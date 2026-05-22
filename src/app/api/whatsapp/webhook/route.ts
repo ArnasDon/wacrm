@@ -165,8 +165,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Process asynchronously so we can ack Meta within their timeout.
-  processWebhook(body).catch((error) => {
+  // Await the processing of the webhook before returning the response
+  // to ensure database updates and realtime notifications complete successfully,
+  // preventing Vercel's serverless environment from freezing the process.
+  await processWebhook(body).catch((error) => {
     console.error('Error processing webhook:', error)
   })
 
@@ -726,11 +728,15 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
-  // Look up existing contacts for this user
+  const normalized = normalizePhone(phone)
+  const last8 = normalized.length >= 8 ? normalized.slice(-8) : normalized
+
+  // Look up matching candidate contacts in DB first rather than fetching all contacts
   const { data: contacts, error: contactsError } = await supabaseAdmin()
     .from('contacts')
     .select('*')
     .eq('user_id', userId)
+    .or(`phone.eq.${phone},phone.eq.${normalized},phone.like.%${last8}`)
 
   if (contactsError) {
     console.error('Error fetching contacts:', contactsError)
@@ -777,10 +783,11 @@ async function findOrCreateConversation(userId: string, contactId: string) {
     .select('*')
     .eq('user_id', userId)
     .eq('contact_id', contactId)
-    .single()
+    .order('created_at', { ascending: true }) // Reuse the oldest one
+    .limit(1)
 
-  if (!findError && existing) {
-    return existing
+  if (!findError && existing && existing.length > 0) {
+    return existing[0]
   }
 
   // Create new conversation

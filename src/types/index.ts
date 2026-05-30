@@ -288,6 +288,24 @@ export interface BroadcastRecipient {
   contact?: Contact;
 }
 
+export interface Offer {
+  id: string;
+  user_id: string;
+  name: string;
+  category: string;
+  provider: string;
+  price_amount: number;
+  fee_amount: number;
+  commission_value: number;
+  benefits: string[];
+  rules: Record<string, unknown>;
+  requirements: string[];
+  metadata: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============================================================
 // Automations (migration 006)
 // ============================================================

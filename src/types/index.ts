@@ -89,6 +89,8 @@ export interface AccountInvitation {
 export interface Contact {
   id: string;
   user_id: string;
+  /** Tenancy column — NOT NULL post-017. */
+  account_id?: string;
   phone: string;
   name?: string;
   email?: string;

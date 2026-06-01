@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
 import {
@@ -16,6 +16,7 @@ import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
  * fields here means adding a column later only touches one spot.
  */
 function buildUpsertRow(
+  accountId: string,
   userId: string,
   payload: TemplatePayload,
   extras: {
@@ -25,6 +26,7 @@ function buildUpsertRow(
   },
 ) {
   return {
+    account_id: accountId,
     user_id: userId,
     name: payload.name,
     category: payload.category,
@@ -74,14 +76,7 @@ async function upsertTemplateRow(
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, userId, accountId } = await requireRole('admin')
 
     let payload: TemplatePayload
     try {
@@ -125,7 +120,7 @@ export async function POST(request: Request) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -161,7 +156,7 @@ export async function POST(request: Request) {
         // until they fix and re-submit.
         await upsertTemplateRow(
           supabase,
-          buildUpsertRow(user.id, payload, {
+          buildUpsertRow(accountId, userId, payload, {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
@@ -181,7 +176,7 @@ export async function POST(request: Request) {
 
     const { data: row, error: upsertErr } = await upsertTemplateRow(
       supabase,
-      buildUpsertRow(user.id, payload, {
+      buildUpsertRow(accountId, userId, payload, {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,
@@ -207,6 +202,8 @@ export async function POST(request: Request) {
       dry_run: dryRun,
     })
   } catch (error) {
+    const mapped = toErrorResponse(error)
+    if (mapped.status !== 500) return mapped
     console.error('Error submitting template:', error)
     return NextResponse.json(
       {

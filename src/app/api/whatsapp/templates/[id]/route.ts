@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   deleteMessageTemplate,
@@ -55,14 +55,7 @@ export async function PATCH(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, accountId } = await requireRole('admin')
 
     let payload: TemplatePayload
     try {
@@ -71,13 +64,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
     }
 
-    // RLS handles ownership, but we need the existing row to read
-    // meta_template_id and status — fetch explicitly.
+    // RLS scopes by account — fetch by id only.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
       .select('id, name, status, meta_template_id, language')
       .eq('id', id)
-      .eq('user_id', user.id)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -127,7 +118,7 @@ export async function PATCH(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -192,6 +183,8 @@ export async function PATCH(
       dry_run: isDryRun(),
     })
   } catch (error) {
+    const mapped = toErrorResponse(error)
+    if (mapped.status !== 500) return mapped
     console.error('Error editing template:', error)
     return NextResponse.json(
       {
@@ -215,20 +208,12 @@ export async function DELETE(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, accountId } = await requireRole('admin')
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
       .select('id, name, meta_template_id')
       .eq('id', id)
-      .eq('user_id', user.id)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -238,7 +223,7 @@ export async function DELETE(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(
@@ -275,6 +260,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, dry_run: isDryRun() })
   } catch (error) {
+    const mapped = toErrorResponse(error)
+    if (mapped.status !== 500) return mapped
     console.error('Error deleting template:', error)
     return NextResponse.json(
       {

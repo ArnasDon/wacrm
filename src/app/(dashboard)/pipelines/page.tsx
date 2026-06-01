@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
 import { useCan } from "@/hooks/use-can";
 import { GatedButton } from "@/components/ui/gated-button";
 
@@ -45,6 +46,7 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const supabase = createClient();
+  const { accountId } = useAuth();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
 
@@ -110,11 +112,11 @@ export default function PipelinesPage() {
       data: { session },
     } = await supabase.auth.getSession();
     const user = session?.user;
-    if (!user) return null;
+    if (!user || !accountId) return null;
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name: "Sales Pipeline" })
+      .insert({ account_id: accountId, user_id: user.id, name: "Sales Pipeline" })
       .select()
       .single();
 
@@ -132,7 +134,7 @@ export default function PipelinesPage() {
     await supabase.from("pipeline_stages").insert(stagesPayload);
 
     return pipeline as Pipeline;
-  }, [supabase]);
+  }, [supabase, accountId]);
 
   // Initial load + seed-if-empty
   useEffect(() => {
@@ -254,10 +256,15 @@ export default function PipelinesPage() {
       setCreating(false);
       return;
     }
+    if (!accountId) {
+      toast.error("Account not ready. Refresh and try again.");
+      setCreating(false);
+      return;
+    }
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name })
+      .insert({ account_id: accountId, user_id: user.id, name })
       .select()
       .single();
 

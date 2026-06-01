@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import type {
   Contact,
   Conversation,
@@ -51,6 +52,7 @@ export function DealForm({
   onSaved,
 }: DealFormProps) {
   const supabase = createClient();
+  const { accountId, profileLoading, canSendMessages } = useAuth();
 
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
@@ -185,9 +187,29 @@ export function DealForm({
         setSaving(false);
         return;
       }
+      if (profileLoading) {
+        toast.error("Account loading, try again");
+        setSaving(false);
+        return;
+      }
+      if (!accountId) {
+        toast.error("Account not ready. Refresh and try again.");
+        setSaving(false);
+        return;
+      }
+      if (!canSendMessages) {
+        toast.error("You do not have permission to create deals");
+        setSaving(false);
+        return;
+      }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, status: "open" });
+        .insert({
+          ...payload,
+          account_id: accountId,
+          user_id: user.id,
+          status: "open",
+        });
       if (error) {
         toast.error("Failed to create deal");
         setSaving(false);

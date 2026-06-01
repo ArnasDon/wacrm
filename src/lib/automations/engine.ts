@@ -26,6 +26,12 @@ export interface AutomationContext {
   message_text?: string
   /** Conversation the event belongs to, if any. */
   conversation_id?: string
+  /** Contact the event belongs to, if any. */
+  contact_id?: string
+  /** Phone number for the contact, if known. */
+  contact_phone?: string
+  /** Display name for the contact, if known. */
+  contact_name?: string
   /** Arbitrary variables accumulated during execution. */
   vars?: Record<string, unknown>
   /** The tag id that was added, for tag_added trigger. */
@@ -542,6 +548,9 @@ function interpolate(s: string, args: ExecuteArgs): string {
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
+    if (ns === 'contact' && prop === 'id') return String(args.context.contact_id ?? '')
+    if (ns === 'contact' && prop === 'phone') return String(args.context.contact_phone ?? '')
+    if (ns === 'contact' && prop === 'name') return String(args.context.contact_name ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''
   })

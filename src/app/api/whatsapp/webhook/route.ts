@@ -648,6 +648,9 @@ async function processMessage(
       context: {
         message_text: inboundText,
         conversation_id: conversation.id,
+        contact_id: contactRecord.id,
+        contact_phone: contactRecord.phone,
+        contact_name: contactRecord.name ?? undefined,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }

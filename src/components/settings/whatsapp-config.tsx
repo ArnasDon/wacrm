@@ -36,7 +36,7 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
 export function WhatsAppConfig() {
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,14 +79,14 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (userId: string) => {
+  const fetchConfig = useCallback(async (scopedAccountId: string) => {
     setLoading(true);
     try {
       // Load form values from Supabase (shows what's in DB)
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', scopedAccountId)
         .maybeSingle();
 
       if (error) {
@@ -147,12 +147,12 @@ export function WhatsAppConfig() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!accountId) {
       setLoading(false);
       return;
     }
-    fetchConfig(user.id);
-  }, [authLoading, user, fetchConfig]);
+    fetchConfig(accountId);
+  }, [authLoading, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
@@ -230,7 +230,7 @@ export function WhatsAppConfig() {
         setPin('');
       }
 
-      if (user) await fetchConfig(user.id);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -286,7 +286,7 @@ export function WhatsAppConfig() {
           { duration: 8000 },
         );
       }
-      if (user) await fetchConfig(user.id);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('verify-registration failed:', err);
       toast.error('Could not reach the verification endpoint.');

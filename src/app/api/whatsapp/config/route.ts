@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import {
+  getCurrentAccount,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -39,21 +43,12 @@ function supabaseAdmin() {
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, accountId } = await getCurrentAccount()
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     if (configError) {
@@ -114,6 +109,10 @@ export async function GET() {
       )
     }
   } catch (error) {
+    const authResponse = toErrorResponse(error)
+    if (authResponse.status !== 500) {
+      return authResponse
+    }
     console.error('Error in WhatsApp config GET:', error)
     return NextResponse.json(
       { connected: false, reason: 'unknown', message: 'Internal server error' },
@@ -130,16 +129,7 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, userId, accountId } = await requireRole('admin')
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -169,7 +159,7 @@ export async function POST(request: Request) {
       .from('whatsapp_config')
       .select('user_id')
       .eq('phone_number_id', phone_number_id)
-      .neq('user_id', user.id)
+      .neq('account_id', accountId)
       .maybeSingle()
 
     if (claimedError) {
@@ -230,7 +220,7 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id, registered_at, phone_number_id')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     const sameNumber =
@@ -318,7 +308,7 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -330,7 +320,11 @@ export async function POST(request: Request) {
     } else {
       const { error: insertError } = await supabase
         .from('whatsapp_config')
-        .insert({ user_id: user.id, ...baseRow })
+        .insert({
+          user_id: userId,
+          account_id: accountId,
+          ...baseRow,
+        })
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)
@@ -361,6 +355,10 @@ export async function POST(request: Request) {
       phone_info: phoneInfo,
     })
   } catch (error) {
+    const authResponse = toErrorResponse(error)
+    if (authResponse.status !== 500) {
+      return authResponse
+    }
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -375,21 +373,12 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { supabase, accountId } = await requireRole('admin')
 
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
       .delete()
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)
@@ -401,6 +390,10 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    const authResponse = toErrorResponse(error)
+    if (authResponse.status !== 500) {
+      return authResponse
+    }
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

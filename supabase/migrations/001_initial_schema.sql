@@ -5,7 +5,7 @@
 -- ============================================================
 
 -- gen_random_uuid() is built into PostgreSQL 13+ (Supabase default).
--- Avoid uuid-ossp / gen_random_uuid(): on Supabase the extension lives
+-- Avoid uuid-ossp / uuid_generate_v4(): on Supabase the extension lives
 -- in the `extensions` schema and is not on search_path.
 
 -- ============================================================

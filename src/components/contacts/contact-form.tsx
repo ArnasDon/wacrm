@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
@@ -34,6 +35,7 @@ export function ContactForm({
   onSaved,
 }: ContactFormProps) {
   const supabase = createClient();
+  const { accountId, profileLoading, canSendMessages } = useAuth();
   const isEdit = !!contact;
 
   const [name, setName] = useState('');
@@ -91,6 +93,9 @@ export function ContactForm({
       } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) throw new Error('Not authenticated');
+      if (profileLoading) throw new Error('Account loading, try again');
+      if (!accountId) throw new Error('Account not ready. Refresh and try again.');
+      if (!canSendMessages) throw new Error('You do not have permission to save contacts');
 
       let contactId = contact?.id;
 
@@ -110,6 +115,7 @@ export function ContactForm({
         const { data, error } = await supabase
           .from('contacts')
           .insert({
+            account_id: accountId,
             user_id: user.id,
             name: name.trim() || null,
             phone: phone.trim(),

@@ -36,7 +36,12 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
 export function WhatsAppConfig() {
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  // After multi-user, whatsapp_config is one-row-per-account, not
+  // one-row-per-user. We pull `accountId` straight off the auth
+  // context and key every read off it — so a teammate who just
+  // joined an account sees the inviter's saved config without
+  // having to re-enter anything.
+  const { user, accountId, loading: authLoading, profileLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -52,21 +57,46 @@ export function WhatsAppConfig() {
   const [wabaId, setWabaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
+  const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
+
+  // True once /register has succeeded on Meta's side (timestamp set
+  // in the row). When false, the saved config is metadata-only and
+  // Meta will silently drop every inbound event — that's the
+  // multi-number bug that prompted this work.
+  const isRegistered = Boolean(config?.registered_at);
+  const lastRegistrationError = config?.last_registration_error ?? null;
+
+  const [verifyingRegistration, setVerifyingRegistration] = useState(false);
+  type RegistrationProbe = {
+    live: boolean;
+    checks: Record<string, boolean | null>;
+    errors?: string[];
+    last_registration_error?: string | null;
+    registered_at?: string | null;
+    subscribed_apps_at?: string | null;
+  };
+  const [registrationProbe, setRegistrationProbe] =
+    useState<RegistrationProbe | null>(null);
 
   const webhookUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (userId: string) => {
+  const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB)
+      // Load form values from Supabase (shows what's in DB).
+      // Switched from `user_id` (which would only match the row's
+      // original author) to `account_id` so every member of the
+      // account sees the same saved configuration. UNIQUE(account_id)
+      // on the table guarantees the .maybeSingle() return type
+      // remains accurate.
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', acctId)
         .maybeSingle();
 
       if (error) {
@@ -79,6 +109,7 @@ export function WhatsAppConfig() {
         setWabaId(data.waba_id || '');
         setAccessToken(MASKED_TOKEN);
         setVerifyToken('');
+        setPin('');
         setTokenEdited(false);
       } else {
         setConfig(null);
@@ -86,8 +117,11 @@ export function WhatsAppConfig() {
         setWabaId('');
         setAccessToken('');
         setVerifyToken('');
+        setPin('');
         setTokenEdited(false);
       }
+      // Clear any stale probe result when reloading the row.
+      setRegistrationProbe(null);
 
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
@@ -122,13 +156,18 @@ export function WhatsAppConfig() {
   }, [supabase]);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
+    // Need both the auth session (`!authLoading`) AND the profile
+    // (`!profileLoading`, which carries `accountId`). Without the
+    // second guard, the effect would fire with `accountId === null`
+    // for the first render window and bail without ever retrying
+    // once the profile arrives.
+    if (authLoading || profileLoading) return;
+    if (!user || !accountId) {
       setLoading(false);
       return;
     }
-    fetchConfig(user.id);
-  }, [authLoading, user, fetchConfig]);
+    fetchConfig(accountId);
+  }, [authLoading, profileLoading, user, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
@@ -151,6 +190,10 @@ export function WhatsAppConfig() {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
         verify_token: verifyToken.trim() || null,
+        // Optional — only sent when the user filled it in. The server
+        // requires it on first save or when changing numbers; for a
+        // simple token rotation, leaving it blank skips re-register.
+        pin: pin.trim() || null,
       };
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
@@ -179,13 +222,30 @@ export function WhatsAppConfig() {
         return;
       }
 
-      toast.success(
-        data.phone_info?.verified_name
-          ? `Connected to ${data.phone_info.verified_name}`
-          : 'Configuration saved successfully'
-      );
+      // The route now returns a structured outcome:
+      //   * registered=true   → number is live, events will flow
+      //   * registered=false  → credentials saved but /register
+      //                         failed; UI shows the specific error
+      //                         and a retry path. registration_error
+      //                         is human-readable from Meta.
+      if (data.registered === false && data.registration_error) {
+        toast.error(
+          `Saved, but Meta couldn't register the number: ${data.registration_error}`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(
+          data.phone_info?.verified_name
+            ? `Live — ${data.phone_info.verified_name} can now receive events.`
+            : 'WhatsApp connected. Events will start flowing within a minute.',
+        );
+        // Clear the PIN so subsequent saves don't accidentally
+        // re-register (which would void the active subscription if
+        // the PIN became stale).
+        setPin('');
+      }
 
-      if (user) await fetchConfig(user.id);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -221,6 +281,32 @@ export function WhatsAppConfig() {
       toast.error('Connection test failed. Check network and try again.');
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleVerifyRegistration() {
+    setVerifyingRegistration(true);
+    setRegistrationProbe(null);
+    try {
+      const res = await fetch('/api/whatsapp/config/verify-registration', {
+        method: 'GET',
+      });
+      const data = (await res.json()) as RegistrationProbe;
+      setRegistrationProbe(data);
+      if (data.live) {
+        toast.success('Number is fully wired — Meta is delivering events.');
+      } else {
+        toast.error(
+          'Number is not fully registered. See the checks below for which step failed.',
+          { duration: 8000 },
+        );
+      }
+      if (accountId) await fetchConfig(accountId);
+    } catch (err) {
+      console.error('verify-registration failed:', err);
+      toast.error('Could not reach the verification endpoint.');
+    } finally {
+      setVerifyingRegistration(false);
     }
   }
 
@@ -320,16 +406,124 @@ export function WhatsAppConfig() {
               <XCircle className="size-4 text-red-500" />
             )}
             <AlertTitle className="text-white mb-0">
-              {connectionStatus === 'connected' ? 'Connected' : 'Not Connected'}
+              {connectionStatus === 'connected' ? 'Credentials valid' : 'Not Connected'}
             </AlertTitle>
           </div>
           <AlertDescription className="text-slate-400">
             {connectionStatus === 'connected'
-              ? 'Your WhatsApp Business API is connected and ready to send/receive messages.'
+              ? 'Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.'
               : statusMessage ||
                 'Configure your Meta API credentials below to connect your WhatsApp Business account.'}
           </AlertDescription>
         </Alert>
+
+        {/* Registration Status — the "is it actually live?" check.
+            Credentials being valid is necessary but not sufficient;
+            without a successful /register call the number won't
+            receive inbound events. Surface this dimension separately
+            so users don't trust a misleading green banner. */}
+        {config && (
+          <Alert
+            className={
+              isRegistered
+                ? 'bg-emerald-950/30 border-emerald-700/50'
+                : 'bg-amber-950/30 border-amber-700/50'
+            }
+          >
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {isRegistered ? (
+                  <CheckCircle2 className="size-4 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="size-4 text-amber-400" />
+                )}
+                <AlertTitle
+                  className={
+                    'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')
+                  }
+                >
+                  {isRegistered
+                    ? 'Registered — Meta will deliver events to wacrm'
+                    : 'Not registered — Meta will not deliver events'}
+                </AlertTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleVerifyRegistration}
+                disabled={verifyingRegistration}
+                className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 h-7"
+              >
+                {verifyingRegistration ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Zap className="size-3.5" />
+                )}
+                Verify with Meta
+              </Button>
+            </div>
+            <AlertDescription className="text-slate-400 mt-2 text-xs leading-relaxed">
+              {isRegistered ? (
+                <>
+                  Subscribed since{' '}
+                  {config.registered_at
+                    ? new Date(config.registered_at).toLocaleString()
+                    : 'unknown'}
+                  . Click <strong>Verify with Meta</strong> if events
+                  stop arriving.
+                </>
+              ) : lastRegistrationError ? (
+                <>
+                  Last attempt failed with:{' '}
+                  <span className="text-red-300">
+                    &quot;{lastRegistrationError}&quot;
+                  </span>
+                  . Enter (or correct) the 2-step PIN below and click
+                  Save Configuration to retry.
+                </>
+              ) : (
+                <>
+                  This number was saved before registration tracking
+                  existed, or registration was skipped. Enter the
+                  2-step PIN below and click Save Configuration to
+                  subscribe it.
+                </>
+              )}
+            </AlertDescription>
+
+            {registrationProbe && (
+              <div className="mt-3 rounded border border-slate-700 bg-slate-900/60 px-3 py-2 space-y-1.5 text-[11px]">
+                <p className="font-medium text-slate-200">
+                  Diagnostic — last run: {' '}
+                  <span className={registrationProbe.live ? 'text-emerald-400' : 'text-amber-400'}>
+                    {registrationProbe.live ? 'live' : 'not live'}
+                  </span>
+                </p>
+                <ul className="space-y-0.5 text-slate-400">
+                  {Object.entries(registrationProbe.checks).map(([k, v]) => (
+                    <li key={k} className="flex items-center gap-1.5">
+                      {v === true ? (
+                        <CheckCircle2 className="size-3 text-emerald-400 shrink-0" />
+                      ) : v === false ? (
+                        <XCircle className="size-3 text-red-400 shrink-0" />
+                      ) : (
+                        <span className="size-3 rounded-full border border-slate-600 shrink-0" />
+                      )}
+                      <code className="text-slate-300">{k}</code>
+                    </li>
+                  ))}
+                </ul>
+                {(registrationProbe.errors ?? []).length > 0 && (
+                  <ul className="pt-1 space-y-0.5 text-red-300">
+                    {registrationProbe.errors?.map((e, i) => (
+                      <li key={i}>• {e}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </Alert>
+        )}
 
         {/* API Credentials */}
         <Card className="bg-slate-900 border-slate-700 ring-0 ring-transparent">
@@ -404,6 +598,39 @@ export function WhatsAppConfig() {
               />
               <p className="text-xs text-slate-500">
                 A custom string you create. Must match the token you set in Meta webhook settings.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-slate-300">
+                Two-step verification PIN
+                {!isRegistered && (
+                  <span className="ml-1 text-red-400">*</span>
+                )}
+              </Label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6-digit PIN from Meta WhatsApp Manager"
+                value={pin}
+                onChange={(e) =>
+                  setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 tracking-widest"
+              />
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Required the first time you connect a number, and any
+                time you swap to a different number. Set it in{' '}
+                <strong className="text-slate-300">
+                  Meta Business Manager → WhatsApp Accounts → Phone
+                  Numbers → Two-step verification
+                </strong>
+                . Without this PIN, Meta saves your credentials but
+                won&apos;t actually route inbound messages to wacrm —
+                the symptom that hits second numbers under a shared
+                WABA. Leave blank to keep an existing registration
+                untouched.
               </p>
             </div>
           </CardContent>

@@ -1,9 +1,18 @@
+import type { AccountRole } from "@/lib/auth/roles";
+
 export interface Profile {
   id: string;
   user_id: string;
   full_name: string;
   email: string;
   avatar_url?: string;
+  /**
+   * Legacy free-form role column from migration 001. Never read
+   * by the app since 017_account_sharing.sql introduced the typed
+   * `account_role` enum. Flagged for removal in a later cleanup
+   * migration — kept on the type so existing destructures don't
+   * break.
+   */
   role: string;
   /**
    * Opted-in beta feature keys for this account. The column survives
@@ -13,7 +22,68 @@ export interface Profile {
    * the `profiles` row.
    */
   beta_features?: string[];
+  /**
+   * Account this profile is a member of. Added by
+   * `017_account_sharing.sql`; NOT NULL in the DB post-backfill.
+   * Optional on the type only because older serialised payloads
+   * (cached client state, test fixtures) may not have it yet.
+   */
+  account_id?: string;
+  /**
+   * Caller's role within their account. Source of truth for every
+   * role-gated UI / API check — call `hasMinRole` from
+   * `@/lib/auth/roles` rather than comparing this string directly.
+   */
+  account_role?: AccountRole;
   created_at: string;
+}
+
+// ============================================================
+// Account-sharing entities (017_account_sharing.sql)
+// ============================================================
+
+export interface Account {
+  id: string;
+  name: string;
+  /** auth.users.id of the immutable owner. */
+  owner_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Hydrated member row for the Settings → Members tab. Combines
+ * the profile and its account_role for a single member of the
+ * caller's account. Sensitive fields (email) are populated only
+ * when the caller has admin+ — agents and viewers see name +
+ * avatar + role only.
+ */
+export interface AccountMember {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  avatar_url: string | null;
+  role: AccountRole;
+  joined_at: string;
+}
+
+/**
+ * Outstanding invite link row. `token_hash` is intentionally
+ * absent — it lives only in the DB and on the server. The
+ * plaintext token is returned once at creation time and surfaced
+ * via the invite URL; never re-emitted.
+ */
+export interface AccountInvitation {
+  id: string;
+  account_id: string;
+  /** Roles offered via invite — owner is never offered. */
+  role: Exclude<AccountRole, "owner">;
+  created_by_user_id: string | null;
+  label: string | null;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  accepted_by_user_id: string | null;
 }
 
 export interface Contact {
@@ -138,6 +208,41 @@ export interface WhatsAppConfig {
   verify_token?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
+  /**
+   * Set when POST /{phone_number_id}/register last succeeded. NULL
+   * means the number was saved but never actually subscribed for
+   * webhooks on Meta's side — inbound events will be silently lost.
+   */
+  registered_at?: string;
+  /** Set when POST /{waba_id}/subscribed_apps last succeeded. */
+  subscribed_apps_at?: string;
+  /** Last error from /register; cleared on success. */
+  last_registration_error?: string;
+}
+
+// Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
+// rather than collapsing to a local TitleCase set — distinctions like
+// PAUSED vs DISABLED vs IN_APPEAL drive the edit/resubmit/delete flows.
+// DRAFT is the local-only state before the row is submitted to Meta.
+export type MessageTemplateStatus =
+  | 'DRAFT'
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAUSED'
+  | 'DISABLED'
+  | 'IN_APPEAL'
+  | 'PENDING_DELETION';
+
+export type TemplateButton =
+  | { type: 'QUICK_REPLY'; text: string }
+  | { type: 'URL'; text: string; url: string; example?: string }
+  | { type: 'PHONE_NUMBER'; text: string; phone_number: string }
+  | { type: 'COPY_CODE'; text: string; example: string };
+
+export interface TemplateSampleValues {
+  body?: string[];
+  header?: string[];
 }
 
 export interface MessageTemplate {
@@ -148,10 +253,18 @@ export interface MessageTemplate {
   language?: string;
   header_type?: 'text' | 'image' | 'video' | 'document';
   header_content?: string;
+  header_handle?: string;
+  header_media_url?: string;
   body_text: string;
   footer_text?: string;
-  buttons?: Record<string, unknown>[];
-  status?: 'Draft' | 'Pending' | 'Approved' | 'Rejected';
+  buttons?: TemplateButton[];
+  sample_values?: TemplateSampleValues;
+  status?: MessageTemplateStatus;
+  meta_template_id?: string;
+  rejection_reason?: string;
+  quality_score?: 'GREEN' | 'YELLOW' | 'RED';
+  submission_error?: string;
+  last_submitted_at?: string;
   created_at: string;
 }
 
@@ -367,6 +480,12 @@ export type AutomationStepConfig =
 
 export interface Automation {
   id: string;
+  /** Account tenancy key — every automation belongs to one account
+   *  (migration 017 made the column NOT NULL). The engine looks up
+   *  active automations by this field on inbound webhook events. */
+  account_id: string;
+  /** Original author. Used for log audit + outbound message
+   *  sender-of-record, never for tenancy isolation. */
   user_id: string;
   name: string;
   description?: string;

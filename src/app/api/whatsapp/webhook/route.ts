@@ -6,6 +6,10 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import {
+  handleTemplateWebhookChange,
+  isTemplateWebhookField,
+} from '@/lib/whatsapp/template-webhook'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -190,6 +194,19 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
   for (const entry of body.entry) {
     for (const change of entry.changes) {
+      // Template-lifecycle events (status / quality / components
+      // updates from Meta) come in on a different change.field and
+      // have a different value shape — route them through the
+      // dedicated handler. Skip the messaging branches below so we
+      // don't try to read message-shaped fields off a template event.
+      if (isTemplateWebhookField(change.field)) {
+        await handleTemplateWebhookChange(
+          { field: change.field, value: change.value as unknown },
+          supabaseAdmin(),
+        )
+        continue
+      }
+
       const value = change.value
 
       // Handle status updates
@@ -204,17 +221,42 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const phoneNumberId = value.metadata.phone_number_id
 
-      // Find user's config by phone_number_id
-      const { data: config, error: configError } = await supabaseAdmin()
+      // Find user's config by phone_number_id. `.single()` returns
+      // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
+      // operators see the real cause in logs. ≥2 rows shouldn't happen
+      // post-migration 013 (UNIQUE constraint), but a row created
+      // before the constraint, or a race, would still surface here.
+      const { data: configRows, error: configError } = await supabaseAdmin()
         .from('whatsapp_config')
         .select('*')
         .eq('phone_number_id', phoneNumberId)
-        .single()
 
-      if (configError || !config) {
+      if (configError) {
+        console.error(
+          'Error fetching whatsapp_config for phone_number_id:',
+          phoneNumberId,
+          configError
+        )
+        continue
+      }
+
+      if (!configRows || configRows.length === 0) {
         console.error('No config found for phone_number_id:', phoneNumberId)
         continue
       }
+
+      if (configRows.length > 1) {
+        console.error(
+          `Multiple configs (${configRows.length}) found for phone_number_id:`,
+          phoneNumberId,
+          '— inbound message dropped. Resolve duplicates so each number maps to a single account.',
+          'Account owners:',
+          configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
+        )
+        continue
+      }
+
+      const config = configRows[0]
 
       const decryptedAccessToken = decrypt(config.access_token)
 
@@ -225,6 +267,12 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         await processMessage(
           message,
           contact,
+          // Tenancy — drives every contact / conversation lookup
+          // and the engines' active-row dispatch.
+          config.account_id,
+          // Audit / sender-of-record — used as the user_id on row
+          // inserts that need it for NOT NULL FK compliance. Always
+          // the admin who saved the WhatsApp config.
           config.user_id,
           decryptedAccessToken
         )
@@ -337,14 +385,17 @@ async function handleStatusUpdate(status: {
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(userId: string, contactId: string) {
+async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
   try {
-    // Most recent outbound broadcast that hasn't been replied to yet.
+    // Most recent outbound broadcast in this account that hasn't
+    // been replied to yet. Account-scoped so a shared inbox reply
+    // marks the broadcast as replied regardless of which teammate
+    // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(user_id)')
+      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
       .eq('contact_id', contactId)
-      .eq('broadcasts.user_id', userId)
+      .eq('broadcasts.account_id', accountId)
       .in('status', ['sent', 'delivered', 'read'])
       .order('created_at', { ascending: false })
       .limit(1)
@@ -449,7 +500,14 @@ async function handleReaction(
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
-  userId: string,
+  // Tenancy. Resolved from the matched whatsapp_config row; every
+  // contact / conversation / message row created downstream is
+  // stamped with this so any member of the account can see it.
+  accountId: string,
+  // Sender-of-record for inserts that need a NOT NULL user_id FK
+  // (contacts, conversations). Always the admin who saved the
+  // WhatsApp config; the choice is arbitrary post-017 but stable.
+  configOwnerUserId: string,
   accessToken: string
 ) {
   const senderPhone = normalizePhone(message.from)
@@ -457,7 +515,8 @@ async function processMessage(
 
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
-    userId,
+    accountId,
+    configOwnerUserId,
     senderPhone,
     contactName
   )
@@ -466,7 +525,8 @@ async function processMessage(
 
   // Find or create conversation
   const conversation = await findOrCreateConversation(
-    userId,
+    accountId,
+    configOwnerUserId,
     contactRecord.id
   )
   if (!conversation) return
@@ -573,7 +633,7 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(userId, contactRecord.id)
+  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
   // ============================================================
   // Flow runner dispatch.
@@ -595,7 +655,8 @@ async function processMessage(
   // basically for free (one indexed SELECT for the active run).
   // ============================================================
   const flowResult = await dispatchInboundToFlows({
-    userId,
+    accountId,
+    userId: configOwnerUserId,
     contactId: contactRecord.id,
     conversationId: conversation.id,
     message:
@@ -642,7 +703,7 @@ async function processMessage(
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
   for (const triggerType of automationTriggers) {
     runAutomationsForTrigger({
-      userId,
+      accountId,
       triggerType,
       contactId: contactRecord.id,
       context: {
@@ -812,22 +873,47 @@ interface ContactOutcome {
 }
 
 async function findOrCreateContact(
-  userId: string,
+  accountId: string,
+  configOwnerUserId: string,
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
-  // Look up existing contacts for this user
+  // Look up existing contacts for this account. We pre-filter in SQL
+  // by the phone's last-8-digit suffix so we don't ship every contact
+  // in the account over the wire just to JS-filter to one row. This
+  // matters at scale: a shared account with 5 teammates × 100 contacts
+  // each is 500 rows — the prior implementation pulled all of them on
+  // every inbound message.
+  //
+  // The `phonesMatch` helper considers two phones equal if they share
+  // the last 8 digits (trunk-prefix tolerance). We mirror that here as
+  // a `like` pattern, then re-run the strict comparison in JS on the
+  // narrowed candidate set. The candidate set is typically 0-2 rows,
+  // so the JS pass is effectively free.
+  //
+  // The trailing-suffix `like` cannot use a B-tree index, but the
+  // `account_id` filter on top of `idx_contacts_account` (017) means
+  // we sequential-scan a small, account-scoped subset.
+  const normalizedSender = phone.replace(/\D/g, '')
+  const phoneSuffix =
+    normalizedSender.length >= 8
+      ? normalizedSender.slice(-8)
+      : normalizedSender
+
   const { data: contacts, error: contactsError } = await supabaseAdmin()
     .from('contacts')
     .select('*')
-    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .like('phone', `%${phoneSuffix}`)
 
   if (contactsError) {
     console.error('Error fetching contacts:', contactsError)
     return null
   }
 
-  // Use phonesMatch for flexible matching
+  // Re-apply phonesMatch on the candidate set for correctness — the
+  // SQL `like` is a coarse pre-filter; phonesMatch handles edge cases
+  // like leading-`+` and explicit trunk-zero handling.
   const existingContact = contacts?.find((c: ContactRow) => phonesMatch(c.phone, phone))
 
   if (existingContact) {
@@ -841,11 +927,15 @@ async function findOrCreateContact(
     return { contact: existingContact, wasCreated: false }
   }
 
-  // Create new contact
+  // Create new contact. account_id is the tenancy column;
+  // user_id is the NOT NULL FK audit column (no inbound message
+  // has a single "user who created" it — we attribute to the
+  // WhatsApp config owner as a stable default).
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
     .insert({
-      user_id: userId,
+      account_id: accountId,
+      user_id: configOwnerUserId,
       phone,
       name: name || phone,
     })
@@ -860,12 +950,16 @@ async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
-async function findOrCreateConversation(userId: string, contactId: string) {
-  // Look for existing conversation
+async function findOrCreateConversation(
+  accountId: string,
+  configOwnerUserId: string,
+  contactId: string,
+) {
+  // Look for existing conversation in this account
   const { data: existing, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
-    .eq('user_id', userId)
+    .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .single()
 
@@ -873,11 +967,13 @@ async function findOrCreateConversation(userId: string, contactId: string) {
     return existing
   }
 
-  // Create new conversation
+  // Create new conversation. Same tenancy + audit split as
+  // findOrCreateContact above.
   const { data: newConv, error: createError } = await supabaseAdmin()
     .from('conversations')
     .insert({
-      user_id: userId,
+      account_id: accountId,
+      user_id: configOwnerUserId,
       contact_id: contactId,
     })
     .select()

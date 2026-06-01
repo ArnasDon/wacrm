@@ -493,10 +493,17 @@ export function MessageThread({
   }, []);
 
   const handleSendTemplate = useCallback(
-    async (template: MessageTemplate, params: string[]) => {
+    async (
+      template: MessageTemplate,
+      values: {
+        body: string[];
+        headerText?: string;
+        buttonParams?: Record<number, string>;
+      },
+    ) => {
       if (!conversation) return;
 
-      const renderedBody = renderTemplateBody(template.body_text, params);
+      const renderedBody = renderTemplateBody(template.body_text, values.body);
       const tempId = `temp-${Date.now()}`;
 
       const optimisticMsg: Message = {
@@ -519,7 +526,17 @@ export function MessageThread({
             conversation_id: conversation.id,
             message_type: "template",
             template_name: template.name,
-            template_params: params,
+            template_language: template.language,
+            // Structured params drive the new send-builder path
+            // (header media + URL button substitution). Body values
+            // are mirrored under both shapes so the route can fall
+            // back if the template row isn't found locally.
+            template_message_params: {
+              body: values.body,
+              headerText: values.headerText,
+              buttonParams: values.buttonParams,
+            },
+            template_params: values.body,
             content_text: renderedBody,
           }),
         });

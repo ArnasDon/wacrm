@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { MessageTemplate } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -21,23 +21,18 @@ import {
   LayoutTemplate,
   Loader2,
 } from "lucide-react";
+import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
+
+export interface TemplateSendValues {
+  body: string[];
+  headerText?: string;
+  buttonParams?: Record<number, string>;
+}
 
 interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect: (template: MessageTemplate, params: string[]) => void;
-}
-
-// Meta numbers template placeholders from 1 ({{1}}, {{2}}, …) and the
-// indices passed to the Graph API must be contiguous starting at 1.
-// We sort + dedupe here so a body using only {{2}} still drives a single
-// input slot, and so render-order matches send-order.
-function extractVariables(body: string): number[] {
-  const ids = new Set<number>();
-  for (const m of body.matchAll(/\{\{(\d+)\}\}/g)) {
-    ids.add(Number(m[1]));
-  }
-  return Array.from(ids).sort((a, b) => a - b);
+  onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -46,6 +41,36 @@ function renderBodyPreview(body: string, params: string[]): string {
     const value = params[idx];
     return value && value.trim().length > 0 ? value : `{{${raw}}}`;
   });
+}
+
+interface UrlButtonSlot {
+  index: number;
+  text: string;
+  url: string;
+}
+
+/**
+ * Templates may need values for: body variables, a text-header
+ * variable, and per-URL-button suffixes. Collect them all so the
+ * send-message path doesn't 400 on missing parameters.
+ */
+function collectVariableSlots(template: MessageTemplate): {
+  bodyVars: number[];
+  headerVarCount: number;
+  urlButtonSlots: UrlButtonSlot[];
+} {
+  const bodyVars = extractVariableIndices(template.body_text);
+  const headerVarCount =
+    template.header_type === "text" && template.header_content
+      ? extractVariableIndices(template.header_content).length
+      : 0;
+  const urlButtonSlots: UrlButtonSlot[] = [];
+  (template.buttons ?? []).forEach((b, i) => {
+    if (b.type === "URL" && extractVariableIndices(b.url).length > 0) {
+      urlButtonSlots.push({ index: i, text: b.text, url: b.url });
+    }
+  });
+  return { bodyVars, headerVarCount, urlButtonSlots };
 }
 
 export function TemplatePicker({
@@ -57,6 +82,8 @@ export function TemplatePicker({
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
   const [params, setParams] = useState<string[]>([]);
+  const [headerText, setHeaderText] = useState<string>("");
+  const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -77,14 +104,11 @@ export function TemplatePicker({
         return;
       }
 
-      // Only Approved templates are sendable through Meta — anything else
-      // would 400 on the send route. Hide them rather than letting the
-      // user pick a template that will be rejected.
       const { data, error } = await supabase
         .from("message_templates")
         .select("*")
         .eq("user_id", user.id)
-        .eq("status", "Approved")
+        .eq("status", "APPROVED")
         .order("created_at", { ascending: false });
 
       if (cancelled) return;
@@ -102,35 +126,60 @@ export function TemplatePicker({
     };
   }, [open]);
 
+  function resetSelection() {
+    setSelected(null);
+    setParams([]);
+    setHeaderText("");
+    setButtonParams({});
+  }
+
   function handleOpenChange(next: boolean) {
-    if (!next) {
-      setSelected(null);
-      setParams([]);
-    }
+    if (!next) resetSelection();
     onOpenChange(next);
   }
 
   function pickTemplate(template: MessageTemplate) {
-    const vars = extractVariables(template.body_text);
-    if (vars.length === 0) {
-      onSelect(template, []);
+    const slots = collectVariableSlots(template);
+    const noInputsNeeded =
+      slots.bodyVars.length === 0 &&
+      slots.headerVarCount === 0 &&
+      slots.urlButtonSlots.length === 0;
+    if (noInputsNeeded) {
+      onSelect(template, { body: [] });
       handleOpenChange(false);
       return;
     }
     setSelected(template);
-    setParams(new Array(vars.length).fill(""));
+    setParams(new Array(slots.bodyVars.length).fill(""));
+    setHeaderText("");
+    setButtonParams({});
   }
 
   function confirm() {
     if (!selected) return;
-    onSelect(selected, params);
+    const values: TemplateSendValues = { body: params };
+    if (headerText.trim()) values.headerText = headerText.trim();
+    if (Object.keys(buttonParams).length > 0) {
+      values.buttonParams = Object.fromEntries(
+        Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
+      );
+    }
+    onSelect(selected, values);
     handleOpenChange(false);
   }
 
-  const variables = selected ? extractVariables(selected.body_text) : [];
+  const slots = useMemo(
+    () => (selected ? collectVariableSlots(selected) : null),
+    [selected],
+  );
   const canConfirm =
     !!selected &&
-    variables.every((_, i) => (params[i] ?? "").trim().length > 0);
+    !!slots &&
+    slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
+    (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
+    slots.urlButtonSlots.every(
+      (s) => (buttonParams[s.index] ?? "").trim().length > 0,
+    );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -207,9 +256,22 @@ export function TemplatePicker({
                 </p>
               )}
             </div>
-            {variables.map((v, i) => (
+            {slots && slots.headerVarCount > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-300">
+                  {`Header {{1}}`}
+                </Label>
+                <Input
+                  value={headerText}
+                  onChange={(e) => setHeaderText(e.target.value)}
+                  placeholder="Value for the header variable"
+                  className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                />
+              </div>
+            )}
+            {slots?.bodyVars.map((v, i) => (
               <div key={v} className="space-y-1">
-                <Label className="text-xs text-slate-300">{`Variable {{${v}}}`}</Label>
+                <Label className="text-xs text-slate-300">{`Body {{${v}}}`}</Label>
                 <Input
                   value={params[i] ?? ""}
                   onChange={(e) => {
@@ -222,6 +284,27 @@ export function TemplatePicker({
                 />
               </div>
             ))}
+            {slots?.urlButtonSlots.map((slot) => (
+              <div key={slot.index} className="space-y-1">
+                <Label className="text-xs text-slate-300">
+                  {`URL button "${slot.text}" — value for `}{`{{1}}`}
+                </Label>
+                <Input
+                  value={buttonParams[slot.index] ?? ""}
+                  onChange={(e) =>
+                    setButtonParams((prev) => ({
+                      ...prev,
+                      [slot.index]: e.target.value,
+                    }))
+                  }
+                  placeholder="URL suffix value"
+                  className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                />
+                <p className="text-[10px] text-slate-500 break-all">
+                  Final URL: {slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}")}
+                </p>
+              </div>
+            ))}
           </div>
         )}
 
@@ -230,10 +313,7 @@ export function TemplatePicker({
             <>
               <Button
                 variant="outline"
-                onClick={() => {
-                  setSelected(null);
-                  setParams([]);
-                }}
+                onClick={resetSelection}
                 className="border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 <ArrowLeft className="h-4 w-4" />

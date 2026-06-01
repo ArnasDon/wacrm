@@ -44,6 +44,8 @@ import {
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
+import { useCan } from '@/hooks/use-can';
+import { GatedButton } from '@/components/ui/gated-button';
 
 const PAGE_SIZE = 25;
 
@@ -53,6 +55,7 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const supabase = createClient();
+  const canEdit = useCan('send-messages');
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,21 +219,25 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
+          <GatedButton
             variant="outline"
+            canAct={canEdit}
+            gateReason="add or import contacts"
             onClick={() => setImportOpen(true)}
             className="border-slate-700 text-slate-300 hover:bg-slate-800"
           >
             <Upload className="size-4" />
             Import
-          </Button>
-          <Button
+          </GatedButton>
+          <GatedButton
+            canAct={canEdit}
+            gateReason="add or import contacts"
             onClick={openAddForm}
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             <Plus className="size-4" />
             Add Contact
-          </Button>
+          </GatedButton>
         </div>
       </div>
 

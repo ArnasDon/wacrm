@@ -19,8 +19,10 @@ import {
 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
+import { useCan } from "@/hooks/use-can"
 import type { Automation } from "@/types"
 import { Button } from "@/components/ui/button"
+import { GatedButton } from "@/components/ui/gated-button"
 import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
@@ -57,6 +59,7 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
 
 export default function AutomationsPage() {
   const router = useRouter()
+  const canCreate = useCan("send-messages")
   const [automations, setAutomations] = useState<Automation[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
@@ -162,13 +165,15 @@ export default function AutomationsPage() {
             Build workflows that react to WhatsApp® events automatically.
           </p>
         </div>
-        <Button
+        <GatedButton
+          canAct={canCreate}
+          gateReason="create automations"
           onClick={() => router.push("/automations/new")}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
           Create Automation
-        </Button>
+        </GatedButton>
       </div>
 
       {showTemplates && (

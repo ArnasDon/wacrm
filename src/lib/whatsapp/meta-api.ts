@@ -66,6 +66,152 @@ export async function verifyPhoneNumber(
 }
 
 // ============================================================
+// Cloud API registration (subscription for inbound webhooks)
+// ============================================================
+//
+// Saving a phone_number_id + access_token to whatsapp_config is NOT
+// enough to receive inbound events from Meta. Two extra calls are
+// required:
+//
+//   POST /{phone_number_id}/register
+//     Subscribes the number for THIS app's webhook. Requires a
+//     6-digit 2FA PIN the user previously set in Meta WhatsApp
+//     Manager → Two-step verification. Without /register, inbound
+//     events are routed to whichever app last claimed the number
+//     (often the one that did Embedded Signup) — so a second user
+//     adding a second number under the same WABA silently loses
+//     every inbound message.
+//
+//   POST /{waba_id}/subscribed_apps
+//     Subscribes the WABA itself to this app. Required exactly
+//     once per WABA, but idempotent so calling on every save is
+//     safe and cheap.
+//
+// Both calls are no-ops when already done — Meta returns success +
+// the helpers below treat that as success.
+
+export interface RegisterPhoneNumberArgs {
+  phoneNumberId: string
+  accessToken: string
+  /**
+   * 6-digit PIN the user set in Meta WhatsApp Manager →
+   * Two-step verification. If 2FA is not enabled on the number,
+   * Meta rejects /register with a clear error and the user is
+   * pointed at the right setting in the UI.
+   */
+  pin: string
+}
+
+export interface RegisterPhoneNumberResult {
+  success: boolean
+  /**
+   * True when Meta indicated the number was already registered to
+   * THIS app — same outcome as a fresh registration from the
+   * caller's POV, surfaced separately for logging clarity.
+   */
+  alreadyRegistered: boolean
+}
+
+/**
+ * Register a phone number for inbound webhook events.
+ *
+ * Errors that should be surfaced verbatim to the user:
+ *   * Missing / wrong PIN  → "Two-step verification PIN required..."
+ *   * No 2FA enabled       → "Two-factor authentication is not on..."
+ *   * Number on other app  → "Number is registered to another app..."
+ */
+export async function registerPhoneNumber(
+  args: RegisterPhoneNumberArgs
+): Promise<RegisterPhoneNumberResult> {
+  const { phoneNumberId, accessToken, pin } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/register`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ messaging_product: 'whatsapp', pin }),
+  })
+
+  if (response.ok) {
+    return { success: true, alreadyRegistered: false }
+  }
+
+  // Meta returns an error envelope with a code. Code 133005 + the
+  // text "already registered" appears when the number is already
+  // subscribed to this app — that's success from the caller's
+  // perspective, surface it as such.
+  let data: { error?: { message?: string; code?: number; error_subcode?: number } } = {}
+  try {
+    data = await response.json()
+  } catch {
+    /* keep empty */
+  }
+  const message = data.error?.message ?? `Meta API error: ${response.status}`
+  if (/already.*registered/i.test(message)) {
+    return { success: true, alreadyRegistered: true }
+  }
+  throw new Error(message)
+}
+
+export interface SubscribeWabaToAppArgs {
+  wabaId: string
+  accessToken: string
+}
+
+/**
+ * Subscribe the WABA to this Meta app's webhook. Idempotent — Meta
+ * returns success even when the subscription already exists.
+ */
+export async function subscribeWabaToApp(
+  args: SubscribeWabaToAppArgs
+): Promise<void> {
+  const { wabaId, accessToken } = args
+  const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
+export interface GetSubscribedAppsArgs {
+  wabaId: string
+  accessToken: string
+}
+
+export interface SubscribedApp {
+  whatsapp_business_api_data?: {
+    id?: string
+    name?: string
+    link?: string
+  }
+}
+
+/**
+ * Diagnostic — fetch the list of apps currently subscribed to this
+ * WABA. The UI uses this to confirm OUR app is in the list when
+ * the user clicks Verify Registration.
+ */
+export async function getSubscribedApps(
+  args: GetSubscribedAppsArgs
+): Promise<SubscribedApp[]> {
+  const { wabaId, accessToken } = args
+  const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = (await response.json()) as { data?: SubscribedApp[] }
+  return data.data ?? []
+}
+
+// ============================================================
 // Sending
 // ============================================================
 
@@ -113,13 +259,97 @@ export async function sendTextMessage(
   return { messageId: data.messages[0].id }
 }
 
+export type MediaKind = 'image' | 'video' | 'document'
+
+export interface SendMediaMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  kind: MediaKind
+  /** Public URL Meta fetches at send time. */
+  link: string
+  /** Optional caption — Meta caps at 1024 chars. Documents + images + videos all accept it. */
+  caption?: string
+  /** Document-only. Shown in the recipient's chat as the file name. Ignored for image/video. */
+  filename?: string
+  contextMessageId?: string
+}
+
+/**
+ * Send an image, video, or document via a public URL.
+ *
+ * Used by the Flows engine's `send_media` node. Mirrors
+ * `sendTextMessage` — single fetch, throws on non-2xx, returns Meta's
+ * message id.
+ */
+export async function sendMediaMessage(
+  args: SendMediaMessageArgs,
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, kind, link, caption, filename, contextMessageId } = args
+  if (!link) throw new Error('sendMediaMessage requires a link.')
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+
+  const media: Record<string, unknown> = { link }
+  if (caption) media.caption = caption
+  if (kind === 'document' && filename) media.filename = filename
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: kind,
+    [kind]: media,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+import type { MessageTemplate } from '@/types'
+import {
+  buildSendComponents,
+  type SendTimeParams,
+} from './template-send-builder'
+
 export interface SendTemplateMessageArgs {
   phoneNumberId: string
   accessToken: string
   to: string
   templateName: string
   language?: string
+  /**
+   * Legacy body-only params. Kept for backward compat with callers
+   * that haven't migrated to the structured `template` + `messageParams`
+   * pair below. New callers should pass `template` so media headers
+   * and URL buttons land on the send.
+   */
   params?: string[]
+  /**
+   * The template row from message_templates. When provided, the helper
+   * builds the full components array (header + body + buttons) via
+   * buildSendComponents — that's the only way image/video/document
+   * headers and URL-with-variable buttons actually reach the recipient.
+   */
+  template?: MessageTemplate
+  /**
+   * Structured per-send values. Body variables go in `body`; header
+   * text variables in `headerText`; media overrides in
+   * `headerMediaUrl` / `headerMediaId`; URL/COPY_CODE button values
+   * in `buttonParams` keyed by index.
+   */
+  messageParams?: SendTimeParams
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
 }
@@ -127,6 +357,13 @@ export interface SendTemplateMessageArgs {
 /**
  * Send a pre-approved WhatsApp message template. Required outside
  * the 24-hour window and for any first-touch messaging.
+ *
+ * Caller paths:
+ *   - Legacy: pass `params: string[]` (body only). Same behaviour as
+ *     before this helper learned about media + buttons.
+ *   - Structured: pass `template` (and optionally `messageParams`).
+ *     The full components array is built from the row so media
+ *     headers + URL buttons land correctly.
  */
 export async function sendTemplateMessage(
   args: SendTemplateMessageArgs
@@ -138,17 +375,33 @@ export async function sendTemplateMessage(
     templateName,
     language = 'en_US',
     params,
+    template,
+    messageParams,
     contextMessageId,
   } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
-  const template: Record<string, unknown> = {
+  const templatePayload: Record<string, unknown> = {
     name: templateName,
     language: { code: language },
   }
 
-  if (params && params.length > 0) {
-    template.components = [
+  if (template) {
+    const components = buildSendComponents(template, {
+      // Legacy callers pass body values in `params`; fold them into
+      // `messageParams.body` so the new path covers them too.
+      body: messageParams?.body ?? params,
+      headerText: messageParams?.headerText,
+      headerMediaUrl: messageParams?.headerMediaUrl,
+      headerMediaId: messageParams?.headerMediaId,
+      buttonParams: messageParams?.buttonParams,
+    })
+    if (components.length > 0) {
+      templatePayload.components = components
+    }
+  } else if (params && params.length > 0) {
+    // Legacy body-only path — no template row available.
+    templatePayload.components = [
       {
         type: 'body',
         parameters: params.map((p) => ({ type: 'text', text: String(p) })),
@@ -161,7 +414,7 @@ export async function sendTemplateMessage(
     recipient_type: 'individual',
     to,
     type: 'template',
-    template,
+    template: templatePayload,
   }
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
@@ -180,6 +433,145 @@ export async function sendTemplateMessage(
   }
   const data = await response.json()
   return { messageId: data.messages[0].id }
+}
+
+// ============================================================
+// Template submission (Business Management API)
+// ============================================================
+
+import type { MetaTemplateSubmitPayload } from './template-components'
+
+export interface SubmitMessageTemplateArgs {
+  wabaId: string
+  accessToken: string
+  payload: MetaTemplateSubmitPayload
+}
+
+export interface SubmitMessageTemplateResult {
+  id: string
+  status: string
+  category?: string
+}
+
+/**
+ * Submit a message template to Meta for approval.
+ *
+ * Returns Meta's assigned template id + initial status (typically
+ * PENDING). Caller persists `id` as `meta_template_id` so the
+ * upcoming edit/delete flows can scope to this exact template (and
+ * language variant) via `hsm_id`, rather than nuking every variant
+ * with the same name.
+ *
+ * 429s from Meta (rate limit: 100 creates/hour/WABA) surface as a
+ * regular `Error('Meta API error: 429')`. The route handler
+ * distinguishes 429 and shows a more actionable toast.
+ */
+export async function submitMessageTemplate(
+  args: SubmitMessageTemplateArgs
+): Promise<SubmitMessageTemplateResult> {
+  const { wabaId, accessToken, payload } = args
+  const url = `${META_API_BASE}/${wabaId}/message_templates`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  if (!data?.id) {
+    throw new Error('Meta accepted the template but returned no id.')
+  }
+  return {
+    id: String(data.id),
+    status: typeof data.status === 'string' ? data.status : 'PENDING',
+    category: typeof data.category === 'string' ? data.category : undefined,
+  }
+}
+
+export interface EditMessageTemplateArgs {
+  /** Meta's template id (stored locally as `meta_template_id`). */
+  metaTemplateId: string
+  accessToken: string
+  /** Send the full components array — Meta replaces, not patches. */
+  components: MetaTemplateSubmitPayload['components']
+  /** Optional — only certain category transitions are allowed by Meta. */
+  category?: MetaTemplateSubmitPayload['category']
+}
+
+export interface EditMessageTemplateResult {
+  success: boolean
+}
+
+/**
+ * Edit an existing (APPROVED or REJECTED) message template.
+ *
+ * Meta caps edits at 10 per 30 days (and 1 per 24h for APPROVED
+ * templates). Every edit re-triggers review, so the status flips
+ * back to PENDING until Meta approves the new components.
+ *
+ * Note: PENDING / DISABLED / IN_APPEAL templates cannot be edited
+ * — the route handler enforces that before calling here.
+ */
+export async function editMessageTemplate(
+  args: EditMessageTemplateArgs
+): Promise<EditMessageTemplateResult> {
+  const { metaTemplateId, accessToken, components, category } = args
+  const body: Record<string, unknown> = { components }
+  if (category) body.category = category
+  const response = await fetch(`${META_API_BASE}/${metaTemplateId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json().catch(() => ({}))
+  return { success: data?.success !== false }
+}
+
+export interface DeleteMessageTemplateArgs {
+  wabaId: string
+  accessToken: string
+  name: string
+  /**
+   * Without `hsm_id`, Meta deletes EVERY language variant of the
+   * template with this `name`. Pass the row's `meta_template_id`
+   * to scope to a single variant.
+   */
+  metaTemplateId?: string
+}
+
+/**
+ * Delete a message template on Meta. Pass `metaTemplateId` to scope
+ * to a single language variant — otherwise Meta nukes every variant
+ * sharing the same `name`.
+ */
+export async function deleteMessageTemplate(
+  args: DeleteMessageTemplateArgs
+): Promise<void> {
+  const { wabaId, accessToken, name, metaTemplateId } = args
+  const params = new URLSearchParams({ name })
+  if (metaTemplateId) params.set('hsm_id', metaTemplateId)
+  const url = `${META_API_BASE}/${wabaId}/message_templates?${params.toString()}`
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  // Treat a 404 as a no-op — the template is already gone on Meta's
+  // side, and we still want the local row removed.
+  if (response.status === 404) return
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
 }
 
 // ============================================================

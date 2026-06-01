@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { FlowBuilder } from "@/components/flows/flow-builder";
+import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 
 /**
@@ -84,5 +84,5 @@ export default function FlowEditorPage() {
     );
   }
 
-  return <FlowBuilder initialFlow={flow} initialNodes={nodes} />;
+  return <FlowEditorShell initialFlow={flow} initialNodes={nodes} />;
 }

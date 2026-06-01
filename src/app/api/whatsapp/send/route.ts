@@ -14,6 +14,8 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import type { MessageTemplate } from '@/types'
+import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 
 export async function POST(request: Request) {
   try {
@@ -38,6 +40,23 @@ export async function POST(request: Request) {
       return rateLimitResponse(limit)
     }
 
+    // Resolve the caller's account_id. Every downstream lookup
+    // (conversation, whatsapp_config, message_templates) is account-
+    // scoped post-multi-user, so the previous `user_id` filters
+    // returned nothing for teammates who didn't author the row.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const body = await request.json()
     const {
       conversation_id,
@@ -45,7 +64,9 @@ export async function POST(request: Request) {
       content_text,
       media_url,
       template_name,
+      template_language,
       template_params,
+      template_message_params,
       reply_to_message_id,
     } = body
 
@@ -75,7 +96,7 @@ export async function POST(request: Request) {
       .from('conversations')
       .select('*, contact:contacts(*)')
       .eq('id', conversation_id)
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (convError || !conversation) {
@@ -106,7 +127,7 @@ export async function POST(request: Request) {
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (configError || !config) {
@@ -177,6 +198,37 @@ export async function POST(request: Request) {
     let waMessageId = ''
     let workingPhone = sanitizedPhone
 
+    // For template sends, load the row so sendTemplateMessage can
+    // build header + button components from the template definition.
+    // Match on (user_id, name, language) — same triple the unique
+    // index enforces — so multi-language templates work correctly.
+    // Missing template falls through with `templateRow = null` and
+    // the legacy body-only path runs.
+    // Load the template row so sendTemplateMessage can build header
+    // + button components from the definition. isMessageTemplate
+    // guards against a malformed row (e.g. from a partial sync)
+    // crashing the send-builder later in the stack.
+    let templateRow: MessageTemplate | null = null
+    if (message_type === 'template' && template_name) {
+      const { data } = await supabase
+        .from('message_templates')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('name', template_name)
+        .eq('language', template_language || 'en_US')
+        .maybeSingle()
+      if (data && !isMessageTemplate(data)) {
+        return NextResponse.json(
+          {
+            error:
+              'Template row is malformed locally — run "Sync from Meta" in Settings to repair it.',
+          },
+          { status: 500 },
+        )
+      }
+      templateRow = data ?? null
+    }
+
     const attempt = async (phone: string): Promise<string> => {
       if (message_type === 'template') {
         const result = await sendTemplateMessage({
@@ -184,6 +236,11 @@ export async function POST(request: Request) {
           accessToken,
           to: phone,
           templateName: template_name,
+          language: template_language || 'en_US',
+          template: templateRow ?? undefined,
+          messageParams: template_message_params ?? undefined,
+          // Legacy body-only fallback — only consulted when
+          // messageParams.body isn't set.
           params: template_params || [],
           contextMessageId,
         })
@@ -297,7 +354,7 @@ export async function POST(request: Request) {
           ended_at: new Date().toISOString(),
           end_reason: 'agent_replied',
         })
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .eq('contact_id', contact.id)
         .eq('status', 'active')
       if (pauseErr) {

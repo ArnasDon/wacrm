@@ -9,6 +9,237 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+Foundation for multi-user accounts. Every wacrm install becomes
+multi-tenant on the database side: a single user's signup creates a
+fresh "account", and every row is scoped to that account rather than
+to the user directly. The user-visible invite / members surface lands
+in follow-up PRs gated by the `'account_sharing'` beta feature flag —
+this release is wiring with no behaviour change on its own. Existing
+self-hosted instances keep working: every existing user is backfilled
+as the sole owner of their own account and sees identical data.
+
+### Changed
+
+- **Tenancy moves from per-user to per-account.** RLS on every
+  domain table (contacts, conversations, messages, broadcasts,
+  automations, flows, pipelines, templates, tags, …) now checks
+  account membership via a new SECURITY DEFINER helper
+  `is_account_member(account_id, min_role)` instead of
+  `auth.uid() = user_id`. The `user_id` columns stay on every row
+  for assignment / audit but no longer enforce isolation.
+- **WhatsApp config is one-per-account, not one-per-user.** The
+  `whatsapp_config.UNIQUE(user_id)` constraint is replaced by
+  `UNIQUE(account_id)`.
+- **`flow_runs` idempotency key swaps to `(account_id, contact_id)`**
+  so two accounts sharing a contact phone number can each run their
+  own flows independently.
+- **The signup trigger (`handle_new_user`) now also creates a
+  personal account** and links the new profile to it as `owner`.
+
+### Changed
+
+- **Flow-media storage is now account-scoped.** Migration 016
+  pathed uploaded files under `auth.uid()/...`, which orphaned
+  flow media when a teammate left a shared account. New uploads
+  go under `account-<account_id>/...` and any account member
+  with the right role can edit them. Legacy paths remain
+  writable by the original uploader for backward compatibility.
+- **Webhook contact lookup now pre-filters in SQL.** Previously
+  pulled every contact in an account just to JS-filter to one
+  row by phone — fine when account = one user, painful when
+  account = team. Pre-filter by phone suffix on the database
+  side; re-apply `phonesMatch` on the (typically 0-2 row)
+  candidate set.
+
+### Migration required
+
+- `supabase/migrations/020_account_sharing_followups.sql` —
+  composite partial indexes on `automations(account_id,
+  trigger_type) WHERE is_active` and `flows(account_id) WHERE
+  status='active'` for the engine dispatch hot path; updated
+  `flow-media` storage RLS to allow account-member writes under
+  the new path convention. Idempotent.
+
+- **Role-aware UI gating across the app.** The inbox composer's
+  send button + textarea, the "New broadcast / automation / flow"
+  buttons, the "Add pipeline / deal" buttons, and the "Add /
+  Import contact" buttons are now disabled-with-tooltip for
+  viewers (and for agents on settings-class actions). Choice:
+  show-but-disable rather than hide, so the UI never feels
+  silently broken to a teammate looking at a feature they don't
+  yet have permission for.
+- **Sidebar surfaces the active account** above the user info
+  when the `account_sharing` beta flag is on. Solo users keep
+  the original layout (their account is named after them, so
+  duplicating it would just add visual noise).
+
+### Fixed
+
+- **Inbound WhatsApp messages now land in the shared inbox.** The
+  webhook + automations + flows engines used to route inbound
+  events by `user_id`, which after the 017 migration only matched
+  the WhatsApp config owner's automations / flows — teammates'
+  rules never fired. PR 8 of the multi-user series flips every
+  lookup to `account_id` so any member of the account sees the
+  inbound message and any teammate's automation or flow can react
+  to it. Also fixes incipient NOT NULL violations on
+  `automation_logs`, `automation_pending_executions`, `flow_runs`,
+  and `deals` — those tables gained `account_id NOT NULL` in 017
+  but the engines hadn't yet been updated to populate it.
+
+### Added
+
+- **Account & member management API** — server-side endpoints
+  for the upcoming Members tab UI. All routes are role-gated and
+  return Supabase-RLS-scoped data.
+  - `GET /api/account` — caller's account + role. Any member.
+  - `PATCH /api/account` — rename the account. Admin+.
+  - `GET /api/account/members` — list members. Email visible to
+    admin+ only; agents/viewers see name + avatar + role +
+    joined date.
+  - `PATCH /api/account/members/[userId]` — change a member's
+    role. Admin+. Owner promotion/demotion goes through the
+    transfer endpoint instead.
+  - `DELETE /api/account/members/[userId]` — remove a member.
+    Admin+. The removed user keeps their login and is moved to a
+    freshly-created personal account (mirror of the signup flow).
+  - `POST /api/account/transfer-ownership` — owner only. Atomic
+    swap with the named member.
+- **Invitation API + redeem flow** — the no-email, link-only
+  invite path. Backend is complete; the Members tab UI that
+  drives it lands in a follow-up.
+  - `GET /api/account/invitations` — list outstanding (admin+).
+  - `POST /api/account/invitations` — create an invite, returns
+    the plaintext token + share URL **exactly once** (we store
+    only the SHA-256 hash on the row). Body
+    `{ role, expiresInDays?, label? }`. Admin+.
+  - `DELETE /api/account/invitations/[id]` — revoke (admin+).
+  - `GET /api/invitations/[token]/peek` — public, per-IP
+    rate-limited. Returns `{ ok, account_name, role, expires_at }`
+    or `{ ok: false, reason }` so the join page can render
+    "You're being invited to <Account> as <Role>".
+  - `POST /api/invitations/[token]/redeem` — authenticated.
+    Atomically moves the caller's profile to the inviter's
+    account and cleans up the orphan personal account. Refuses
+    with 409 if the caller's current account already contains
+    domain data (no silent data loss).
+
+### Migration required
+
+Apply against your Supabase project before deploying this version:
+
+- `supabase/migrations/017_account_sharing.sql` — introduces the
+  `accounts` and `account_invitations` tables plus an
+  `account_role_enum` type; adds `account_id` to every
+  user-scoped table and backfills it; rewrites every RLS policy;
+  replaces the new-user trigger. Idempotent. **No data loss** —
+  every existing user is mapped to a freshly-created account
+  with role `owner` and every existing row of theirs is linked
+  to that account.
+- `supabase/migrations/018_account_member_rpcs.sql` — adds three
+  `SECURITY DEFINER` RPCs (`set_member_role`,
+  `remove_account_member`, `transfer_account_ownership`) that
+  back the member-management API. They self-check the caller's
+  role and raise SQLSTATE `42501` / `22023` on forbidden / bad
+  input so the API layer can map cleanly to 403 / 400.
+  Idempotent.
+- `supabase/migrations/019_invitation_rpcs.sql` — adds two
+  `SECURITY DEFINER` RPCs: `peek_invitation` (anonymous read by
+  token hash, returns a fixed-shape JSON envelope) and
+  `redeem_invitation` (authenticated atomic move + orphan
+  cleanup, with a domain-data safety check). Both bypass the
+  RLS that would otherwise block their reads/writes. Idempotent.
+
+## [0.2.2] — 2026-05-29
+
+Flow nodes can now send media. Closes the most-requested gap from user
+feedback after the v0.2.0 Flows launch — flows were text-only and
+couldn't deliver an invoice, receipt, product photo, or short demo
+video mid-conversation.
+
+### Added
+
+- **`send_media` flow node.** Send an image (PNG / JPEG / WebP), video
+  (MP4 / 3GP), or document (PDF, Word, Excel, PowerPoint, TXT) to the
+  customer from any point in a flow. Pick a file in the builder, it
+  uploads to the new `flow-media` Supabase Storage bucket, and Meta
+  fetches the public URL at send time. Optional caption (1024 char cap,
+  supports `{{vars.X}}` interpolation); documents also take an optional
+  filename shown in the recipient's chat. Auto-advances after send —
+  same suspend semantics as `send_message`.
+  ([#156](https://github.com/ArnasDon/wacrm/pull/156))
+
+### Migration required
+
+Apply against your Supabase project before deploying this version:
+
+- `supabase/migrations/016_flow_media.sql` — does two things:
+  1. Adds `'send_media'` to the `flow_nodes.node_type` CHECK
+     constraint. Without this the `send_media` node fails to save with
+     a constraint violation.
+  2. Creates the public `flow-media` Supabase Storage bucket (16 MB
+     file-size cap, image / video / document MIME allowlist) plus
+     per-user RLS policies (path prefix = `auth.uid()`). Without this
+     the builder's file picker fails on upload. Same shape as the
+     `avatars` bucket from migration 008 — the bucket is **public** so
+     Meta can fetch the URL without credentials.
+
+The migration is idempotent and safe to re-run.
+
+## [0.2.1] — 2026-05-26
+
+Bug-fix release. Plugs a silent inbound-message drop that triggered
+when two users on the same instance saved the same WhatsApp
+`phone_number_id`.
+
+### Fixed
+
+- **Inbound WhatsApp messages no longer silently disappear** when two
+  users have claimed the same `phone_number_id`. Previously the
+  webhook used `.single()` to look up the owning config, which errors
+  `PGRST116` for both 0 rows *and* ≥2 rows — the second user's save
+  put the DB into the ≥2-row state and every inbound message was
+  dropped while the log misleadingly reported *"No config found for
+  phone_number_id"*. Three layers of fix: `POST /api/whatsapp/config`
+  now returns **409** when another user has already claimed the
+  number, the webhook lookup distinguishes 0 rows from ≥2 rows and
+  logs the conflicting `user_id`s, and a new DB constraint
+  (`UNIQUE(phone_number_id)`) prevents the bad state at the storage
+  layer. Reported in
+  [#136](https://github.com/ArnasDon/wacrm/issues/136), fixed in
+  [#143](https://github.com/ArnasDon/wacrm/pull/143).
+
+### Migration required
+
+Apply against your Supabase project before deploying this version:
+
+- `supabase/migrations/013_whatsapp_config_phone_number_id_unique.sql`
+  — adds `UNIQUE(phone_number_id)` to `whatsapp_config`. **Fails
+  loudly with a copy-pasteable resolution hint** if duplicate rows
+  already exist; auto-deduping would destroy encrypted tokens, so
+  the operator picks which row keeps the number. To check first:
+
+  ```sql
+  SELECT phone_number_id, array_agg(user_id) AS owners, count(*) AS n
+  FROM whatsapp_config
+  GROUP BY phone_number_id
+  HAVING count(*) > 1;
+  ```
+
+  If that returns rows, `DELETE` the duplicate row(s) you want to
+  drop, then re-run the migration.
+
+### Note on multi-user setups
+
+wacrm is intentionally **single-tenant per WhatsApp number**. RLS on
+`conversations`/`messages` is `auth.uid() = user_id`, so a second
+user physically cannot read messages routed to a different owner —
+two users sharing one number was never supported. If you need
+multiple humans handling the same inbox, run them under one shared
+account.
+
 ## [0.2.0] — 2026-05-22
 
 The **Flows** release. Adds a no-code, branching, button-driven WhatsApp

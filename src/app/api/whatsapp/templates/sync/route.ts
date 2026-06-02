@@ -217,23 +217,42 @@ export async function POST() {
           ? headerFormat.toLowerCase()
           : null
 
-      const row = {
-        user_id: user.id,
-        name: t.name,
-        category: normalizeCategory(t.category),
-        language: t.language,
-        header_type: headerType,
-        header_content: header?.text ?? null,
-        header_handle: header?.example?.header_handle?.[0] ?? null,
-        body_text: body?.text ?? '',
-        footer_text: footer?.text ?? null,
-        buttons: parsedButtons.length ? parsedButtons : null,
-        sample_values: sampleValues,
-        status: normalizeStatus(t.status),
-        meta_template_id: t.id,
-        quality_score: normalizeQualityScore(t.quality_score),
-        updated_at: new Date().toISOString(),
-      }
+const headerHandle = header?.example?.header_handle?.[0] ?? null
+
+const row = {
+  user_id: user.id,
+  name: t.name,
+  category: normalizeCategory(t.category),
+  language: t.language,
+
+  header_type: headerType,
+  header_content: header?.text ?? null,
+  header_handle: headerHandle,
+
+  // For image/video/document templates, this gives the sender something to use.
+  // Note: Meta sample URLs can expire, so replace later with a stable public image URL if needed.
+  header_media_url:
+    headerType === 'image' ||
+    headerType === 'video' ||
+    headerType === 'document'
+      ? headerHandle
+      : null,
+
+  body_text: body?.text ?? '',
+  footer_text: footer?.text ?? null,
+  buttons: parsedButtons.length ? parsedButtons : [],
+
+  sample_values: sampleValues,
+  components: t.components ?? [],
+  raw_meta: t,
+
+  status: normalizeStatus(t.status),
+  meta_template_id: t.id,
+  quality_score: normalizeQualityScore(t.quality_score),
+
+  last_synced_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
 
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')

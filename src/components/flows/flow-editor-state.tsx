@@ -97,6 +97,9 @@ export interface FlowEditorContextValue {
   updateNode: (key: string, patch: Partial<BuilderNode>) => void;
   updateNodeConfig: (key: string, patch: Record<string, unknown>) => void;
   updateNodePosition: (key: string, x: number, y: number) => void;
+  updateNodePositions: (
+    positions: Record<string, { x: number; y: number }>,
+  ) => void;
   removeNode: (key: string) => void;
 
   // Actions
@@ -184,6 +187,22 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
     case "end":
       return {};
   }
+}
+
+export function applyNodePositions(
+  nodes: BuilderNode[],
+  positions: Record<string, { x: number; y: number }>,
+): BuilderNode[] {
+  return nodes.map((n) => {
+    const next = positions[n.node_key];
+    return next
+      ? {
+          ...n,
+          position_x: Math.round(next.x),
+          position_y: Math.round(next.y),
+        }
+      : n;
+  });
 }
 
 // ============================================================
@@ -438,6 +457,19 @@ export function FlowEditorProvider({
     [setState],
   );
 
+  const updateNodePositions = useCallback(
+    (positions: Record<string, { x: number; y: number }>) => {
+      // Initial Dagre layout hydration should not dirty the editor:
+      // opening a legacy all-zero flow must not enable Save or arm
+      // beforeunload before the user actually edits anything.
+      setStateRaw((s) => ({
+        ...s,
+        nodes: applyNodePositions(s.nodes, positions),
+      }));
+    },
+    [],
+  );
+
   const addNode = useCallback(
     (type: NodeType): string => {
       const meta = NODE_META[type];
@@ -498,6 +530,7 @@ export function FlowEditorProvider({
       updateNode,
       updateNodeConfig,
       updateNodePosition,
+      updateNodePositions,
       removeNode,
       save,
       setStatus,
@@ -518,6 +551,7 @@ export function FlowEditorProvider({
       updateNode,
       updateNodeConfig,
       updateNodePosition,
+      updateNodePositions,
       removeNode,
       save,
       setStatus,

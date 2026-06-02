@@ -36,8 +36,9 @@
  * list view reads.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyNodeChanges,
   Background,
   Controls,
   Handle,
@@ -50,6 +51,7 @@ import {
   type Connection,
   type Node as RfNode,
   type Edge as RfEdge,
+  type NodeChange,
   type NodeProps,
   type OnNodeDrag,
 } from "@xyflow/react";
@@ -227,6 +229,7 @@ function FlowCanvasInner() {
     setState,
     updateNodeConfig,
     updateNodePosition,
+    updateNodePositions,
     removeNode,
     flashKey,
   } = useFlowEditor();
@@ -246,15 +249,10 @@ function FlowCanvasInner() {
     [selectedNodeKey, builderNodes],
   );
 
-  const { rfNodes, rfEdges } = useMemo(() => {
+  const autoLayoutPositions = useMemo(() => {
     const canvasEdges = deriveCanvasEdges(builderNodes);
 
-    // Decide whether to auto-layout. The helper guards against
-    // overwriting a user's manual arrangement (only fires when ALL
-    // nodes sit at the origin), so we can safely call it
-    // unconditionally — if any node has been positioned, this is a
-    // no-op.
-    const positions = shouldAutoLayout(builderNodes)
+    return shouldAutoLayout(builderNodes)
       ? autoLayout(
           builderNodes.map((n) => ({
             id: n.node_key,
@@ -265,9 +263,26 @@ function FlowCanvasInner() {
           { direction: "TB" },
         )
       : null;
+  }, [builderNodes]);
 
-    const rfNodes: RfNode<NodeData>[] = builderNodes.map((n) => {
-      const fallback = positions?.get(n.node_key);
+  // If dagre had to place an all-zero flow, persist the generated
+  // positions into editor state once. Otherwise the next drag would
+  // save only the dragged node and every other node would fall back
+  // to (0,0), which feels like nodes teleporting around the canvas.
+  const persistedAutoLayoutRef = useRef(false);
+  useEffect(() => {
+    if (!autoLayoutPositions || persistedAutoLayoutRef.current) return;
+    persistedAutoLayoutRef.current = true;
+    updateNodePositions(
+      Object.fromEntries(
+        [...autoLayoutPositions].map(([key, pos]) => [key, pos]),
+      ),
+    );
+  }, [autoLayoutPositions, updateNodePositions]);
+
+  const derivedRfNodes = useMemo(() => {
+    const nodes: RfNode<NodeData>[] = builderNodes.map((n) => {
+      const fallback = autoLayoutPositions?.get(n.node_key);
       return {
         id: n.node_key,
         type: "flow",
@@ -282,6 +297,18 @@ function FlowCanvasInner() {
         },
       };
     });
+
+    return nodes;
+  }, [builderNodes, entryNodeId, flashKey, autoLayoutPositions]);
+
+  const [rfNodes, setRfNodes] = useState<RfNode<NodeData>[]>(derivedRfNodes);
+
+  useEffect(() => {
+    setRfNodes(derivedRfNodes);
+  }, [derivedRfNodes]);
+
+  const rfEdges = useMemo(() => {
+    const canvasEdges = deriveCanvasEdges(builderNodes);
 
     // sourceHandle is now wired up — the FlowNodeCard renders a Handle
     // per slot whose id matches the scheme in edges.ts, so React-Flow
@@ -299,8 +326,15 @@ function FlowCanvasInner() {
       style: { stroke: "#475569", strokeWidth: 1.5 },
     }));
 
-    return { rfNodes, rfEdges };
-  }, [builderNodes, entryNodeId, flashKey]);
+    return rfEdges;
+  }, [builderNodes]);
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<RfNode<NodeData>>[]) => {
+      setRfNodes((nodes) => applyNodeChanges(changes, nodes));
+    },
+    [],
+  );
 
   // Drag-to-position: React-Flow tracks the visual drag internally and
   // fires this once on release. We write the final coordinate back to
@@ -439,6 +473,7 @@ function FlowCanvasInner() {
           fitView
           fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
           proOptions={{ hideAttribution: true }}
+          onNodesChange={handleNodesChange}
           onNodeDragStop={handleNodeDragStop}
           onNodeClick={handleNodeClick}
           onConnect={handleConnect}

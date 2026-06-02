@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyNodePositions,
   defaultConfigFor,
   uniqueNodeKey,
 } from "./flow-editor-state";
@@ -30,6 +31,48 @@ describe("uniqueNodeKey", () => {
       { node_key: "menu_3", node_type: "end", config: {} },
     ];
     expect(uniqueNodeKey("menu", existing)).toBe("menu_4");
+  });
+});
+
+describe("applyNodePositions", () => {
+  it("rounds and applies positions without changing unrelated nodes", () => {
+    const nodes: BuilderNode[] = [
+      {
+        node_key: "start",
+        node_type: "start",
+        config: {},
+        position_x: 0,
+        position_y: 0,
+      },
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {},
+        position_x: 10,
+        position_y: 20,
+      },
+    ];
+
+    expect(
+      applyNodePositions(nodes, {
+        start: { x: 10.4, y: 20.6 },
+      }),
+    ).toEqual([
+      {
+        node_key: "start",
+        node_type: "start",
+        config: {},
+        position_x: 10,
+        position_y: 21,
+      },
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {},
+        position_x: 10,
+        position_y: 20,
+      },
+    ]);
   });
 });
 

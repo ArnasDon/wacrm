@@ -97,13 +97,31 @@ function buildHeaderComponent(
   // image / video / document — Meta requires the media component on
   // every send. Prefer the caller's explicit override; fall back to
   // the template's stored sample.
-  const link = params.headerMediaUrl ?? template.header_media_url;
-  const id = params.headerMediaId ?? template.header_handle;
+  //
+  // IMPORTANT: Meta's template sync returns `header_handle` as a sample
+  // media URL for approved media headers. It is NOT always a Meta media ID.
+  // If we send that URL in the `id` field, Meta rejects the send. Treat
+  // http(s) header_handle values as links, and only use header_handle as an
+  // ID when it is not a URL.
+  const storedHandle = template.header_handle;
+  const handleIsUrl =
+    typeof storedHandle === 'string' && /^https?:\/\//i.test(storedHandle);
+
+  const link =
+    params.headerMediaUrl ??
+    template.header_media_url ??
+    (handleIsUrl ? storedHandle : undefined);
+
+  const id =
+    params.headerMediaId ??
+    (!handleIsUrl ? storedHandle : undefined);
+
   if (!link && !id) {
     throw new Error(
       `${headerType} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.`,
     );
   }
+
   const mediaPayload: { link?: string; id?: string } = id ? { id } : { link };
   return {
     type: 'header',

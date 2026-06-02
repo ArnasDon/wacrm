@@ -195,7 +195,17 @@ export async function POST(request: Request) {
   })
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
+}try {
+  await processWebhook(body)
+} catch (error) {
+  console.error('Error processing webhook:', error)
+  return NextResponse.json(
+    { error: 'Webhook processing failed' },
+    { status: 500 }
+  )
 }
+
+return NextResponse.json({ status: 'received' }, { status: 200 })
 
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
   if (!body.entry) return
@@ -730,7 +740,19 @@ async function processMessage(
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
-}
+}await Promise.allSettled(
+  automationTriggers.map((triggerType) =>
+    runAutomationsForTrigger({
+      userId,
+      triggerType,
+      contactId: contactRecord.id,
+      context: {
+        message_text: inboundText,
+        conversation_id: conversation.id,
+      },
+    })
+  )
+)
 
 async function parseMessageContent(
   message: WhatsAppMessage,

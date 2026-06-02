@@ -66,12 +66,20 @@ interface WhatsAppWebhookEntry {
         wa_id: string
       }>
       messages?: WhatsAppMessage[]
-      statuses?: Array<{
-        id: string
-        status: string
-        timestamp: string
-        recipient_id: string
-      }>
+statuses?: Array<{
+  id: string
+  status: string
+  timestamp: string
+  recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: {
+      details?: string
+    }
+  }>
+}>
     }
     field: string
   }>
@@ -322,6 +330,14 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: {
+      details?: string
+    }
+  }>
 }) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status.
@@ -356,10 +372,31 @@ async function handleStatusUpdate(status: {
   // `failed` only from pre-delivered states.
   if (!isValidStatusTransition(recipient.status, status.status)) return
 
-  const update: Record<string, unknown> = { status: status.status }
-  if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
-  if (status.status === 'delivered') update.delivered_at = tsIso
-  if (status.status === 'read') update.read_at = tsIso
+  const metaError = status.errors?.[0]
+
+const update: Record<string, unknown> = {
+  status: status.status,
+  raw_status_payload: status,
+}
+
+if (status.status === 'sent') update.sent_at = tsIso
+if (status.status === 'delivered') update.delivered_at = tsIso
+if (status.status === 'read') update.read_at = tsIso
+
+if (status.status === 'failed') {
+  update.error_message =
+    metaError?.message ||
+    metaError?.title ||
+    metaError?.error_data?.details ||
+    'Message failed'
+
+  update.meta_error_code =
+    metaError?.code != null ? String(metaError.code) : null
+
+  update.meta_error_title = metaError?.title ?? null
+  update.meta_error_message = metaError?.message ?? null
+  update.meta_error_details = metaError?.error_data?.details ?? null
+}
 
   const { error: recUpdateErr } = await supabaseAdmin()
     .from('broadcast_recipients')

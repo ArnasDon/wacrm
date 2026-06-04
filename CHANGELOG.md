@@ -11,14 +11,17 @@ and polish.
 
 ## [Unreleased]
 
-Foundation for multi-user accounts. Every wacrm install becomes
-multi-tenant on the database side: a single user's signup creates a
-fresh "account", and every row is scoped to that account rather than
-to the user directly. The user-visible invite / members surface lands
-in follow-up PRs gated by the `'account_sharing'` beta feature flag —
-this release is wiring with no behaviour change on its own. Existing
+Multi-user accounts ship. Every wacrm install is multi-tenant on the
+database side: a single user's signup creates a fresh "account", and
+every row is scoped to that account rather than to the user directly.
+This release also opens the user-visible **Members** surface — invite
+teammates by link, manage their roles, transfer ownership — to all
+users. The `'account_sharing'` beta gate that hid it during
+development is removed (mirrors the Flows soft-GA in 0.2.0). Existing
 self-hosted instances keep working: every existing user is backfilled
-as the sole owner of their own account and sees identical data.
+as the sole owner of their own account and sees identical data, and a
+solo owner who never invites anyone sees the same single-user app they
+always did.
 
 ### Changed
 
@@ -71,9 +74,15 @@ as the sole owner of their own account and sees identical data.
   silently broken to a teammate looking at a feature they don't
   yet have permission for.
 - **Sidebar surfaces the active account** above the user info
-  when the `account_sharing` beta flag is on. Solo users keep
-  the original layout (their account is named after them, so
-  duplicating it would just add visual noise).
+  whenever the account name differs from your own — i.e. once
+  you've renamed the account or joined a shared one. A default
+  solo account is named after you, so the strip stays hidden to
+  avoid duplicating your name in the footer.
+- **Members is open to all users.** The `account_sharing` beta
+  flag that hid the Settings → Members tab and the sidebar
+  account strip during development is gone; the multi-user
+  surface is now part of the standard app. (Same soft-GA move as
+  Flows in 0.2.0.)
 
 ### Fixed
 
@@ -91,8 +100,17 @@ as the sole owner of their own account and sees identical data.
 
 ### Added
 
+- **Members tab in Settings.** The user-facing surface for the
+  multi-user APIs below, available to everyone (no beta flag). From
+  Settings → **Members** an admin or owner can: see who's on the
+  account with their role and join date, invite teammates by
+  generating a one-time share link (pick the role + optional
+  expiry), revoke pending invites, change a member's role, remove a
+  member, and — as owner — transfer ownership. Recipients accept via
+  a public `/join/[token]` page. Full guide:
+  [Members docs](https://wacrm.tech/docs/members).
 - **Account & member management API** — server-side endpoints
-  for the upcoming Members tab UI. All routes are role-gated and
+  backing the Members tab. All routes are role-gated and
   return Supabase-RLS-scoped data.
   - `GET /api/account` — caller's account + role. Any member.
   - `PATCH /api/account` — rename the account. Admin+.
@@ -108,8 +126,8 @@ as the sole owner of their own account and sees identical data.
   - `POST /api/account/transfer-ownership` — owner only. Atomic
     swap with the named member.
 - **Invitation API + redeem flow** — the no-email, link-only
-  invite path. Backend is complete; the Members tab UI that
-  drives it lands in a follow-up.
+  invite path that powers the Members tab's "Invite member" button
+  and the `/join/[token]` accept page.
   - `GET /api/account/invitations` — list outstanding (admin+).
   - `POST /api/account/invitations` — create an invite, returns
     the plaintext token + share URL **exactly once** (we store

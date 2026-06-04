@@ -35,6 +35,10 @@ clone or fork it to run your own CRM.
   tags, webhooks. Visual builder.
 - **Real-time dashboard** — response times, daily volume, pipeline
   value, cross-module activity feed.
+- **Team accounts** — invite teammates by link, role-based access
+  (owner / admin / agent / viewer), ownership transfer. Every install
+  is account-scoped, so one shared inbox can be staffed by a whole
+  team. Solo use stays single-user with zero setup.
 - **Account management** — email, password, avatar, global sign-out.
 
 ## Why fork this?

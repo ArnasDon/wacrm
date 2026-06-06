@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -37,10 +37,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type {
+  AccountMember,
   AutomationStepType,
   AutomationTriggerType,
   KeywordMatchTriggerConfig,
+  MessageTemplate,
+  Tag as TagRecord,
 } from "@/types"
+import { hasMinRole } from "@/lib/auth/roles"
+import { parseKeywordList } from "@/lib/automations/keyword-list"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 // ------------------------------------------------------------
@@ -64,6 +70,25 @@ export interface BuilderInitial {
   is_active: boolean
   steps: BuilderStep[]
 }
+
+interface BuilderResources {
+  tags: TagRecord[]
+  members: AccountMember[]
+  templates: MessageTemplate[]
+  loading: boolean
+  error: string | null
+}
+
+const EMPTY_RESOURCES: BuilderResources = {
+  tags: [],
+  members: [],
+  templates: [],
+  loading: true,
+  error: null,
+}
+
+const SELECT_CLASS =
+  "w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 
 // ------------------------------------------------------------
 // Step metadata — one source of truth for icon + label + border color
@@ -165,6 +190,60 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const [state, setState] = useState<BuilderInitial>(initial)
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [resources, setResources] = useState<BuilderResources>(EMPTY_RESOURCES)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadResources() {
+      try {
+        const supabase = createClient()
+        const [tagsResult, templatesResult, membersResponse] = await Promise.all([
+          supabase.from("tags").select("*").order("name"),
+          supabase
+            .from("message_templates")
+            .select("*")
+            .eq("status", "APPROVED")
+            .order("created_at", { ascending: false }),
+          fetch("/api/account/members", { cache: "no-store" }),
+        ])
+
+        if (tagsResult.error) throw tagsResult.error
+        if (templatesResult.error) throw templatesResult.error
+        if (!membersResponse.ok) {
+          const payload = (await membersResponse.json().catch(() => ({}))) as {
+            error?: string
+          }
+          throw new Error(payload.error ?? "Failed to load members")
+        }
+
+        const membersPayload = (await membersResponse.json()) as {
+          members?: AccountMember[]
+        }
+        if (cancelled) return
+
+        setResources({
+          tags: (tagsResult.data ?? []) as TagRecord[],
+          templates: (templatesResult.data ?? []) as MessageTemplate[],
+          members: membersPayload.members ?? [],
+          loading: false,
+          error: null,
+        })
+      } catch (err) {
+        if (cancelled) return
+        const message =
+          err instanceof Error ? err.message : "Failed to load builder options"
+        console.error("Failed to load automation builder options:", err)
+        setResources({ ...EMPTY_RESOURCES, loading: false, error: message })
+      }
+    }
+
+    void loadResources()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function patchTop<K extends keyof BuilderInitial>(key: K, value: BuilderInitial[K]) {
     setState((s) => ({ ...s, [key]: value }))
@@ -289,6 +368,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
           <TriggerCard
             type={state.trigger_type}
             config={state.trigger_config}
+            resources={resources}
             onTypeChange={(t) => patchTop("trigger_type", t)}
             onConfigChange={(c) => patchTop("trigger_config", c)}
           />
@@ -301,6 +381,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
             addStepAt={addStepAt}
             deleteStepAt={deleteStepAt}
             moveStepAt={moveStepAt}
+            resources={resources}
           />
         </div>
       </div>
@@ -315,11 +396,13 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
 function TriggerCard({
   type,
   config,
+  resources,
   onTypeChange,
   onConfigChange,
 }: {
   type: AutomationTriggerType
   config: Record<string, unknown>
+  resources: BuilderResources
   onTypeChange: (t: AutomationTriggerType) => void
   onConfigChange: (c: Record<string, unknown>) => void
 }) {
@@ -375,13 +458,10 @@ function TriggerCard({
               />
             )}
             {type === "tag_added" && (
-              <Input
-                placeholder="Tag id"
+              <TagSelect
                 value={(config.tag_id as string) ?? ""}
-                onChange={(e) =>
-                  onConfigChange({ ...config, tag_id: e.target.value })
-                }
-                className="bg-slate-800 text-white"
+                resources={resources}
+                onChange={(tagId) => onConfigChange({ ...config, tag_id: tagId })}
               />
             )}
             {type === "time_based" && (
@@ -409,6 +489,7 @@ function KeywordMatchConfig({
   onChange: (c: Record<string, unknown>) => void
 }) {
   const keywords = config?.keywords ?? []
+  const [rawKeywords, setRawKeywords] = useState(() => keywords.join(", "))
   return (
     <div className="space-y-2">
       <div>
@@ -416,16 +497,16 @@ function KeywordMatchConfig({
           Keywords (comma-separated)
         </label>
         <Input
-          value={keywords.join(", ")}
-          onChange={(e) =>
+          value={rawKeywords}
+          onChange={(e) => {
+            const value = e.target.value
+            setRawKeywords(value)
             onChange({
               ...config,
-              keywords: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
+              keywords: parseKeywordList(value),
             })
-          }
+          }}
+          onBlur={() => setRawKeywords(parseKeywordList(rawKeywords).join(", "))}
           className="bg-slate-800 text-white"
         />
       </div>
@@ -468,6 +549,7 @@ interface StepListProps {
   addStepAt: (parent: ParentScope, index: number, type: AutomationStepType) => void
   deleteStepAt: (path: StepPath) => void
   moveStepAt: (path: StepPath, direction: -1 | 1) => void
+  resources: BuilderResources
 }
 
 function StepList(props: StepListProps) {
@@ -563,6 +645,7 @@ function StepRenderer({
             <div className="border-t border-slate-800 px-4 py-3">
               <StepEditor
                 step={step}
+                resources={props.resources}
                 onChange={(next) => props.updateStep(path, () => next)}
               />
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-800 pt-3">
@@ -701,9 +784,11 @@ function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
 
 function StepEditor({
   step,
+  resources,
   onChange,
 }: {
   step: BuilderStep
+  resources: BuilderResources
   onChange: (s: BuilderStep) => void
 }) {
   const cfg = step.step_config
@@ -725,18 +810,17 @@ function StepEditor({
     case "send_template":
       return (
         <>
-          <FieldBlock label="Template name">
-            <Input
-              value={(cfg.template_name as string) ?? ""}
-              onChange={(e) => set({ template_name: e.target.value })}
-              className="bg-slate-800 text-white"
-            />
-          </FieldBlock>
-          <FieldBlock label="Language">
-            <Input
-              value={(cfg.language as string) ?? ""}
-              onChange={(e) => set({ language: e.target.value })}
-              className="bg-slate-800 text-white"
+          <FieldBlock label="Approved template">
+            <TemplateSelect
+              templateName={(cfg.template_name as string) ?? ""}
+              language={(cfg.language as string) ?? "en_US"}
+              resources={resources}
+              onChange={(template) =>
+                set({
+                  template_name: template?.name ?? "",
+                  language: template?.language ?? "en_US",
+                })
+              }
             />
           </FieldBlock>
         </>
@@ -744,11 +828,11 @@ function StepEditor({
     case "add_tag":
     case "remove_tag":
       return (
-        <FieldBlock label="Tag id">
-          <Input
+        <FieldBlock label="Tag">
+          <TagSelect
             value={(cfg.tag_id as string) ?? ""}
-            onChange={(e) => set({ tag_id: e.target.value })}
-            className="bg-slate-800 text-white"
+            resources={resources}
+            onChange={(tagId) => set({ tag_id: tagId })}
           />
         </FieldBlock>
       )
@@ -766,11 +850,11 @@ function StepEditor({
             </select>
           </FieldBlock>
           {cfg.mode === "specific" && (
-            <FieldBlock label="Agent id">
-              <Input
+            <FieldBlock label="Agent">
+              <MemberSelect
                 value={(cfg.agent_id as string) ?? ""}
-                onChange={(e) => set({ agent_id: e.target.value })}
-                className="bg-slate-800 text-white"
+                resources={resources}
+                onChange={(agentId) => set({ agent_id: agentId })}
               />
             </FieldBlock>
           )}
@@ -873,21 +957,27 @@ function StepEditor({
               <option value="time_of_day">Time of day</option>
             </select>
           </FieldBlock>
-          <FieldBlock label="Operand">
-            <Input
-              placeholder={
-                cfg.subject === "time_of_day"
-                  ? "HH:mm-HH:mm"
-                  : cfg.subject === "contact_field"
-                  ? "name / email / company"
-                  : cfg.subject === "tag_presence"
-                  ? "tag id"
-                  : ""
-              }
-              value={(cfg.operand as string) ?? ""}
-              onChange={(e) => set({ operand: e.target.value })}
-              className="bg-slate-800 text-white"
-            />
+          <FieldBlock label={cfg.subject === "tag_presence" ? "Tag" : "Operand"}>
+            {cfg.subject === "tag_presence" ? (
+              <TagSelect
+                value={(cfg.operand as string) ?? ""}
+                resources={resources}
+                onChange={(tagId) => set({ operand: tagId })}
+              />
+            ) : (
+              <Input
+                placeholder={
+                  cfg.subject === "time_of_day"
+                    ? "HH:mm-HH:mm"
+                    : cfg.subject === "contact_field"
+                    ? "name / email / company"
+                    : ""
+                }
+                value={(cfg.operand as string) ?? ""}
+                onChange={(e) => set({ operand: e.target.value })}
+                className="bg-slate-800 text-white"
+              />
+            )}
           </FieldBlock>
           {(cfg.subject === "contact_field" || cfg.subject === "message_content") && (
             <FieldBlock label="Value">
@@ -928,6 +1018,173 @@ function StepEditor({
     default:
       return null
   }
+}
+
+function TagSelect({
+  value,
+  resources,
+  onChange,
+}: {
+  value: string
+  resources: BuilderResources
+  onChange: (tagId: string) => void
+}) {
+  const selected = resources.tags.find((tag) => tag.id === value)
+  const selectValue = value && !selected ? "__current" : value
+
+  return (
+    <>
+      <select
+        value={selectValue}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={resources.loading && resources.tags.length === 0}
+        className={SELECT_CLASS}
+      >
+        <option value="">
+          {resources.loading ? "Loading tags..." : "Select a tag"}
+        </option>
+        {value && !selected ? (
+          <option value="__current" disabled>
+            Unknown tag ({shortId(value)})
+          </option>
+        ) : null}
+        {!resources.loading && resources.tags.length === 0 ? (
+          <option value="__empty" disabled>
+            No tags available
+          </option>
+        ) : null}
+        {resources.tags.map((tag) => (
+          <option key={tag.id} value={tag.id}>
+            {tag.name}
+          </option>
+        ))}
+      </select>
+      <ResourceLoadNote resources={resources} />
+    </>
+  )
+}
+
+function MemberSelect({
+  value,
+  resources,
+  onChange,
+}: {
+  value: string
+  resources: BuilderResources
+  onChange: (agentId: string) => void
+}) {
+  const assignableMembers = resources.members.filter((member) =>
+    hasMinRole(member.role, "agent"),
+  )
+  const selected = assignableMembers.find((member) => member.user_id === value)
+  const selectValue = value && !selected ? "__current" : value
+
+  return (
+    <>
+      <select
+        value={selectValue}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={resources.loading && assignableMembers.length === 0}
+        className={SELECT_CLASS}
+      >
+        <option value="">
+          {resources.loading ? "Loading agents..." : "Select an agent"}
+        </option>
+        {value && !selected ? (
+          <option value="__current" disabled>
+            Unknown agent ({shortId(value)})
+          </option>
+        ) : null}
+        {!resources.loading && assignableMembers.length === 0 ? (
+          <option value="__empty" disabled>
+            No agents available
+          </option>
+        ) : null}
+        {assignableMembers.map((member) => (
+          <option key={member.user_id} value={member.user_id}>
+            {memberLabel(member)} ({member.role})
+          </option>
+        ))}
+      </select>
+      <ResourceLoadNote resources={resources} />
+    </>
+  )
+}
+
+function TemplateSelect({
+  templateName,
+  language,
+  resources,
+  onChange,
+}: {
+  templateName: string
+  language: string
+  resources: BuilderResources
+  onChange: (template: MessageTemplate | null) => void
+}) {
+  const selected = resources.templates.find(
+    (template) =>
+      template.name === templateName &&
+      templateLanguage(template) === (language || "en_US"),
+  )
+  const selectValue = templateName && !selected ? "__current" : selected?.id ?? ""
+
+  return (
+    <>
+      <select
+        value={selectValue}
+        onChange={(e) => {
+          const template =
+            resources.templates.find((item) => item.id === e.target.value) ?? null
+          onChange(template)
+        }}
+        disabled={resources.loading && resources.templates.length === 0}
+        className={SELECT_CLASS}
+      >
+        <option value="">
+          {resources.loading ? "Loading templates..." : "Select a template"}
+        </option>
+        {templateName && !selected ? (
+          <option value="__current" disabled>
+            Current: {templateName} ({language || "en_US"})
+          </option>
+        ) : null}
+        {!resources.loading && resources.templates.length === 0 ? (
+          <option value="__empty" disabled>
+            No approved templates available
+          </option>
+        ) : null}
+        {resources.templates.map((template) => (
+          <option key={template.id} value={template.id}>
+            {template.name} ({templateLanguage(template)})
+          </option>
+        ))}
+      </select>
+      {selected?.body_text ? (
+        <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+          {selected.body_text}
+        </p>
+      ) : null}
+      <ResourceLoadNote resources={resources} />
+    </>
+  )
+}
+
+function ResourceLoadNote({ resources }: { resources: BuilderResources }) {
+  if (!resources.error) return null
+  return <p className="mt-1 text-[11px] text-amber-400">{resources.error}</p>
+}
+
+function memberLabel(member: AccountMember): string {
+  return member.full_name || member.email || "Unnamed member"
+}
+
+function templateLanguage(template: MessageTemplate): string {
+  return template.language || "en_US"
+}
+
+function shortId(id: string): string {
+  return id.length > 8 ? `${id.slice(0, 8)}...` : id
 }
 
 function FieldBlock({

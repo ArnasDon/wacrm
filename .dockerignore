@@ -1,0 +1,10 @@
+.git
+.github
+.next
+node_modules
+supabase/.temp
+.env.local
+.env.local.*
+*.log
+coverage
+dist

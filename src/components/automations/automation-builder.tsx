@@ -45,7 +45,10 @@ import type {
   Tag as TagRecord,
 } from "@/types"
 import { hasMinRole } from "@/lib/auth/roles"
-import { parseKeywordList } from "@/lib/automations/keyword-list"
+import {
+  normalizeKeywordMatchType,
+  parseKeywordList,
+} from "@/lib/automations/keyword-list"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
@@ -490,6 +493,14 @@ function KeywordMatchConfig({
 }) {
   const keywords = config?.keywords ?? []
   const [rawKeywords, setRawKeywords] = useState(() => keywords.join(", "))
+  const matchType = normalizeKeywordMatchType(config?.match_type)
+
+  useEffect(() => {
+    if (config?.match_type !== matchType) {
+      onChange({ ...config, match_type: matchType })
+    }
+  }, [config, matchType, onChange])
+
   return (
     <div className="space-y-2">
       <div>
@@ -504,6 +515,7 @@ function KeywordMatchConfig({
             onChange({
               ...config,
               keywords: parseKeywordList(value),
+              match_type: matchType,
             })
           }}
           onBlur={() => setRawKeywords(parseKeywordList(rawKeywords).join(", "))}
@@ -515,7 +527,7 @@ function KeywordMatchConfig({
           Match type
         </label>
         <select
-          value={config?.match_type ?? "contains"}
+          value={matchType}
           onChange={(e) => onChange({ ...config, match_type: e.target.value as "exact" | "contains" })}
           className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-white focus:outline-none"
         >

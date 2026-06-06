@@ -99,7 +99,15 @@ export default function AutomationsPage() {
         prev?.map((x) => (x.id === a.id ? { ...x, is_active: !next } : x)) ?? prev,
       )
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? "Failed to update")
+      const firstIssue: { path?: string; message?: string } | undefined =
+        body?.issues?.[0]
+      if (firstIssue?.message) {
+        toast.error(firstIssue.message, {
+          description: firstIssue.path ? `at ${firstIssue.path}` : undefined,
+        })
+      } else {
+        toast.error(body?.error ?? "Failed to update")
+      }
       return
     }
     toast.success(next ? "Automation activated" : "Automation paused")

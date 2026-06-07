@@ -79,6 +79,23 @@ export async function POST(request: Request) {
       return rateLimitResponse(limit)
     }
 
+    // Resolve the caller's account_id. whatsapp_config + templates
+    // + broadcasts are all account-scoped post-multi-user, so the
+    // old `.eq('user_id', user.id)` filters miss every row created
+    // by a teammate.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const body = await request.json()
     const {
       recipients: newRecipients,
@@ -120,7 +137,7 @@ export async function POST(request: Request) {
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (configError || !config) {
@@ -143,7 +160,7 @@ export async function POST(request: Request) {
     const { data: rawTemplateRow } = await supabase
       .from('message_templates')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .eq('name', template_name)
       .eq('language', template_language || 'en_US')
       .maybeSingle()

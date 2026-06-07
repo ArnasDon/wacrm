@@ -25,14 +25,30 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Auth pages - redirect to dashboard if already logged in
+  // Auth pages - redirect to dashboard if already logged in.
+  // Exception: when an invite token is in the query string we
+  // send the already-signed-in user to /join/<token> instead so
+  // they can accept the invitation in one click. Without this,
+  // a forwarded invite link to someone who's already signed in
+  // would silently drop them on /dashboard.
   if (user && (
     request.nextUrl.pathname === '/login' ||
     request.nextUrl.pathname === '/signup' ||
     request.nextUrl.pathname === '/forgot-password'
   )) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    const inviteToken = request.nextUrl.searchParams.get('invite')
+    if (
+      inviteToken &&
+      (request.nextUrl.pathname === '/login' ||
+        request.nextUrl.pathname === '/signup')
+    ) {
+      url.pathname = `/join/${encodeURIComponent(inviteToken)}`
+      url.search = ''
+    } else {
+      url.pathname = '/dashboard'
+      url.search = ''
+    }
     return NextResponse.redirect(url)
   }
 

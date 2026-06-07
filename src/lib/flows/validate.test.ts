@@ -420,6 +420,102 @@ describe("validateFlowForActivation — nodes", () => {
   });
 });
 
+describe("validateFlowForActivation — send_media", () => {
+  const baseFlow = { ...validFlow, entry_node_id: "s" };
+  const nodesWith = (mediaConfig: Record<string, unknown>) => [
+    { node_key: "s", node_type: "start", config: { next_node_key: "m" } },
+    { node_key: "m", node_type: "send_media", config: mediaConfig },
+    { node_key: "h", node_type: "handoff", config: {} },
+  ];
+
+  it("passes on a fully-populated send_media node", () => {
+    const issues = validateFlowForActivation(
+      baseFlow,
+      nodesWith({
+        media_type: "document",
+        media_url: "https://cdn.example/invoice.pdf",
+        caption: "Your invoice",
+        filename: "invoice.pdf",
+        next_node_key: "h",
+      }),
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("flags missing media_url", () => {
+    const issues = validateFlowForActivation(
+      baseFlow,
+      nodesWith({
+        media_type: "image",
+        media_url: "",
+        next_node_key: "h",
+      }),
+    );
+    expect(
+      issues.some((i) => i.node_key === "m" && i.field === "media_url"),
+    ).toBe(true);
+  });
+
+  it("flags missing media_type", () => {
+    const issues = validateFlowForActivation(
+      baseFlow,
+      nodesWith({
+        media_url: "https://cdn.example/x.png",
+        next_node_key: "h",
+      }),
+    );
+    expect(
+      issues.some((i) => i.node_key === "m" && i.field === "media_type"),
+    ).toBe(true);
+  });
+
+  it("flags next_node_key pointing at a non-existent node", () => {
+    const issues = validateFlowForActivation(
+      baseFlow,
+      nodesWith({
+        media_type: "image",
+        media_url: "https://cdn.example/x.png",
+        next_node_key: "ghost",
+      }),
+    );
+    expect(
+      issues.some(
+        (i) =>
+          i.node_key === "m" &&
+          i.field === "next_node_key" &&
+          i.message.includes("ghost"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags caption exceeding 1024 chars", () => {
+    const issues = validateFlowForActivation(
+      baseFlow,
+      nodesWith({
+        media_type: "image",
+        media_url: "https://cdn.example/x.png",
+        caption: "x".repeat(1025),
+        next_node_key: "h",
+      }),
+    );
+    expect(
+      issues.some((i) => i.node_key === "m" && i.field === "caption"),
+    ).toBe(true);
+  });
+
+  it("contributes its next_node_key to reachability", () => {
+    const set = reachableFromEntry(
+      "s",
+      nodesWith({
+        media_type: "image",
+        media_url: "https://cdn.example/x.png",
+        next_node_key: "h",
+      }),
+    );
+    expect(set).toEqual(new Set(["s", "m", "h"]));
+  });
+});
+
 describe("reachableFromEntry", () => {
   it("walks the graph from the entry", () => {
     const set = reachableFromEntry("start", validNodes);

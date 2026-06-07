@@ -26,6 +26,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
 import { toast } from "sonner";
+import { useCan } from "@/hooks/use-can";
+import { useAuth } from "@/hooks/use-auth";
+import { GatedButton } from "@/components/ui/gated-button";
+
+// Pipeline creation is admin-class (settings-tier write under
+// the new RLS); deal creation is operational and only requires
+// agent+. The two CTAs gate on different `useCan` capabilities,
+// not on different copy.
 
 // Spec-defined seed — name and color per the product spec.
 const SPEC_DEFAULT_STAGES = [
@@ -38,6 +46,9 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const supabase = createClient();
+  const canEditSettings = useCan("edit-settings");
+  const canCreateDeals = useCan("send-messages");
+  const { accountId } = useAuth();
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
@@ -102,10 +113,12 @@ export default function PipelinesPage() {
     } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) return null;
+    // pipelines.account_id is NOT NULL post-017 with no DB default.
+    if (!accountId) return null;
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name: "Sales Pipeline" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
       .select()
       .single();
 
@@ -123,7 +136,7 @@ export default function PipelinesPage() {
     await supabase.from("pipeline_stages").insert(stagesPayload);
 
     return pipeline as Pipeline;
-  }, [supabase]);
+  }, [supabase, accountId]);
 
   // Initial load + seed-if-empty
   useEffect(() => {
@@ -245,10 +258,16 @@ export default function PipelinesPage() {
       setCreating(false);
       return;
     }
+    // pipelines.account_id is NOT NULL post-017 with no DB default.
+    if (!accountId) {
+      toast.error("Your profile is not linked to an account.");
+      setCreating(false);
+      return;
+    }
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, name })
+      .insert({ user_id: user.id, account_id: accountId, name })
       .select()
       .single();
 
@@ -346,22 +365,26 @@ export default function PipelinesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
+          <GatedButton
             variant="outline"
+            canAct={canEditSettings}
+            gateReason="create pipelines"
             onClick={() => setNewPipelineOpen(true)}
             className="border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
           >
             <Plus className="mr-1 h-4 w-4" />
             Add Pipeline
-          </Button>
-          <Button
-            onClick={() => handleAddDeal()}
+          </GatedButton>
+          <GatedButton
+            canAct={canCreateDeals}
+            gateReason="create deals"
             disabled={!selectedPipelineId || stages.length === 0}
+            onClick={() => handleAddDeal()}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-1 h-4 w-4" />
             Add Deal
-          </Button>
+          </GatedButton>
         </div>
       </div>
 
@@ -375,13 +398,15 @@ export default function PipelinesPage() {
           <p className="mt-2 text-sm text-slate-400">
             Create a pipeline to start tracking deals
           </p>
-          <Button
+          <GatedButton
+            canAct={canEditSettings}
+            gateReason="create pipelines"
             onClick={() => setNewPipelineOpen(true)}
             className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-1 h-4 w-4" />
             Create Pipeline
-          </Button>
+          </GatedButton>
         </div>
       ) : (
         <>

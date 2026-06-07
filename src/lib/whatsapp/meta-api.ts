@@ -259,6 +259,64 @@ export async function sendTextMessage(
   return { messageId: data.messages[0].id }
 }
 
+export type MediaKind = 'image' | 'video' | 'document'
+
+export interface SendMediaMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  kind: MediaKind
+  /** Public URL Meta fetches at send time. */
+  link: string
+  /** Optional caption — Meta caps at 1024 chars. Documents + images + videos all accept it. */
+  caption?: string
+  /** Document-only. Shown in the recipient's chat as the file name. Ignored for image/video. */
+  filename?: string
+  contextMessageId?: string
+}
+
+/**
+ * Send an image, video, or document via a public URL.
+ *
+ * Used by the Flows engine's `send_media` node. Mirrors
+ * `sendTextMessage` — single fetch, throws on non-2xx, returns Meta's
+ * message id.
+ */
+export async function sendMediaMessage(
+  args: SendMediaMessageArgs,
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, kind, link, caption, filename, contextMessageId } = args
+  if (!link) throw new Error('sendMediaMessage requires a link.')
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+
+  const media: Record<string, unknown> = { link }
+  if (caption) media.caption = caption
+  if (kind === 'document' && filename) media.filename = filename
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: kind,
+    [kind]: media,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 import type { MessageTemplate } from '@/types'
 import {
   buildSendComponents,

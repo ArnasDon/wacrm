@@ -16,6 +16,7 @@ import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
  * fields here means adding a column later only touches one spot.
  */
 function buildUpsertRow(
+  accountId: string,
   userId: string,
   payload: TemplatePayload,
   extras: {
@@ -25,6 +26,13 @@ function buildUpsertRow(
   },
 ) {
   return {
+    // Account tenancy — required NOT NULL on message_templates as
+    // of migration 017. Without this an INSERT throws on the
+    // not-null constraint.
+    account_id: accountId,
+    // Original author — kept as audit only. The unique index is
+    // still on (user_id, name, language) — see the upsert helper
+    // for the cross-teammate dedup follow-up.
     user_id: userId,
     name: payload.name,
     category: payload.category,
@@ -51,6 +59,11 @@ async function upsertTemplateRow(
   supabase: SupabaseClient,
   row: ReturnType<typeof buildUpsertRow>,
 ) {
+  // TODO(account-sharing): conflict target is still scoped to
+  // user_id. Once a follow-up migration drops the legacy unique
+  // index on (user_id, name, language) and adds (account_id,
+  // name, language), switch `onConflict` here so two teammates
+  // can't shadow each other's same-named template.
   return supabase
     .from('message_templates')
     .upsert(row, { onConflict: 'user_id,name,language' })
@@ -81,6 +94,21 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Resolve the caller's account_id — whatsapp_config + the
+    // message_templates row are account-scoped post-multi-user.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
     }
 
     let payload: TemplatePayload
@@ -125,7 +153,7 @@ export async function POST(request: Request) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -161,7 +189,7 @@ export async function POST(request: Request) {
         // until they fix and re-submit.
         await upsertTemplateRow(
           supabase,
-          buildUpsertRow(user.id, payload, {
+          buildUpsertRow(accountId, user.id, payload, {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
@@ -181,7 +209,7 @@ export async function POST(request: Request) {
 
     const { data: row, error: upsertErr } = await upsertTemplateRow(
       supabase,
-      buildUpsertRow(user.id, payload, {
+      buildUpsertRow(accountId, user.id, payload, {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,

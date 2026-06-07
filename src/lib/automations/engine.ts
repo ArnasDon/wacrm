@@ -35,14 +35,20 @@ export interface AutomationContext {
 }
 
 export interface DispatchInput {
-  userId: string
+  /** Account-level tenancy key. Drives the lookup of which active
+   *  automations to fire — `automations.account_id` is the tenant
+   *  isolation after migration 017. Replaces the previous `userId`
+   *  field; the per-automation user_id is read off each row when
+   *  needed (sender identity for outbound messages, log audit). */
+  accountId: string
   triggerType: AutomationTriggerType
   contactId?: string | null
   context?: AutomationContext
 }
 
 /**
- * Fire all active automations matching the given trigger for a user.
+ * Fire all active automations matching the given trigger for an
+ * account.
  *
  * Must never throw — callers use fire-and-forget from the webhook.
  * All errors are caught and logged; per-automation failures are
@@ -51,10 +57,35 @@ export interface DispatchInput {
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
   try {
     const db = supabaseAdmin()
+
+    // Tenant isolation. `contactId` can be caller-supplied (the manual
+    // POST /api/automations/engine entrypoint reads it straight from the
+    // request body), and every step below runs through the service-role
+    // client, which bypasses RLS. So before any step can touch the
+    // contact, verify it actually belongs to this account. A foreign or
+    // forged id is refused silently — callers are fire-and-forget, and a
+    // distinct error would leak whether a given contact UUID exists.
+    if (input.contactId) {
+      const { data: owned, error: ownErr } = await db
+        .from('contacts')
+        .select('id')
+        .eq('id', input.contactId)
+        .eq('account_id', input.accountId)
+        .maybeSingle()
+      if (ownErr) {
+        console.error('[automations] contact ownership check failed:', ownErr)
+        return
+      }
+      if (!owned) {
+        console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
+        return
+      }
+    }
+
     const { data: automations, error } = await db
       .from('automations')
       .select('*')
-      .eq('user_id', input.userId)
+      .eq('account_id', input.accountId)
       .eq('trigger_type', input.triggerType)
       .eq('is_active', true)
 
@@ -84,7 +115,12 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
 export async function resumePendingExecution(pending: {
   id: string
   automation_id: string
+  /** Audit-only; the automation row carries account_id for tenancy. */
   user_id: string
+  /** Account-scoped lookups read from the automation row, so this
+   *  field is just here to mirror the row shape and keep the cron's
+   *  pass-through self-documenting. */
+  account_id: string
   contact_id: string | null
   log_id: string | null
   parent_step_id: string | null
@@ -134,6 +170,11 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
     .from('automation_logs')
     .insert({
       automation_id: automation.id,
+      // Tenancy: matches automation.account_id (NOT NULL post-017).
+      account_id: automation.account_id,
+      // Audit: keeps the historical "author of this automation"
+      // pointer so logs still attribute to the right user even
+      // after teammates join the account.
       user_id: automation.user_id,
       contact_id: input.contactId ?? null,
       trigger_event: input.triggerType,
@@ -222,6 +263,8 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
       const ms = waitMs(cfg)
       await db.from('automation_pending_executions').insert({
         automation_id: args.automation.id,
+        // Tenancy: account_id required NOT NULL post-017.
+        account_id: args.automation.account_id,
         user_id: args.automation.user_id,
         contact_id: args.contactId,
         log_id: args.logId,
@@ -305,6 +348,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendText({
+        accountId: args.automation.account_id,
         userId: args.automation.user_id,
         conversationId,
         contactId: args.contactId,
@@ -337,6 +381,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
             .map((k) => String(cfg.variables![k]))
         : []
       const { whatsapp_message_id } = await engineSendTemplate({
+        accountId: args.automation.account_id,
         userId: args.automation.user_id,
         conversationId,
         contactId: args.contactId,
@@ -348,6 +393,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'add_tag': {
+      // contact_tags has no account_id column; cross-tenant protection for
+      // the attacker-supplied contactId comes from the ownership guard in
+      // runAutomationsForTrigger.
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
       await db
@@ -360,6 +408,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'remove_tag': {
+      // See add_tag: tenant scoping relies on the runAutomationsForTrigger
+      // ownership guard, since contact_tags carries no account_id.
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('remove_tag needs contact + tag_id')
       await db
@@ -375,10 +425,13 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
+        // Pick any member of the account. The existing implementation
+        // only ever returned the automation's author; preserving that
+        // shape until a real round-robin algorithm replaces it.
         const { data: profiles } = await db
           .from('profiles')
           .select('user_id')
-          .eq('user_id', args.automation.user_id)
+          .eq('account_id', args.automation.account_id)
           .limit(1)
         agentId = profiles?.[0]?.user_id
       }
@@ -386,7 +439,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
-        .eq('user_id', args.automation.user_id)
+        .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
       return `assigned to ${agentId}`
     }
@@ -398,10 +451,14 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!allowed.has(cfg.field)) {
         return `field ${cfg.field} not writable from automations`
       }
+      // Defense in depth: scope the service-role write to the account so
+      // a future caller that skips the entry-point ownership guard still
+      // cannot write across tenants.
       await db
         .from('contacts')
         .update({ [cfg.field]: cfg.value, updated_at: new Date().toISOString() })
         .eq('id', args.contactId)
+        .eq('account_id', args.automation.account_id)
       return `${cfg.field} updated`
     }
 
@@ -409,6 +466,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const cfg = step.step_config as CreateDealStepConfig
       if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
       await db.from('deals').insert({
+        // Tenancy + audit, same split as automation_logs above.
+        account_id: args.automation.account_id,
         user_id: args.automation.user_id,
         pipeline_id: cfg.pipeline_id,
         stage_id: cfg.stage_id,
@@ -438,7 +497,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       await db
         .from('conversations')
         .update({ status: 'closed', updated_at: new Date().toISOString() })
-        .eq('user_id', args.automation.user_id)
+        .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
       return 'conversation closed'
     }
@@ -466,7 +525,7 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const { data, error } = await supabaseAdmin()
     .from('conversations')
     .select('id')
-    .eq('user_id', args.automation.user_id)
+    .eq('account_id', args.automation.account_id)
     .eq('contact_id', args.contactId)
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
@@ -492,6 +551,9 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
   switch (cfg.subject) {
     case 'tag_presence': {
       if (!args.contactId || !cfg.operand) return false
+      // contact_tags has no account_id column (its RLS keys off the parent
+      // contact), so tenant scoping here relies on the contact-ownership
+      // guard in runAutomationsForTrigger.
       const { count } = await db
         .from('contact_tags')
         .select('id', { count: 'exact', head: true })
@@ -501,10 +563,13 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
     }
     case 'contact_field': {
       if (!args.contactId || !cfg.operand) return false
+      // Scope to the account so the condition can't be turned into a
+      // cross-tenant read oracle via the service-role client.
       const { data } = await db
         .from('contacts')
         .select(cfg.operand)
         .eq('id', args.contactId)
+        .eq('account_id', args.automation.account_id)
         .maybeSingle()
       const v = (data as Record<string, unknown> | null)?.[cfg.operand]
       return v != null && String(v) === String(cfg.value ?? '')

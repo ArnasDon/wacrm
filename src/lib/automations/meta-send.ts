@@ -20,6 +20,13 @@ import { supabaseAdmin } from './admin-client'
 // ------------------------------------------------------------
 
 interface SendTextArgs {
+  /** Account-level tenancy key. Drives contact + whatsapp_config
+   *  lookups so an automation authored by user A still sends through
+   *  the WhatsApp number user B saved on the same account. */
+  accountId: string
+  /** Original author of the automation/flow — used for INSERT audit
+   *  columns (messages.sender_id-ish) and for resolving the agent's
+   *  identity in logs. Not consulted for tenancy. */
   userId: string
   conversationId: string
   contactId: string
@@ -27,6 +34,7 @@ interface SendTextArgs {
 }
 
 interface SendTemplateArgs {
+  accountId: string
   userId: string
   conversationId: string
   contactId: string
@@ -52,22 +60,22 @@ type SendInput =
 async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Scope the contact lookup by user_id. The engine uses the
-  // service-role client (bypassing RLS), and the public
-  // /api/automations/engine endpoint accepts contact_id from the
-  // request body — without this filter, an authenticated user could
-  // fire their own automations against another tenant's contact UUID
-  // and send via their own WhatsApp config to that contact's phone.
-  // Practical risk is low (UUIDs are unguessable) but the check is
-  // cheap defense-in-depth.
+  // Scope the contact + config lookups by account_id, not user_id.
+  // The engine uses the service-role client (bypassing RLS); without
+  // this filter, an authenticated user could fire their own
+  // automations against another tenant's contact UUID and send via
+  // their own WhatsApp config to that contact's phone. The 017
+  // migration moved both tables to account-scoped tenancy, so the
+  // check is the same defense-in-depth as before, just keyed on the
+  // new tenancy column.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
     .select('id, phone')
     .eq('id', input.contactId)
-    .eq('user_id', input.userId)
+    .eq('account_id', input.accountId)
     .maybeSingle()
   if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this user')
+    throw new Error('contact not found for this account')
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
@@ -78,7 +86,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const { data: config, error: configErr } = await db
     .from('whatsapp_config')
     .select('*')
-    .eq('user_id', input.userId)
+    .eq('account_id', input.accountId)
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')

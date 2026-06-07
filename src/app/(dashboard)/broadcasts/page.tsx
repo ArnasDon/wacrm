@@ -14,6 +14,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Radio, Plus, Loader2 } from 'lucide-react';
+import { useCan } from '@/hooks/use-can';
+import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 
 /**
@@ -56,6 +58,7 @@ function RateCell({
 
 export default function BroadcastsPage() {
   const router = useRouter();
+  const canCreate = useCan('send-messages');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -181,13 +184,15 @@ export default function BroadcastsPage() {
             Send bulk messages to your contacts using approved templates.
           </p>
         </div>
-        <Button
+        <GatedButton
+          canAct={canCreate}
+          gateReason="create broadcasts"
           onClick={() => router.push('/broadcasts/new')}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
           New Broadcast
-        </Button>
+        </GatedButton>
       </div>
 
       {broadcasts.length === 0 ? (
@@ -197,13 +202,15 @@ export default function BroadcastsPage() {
           <p className="mt-1 text-xs text-slate-400">
             Create your first broadcast to reach your contacts at scale.
           </p>
-          <Button
+          <GatedButton
+            canAct={canCreate}
+            gateReason="create broadcasts"
             onClick={() => router.push('/broadcasts/new')}
             className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="h-4 w-4" />
             New Broadcast
-          </Button>
+          </GatedButton>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">

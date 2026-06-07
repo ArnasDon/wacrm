@@ -6,10 +6,18 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import {
+  canEditSettings as canEditSettingsFor,
+  canManageMembers as canManageMembersFor,
+  canSendMessages as canSendMessagesFor,
+  isAccountRole,
+  type AccountRole,
+} from "@/lib/auth/roles";
 
 interface Profile {
   id: string;
@@ -23,6 +31,13 @@ interface Profile {
    * #134 — but the column survives for future beta gates.
    */
   beta_features: string[];
+  account_id: string | null;
+  account_role: AccountRole | null;
+}
+
+interface AccountSummary {
+  id: string;
+  name: string;
 }
 
 interface AuthContextValue {
@@ -48,6 +63,36 @@ interface AuthContextValue {
    *  the settings form so header/sidebar reflect the change without a
    *  full page reload. */
   refreshProfile: () => Promise<void>;
+
+  // ----------------------------------------------------------
+  // Account-scoped context (added by the account-sharing series)
+  //
+  // All of these are nullable until `profileLoading` is false.
+  // After the profile resolves they're guaranteed to be set,
+  // because migration 017 made `account_id` / `account_role`
+  // NOT NULL on `profiles`.
+  // ----------------------------------------------------------
+
+  /** Account id the current user belongs to. Null while loading. */
+  accountId: string | null;
+  /** Role within that account. Null while loading. */
+  accountRole: AccountRole | null;
+  /** Lightweight account meta — id + name. Null while loading. */
+  account: AccountSummary | null;
+  /** True if `accountRole === 'owner'`. */
+  isOwner: boolean;
+  /** True if `accountRole === 'admin'` (does NOT include owner — use canManageMembers for "admin or above"). */
+  isAdmin: boolean;
+  /** True if `accountRole === 'agent'`. */
+  isAgent: boolean;
+  /** True if `accountRole === 'viewer'`. */
+  isViewer: boolean;
+  /** True if the caller can manage members (admin+). */
+  canManageMembers: boolean;
+  /** True if the caller can edit account-wide settings (admin+). */
+  canEditSettings: boolean;
+  /** True if the caller can send messages and edit operational data (agent+). */
+  canSendMessages: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -60,6 +105,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [account, setAccount] = useState<AccountSummary | null>(null);
   const [loading, setLoading] = useState(true);
   // Tracked separately from `loading`. The session settles fast (one
   // local cookie read); the profile fetch crosses the network and
@@ -69,14 +115,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Shared across init, auth-state-change listener, and the exposed
   // refreshProfile() callback. Reads the current session's user id and
-  // pulls the matching profile row.
+  // pulls the matching profile row along with its account summary.
   const fetchProfile = useCallback(async (userId: string) => {
     const supabase = createClient();
     setProfileLoading(true);
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, email, avatar_url, role, beta_features")
+        .select(
+          // `account:accounts!inner(id, name)` — explicit join on the
+          // single FK profiles.account_id → accounts.id. `!inner` so a
+          // missing account collapses to null rather than a half-
+          // populated row (shouldn't happen post-017 NOT NULL, but
+          // belt-and-braces against forks running older schemas).
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts!inner(id, name)",
+        )
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -91,14 +144,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data) {
-        // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
-        // narrow defensively in case the column hasn't been migrated yet
-        // (older deployments running 011 lazily) — `null` reads as no
-        // opt-ins, which is the safe default for any future beta gate.
+        // Supabase's typed client surfaces an embedded `!inner` row
+        // as either an object or a single-element array depending on
+        // the schema's inferred cardinality — normalise to the object
+        // form before reading.
+        const accountRow = Array.isArray(data.account)
+          ? data.account[0] ?? null
+          : (data.account as { id: string; name: string } | null);
+
+        // Narrow the DB enum into our AccountRole union. The DB
+        // constraint should make this unconditional, but a future
+        // migration that broadens the enum without updating TS would
+        // otherwise crash here — fall back to null and let UI gates
+        // treat the caller as least-privileged.
+        const accountRole = isAccountRole(data.account_role)
+          ? data.account_role
+          : null;
+
         setProfile({
-          ...data,
+          id: data.id,
+          full_name: data.full_name,
+          email: data.email,
+          avatar_url: data.avatar_url,
+          role: data.role,
+          // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
+          // narrow defensively in case the column hasn't been migrated yet
+          // (older deployments running 011 lazily) — `null` reads as no
+          // opt-ins, which is the safe default for any future beta gate.
           beta_features: data.beta_features ?? [],
+          account_id: data.account_id ?? null,
+          account_role: accountRole,
         });
+        setAccount(accountRow);
       }
     } catch (err) {
       console.error("[AuthProvider] fetchProfile threw:", err);
@@ -165,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fetchProfile(currentUser.id);
       } else {
         setProfile(null);
+        setAccount(null);
         setProfileLoading(false);
       }
 
@@ -176,13 +254,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfile]);
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    setAccount(null);
     window.location.href = "/login";
   }, []);
 
@@ -191,9 +270,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchProfile(user.id);
   }, [user?.id, fetchProfile]);
 
+  // Derive the role booleans once per profile change rather than on
+  // every consumer render. Cheap regardless, but the memo also gives
+  // each derived value a stable identity for React.memo / useEffect
+  // dependencies downstream.
+  const derived = useMemo(() => {
+    const role = profile?.account_role ?? null;
+    return {
+      accountRole: role,
+      accountId: profile?.account_id ?? null,
+      isOwner: role === "owner",
+      isAdmin: role === "admin",
+      isAgent: role === "agent",
+      isViewer: role === "viewer",
+      canManageMembers: role ? canManageMembersFor(role) : false,
+      canEditSettings: role ? canEditSettingsFor(role) : false,
+      canSendMessages: role ? canSendMessagesFor(role) : false,
+    };
+  }, [profile?.account_role, profile?.account_id]);
+
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, profileLoading, signOut, refreshProfile }}
+      value={{
+        user,
+        profile,
+        loading,
+        profileLoading,
+        signOut,
+        refreshProfile,
+        account,
+        ...derived,
+      }}
     >
       {children}
     </AuthContext.Provider>
@@ -208,7 +315,9 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
     // Fallback for components rendered outside the provider (shouldn't
-    // happen in normal flow, but don't crash the page).
+    // happen in normal flow, but don't crash the page). Account state
+    // collapses to least-privileged null — every `canX` boolean is
+    // false so UI gates fail closed.
     return {
       user: null,
       profile: null,
@@ -218,6 +327,16 @@ export function useAuth(): AuthContextValue {
         window.location.href = "/login";
       },
       refreshProfile: async () => {},
+      account: null,
+      accountId: null,
+      accountRole: null,
+      isOwner: false,
+      isAdmin: false,
+      isAgent: false,
+      isViewer: false,
+      canManageMembers: false,
+      canEditSettings: false,
+      canSendMessages: false,
     };
   }
   return ctx;

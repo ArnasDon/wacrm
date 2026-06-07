@@ -64,6 +64,21 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Resolve the caller's account_id so template + whatsapp_config
+    // lookups work for teammates who didn't author the row.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     let payload: TemplatePayload
     try {
       payload = (await request.json()) as TemplatePayload
@@ -77,7 +92,7 @@ export async function PATCH(
       .from('message_templates')
       .select('id, name, status, meta_template_id, language')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -127,7 +142,7 @@ export async function PATCH(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -224,11 +239,27 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Same account-scoping rationale as the PATCH handler above —
+    // teammates need to be able to operate on shared templates +
+    // the shared whatsapp_config.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
       .select('id, name, meta_template_id')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -238,7 +269,7 @@ export async function DELETE(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(

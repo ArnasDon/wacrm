@@ -242,6 +242,65 @@ function validateNode(
       break;
     }
 
+    case "send_media": {
+      const cfg = node.config as {
+        media_type?: "image" | "video" | "document";
+        media_url?: string;
+        caption?: string;
+        next_node_key?: string;
+      };
+      if (
+        !cfg.media_type ||
+        !["image", "video", "document"].includes(cfg.media_type)
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "media_type",
+          message: "Send-media node needs a media type (image, video, or document).",
+        });
+      }
+      if (!cfg.media_url?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "media_url",
+          message: "Send-media node needs a file (upload one before activating).",
+        });
+      }
+      // Caption cap mirrors Meta's interactive body cap; documented as a
+      // hard limit in the WhatsApp Cloud API media-message reference.
+      if (cfg.caption && cfg.caption.length > INTERACTIVE_LIMITS.bodyMaxLength) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "caption",
+          message: `Caption exceeds ${INTERACTIVE_LIMITS.bodyMaxLength} chars (WhatsApp limit).`,
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Send-media node must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Send-media points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
     case "send_buttons": {
       const cfg = node.config as {
         text?: string;
@@ -690,6 +749,7 @@ function outgoingEdges(node: NodeInput): string[] {
   switch (node.node_type) {
     case "start":
     case "send_message":
+    case "send_media":
     case "collect_input":
     case "set_tag": {
       const cfg = node.config as { next_node_key?: string };

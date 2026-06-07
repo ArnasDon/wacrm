@@ -132,12 +132,27 @@ export default function InboxPage() {
 
       if (!user) return;
 
-      // Table is `whatsapp_config` (singular) — the previous "whatsapp_configs"
-      // query always returned no rows, so the banner always showed "not connected".
+      // whatsapp_config is one-row-per-account post-multi-user, so
+      // the previous `.eq('user_id', user.id)` would miss the row
+      // for any teammate who didn't personally save the config —
+      // the "WhatsApp not connected" banner would show in the
+      // shared inbox even though the admin had it configured.
+      // Resolve account_id via the profile and query by that.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("account_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const accountId = profile?.account_id as string | undefined;
+      if (!accountId) {
+        setWhatsappConnected(false);
+        return;
+      }
+
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
-        .eq("user_id", user.id)
+        .eq("account_id", accountId)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
@@ -530,10 +545,16 @@ export default function InboxPage() {
         {/* Center panel: Message thread.
             Hidden on mobile when no conversation is selected so the
             list can occupy the full width. Always visible on lg+
-            (shows its own empty-state if no thread is picked yet). */}
+            (shows its own empty-state if no thread is picked yet).
+
+            `min-w-0` is load-bearing: without it, a single wide piece
+            of content inside the thread (long quote preview, very
+            long URL in a message body) forces the flex child past
+            its share and pushes the contact-sidebar panel off-screen
+            on the right. Issue #165. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex",
+            "flex h-full min-w-0 flex-1 lg:flex",
             hasActiveConv ? "flex" : "hidden lg:flex",
           )}
         >

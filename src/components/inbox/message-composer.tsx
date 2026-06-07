@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
 import { Send, LayoutTemplate } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GatedButton } from "@/components/ui/gated-button";
+import { useCan } from "@/hooks/use-can";
 import { cn } from "@/lib/utils";
 import { ReplyQuote } from "./reply-quote";
 
@@ -33,6 +35,11 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Viewers (read-only role) can browse the inbox but never send.
+  // For solo users this is always true — single-owner accounts pass
+  // every capability — so the disabled branch is a no-op there.
+  const canSend = useCan("send-messages");
+  const readOnly = !canSend;
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -105,15 +112,17 @@ export function MessageComposer({
       )}
 
       <div className="flex items-end gap-2">
-        <Button
+        <GatedButton
           variant="ghost"
           size="sm"
+          canAct={!readOnly}
+          gateReason="send messages"
+          title={readOnly ? undefined : "Send template"}
           className="h-9 w-9 shrink-0 p-0 text-slate-400 hover:text-white"
           onClick={onOpenTemplates}
-          title="Send template"
         >
           <LayoutTemplate className="h-4 w-4" />
-        </Button>
+        </GatedButton>
 
         <textarea
           ref={textareaRef}
@@ -121,26 +130,34 @@ export function MessageComposer({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={
-            sessionExpired
-              ? "Session expired - use a template"
-              : "Type a message... (Shift+Enter for new line)"
+            readOnly
+              ? "Read-only — viewers can browse but not reply"
+              : sessionExpired
+                ? "Session expired - use a template"
+                : "Type a message... (Shift+Enter for new line)"
           }
-          disabled={sessionExpired}
+          disabled={sessionExpired || readOnly}
           rows={1}
+          // Textarea keeps its own inline title — the GatedButton
+          // wrapping pattern doesn't apply to non-button inputs.
+          // The placeholder text also surfaces the read-only state.
+          title={readOnly ? "Read-only — your role can't send messages" : undefined}
           className={cn(
             "flex-1 resize-none rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
-            sessionExpired && "cursor-not-allowed opacity-50"
+            (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
           )}
         />
 
-        <Button
+        <GatedButton
           size="sm"
-          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+          canAct={!readOnly}
+          gateReason="send messages"
           disabled={!text.trim() || sessionExpired || sending}
           onClick={handleSend}
+          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
           <Send className="h-4 w-4" />
-        </Button>
+        </GatedButton>
       </div>
 
       {/* Hint sits outside the flex row so its height doesn't push

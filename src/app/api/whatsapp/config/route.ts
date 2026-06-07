@@ -8,6 +8,29 @@ import {
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
+/**
+ * Resolve the caller's account_id from their profile. Inlined here
+ * (rather than going through `@/lib/auth/account.getCurrentAccount`)
+ * because the GET handler wants to return shaped 200s for every
+ * non-auth failure mode, not throw — keeping the helper minimal lets
+ * the existing response branches stay as-is.
+ *
+ * Returns null if the user has no profile or no account; callers
+ * should treat that the same as "not connected".
+ */
+async function resolveAccountId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('account_id')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error || !data?.account_id) return null
+  return data.account_id as string
+}
+
 // Lazy-initialised service-role client. We need it to detect a
 // phone_number_id already claimed by a *different* user — under RLS,
 // the user's own session can't see other users' rows, so the conflict
@@ -50,10 +73,22 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const accountId = await resolveAccountId(supabase, user.id)
+    if (!accountId) {
+      return NextResponse.json(
+        {
+          connected: false,
+          reason: 'no_account',
+          message: 'Your profile is not linked to an account.',
+        },
+        { status: 200 },
+      )
+    }
+
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     if (configError) {
@@ -141,6 +176,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const accountId = await resolveAccountId(supabase, user.id)
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
 
@@ -160,16 +203,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // Reject if another user has already claimed this phone_number_id.
-    // wacrm is single-tenant-per-WhatsApp-number — letting two users
+    // Reject if another account has already claimed this phone_number_id.
+    // wacrm is single-tenant-per-WhatsApp-number — letting two accounts
     // bind the same number causes the webhook's `.single()` lookup to
     // throw PGRST116 ("multiple rows"), silently dropping every
-    // inbound message. See issue #136.
+    // inbound message. See issue #136. Post-multi-user we key on
+    // account_id (not user_id) since teammates inside the same account
+    // all share one config; the conflict is between accounts.
     const { data: claimed, error: claimedError } = await supabaseAdmin()
       .from('whatsapp_config')
-      .select('user_id')
+      .select('account_id')
       .eq('phone_number_id', phone_number_id)
-      .neq('user_id', user.id)
+      .neq('account_id', accountId)
       .maybeSingle()
 
     if (claimedError) {
@@ -224,13 +269,13 @@ export async function POST(request: Request) {
       )
     }
 
-    // Look up any pre-existing row so we know whether this number is
-    // already registered with Meta — if so we can skip /register when
-    // the user didn't provide a PIN this time around.
+    // Look up any pre-existing row for this account so we know whether
+    // this number is already registered with Meta — if so we can skip
+    // /register when the user didn't provide a PIN this time around.
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id, registered_at, phone_number_id')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     const sameNumber =
@@ -318,7 +363,7 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -328,9 +373,17 @@ export async function POST(request: Request) {
         )
       }
     } else {
+      // Insert with both columns: `account_id` is the tenancy key
+      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
+      // up-front), `user_id` is the audit column identifying which
+      // member of the account saved the config.
       const { error: insertError } = await supabase
         .from('whatsapp_config')
-        .insert({ user_id: user.id, ...baseRow })
+        .insert({
+          account_id: accountId,
+          user_id: user.id,
+          ...baseRow,
+        })
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)
@@ -386,10 +439,18 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const accountId = await resolveAccountId(supabase, user.id)
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
       .delete()
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

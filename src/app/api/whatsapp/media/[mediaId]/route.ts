@@ -31,11 +31,28 @@ export async function GET(
       )
     }
 
+    // Resolve the caller's account_id — whatsapp_config is one-per-
+    // account post-multi-user, so a teammate fetching media for a
+    // conversation in the shared inbox needs the account's config,
+    // not their personal (non-existent) row.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     // Fetch and decrypt WhatsApp config
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (configError || !config) {

@@ -3,19 +3,27 @@
 import { Clock } from 'lucide-react'
 import { DOW_SHORT_MON_FIRST } from '@/lib/dashboard/date-utils'
 import type { ResponseTimeSummary } from '@/lib/dashboard/types'
+import { BarChart } from '@/components/tremor/bar-chart'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
 
 interface ResponseTimeChartProps {
   data: ResponseTimeSummary | null
   loading: boolean
-  /** Minutes. Horizontal dashed line rendered at this height. */
+  /** Minutes. Surfaced as a "target" pill in the header. The
+   *  hand-rolled SVG version drew this as a horizontal dashed
+   *  line on the chart; Tremor BarChart doesn't expose Recharts
+   *  primitives, so we promote it to the header for now. A
+   *  follow-up can introduce an overlay or extend the vendored
+   *  BarChart with a `referenceLines` prop. */
   thresholdMinutes?: number
 }
 
-const VB_W = 760
-const VB_H = 220
-const PADDING = { top: 24, right: 16, bottom: 32, left: 44 }
+// Single category, single colour — the data is "average minutes
+// per weekday". Tremor expects categories as the second tuple in
+// the row object, so we shape the buckets into
+// `{ day: 'Mon', 'Avg minutes': 4.2 }` rows below.
+const CATEGORY = 'Avg minutes'
 
 export function ResponseTimeChart({
   data,
@@ -24,9 +32,20 @@ export function ResponseTimeChart({
 }: ResponseTimeChartProps) {
   const hasData = data?.buckets.some((b) => b.avgMinutes != null) ?? false
 
+  // Map buckets → Tremor rows. Null `avgMinutes` (no samples)
+  // collapses to 0; the chart will render an empty slot for it.
+  // We attach `samples` on the row so a future customTooltip can
+  // surface "no samples" copy without losing the data shape.
+  const chartData =
+    data?.buckets.map((b, i) => ({
+      day: DOW_SHORT_MON_FIRST[i],
+      [CATEGORY]: b.avgMinutes ?? 0,
+      samples: b.samples,
+    })) ?? []
+
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-900">
-      <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-white">
             Average First Response Time
@@ -36,25 +55,32 @@ export function ResponseTimeChart({
             weekday
           </p>
         </div>
-        {data && (data.thisWeekAvg != null || data.lastWeekAvg != null) && (
-          <div className="text-right text-xs">
-            <div className="text-slate-400">
-              This week:{' '}
-              <span className="font-medium text-white tabular-nums">
-                {fmt(data.thisWeekAvg)}
-              </span>
+        <div className="flex items-center gap-3 text-right text-xs">
+          {thresholdMinutes > 0 && (
+            <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-300 tabular-nums">
+              target {thresholdMinutes}m
+            </span>
+          )}
+          {data && (data.thisWeekAvg != null || data.lastWeekAvg != null) && (
+            <div>
+              <div className="text-slate-400">
+                This week:{' '}
+                <span className="font-medium text-white tabular-nums">
+                  {fmt(data.thisWeekAvg)}
+                </span>
+              </div>
+              <div className="text-slate-500">
+                Last week:{' '}
+                <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
+              </div>
             </div>
-            <div className="text-slate-500">
-              Last week:{' '}
-              <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <div className="p-5">
         {loading || !data ? (
-          <Skeleton className="h-[220px] w-full" />
+          <Skeleton className="h-[260px] w-full" />
         ) : !hasData ? (
           <EmptyState
             icon={Clock}
@@ -62,123 +88,23 @@ export function ResponseTimeChart({
             hint="This chart fills in as you reply to customer messages."
           />
         ) : (
-          <Bars data={data} thresholdMinutes={thresholdMinutes} />
+          <BarChart
+            data={chartData}
+            index="day"
+            categories={[CATEGORY]}
+            // 'violet' maps to Tailwind's `fill-violet-500` — matches
+            // the brand accent the hand-rolled bars used (#7c3aed).
+            colors={['violet']}
+            valueFormatter={(value) => `${value.toFixed(1)}m`}
+            showLegend={false}
+            yAxisWidth={48}
+            // Compact height so the chart sits well inside the card
+            // without dominating the row alongside the donut + activity feed.
+            className="h-[260px]"
+          />
         )}
       </div>
     </section>
-  )
-}
-
-function Bars({
-  data,
-  thresholdMinutes,
-}: {
-  data: ResponseTimeSummary
-  thresholdMinutes: number
-}) {
-  const chartW = VB_W - PADDING.left - PADDING.right
-  const chartH = VB_H - PADDING.top - PADDING.bottom
-
-  const values = data.buckets.map((b) => b.avgMinutes ?? 0)
-  const rawMax = Math.max(thresholdMinutes * 1.2, ...values)
-  const maxY = niceCeil(rawMax)
-  const yFor = (v: number) =>
-    maxY === 0 ? PADDING.top + chartH : PADDING.top + chartH - (v / maxY) * chartH
-
-  const barSlot = chartW / 7
-  const barW = Math.min(44, barSlot * 0.55)
-
-  const ticks = [0, maxY / 2, maxY].map((t) => Math.round(t))
-
-  return (
-    <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="h-[220px] w-full" role="img">
-      {/* Y grid */}
-      {ticks.map((t) => {
-        const y = yFor(t)
-        return (
-          <g key={t}>
-            <line
-              x1={PADDING.left}
-              x2={VB_W - PADDING.right}
-              y1={y}
-              y2={y}
-              stroke="rgb(30 41 59)"
-              strokeDasharray="3 3"
-            />
-            <text
-              x={PADDING.left - 8}
-              y={y}
-              textAnchor="end"
-              dominantBaseline="middle"
-              className="fill-slate-500 text-[10px]"
-            >
-              {t}m
-            </text>
-          </g>
-        )
-      })}
-
-      {/* Threshold line — rendered after grid so it sits on top, but
-          we keep it muted so bars remain the visual focus. */}
-      {thresholdMinutes > 0 && thresholdMinutes <= maxY && (
-        <g>
-          <line
-            x1={PADDING.left}
-            x2={VB_W - PADDING.right}
-            y1={yFor(thresholdMinutes)}
-            y2={yFor(thresholdMinutes)}
-            stroke="rgb(244 63 94)"
-            strokeDasharray="4 4"
-            strokeWidth={1.25}
-            opacity={0.8}
-          />
-          <text
-            x={VB_W - PADDING.right - 4}
-            y={yFor(thresholdMinutes) - 4}
-            textAnchor="end"
-            className="fill-rose-300 text-[10px]"
-          >
-            target {thresholdMinutes}m
-          </text>
-        </g>
-      )}
-
-      {/* Bars */}
-      {data.buckets.map((b, i) => {
-        const v = b.avgMinutes ?? 0
-        const x = PADDING.left + barSlot * i + (barSlot - barW) / 2
-        const y = yFor(v)
-        const h = PADDING.top + chartH - y
-        const muted = b.avgMinutes == null
-        return (
-          <g key={i}>
-            <rect
-              x={x}
-              y={muted ? PADDING.top + chartH - 2 : y}
-              width={barW}
-              height={muted ? 2 : Math.max(1, h)}
-              rx={4}
-              fill={muted ? 'rgb(51 65 85)' : '#7c3aed'}
-              opacity={muted ? 0.6 : 1}
-            >
-              <title>
-                {DOW_SHORT_MON_FIRST[i]}:{' '}
-                {b.avgMinutes == null ? 'no samples' : `${b.avgMinutes.toFixed(1)} min avg`}
-                {b.samples > 0 ? ` (${b.samples} sample${b.samples === 1 ? '' : 's'})` : ''}
-              </title>
-            </rect>
-            <text
-              x={x + barW / 2}
-              y={VB_H - 10}
-              textAnchor="middle"
-              className="fill-slate-400 text-[11px]"
-            >
-              {DOW_SHORT_MON_FIRST[i]}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
   )
 }
 
@@ -187,16 +113,4 @@ function fmt(mins: number | null): string {
   if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`
   if (mins < 60) return `${mins.toFixed(1)}m`
   return `${(mins / 60).toFixed(1)}h`
-}
-
-function niceCeil(max: number): number {
-  if (max <= 0) return 10
-  const pow = Math.pow(10, Math.floor(Math.log10(max)))
-  const n = max / pow
-  let nice: number
-  if (n <= 1) nice = 1
-  else if (n <= 2) nice = 2
-  else if (n <= 5) nice = 5
-  else nice = 10
-  return nice * pow
 }

@@ -1,7 +1,14 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Settings, MessageSquare, Tag, User, Palette } from 'lucide-react';
+import {
+  Settings,
+  MessageSquare,
+  Tag,
+  User,
+  Palette,
+  UsersRound,
+} from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { TemplateManager } from '@/components/settings/template-manager';
@@ -10,6 +17,7 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { PasswordForm } from '@/components/settings/password-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
+import { MembersTab } from '@/components/settings/members-tab';
 
 const TAB_VALUES = [
   'profile',
@@ -17,6 +25,7 @@ const TAB_VALUES = [
   'templates',
   'tags',
   'appearance',
+  'members',
 ] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
@@ -88,6 +97,13 @@ export default function SettingsPage() {
             <Palette className="size-4" />
             Appearance
           </TabsTrigger>
+          <TabsTrigger
+            value="members"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <UsersRound className="size-4" />
+            Members
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
@@ -110,6 +126,10 @@ export default function SettingsPage() {
 
         <TabsContent value="appearance">
           <AppearancePanel />
+        </TabsContent>
+
+        <TabsContent value="members">
+          <MembersTab />
         </TabsContent>
       </Tabs>
     </div>

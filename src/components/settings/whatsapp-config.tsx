@@ -36,7 +36,12 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
 export function WhatsAppConfig() {
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  // After multi-user, whatsapp_config is one-row-per-account, not
+  // one-row-per-user. We pull `accountId` straight off the auth
+  // context and key every read off it — so a teammate who just
+  // joined an account sees the inviter's saved config without
+  // having to re-enter anything.
+  const { user, accountId, loading: authLoading, profileLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,14 +84,19 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (userId: string) => {
+  const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB)
+      // Load form values from Supabase (shows what's in DB).
+      // Switched from `user_id` (which would only match the row's
+      // original author) to `account_id` so every member of the
+      // account sees the same saved configuration. UNIQUE(account_id)
+      // on the table guarantees the .maybeSingle() return type
+      // remains accurate.
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', acctId)
         .maybeSingle();
 
       if (error) {
@@ -146,13 +156,18 @@ export function WhatsAppConfig() {
   }, [supabase]);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
+    // Need both the auth session (`!authLoading`) AND the profile
+    // (`!profileLoading`, which carries `accountId`). Without the
+    // second guard, the effect would fire with `accountId === null`
+    // for the first render window and bail without ever retrying
+    // once the profile arrives.
+    if (authLoading || profileLoading) return;
+    if (!user || !accountId) {
       setLoading(false);
       return;
     }
-    fetchConfig(user.id);
-  }, [authLoading, user, fetchConfig]);
+    fetchConfig(accountId);
+  }, [authLoading, profileLoading, user, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
@@ -230,7 +245,7 @@ export function WhatsAppConfig() {
         setPin('');
       }
 
-      if (user) await fetchConfig(user.id);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -286,7 +301,7 @@ export function WhatsAppConfig() {
           { duration: 8000 },
         );
       }
-      if (user) await fetchConfig(user.id);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('verify-registration failed:', err);
       toast.error('Could not reach the verification endpoint.');

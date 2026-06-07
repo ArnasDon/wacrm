@@ -135,10 +135,25 @@ export async function POST() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Resolve the caller's account_id — both whatsapp_config and
+    // the message_templates we sync into are account-scoped.
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (configError || !config) {
@@ -217,6 +232,7 @@ export async function POST() {
           ? headerFormat.toLowerCase()
           : null
 
+<<<<<<< HEAD
 const headerHandle = header?.example?.header_handle?.[0] ?? null
 
 const row = {
@@ -253,11 +269,34 @@ const row = {
   last_synced_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 }
+=======
+      const row = {
+        // Account tenancy + user audit, same split as the submit
+        // route. account_id is NOT NULL on message_templates
+        // post-017, so an INSERT without it errors.
+        account_id: accountId,
+        user_id: user.id,
+        name: t.name,
+        category: normalizeCategory(t.category),
+        language: t.language,
+        header_type: headerType,
+        header_content: header?.text ?? null,
+        header_handle: header?.example?.header_handle?.[0] ?? null,
+        body_text: body?.text ?? '',
+        footer_text: footer?.text ?? null,
+        buttons: parsedButtons.length ? parsedButtons : null,
+        sample_values: sampleValues,
+        status: normalizeStatus(t.status),
+        meta_template_id: t.id,
+        quality_score: normalizeQualityScore(t.quality_score),
+        updated_at: new Date().toISOString(),
+      }
+>>>>>>> upstream/main
 
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

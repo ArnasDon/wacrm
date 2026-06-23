@@ -11,18 +11,18 @@ interface DealCardProps {
 }
 
 function formatCurrency(value: number, currency?: string) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: currency || "USD",
+    currency: currency || "BRL",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Number(value || 0));
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("pt-BR", {
+    day: "2-digit",
     month: "short",
-    day: "numeric",
     year: "numeric",
   });
 }
@@ -34,7 +34,7 @@ function initials(name?: string, fallback?: string) {
 }
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
-  const contactLabel = deal.contact?.name || deal.contact?.phone || "No contact";
+  const contactLabel = deal.contact?.name || deal.contact?.phone || "Sem contato";
   const assigneeLabel = deal.assignee?.full_name || null;
 
   return (
@@ -67,13 +67,13 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         {deal.status === "won" && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
             <Check className="h-3 w-3" />
-            Won
+            Ganho
           </span>
         )}
         {deal.status === "lost" && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
             <X className="h-3 w-3" />
-            Lost
+            Perdido
           </span>
         )}
       </div>

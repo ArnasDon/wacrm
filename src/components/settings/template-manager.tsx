@@ -44,6 +44,13 @@ const statusColors: Record<string, string> = {
   Rejected: 'bg-red-600/20 text-red-400 border-red-600/30',
 };
 
+const statusLabels: Record<string, string> = {
+  Draft: 'Rascunho',
+  Pending: 'Pendente',
+  Approved: 'Aprovado',
+  Rejected: 'Rejeitado',
+};
+
 interface TemplateFormData {
   name: string;
   category: MessageTemplate['category'];
@@ -124,8 +131,8 @@ export function TemplateManager() {
       if (error) throw error;
       setTemplates(data || []);
     } catch (err) {
-      console.error('Failed to fetch templates:', err);
-      toast.error('Failed to load templates');
+      console.error('Falha ao buscar modelos:', err);
+      toast.error('Falha ao carregar modelos');
     } finally {
       setLoading(false);
     }
@@ -133,18 +140,18 @@ export function TemplateManager() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast.error('Template name is required');
+      toast.error('O nome do modelo é obrigatório');
       return;
     }
     if (!form.body_text.trim()) {
-      toast.error('Body text is required');
+      toast.error('O corpo do texto é obrigatório');
       return;
     }
 
     try {
       setSaving(true);
       if (!user) {
-        toast.error('Not authenticated');
+        toast.error('Não autenticado');
         return;
       }
 
@@ -165,13 +172,13 @@ export function TemplateManager() {
 
       if (error) throw error;
 
-      toast.success('Template created successfully');
+      toast.success('Modelo criado com sucesso');
       setDialogOpen(false);
       setForm(emptyForm);
       if (user) await fetchTemplates(user.id);
     } catch (err) {
-      console.error('Save error:', err);
-      toast.error('Failed to create template');
+      console.error('Erro ao salvar:', err);
+      toast.error('Falha ao criar modelo');
     } finally {
       setSaving(false);
     }
@@ -195,32 +202,30 @@ export function TemplateManager() {
         throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
       }
       toast.success(
-        `Synced ${data.total} template${data.total === 1 ? '' : 's'} from Meta` +
+        `${data.total} modelo${data.total === 1 ? '' : 's'} sincronizado${data.total === 1 ? '' : 's'} da Meta` +
           (data.inserted || data.updated
-            ? ` (${data.inserted} new, ${data.updated} updated)`
+            ? ` (${data.inserted} novo${data.inserted !== 1 ? 's' : ''}, ${data.updated} atualizado${data.updated !== 1 ? 's' : ''})`
             : ''),
       );
       if (Array.isArray(data.errors) && data.errors.length > 0) {
-        // Surface per-template failures so users don't trust a green
-        // toast that hides silent drift.
         const preview = data.errors.slice(0, 3).map(
           (e: { name: string; language: string; message: string }) =>
             `${e.name} (${e.language})`,
         );
         const suffix =
-          data.errors.length > 3 ? `, +${data.errors.length - 3} more` : '';
-        toast.error(`Failed to sync: ${preview.join(', ')}${suffix}`);
+          data.errors.length > 3 ? `, +${data.errors.length - 3} mais` : '';
+        toast.error(`Falha ao sincronizar: ${preview.join(', ')}${suffix}`);
       }
       if (data.truncated) {
         toast.warning(
-          'Hit Meta pagination cap — more templates may exist. Contact support if this persists.',
+          'Limite de paginação da Meta atingido — podem existir mais modelos. Entre em contato com o suporte se isso persistir.',
         );
       }
       await fetchTemplates(user.id);
     } catch (err) {
-      console.error('Template sync error:', err);
+      console.error('Erro de sincronização de modelos:', err);
       toast.error(
-        err instanceof Error ? err.message : 'Failed to sync templates',
+        err instanceof Error ? err.message : 'Falha ao sincronizar modelos',
       );
     } finally {
       setSyncing(false);
@@ -235,11 +240,11 @@ export function TemplateManager() {
         .eq('id', id);
 
       if (error) throw error;
-      toast.success('Template deleted');
+      toast.success('Modelo excluído');
       setTemplates((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
-      console.error('Delete error:', err);
-      toast.error('Failed to delete template');
+      console.error('Erro ao excluir:', err);
+      toast.error('Falha ao excluir modelo');
     }
   }
 
@@ -255,11 +260,11 @@ export function TemplateManager() {
     <div className="space-y-4 mt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-white">Message Templates</h2>
+          <h2 className="text-lg font-semibold text-white">Modelos de Mensagem</h2>
           <p className="text-sm text-slate-400">
-            Create and manage your WhatsApp message templates. Meta requires
-            every template to be approved in the WhatsApp Manager before it can
-            be sent — use &quot;Sync from Meta&quot; to pull your approved list.
+            Crie e gerencie seus modelos de mensagem do WhatsApp. A Meta exige
+            que cada modelo seja aprovado no Gerenciador do WhatsApp antes de
+            poder ser enviado — use &quot;Sincronizar da Meta&quot; para buscar sua lista aprovada.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -268,12 +273,12 @@ export function TemplateManager() {
             onClick={handleSyncFromMeta}
             disabled={syncing}
             className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800"
-            title="Pull approved templates from your Meta WhatsApp Business Account"
+            title="Buscar modelos aprovados da sua Conta Empresarial do WhatsApp na Meta"
           >
             <RefreshCw
               className={`size-4 ${syncing ? 'animate-spin' : ''}`}
             />
-            {syncing ? 'Syncing…' : 'Sync from Meta'}
+            {syncing ? 'Sincronizando…' : 'Sincronizar da Meta'}
           </Button>
           <Button
             onClick={() => {
@@ -283,7 +288,7 @@ export function TemplateManager() {
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             <Plus className="size-4" />
-            New Template
+            Novo Modelo
           </Button>
         </div>
       </div>
@@ -291,8 +296,8 @@ export function TemplateManager() {
       {templates.length === 0 ? (
         <Card className="bg-slate-900 border-slate-700 ring-0 ring-transparent">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-slate-400 text-sm">No templates yet.</p>
-            <p className="text-slate-500 text-xs mt-1">Create your first message template to get started.</p>
+            <p className="text-slate-400 text-sm">Nenhum modelo ainda.</p>
+            <p className="text-slate-500 text-xs mt-1">Crie seu primeiro modelo de mensagem para começar.</p>
           </CardContent>
         </Card>
       ) : (
@@ -311,7 +316,7 @@ export function TemplateManager() {
                     <Badge
                       className={`text-xs border ${statusColors[template.status || 'Draft'] || ''}`}
                     >
-                      {template.status || 'Draft'}
+                      {statusLabels[template.status || 'Draft'] || template.status || 'Rascunho'}
                     </Badge>
                     {template.language && (
                       <span className="text-xs text-slate-500 uppercase">{template.language}</span>
@@ -340,17 +345,17 @@ export function TemplateManager() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-700 sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white">New Message Template</DialogTitle>
+            <DialogTitle className="text-white">Novo Modelo de Mensagem</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Create a new WhatsApp message template.
+              Crie um novo modelo de mensagem do WhatsApp.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label className="text-slate-300">Template Name</Label>
+              <Label className="text-slate-300">Nome do Modelo</Label>
               <Input
-                placeholder="e.g. order_confirmation"
+                placeholder="ex: confirmacao_pedido"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
@@ -359,7 +364,7 @@ export function TemplateManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-slate-300">Category</Label>
+                <Label className="text-slate-300">Categoria</Label>
                 <Select
                   value={form.category}
                   onValueChange={(val) =>
@@ -380,7 +385,7 @@ export function TemplateManager() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-300">Language</Label>
+                <Label className="text-slate-300">Idioma</Label>
                 <Input
                   list="template-language-codes"
                   placeholder="en_US"
@@ -394,25 +399,25 @@ export function TemplateManager() {
                   ))}
                 </datalist>
                 <p className="text-[11px] text-slate-500">
-                  Must match the exact language code the template is approved
-                  under on Meta — e.g. <code>en_US</code> and <code>en</code>{' '}
-                  are distinct.
+                  Deve corresponder ao código de idioma exato com que o modelo foi aprovado
+                  na Meta — ex: <code>en_US</code> e <code>en</code>{' '}
+                  são distintos.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-slate-300">Header Type</Label>
+              <Label className="text-slate-300">Tipo de Cabeçalho</Label>
               <Select
                 value={form.header_type}
                 onValueChange={(val) => setForm({ ...form, header_type: val || '' })}
               >
                 <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
-                  <SelectValue placeholder="None" />
+                  <SelectValue placeholder="Nenhum" />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
                   <SelectItem value="none" className="text-white focus:bg-slate-700 focus:text-white">
-                    None
+                    Nenhum
                   </SelectItem>
                   {HEADER_TYPES.map((type) => (
                     <SelectItem key={type} value={type} className="text-white focus:bg-slate-700 focus:text-white">
@@ -424,9 +429,9 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-slate-300">Body Text</Label>
+              <Label className="text-slate-300">Corpo do Texto</Label>
               <Textarea
-                placeholder="Enter your template message body. Use {{1}}, {{2}} for variables."
+                placeholder="Digite o corpo da sua mensagem. Use {{1}}, {{2}} para variáveis."
                 value={form.body_text}
                 onChange={(e) => setForm({ ...form, body_text: e.target.value })}
                 rows={4}
@@ -435,9 +440,9 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-slate-300">Footer Text</Label>
+              <Label className="text-slate-300">Texto do Rodapé</Label>
               <Input
-                placeholder="Optional footer text"
+                placeholder="Texto de rodapé opcional"
                 value={form.footer_text}
                 onChange={(e) => setForm({ ...form, footer_text: e.target.value })}
                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
@@ -451,7 +456,7 @@ export function TemplateManager() {
               onClick={() => setDialogOpen(false)}
               className="border-slate-700 text-slate-300 hover:bg-slate-800"
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               onClick={handleSave}
@@ -461,10 +466,10 @@ export function TemplateManager() {
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Creating...
+                  Criando...
                 </>
               ) : (
-                'Create Template'
+                'Criar Modelo'
               )}
             </Button>
           </DialogFooter>

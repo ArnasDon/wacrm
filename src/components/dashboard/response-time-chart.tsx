@@ -29,23 +29,22 @@ export function ResponseTimeChart({
       <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-white">
-            Average First Response Time
+            Tempo Médio de Primeira Resposta
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Minutes to reply to a customer&apos;s first unreplied message, by
-            weekday
+            Minutos para responder à primeira mensagem não respondida de um cliente, por dia da semana
           </p>
         </div>
         {data && (data.thisWeekAvg != null || data.lastWeekAvg != null) && (
           <div className="text-right text-xs">
             <div className="text-slate-400">
-              This week:{' '}
+              Esta semana:{' '}
               <span className="font-medium text-white tabular-nums">
                 {fmt(data.thisWeekAvg)}
               </span>
             </div>
             <div className="text-slate-500">
-              Last week:{' '}
+              Semana passada:{' '}
               <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
             </div>
           </div>
@@ -58,8 +57,8 @@ export function ResponseTimeChart({
         ) : !hasData ? (
           <EmptyState
             icon={Clock}
-            title="No replies recorded yet"
-            hint="This chart fills in as you reply to customer messages."
+            title="Nenhuma resposta registrada ainda"
+            hint="Este gráfico será preenchido à medida que você responder às mensagens dos clientes."
           />
         ) : (
           <Bars data={data} thresholdMinutes={thresholdMinutes} />
@@ -138,7 +137,7 @@ function Bars({
             textAnchor="end"
             className="fill-rose-300 text-[10px]"
           >
-            target {thresholdMinutes}m
+            meta {thresholdMinutes}m
           </text>
         </g>
       )}
@@ -163,8 +162,8 @@ function Bars({
             >
               <title>
                 {DOW_SHORT_MON_FIRST[i]}:{' '}
-                {b.avgMinutes == null ? 'no samples' : `${b.avgMinutes.toFixed(1)} min avg`}
-                {b.samples > 0 ? ` (${b.samples} sample${b.samples === 1 ? '' : 's'})` : ''}
+                {b.avgMinutes == null ? 'sem registros' : `média de ${b.avgMinutes.toFixed(1)} min`}
+                {b.samples > 0 ? ` (${b.samples} ${b.samples === 1 ? 'amostra' : 'amostras'})` : ''}
               </title>
             </rect>
             <text

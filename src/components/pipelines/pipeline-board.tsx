@@ -28,9 +28,9 @@ interface PipelineBoardProps {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "USD",
+    currency: "BRL",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
@@ -212,7 +212,7 @@ function StageColumn({
       >
         {deals.length === 0 ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-700 py-10 text-xs text-slate-500">
-            Drop a deal here
+            Solte um negócio aqui
           </div>
         ) : (
           deals.map((deal) => (
@@ -233,7 +233,7 @@ function StageColumn({
         className="mt-3 w-full justify-start border border-dashed border-slate-700 bg-transparent text-slate-400 hover:border-slate-600 hover:bg-slate-800 hover:text-white"
       >
         <Plus className="mr-1 h-3 w-3" />
-        Add Deal
+        Adicionar Negócio
       </Button>
     </div>
   );

@@ -83,61 +83,61 @@ export function Step4ScheduleSend({
 
   const audienceLabel =
     audience.type === 'all'
-      ? 'All Contacts'
+      ? 'Todos os Contatos'
       : audience.type === 'tags'
-        ? `Tags (${audience.tagIds?.length ?? 0} selected)`
+        ? `Tags (${audience.tagIds?.length ?? 0} selecionadas)`
         : audience.type === 'csv'
-          ? 'CSV Upload'
-          : 'Custom';
+          ? 'Envio de CSV'
+          : 'Personalizado';
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-white">Review & Send</h2>
+        <h2 className="text-lg font-semibold text-white">Revisar e Enviar</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Name your broadcast, review the details, and send.
+          Dê um nome à sua transmissão, revise os detalhes e envie.
         </p>
       </div>
 
       {/* Broadcast Name */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-white">Broadcast Name</label>
+        <label className="mb-1.5 block text-sm font-medium text-white">Nome da Transmissão</label>
         <Input
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
-          placeholder="e.g. Summer Sale Announcement"
+          placeholder="ex: Anúncio de Venda de Verão"
           className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
         />
       </div>
 
       {/* Summary Card */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
-        <p className="text-sm font-medium text-white">Summary</p>
+        <p className="text-sm font-medium text-white">Resumo</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <p className="text-xs text-slate-400">Template</p>
+            <p className="text-xs text-slate-400">Modelo</p>
             <p className="text-white">{template.name}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Audience</p>
+            <p className="text-xs text-slate-400">Público-alvo</p>
             <p className="text-white">{audienceLabel}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Estimated Reach</p>
+            <p className="text-xs text-slate-400">Alcance Estimado</p>
             <div className="flex items-center gap-1.5">
               {loadingReach ? (
                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
               ) : (
                 <>
                   <Users className="h-3.5 w-3.5 text-primary" />
-                  <p className="font-medium text-white">{estimatedReach.toLocaleString()}</p>
+                  <p className="font-medium text-white">{estimatedReach.toLocaleString('pt-BR')}</p>
                 </>
               )}
             </div>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Language</p>
-            <p className="text-white">{template.language ?? 'en_US'}</p>
+            <p className="text-xs text-slate-400">Idioma</p>
+            <p className="text-white">{template.language ?? 'pt_BR'}</p>
           </div>
         </div>
       </div>
@@ -148,7 +148,7 @@ export function Step4ScheduleSend({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <p className="text-sm font-medium text-white">Sending broadcast...</p>
+              <p className="text-sm font-medium text-white">Enviando transmissão...</p>
             </div>
             <span className="text-xs font-medium text-primary">{progress}%</span>
           </div>
@@ -169,7 +169,7 @@ export function Step4ScheduleSend({
           className="border-slate-700 text-slate-300"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          Voltar
         </Button>
 
         <div className="flex items-center gap-2">
@@ -181,7 +181,7 @@ export function Step4ScheduleSend({
               className="border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
-              Save as Draft
+              Salvar como Rascunho
             </Button>
           )}
 
@@ -195,17 +195,17 @@ export function Step4ScheduleSend({
             }
           >
             <Send className="h-4 w-4" />
-            Send Broadcast
+            Enviar Transmissão
           </DialogTrigger>
           <DialogContent className="border-slate-700 bg-slate-900 sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-white">Confirm Broadcast</DialogTitle>
+              <DialogTitle className="text-white">Confirmar Transmissão</DialogTitle>
               <DialogDescription className="text-slate-400">
-                You are about to send this broadcast to{' '}
-                <span className="font-medium text-white">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-white">{template.name}</span> template.
-                This action cannot be undone.
+                Você está prestes a enviar esta transmissão para{' '}
+                <span className="font-medium text-white">{estimatedReach.toLocaleString('pt-BR')}</span>{' '}
+                contatos usando o modelo{' '}
+                <span className="font-medium text-white">{template.name}</span>.
+                Esta ação não pode ser desfeita.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -214,7 +214,7 @@ export function Step4ScheduleSend({
                 onClick={() => setShowConfirm(false)}
                 className="border-slate-700 text-slate-300"
               >
-                Cancel
+                Cancelar
               </Button>
               <Button
                 onClick={() => {
@@ -224,7 +224,7 @@ export function Step4ScheduleSend({
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 <Send className="h-4 w-4" />
-                Confirm & Send
+                Confirmar e Enviar
               </Button>
             </DialogFooter>
           </DialogContent>

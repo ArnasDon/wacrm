@@ -92,30 +92,37 @@ const nextConfig: NextConfig = {
    * matched.
    */
   async headers() {
+    const isDev = process.env.NODE_ENV === "development";
+    const cacheHeaders = isDev
+      ? []
+      : [
+          {
+            source: "/_next/static/:path*",
+            headers: [
+              {
+                key: "Cache-Control",
+                value: "public, max-age=31536000, immutable",
+              },
+            ],
+          },
+          {
+            source: "/api/:path*",
+            headers: [{ key: "Cache-Control", value: "no-store" }],
+          },
+          {
+            source: "/:path*",
+            headers: [
+              {
+                key: "Cache-Control",
+                value:
+                  "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+              },
+            ],
+          },
+        ];
+
     return [
-      {
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
-      {
-        source: "/api/:path*",
-        headers: [{ key: "Cache-Control", value: "no-store" }],
-      },
-      {
-        source: "/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
-          },
-        ],
-      },
+      ...cacheHeaders,
       {
         // Security headers on every response, including /_next/static
         // assets (nosniff matters there) and /api/* (HSTS + referrer-

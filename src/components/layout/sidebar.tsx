@@ -44,17 +44,17 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
+  { href: "/dashboard", label: "Painel", icon: LayoutDashboard },
+  { href: "/inbox", label: "Caixa de Entrada", icon: MessageSquare },
+  { href: "/contacts", label: "Contatos", icon: Users },
+  { href: "/pipelines", label: "Funis", icon: GitBranch },
+  { href: "/broadcasts", label: "Transmissões", icon: Radio },
+  { href: "/automations", label: "Automações", icon: Zap },
+  { href: "/flows", label: "Fluxos", icon: Workflow, beta: true },
 ];
 
 const bottomNavItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings", label: "Configurações", icon: Settings },
 ];
 
 interface SidebarProps {
@@ -128,7 +128,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <MessageSquare className="h-4 w-4" />
             </div>
             <span className="text-sm font-semibold text-white">
-              CRM Template for WhatsApp
+              CRM para WhatsApp
             </span>
           </Link>
           <button
@@ -176,7 +176,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     )}
                     {showUnreadDot && (
                       <span
-                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
+                        aria-label={`${totalUnread} conversa${totalUnread === 1 ? "" : "s"} não lida${totalUnread === 1 ? "" : "s"}`}
                         className="relative flex h-2 w-2"
                       >
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -256,7 +256,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 }
               >
                 <User className="size-4" />
-                Profile
+                Perfil
               </DropdownMenuItem>
               <DropdownMenuItem
                 render={
@@ -268,7 +268,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 }
               >
                 <Settings className="size-4" />
-                Settings
+                Configurações
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-slate-800" />
               <DropdownMenuItem
@@ -276,7 +276,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 className="text-slate-200 focus:bg-slate-800 focus:text-white"
               >
                 <LogOut className="size-4" />
-                Sign out
+                Sair
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

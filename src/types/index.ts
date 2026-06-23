@@ -132,10 +132,14 @@ export interface MessageReaction {
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
-  phone_number_id: string;
-  waba_id?: string;
-  access_token: string;
-  verify_token?: string;
+  provider: 'meta' | 'evolution';
+  phone_number_id?: string | null;
+  waba_id?: string | null;
+  access_token?: string | null;
+  verify_token?: string | null;
+  evolution_api_url?: string | null;
+  evolution_api_key?: string | null;
+  evolution_instance_name?: string | null;
   status: 'connected' | 'disconnected';
   connected_at?: string;
 }

@@ -77,9 +77,28 @@ export async function engineSendText(
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  let accessToken = ''
+  if (config.provider !== 'evolution') {
+    accessToken = decrypt(config.access_token)
+  }
 
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'evolution') {
+      const { sendEvolutionTextMessage } = await import('@/lib/whatsapp/evolution-api');
+      let evoApiKey = config.evolution_api_key;
+      try { evoApiKey = decrypt(evoApiKey); } catch {}
+      const r = await sendEvolutionTextMessage({
+        config: {
+          apiUrl: config.evolution_api_url,
+          apiKey: evoApiKey,
+          instanceName: config.evolution_instance_name,
+        },
+        to: phone,
+        text: args.text,
+      });
+      return r.messageId;
+    }
+
     const r = await sendTextMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,
@@ -221,9 +240,36 @@ async function sendInteractiveViaMeta(
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  let accessToken = ''
+  if (config.provider !== 'evolution') {
+    accessToken = decrypt(config.access_token)
+  }
 
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'evolution') {
+      const { sendEvolutionTextMessage } = await import('@/lib/whatsapp/evolution-api');
+      let evoApiKey = config.evolution_api_key;
+      try { evoApiKey = decrypt(evoApiKey); } catch {}
+      
+      let textToSend = input.bodyText;
+      if (input.kind === 'buttons') {
+         textToSend += '\n\n' + input.buttons.map((b, i) => `[${i + 1}] ${b.reply.title}`).join('\n');
+      } else if (input.kind === 'list') {
+         textToSend += '\n\n' + input.sections.flatMap(s => s.rows.map(r => `- ${r.title}`)).join('\n');
+      }
+
+      const r = await sendEvolutionTextMessage({
+        config: {
+          apiUrl: config.evolution_api_url,
+          apiKey: evoApiKey,
+          instanceName: config.evolution_instance_name,
+        },
+        to: phone,
+        text: textToSend,
+      });
+      return r.messageId;
+    }
+
     if (input.kind === 'buttons') {
       const r = await sendInteractiveButtons({
         phoneNumberId: config.phone_number_id,

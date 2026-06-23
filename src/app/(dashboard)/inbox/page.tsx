@@ -503,7 +503,7 @@ export default function InboxPage() {
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
           <WifiOff className="h-4 w-4 text-amber-400" />
           <p className="text-xs text-amber-400">
-            WhatsApp® is not connected. Go to Settings to connect your account.
+            O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.
           </p>
         </div>
       )}

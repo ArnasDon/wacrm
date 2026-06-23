@@ -182,7 +182,7 @@ export function ContactDetailView({
 
   async function saveDetails() {
     if (!contactId || !editPhone.trim()) {
-      toast.error('Phone number is required');
+      toast.error('O número de telefone é obrigatório');
       return;
     }
 
@@ -199,9 +199,9 @@ export function ContactDetailView({
       .eq('id', contactId);
 
     if (error) {
-      toast.error('Failed to update contact');
+      toast.error('Falha ao atualizar contato');
     } else {
-      toast.success('Contact updated');
+      toast.success('Contato atualizado');
       fetchContact();
       onUpdated();
     }
@@ -245,7 +245,7 @@ export function ContactDetailView({
     } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) {
-      toast.error('Not authenticated');
+      toast.error('Não autenticado');
       setSavingNote(false);
       return;
     }
@@ -257,11 +257,11 @@ export function ContactDetailView({
     });
 
     if (error) {
-      toast.error('Failed to add note');
+      toast.error('Falha ao adicionar nota');
     } else {
       setNewNote('');
       fetchNotes();
-      toast.success('Note added');
+      toast.success('Nota adicionada');
     }
     setSavingNote(false);
   }
@@ -273,10 +273,10 @@ export function ContactDetailView({
       .eq('id', noteId);
 
     if (error) {
-      toast.error('Failed to delete note');
+      toast.error('Falha ao excluir nota');
     } else {
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
-      toast.success('Note deleted');
+      toast.success('Nota excluída');
     }
   }
 
@@ -306,9 +306,9 @@ export function ContactDetailView({
         if (error) throw error;
       }
 
-      toast.success('Custom fields saved');
+      toast.success('Campos personalizados salvos');
     } catch {
-      toast.error('Failed to save custom fields');
+      toast.error('Falha ao salvar campos personalizados');
     }
     setSavingCustom(false);
   }
@@ -345,10 +345,10 @@ export function ContactDetailView({
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <SheetTitle className="text-white truncate">
-                    {contact.name || 'Unknown'}
+                    {contact.name || 'Sem nome'}
                   </SheetTitle>
                   <SheetDescription className="text-slate-400 text-xs mt-0.5">
-                    Contact details
+                    Detalhes do contato
                   </SheetDescription>
                   <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-400">
                     <button
@@ -387,7 +387,7 @@ export function ContactDetailView({
                   value="details"
                   className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
                 >
-                  Details
+                  Detalhes
                 </TabsTrigger>
                 <TabsTrigger
                   value="tags"
@@ -399,19 +399,19 @@ export function ContactDetailView({
                   value="notes"
                   className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
                 >
-                  Notes
+                  Notas
                 </TabsTrigger>
                 <TabsTrigger
                   value="custom"
                   className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
                 >
-                  Custom Fields
+                  Campos Personalizados
                 </TabsTrigger>
                 <TabsTrigger
                   value="deals"
                   className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
                 >
-                  Deals
+                  Negócios
                 </TabsTrigger>
               </TabsList>
 
@@ -419,7 +419,7 @@ export function ContactDetailView({
               <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label className="text-slate-400 text-xs">Name</Label>
+                    <Label className="text-slate-400 text-xs">Nome</Label>
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
@@ -428,7 +428,7 @@ export function ContactDetailView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-slate-400 text-xs">
-                      Phone <span className="text-red-400">*</span>
+                      Telefone <span className="text-red-400">*</span>
                     </Label>
                     <Input
                       value={editPhone}
@@ -437,7 +437,7 @@ export function ContactDetailView({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-slate-400 text-xs">Email</Label>
+                    <Label className="text-slate-400 text-xs">E-mail</Label>
                     <Input
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
@@ -445,7 +445,7 @@ export function ContactDetailView({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-slate-400 text-xs">Company</Label>
+                    <Label className="text-slate-400 text-xs">Empresa</Label>
                     <Input
                       value={editCompany}
                       onChange={(e) => setEditCompany(e.target.value)}
@@ -463,7 +463,7 @@ export function ContactDetailView({
                     ) : (
                       <Save className="size-3.5" />
                     )}
-                    Save Changes
+                    Salvar Alterações
                   </Button>
                 </div>
               </TabsContent>
@@ -472,11 +472,11 @@ export function ContactDetailView({
               <TabsContent value="tags" className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-3">
                   <p className="text-xs text-slate-400">
-                    Click a tag to add or remove it from this contact.
+                    Clique em uma tag para adicioná-la ou removê-la deste contato.
                   </p>
                   {allTags.length === 0 ? (
                     <p className="text-sm text-slate-500">
-                      No tags available. Create tags in Settings.
+                      Nenhuma tag disponível. Crie tags em Configurações.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
@@ -513,7 +513,7 @@ export function ContactDetailView({
                   <Textarea
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="Write a note..."
+                    placeholder="Escreva uma nota..."
                     className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 min-h-[60px] text-sm resize-none"
                   />
                   <Button
@@ -527,7 +527,7 @@ export function ContactDetailView({
                     ) : (
                       <Plus className="size-3.5" />
                     )}
-                    Add Note
+                    Adicionar Nota
                   </Button>
                 </div>
 
@@ -538,7 +538,7 @@ export function ContactDetailView({
                     </div>
                   ) : notes.length === 0 ? (
                     <p className="text-sm text-slate-500 text-center py-8">
-                      No notes yet.
+                      Nenhuma nota ainda.
                     </p>
                   ) : (
                     notes.map((note) => (
@@ -558,9 +558,9 @@ export function ContactDetailView({
                           </button>
                         </div>
                         <p className="text-xs text-slate-500 mt-1.5">
-                          {new Date(note.created_at).toLocaleDateString('en-US', {
+                          {new Date(note.created_at).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
                             month: 'short',
-                            day: 'numeric',
                             year: 'numeric',
                             hour: '2-digit',
                             minute: '2-digit',
@@ -580,7 +580,7 @@ export function ContactDetailView({
                   </div>
                 ) : customFields.length === 0 ? (
                   <p className="text-sm text-slate-500 text-center py-8">
-                    No custom fields defined. Create them in Settings.
+                    Nenhum campo personalizado definido. Crie-os em Configurações.
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -597,7 +597,7 @@ export function ContactDetailView({
                               [field.id]: e.target.value,
                             }))
                           }
-                          placeholder={`Enter ${field.field_name}...`}
+                          placeholder={`Digite ${field.field_name}...`}
                           className="bg-slate-800 border-slate-700 text-white h-8 text-sm placeholder:text-slate-500"
                         />
                       </div>
@@ -613,7 +613,7 @@ export function ContactDetailView({
                       ) : (
                         <Save className="size-3.5" />
                       )}
-                      Save Custom Fields
+                      Salvar Campos Personalizados
                     </Button>
                   </div>
                 )}
@@ -626,7 +626,7 @@ export function ContactDetailView({
                     <Loader2 className="size-5 animate-spin text-primary" />
                   </div>
                 ) : deals.length === 0 ? (
-                  <p className="text-xs text-slate-500">No deals yet</p>
+                  <p className="text-xs text-slate-500">Nenhum negócio ainda</p>
                 ) : (
                   <div className="space-y-2">
                     {deals.map((deal) => (
@@ -653,9 +653,9 @@ export function ContactDetailView({
                         <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
                           <span className="flex items-center gap-1">
                             <DollarSign className="size-3" />
-                            {new Intl.NumberFormat('en-US', {
+                            {new Intl.NumberFormat('pt-BR', {
                               style: 'currency',
-                              currency: deal.currency || 'USD',
+                              currency: deal.currency || 'BRL',
                               maximumFractionDigits: 0,
                             }).format(Number(deal.value || 0))}
                           </span>
@@ -667,7 +667,7 @@ export function ContactDetailView({
                                   : 'text-red-400'
                               }
                             >
-                              {deal.status}
+                              {deal.status === 'won' ? 'ganho' : 'perdido'}
                             </span>
                           )}
                         </div>

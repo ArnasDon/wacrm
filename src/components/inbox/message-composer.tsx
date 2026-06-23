@@ -90,7 +90,7 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
-            24-hour session expired. Use a template to re-engage.
+            A sessão de 24 horas expirou. Use um modelo para reengajar.
           </p>
           <Button
             variant="ghost"
@@ -99,7 +99,7 @@ export function MessageComposer({
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="mr-1 h-3 w-3" />
-            Templates
+            Modelos
           </Button>
         </div>
       )}
@@ -110,7 +110,7 @@ export function MessageComposer({
           size="sm"
           className="h-9 w-9 shrink-0 p-0 text-slate-400 hover:text-white"
           onClick={onOpenTemplates}
-          title="Send template"
+          title="Enviar modelo"
         >
           <LayoutTemplate className="h-4 w-4" />
         </Button>
@@ -122,8 +122,8 @@ export function MessageComposer({
           onKeyDown={handleKeyDown}
           placeholder={
             sessionExpired
-              ? "Session expired - use a template"
-              : "Type a message... (Shift+Enter for new line)"
+              ? "Sessão expirada - use um modelo"
+              : "Digite uma mensagem... (Shift+Enter para pular linha)"
           }
           disabled={sessionExpired}
           rows={1}
@@ -147,7 +147,7 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge (w-9 button + gap-2 = 44px). */}
       <p className="mt-1 pl-11 text-[10px] text-slate-600">
-        Type &apos;/&apos; for quick replies
+        Digite &apos;/&apos; para respostas rápidas
       </p>
     </div>
   );

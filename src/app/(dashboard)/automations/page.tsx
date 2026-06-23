@@ -72,7 +72,7 @@ export default function AutomationsPage() {
       if (fetchErr) throw fetchErr
       setAutomations((data ?? []) as Automation[])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load automations")
+      setError(err instanceof Error ? err.message : "Falha ao carregar automações")
     }
   }
 
@@ -96,20 +96,20 @@ export default function AutomationsPage() {
         prev?.map((x) => (x.id === a.id ? { ...x, is_active: !next } : x)) ?? prev,
       )
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? "Failed to update")
+      toast.error(body?.error ?? "Falha ao atualizar")
       return
     }
-    toast.success(next ? "Automation activated" : "Automation paused")
+    toast.success(next ? "Automação ativada" : "Automação pausada")
   }
 
   async function duplicate(a: Automation) {
     const res = await fetch(`/api/automations/${a.id}/duplicate`, { method: "POST" })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? "Failed to duplicate")
+      toast.error(body?.error ?? "Falha ao duplicar")
       return
     }
-    toast.success("Automation duplicated")
+    toast.success("Automação duplicada")
     load()
   }
 
@@ -120,10 +120,10 @@ export default function AutomationsPage() {
     setDeleting(false)
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      toast.error(body?.error ?? "Failed to delete")
+      toast.error(body?.error ?? "Falha ao excluir")
       return
     }
-    toast.success("Automation deleted")
+    toast.success("Automação excluída")
     setPendingDelete(null)
     load()
   }
@@ -137,7 +137,7 @@ export default function AutomationsPage() {
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <p className="text-sm text-red-400">{error}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
-          Retry
+          Tentar novamente
         </Button>
       </div>
     )
@@ -157,9 +157,9 @@ export default function AutomationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Automations</h1>
+          <h1 className="text-2xl font-bold text-white">Automações</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Build workflows that react to WhatsApp® events automatically.
+            Crie fluxos de trabalho que reagem a eventos do WhatsApp® automaticamente.
           </p>
         </div>
         <Button
@@ -167,13 +167,13 @@ export default function AutomationsPage() {
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
-          Create Automation
+          Criar Automação
         </Button>
       </div>
 
       {showTemplates && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-slate-300">Quick-start templates</h2>
+          <h2 className="mb-3 text-sm font-semibold text-slate-300">Modelos de início rápido</h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             {TEMPLATE_ORDER.map((slug) => {
               const t = AUTOMATION_TEMPLATES[slug]
@@ -201,9 +201,9 @@ export default function AutomationsPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <Zap className="h-6 w-6 text-primary" />
           </div>
-          <p className="mt-3 text-sm font-medium text-white">No automations yet</p>
+          <p className="mt-3 text-sm font-medium text-white">Nenhuma automação ainda</p>
           <p className="mt-1 text-xs text-slate-400">
-            Pick a template above or create one from scratch.
+            Escolha um modelo acima ou crie uma do zero.
           </p>
         </div>
       ) : (
@@ -225,11 +225,10 @@ export default function AutomationsPage() {
       <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete automation</DialogTitle>
+            <DialogTitle>Excluir automação</DialogTitle>
             <DialogDescription>
-              This permanently removes{" "}
-              <span className="text-white">{pendingDelete?.name}</span> and its execution
-              history. This cannot be undone.
+              Isso removerá permanentemente{" "}
+              <span className="text-white">{pendingDelete?.name}</span> e seu histórico de execução. Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -238,7 +237,7 @@ export default function AutomationsPage() {
               onClick={() => setPendingDelete(null)}
               disabled={deleting}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               variant="destructive"
@@ -246,7 +245,7 @@ export default function AutomationsPage() {
               disabled={deleting}
             >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Delete
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -310,10 +309,10 @@ function AutomationCard({
               {meta.label}
             </span>
             <span className="tabular-nums">
-              {automation.execution_count} run{automation.execution_count === 1 ? "" : "s"}
+              {automation.execution_count} {automation.execution_count === 1 ? "execução" : "execuções"}
             </span>
             <span aria-hidden>·</span>
-            <span>last {formatRelative(automation.last_executed_at)}</span>
+            <span>última {formatRelative(automation.last_executed_at)}</span>
           </div>
         </button>
 
@@ -321,12 +320,12 @@ function AutomationCard({
           <Switch
             checked={automation.is_active}
             onCheckedChange={(v) => onToggle(!!v)}
-            aria-label={automation.is_active ? "Deactivate" : "Activate"}
+            aria-label={automation.is_active ? "Desativar" : "Ativar"}
           />
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label="Open menu"
+              aria-label="Abrir menu"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-white data-[popup-open]:bg-slate-800"
             >
               <MoreVertical className="h-4 w-4" />
@@ -334,20 +333,20 @@ function AutomationCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="h-4 w-4" />
-                Edit
+                Editar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onDuplicate}>
                 <Copy className="h-4 w-4" />
-                Duplicate
+                Duplicar
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onLogs}>
                 <FileText className="h-4 w-4" />
-                View Logs
+                Ver Logs
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4" />
-                Delete
+                Excluir
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

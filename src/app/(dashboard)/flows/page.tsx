@@ -53,9 +53,9 @@ interface FlowRow {
 }
 
 const STATUS_LABELS: Record<FlowRow["status"], string> = {
-  draft: "Draft",
-  active: "Active",
-  archived: "Archived",
+  draft: "Rascunho",
+  active: "Ativo",
+  archived: "Arquivado",
 };
 
 const STATUS_COLORS: Record<FlowRow["status"], string> = {
@@ -112,7 +112,7 @@ export default function FlowsPage() {
       } catch (err) {
         if (!cancelled) {
           console.error(err);
-          toast.error("Couldn't load flows.");
+          toast.error("Não foi possível carregar os fluxos.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -143,7 +143,7 @@ export default function FlowsPage() {
       router.push(`/flows/${json.flow.id}`);
     } catch (err) {
       console.error(err);
-      toast.error("Couldn't create flow.");
+      toast.error("Não foi possível criar o fluxo.");
     } finally {
       setCreating(false);
     }
@@ -159,13 +159,13 @@ export default function FlowsPage() {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `Clone failed: ${res.status}`);
+        throw new Error(json.error ?? `Falha ao clonar: ${res.status}`);
       }
       const json = (await res.json()) as { flow: FlowRow };
       setCreateOpen(false);
       router.push(`/flows/${json.flow.id}`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Clone failed";
+      const msg = err instanceof Error ? err.message : "Falha ao clonar";
       toast.error(msg);
     } finally {
       setCreating(false);
@@ -174,17 +174,17 @@ export default function FlowsPage() {
 
   async function handleDelete(flow: FlowRow) {
     const yes = window.confirm(
-      `Delete "${flow.name}"? Any active runs will end immediately.`,
+      `Excluir "${flow.name}"? Qualquer execução ativa será encerrada imediatamente.`,
     );
     if (!yes) return;
     try {
       const res = await fetch(`/api/flows/${flow.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
       setFlows((prev) => prev.filter((f) => f.id !== flow.id));
-      toast.success("Flow deleted.");
+      toast.success("Fluxo excluído.");
     } catch (err) {
       console.error(err);
-      toast.error("Couldn't delete flow.");
+      toast.error("Não foi possível excluir o fluxo.");
     }
   }
 
@@ -201,19 +201,19 @@ export default function FlowsPage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-white">Flows</h1>
+            <h1 className="text-2xl font-semibold text-white">Fluxos</h1>
             <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
               Beta
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-400">
-            Build branching, button-driven WhatsApp conversations. Useful for
-            menus, FAQs, and triage before a human steps in.
+            Crie conversas do WhatsApp ramificadas e guiadas por botões. Útil para
+            menus, FAQs e triagem antes da intervenção humana.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
-          New flow
+          Novo fluxo
         </Button>
       </header>
 
@@ -239,16 +239,16 @@ export default function FlowsPage() {
             sm-scoped 384px wins at every real desktop breakpoint. */}
         <DialogContent className="sm:max-w-4xl bg-slate-900 text-slate-100">
           <DialogHeader>
-            <DialogTitle>Create a new flow</DialogTitle>
+            <DialogTitle>Criar um novo fluxo</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Start from a template or build from scratch.
+              Comece a partir de um modelo ou crie do zero.
             </DialogDescription>
           </DialogHeader>
 
           {templates.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">
-                Start from a template
+                Começar a partir de um modelo
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {templates.map((t) => {
@@ -269,7 +269,7 @@ export default function FlowsPage() {
                         {t.description}
                       </span>
                       <span className="mt-auto border-t border-slate-800 pt-2 text-[11px] text-slate-500">
-                        {t.node_count} {t.node_count === 1 ? "node" : "nodes"}
+                        {t.node_count} {t.node_count === 1 ? "nó" : "nós"}
                       </span>
                     </button>
                   );
@@ -280,12 +280,12 @@ export default function FlowsPage() {
 
           <div className="space-y-2 border-t border-slate-800 pt-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">
-              Or start blank
+              Ou comece em branco
             </p>
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="e.g. Welcome menu"
+              placeholder="ex: Menu de boas-vindas"
               className="bg-slate-800"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreate();
@@ -299,11 +299,11 @@ export default function FlowsPage() {
               onClick={() => setCreateOpen(false)}
               disabled={creating}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button onClick={handleCreate} disabled={!newName.trim() || creating}>
               {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create blank flow
+              Criar fluxo em branco
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -319,16 +319,16 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         <Workflow className="h-6 w-6 text-slate-500" />
       </div>
       <h2 className="mt-4 text-base font-medium text-white">
-        No flows yet
+        Nenhum fluxo ainda
       </h2>
       <p className="mt-1 max-w-md text-sm text-slate-400">
-        Build your first conversation — a welcome menu, an order lookup, an FAQ
-        bot. Customers tap buttons; the bot routes them to the right answer (or
-        the right agent).
+        Crie sua primeira conversa — um menu de boas-vindas, busca de pedidos ou
+        robô de FAQ. Os clientes tocam nos botões e o robô os direciona para a
+        resposta correta (ou atendente adequado).
       </p>
       <Button onClick={onCreate} className="mt-5">
         <Plus className="h-4 w-4" />
-        Create your first flow
+        Criar seu primeiro fluxo
       </Button>
     </div>
   );
@@ -378,14 +378,14 @@ function FlowCard({
       <div className="mt-4 flex items-center gap-3 text-[11px] text-slate-500">
         <span className="inline-flex items-center gap-1">
           <MessageSquare className="h-3 w-3" />
-          {flow.execution_count} {flow.execution_count === 1 ? "run" : "runs"}
+          {flow.execution_count} {flow.execution_count === 1 ? "execução" : "execuções"}
         </span>
       </div>
 
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
         <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
-          Edit
+          Editar
         </Button>
         <Button
           variant="ghost"
@@ -394,7 +394,7 @@ function FlowCard({
           className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          Delete
+          Excluir
         </Button>
       </div>
     </div>
@@ -406,11 +406,11 @@ function describeTrigger(flow: FlowRow): string {
     const keywords = Array.isArray(flow.trigger_config.keywords)
       ? (flow.trigger_config.keywords as string[])
       : [];
-    if (keywords.length === 0) return "Triggers on keyword (none set)";
-    return `Triggers on: ${keywords.join(", ")}`;
+    if (keywords.length === 0) return "Gatilha por palavra-chave (nenhuma definida)";
+    return `Gatilha em: ${keywords.join(", ")}`;
   }
   if (flow.trigger_type === "first_inbound_message") {
-    return "Triggers on a contact's first-ever inbound message";
+    return "Gatilha na primeira mensagem de entrada do contato";
   }
-  return "Manual trigger";
+  return "Gatilho manual";
 }

@@ -84,9 +84,29 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  let accessToken = ''
+  if (config.provider !== 'evolution') {
+    accessToken = decrypt(config.access_token)
+  }
 
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'evolution') {
+      const { sendEvolutionTextMessage } = await import('@/lib/whatsapp/evolution-api');
+      let evoApiKey = config.evolution_api_key;
+      try { evoApiKey = decrypt(evoApiKey); } catch {}
+      const text = input.kind === 'template' ? `[Template: ${input.templateName}]` : input.text;
+      const r = await sendEvolutionTextMessage({
+        config: {
+          apiUrl: config.evolution_api_url,
+          apiKey: evoApiKey,
+          instanceName: config.evolution_instance_name,
+        },
+        to: phone,
+        text,
+      });
+      return r.messageId;
+    }
+
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,

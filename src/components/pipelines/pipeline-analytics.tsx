@@ -24,9 +24,9 @@ interface PipelineAnalyticsProps {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "USD",
+    currency: "BRL",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
@@ -102,43 +102,50 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-3 xl:grid-cols-6">
         <Metric
           icon={<BarChart3 className="h-4 w-4 text-slate-400" />}
-          label="Total Deals"
+          label="Total de Negócios"
           value={String(stats.totalCount)}
-          tooltip="Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included."
+          tooltip="Quantidade de negócios neste funil que não estão marcados como Perdidos. Negócios Ganhos também estão inclusos."
         />
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
-          label="Pipeline Value"
+          label="Valor do Funil"
           value={formatCurrency(stats.totalValue)}
-          tooltip="Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost."
+          tooltip="Soma do valor de todos os negócios neste funil, excluindo os negócios marcados como Perdidos."
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
-          label="Avg Deal Size"
+          label="Tamanho Médio"
           value={formatCurrency(stats.avgValue)}
-          tooltip="Pipeline Value divided by Total Deals — the average value of a single non-lost deal."
+          tooltip="Valor do Funil dividido pelo Total de Negócios — o valor médio de um negócio não perdido."
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
-          label="Weighted Value"
+          label="Valor Ponderado"
           value={formatCurrency(stats.weightedValue)}
-          tooltip="Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded."
+          tooltip="Receita esperada: o valor de cada negócio aberto × a probabilidade da sua etapa. Primeira etapa ≈ 10%, as etapas progridem até 90%, Ganho = 100%. Negócios Perdidos são excluídos."
         />
         <Metric
           icon={<Trophy className="h-4 w-4 text-primary" />}
-          label="Won This Month"
+          label="Ganhos este Mês"
           value={String(stats.wonThisMonth)}
-          tooltip="Deals marked as Won since the first day of the current month."
+          tooltip="Negócios marcados como Ganhos desde o primeiro dia do mês atual."
         />
         <Metric
           icon={<XCircle className="h-4 w-4 text-red-400" />}
-          label="Lost This Month"
+          label="Perdidos este Mês"
           value={String(stats.lostThisMonth)}
-          tooltip="Deals marked as Lost since the first day of the current month."
+          tooltip="Negócios marcados como Perdidos desde o primeiro dia do mês atual."
         />
       </div>
     </TooltipProvider>
   );
+}
+
+interface MetricProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tooltip: string;
 }
 
 function Metric({
@@ -146,12 +153,7 @@ function Metric({
   label,
   value,
   tooltip,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  tooltip: string;
-}) {
+}: MetricProps) {
   return (
     <div className="rounded-lg bg-slate-800/50 p-3">
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
@@ -162,7 +164,7 @@ function Metric({
             render={
               <button
                 type="button"
-                aria-label={`How ${label} is calculated`}
+                aria-label={`Como ${label} é calculado`}
                 className="ml-auto text-slate-500 hover:text-slate-300 focus:outline-none"
               />
             }

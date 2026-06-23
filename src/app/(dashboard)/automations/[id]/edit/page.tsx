@@ -27,7 +27,7 @@ export default function EditAutomationPage({
     async function load() {
       const res = await fetch(`/api/automations/${id}`)
       if (!res.ok) {
-        if (!cancelled) setError(`Failed to load (${res.status})`)
+        if (!cancelled) setError(`Falha ao carregar (${res.status})`)
         return
       }
       const body = await res.json()
@@ -56,7 +56,7 @@ export default function EditAutomationPage({
           onClick={() => router.push("/automations")}
           className="text-sm text-primary hover:text-primary/80"
         >
-          Back to Automations
+          Voltar para Automações
         </button>
       </div>
     )

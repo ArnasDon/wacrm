@@ -50,9 +50,9 @@ export default function LoginPage() {
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <MessageSquare className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-xl text-white">Welcome back</CardTitle>
+          <CardTitle className="text-xl text-white">Bem-vindo de volta</CardTitle>
           <CardDescription className="text-slate-400">
-            Sign in to your account
+            Entre na sua conta
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -65,7 +65,7 @@ export default function LoginPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="email" className="text-slate-300">
-                Email
+                E-mail
               </Label>
               <Input
                 id="email"
@@ -81,19 +81,19 @@ export default function LoginPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-slate-300">
-                  Password
+                  Senha
                 </Label>
                 <Link
                   href="/forgot-password"
                   className="text-sm text-primary hover:text-primary/80"
                 >
-                  Forgot password?
+                  Esqueceu sua senha?
                 </Link>
               </div>
               <Input
                 id="password"
                 type="password"
-                placeholder="Enter your password"
+                placeholder="Digite sua senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -106,17 +106,17 @@ export default function LoginPage() {
               disabled={loading}
               className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-400">
-            Don&apos;t have an account?{" "}
+            Não tem uma conta?{" "}
             <Link
               href="/signup"
               className="text-primary hover:text-primary/80"
             >
-              Create account
+              Criar conta
             </Link>
           </p>
         </CardContent>

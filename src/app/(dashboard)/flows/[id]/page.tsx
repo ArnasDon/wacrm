@@ -51,7 +51,7 @@ export default function FlowEditorPage() {
       } catch (err) {
         if (!cancelled) {
           console.error(err);
-          toast.error("Couldn't load flow.");
+          toast.error("Não foi possível carregar o fluxo.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -72,13 +72,13 @@ export default function FlowEditorPage() {
   if (notFound || !flow) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-slate-400">Flow not found.</p>
+        <p className="text-sm text-slate-400">Fluxo não encontrado.</p>
         <button
           type="button"
           onClick={() => router.push("/flows")}
           className="text-sm text-primary hover:opacity-80"
         >
-          ← Back to flows
+          ← Voltar para fluxos
         </button>
       </div>
     );

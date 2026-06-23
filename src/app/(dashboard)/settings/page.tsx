@@ -44,10 +44,9 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <h1 className="text-2xl font-bold text-white">Configurações</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Manage your profile, WhatsApp® integration, message templates, and
-          tags.
+          Gerencie seu perfil, integração com o WhatsApp®, modelos de mensagens e tags.
         </p>
       </div>
 
@@ -58,21 +57,21 @@ export default function SettingsPage() {
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
             <User className="size-4" />
-            Profile
+            Perfil
           </TabsTrigger>
           <TabsTrigger
             value="whatsapp"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
             <Settings className="size-4" />
-            WhatsApp Config
+            Integração do WhatsApp
           </TabsTrigger>
           <TabsTrigger
             value="templates"
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
             <MessageSquare className="size-4" />
-            Templates
+            Modelos de Mensagem
           </TabsTrigger>
           <TabsTrigger
             value="tags"
@@ -86,31 +85,31 @@ export default function SettingsPage() {
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
             <Palette className="size-4" />
-            Appearance
+            Aparência
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="profile" className="space-y-6">
+        <div className={tab === 'profile' ? 'space-y-6 outline-none mt-2' : 'hidden'}>
           <ProfileForm />
           <PasswordForm />
           <SessionsCard />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="whatsapp">
+        <div className={tab === 'whatsapp' ? 'outline-none mt-2' : 'hidden'}>
           <WhatsAppConfig />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="templates">
+        <div className={tab === 'templates' ? 'outline-none mt-2' : 'hidden'}>
           <TemplateManager />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="tags">
+        <div className={tab === 'tags' ? 'outline-none mt-2' : 'hidden'}>
           <TagManager />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="appearance">
+        <div className={tab === 'appearance' ? 'outline-none mt-2' : 'hidden'}>
           <AppearancePanel />
-        </TabsContent>
+        </div>
       </Tabs>
     </div>
   );

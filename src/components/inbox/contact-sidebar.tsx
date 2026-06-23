@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -114,7 +115,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-slate-800 bg-slate-900">
-        <p className="text-sm text-slate-500">Select a conversation</p>
+        <p className="text-sm text-slate-500">Selecione uma conversa</p>
       </div>
     );
   }
@@ -181,7 +182,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
-                <p className="px-1 text-xs text-slate-600">No tags</p>
+                <p className="px-1 text-xs text-slate-600">Sem tags</p>
               ) : (
                 tags.map((tag) => (
                   <span
@@ -206,11 +207,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-slate-500">
               <DollarSign className="h-3 w-3" />
-              Active Deals
+              Negócios Ativos
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
-                <p className="px-1 text-xs text-slate-600">No deals</p>
+                <p className="px-1 text-xs text-slate-600">Sem negócios</p>
               ) : (
                 deals.map((deal) => (
                   <div
@@ -222,7 +223,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                     </p>
                     <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
                       <span>
-                        {deal.currency ?? "$"}
+                        {deal.currency ?? "R$"}
                         {deal.value.toLocaleString()}
                       </span>
                       {deal.stage && (
@@ -250,14 +251,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-slate-500">
               <StickyNote className="h-3 w-3" />
-              Notes
+              Notas
             </div>
             <div className="mt-2">
               <div className="flex gap-2">
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Add a note..."
+                  placeholder="Adicionar uma nota..."
                   rows={2}
                   className="flex-1 resize-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-primary/50"
                 />
@@ -281,7 +282,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                       {note.note_text}
                     </p>
                     <p className="mt-1 text-[10px] text-slate-600">
-                      {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
+                      {format(new Date(note.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                     </p>
                   </div>
                 ))}

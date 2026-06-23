@@ -49,4 +49,4 @@ export function mondayIndex(d: Date): number {
   return (jsDow + 6) % 7
 }
 
-export const DOW_SHORT_MON_FIRST = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+export const DOW_SHORT_MON_FIRST = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'] as const

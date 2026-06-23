@@ -18,13 +18,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/inbox": "Inbox",
-  "/contacts": "Contacts",
-  "/pipelines": "Pipelines",
-  "/broadcasts": "Broadcasts",
-  "/automations": "Automations",
-  "/settings": "Settings",
+  "/dashboard": "Painel",
+  "/inbox": "Caixa de Entrada",
+  "/contacts": "Contatos",
+  "/pipelines": "Funis",
+  "/broadcasts": "Transmissões",
+  "/automations": "Automações",
+  "/settings": "Configurações",
 };
 
 function getPageTitle(pathname: string): string {
@@ -32,7 +32,7 @@ function getPageTitle(pathname: string): string {
   const match = Object.entries(pageTitles).find(([path]) =>
     pathname.startsWith(path),
   );
-  return match ? match[1] : "Dashboard";
+  return match ? match[1] : "Painel";
 }
 
 interface HeaderProps {
@@ -58,7 +58,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <button
           type="button"
           onClick={onOpenSidebar}
-          aria-label="Open menu"
+          aria-label="Abrir menu"
           className="flex h-10 w-10 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-slate-800 hover:text-white lg:hidden"
         >
           <Menu className="h-5 w-5" />
@@ -71,7 +71,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
       <DropdownMenu>
         <DropdownMenuTrigger
           className="flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-slate-800/70 focus:bg-slate-800/70 focus:outline-none data-popup-open:bg-slate-800/70 sm:gap-3 sm:pl-1 sm:pr-3"
-          aria-label="Open account menu"
+          aria-label="Abrir menu da conta"
         >
           <Avatar className="size-8">
             {profile?.avatar_url ? (
@@ -111,7 +111,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             }
           >
             <User className="size-4" />
-            Profile
+            Perfil
           </DropdownMenuItem>
           <DropdownMenuItem
             render={
@@ -122,7 +122,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             }
           >
             <SettingsIcon className="size-4" />
-            Settings
+            Configurações
           </DropdownMenuItem>
           <DropdownMenuSeparator className="bg-slate-800" />
           <DropdownMenuItem
@@ -130,7 +130,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             className="text-slate-200 focus:bg-slate-800 focus:text-white"
           >
             <LogOut className="size-4" />
-            Sign out
+            Sair
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

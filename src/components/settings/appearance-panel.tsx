@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Check } from "lucide-react";
 
 import { useTheme } from "@/hooks/use-theme";
@@ -20,14 +21,18 @@ import { cn } from "@/lib/utils";
  */
 export function AppearancePanel() {
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-white">Color theme</h2>
+        <h2 className="text-lg font-semibold text-white">Tema de cor</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Pick the accent color used across the app. All themes stay
-          dark — only the primary color (buttons, active nav, badges)
-          changes. Saved to this device.
+          Escolha a cor de destaque usada no aplicativo. Todos os temas continuam escuros — apenas a cor principal (botões, navegação ativa, selos) muda. Salvo neste dispositivo.
         </p>
       </div>
 
@@ -39,7 +44,7 @@ export function AppearancePanel() {
             name={t.name}
             tagline={t.tagline}
             swatch={t.swatch}
-            isActive={t.id === theme}
+            isActive={mounted && t.id === theme}
             onPick={() => setTheme(t.id)}
           />
         ))}
@@ -68,7 +73,7 @@ function ThemeCard({
       type="button"
       onClick={onPick}
       aria-pressed={isActive}
-      aria-label={`Use ${name} theme`}
+      aria-label={`Usar tema ${name}`}
       className={cn(
         "flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
         isActive
@@ -88,7 +93,7 @@ function ThemeCard({
         {isActive && (
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
             <Check className="h-3 w-3" />
-            Active
+            Ativo
           </span>
         )}
       </div>
@@ -107,7 +112,7 @@ function ThemeCard({
         <span className="w-3 bg-slate-800" />
         <span className="w-3 bg-slate-900" />
       </div>
-      <span className="sr-only">Theme id: {id}</span>
+      <span className="sr-only">ID do tema: {id}</span>
     </button>
   );
 }

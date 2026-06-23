@@ -50,10 +50,13 @@ export function ProfileForm() {
 
   // Seed form state once the profile loads.
   useEffect(() => {
-    if (!profile) return;
-    setFullName(profile.full_name ?? '');
-    setEmail(profile.email ?? '');
-  }, [profile]);
+    if (profile) {
+      setFullName(profile.full_name ?? '');
+      setEmail(profile.email ?? '');
+    } else if (user) {
+      setEmail(user.email ?? '');
+    }
+  }, [profile, user]);
 
   // Cleanup object URLs to avoid leaks.
   useEffect(() => {
@@ -75,14 +78,14 @@ export function ProfileForm() {
     if (!file) return;
 
     if (!ALLOWED_MIME.has(file.type)) {
-      toast.error('Unsupported image type', {
-        description: 'Use PNG, JPG, WebP, or GIF.',
+      toast.error('Tipo de imagem não suportado', {
+        description: 'Use PNG, JPG, WebP ou GIF.',
       });
       return;
     }
     if (file.size > MAX_AVATAR_BYTES) {
-      toast.error('Image is too large', {
-        description: 'Maximum 2 MB.',
+      toast.error('A imagem é muito grande', {
+        description: 'Máximo de 2 MB.',
       });
       return;
     }
@@ -102,22 +105,22 @@ export function ProfileForm() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !profile) return;
+    if (!user) return;
 
     const trimmedName = fullName.trim();
     if (!trimmedName) {
-      toast.error('Display name is required');
+      toast.error('O nome de exibição é obrigatório');
       return;
     }
     const trimmedEmail = email.trim();
     if (!EMAIL_RE.test(trimmedEmail)) {
-      toast.error('Enter a valid email address');
+      toast.error('Digite um endereço de e-mail válido');
       return;
     }
 
     setSaving(true);
     try {
-      let nextAvatarUrl: string | null = profile.avatar_url ?? null;
+      let nextAvatarUrl: string | null = profile?.avatar_url ?? null;
 
       // Upload a newly-staged image, if any.
       if (pendingAvatar) {
@@ -132,7 +135,7 @@ export function ProfileForm() {
             contentType: pendingAvatar.type,
           });
         if (uploadError) {
-          throw new Error(`Upload failed: ${uploadError.message}`);
+          throw new Error(`Falha no envio: ${uploadError.message}`);
         }
         const {
           data: { publicUrl },
@@ -145,13 +148,14 @@ export function ProfileForm() {
       // Persist name + avatar to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          user_id: user.id,
           full_name: trimmedName,
+          email: trimmedEmail,
           avatar_url: nextAvatarUrl,
-        })
-        .eq('user_id', user.id);
+        }, { onConflict: 'user_id' });
       if (updateError) {
-        throw new Error(`Save failed: ${updateError.message}`);
+        throw new Error(`Falha ao salvar: ${updateError.message}`);
       }
 
       // Email change goes through Supabase Auth, which emails a
@@ -160,14 +164,14 @@ export function ProfileForm() {
       // after the user clicks the link (handled by the handle_new_user
       // trigger pattern in production deployments).
       let emailSent = false;
-      if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
+      if (!profile || trimmedEmail.toLowerCase() !== (profile.email ?? '').toLowerCase()) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: trimmedEmail,
         });
         if (emailError) {
           // Partial success: name/avatar saved but email didn't.
-          toast.success('Profile saved');
-          toast.error(`Email change failed: ${emailError.message}`);
+          toast.success('Perfil salvo');
+          toast.error(`Falha ao alterar o e-mail: ${emailError.message}`);
           setSaving(false);
           await refreshProfile();
           return;
@@ -183,11 +187,11 @@ export function ProfileForm() {
 
       toast.success(
         emailSent
-          ? 'Profile saved — check your email to confirm the address change'
-          : 'Profile saved',
+          ? 'Perfil salvo — verifique seu e-mail para confirmar a alteração do endereço'
+          : 'Perfil salvo',
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido';
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -195,14 +199,14 @@ export function ProfileForm() {
   };
 
   const dirty =
-    !!profile &&
-    (fullName.trim() !== (profile.full_name ?? '') ||
-      email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
-      pendingAvatar !== null ||
-      removeAvatar);
+    !profile ||
+    fullName.trim() !== (profile.full_name ?? '') ||
+    email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+    pendingAvatar !== null ||
+    removeAvatar;
 
   const joined = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString(undefined, {
+    ? new Date(user.created_at).toLocaleDateString('pt-BR', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -212,10 +216,9 @@ export function ProfileForm() {
   return (
     <Card className="bg-slate-900/40 border-slate-800">
       <CardHeader>
-        <CardTitle className="text-white">Profile</CardTitle>
+        <CardTitle className="text-white">Perfil</CardTitle>
         <CardDescription className="text-slate-400">
-          How you show up across the app. Your avatar and name appear in the
-          header, sidebar, and anywhere your teammates see you.
+          Como você aparece no aplicativo. Seu avatar e nome aparecem no cabeçalho, barra lateral e onde seus colegas de equipe te virem.
         </CardDescription>
       </CardHeader>
 
@@ -247,7 +250,7 @@ export function ProfileForm() {
                 disabled={saving}
               >
                 <Upload className="size-4" />
-                {currentAvatar ? 'Change photo' : 'Upload photo'}
+                {currentAvatar ? 'Alterar foto' : 'Enviar foto'}
               </Button>
               {currentAvatar && (
                 <Button
@@ -258,11 +261,11 @@ export function ProfileForm() {
                   className="text-slate-400 hover:text-white"
                 >
                   <Trash2 className="size-4" />
-                  Remove
+                  Remover
                 </Button>
               )}
               <p className="w-full text-xs text-slate-500">
-                PNG, JPG, WebP, or GIF. Up to 2 MB.
+                PNG, JPG, WebP ou GIF. Até 2 MB.
               </p>
             </div>
           </div>
@@ -270,7 +273,7 @@ export function ProfileForm() {
           {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="profile-full-name" className="text-slate-200">
-              Display name
+              Nome de exibição
             </Label>
             <Input
               id="profile-full-name"
@@ -286,7 +289,7 @@ export function ProfileForm() {
           {/* Email */}
           <div className="space-y-2">
             <Label htmlFor="profile-email" className="text-slate-200">
-              Email
+              E-mail
             </Label>
             <Input
               id="profile-email"
@@ -300,9 +303,9 @@ export function ProfileForm() {
               <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
                 <Mail className="mt-0.5 size-3.5 shrink-0" />
                 <span>
-                  Check the inbox for <strong>{profile?.email}</strong> and{' '}
-                  <strong>{email}</strong> — both need to confirm before the
-                  change takes effect.
+                  Verifique a caixa de entrada de <strong>{profile?.email}</strong> e{' '}
+                  <strong>{email}</strong> — ambos precisam confirmar antes que a
+                  alteração entre em vigor.
                 </span>
               </p>
             )}
@@ -311,21 +314,21 @@ export function ProfileForm() {
           {/* Read-only block */}
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Account details
+              Detalhes da conta
             </p>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-slate-500">Role</dt>
+                <dt className="text-slate-500">Função</dt>
                 <dd className="mt-0.5 font-mono text-slate-200">
                   {profile?.role ?? 'user'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">Joined</dt>
+                <dt className="text-slate-500">Membro desde</dt>
                 <dd className="mt-0.5 text-slate-200">{joined}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-slate-500">User ID</dt>
+                <dt className="text-slate-500">ID do Usuário</dt>
                 <dd className="mt-0.5 break-all font-mono text-xs text-slate-400">
                   {user?.id ?? '—'}
                 </dd>
@@ -336,19 +339,19 @@ export function ProfileForm() {
           {!profile && (
             <p className="flex items-center gap-2 text-sm text-slate-400">
               <CircleAlert className="size-4" />
-              Loading your profile…
+              Carregando seu perfil...
             </p>
           )}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={saving || !dirty || !profile}>
+            <Button type="submit" disabled={saving || !dirty}>
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Saving…
+                  Salvando...
                 </>
               ) : (
-                'Save changes'
+                'Salvar alterações'
               )}
             </Button>
           </div>

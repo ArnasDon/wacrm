@@ -116,26 +116,29 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    let accessToken = ''
+    if (config.provider !== 'evolution') {
+      accessToken = decrypt(config.access_token)
 
-    // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
-    // return from the send without waiting, so a failed upgrade just
-    // means the next send tries again. The upgrade is idempotent —
-    // concurrent sends both produce valid GCM ciphertexts of the same
-    // plaintext, last write wins.
-    if (isLegacyFormat(config.access_token)) {
-      void supabase
-        .from('whatsapp_config')
-        .update({ access_token: encrypt(accessToken) })
-        .eq('id', config.id)
-        .then(({ error }) => {
-          if (error) {
-            console.warn(
-              '[whatsapp/send] access_token GCM upgrade failed:',
-              error.message,
-            )
-          }
-        })
+      // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
+      // return from the send without waiting, so a failed upgrade just
+      // means the next send tries again. The upgrade is idempotent —
+      // concurrent sends both produce valid GCM ciphertexts of the same
+      // plaintext, last write wins.
+      if (isLegacyFormat(config.access_token)) {
+        void supabase
+          .from('whatsapp_config')
+          .update({ access_token: encrypt(accessToken) })
+          .eq('id', config.id)
+          .then(({ error }) => {
+            if (error) {
+              console.warn(
+                '[whatsapp/send] access_token GCM upgrade failed:',
+                error.message,
+              )
+            }
+          })
+      }
     }
 
     // Resolve the reply target (if any) to its Meta message_id, which is
@@ -178,6 +181,22 @@ export async function POST(request: Request) {
     let workingPhone = sanitizedPhone
 
     const attempt = async (phone: string): Promise<string> => {
+      if (config.provider === 'evolution') {
+        const { sendEvolutionTextMessage } = await import('@/lib/whatsapp/evolution-api');
+        let evoApiKey = config.evolution_api_key;
+        try { evoApiKey = decrypt(evoApiKey); } catch {}
+        const result = await sendEvolutionTextMessage({
+          config: {
+            apiUrl: config.evolution_api_url,
+            apiKey: evoApiKey,
+            instanceName: config.evolution_instance_name,
+          },
+          to: phone,
+          text: content_text || `[Template: ${template_name}]`, // Evolution Baileys integration doesn't support Meta's structured templates by default
+        });
+        return result.messageId;
+      }
+
       if (message_type === 'template') {
         const result = await sendTemplateMessage({
           phoneNumberId: config.phone_number_id,

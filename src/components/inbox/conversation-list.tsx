@@ -3,16 +3,25 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { Conversation, ConversationStatus } from "@/types";
-import { Search, ChevronDown } from "lucide-react";
+import type { Conversation, ConversationStatus, Tag } from "@/types";
+import {
+  Search,
+  Inbox,
+  Mail,
+  MessageCircle,
+  Clock,
+  CircleCheck,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -36,14 +45,18 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
+// Stable empty array so conversations without tags don't get a fresh
+// reference each render (which would needlessly re-render the item).
+const EMPTY_TAGS: Tag[] = [];
+
 type InboxFilter = ConversationStatus | "all" | "unread";
 
-const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = [
-  { label: "All", value: "all" },
-  { label: "Unread", value: "unread" },
-  { label: "Open", value: "open" },
-  { label: "Pending", value: "pending" },
-  { label: "Closed", value: "closed" },
+const FILTER_OPTIONS: { label: string; value: InboxFilter; icon: LucideIcon }[] = [
+  { label: "All", value: "all", icon: Inbox },
+  { label: "Unread", value: "unread", icon: Mail },
+  { label: "Open", value: "open", icon: MessageCircle },
+  { label: "Pending", value: "pending", icon: Clock },
+  { label: "Closed", value: "closed", icon: CircleCheck },
 ];
 
 export function ConversationList({
@@ -56,6 +69,13 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
+  // Maps to decorate each list item without coupling to the conversations
+  // array (which the parent rewrites on realtime events). Keyed so we can
+  // look up by the conversation's assigned_agent_id / contact_id.
+  const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map());
+  const [tagsByContact, setTagsByContact] = useState<Map<string, Tag[]>>(
+    new Map()
+  );
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -79,26 +99,62 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("*, contact:contacts(*)")
-        .order("last_message_at", { ascending: false });
+      // Conversations drive the list; profiles resolve the assigned agent's
+      // name and contact_tags decorate each row with the contact's tags.
+      // Tags/agents are kept in their own maps (not merged into the
+      // conversation objects) so the parent's realtime rewrites don't drop them.
+      const [convRes, profRes, tagRes] = await Promise.all([
+        supabase
+          .from("conversations")
+          .select("*, contact:contacts(*)")
+          .order("last_message_at", { ascending: false }),
+        supabase.from("profiles").select("user_id, full_name"),
+        supabase.from("contact_tags").select("contact_id, tag:tags(*)"),
+      ]);
 
       if (cancelled) return;
 
-      if (error) {
+      if (convRes.error) {
         // Supabase errors have non-enumerable properties — log fields explicitly
         console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
+          message: convRes.error.message,
+          details: convRes.error.details,
+          hint: convRes.error.hint,
+          code: convRes.error.code,
         });
         setLoading(false);
         return;
       }
 
-      onConversationsLoadedRef.current(data ?? []);
+      onConversationsLoadedRef.current(convRes.data ?? []);
+
+      if (profRes.data) {
+        setAgentNames(
+          new Map(
+            profRes.data
+              .filter((p) => p.user_id && p.full_name)
+              .map((p) => [p.user_id as string, p.full_name as string])
+          )
+        );
+      }
+
+      if (tagRes.data) {
+        // `tag` is a to-one relation so it resolves to a single row at
+        // runtime, though supabase-js types it as an array — normalize both.
+        const map = new Map<string, Tag[]>();
+        for (const row of tagRes.data as unknown as {
+          contact_id: string;
+          tag: Tag | Tag[] | null;
+        }[]) {
+          const tag = Array.isArray(row.tag) ? row.tag[0] : row.tag;
+          if (!tag) continue;
+          const arr = map.get(row.contact_id);
+          if (arr) arr.push(tag);
+          else map.set(row.contact_id, [tag]);
+        }
+        setTagsByContact(map);
+      }
+
       setLoading(false);
     })();
 
@@ -146,8 +202,6 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
-
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
     // the single pane showing; fixed 320px on desktop where it shares the
@@ -165,31 +219,35 @@ export function ConversationList({
           />
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-              {activeFilter?.label ?? "All"}
-              <ChevronDown className="h-3 w-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="border-border bg-popover"
-          >
-            {FILTER_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
-                className={cn(
-                  "text-sm",
-                  filter === opt.value
-                    ? "text-primary"
-                    : "text-popover-foreground"
-                )}
-              >
-                {opt.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <TooltipProvider>
+          <div className="flex items-center gap-1">
+            {FILTER_OPTIONS.map((opt) => {
+              const isActive = filter === opt.value;
+              return (
+                <Tooltip key={opt.value}>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant={isActive ? "secondary" : "ghost"}
+                        onClick={() => setFilter(opt.value)}
+                        aria-label={opt.label}
+                        aria-pressed={isActive}
+                        className={cn(
+                          !isActive && "text-muted-foreground"
+                        )}
+                      />
+                    }
+                  >
+                    <opt.icon className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent>{opt.label}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
       </div>
 
       {/* Conversation Items.
@@ -215,6 +273,12 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                assigneeName={
+                  conv.assigned_agent_id
+                    ? agentNames.get(conv.assigned_agent_id)
+                    : undefined
+                }
+                tags={tagsByContact.get(conv.contact_id) ?? EMPTY_TAGS}
               />
             ))}
           </div>
@@ -228,12 +292,18 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Full name of the agent the conversation is assigned to, if any. */
+  assigneeName?: string;
+  /** Tags linked to the conversation's contact. */
+  tags: Tag[];
 }
 
 function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  assigneeName,
+  tags,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || "Unknown";
@@ -297,6 +367,31 @@ function ConversationItem({
             />
           </div>
         </div>
+
+        {/* Assigned agent + contact tags. Agent comes first so it's
+            always the leading chip, then the contact's tags wrap below. */}
+        {(assigneeName || tags.length > 0) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {assigneeName && (
+              <span className="inline-flex max-w-full items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-inset ring-border">
+                <User className="size-2.5 shrink-0" />
+                <span className="truncate">{assigneeName}</span>
+              </span>
+            )}
+            {tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="max-w-full truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  backgroundColor: `${tag.color}20`,
+                  color: tag.color,
+                }}
+              >
+                {tag.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </button>
   );

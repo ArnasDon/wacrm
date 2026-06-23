@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
@@ -28,8 +29,15 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "WA CRM",
+  },
   icons: {
     icon: [{ url: "/icon" }],
+    apple: [{ url: "/icon-192.png" }],
   },
   formatDetection: {
     email: false,
@@ -41,6 +49,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#020617",
   colorScheme: "dark light",
+  viewportFit: "cover",
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -106,6 +115,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <ThemedToaster />
+          <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
     </html>

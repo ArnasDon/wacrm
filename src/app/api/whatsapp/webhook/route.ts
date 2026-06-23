@@ -7,6 +7,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { sendInboundPush } from '@/lib/push/send-inbound'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -630,6 +631,18 @@ async function processMessage(
   if (convError) {
     console.error('Error updating conversation:', convError)
   }
+
+  // Web push: notify the assigned agent (or, when unassigned, every
+  // owner/admin/agent of the account). Fire-and-forget and fully
+  // guarded so a push failure can never break inbound processing or
+  // delay the 200 we owe Meta.
+  void sendInboundPush({
+    accountId,
+    conversation,
+    contentText,
+    contactName: contactRecord.name ?? contactRecord.phone,
+    messageType: message.type,
+  }).catch((e) => console.error('push notify failed:', e))
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate

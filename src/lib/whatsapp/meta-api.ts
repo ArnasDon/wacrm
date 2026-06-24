@@ -1034,3 +1034,80 @@ export async function downloadMedia(
   const buffer = Buffer.from(await response.arrayBuffer())
   return { buffer, contentType }
 }
+
+// ============================================================
+// Calling (WhatsApp Business Calling API — VoIP/WebRTC)
+//
+// All call control flows through a single endpoint:
+//   POST /{phoneNumberId}/calls
+// with an `action` discriminator. For an inbound (user-initiated)
+// call the agent's browser produces an SDP answer which we relay to
+// Meta via `pre_accept` (early) and/or `accept` (on connect). `reject`
+// declines a ringing call; `terminate` hangs up an in-progress one.
+// `connect` (outbound dialing) is intentionally omitted until the
+// business-initiated phase.
+// ============================================================
+
+export type CallAction = 'pre_accept' | 'accept' | 'reject' | 'terminate'
+
+export interface ManageCallArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's call id (`call.id` from the webhook). */
+  callId: string
+  action: CallAction
+  /**
+   * The agent's SDP answer. Required for `pre_accept` / `accept`,
+   * omitted for `reject` / `terminate`.
+   */
+  sdp?: string
+}
+
+export interface ManageCallResult {
+  /** Meta echoes the call id; surfaced for logging/assertions. */
+  callId: string
+  /** Raw Meta response body (shape varies by action). */
+  raw: unknown
+}
+
+/**
+ * Send a call-control action to Meta for an existing call.
+ *
+ * Mirrors the message senders: named params, Bearer auth, and
+ * `throwMetaError` on a non-2xx so callers get Meta's real message.
+ */
+export async function manageCall(
+  args: ManageCallArgs
+): Promise<ManageCallResult> {
+  const { phoneNumberId, accessToken, callId, action, sdp } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/calls`
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    call_id: callId,
+    action,
+  }
+  // pre_accept / accept carry the agent's SDP answer.
+  if (action === 'pre_accept' || action === 'accept') {
+    if (!sdp) {
+      throw new Error(`manageCall: action '${action}' requires an SDP answer`)
+    }
+    body.session = { sdp_type: 'answer', sdp }
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    await throwMetaError(response, `Meta call ${action} error: ${response.status}`)
+  }
+
+  const raw = await response.json().catch(() => ({}))
+  return { callId, raw }
+}

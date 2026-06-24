@@ -11,6 +11,11 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import {
+  reduceCallEvent,
+  type WhatsAppCallEvent,
+  type ExistingCallRow,
+} from '@/lib/whatsapp/call-events'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +78,9 @@ interface WhatsAppWebhookEntry {
         timestamp: string
         recipient_id: string
       }>
+      // WhatsApp Business Calling — present on the `calls` change.field
+      // once the app is subscribed to it (migration 027 / Phase 1).
+      calls?: WhatsAppCallEvent[]
     }
     field: string
   }>
@@ -217,53 +225,32 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         }
       }
 
+      // Past this point we need the account config. Both inbound
+      // messages and call events (Phase 1) are keyed off the same
+      // whatsapp_config row resolved by phone_number_id — so resolve
+      // it once if EITHER is present, and skip when neither is.
+      const hasMessages = Boolean(value.messages && value.contacts)
+      const hasCalls = Boolean(value.calls && value.calls.length)
+      if (!hasMessages && !hasCalls) continue
+
+      const config = await resolveAccountConfig(value.metadata.phone_number_id)
+      if (!config) continue
+
+      // Handle WhatsApp Business calls (inbound voice — Phase 1).
+      if (hasCalls) {
+        for (const call of value.calls!) {
+          await handleCallEvent(call, config)
+        }
+      }
+
       // Handle incoming messages
-      if (!value.messages || !value.contacts) continue
-
-      const phoneNumberId = value.metadata.phone_number_id
-
-      // Find user's config by phone_number_id. `.single()` returns
-      // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
-      // operators see the real cause in logs. ≥2 rows shouldn't happen
-      // post-migration 013 (UNIQUE constraint), but a row created
-      // before the constraint, or a race, would still surface here.
-      const { data: configRows, error: configError } = await supabaseAdmin()
-        .from('whatsapp_config')
-        .select('*')
-        .eq('phone_number_id', phoneNumberId)
-
-      if (configError) {
-        console.error(
-          'Error fetching whatsapp_config for phone_number_id:',
-          phoneNumberId,
-          configError
-        )
-        continue
-      }
-
-      if (!configRows || configRows.length === 0) {
-        console.error('No config found for phone_number_id:', phoneNumberId)
-        continue
-      }
-
-      if (configRows.length > 1) {
-        console.error(
-          `Multiple configs (${configRows.length}) found for phone_number_id:`,
-          phoneNumberId,
-          '— inbound message dropped. Resolve duplicates so each number maps to a single account.',
-          'Account owners:',
-          configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
-        )
-        continue
-      }
-
-      const config = configRows[0]
+      if (!hasMessages) continue
 
       const decryptedAccessToken = decrypt(config.access_token)
 
-      for (let i = 0; i < value.messages.length; i++) {
-        const message = value.messages[i]
-        const contact = value.contacts[i] || value.contacts[0]
+      for (let i = 0; i < value.messages!.length; i++) {
+        const message = value.messages![i]
+        const contact = value.contacts![i] || value.contacts![0]
 
         await processMessage(
           message,
@@ -279,6 +266,119 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         )
       }
     }
+  }
+}
+
+/**
+ * Resolve the single whatsapp_config row for an inbound phone_number_id.
+ *
+ * `.single()` returns PGRST116 for both 0 rows AND ≥2 rows — distinguish
+ * them so operators see the real cause in logs. ≥2 rows shouldn't happen
+ * post-migration 013 (UNIQUE constraint), but a row created before the
+ * constraint, or a race, would still surface here. Returns null (caller
+ * skips the event) on any non-unique resolution.
+ */
+async function resolveAccountConfig(phoneNumberId: string) {
+  const { data: configRows, error: configError } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('*')
+    .eq('phone_number_id', phoneNumberId)
+
+  if (configError) {
+    console.error(
+      'Error fetching whatsapp_config for phone_number_id:',
+      phoneNumberId,
+      configError
+    )
+    return null
+  }
+
+  if (!configRows || configRows.length === 0) {
+    console.error('No config found for phone_number_id:', phoneNumberId)
+    return null
+  }
+
+  if (configRows.length > 1) {
+    console.error(
+      `Multiple configs (${configRows.length}) found for phone_number_id:`,
+      phoneNumberId,
+      '— inbound event dropped. Resolve duplicates so each number maps to a single account.',
+      'Account owners:',
+      configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
+    )
+    return null
+  }
+
+  return configRows[0]
+}
+
+/**
+ * Persist a WhatsApp Business call webhook event into `call_logs`.
+ *
+ * Resolves (or creates) the contact + conversation the same way inbound
+ * messages do — a call from a never-seen number still produces a contact
+ * and a conversation thread — then upserts the call row keyed on
+ * (account_id, meta_call_id). The pure status/SDP/timing mapping lives in
+ * `reduceCallEvent` (unit-tested); this function only does the I/O.
+ */
+async function handleCallEvent(
+  call: WhatsAppCallEvent,
+  config: { account_id: string; user_id: string }
+) {
+  if (!call.id || !call.from) {
+    console.error('[webhook] call event missing id/from — dropped', call)
+    return
+  }
+
+  const callerPhone = normalizePhone(call.from)
+
+  // Find or create contact (name unknown for calls — fall back to phone).
+  const contactOutcome = await findOrCreateContact(
+    config.account_id,
+    config.user_id,
+    callerPhone,
+    '',
+  )
+  if (!contactOutcome) return
+
+  const conversation = await findOrCreateConversation(
+    config.account_id,
+    config.user_id,
+    contactOutcome.contact.id,
+  )
+  if (!conversation) return
+
+  // Look up any existing row for this call so the reducer can make
+  // connect→terminate state decisions (e.g. answered → completed).
+  const { data: existingRow } = await supabaseAdmin()
+    .from('call_logs')
+    .select('status, started_at, answered_at')
+    .eq('account_id', config.account_id)
+    .eq('meta_call_id', call.id)
+    .maybeSingle()
+
+  const patch = reduceCallEvent(
+    call,
+    (existingRow as ExistingCallRow | null) ?? null,
+    new Date().toISOString(),
+  )
+
+  // Upsert on the (account_id, meta_call_id) unique index (migration 027)
+  // so duplicate webhook deliveries converge on one row.
+  const { error: upsertError } = await supabaseAdmin()
+    .from('call_logs')
+    .upsert(
+      {
+        account_id: config.account_id,
+        conversation_id: conversation.id,
+        contact_id: contactOutcome.contact.id,
+        ...patch,
+      },
+      { onConflict: 'account_id,meta_call_id' },
+    )
+
+  if (upsertError) {
+    console.error('[webhook] call_logs upsert failed:', upsertError.message)
   }
 }
 

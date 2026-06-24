@@ -193,6 +193,43 @@ export interface Message {
   interactive_reply_id?: string;
 }
 
+export type CallDirection = "inbound" | "outbound";
+
+export type CallStatus =
+  | "initiated"
+  | "ringing"
+  | "connected"
+  | "completed"
+  | "missed"
+  | "declined"
+  | "failed";
+
+/**
+ * A voice call over the WhatsApp Business Calling API. One row per
+ * call, child of a conversation (migration 027). `offer_sdp` holds the
+ * customer's SDP offer so the browser softphone can answer it.
+ */
+export interface CallLog {
+  id: string;
+  account_id: string;
+  conversation_id: string;
+  contact_id: string;
+  meta_call_id?: string | null;
+  direction: CallDirection;
+  status: CallStatus;
+  offer_sdp?: string | null;
+  sdp_type?: "offer" | "answer" | null;
+  answered_by_user_id?: string | null;
+  started_at: string;
+  answered_at?: string | null;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  end_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact;
+}
+
 export type ReactionActor = 'customer' | 'agent';
 
 export interface MessageReaction {

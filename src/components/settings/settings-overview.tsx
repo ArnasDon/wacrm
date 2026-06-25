@@ -170,6 +170,11 @@ export function SettingsOverview({
       ),
     },
     {
+      section: 'ai',
+      loading: false,
+      subtitle: 'Auto-reply from your knowledge base',
+    },
+    {
       section: 'members',
       loading: countsLoading,
       subtitle:

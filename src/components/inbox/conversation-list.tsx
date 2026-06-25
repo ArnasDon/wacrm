@@ -283,6 +283,16 @@ function ConversationItem({
             {conversation.last_message_text || "No messages yet"}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* AI handed this thread off to a human — surfaces live via the
+                existing conversations realtime UPDATE (page bumps the row's
+                ai_* fields into state). Tied to status==='pending' so a
+                taken-over/handed-back thread (escalation cleared) drops it. */}
+            {conversation.ai_escalated_at &&
+              conversation.status === "pending" && (
+                <span className="flex h-4 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-medium text-amber-500">
+                  🙋 Needs human
+                </span>
+              )}
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}

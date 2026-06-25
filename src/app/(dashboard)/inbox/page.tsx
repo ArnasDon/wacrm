@@ -537,6 +537,23 @@ export default function InboxPage() {
     [activeConversation]
   );
 
+  // Reflect a Take over / Hand back to AI toggle. Mirrors the status /
+  // assign handlers: patch the list row + active conversation optimistically
+  // so the header control and the "Needs human" badge update instantly; the
+  // realtime conversations.UPDATE the Supabase write emits converges the
+  // same fields as a no-op.
+  const handleAiHandlingChange = useCallback(
+    (conversationId: string, updates: Partial<Conversation>) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, ...updates } : c))
+      );
+      if (activeConversation?.id === conversationId) {
+        setActiveConversation((prev) => (prev ? { ...prev, ...updates } : prev));
+      }
+    },
+    [activeConversation]
+  );
+
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
   // conversation slides the thread in; the thread's back button pops
@@ -601,6 +618,7 @@ export default function InboxPage() {
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}
             onAssignChange={handleAssignChange}
+            onAiHandlingChange={handleAiHandlingChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}

@@ -26,6 +26,8 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Bot,
+  Hand,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +75,16 @@ interface MessageThreadProps {
   onAssignChange: (
     conversationId: string,
     assignedAgentId: string | null,
+  ) => void;
+  /**
+   * Reflect an AI hand-off toggle (Take over / Hand back to AI). Patches
+   * the affected conversation's `ai_*` fields in the page's state so the
+   * header + list badge update immediately; the realtime UPDATE that the
+   * Supabase write emits converges the same fields as a no-op.
+   */
+  onAiHandlingChange: (
+    conversationId: string,
+    updates: Partial<Conversation>,
   ) => void;
   /**
    * On mobile, the thread is shown full-screen with the conversation list
@@ -159,6 +171,7 @@ export function MessageThread({
   onUpdateMessage,
   onStatusChange,
   onAssignChange,
+  onAiHandlingChange,
   onBack,
   resyncToken = 0,
   onRefresh,
@@ -778,6 +791,55 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  // Take over (human owns the thread; AI goes silent) / Hand back to AI
+  // (re-arm the bot and clear the escalation). Reuses the same
+  // conversations.update() path the status/assign controls use; the
+  // backend send route already flips ai_handling=false on a manual reply,
+  // so this just covers the explicit toggle. Issue: spec §8.
+  const handleAiHandlingChange = useCallback(
+    async (handling: boolean) => {
+      if (!conversation) return;
+
+      const updates: Partial<Conversation> = handling
+        ? {
+            // Hand back: re-arm the bot and clear the escalation markers so
+            // the "Needs human" badge drops and the thread is bot-eligible.
+            ai_handling: true,
+            ai_escalated_at: undefined,
+            ai_escalation_reason: undefined,
+          }
+        : { ai_handling: false };
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("conversations")
+        // null clears the columns in the DB; the optimistic `updates`
+        // patch above uses `undefined` to drop them from the client row.
+        .update(
+          handling
+            ? {
+                ai_handling: true,
+                ai_escalated_at: null,
+                ai_escalation_reason: null,
+              }
+            : { ai_handling: false },
+        )
+        .eq("id", conversation.id);
+
+      if (error) {
+        console.error("Failed to update AI handling:", error);
+        toast.error(
+          handling ? "Failed to hand back to AI" : "Failed to take over",
+        );
+        return;
+      }
+
+      onAiHandlingChange(conversation.id, updates);
+      toast.success(handling ? "Handed back to AI" : "You've taken over");
+    },
+    [conversation, onAiHandlingChange],
+  );
+
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
@@ -807,6 +869,14 @@ export function MessageThread({
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? "Assigned")
     : "Assign";
+
+  // AI hand-off state for the header controls. `ai_handling` defaults to
+  // true at the DB level, so an undefined value reads as "AI is driving".
+  // The bot is considered active only while it's handling AND hasn't
+  // escalated; once escalated or taken over we offer "Hand back to AI".
+  const aiHandling = conversation.ai_handling !== false;
+  const aiEscalated = !!conversation.ai_escalated_at;
+  const aiActive = aiHandling && !aiEscalated;
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -902,6 +972,33 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+
+          {/* AI hand-off control — matches the other header pills. While
+              the AI is driving (handling && not escalated) we offer "Take
+              over"; once escalated or a human has taken over we offer
+              "Hand back to AI". Sending a manual reply also takes over
+              (handled in the backend send route). Spec §8. */}
+          {aiActive ? (
+            <button
+              type="button"
+              onClick={() => void handleAiHandlingChange(false)}
+              title="Take over — stop the AI on this conversation"
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Hand className="h-3 w-3" />
+              <span className="hidden sm:inline">Take over</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleAiHandlingChange(true)}
+              title="Hand back to AI — let the assistant resume"
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs text-primary hover:bg-muted"
+            >
+              <Bot className="h-3 w-3" />
+              <span className="hidden sm:inline">Hand back to AI</span>
             </button>
           )}
 

@@ -249,6 +249,7 @@ export function MessageBubble({
   onToggleReaction,
 }: MessageBubbleProps) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  const isBot = message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
@@ -282,6 +283,13 @@ export function MessageBubble({
             isAgent ? "justify-end" : "justify-start",
           )}
         >
+          {/* Mark assistant-sent replies so agents can tell at a glance
+              which messages the AI sent (sender_type==='bot'). */}
+          {isBot && (
+            <span className="rounded bg-primary-foreground/20 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary-foreground/90">
+              AI
+            </span>
+          )}
           <span
             className={cn(
               "text-[10px]",

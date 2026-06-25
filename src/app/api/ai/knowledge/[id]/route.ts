@@ -89,8 +89,7 @@ export async function PATCH(
     const update: Record<string, unknown> = {};
 
     if ('title' in body) {
-      const rawTitle =
-        typeof body.title === 'string' ? body.title.trim() : '';
+      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
       if (!rawTitle) {
         return NextResponse.json(
           { error: "'title' must be a non-empty string" },

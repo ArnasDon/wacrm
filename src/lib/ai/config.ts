@@ -11,9 +11,9 @@
  * skip`, and the broader fail-safe-to-human bias of §1).
  */
 
-import { type AiAssistantConfig } from "@/types";
+import { type AiAssistantConfig } from '@/types';
 
-import { supabaseAdmin } from "./admin-client";
+import { supabaseAdmin } from './admin-client';
 
 /**
  * Load `ai_assistant_config` for one account.
@@ -24,18 +24,18 @@ import { supabaseAdmin } from "./admin-client";
  * ever matches.
  */
 export async function loadAiConfig(
-  accountId: string,
+  accountId: string
 ): Promise<AiAssistantConfig | null> {
   const db = supabaseAdmin();
 
   const { data, error } = await db
-    .from("ai_assistant_config")
-    .select("*")
-    .eq("account_id", accountId)
+    .from('ai_assistant_config')
+    .select('*')
+    .eq('account_id', accountId)
     .maybeSingle();
 
   if (error) {
-    console.error("[ai] loadAiConfig error:", error.message);
+    console.error('[ai] loadAiConfig error:', error.message);
     return null;
   }
 

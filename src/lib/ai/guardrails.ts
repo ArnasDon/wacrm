@@ -26,7 +26,7 @@
  * `ai_reply_log.reason` / `conversations.ai_escalation_reason`.
  */
 
-import { type AiEscalationReason } from "@/types";
+import { type AiEscalationReason } from '@/types';
 
 /** Outcome of the deterministic guardrail scan. */
 export interface GuardrailResult {
@@ -54,44 +54,44 @@ export interface GuardrailResult {
  * would double-cover and over-escalate (e.g. "your agent called me").
  */
 const HUMAN_REQUEST_VERBS = [
-  "talk to",
-  "speak to",
-  "speak with",
-  "talk with",
-  "chat with",
-  "connect me to",
-  "connect me with",
-  "transfer me to",
-  "put me through to",
-  "get me",
-  "i want",
-  "i need",
+  'talk to',
+  'speak to',
+  'speak with',
+  'talk with',
+  'chat with',
+  'connect me to',
+  'connect me with',
+  'transfer me to',
+  'put me through to',
+  'get me',
+  'i want',
+  'i need',
   "i'd like",
-  "i would like",
-  "can i talk to",
-  "can i speak to",
-  "let me talk to",
-  "let me speak to",
+  'i would like',
+  'can i talk to',
+  'can i speak to',
+  'let me talk to',
+  'let me speak to',
 ] as const;
 
 const HUMAN_REQUEST_NOUNS = [
-  "a human",
-  "a real human",
-  "a real person",
-  "a person",
-  "a real agent",
-  "an agent",
-  "a live agent",
-  "a human agent",
-  "a representative",
-  "a rep",
-  "a manager",
-  "a real human being",
-  "customer service",
-  "customer support",
-  "support agent",
-  "someone real",
-  "a real one",
+  'a human',
+  'a real human',
+  'a real person',
+  'a person',
+  'a real agent',
+  'an agent',
+  'a live agent',
+  'a human agent',
+  'a representative',
+  'a rep',
+  'a manager',
+  'a real human being',
+  'customer service',
+  'customer support',
+  'support agent',
+  'someone real',
+  'a real one',
 ] as const;
 
 /**
@@ -103,8 +103,8 @@ function phraseToPattern(phrase: string): string {
   return phrase
     .trim()
     .split(/\s+/)
-    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("\\s+");
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
 }
 
 /**
@@ -115,7 +115,7 @@ function phraseToPattern(phrase: string): string {
  * and ends with a word character, so `\b` on both sides is sound.
  */
 function phraseRegex(phrase: string): RegExp {
-  return new RegExp(`\\b${phraseToPattern(phrase)}\\b`, "i");
+  return new RegExp(`\\b${phraseToPattern(phrase)}\\b`, 'i');
 }
 
 /**
@@ -145,7 +145,7 @@ function requestsHuman(text: string): boolean {
  */
 function matchesKeyword(text: string, keywords: readonly string[]): boolean {
   for (const keyword of keywords) {
-    if (typeof keyword !== "string") continue;
+    if (typeof keyword !== 'string') continue;
     const trimmed = keyword.trim();
     if (trimmed.length === 0) continue;
     if (phraseRegex(trimmed).test(text)) return true;
@@ -168,16 +168,16 @@ function matchesKeyword(text: string, keywords: readonly string[]): boolean {
  */
 export function shouldForceEscalate(
   inboundText: string,
-  escalationKeywords: readonly string[],
+  escalationKeywords: readonly string[]
 ): GuardrailResult {
-  if (typeof inboundText !== "string" || inboundText.trim().length === 0) {
+  if (typeof inboundText !== 'string' || inboundText.trim().length === 0) {
     return { escalate: false };
   }
 
   const keywords = Array.isArray(escalationKeywords) ? escalationKeywords : [];
 
   if (matchesKeyword(inboundText, keywords) || requestsHuman(inboundText)) {
-    return { escalate: true, reason: "keyword" };
+    return { escalate: true, reason: 'keyword' };
   }
 
   return { escalate: false };

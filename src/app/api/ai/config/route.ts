@@ -284,7 +284,29 @@ export async function PUT(request: Request) {
             { status: 400 }
           );
         }
-        updates.logo_url = url.length === 0 ? null : url;
+        if (url.length === 0) {
+          updates.logo_url = null;
+        } else {
+          // Only accept http(s) URLs — reject `javascript:` / `data:` and
+          // other schemes so a stored logo can never become an injection
+          // vector wherever it's later rendered as an <img src>.
+          let parsed: URL;
+          try {
+            parsed = new URL(url);
+          } catch {
+            return NextResponse.json(
+              { error: "'logo_url' must be a valid URL" },
+              { status: 400 }
+            );
+          }
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            return NextResponse.json(
+              { error: "'logo_url' must be an http(s) URL" },
+              { status: 400 }
+            );
+          }
+          updates.logo_url = url;
+        }
       } else {
         return NextResponse.json(
           { error: "'logo_url' must be a string or null" },

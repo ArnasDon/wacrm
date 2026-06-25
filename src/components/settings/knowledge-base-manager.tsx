@@ -87,8 +87,9 @@ export function KnowledgeBaseManager() {
 
   // Per-row in-flight markers so a toggle/delete only spins its own row.
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [entryToDelete, setEntryToDelete] =
-    useState<KnowledgeBaseEntry | null>(null);
+  const [entryToDelete, setEntryToDelete] = useState<KnowledgeBaseEntry | null>(
+    null
+  );
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
@@ -129,7 +130,8 @@ export function KnowledgeBaseManager() {
 
   const pct = Math.min(100, (enabledTokens / TOKEN_BUDGET) * 100);
   const overBudget = enabledTokens > TOKEN_BUDGET;
-  const nearBudget = !overBudget && enabledTokens >= TOKEN_BUDGET * WARN_FRACTION;
+  const nearBudget =
+    !overBudget && enabledTokens >= TOKEN_BUDGET * WARN_FRACTION;
 
   function openCreate() {
     setEditingId(null);
@@ -163,19 +165,17 @@ export function KnowledgeBaseManager() {
           method: isEdit ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, content }),
-        },
+        }
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(
-          data?.error || `Save failed (HTTP ${res.status})`,
-        );
+        throw new Error(data?.error || `Save failed (HTTP ${res.status})`);
       }
       const saved = data.entry as KnowledgeBaseEntry;
       setEntries((prev) =>
         isEdit
           ? prev.map((e) => (e.id === saved.id ? saved : e))
-          : [saved, ...prev],
+          : [saved, ...prev]
       );
       toast.success(isEdit ? 'Entry updated' : 'Entry added');
       setDialogOpen(false);
@@ -192,7 +192,7 @@ export function KnowledgeBaseManager() {
     setTogglingId(entry.id);
     // Optimistic flip — revert on failure.
     setEntries((prev) =>
-      prev.map((e) => (e.id === entry.id ? { ...e, enabled: next } : e)),
+      prev.map((e) => (e.id === entry.id ? { ...e, enabled: next } : e))
     );
     try {
       const res = await fetch(`/api/ai/knowledge/${entry.id}`, {
@@ -206,17 +206,19 @@ export function KnowledgeBaseManager() {
       }
       setEntries((prev) =>
         prev.map((e) =>
-          e.id === entry.id ? (data.entry as KnowledgeBaseEntry) : e,
-        ),
+          e.id === entry.id ? (data.entry as KnowledgeBaseEntry) : e
+        )
       );
     } catch (err) {
       // Revert the optimistic flip.
       setEntries((prev) =>
         prev.map((e) =>
-          e.id === entry.id ? { ...e, enabled: entry.enabled } : e,
-        ),
+          e.id === entry.id ? { ...e, enabled: entry.enabled } : e
+        )
       );
-      toast.error(err instanceof Error ? err.message : 'Failed to update entry');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update entry'
+      );
     } finally {
       setTogglingId(null);
     }
@@ -238,7 +240,9 @@ export function KnowledgeBaseManager() {
       toast.success('Entry deleted');
       setEntryToDelete(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete entry');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to delete entry'
+      );
     } finally {
       setDeleting(false);
     }
@@ -273,7 +277,7 @@ export function KnowledgeBaseManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="text-primary size-6 animate-spin" />
       </div>
     );
   }
@@ -282,13 +286,12 @@ export function KnowledgeBaseManager() {
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold tracking-tight text-foreground">
+          <h3 className="text-foreground text-base font-semibold tracking-tight">
             Knowledge base
           </h3>
-          <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">
-            The assistant answers strictly from these pages. Disabled
-            entries are excluded from the prompt. Import a file or write
-            a page by hand.
+          <p className="text-muted-foreground mt-1 max-w-[62ch] text-sm">
+            The assistant answers strictly from these pages. Disabled entries
+            are excluded from the prompt. Import a file or write a page by hand.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -327,7 +330,7 @@ export function KnowledgeBaseManager() {
       <Card>
         <CardContent className="space-y-2 py-4">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-foreground text-sm font-medium">
               Knowledge base size
             </span>
             <span
@@ -337,14 +340,14 @@ export function KnowledgeBaseManager() {
                   ? 'text-red-400'
                   : nearBudget
                     ? 'text-amber-400'
-                    : 'text-muted-foreground',
+                    : 'text-muted-foreground'
               )}
             >
               {fmtTokens(enabledTokens)} / {fmtTokens(TOKEN_BUDGET)} tokens
             </span>
           </div>
           <div
-            className="h-2 w-full overflow-hidden rounded-full bg-muted"
+            className="bg-muted h-2 w-full overflow-hidden rounded-full"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={TOKEN_BUDGET}
@@ -358,17 +361,17 @@ export function KnowledgeBaseManager() {
                   ? 'bg-red-500'
                   : nearBudget
                     ? 'bg-amber-500'
-                    : 'bg-primary',
+                    : 'bg-primary'
               )}
               style={{ width: `${Math.max(pct, enabledTokens > 0 ? 2 : 0)}%` }}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             {overBudget ? (
               <span className="text-red-400">
-                Over the {fmtTokens(TOKEN_BUDGET)}-token budget — replies
-                cost more and may slow down. Trim entries, or this is the
-                signal to switch to retrieval (RAG).
+                Over the {fmtTokens(TOKEN_BUDGET)}-token budget — replies cost
+                more and may slow down. Trim entries, or this is the signal to
+                switch to retrieval (RAG).
               </span>
             ) : nearBudget ? (
               <span className="text-amber-400">
@@ -390,20 +393,20 @@ export function KnowledgeBaseManager() {
       {entries.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-            <FileText className="size-6 text-muted-foreground" />
-            <p className="mt-2 text-sm text-muted-foreground">
+            <FileText className="text-muted-foreground size-6" />
+            <p className="text-muted-foreground mt-2 text-sm">
               No knowledge base entries yet.
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Add a page or import a file so the assistant has something
-              to answer from.
+            <p className="text-muted-foreground mt-1 text-xs">
+              Add a page or import a file so the assistant has something to
+              answer from.
             </p>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardContent className="p-0">
-            <ul className="divide-y divide-border">
+            <ul className="divide-border divide-y">
               {entries.map((entry) => (
                 <li
                   key={entry.id}
@@ -416,12 +419,12 @@ export function KnowledgeBaseManager() {
                           'truncate text-sm font-medium',
                           entry.enabled
                             ? 'text-foreground'
-                            : 'text-muted-foreground',
+                            : 'text-muted-foreground'
                         )}
                       >
                         {entry.title}
                       </span>
-                      <Badge className="border-border bg-muted text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <Badge className="border-border bg-muted text-muted-foreground text-[10px] tracking-wide uppercase">
                         {entry.source_type === 'file' ? (
                           <>
                             <FileText className="size-2.5" />
@@ -435,10 +438,10 @@ export function KnowledgeBaseManager() {
                         )}
                       </Badge>
                     </div>
-                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                    <p className="text-muted-foreground mt-1 line-clamp-1 text-xs">
                       {entry.content}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                    <p className="text-muted-foreground mt-1 text-xs tabular-nums">
                       ~{fmtTokens(entry.token_estimate ?? 0)} tokens
                       {entry.source_filename
                         ? ` · ${entry.source_filename}`
@@ -447,7 +450,7 @@ export function KnowledgeBaseManager() {
                   </div>
 
                   <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                    <label className="flex items-center gap-2 pr-1 text-xs text-muted-foreground">
+                    <label className="text-muted-foreground flex items-center gap-2 pr-1 text-xs">
                       {togglingId === entry.id ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : null}
@@ -467,7 +470,7 @@ export function KnowledgeBaseManager() {
                       size="icon"
                       onClick={() => openEdit(entry)}
                       aria-label="Edit entry"
-                      className="size-8 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      className="text-muted-foreground hover:bg-primary/10 hover:text-primary size-8"
                     >
                       <Pencil className="size-3.5" />
                     </Button>
@@ -476,7 +479,7 @@ export function KnowledgeBaseManager() {
                       size="icon"
                       onClick={() => setEntryToDelete(entry)}
                       aria-label="Delete entry"
-                      className="size-8 text-muted-foreground hover:bg-red-950/30 hover:text-red-400"
+                      className="text-muted-foreground size-8 hover:bg-red-950/30 hover:text-red-400"
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -499,14 +502,16 @@ export function KnowledgeBaseManager() {
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto border-border bg-popover sm:max-w-2xl">
+        <DialogContent className="border-border bg-popover max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">
-              {editingId ? 'Edit knowledge base entry' : 'New knowledge base entry'}
+              {editingId
+                ? 'Edit knowledge base entry'
+                : 'New knowledge base entry'}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              Write a focused page (markdown supported). The assistant
-              answers using the combined text of every enabled entry.
+              Write a focused page (markdown supported). The assistant answers
+              using the combined text of every enabled entry.
             </DialogDescription>
           </DialogHeader>
 
@@ -530,14 +535,16 @@ export function KnowledgeBaseManager() {
               </Label>
               <Textarea
                 id="kb-content"
-                placeholder={'## Refunds\nWe offer refunds within 30 days of purchase…'}
+                placeholder={
+                  '## Refunds\nWe offer refunds within 30 days of purchase…'
+                }
                 value={form.content}
                 rows={12}
                 maxLength={200_000}
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
-                className="resize-y border-border bg-muted font-mono text-sm text-foreground placeholder:text-muted-foreground"
+                className="border-border bg-muted text-foreground placeholder:text-muted-foreground resize-y font-mono text-sm"
               />
-              <p className="text-[11px] text-muted-foreground tabular-nums">
+              <p className="text-muted-foreground text-[11px] tabular-nums">
                 ~{fmtTokens(Math.ceil(form.content.trim().length / 4))} tokens
               </p>
             </div>

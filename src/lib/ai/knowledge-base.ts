@@ -16,9 +16,9 @@
  * Flows and automations engines already do (spec §4 / §12).
  */
 
-import { type KnowledgeBaseEntry } from "@/types";
+import { type KnowledgeBaseEntry } from '@/types';
 
-import { supabaseAdmin } from "./admin-client";
+import { supabaseAdmin } from './admin-client';
 
 /**
  * Divisor for the rough token estimate. ~4 characters per token is the
@@ -41,19 +41,19 @@ const CHARS_PER_TOKEN = 4;
  * (spec §7.2), which is the safe fail-to-human outcome (spec §1).
  */
 export async function loadEnabledEntries(
-  accountId: string,
+  accountId: string
 ): Promise<KnowledgeBaseEntry[]> {
   const db = supabaseAdmin();
 
   const { data, error } = await db
-    .from("knowledge_base_entries")
-    .select("*")
-    .eq("account_id", accountId)
-    .eq("enabled", true)
-    .order("created_at", { ascending: true });
+    .from('knowledge_base_entries')
+    .select('*')
+    .eq('account_id', accountId)
+    .eq('enabled', true)
+    .order('created_at', { ascending: true });
 
   if (error) {
-    console.error("[ai] loadEnabledEntries error:", error.message);
+    console.error('[ai] loadEnabledEntries error:', error.message);
     return [];
   }
 
@@ -70,7 +70,7 @@ export async function loadEnabledEntries(
  * non-empty text counts as at least one token.
  */
 export function estimateTokens(text: string): number {
-  if (typeof text !== "string" || text.length === 0) {
+  if (typeof text !== 'string' || text.length === 0) {
     return 0;
   }
 

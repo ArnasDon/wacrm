@@ -43,11 +43,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Card,
   CardContent,
@@ -81,11 +77,7 @@ const MODEL_OPTIONS: { value: string; label: string }[] = [
 // migration 023), so restrict to those — GIF is not accepted there.
 const LOGO_BUCKET = 'chat-media';
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
-const LOGO_ALLOWED_MIME = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-]);
+const LOGO_ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 // Bounds mirrored from the PUT /api/ai/config validator so the UI
 // stops obvious over-length input before a round-trip.
@@ -105,11 +97,11 @@ export function AiAssistantSettings() {
           />
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-              <ShieldAlert className="size-6 text-muted-foreground" />
-              <p className="mt-2 text-sm text-muted-foreground">
+              <ShieldAlert className="text-muted-foreground size-6" />
+              <p className="text-muted-foreground mt-2 text-sm">
                 Only admins can configure the AI assistant.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="text-muted-foreground mt-1 text-xs">
                 Ask an account admin if you need changes made here.
               </p>
             </CardContent>
@@ -214,7 +206,11 @@ function AiAssistantSettingsInner() {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       addKeyword(keywordDraft);
-    } else if (e.key === 'Backspace' && keywordDraft === '' && keywords.length) {
+    } else if (
+      e.key === 'Backspace' &&
+      keywordDraft === '' &&
+      keywords.length
+    ) {
       e.preventDefault();
       setKeywords((prev) => prev.slice(0, -1));
     }
@@ -257,13 +253,9 @@ function AiAssistantSettingsInner() {
       return;
     }
     const cap = Number(dailyReplyCap);
-    if (
-      !Number.isInteger(cap) ||
-      cap < 1 ||
-      cap > MAX_DAILY_REPLY_CAP
-    ) {
+    if (!Number.isInteger(cap) || cap < 1 || cap > MAX_DAILY_REPLY_CAP) {
       toast.error(
-        `Daily reply cap must be a whole number between 1 and ${MAX_DAILY_REPLY_CAP}`,
+        `Daily reply cap must be a whole number between 1 and ${MAX_DAILY_REPLY_CAP}`
       );
       return;
     }
@@ -329,7 +321,7 @@ function AiAssistantSettingsInner() {
           description="Auto-reply to WhatsApp messages from your knowledge base, with a clean hand-off to a human when unsure."
         />
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="text-primary size-6 animate-spin" />
         </div>
       </section>
     );
@@ -352,11 +344,11 @@ function AiAssistantSettingsInner() {
                 Anthropic API key not configured
               </AlertTitle>
               <AlertDescription className="text-sm text-amber-100/80">
-                The server has no <code className="text-xs">ANTHROPIC_API_KEY</code>{' '}
-                set, so the assistant can&apos;t send replies — every message
-                will be handed to a human. Set the key in the server
-                environment to enable auto-replies. You can still configure
-                everything else here.
+                The server has no{' '}
+                <code className="text-xs">ANTHROPIC_API_KEY</code> set, so the
+                assistant can&apos;t send replies — every message will be handed
+                to a human. Set the key in the server environment to enable
+                auto-replies. You can still configure everything else here.
               </AlertDescription>
             </div>
           </div>
@@ -367,17 +359,17 @@ function AiAssistantSettingsInner() {
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
           <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+            <span className="bg-primary-soft text-primary flex size-9 shrink-0 items-center justify-center rounded-lg">
               <Bot className="size-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">
+              <p className="text-foreground text-sm font-semibold">
                 Auto-reply to inbound WhatsApp messages
               </p>
-              <p className="mt-0.5 max-w-[62ch] text-xs text-muted-foreground">
-                When on, the assistant answers confidently-grounded
-                questions and escalates anything it&apos;s unsure about to
-                a human. Off by default.
+              <p className="text-muted-foreground mt-0.5 max-w-[62ch] text-xs">
+                When on, the assistant answers confidently-grounded questions
+                and escalates anything it&apos;s unsure about to a human. Off by
+                default.
               </p>
             </div>
           </div>
@@ -405,9 +397,9 @@ function AiAssistantSettingsInner() {
         <CardHeader>
           <CardTitle className="text-foreground">Prompt & behaviour</CardTitle>
           <CardDescription className="text-muted-foreground">
-            The system prompt steers tone and the grounding rules. The
-            default already instructs the assistant to answer only from
-            your knowledge base and to escalate when unsure.
+            The system prompt steers tone and the grounding rules. The default
+            already instructs the assistant to answer only from your knowledge
+            base and to escalate when unsure.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -422,9 +414,9 @@ function AiAssistantSettingsInner() {
               maxLength={20_000}
               onChange={(e) => setSystemPrompt(e.target.value)}
               placeholder="You are the customer-support assistant for…"
-              className="resize-y border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground"
+              className="border-border bg-muted text-foreground placeholder:text-muted-foreground resize-y text-sm"
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-muted-foreground text-[11px]">
               Use <code className="text-[11px]">{'{business_name}'}</code> to
               insert the business name. The knowledge base is appended
               automatically — don&apos;t paste it here.
@@ -442,21 +434,21 @@ function AiAssistantSettingsInner() {
               maxLength={2_000}
               onChange={(e) => setHandoffMessage(e.target.value)}
               placeholder="Thanks! Let me connect you with a team member who can help."
-              className="resize-y border-border bg-muted text-sm text-foreground placeholder:text-muted-foreground"
+              className="border-border bg-muted text-foreground placeholder:text-muted-foreground resize-y text-sm"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Sent to the customer when a conversation is escalated to a
-              human. Leave blank to send nothing on hand-off.
+            <p className="text-muted-foreground text-[11px]">
+              Sent to the customer when a conversation is escalated to a human.
+              Leave blank to send nothing on hand-off.
             </p>
           </div>
 
           <div className="space-y-2">
             <Label className="text-muted-foreground">Escalation keywords</Label>
-            <div className="flex flex-wrap gap-1.5 rounded-md border border-border bg-muted p-2">
+            <div className="border-border bg-muted flex flex-wrap gap-1.5 rounded-md border p-2">
               {keywords.map((kw) => (
                 <Badge
                   key={kw}
-                  className="gap-1 border-border bg-card text-xs text-foreground"
+                  className="border-border bg-card text-foreground gap-1 text-xs"
                 >
                   {kw}
                   <button
@@ -489,17 +481,17 @@ function AiAssistantSettingsInner() {
                     size="icon"
                     onClick={() => addKeyword(keywordDraft)}
                     aria-label="Add keyword"
-                    className="size-6 text-muted-foreground hover:text-primary"
+                    className="text-muted-foreground hover:text-primary size-6"
                   >
                     <Plus className="size-3.5" />
                   </Button>
                 )}
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              An inbound message containing any of these escalates straight
-              to a human — no AI reply attempted. Press Enter or comma to
-              add. Case-insensitive.
+            <p className="text-muted-foreground text-[11px]">
+              An inbound message containing any of these escalates straight to a
+              human — no AI reply attempted. Press Enter or comma to add.
+              Case-insensitive.
             </p>
           </div>
         </CardContent>
@@ -510,9 +502,8 @@ function AiAssistantSettingsInner() {
         <CardHeader>
           <CardTitle className="text-foreground">Persona</CardTitle>
           <CardDescription className="text-muted-foreground">
-            How the assistant introduces itself. In v1 the logo is stored
-            as persona context only — there&apos;s no customer-facing
-            surface yet.
+            How the assistant introduces itself. In v1 the logo is stored as
+            persona context only — there&apos;s no customer-facing surface yet.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -521,7 +512,7 @@ function AiAssistantSettingsInner() {
               {logoUrl ? (
                 <AvatarImage src={logoUrl} alt={businessName || 'Logo'} />
               ) : null}
-              <AvatarFallback className="bg-primary/10 text-base text-primary">
+              <AvatarFallback className="bg-primary/10 text-primary text-base">
                 {initial}
               </AvatarFallback>
             </Avatar>
@@ -558,7 +549,7 @@ function AiAssistantSettingsInner() {
                   Remove
                 </Button>
               )}
-              <p className="w-full text-xs text-muted-foreground">
+              <p className="text-muted-foreground w-full text-xs">
                 PNG, JPG, or WebP. Up to 2 MB.
               </p>
             </div>
@@ -576,7 +567,7 @@ function AiAssistantSettingsInner() {
               placeholder="e.g. Acme Logistics"
               className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-muted-foreground text-[11px]">
               Substituted into the prompt wherever{' '}
               <code className="text-[11px]">{'{business_name}'}</code> appears.
             </p>
@@ -605,7 +596,7 @@ function AiAssistantSettingsInner() {
                 setModel(val);
               }}
             >
-              <SelectTrigger className="w-full border-border bg-muted text-foreground">
+              <SelectTrigger className="border-border bg-muted text-foreground w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="border-border bg-popover">
@@ -620,9 +611,9 @@ function AiAssistantSettingsInner() {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
-              Sonnet is the recommended balance; Haiku is cheaper and
-              faster for simpler knowledge bases.
+            <p className="text-muted-foreground text-[11px]">
+              Sonnet is the recommended balance; Haiku is cheaper and faster for
+              simpler knowledge bases.
             </p>
           </div>
 
@@ -642,9 +633,9 @@ function AiAssistantSettingsInner() {
               }
               className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Maximum AI replies per day for this account. Once reached,
-              new messages escalate to a human until tomorrow.
+            <p className="text-muted-foreground text-[11px]">
+              Maximum AI replies per day for this account. Once reached, new
+              messages escalate to a human until tomorrow.
             </p>
           </div>
         </CardContent>

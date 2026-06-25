@@ -393,6 +393,10 @@ export async function POST(request: Request) {
     // from here on, so the AI assistant goes silent on it immediately
     // (mirrors the flow pause below — the strongest "human is here"
     // signal). "Hand back to AI" in the inbox flips this back to true.
+    //
+    // Also clear any AI escalation markers: if the AI had escalated this
+    // thread (status='pending' + ai_escalated_at), a human now replying
+    // resolves it, so the "Needs human" badge drops instead of sticking.
     await supabase
       .from('conversations')
       .update({
@@ -400,6 +404,8 @@ export async function POST(request: Request) {
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         ai_handling: false,
+        ai_escalated_at: null,
+        ai_escalation_reason: null,
       })
       .eq('id', conversation_id)
 

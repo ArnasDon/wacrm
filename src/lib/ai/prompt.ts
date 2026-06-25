@@ -29,9 +29,9 @@
  * can pass them straight through with no remapping.
  */
 
-import type Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from '@anthropic-ai/sdk';
 
-import { type AiAssistantConfig, type KnowledgeBaseEntry } from "@/types";
+import { type AiAssistantConfig, type KnowledgeBaseEntry } from '@/types';
 
 /**
  * Default number of conversation history turns to include for context
@@ -45,8 +45,8 @@ export const HISTORY_MESSAGE_LIMIT = 10;
  * tell exactly where the grounding material begins and ends and can't
  * confuse KB content with instructions.
  */
-const KB_HEADER = "===== KNOWLEDGE BASE (START) =====";
-const KB_FOOTER = "===== KNOWLEDGE BASE (END) =====";
+const KB_HEADER = '===== KNOWLEDGE BASE (START) =====';
+const KB_FOOTER = '===== KNOWLEDGE BASE (END) =====';
 
 /**
  * Shown in place of the KB body when an account has no enabled entries.
@@ -55,7 +55,7 @@ const KB_FOOTER = "===== KNOWLEDGE BASE (END) =====";
  * to ground on — which, combined with the "answer ONLY from the KB"
  * system prompt, drives it to `confident: false` rather than guessing.
  */
-const KB_EMPTY_PLACEHOLDER = "(No knowledge base entries are available.)";
+const KB_EMPTY_PLACEHOLDER = '(No knowledge base entries are available.)';
 
 /**
  * Minimal history-message shape consumed by `buildMessages`. Decoupled
@@ -65,7 +65,7 @@ const KB_EMPTY_PLACEHOLDER = "(No knowledge base entries are available.)";
  */
 export interface PromptHistoryMessage {
   /** Who sent it: `customer` → `user`; `agent` / `bot` → `assistant`. */
-  sender_type: "customer" | "agent" | "bot";
+  sender_type: 'customer' | 'agent' | 'bot';
   /** The text body. Empty / missing entries are dropped (see below). */
   content_text?: string | null;
 }
@@ -79,10 +79,10 @@ export interface PromptHistoryMessage {
  */
 function renderPersona(config: AiAssistantConfig): string {
   const businessName =
-    typeof config.business_name === "string" &&
+    typeof config.business_name === 'string' &&
     config.business_name.trim().length > 0
       ? config.business_name.trim()
-      : "our business";
+      : 'our business';
 
   return config.system_prompt.replace(/\{business_name\}/g, businessName);
 }
@@ -102,7 +102,8 @@ function assembleKnowledgeBase(entries: readonly KnowledgeBaseEntry[]): string {
     .filter((entry) => entry.enabled)
     .map((entry) => `## ${entry.title}\n${entry.content}`);
 
-  const body = rendered.length > 0 ? rendered.join("\n\n") : KB_EMPTY_PLACEHOLDER;
+  const body =
+    rendered.length > 0 ? rendered.join('\n\n') : KB_EMPTY_PLACEHOLDER;
 
   return `${KB_HEADER}\n${body}\n${KB_FOOTER}`;
 }
@@ -124,17 +125,17 @@ function assembleKnowledgeBase(entries: readonly KnowledgeBaseEntry[]): string {
  */
 export function buildSystemBlocks(
   config: AiAssistantConfig,
-  kbEntries: readonly KnowledgeBaseEntry[],
+  kbEntries: readonly KnowledgeBaseEntry[]
 ): Anthropic.TextBlockParam[] {
   const persona: Anthropic.TextBlockParam = {
-    type: "text",
+    type: 'text',
     text: renderPersona(config),
   };
 
   const knowledgeBase: Anthropic.TextBlockParam = {
-    type: "text",
+    type: 'text',
     text: assembleKnowledgeBase(kbEntries),
-    cache_control: { type: "ephemeral" },
+    cache_control: { type: 'ephemeral' },
   };
 
   return [persona, knowledgeBase];
@@ -145,8 +146,10 @@ export function buildSystemBlocks(
  * the customer is the `user`; everything we send back (a human `agent`
  * or the `bot` itself) is the `assistant`.
  */
-function roleFor(senderType: PromptHistoryMessage["sender_type"]): "user" | "assistant" {
-  return senderType === "customer" ? "user" : "assistant";
+function roleFor(
+  senderType: PromptHistoryMessage['sender_type']
+): 'user' | 'assistant' {
+  return senderType === 'customer' ? 'user' : 'assistant';
 }
 
 /**
@@ -164,14 +167,14 @@ function roleFor(senderType: PromptHistoryMessage["sender_type"]): "user" | "ass
  */
 export function buildMessages(
   history: readonly PromptHistoryMessage[],
-  inboundText: string,
+  inboundText: string
 ): Anthropic.MessageParam[] {
   const safeHistory = Array.isArray(history) ? history : [];
 
   const usable = safeHistory.filter(
     (msg): msg is PromptHistoryMessage =>
-      typeof msg?.content_text === "string" &&
-      msg.content_text.trim().length > 0,
+      typeof msg?.content_text === 'string' &&
+      msg.content_text.trim().length > 0
   );
 
   const recent = usable.slice(-HISTORY_MESSAGE_LIMIT);
@@ -181,7 +184,7 @@ export function buildMessages(
     content: msg.content_text as string,
   }));
 
-  messages.push({ role: "user", content: inboundText });
+  messages.push({ role: 'user', content: inboundText });
 
   return messages;
 }

@@ -22,12 +22,12 @@
  * escalation to a human (spec §6, §12).
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic from '@anthropic-ai/sdk';
 
-import { type AiModelResult } from "@/types";
+import { type AiModelResult } from '@/types';
 
 /** The forced tool's name (spec §7.1). */
-export const SUBMIT_ANSWER_TOOL_NAME = "submit_answer";
+export const SUBMIT_ANSWER_TOOL_NAME = 'submit_answer';
 
 /**
  * Thrown when `ANTHROPIC_API_KEY` is absent at call time. Typed (not a
@@ -37,9 +37,9 @@ export const SUBMIT_ANSWER_TOOL_NAME = "submit_answer";
  * `src/lib/auth/account.ts`.
  */
 export class MissingApiKeyError extends Error {
-  constructor(message = "ANTHROPIC_API_KEY is not configured") {
+  constructor(message = 'ANTHROPIC_API_KEY is not configured') {
     super(message);
-    this.name = "MissingApiKeyError";
+    this.name = 'MissingApiKeyError';
   }
 }
 
@@ -73,7 +73,7 @@ export interface CallAssistantArgs {
    * Optional injected client (default a real `Anthropic` instance, built
    * lazily). Tests pass a stub so no network call happens (spec §14).
    */
-  client?: Pick<Anthropic, "messages">;
+  client?: Pick<Anthropic, 'messages'>;
 }
 
 /** The wrapper's result: the model's verdict plus the token usage. */
@@ -96,30 +96,30 @@ const MAX_OUTPUT_TOKENS = 1024;
 const SUBMIT_ANSWER_TOOL: Anthropic.Tool = {
   name: SUBMIT_ANSWER_TOOL_NAME,
   description:
-    "Submit your decision for this customer message. Call this exactly " +
-    "once. Set `confident` to true ONLY if the knowledge base fully and " +
-    "clearly answers the question; otherwise set it to false and leave " +
-    "`answer` empty so the conversation is handed to a human.",
+    'Submit your decision for this customer message. Call this exactly ' +
+    'once. Set `confident` to true ONLY if the knowledge base fully and ' +
+    'clearly answers the question; otherwise set it to false and leave ' +
+    '`answer` empty so the conversation is handed to a human.',
   input_schema: {
-    type: "object",
+    type: 'object',
     properties: {
       answer: {
-        type: "string",
+        type: 'string',
         description:
-          "The reply to send the customer. Empty string if you are not " +
-          "confident the knowledge base answers the question.",
+          'The reply to send the customer. Empty string if you are not ' +
+          'confident the knowledge base answers the question.',
       },
       confident: {
-        type: "boolean",
+        type: 'boolean',
         description:
-          "True ONLY if the knowledge base fully answers the question.",
+          'True ONLY if the knowledge base fully answers the question.',
       },
       reason: {
-        type: "string",
-        description: "Short rationale for the decision, for the audit log.",
+        type: 'string',
+        description: 'Short rationale for the decision, for the audit log.',
       },
     },
-    required: ["answer", "confident", "reason"],
+    required: ['answer', 'confident', 'reason'],
   },
 };
 
@@ -128,7 +128,7 @@ const SUBMIT_ANSWER_TOOL: Anthropic.Tool = {
  * (spec §7.1).
  */
 const SUBMIT_ANSWER_TOOL_CHOICE: Anthropic.ToolChoiceTool = {
-  type: "tool",
+  type: 'tool',
   name: SUBMIT_ANSWER_TOOL_NAME,
 };
 
@@ -176,30 +176,30 @@ function toUsage(usage: Anthropic.Usage): AiUsage {
 function parseToolUse(content: Anthropic.ContentBlock[]): AiModelResult {
   const block = content.find(
     (b): b is Anthropic.ToolUseBlock =>
-      b.type === "tool_use" && b.name === SUBMIT_ANSWER_TOOL_NAME,
+      b.type === 'tool_use' && b.name === SUBMIT_ANSWER_TOOL_NAME
   );
 
   if (!block) {
     throw new Error(
-      `Anthropic response contained no '${SUBMIT_ANSWER_TOOL_NAME}' tool_use block`,
+      `Anthropic response contained no '${SUBMIT_ANSWER_TOOL_NAME}' tool_use block`
     );
   }
 
   const input = block.input;
-  if (typeof input !== "object" || input === null) {
+  if (typeof input !== 'object' || input === null) {
     throw new Error(
-      `'${SUBMIT_ANSWER_TOOL_NAME}' tool_use input was not an object`,
+      `'${SUBMIT_ANSWER_TOOL_NAME}' tool_use input was not an object`
     );
   }
 
   const { answer, confident, reason } = input as Record<string, unknown>;
   if (
-    typeof answer !== "string" ||
-    typeof confident !== "boolean" ||
-    typeof reason !== "string"
+    typeof answer !== 'string' ||
+    typeof confident !== 'boolean' ||
+    typeof reason !== 'string'
   ) {
     throw new Error(
-      `'${SUBMIT_ANSWER_TOOL_NAME}' tool_use input did not match the expected schema`,
+      `'${SUBMIT_ANSWER_TOOL_NAME}' tool_use input did not match the expected schema`
     );
   }
 

@@ -30,24 +30,24 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
-import { sendTextMessage } from '@/lib/whatsapp/meta-api'
+} from '@/lib/whatsapp/phone-utils';
+import { sendTextMessage } from '@/lib/whatsapp/meta-api';
 
-import { supabaseAdmin } from './admin-client'
+import { supabaseAdmin } from './admin-client';
 
 export interface SendAiReplyArgs {
   /** Account-level tenancy key — scopes the contact lookup + auto-correct. */
-  accountId: string
+  accountId: string;
   /** Conversation the reply belongs to; the outgoing row + preview attach here. */
-  conversationId: string
+  conversationId: string;
   /** Contact whose phone the message is sent to (resolved + validated here). */
-  contactId: string
+  contactId: string;
   /** The reply text to send the customer (already decided non-empty upstream). */
-  text: string
+  text: string;
   /** Decrypted Meta access token, resolved by the caller from whatsapp_config. */
-  accessToken: string
+  accessToken: string;
   /** Meta phone-number id, resolved by the caller from whatsapp_config. */
-  phoneNumberId: string
+  phoneNumberId: string;
 }
 
 /**
@@ -59,9 +59,9 @@ export interface SendAiReplyArgs {
  * "AI" tag in the inbox keys off the same `sender_type='bot'` discriminator.
  */
 export async function sendAiReply(
-  args: SendAiReplyArgs,
+  args: SendAiReplyArgs
 ): Promise<{ whatsapp_message_id: string }> {
-  const db = supabaseAdmin()
+  const db = supabaseAdmin();
 
   // Resolve + validate the contact phone. Scoped by account_id for the
   // same defense-in-depth reason as flows/automations meta-send.
@@ -70,14 +70,14 @@ export async function sendAiReply(
     .select('id, phone')
     .eq('id', args.contactId)
     .eq('account_id', args.accountId)
-    .maybeSingle()
+    .maybeSingle();
   if (contactErr || !contact?.phone) {
-    throw new Error('contact not found for this account')
+    throw new Error('contact not found for this account');
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
+  const sanitized = sanitizePhoneForMeta(contact.phone);
   if (!isValidE164(sanitized)) {
-    throw new Error(`contact phone invalid: ${contact.phone}`)
+    throw new Error(`contact phone invalid: ${contact.phone}`);
   }
 
   const attempt = async (phone: string): Promise<string> => {
@@ -86,36 +86,39 @@ export async function sendAiReply(
       accessToken: args.accessToken,
       to: phone,
       text: args.text,
-    })
-    return r.messageId
-  }
+    });
+    return r.messageId;
+  };
 
   // Phone-variant retry: numbers registered with/without a trunk 0 plus
   // Meta's sandbox quirks need this to reliably land. Only the specific
   // "recipient not in allowed list" failure is retried; any other error
   // (bad token, invalid recipient) bubbles up so the caller escalates.
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
+  const variants = phoneVariants(sanitized);
+  let workingPhone = sanitized;
+  let waMessageId = '';
+  let lastError: unknown = null;
   for (const v of variants) {
     try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
+      waMessageId = await attempt(v);
+      workingPhone = v;
+      lastError = null;
+      break;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isRecipientNotAllowedError(msg)) throw err;
+      lastError = err;
     }
   }
-  if (lastError) throw lastError
+  if (lastError) throw lastError;
 
   // Persist the working variant back to the contact so future sends go
   // straight through on the first attempt.
   if (workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+    await db
+      .from('contacts')
+      .update({ phone: workingPhone })
+      .eq('id', contact.id);
   }
 
   // Persist the bot's reply. sender_type='bot' is what the inbox keys the
@@ -128,9 +131,9 @@ export async function sendAiReply(
     content_text: args.text,
     message_id: waMessageId,
     status: 'sent',
-  })
+  });
   if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`);
   }
 
   await db
@@ -140,7 +143,7 @@ export async function sendAiReply(
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('id', args.conversationId)
+    .eq('id', args.conversationId);
 
-  return { whatsapp_message_id: waMessageId }
+  return { whatsapp_message_id: waMessageId };
 }

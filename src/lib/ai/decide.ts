@@ -22,10 +22,10 @@
  * `src/lib/ai/guardrails.ts` and `src/lib/flows/fallback.ts`).
  */
 
-import { type AiEscalationReason, type AiModelResult } from "@/types";
+import { type AiEscalationReason, type AiModelResult } from '@/types';
 
 /** The two terminal actions the assistant can take on an inbound message. */
-export type DecideAction = "reply" | "escalate";
+export type DecideAction = 'reply' | 'escalate';
 
 /**
  * The verdict produced from a model result.
@@ -40,8 +40,8 @@ export type DecideAction = "reply" | "escalate";
  *   `ai_reply_log.reason` / `conversations.ai_escalation_reason`.
  */
 export type DecideResult =
-  | { action: "reply"; text: string }
-  | { action: "escalate"; reason: AiEscalationReason };
+  | { action: 'reply'; text: string }
+  | { action: 'escalate'; reason: AiEscalationReason };
 
 /**
  * Reduce the model's structured `submit_answer` result to a reply /
@@ -55,11 +55,12 @@ export type DecideResult =
  */
 export function decide(modelResult: AiModelResult): DecideResult {
   const confident = modelResult?.confident === true;
-  const answer = typeof modelResult?.answer === "string" ? modelResult.answer : "";
+  const answer =
+    typeof modelResult?.answer === 'string' ? modelResult.answer : '';
 
   if (confident && answer.trim().length > 0) {
-    return { action: "reply", text: answer };
+    return { action: 'reply', text: answer };
   }
 
-  return { action: "escalate", reason: "low_confidence" };
+  return { action: 'escalate', reason: 'low_confidence' };
 }

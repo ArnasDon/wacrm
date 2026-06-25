@@ -29,6 +29,11 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
       ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       META_APP_SECRET: 'ci-dummy-meta-secret'
+      # The AI assistant reads ANTHROPIC_API_KEY lazily (only when a reply
+      # is actually generated), so build/typecheck/test don't strictly
+      # need it — but provide a placeholder for parity with the other
+      # secrets and to keep any future module-load read satisfied.
+      ANTHROPIC_API_KEY: 'ci-dummy-anthropic-key'
     steps:
       - uses: actions/checkout@v7
 

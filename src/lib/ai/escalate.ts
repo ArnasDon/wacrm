@@ -39,28 +39,28 @@ import {
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
-import { sendTextMessage } from '@/lib/whatsapp/meta-api'
-import { type AiAssistantConfig, type AiEscalationReason } from '@/types'
+} from '@/lib/whatsapp/phone-utils';
+import { sendTextMessage } from '@/lib/whatsapp/meta-api';
+import { type AiAssistantConfig, type AiEscalationReason } from '@/types';
 
-import { supabaseAdmin } from './admin-client'
+import { supabaseAdmin } from './admin-client';
 
 export interface EscalateConversationArgs {
   /** Conversation to hand to a human. */
-  conversationId: string
+  conversationId: string;
   /** Why we escalated — written to `conversations.ai_escalation_reason`. */
-  reason: AiEscalationReason
+  reason: AiEscalationReason;
   /**
    * The account's AI config. Only `handoff_message` is consulted here; the
    * full object is passed so the caller doesn't have to re-shape it.
    */
-  config: AiAssistantConfig
+  config: AiAssistantConfig;
   /** Decrypted Meta access token, resolved by the caller. */
-  accessToken: string
+  accessToken: string;
   /** Meta phone-number id, resolved by the caller. */
-  phoneNumberId: string
+  phoneNumberId: string;
   /** The customer's phone number, to send the optional handoff message to. */
-  customerPhone: string
+  customerPhone: string;
 }
 
 /**
@@ -72,14 +72,14 @@ export interface EscalateConversationArgs {
  * succeed (spec §1, §6).
  */
 export async function escalateConversation(
-  args: EscalateConversationArgs,
+  args: EscalateConversationArgs
 ): Promise<void> {
-  const db = supabaseAdmin()
+  const db = supabaseAdmin();
 
   // 1. Flip the conversation out of AI control. This is the safety-critical
   //    step — do it first so a later handoff-send failure can't leave the
   //    AI still "handling" a conversation it has abandoned.
-  const now = new Date().toISOString()
+  const now = new Date().toISOString();
   const { error: updateErr } = await db
     .from('conversations')
     .update({
@@ -89,34 +89,34 @@ export async function escalateConversation(
       status: 'pending',
       updated_at: now,
     })
-    .eq('id', args.conversationId)
+    .eq('id', args.conversationId);
   if (updateErr) {
     // The DB flip is load-bearing; surface its failure so the caller logs
     // an `error` decision and a human can be alerted another way.
-    throw new Error(`escalation DB update failed: ${updateErr.message}`)
+    throw new Error(`escalation DB update failed: ${updateErr.message}`);
   }
 
   // 2. Optionally notify the customer. Nothing to send when no handoff
   //    message is configured (nullable = send nothing, spec §4.1).
-  const handoff = args.config.handoff_message?.trim()
-  if (!handoff) return
+  const handoff = args.config.handoff_message?.trim();
+  if (!handoff) return;
 
-  const sanitized = sanitizePhoneForMeta(args.customerPhone)
+  const sanitized = sanitizePhoneForMeta(args.customerPhone);
   if (!isValidE164(sanitized)) {
     // Can't message an invalid number — the conversation is still correctly
     // escalated, so just log and return rather than throwing.
     console.error(
-      `[ai] escalate: customer phone invalid, skipping handoff send: ${args.customerPhone}`,
-    )
-    return
+      `[ai] escalate: customer phone invalid, skipping handoff send: ${args.customerPhone}`
+    );
+    return;
   }
 
   // Best-effort handoff send over the same Meta path as the composer / flows
   // engine, with the same phone-variant retry. A failure here is logged, not
   // thrown — the escalation has already taken effect.
   try {
-    const variants = phoneVariants(sanitized)
-    let lastError: unknown = null
+    const variants = phoneVariants(sanitized);
+    let lastError: unknown = null;
     for (const v of variants) {
       try {
         await sendTextMessage({
@@ -124,20 +124,20 @@ export async function escalateConversation(
           accessToken: args.accessToken,
           to: v,
           text: handoff,
-        })
-        lastError = null
-        break
+        });
+        lastError = null;
+        break;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (!isRecipientNotAllowedError(msg)) throw err
-        lastError = err
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!isRecipientNotAllowedError(msg)) throw err;
+        lastError = err;
       }
     }
-    if (lastError) throw lastError
+    if (lastError) throw lastError;
   } catch (err) {
     console.error(
       '[ai] escalate: handoff message send failed:',
-      err instanceof Error ? err.message : err,
-    )
+      err instanceof Error ? err.message : err
+    );
   }
 }

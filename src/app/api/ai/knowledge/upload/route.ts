@@ -107,6 +107,22 @@ export async function POST(request: Request) {
     );
     if (!limit.success) return rateLimitResponse(limit);
 
+    // Reject oversized uploads before buffering the whole multipart body
+    // into memory. Content-Length can be understated by a hostile client
+    // but not inflated, so this is an early filter; the authoritative
+    // bound is the file.size check below after the body is parsed.
+    const declaredLength = Number(request.headers.get('content-length') ?? '0');
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        {
+          error: `File is too large. Maximum size is ${Math.floor(
+            MAX_FILE_BYTES / (1024 * 1024)
+          )} MB.`,
+        },
+        { status: 413 }
+      );
+    }
+
     const form = await request.formData().catch(() => null);
     const file = form?.get('file');
     if (!(file instanceof File)) {

@@ -388,13 +388,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Update conversation
+    // Update conversation. Setting `ai_handling=false` is the human-
+    // takeover signal: an agent replying by hand owns the conversation
+    // from here on, so the AI assistant goes silent on it immediately
+    // (mirrors the flow pause below — the strongest "human is here"
+    // signal). "Hand back to AI" in the inbox flips this back to true.
     await supabase
       .from('conversations')
       .update({
         last_message_text: content_text || `[${message_type}]`,
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        ai_handling: false,
       })
       .eq('id', conversation_id)
 

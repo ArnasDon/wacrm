@@ -156,6 +156,23 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * Is the AI assistant still driving this conversation? Added by
+   * `027_ai_assistant.sql` with DB default `true`, so a freshly-created
+   * conversation is eligible for the bot. Flipped to `false` on
+   * escalation or the instant a human replies (human-takeover). When
+   * `false` the assistant stays silent on this thread.
+   */
+  ai_handling?: boolean;
+  /** Set when the assistant handed this conversation off to a human. */
+  ai_escalated_at?: string;
+  /**
+   * Why the assistant escalated:
+   * `low_confidence` | `keyword` | `error` | `cap_reached` | `human_takeover`.
+   * Free-form text in the DB; this union documents the values the
+   * engine writes.
+   */
+  ai_escalation_reason?: AiEscalationReason;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';
@@ -541,4 +558,140 @@ export interface AutomationLog {
   error_message?: string | null;
   created_at: string;
   contact?: Contact;
+}
+
+// ============================================================
+// AI assistant (027_ai_assistant.sql)
+// ============================================================
+
+/**
+ * Per-account configuration for the WhatsApp AI assistant ("LLM
+ * wiki"). Exactly one row per account (UNIQUE account_id). Off by
+ * default — the assistant is strictly opt-in. Settings-class:
+ * readable/writable by admin+ only. The `ANTHROPIC_API_KEY` itself is
+ * NEVER on this type — it lives server-side in env; Settings reports
+ * only a configured/not-configured boolean.
+ */
+export interface AiAssistantConfig {
+  id: string;
+  /** Tenancy key — one config per account (NOT NULL, UNIQUE in the DB). */
+  account_id: string;
+  /** Master switch. DB default `false` (opt-in). */
+  enabled: boolean;
+  /**
+   * Editable system prompt. Seeded with the strong "answer ONLY from
+   * the KB" default (see spec §7.2); `{business_name}` is substituted
+   * at prompt-assembly time.
+   */
+  system_prompt: string;
+  /** Sent to the customer on escalation; nullable = send nothing. */
+  handoff_message?: string;
+  /**
+   * Keywords that always escalate to a human pre-LLM (no model call).
+   * Seeded with: refund, cancel, complaint, lawyer, legal, human,
+   * agent, manager. DB default `'{}'`-typed but seeded non-empty.
+   */
+  escalation_keywords: string[];
+  /** Persona context (business name) injected into the prompt. */
+  business_name?: string;
+  /**
+   * Stored via the existing storage bucket; persona context only in
+   * v1 (no customer-facing surface yet).
+   */
+  logo_url?: string;
+  /** Anthropic model id. DB default `'claude-sonnet-4-6'`. */
+  model: string;
+  /** Per-account daily reply cap; cap hit → escalate. DB default 500. */
+  daily_reply_cap: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Where a knowledge-base entry came from. */
+export type KnowledgeBaseSourceType = 'manual' | 'file';
+
+/**
+ * One "wiki page" of the per-account knowledge base. The model is fed
+ * the concatenation of every `enabled` entry for the account; disabled
+ * entries are excluded from the prompt. Settings-class: admin+ only.
+ */
+export interface KnowledgeBaseEntry {
+  id: string;
+  /** Tenancy key — strict per-account isolation in prompt assembly. */
+  account_id: string;
+  title: string;
+  /** Markdown / plain text fed verbatim to the model. */
+  content: string;
+  /** Hand-authored (`manual`) vs created from an upload (`file`). */
+  source_type: KnowledgeBaseSourceType;
+  /** Original filename when `source_type === 'file'`. */
+  source_filename?: string;
+  /** Disabled entries are excluded from the assembled prompt. */
+  enabled: boolean;
+  /**
+   * Cached ~token count (chars/4 heuristic) for the Settings size
+   * meter. Nullable until first computed.
+   */
+  token_estimate?: number;
+  /** Author, for audit. NULL after the user is deleted (ON DELETE SET NULL). */
+  created_by_user_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Outcome recorded for one evaluated inbound message. */
+export type AiReplyDecision = 'replied' | 'escalated' | 'skipped' | 'error';
+
+/**
+ * Why the assistant escalated a conversation to a human. Written to
+ * both `conversations.ai_escalation_reason` and `ai_reply_log.reason`.
+ */
+export type AiEscalationReason =
+  | 'low_confidence'
+  | 'keyword'
+  | 'error'
+  | 'cap_reached'
+  | 'human_takeover';
+
+/**
+ * One row per AI decision — audit trail and the data source for a
+ * future cost view (spec §16; no UI reads it in v1). Inserted by the
+ * webhook engine via the service-role client (RLS-bypassing);
+ * admin-read only.
+ */
+export interface AiReplyLog {
+  id: string;
+  account_id: string;
+  conversation_id?: string;
+  /** The inbound `messages.id` that triggered this decision. */
+  message_id?: string;
+  decision: AiReplyDecision;
+  /** Model's self-report; NULL when the decision was made pre-LLM. */
+  confident?: boolean;
+  /** Escalation reason / error summary. */
+  reason?: string;
+  model?: string;
+  /** Token usage from the Anthropic `usage` block; NULL when no LLM call. */
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_tokens?: number;
+  latency_ms?: number;
+  created_at: string;
+}
+
+/**
+ * The structured result the model returns via the forced
+ * `submit_answer` tool (spec §7.1), shared between the Anthropic
+ * wrapper, the pure `decide` core, and their tests. The deterministic
+ * guardrails and `decide` consume this to choose reply vs. escalate;
+ * auto-send requires BOTH `confident === true` and a non-empty
+ * `answer`.
+ */
+export interface AiModelResult {
+  /** The reply to send the customer; empty when not confident. */
+  answer: string;
+  /** True ONLY if the knowledge base fully answers the question. */
+  confident: boolean;
+  /** Short rationale, recorded in the audit log. */
+  reason: string;
 }

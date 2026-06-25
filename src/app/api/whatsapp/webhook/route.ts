@@ -7,6 +7,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { maybeReplyToInbound } from '@/lib/ai/reply'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -275,7 +276,10 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          // Meta phone-number id — the AI assistant needs it to send an
+          // autonomous reply via the same Meta send path.
+          config.phone_number_id
         )
       }
     }
@@ -509,7 +513,11 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  // Meta phone-number id from the matched whatsapp_config row. Passed
+  // through to the AI assistant so an autonomous reply goes out on the
+  // same number the inbound arrived on.
+  phoneNumberId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -595,21 +603,28 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
-  const { error: msgError } = await supabaseAdmin().from('messages').insert({
-    conversation_id: conversation.id,
-    sender_type: 'customer',
-    content_type: contentType,
-    content_text: contentText,
-    media_url: mediaUrl,
-    message_id: message.id,
-    status: 'delivered',
-    created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
+  const { data: insertedMessage, error: msgError } = await supabaseAdmin()
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      sender_type: 'customer',
+      content_type: contentType,
+      content_text: contentText,
+      media_url: mediaUrl,
+      message_id: message.id,
+      status: 'delivered',
+      created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      interactive_reply_id: interactiveReplyId,
+    })
+    // `.select().single()` so the inserted UUID is available for the AI
+    // assistant's `ai_reply_log` audit row (the inbound message that
+    // triggered the decision — see maybeReplyToInbound dispatch below).
+    .select('id')
+    .single()
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
@@ -712,6 +727,26 @@ async function processMessage(
         conversation_id: conversation.id,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
+  }
+
+  // AI assistant dispatch. Suppressed when a flow consumed the message —
+  // the customer is navigating a bot menu/flow, so the assistant must not
+  // also reply (same `!flowConsumed` gate as the content-level automation
+  // triggers above). Fire-and-forget like the automation dispatch:
+  // maybeReplyToInbound has its own try/catch, never throws, and runs off
+  // the webhook's ack path so a slow or failing AI call can't delay Meta's
+  // 200. Its own internal gates (enabled / ai_handling / guardrails / cap)
+  // decide whether it actually replies or escalates.
+  if (!flowConsumed) {
+    maybeReplyToInbound({
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
+      messageId: insertedMessage.id,
+      inboundText,
+      accessToken,
+      phoneNumberId,
+    }).catch(console.error)
   }
 }
 

@@ -18,6 +18,13 @@ differs (`npm run worker`).
 - A reachable **Redis** instance (the same one is fine for app + worker).
 - The web app already deployed (channels configured, ENCRYPTION_KEY set).
 
+> ⚠️ **The web app is the queue _producer_ — it also needs `REDIS_URL`.**
+> The inbound webhook enqueues the SDR job; if `REDIS_URL` is missing on the
+> web service the enqueue fails silently (`maybeEnqueueSdr` swallows the error
+> on purpose so a Redis hiccup never breaks inbound), so **no job is ever
+> created and the worker stays idle**. Set the *same* `REDIS_URL` on **both**
+> the web service and the worker service, pointing at the same Redis.
+
 ## Steps (Easypanel)
 
 1. **New service** in the same project (`crm_zenith`). Source = the **same

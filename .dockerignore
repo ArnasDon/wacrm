@@ -1,0 +1,34 @@
+# Dependencies — reinstalled inside the image
+node_modules
+npm-debug.log*
+
+# Build output
+.next
+out
+build
+dist
+
+# Local env & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+
+# Version control & CI
+.git
+.github
+.gitignore
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Tests & docs not needed at runtime
+coverage
+*.md
+!README.md
+
+# Claude / agent scratch
+.claude
+memory

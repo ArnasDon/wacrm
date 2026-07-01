@@ -13,11 +13,13 @@ import type {
   DownloadMediaArgs,
   DownloadMediaResult,
   SendResult,
+  ReactArgs,
 } from './types'
 import {
   sendTextMessage,
   sendMediaMessage,
   sendTemplateMessage,
+  sendReactionMessage,
   getMediaUrl,
   downloadMedia as downloadMetaMedia,
   type MediaKind,
@@ -85,5 +87,15 @@ export class MetaProvider implements WhatsAppProvider {
       accessToken: this.config.accessToken,
     })
     return { buffer, contentType }
+  }
+
+  async reactToMessage(args: ReactArgs): Promise<void> {
+    await sendReactionMessage({
+      phoneNumberId: this.config.phoneNumberId,
+      accessToken: this.config.accessToken,
+      to: args.to,
+      targetMessageId: args.targetExternalId,
+      emoji: args.emoji,
+    })
   }
 }

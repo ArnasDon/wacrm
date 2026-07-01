@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import { getProviderFromConfig, type WhatsAppConfigRow } from '@/lib/whatsapp/providers/factory';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -14,7 +13,8 @@ import {
  *
  * Body: { message_id: <internal UUID>, emoji: <single emoji or "" to remove> }
  *
- * Sends the reaction to Meta and mirrors it into `message_reactions`
+ * Sends the reaction through whichever provider owns the message's
+ * conversation (Meta or Uazapi) and mirrors it into `message_reactions`
  * (delete on empty emoji). Customer-side reactions are handled by the
  * webhook — this route only writes `actor_type = 'agent'` rows.
  */
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, contact:contacts(phone)')
+      .select('id, account_id, provider, contact:contacts(phone)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -108,12 +108,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
+    // WhatsApp config, scoped to whichever provider owns this
+    // conversation — an account can hold both a Meta and a Uazapi row
+    // (migration 029), so this must not assume Meta.
+    const conversationProvider = (conversation.provider as string | null) || 'meta';
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token')
+      .select('*')
       .eq('account_id', accountId)
-      .eq('provider', 'meta')
+      .eq('provider', conversationProvider)
       .single();
 
     if (configError || !config) {
@@ -123,23 +126,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const accessToken = decrypt(config.access_token);
+    const provider = getProviderFromConfig(config as WhatsAppConfigRow);
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
-      await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      await provider.reactToMessage({
         to: sanitizedPhone,
-        targetMessageId: targetMessage.message_id,
+        targetExternalId: targetMessage.message_id,
         emoji,
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Unknown Meta API error';
-      console.error('[whatsapp/react] Meta send failed:', message);
+        err instanceof Error ? err.message : `Unknown ${provider.name} API error`;
+      console.error(`[whatsapp/react] ${provider.name} send failed:`, message);
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
+        { error: `${provider.name} API error: ${message}` },
         { status: 502 },
       );
     }

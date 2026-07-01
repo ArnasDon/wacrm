@@ -18,6 +18,7 @@ import type {
   DownloadMediaArgs,
   DownloadMediaResult,
   SendResult,
+  ReactArgs,
 } from './types'
 
 export interface UazapiProviderConfig {
@@ -133,6 +134,26 @@ export class UazapiProvider implements WhatsAppProvider {
     return {
       buffer: Buffer.from(data.base64, 'base64'),
       contentType: data.mimetype || data.mimeType || 'application/octet-stream',
+    }
+  }
+
+  /**
+   * POST /message/react — `id` must be the full `owner:messageid`
+   * form (same value stored as `externalMessageId`/`messages.message_id`
+   * for Uazapi rows). Empty `emoji` removes an existing reaction.
+   */
+  async reactToMessage(args: ReactArgs): Promise<void> {
+    const response = await fetch(this.url('/message/react'), {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        number: args.to,
+        id: args.targetExternalId,
+        text: args.emoji,
+      }),
+    })
+    if (!response.ok) {
+      await throwUazapiError(response, `Uazapi reaction failed: ${response.status}`)
     }
   }
 

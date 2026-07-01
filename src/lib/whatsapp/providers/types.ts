@@ -67,6 +67,14 @@ export interface DownloadMediaResult {
   contentType: string
 }
 
+export interface ReactArgs {
+  to: string
+  /** externalMessageId of the message being reacted to. */
+  targetExternalId: string
+  /** Single emoji, or empty string to remove an existing reaction. */
+  emoji: string
+}
+
 export interface WhatsAppProvider {
   readonly name: 'meta' | 'uazapi'
   sendText(args: SendTextArgs): Promise<SendResult>
@@ -74,4 +82,5 @@ export interface WhatsAppProvider {
   /** Meta: real approved template. Uazapi: falls back to plain text. */
   sendTemplate(args: SendTemplateArgs): Promise<SendResult>
   downloadMedia(args: DownloadMediaArgs): Promise<DownloadMediaResult>
+  reactToMessage(args: ReactArgs): Promise<void>
 }

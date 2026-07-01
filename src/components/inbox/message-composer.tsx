@@ -36,6 +36,7 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
+import type { QuickReply } from "@/types";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -124,6 +125,21 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [quickReplyFilter, setQuickReplyFilter] = useState("");
+
+  useEffect(() => {
+    fetch("/api/quick-replies")
+      .then(res => res.json())
+      .then(data => {
+        if (data.quickReplies) setQuickReplies(data.quickReplies);
+      })
+      .catch(console.error);
+  }, []);
+
+  const filteredQuickReplies = quickReplies.filter(qr => qr.shortcut.toLowerCase().includes(quickReplyFilter));
+
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
   const [draft, setDraft] = useState<MediaDraft | null>(null);
@@ -207,18 +223,30 @@ export function MessageComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showQuickReplies && e.key === "Escape") {
+        setShowQuickReplies(false);
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
+    [handleSend, showQuickReplies]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value);
+      const val = e.target.value;
+      setText(val);
       adjustHeight();
+      
+      if (val.startsWith("/")) {
+        setShowQuickReplies(true);
+        setQuickReplyFilter(val.slice(1).toLowerCase());
+      } else {
+        setShowQuickReplies(false);
+      }
     },
     [adjustHeight]
   );
@@ -471,7 +499,7 @@ export function MessageComposer({
           </Button>
         </div>
       ) : (
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 relative">
           {/* Attach menu — photo / video / document / voice. */}
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -522,6 +550,27 @@ export function MessageComposer({
           >
             <LayoutTemplate className="h-4 w-4" />
           </GatedButton>
+
+          {/* Quick Replies Dropdown */}
+          {showQuickReplies && filteredQuickReplies.length > 0 && (
+            <div className="absolute bottom-full left-12 mb-2 w-64 max-h-48 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-md z-50">
+              {filteredQuickReplies.map(qr => (
+                <button
+                  key={qr.id}
+                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted rounded-md flex flex-col"
+                  onClick={() => {
+                    setText(qr.content);
+                    setShowQuickReplies(false);
+                    textareaRef.current?.focus();
+                    setTimeout(adjustHeight, 0);
+                  }}
+                >
+                  <span className="font-semibold text-primary">/{qr.shortcut}</span>
+                  <span className="truncate text-muted-foreground">{qr.content}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <textarea
             ref={textareaRef}

@@ -515,6 +515,9 @@ function ConversationItem({
                 {conversation.unread_count}
               </span>
             )}
+            {conversation.snooze_until && (
+              <BellRing className="h-3 w-3 text-amber-500" title={`Snoozed until ${new Date(conversation.snooze_until).toLocaleString()}`} />
+            )}
             <span
               className={cn(
                 "h-2 w-2 rounded-full",

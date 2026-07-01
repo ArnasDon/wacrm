@@ -26,6 +26,9 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Bot,
+  Bell,
+  BellOff
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -195,6 +198,45 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const handleSummarize = async () => {
+    if (!conversationId) return;
+    setIsSummarizing(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/summarize`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("AI Summary", { description: data.summary, duration: 15000 });
+      } else {
+        toast.error("Summarize failed", { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error("Error", { description: err.message });
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const handleSnooze = async (hours: number | null) => {
+    if (!conversationId) return;
+    const snooze_until = hours ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString() : null;
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/snooze`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snooze_until }),
+      });
+      if (res.ok) {
+        toast.success(hours ? `Snoozed for ${hours} hours` : "Snooze cleared");
+      } else {
+        const data = await res.json();
+        toast.error("Failed to snooze", { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error("Error", { description: err.message });
+    }
+  };
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -842,17 +884,20 @@ export function MessageThread({
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+              the name + back arrow keep their room. Also hidden when the
+              contact panel is open to prevent overlap with the right actions. */}
+          {!contactPanelOpen && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                sessionInfo.expired ? "text-red-400" : "text-primary"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -904,6 +949,52 @@ export function MessageThread({
               />
             </button>
           )}
+
+          {/* AI Summarize */}
+          <button
+            type="button"
+            onClick={handleSummarize}
+            disabled={isSummarizing || messages.length === 0}
+            aria-label="AI Summary"
+            title="AI Summary"
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
+            )}
+          >
+            <Bot className={cn("h-3.5 w-3.5", isSummarizing && "animate-pulse text-primary")} />
+          </button>
+
+          {/* Snooze dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+                conversation?.snooze_until ? "text-amber-500" : "text-muted-foreground"
+              )}
+              title="Snooze Reminder"
+            >
+              <Bell className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="border-border bg-popover w-40">
+              <DropdownMenuItem onClick={() => handleSnooze(1)} className="text-sm">
+                In 1 hour
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSnooze(24)} className="text-sm">
+                Tomorrow
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSnooze(168)} className="text-sm">
+                Next week
+              </DropdownMenuItem>
+              {conversation?.snooze_until && (
+                <>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <DropdownMenuItem onClick={() => handleSnooze(null)} className="text-sm text-red-500">
+                    <BellOff className="mr-2 h-3 w-3" /> Clear Snooze
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Status dropdown */}
           <DropdownMenu>

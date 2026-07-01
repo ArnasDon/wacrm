@@ -1,4 +1,4 @@
-# wacrm — CRM Template for WhatsApp
+# whatsapp-crm — CRM Template for WhatsApp
 
 > Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
 > sales pipelines, broadcasts, and no-code automations. Fork it, brand
@@ -11,10 +11,10 @@
 </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](./LICENSE)
-[![CI](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml)
+[![CI](https://github.com/ahmed-ali-codes/whatsapp-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-ali-codes/whatsapp-crm/actions/workflows/ci.yml)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
-[![Stars](https://img.shields.io/github/stars/ArnasDon/wacrm?style=social)](https://github.com/ArnasDon/wacrm/stargazers)
+[![Stars](https://img.shields.io/github/stars/ahmed-ali-codes/whatsapp-crm?style=social)](https://github.com/ahmed-ali-codes/whatsapp-crm/stargazers)
 
 The marketing site and self-host docs live in a separate repo:
 [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)
@@ -68,9 +68,9 @@ in an afternoon and make yours.
 ## Quick start
 
 ```bash
-# Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
-git clone https://github.com/<your-username>/wacrm.git
-cd wacrm
+# Clone the repository:
+git clone https://github.com/ahmed-ali-codes/whatsapp-crm.git
+cd whatsapp-crm
 npm install
 cp .env.local.example .env.local   # fill in Supabase + Meta creds
 npm run dev
@@ -92,7 +92,7 @@ Open <http://localhost:3000>. You'll be redirected to `/login` (or
   </a>
 </p>
 
-**wacrm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting).**
+**whatsapp-crm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting).**
 It's the path we test, document, and recommend — and the fastest way
 to get a production-grade CRM live without owning a VPS or a
 Kubernetes cluster.
@@ -121,7 +121,7 @@ Kubernetes cluster.
 Full walkthrough with screenshots:
 **[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
 
-> _Note: wacrm is MIT-licensed and runs anywhere Node.js does
+> _Note: whatsapp-crm is MIT-licensed and runs anywhere Node.js does
 > (Vercel, Railway, your own VPS). Hostinger is recommended, not
 > required._
 

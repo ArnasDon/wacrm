@@ -573,6 +573,27 @@ export default function InboxPage() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onConversationStarted={async (convId) => {
+              // Hydrate the new conversation (with its contact join) from
+              // the DB, add it to state, then open it in the thread pane.
+              await hydrateConversation(convId);
+              // After hydration the conv is in `conversations` — find and
+              // open it. If it isn't there yet (very rare race) we bump
+              // resyncToken so the list refetches and picks it up.
+              setConversations((prev) => {
+                const match = prev.find((c) => c.id === convId);
+                if (match) {
+                  setActiveConversation(match);
+                  setActiveContact(match.contact ?? null);
+                  setMessages([]);
+                  autoSelectedForDeepLinkRef.current = convId;
+                  router.replace(`/inbox?c=${convId}`, { scroll: false });
+                } else {
+                  setResyncToken((n) => n + 1);
+                }
+                return prev;
+              });
+            }}
           />
         </div>
 

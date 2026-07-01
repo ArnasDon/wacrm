@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
-import { Search, ChevronDown } from "lucide-react";
+import { Search, ChevronDown, SquarePen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { NewChatDialog } from "@/components/inbox/new-chat-dialog";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -28,6 +29,12 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Called with the conversation id after the user successfully starts a
+   * new outbound chat via the compose button. The parent should open that
+   * conversation in the thread pane.
+   */
+  onConversationStarted?: (conversationId: string) => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,10 +59,12 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  onConversationStarted,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -153,6 +162,30 @@ export function ConversationList({
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
+      {/* Panel header with title + compose button */}
+      <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Conversations
+        </span>
+        <button
+          onClick={() => setNewChatOpen(true)}
+          title="New Chat"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <SquarePen className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* New Chat Dialog */}
+      <NewChatDialog
+        open={newChatOpen}
+        onOpenChange={setNewChatOpen}
+        onConversationStarted={(convId) => {
+          setNewChatOpen(false);
+          onConversationStarted?.(convId);
+        }}
+      />
+
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
         <div className="relative">

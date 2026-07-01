@@ -21,12 +21,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
@@ -37,6 +31,8 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { getProviderFromConfig, type WhatsAppConfigRow } from '@/lib/whatsapp/providers/factory';
+import type { MediaKind } from '@/lib/whatsapp/providers/types';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -210,6 +206,9 @@ export async function sendMessageToConversation(
     );
   }
 
+  // Sanitization is digits-only for both providers — same format Uazapi
+  // expects for `number`. isValidE164 stays a Meta-shaped sanity check;
+  // Uazapi numbers happen to satisfy it too (same E.164-ish digit range).
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
   if (!isValidE164(sanitizedPhone)) {
     throw new SendMessageError(
@@ -219,11 +218,16 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
+  // WhatsApp config — scoped to the conversation's provider. A
+  // conversation created before migration 029 has provider='meta' by
+  // column default, which matches the only config row such an account
+  // could have had.
+  const conversationProvider = (conversation.provider as string | null) || 'meta';
   const { data: config, error: configError } = await db
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', conversationProvider)
     .single();
 
   if (configError || !config) {
@@ -234,13 +238,12 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
-
-  // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  // Self-heal legacy CBC access_token ciphertexts (Meta only — Uazapi
+  // never had a CBC-era token). Fire-and-forget; idempotent.
+  if (config.provider === 'meta' && config.access_token && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
+      .update({ access_token: encrypt(decrypt(config.access_token)) })
       .eq('id', config.id)
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) {
@@ -251,6 +254,8 @@ export async function sendMessageToConversation(
         }
       });
   }
+
+  const provider = getProviderFromConfig(config as WhatsAppConfigRow);
 
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote
@@ -303,49 +308,43 @@ export async function sendMessageToConversation(
 
   const attempt = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
-      const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await provider.sendTemplate({
         to: phone,
         templateName: templateName!,
         language: templateLanguage || 'en_US',
-        template: templateRow ?? undefined,
+        templateRow: templateRow ?? undefined,
         messageParams: templateMessageParams ?? undefined,
         params: templateParams || [],
-        contextMessageId,
+        replyToExternalId: contextMessageId,
       });
-      return result.messageId;
+      return result.externalMessageId;
     }
     if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await provider.sendMedia({
         to: phone,
         kind: messageType as MediaKind,
         link: mediaUrl!,
         caption: contentText || undefined,
         filename: filename || undefined,
-        contextMessageId,
+        replyToExternalId: contextMessageId,
       });
-      return result.messageId;
+      return result.externalMessageId;
     }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+    const result = await provider.sendText({
       to: phone,
       text: contentText!,
-      contextMessageId,
+      replyToExternalId: contextMessageId,
     });
-    return result.messageId;
+    return result.externalMessageId;
   };
 
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
+  // Phone-variant retry is a Meta-specific workaround (sandbox numbers
+  // rejecting a trunk-prefix mismatch) — Uazapi has no such allowed-list
+  // concept, so it sends once with the sanitized number.
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
-    const variants = phoneVariants(sanitizedPhone);
+    const variants = provider.name === 'meta' ? phoneVariants(sanitizedPhone) : [sanitizedPhone];
     let lastError: unknown = null;
 
     for (const variant of variants) {
@@ -369,9 +368,9 @@ export async function sendMessageToConversation(
     if (lastError) throw lastError;
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+      err instanceof Error ? err.message : `Unknown ${provider.name} API error`;
+    console.error(`[send-message] ${provider.name} send failed for all variants:`, message);
+    throw new SendMessageError('provider_error', `${provider.name} API error: ${message}`, 502);
   }
 
   if (workingPhone !== sanitizedPhone) {
@@ -398,6 +397,7 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      provider: provider.name,
     })
     .select()
     .single();

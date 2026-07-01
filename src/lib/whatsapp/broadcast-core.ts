@@ -115,6 +115,7 @@ export async function createBroadcast(
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
     .single();
   if (configError || !config) {
     throw new BroadcastError(

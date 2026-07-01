@@ -387,6 +387,25 @@ export default function InboxPage() {
     setResyncToken((n) => n + 1);
   }, []);
 
+  /**
+   * "New conversation" just sent the first message to a phone number
+   * with no prior history — deep-link into it the same way clicking a
+   * dashboard "recent conversations" row does: set `?c=`, then bump
+   * resyncToken so ConversationList refetches and picks up the new
+   * row. handleConversationsLoaded's existing deep-link check auto-
+   * selects it once that refetch lands, so no separate select call is
+   * needed here — and it stays correct even if the realtime INSERT for
+   * this same conversation arrives first or last.
+   */
+  const handleConversationCreated = useCallback(
+    (conversationId: string) => {
+      autoSelectedForDeepLinkRef.current = null;
+      router.replace(`/inbox?c=${conversationId}`, { scroll: false });
+      setResyncToken((n) => n + 1);
+    },
+    [router]
+  );
+
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {
       setConversations(loaded);
@@ -577,6 +596,7 @@ export default function InboxPage() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onConversationCreated={handleConversationCreated}
           />
         </div>
 

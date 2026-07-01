@@ -73,12 +73,16 @@ export async function resolveAuditUserId(
   db: SupabaseClient,
   accountId: string
 ): Promise<string> {
-  const { data: config } = await db
+  // `.limit(1)` (not `.maybeSingle()`) — an account can now hold both a
+  // Meta and a Uazapi row (migration 029); either one's owner works
+  // equally well as the audit default, so just take whichever sorts
+  // first rather than throwing on "multiple rows returned".
+  const { data: configs } = await db
     .from('whatsapp_config')
     .select('user_id')
     .eq('account_id', accountId)
-    .maybeSingle();
-  const configOwner = config?.user_id as string | undefined;
+    .limit(1);
+  const configOwner = configs?.[0]?.user_id as string | undefined;
   if (configOwner) return configOwner;
 
   const { data: account } = await db

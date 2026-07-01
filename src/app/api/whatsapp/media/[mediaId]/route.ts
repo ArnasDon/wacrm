@@ -48,11 +48,17 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
+    // Fetch and decrypt WhatsApp config. Scoped to provider='meta' —
+    // this route only ever serves Meta media ids (see the Uazapi
+    // equivalent at /api/uazapi/media/[messageId]); an account can now
+    // hold both a Meta and a Uazapi row (migration 029), so an
+    // unscoped `.single()` here would throw "multiple rows" once both
+    // are connected.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
       .single()
 
     if (configError || !config) {

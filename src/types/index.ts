@@ -159,6 +159,13 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * Which WhatsApp provider owns this conversation (migration 029).
+   * Stamped once at creation by whichever webhook opened the thread;
+   * outbound sends read this to route to the right provider. Defaults
+   * to 'meta' for every conversation created before Uazapi support.
+   */
+  provider?: WhatsAppProviderName;
 }
 
 // ============================================================
@@ -216,6 +223,8 @@ export interface Message {
    * cue (renders with a "↩ button reply" affordance).
    */
   interactive_reply_id?: string;
+  /** Provider that sent/received this message. Null for rows inserted before migration 029. */
+  provider?: WhatsAppProviderName;
 }
 
 export type ReactionActor = 'customer' | 'agent';
@@ -230,12 +239,19 @@ export interface MessageReaction {
   created_at: string;
 }
 
+/** 'meta' = WhatsApp Cloud API (official). 'uazapi' = QR-based, unofficial. */
+export type WhatsAppProviderName = 'meta' | 'uazapi';
+
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
-  phone_number_id: string;
+  /** Which provider this row configures. An account can hold one row per provider (migration 029). */
+  provider: WhatsAppProviderName;
+  /** Meta-only. Null on provider='uazapi' rows. */
+  phone_number_id?: string;
   waba_id?: string;
-  access_token: string;
+  /** Meta-only, encrypted. Null on provider='uazapi' rows. */
+  access_token?: string;
   verify_token?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
@@ -249,6 +265,17 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** True when this is the provider used for brand-new outbound (broadcasts, cold automations). One per account. */
+  is_default: boolean;
+  /** Uazapi-only fields — null on provider='meta' rows. */
+  uazapi_instance_token?: string;
+  uazapi_base_url?: string;
+  uazapi_instance_name?: string;
+  uazapi_connection_status?: 'disconnected' | 'connecting' | 'connected';
+  uazapi_last_qr_at?: string;
+  uazapi_connected_at?: string;
+  /** Unused — the webhook now authenticates via the instance token Uazapi echoes back, not a URL secret. Column kept for backward compat with migration 029. */
+  uazapi_webhook_secret?: string;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

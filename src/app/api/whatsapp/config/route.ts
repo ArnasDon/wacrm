@@ -89,6 +89,7 @@ export async function GET() {
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
       .maybeSingle()
 
     if (configError) {
@@ -269,13 +270,16 @@ export async function POST(request: Request) {
       )
     }
 
-    // Look up any pre-existing row for this account so we know whether
-    // this number is already registered with Meta — if so we can skip
+    // Look up any pre-existing Meta row for this account so we know
+    // whether this number is already registered — if so we can skip
     // /register when the user didn't provide a PIN this time around.
+    // Scoped to provider='meta': an account may also have a Uazapi row
+    // (migration 029) and this lookup must not cross-match it.
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id, registered_at, phone_number_id')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
       .maybeSingle()
 
     const sameNumber =
@@ -371,6 +375,7 @@ export async function POST(request: Request) {
         .from('whatsapp_config')
         .update(baseRow)
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -380,15 +385,30 @@ export async function POST(request: Request) {
         )
       }
     } else {
+      // First-provider-connected becomes the default outbound provider.
+      // If a Uazapi row already claimed `is_default` for this account,
+      // it stays default (per the confirmed decision: Uazapi is the
+      // default when both are connected) — Meta only becomes default
+      // when it's the account's first connection.
+      const { data: anyDefault } = await supabase
+        .from('whatsapp_config')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('is_default', true)
+        .maybeSingle()
+
       // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
-      // up-front), `user_id` is the audit column identifying which
-      // member of the account saved the config.
+      // (NOT NULL post-017, UNIQUE per (account_id, provider) as of
+      // migration 029 so duplicates trip the constraint up-front),
+      // `user_id` is the audit column identifying which member of the
+      // account saved the config.
       const { error: insertError } = await supabase
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
           user_id: user.id,
+          provider: 'meta',
+          is_default: !anyDefault,
           ...baseRow,
         })
 
@@ -463,6 +483,7 @@ export async function DELETE() {
       .from('whatsapp_config')
       .delete()
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

@@ -81,6 +81,7 @@ export async function engineSendText(
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', args.accountId)
+    .eq('provider', 'meta')
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
@@ -190,6 +191,7 @@ export async function engineSendMedia(
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', args.accountId)
+    .eq('provider', 'meta')
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
@@ -342,6 +344,7 @@ async function sendInteractiveViaMeta(
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', input.accountId)
+    .eq('provider', 'meta')
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')

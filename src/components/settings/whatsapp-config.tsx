@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
+import { UazapiConfig } from './uazapi-config';
 import {
   Accordion,
   AccordionItem,
@@ -100,11 +101,15 @@ export function WhatsAppConfig() {
       // original author) to `account_id` so every member of the
       // account sees the same saved configuration. UNIQUE(account_id)
       // on the table guarantees the .maybeSingle() return type
-      // remains accurate.
+      // remains accurate. Scoped to provider='meta' — this panel only
+      // manages the Meta row; migration 029 added a coexisting Uazapi
+      // row per account, which an unscoped query would ambiguously
+      // match too.
       const { data, error } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', acctId)
+        .eq('provider', 'meta')
         .maybeSingle();
 
       if (error) {
@@ -850,6 +855,14 @@ export function WhatsAppConfig() {
           </CardContent>
         </Card>
       </div>
+    </div>
+
+    {/* Second provider — coexists with the Meta connection above.
+        Each conversation sticks to whichever provider opened it;
+        Uazapi becomes the default for brand-new outbound once
+        connected (see /api/uazapi/instance). */}
+    <div className="mt-6 max-w-2xl">
+      <UazapiConfig />
     </div>
     </section>
   );

@@ -30,6 +30,8 @@ export interface ResolvedConversation {
   contactId: string;
   /** True if this call created the contact (vs matched an existing one). */
   contactCreated: boolean;
+  /** Provider the conversation is (or was already) associated with. */
+  provider: string;
 }
 
 /**
@@ -37,12 +39,20 @@ export interface ResolvedConversation {
  * `accountId`. Throws `SendMessageError` (shared with the send core,
  * so the route maps one error family) on a bad phone, a missing
  * WhatsApp config, or a DB failure.
+ *
+ * `provider` selects which WhatsApp connection a brand-new conversation
+ * is stamped with (see migration 029 — an account can hold a Meta row,
+ * a Uazapi row, or both). Omit it to use the account's default
+ * provider (`whatsapp_config.is_default`). Ignored when the contact
+ * already has a conversation — that conversation keeps whichever
+ * provider opened it.
  */
 export async function resolveConversationByPhone(
   db: SupabaseClient,
   accountId: string,
   phone: string,
-  name?: string | null
+  name?: string | null,
+  provider?: 'meta' | 'uazapi'
 ): Promise<ResolvedConversation> {
   const sanitized = sanitizePhoneForMeta(phone);
   if (!isValidE164(sanitized)) {
@@ -53,19 +63,39 @@ export async function resolveConversationByPhone(
     );
   }
 
-  // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (!config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // Resolve which config to use — an explicit `provider` must exist as
+  // a connected row; otherwise fall back to the account's default, and
+  // finally to whichever single row exists (pre-multi-provider accounts).
+  let resolvedProvider: string;
+  if (provider) {
+    const { data: config } = await db
+      .from('whatsapp_config')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('provider', provider)
+      .maybeSingle();
+    if (!config) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        `WhatsApp (${provider}) is not configured for this account.`,
+        400
+      );
+    }
+    resolvedProvider = provider;
+  } else {
+    const { data: configs } = await db
+      .from('whatsapp_config')
+      .select('provider, is_default')
+      .eq('account_id', accountId);
+    if (!configs || configs.length === 0) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    resolvedProvider =
+      configs.find((c) => c.is_default)?.provider ?? configs[0].provider;
   }
 
   // Audit user for created rows = the single account-wide default used
@@ -141,13 +171,20 @@ export async function resolveConversationByPhone(
   // webhook.
   const { data: conv } = await db
     .from('conversations')
-    .select('id')
+    .select('id, provider')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .maybeSingle();
 
   if (conv?.id) {
-    return { conversationId: conv.id, contactId, contactCreated };
+    // Keep whichever provider actually opened this conversation — the
+    // caller's requested `provider` only applies to brand-new threads.
+    return {
+      conversationId: conv.id,
+      contactId,
+      contactCreated,
+      provider: conv.provider || 'meta',
+    };
   }
 
   const { data: newConv, error: convErr } = await db
@@ -156,6 +193,7 @@ export async function resolveConversationByPhone(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      provider: resolvedProvider,
     })
     .select('id')
     .single();
@@ -169,5 +207,10 @@ export async function resolveConversationByPhone(
     );
   }
 
-  return { conversationId: newConv.id, contactId, contactCreated };
+  return {
+    conversationId: newConv.id,
+    contactId,
+    contactCreated,
+    provider: resolvedProvider,
+  };
 }

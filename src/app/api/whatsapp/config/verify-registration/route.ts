@@ -59,6 +59,7 @@ export async function GET() {
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
     .maybeSingle()
 
   if (!config) {

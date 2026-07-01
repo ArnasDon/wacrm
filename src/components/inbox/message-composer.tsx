@@ -96,6 +96,14 @@ interface MessageComposerProps {
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onOpenTemplates: () => void;
+  /**
+   * Templates are a Meta-only concept (approved templates + the 24h
+   * re-engagement window). Uazapi has neither — hide both entry points
+   * into the template picker for non-Meta conversations rather than
+   * offering a feature that doesn't apply. Defaults to true so any
+   * caller that hasn't been updated keeps the existing Meta behaviour.
+   */
+  showTemplates?: boolean;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
 }
@@ -117,6 +125,7 @@ export function MessageComposer({
   onSend,
   onSendMedia,
   onOpenTemplates,
+  showTemplates = true,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
@@ -391,17 +400,21 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
-            24-hour session expired. Use a template to re-engage.
+            {showTemplates
+              ? "24-hour session expired. Use a template to re-engage."
+              : "24-hour session expired. Wait for the contact to message again."}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="mr-1 h-3 w-3" />
-            Templates
-          </Button>
+          {showTemplates && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-amber-400 hover:text-amber-300"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="mr-1 h-3 w-3" />
+              Templates
+            </Button>
+          )}
         </div>
       )}
 
@@ -511,17 +524,19 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : "Send template"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+          {showTemplates && (
+            <GatedButton
+              variant="ghost"
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              title={readOnly ? undefined : "Send template"}
+              className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </GatedButton>
+          )}
 
           <textarea
             ref={textareaRef}

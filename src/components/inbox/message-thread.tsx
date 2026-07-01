@@ -219,8 +219,17 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
+  // The 24-hour re-engagement window is a Meta Cloud API rule (free-form
+  // text outside it gets rejected server-side, hence the template
+  // requirement) — it doesn't exist for Uazapi, which sends free-form
+  // text at any time. Conversations default to 'meta' pre-migration-029,
+  // so anything explicitly NOT 'uazapi' is treated as Meta-gated.
+  const isOfficialProvider = (conversation?.provider ?? "meta") !== "uazapi";
+
+  // 24-hour session timer — only meaningful (and only blocks sending)
+  // for Meta conversations.
   const sessionInfo = useMemo(() => {
+    if (!isOfficialProvider) return { expired: false, remaining: "" };
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -244,7 +253,7 @@ export function MessageThread({
         : `${Math.floor(hoursLeft * 60)}m remaining`;
 
     return { expired, remaining };
-  }, [messages]);
+  }, [messages, isOfficialProvider]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -841,18 +850,21 @@ export function MessageThread({
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+          {/* Session timer badge — Meta-only (the 24h window doesn't
+              exist for Uazapi, see isOfficialProvider), hidden on the
+              narrowest phones so the name + back arrow keep their room. */}
+          {isOfficialProvider && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                sessionInfo.expired ? "text-red-400" : "text-primary"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1077,15 +1089,22 @@ export function MessageThread({
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onOpenTemplates={handleOpenTemplates}
+        showTemplates={isOfficialProvider}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
       />
 
-      <TemplatePicker
-        open={templateModalOpen}
-        onOpenChange={setTemplateModalOpen}
-        onSelect={handleSendTemplate}
-      />
+      {/* Templates are Meta-only (approved-template + 24h-window
+          concept) — the picker stays mounted but unreachable for
+          Uazapi conversations since MessageComposer hides every entry
+          point into it when showTemplates is false. */}
+      {isOfficialProvider && (
+        <TemplatePicker
+          open={templateModalOpen}
+          onOpenChange={setTemplateModalOpen}
+          onSelect={handleSendTemplate}
+        />
+      )}
     </div>
   );
 }

@@ -12,14 +12,18 @@ import { SendMessageError } from './send-message';
 type ContactRow = { id: string; phone: string; name?: string | null };
 
 interface Script {
-  config?: { user_id: string } | null; // whatsapp_config.maybeSingle
+  // whatsapp_config — resolveAuditUserId's `.limit(1)` and
+  // resolve-conversation's default-provider `.select('provider, is_default')`
+  // both resolve via the bare `then()` below (unterminated builder chain),
+  // so a single row list backs both.
+  config?: { user_id: string; provider?: string; is_default?: boolean } | null;
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
   contactCandidatesByCall?: ContactRow[][];
   insertedContactId?: string; // contacts insert -> single
   insertContactError?: { code?: string } | null;
-  existingConversation?: { id: string } | null; // conversations select.maybeSingle
+  existingConversation?: { id: string; provider?: string } | null; // conversations select.maybeSingle
   insertedConversationId?: string; // conversations insert -> single
 }
 
@@ -30,6 +34,7 @@ function makeDb(script: Script): SupabaseClient {
 
   const builder: Record<string, unknown> = {
     select: () => builder,
+    limit: () => builder,
     insert: () => {
       mode = 'insert';
       return builder;
@@ -75,9 +80,17 @@ function makeDb(script: Script): SupabaseClient {
         });
       return Promise.resolve({ data: null, error: null });
     },
-    // Thenable: `await db.from().update().eq()` lands here.
-    then: (resolve: (v: { data: null; error: null }) => void) =>
-      resolve({ data: null, error: null }),
+    // Thenable: `await db.from().update().eq()` lands here, as does
+    // `await db.from('whatsapp_config').select(...).eq(...)` (no
+    // terminal .single()/.maybeSingle()) — used by resolveAuditUserId's
+    // `.limit(1)` and resolve-conversation's default-provider lookup.
+    then: (resolve: (v: { data: unknown; error: null }) => void) => {
+      if (table === 'whatsapp_config' && mode === 'select') {
+        resolve({ data: script.config ? [script.config] : [], error: null });
+        return;
+      }
+      resolve({ data: null, error: null });
+    },
   };
 
   return {
@@ -116,9 +129,9 @@ describe('resolveConversationByPhone', () => {
 
   it('returns the existing contact + conversation without creating', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { user_id: 'owner-1', provider: 'meta' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
-      existingConversation: { id: 'cv1' },
+      existingConversation: { id: 'cv1', provider: 'meta' },
     });
     const res = await resolveConversationByPhone(
       db,
@@ -129,12 +142,13 @@ describe('resolveConversationByPhone', () => {
       conversationId: 'cv1',
       contactId: 'c1',
       contactCreated: false,
+      provider: 'meta',
     });
   });
 
   it('creates contact + conversation when none exist', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { user_id: 'owner-1', provider: 'meta' },
       contactCandidates: [],
       insertedContactId: 'c2',
       existingConversation: null,
@@ -149,6 +163,7 @@ describe('resolveConversationByPhone', () => {
     expect(res).toEqual({
       conversationId: 'cv2',
       contactId: 'c2',
+      provider: 'meta',
       contactCreated: true,
     });
   });

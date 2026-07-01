@@ -154,6 +154,7 @@ export async function POST() {
       .from('whatsapp_config')
       .select('*')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
       .single()
 
     if (configError || !config) {

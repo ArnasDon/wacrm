@@ -10,9 +10,10 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
-// limiting, and the two ways the UI targets a thread — an existing
+// limiting, and the three ways the UI targets a thread — an existing
 // `conversation_id` (inbox) or a `contact_id` (Contact detail →
 // find-or-create the conversation). The actual Meta plumbing (validate
 // → send → persist → pause flows) lives in the shared
@@ -65,8 +66,18 @@ export async function POST(request: Request) {
       // `conversation_id` targets an existing thread (inbox). `contact_id`
       // lets a caller initiate from a contact that may have no conversation
       // yet (Contact detail → Send template) — we find-or-create one below.
+      // `phone` is the third path — the inbox's "New conversation" flow,
+      // where the caller has a raw phone number and no contact/conversation
+      // exists yet at all.
       conversation_id: conversationIdInput,
       contact_id,
+      phone,
+      contact_name,
+      /** Which WhatsApp connection to use for a brand-new (`phone`-path)
+       *  conversation — 'meta' | 'uazapi'. Ignored by the other two paths
+       *  (they target a conversation that already has a provider). Omit
+       *  to use the account's default. */
+      provider,
       message_type,
       content_text,
       media_url,
@@ -78,11 +89,11 @@ export async function POST(request: Request) {
       reply_to_message_id,
     } = body
 
-    if ((!conversationIdInput && !contact_id) || !message_type) {
+    if ((!conversationIdInput && !contact_id && !phone) || !message_type) {
       return NextResponse.json(
         {
           error:
-            'Either conversation_id or contact_id, plus message_type, are required',
+            'Either conversation_id, contact_id, or phone, plus message_type, are required',
         },
         { status: 400 }
       )
@@ -126,6 +137,26 @@ export async function POST(request: Request) {
         )
       }
       conversationId = data.id
+    } else if (phone) {
+      // "New conversation" path — no existing contact/conversation.
+      // Reuses the same find-or-create the public API's phone-based
+      // send uses, so a contact started here is indistinguishable from
+      // one created via /api/v1/messages or an inbound webhook.
+      try {
+        const resolved = await resolveConversationByPhone(
+          supabase,
+          accountId,
+          phone,
+          typeof contact_name === 'string' ? contact_name : null,
+          provider === 'meta' || provider === 'uazapi' ? provider : undefined
+        )
+        conversationId = resolved.conversationId
+      } catch (err) {
+        if (err instanceof SendMessageError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
     } else {
       // contact_id path: verify the contact is in this account first so a
       // caller can't open a conversation against someone else's contact.
@@ -187,6 +218,7 @@ export async function POST(request: Request) {
         success: true,
         message_id: result.messageId,
         whatsapp_message_id: result.whatsappMessageId,
+        conversation_id: conversationId,
       })
     } catch (err) {
       if (err instanceof SendMessageError) {

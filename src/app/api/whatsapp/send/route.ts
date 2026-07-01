@@ -1,27 +1,25 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api'
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { supabaseAdmin } from '@/lib/flows/admin-client'
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
-import {
   checkRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
-import type { MessageTemplate } from '@/types'
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import {
+  sendMessageToConversation,
+  validateSendMessageParams,
+  SendMessageError,
+} from '@/lib/whatsapp/send-message'
 
+// The dashboard's outbound-send endpoint. It owns auth, per-user rate
+// limiting, and the two ways the UI targets a thread — an existing
+// `conversation_id` (inbox) or a `contact_id` (Contact detail →
+// find-or-create the conversation). The actual Meta plumbing (validate
+// → send → persist → pause flows) lives in the shared
+// `sendMessageToConversation` core, which the public `/api/v1/messages`
+// endpoint reuses. This route is a thin adapter: resolve the
+// conversation, delegate, then map `SendMessageError` back onto the
+// dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -90,66 +88,33 @@ export async function POST(request: Request) {
       )
     }
 
-    // Media kinds (image/video/document/audio) are sent to Meta via a
-    // public URL the composer already uploaded to the chat-media bucket.
-    const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const
-    const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(message_type)
-
-    // Reject anything outside the known set up front rather than letting
-    // an unknown type fall through to the text path with empty content.
-    const VALID_MESSAGE_TYPES = ['text', 'template', ...MEDIA_KINDS] as const
-    if (!(VALID_MESSAGE_TYPES as readonly string[]).includes(message_type)) {
-      return NextResponse.json(
-        { error: `Unsupported message_type "${message_type}"` },
-        { status: 400 }
-      )
-    }
-
-    if (message_type === 'text' && !content_text) {
-      return NextResponse.json(
-        { error: 'content_text is required for text messages' },
-        { status: 400 }
-      )
-    }
-
-    if (message_type === 'template' && !template_name) {
-      return NextResponse.json(
-        { error: 'template_name is required for template messages' },
-        { status: 400 }
-      )
-    }
-
-    if (isMediaKind && !media_url) {
-      return NextResponse.json(
-        { error: `media_url is required for ${message_type} messages` },
-        { status: 400 }
-      )
-    }
-
-    // Meta caps media captions at 1024 chars; reject before the upload is
-    // wasted at the Meta call. (Audio carries no caption — see meta-api.)
-    if (
-      isMediaKind &&
-      message_type !== 'audio' &&
-      typeof content_text === 'string' &&
-      content_text.length > 1024
-    ) {
-      return NextResponse.json(
-        { error: 'Caption exceeds the 1024-character limit' },
-        { status: 400 }
-      )
+    // Validate the message shape up front — before the contact_id path
+    // finds-or-creates a conversation — so an invalid payload 400s
+    // without leaving an orphan empty conversation behind.
+    try {
+      validateSendMessageParams({
+        messageType: message_type,
+        contentText: content_text,
+        mediaUrl: media_url,
+        templateName: template_name,
+      })
+    } catch (err) {
+      if (err instanceof SendMessageError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
     }
 
     // Resolve the target conversation. With `conversation_id` we load the
     // existing thread; with `contact_id` we find-or-create one for the
     // contact so a business-initiated template send (Contact detail view)
-    // reuses this whole path — phone variants, send-builder, persistence.
-    let conversation: { id: string; contact?: { id: string; phone?: string } | null } | null = null
+    // reuses the shared send core below.
+    let conversationId: string | null = null
 
     if (conversationIdInput) {
       const { data, error: convError } = await supabase
         .from('conversations')
-        .select('*, contact:contacts(*)')
+        .select('id')
         .eq('id', conversationIdInput)
         .eq('account_id', accountId)
         .single()
@@ -160,13 +125,13 @@ export async function POST(request: Request) {
           { status: 404 }
         )
       }
-      conversation = data
+      conversationId = data.id
     } else {
       // contact_id path: verify the contact is in this account first so a
       // caller can't open a conversation against someone else's contact.
       const { data: contactRow, error: contactErr } = await supabase
         .from('contacts')
-        .select('*')
+        .select('id')
         .eq('id', contact_id)
         .eq('account_id', accountId)
         .maybeSingle()
@@ -190,305 +155,48 @@ export async function POST(request: Request) {
           { status: 500 }
         )
       }
-      // The embed may not round-trip on insert; pin the contact we verified.
-      conversation = { ...resolved, contact: resolved.contact ?? contactRow }
+      conversationId = resolved
     }
 
-    if (!conversation) {
+    if (!conversationId) {
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 }
       )
     }
 
-    const conversation_id = conversation.id
-
-    const contact = conversation.contact
-    if (!contact?.phone) {
-      return NextResponse.json(
-        { error: 'Contact phone number not found' },
-        { status: 400 }
-      )
-    }
-
-    // Sanitize and validate phone
-    const sanitizedPhone = sanitizePhoneForMeta(contact.phone)
-    if (!isValidE164(sanitizedPhone)) {
-      return NextResponse.json(
-        { error: 'Invalid phone number format' },
-        { status: 400 }
-      )
-    }
-
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
-        { status: 400 }
-      )
-    }
-
-    const accessToken = decrypt(config.access_token)
-
-    // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
-    // return from the send without waiting, so a failed upgrade just
-    // means the next send tries again. The upgrade is idempotent —
-    // concurrent sends both produce valid GCM ciphertexts of the same
-    // plaintext, last write wins.
-    if (isLegacyFormat(config.access_token)) {
-      void supabase
-        .from('whatsapp_config')
-        .update({ access_token: encrypt(accessToken) })
-        .eq('id', config.id)
-        .then(({ error }) => {
-          if (error) {
-            console.warn(
-              '[whatsapp/send] access_token GCM upgrade failed:',
-              error.message,
-            )
-          }
-        })
-    }
-
-    // Resolve the reply target (if any) to its Meta message_id, which is
-    // what `context.message_id` on the outgoing Meta payload needs. The
-    // parent must belong to this same conversation — otherwise a caller
-    // could quote messages they can't see by guessing UUIDs.
-    let contextMessageId: string | undefined
-    if (reply_to_message_id) {
-      const { data: parent, error: parentError } = await supabase
-        .from('messages')
-        .select('message_id, conversation_id')
-        .eq('id', reply_to_message_id)
-        .eq('conversation_id', conversation_id)
-        .maybeSingle()
-
-      if (parentError || !parent) {
-        return NextResponse.json(
-          { error: 'reply_to_message_id not found in this conversation' },
-          { status: 400 }
-        )
-      }
-      if (!parent.message_id) {
-        // Parent never reached Meta (still in 'sending' or 'failed') — we
-        // can't quote it on WhatsApp. Send without context rather than
-        // dropping the message entirely.
-        console.warn(
-          '[whatsapp/send] reply target has no Meta message_id; sending without context'
-        )
-      } else {
-        contextMessageId = parent.message_id
-      }
-    }
-
-    // Send via Meta API — retry with phone-number variants if Meta rejects
-    // with "recipient not in allowed list" (common in sandbox / when a
-    // number was registered with/without a trunk 0). If an alternate
-    // format succeeds, we persist it back to the contact row so the
-    // next send goes through on the first attempt.
-    let waMessageId = ''
-    let workingPhone = sanitizedPhone
-
-    // For template sends, load the row so sendTemplateMessage can
-    // build header + button components from the template definition.
-    // Match on (user_id, name, language) — same triple the unique
-    // index enforces — so multi-language templates work correctly.
-    // Missing template falls through with `templateRow = null` and
-    // the legacy body-only path runs.
-    // Load the template row so sendTemplateMessage can build header
-    // + button components from the definition. isMessageTemplate
-    // guards against a malformed row (e.g. from a partial sync)
-    // crashing the send-builder later in the stack.
-    let templateRow: MessageTemplate | null = null
-    if (message_type === 'template' && template_name) {
-      const { data } = await supabase
-        .from('message_templates')
-        .select('*')
-        .eq('account_id', accountId)
-        .eq('name', template_name)
-        .eq('language', template_language || 'en_US')
-        .maybeSingle()
-      if (data && !isMessageTemplate(data)) {
-        return NextResponse.json(
-          {
-            error:
-              'Template row is malformed locally — run "Sync from Meta" in Settings to repair it.',
-          },
-          { status: 500 },
-        )
-      }
-      templateRow = data ?? null
-    }
-
-    const attempt = async (phone: string): Promise<string> => {
-      if (message_type === 'template') {
-        const result = await sendTemplateMessage({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
-          to: phone,
-          templateName: template_name,
-          language: template_language || 'en_US',
-          template: templateRow ?? undefined,
-          messageParams: template_message_params ?? undefined,
-          // Legacy body-only fallback — only consulted when
-          // messageParams.body isn't set.
-          params: template_params || [],
-          contextMessageId,
-        })
-        return result.messageId
-      }
-      if (isMediaKind) {
-        // content_text doubles as the caption (ignored for audio inside
-        // sendMediaMessage). filename surfaces in the recipient's chat
-        // for documents only.
-        const result = await sendMediaMessage({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
-          to: phone,
-          kind: message_type as MediaKind,
-          link: media_url,
-          caption: content_text || undefined,
-          filename: filename || undefined,
-          contextMessageId,
-        })
-        return result.messageId
-      }
-      const result = await sendTextMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        text: content_text,
-        contextMessageId,
-      })
-      return result.messageId
-    }
-
+    // Delegate to the shared send core (validates, sends to Meta with
+    // phone-variant retry, persists, pauses active flow runs). Its
+    // `SendMessageError` carries a machine code + HTTP status; the
+    // dashboard maps it to the internal `{ error }` shape.
     try {
-      const variants = phoneVariants(sanitizedPhone)
-      let lastError: unknown = null
-
-      for (const variant of variants) {
-        try {
-          waMessageId = await attempt(variant)
-          workingPhone = variant
-          lastError = null
-          break
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          // Only retry when the failure is specifically that the
-          // recipient isn't in Meta's allowed list. Any other error
-          // (bad token, invalid template, etc.) bubbles up immediately.
-          if (!isRecipientNotAllowedError(message)) {
-            throw err
-          }
-          lastError = err
-          console.warn(`[whatsapp/send] variant "${variant}" rejected by Meta, trying next…`)
-        }
-      }
-
-      if (lastError) throw lastError
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API send failed for all variants:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 502 }
-      )
-    }
-
-    // If a non-original variant succeeded, update the contact so future
-    // sends go straight through. sanitizePhoneForMeta on workingPhone
-    // will yield workingPhone itself, so re-storing preserves it.
-    if (workingPhone !== sanitizedPhone) {
-      console.log(
-        `[whatsapp/send] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
-      )
-      await supabase
-        .from('contacts')
-        .update({ phone: workingPhone })
-        .eq('id', contact.id)
-    }
-
-    // Insert message into DB — field names MUST match the messages schema
-    // (see supabase/migrations/001_initial_schema.sql):
-    //   conversation_id, sender_type, content_type, content_text,
-    //   media_url, template_name, message_id, status, created_at
-    const { data: messageRecord, error: msgError } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id,
-        sender_type: 'agent',
-        content_type: message_type,
-        content_text: content_text || null,
-        media_url: media_url || null,
-        template_name: template_name || null,
-        message_id: waMessageId,
-        status: 'sent',
-        reply_to_message_id: reply_to_message_id || null,
+      const result = await sendMessageToConversation(supabase, accountId, {
+        conversationId,
+        messageType: message_type,
+        contentText: content_text,
+        mediaUrl: media_url,
+        filename,
+        templateName: template_name,
+        templateLanguage: template_language,
+        templateParams: template_params,
+        templateMessageParams: template_message_params,
+        replyToMessageId: reply_to_message_id,
       })
-      .select()
-      .single()
 
-    if (msgError) {
-      console.error('Error inserting sent message:', msgError)
-      return NextResponse.json(
-        { error: `Message sent to Meta but failed to save to DB: ${msgError.message}` },
-        { status: 500 }
-      )
-    }
-
-    // Update conversation
-    await supabase
-      .from('conversations')
-      .update({
-        last_message_text: content_text || `[${message_type}]`,
-        last_message_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+      return NextResponse.json({
+        success: true,
+        message_id: result.messageId,
+        whatsapp_message_id: result.whatsappMessageId,
       })
-      .eq('id', conversation_id)
-
-    // Pause any active Flow run for this contact — the agent stepping
-    // in is the strongest "yield, human is here" signal. See PR #2
-    // plan for why we pause (not end): preserves diagnostic state +
-    // lets the agent or the 24h timeout sweep cleanly resolve the
-    // run later. For accounts with no active runs the UPDATE matches
-    // zero rows — cheap and harmless.
-    try {
-      const { error: pauseErr } = await supabaseAdmin()
-        .from('flow_runs')
-        .update({
-          status: 'paused_by_agent',
-          ended_at: new Date().toISOString(),
-          end_reason: 'agent_replied',
-        })
-        .eq('account_id', accountId)
-        .eq('contact_id', contact.id)
-        .eq('status', 'active')
-      if (pauseErr) {
-        // Best-effort — log + continue. The agent's message already
-        // landed at Meta; don't fail the response over a bookkeeping
-        // miss. Worst case: a stale active run gets caught by the
-        // stale-run cron sweep within 24h.
-        console.error('[flows] pause-on-agent-send failed:', pauseErr.message)
-      }
     } catch (err) {
-      console.error(
-        '[flows] pause-on-agent-send threw:',
-        err instanceof Error ? err.message : err,
-      )
+      if (err instanceof SendMessageError) {
+        return NextResponse.json(
+          { error: err.message },
+          { status: err.status }
+        )
+      }
+      throw err
     }
-
-    return NextResponse.json({
-      success: true,
-      message_id: messageRecord.id,
-      whatsapp_message_id: waMessageId,
-    })
   } catch (error) {
     console.error('Error in WhatsApp send POST:', error)
     return NextResponse.json(
@@ -501,8 +209,8 @@ export async function POST(request: Request) {
 type SendSupabase = Awaited<ReturnType<typeof createClient>>
 
 /**
- * Return the contact's conversation in this account, creating one if it
- * doesn't exist yet. Mirrors the webhook's find-or-create so an
+ * Return the contact's conversation id in this account, creating one if
+ * it doesn't exist yet. Mirrors the webhook's find-or-create so an
  * inbound-then-outbound (or outbound-first) sequence converges on a single
  * thread per contact. Runs under the caller's RLS — the conversations_insert
  * policy requires account agent membership, which the caller already is.
@@ -512,15 +220,15 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string,
-) {
+): Promise<string | null> {
   const { data: existing } = await supabase
     .from('conversations')
-    .select('*, contact:contacts(*)')
+    .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .maybeSingle()
 
-  if (existing) return existing
+  if (existing) return existing.id
 
   const { data: created, error } = await supabase
     .from('conversations')
@@ -529,7 +237,7 @@ async function findOrCreateConversation(
       user_id: userId,
       contact_id: contactId,
     })
-    .select('*, contact:contacts(*)')
+    .select('id')
     .single()
 
   if (error) {
@@ -537,5 +245,5 @@ async function findOrCreateConversation(
     return null
   }
 
-  return created
+  return created.id
 }

@@ -2,18 +2,23 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  CONVERSATION_SELECT,
+  matchesContactFilters,
+  normalizeConversations,
+} from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
-import type { Conversation, ConversationStatus } from "@/types";
-import { Search, ChevronDown, SquarePen } from "lucide-react";
+import type { Conversation, ConversationStatus, Tag } from "@/types";
+import { Search, ChevronDown, SquarePen, BellRing, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NewChatDialog } from "@/components/inbox/new-chat-dialog";
 
@@ -65,6 +70,13 @@ export function ConversationList({
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
   const [newChatOpen, setNewChatOpen] = useState(false);
+  
+  // Contact-based filters (issue #272). Tags use OR logic (a conversation
+  // matches if its contact carries any selected tag), consistent with
+  // Broadcast audience filtering. Company is an exact match on the field.
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -90,7 +102,7 @@ export function ConversationList({
     (async () => {
       const { data, error } = await supabase
         .from("conversations")
-        .select("*, contact:contacts(*)")
+        .select(CONVERSATION_SELECT)
         .order("last_message_at", { ascending: false });
 
       if (cancelled) return;
@@ -107,7 +119,7 @@ export function ConversationList({
         return;
       }
 
-      onConversationsLoadedRef.current(data ?? []);
+      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
       setLoading(false);
     })();
 
@@ -119,6 +131,38 @@ export function ConversationList({
     // up on any events sent while the WS was disconnected or throttled.
   }, [resyncToken]);
 
+  // Tag definitions for the filter picker — loaded once so labels/colours
+  // stay stable regardless of which conversations happen to be loaded.
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("tags").select("*").order("name");
+      if (!cancelled && data) setTags(data as Tag[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Company options are derived from the loaded conversations — there's no
+  // separate companies table, and only companies with a live conversation
+  // are worth offering as an inbox filter.
+  const companies = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of conversations) {
+      const co = c.contact?.company?.trim();
+      if (co) set.add(co);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [conversations]);
+
+  const tagsById = useMemo(() => {
+    const m = new Map<string, Tag>();
+    for (const t of tags) m.set(t.id, t);
+    return m;
+  }, [tags]);
+
   const filtered = useMemo(() => {
     let result = conversations;
 
@@ -126,6 +170,16 @@ export function ConversationList({
       result = result.filter((c) => c.unread_count > 0);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
+    }
+
+    // Contact-based filters (tags via OR logic, exact company match).
+    if (selectedTagIds.length > 0 || selectedCompany !== null) {
+      result = result.filter((c) =>
+        matchesContactFilters(c, {
+          tagIds: selectedTagIds,
+          company: selectedCompany,
+        })
+      );
     }
 
     if (search.trim()) {
@@ -139,7 +193,20 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+
+  const toggleTag = useCallback((id: string) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
+    );
+  }, []);
+
+  const clearContactFilters = useCallback(() => {
+    setSelectedTagIds([]);
+    setSelectedCompany(null);
+  }, []);
+
+  const hasContactFilters = selectedTagIds.length > 0 || selectedCompany !== null;
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,31 +265,158 @@ export function ConversationList({
           />
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-              {activeFilter?.label ?? "All"}
-              <ChevronDown className="h-3 w-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="border-border bg-popover"
-          >
-            {FILTER_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
+        <div className="flex flex-wrap items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
+                {activeFilter?.label ?? "All"}
+                <ChevronDown className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="border-border bg-popover"
+            >
+              {FILTER_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => setFilter(opt.value)}
+                  className={cn(
+                    "text-sm",
+                    filter === opt.value
+                      ? "text-primary"
+                      : "text-popover-foreground"
+                  )}
+                >
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {tags.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
                 className={cn(
-                  "text-sm",
-                  filter === opt.value
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  selectedTagIds.length > 0
                     ? "text-primary"
-                    : "text-popover-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {opt.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                Tags
+                {selectedTagIds.length > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {selectedTagIds.length}
+                  </span>
+                )}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-64 w-56 border-border bg-popover"
+              >
+                {tags.map((t) => (
+                  <DropdownMenuCheckboxItem
+                    key={t.id}
+                    checked={selectedTagIds.includes(t.id)}
+                    onCheckedChange={() => toggleTag(t.id)}
+                    className="text-sm text-popover-foreground"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      <span className="truncate">{t.name}</span>
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {companies.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex max-w-40 items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  selectedCompany
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="truncate">{selectedCompany ?? "Company"}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-64 w-56 border-border bg-popover"
+              >
+                <DropdownMenuItem
+                  onClick={() => setSelectedCompany(null)}
+                  className={cn(
+                    "text-sm",
+                    selectedCompany === null
+                      ? "text-primary"
+                      : "text-popover-foreground"
+                  )}
+                >
+                  All companies
+                </DropdownMenuItem>
+                {companies.map((co) => (
+                  <DropdownMenuItem
+                    key={co}
+                    onClick={() => setSelectedCompany(co)}
+                    className={cn(
+                      "text-sm",
+                      selectedCompany === co
+                        ? "text-primary"
+                        : "text-popover-foreground"
+                    )}
+                  >
+                    <span className="truncate">{co}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        {hasContactFilters && (
+          <div className="flex flex-wrap items-center gap-1">
+            {selectedTagIds.map((id) => {
+              const tag = tagsById.get(id);
+              return (
+                <button
+                  key={id}
+                  onClick={() => toggleTag(id)}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted/70"
+                >
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: tag?.color ?? "var(--muted-foreground)" }}
+                  />
+                  <span className="max-w-24 truncate">{tag?.name ?? "Tag"}</span>
+                  <X className="h-3 w-3" />
+                </button>
+              );
+            })}
+            {selectedCompany && (
+              <button
+                onClick={() => setSelectedCompany(null)}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted/70"
+              >
+                <span className="max-w-24 truncate">{selectedCompany}</span>
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            <button
+              onClick={clearContactFilters}
+              className="px-1 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Conversation Items.

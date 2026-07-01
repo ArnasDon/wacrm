@@ -100,6 +100,9 @@ export interface Contact {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
+   *  Inbox conversation list, for tag filtering). Absent otherwise. */
+  tags?: Tag[];
 }
 
 export interface Tag {
@@ -156,6 +159,28 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+}
+
+// ============================================================
+// Notifications (migration 027)
+// ============================================================
+
+export type NotificationType = 'conversation_assigned';
+
+export interface Notification {
+  id: string;
+  account_id: string;
+  /** Recipient — the agent this notification is for. */
+  user_id: string;
+  type: NotificationType;
+  conversation_id?: string;
+  contact_id?: string;
+  /** Who triggered it. Null when an automation/system assigned it. */
+  actor_user_id?: string;
+  title: string;
+  body?: string;
+  read_at?: string;
+  created_at: string;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';

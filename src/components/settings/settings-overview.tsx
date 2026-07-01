@@ -135,7 +135,7 @@ export function SettingsOverview({
     return () => {
       cancelled = true;
     };
-  }, [user, accountId, canManageMembers]);
+  }, [user?.id, accountId, canManageMembers]);
 
   const displayName = profile?.full_name || profile?.email || 'Your account';
   const initial = (profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();

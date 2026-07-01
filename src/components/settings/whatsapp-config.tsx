@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Eye,
@@ -53,6 +53,13 @@ export function WhatsAppConfig() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  // Guards against re-hydrating the form when the load effect below
+  // re-runs for reasons unrelated to actually switching accounts —
+  // e.g. Supabase's onAuthStateChange fires a token refresh (new
+  // `user` object, profileLoading flips true/false) when the browser
+  // tab regains focus. Without this, that churn calls fetchConfig()
+  // again and overwrites whatever the user typed but hadn't saved yet.
+  const loadedAccountIdRef = useRef<string | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -164,11 +171,14 @@ export function WhatsAppConfig() {
     // once the profile arrives.
     if (authLoading || profileLoading) return;
     if (!user || !accountId) {
+      loadedAccountIdRef.current = null;
       setLoading(false);
       return;
     }
+    if (loadedAccountIdRef.current === accountId) return;
+    loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
-  }, [authLoading, profileLoading, user, accountId, fetchConfig]);
+  }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {

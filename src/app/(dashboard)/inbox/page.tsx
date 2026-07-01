@@ -3,6 +3,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  CONVERSATION_SELECT,
+  normalizeConversation,
+} from "@/lib/inbox/conversations";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
@@ -118,7 +122,7 @@ export default function InboxPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("conversations")
-        .select("*, contact:contacts(*)")
+        .select(CONVERSATION_SELECT)
         .eq("id", convId)
         .maybeSingle();
       if (error) {
@@ -133,7 +137,7 @@ export default function InboxPage() {
         return;
       }
       if (!data) return;
-      const fetched = data as Conversation;
+      const fetched = normalizeConversation(data);
       setConversations((prev) => {
         const existing = prev.find((c) => c.id === fetched.id);
         if (existing) {

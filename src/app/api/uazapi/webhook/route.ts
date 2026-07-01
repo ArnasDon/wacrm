@@ -81,10 +81,34 @@ function normalizeInbound(body: any): NormalizedInbound | null {
   if (!msg) return null
   const chat = body?.chat ?? {}
 
-  const chatid: string = msg.chatid || msg.sender_pn || msg.sender || ''
-  const senderPhoneRaw: string = msg.sender || msg.sender_pn || chatid.split('@')[0] || ''
-  let fromPhone = normalizePhone(senderPhoneRaw || chatid)
+  // WhatsApp has been migrating chats to `@lid` (a privacy-preserving
+  // "linked ID") instead of the phone-number-based `@s.whatsapp.net`
+  // JID. When that happens, `chatid`/`sender` carry the LID (a numeric
+  // string that looks like a phone number but isn't one — see issue
+  // where a reply created a duplicate contact whose "phone" was a LID
+  // and every outbound send to it then failed with "not on WhatsApp").
+  // `sender_pn` is Uazapi's dedicated phone-number field and must be
+  // preferred whenever present; `chatid`/`sender` are LID-safe
+  // fallbacks only for group-detection and for the (rare) delivery
+  // that has no `sender_pn` at all.
+  const chatid: string = msg.chatid || msg.sender || ''
+  const senderPhoneRaw: string = msg.sender_pn || msg.sender || chatid.split('@')[0] || ''
+  let fromPhone = normalizePhone(senderPhoneRaw)
   if (!fromPhone) fromPhone = normalizePhone(chat.phone || '')
+
+  // TEMP DIAGNOSTIC — remove once the LID-vs-phone field mapping above
+  // is confirmed against a few real deliveries. Only fires when there's
+  // no dedicated phone field to fall back on, so the happy path stays
+  // silent.
+  if (!msg.sender_pn) {
+    console.warn('[uazapi-webhook] no sender_pn on inbound message — raw fields:', {
+      chatid: msg.chatid,
+      sender: msg.sender,
+      sender_pn: msg.sender_pn,
+      chat_phone: chat.phone,
+      resolved_fromPhone: fromPhone,
+    })
+  }
   if (!fromPhone) return null
 
   const isGroup = Boolean(msg.isGroup ?? chat.wa_isGroup ?? chatid.includes('@g.us'))

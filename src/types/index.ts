@@ -158,6 +158,7 @@ export interface Conversation {
   unread_count: number;
   created_at: string;
   updated_at: string;
+  snooze_until?: string | null;
   contact?: Contact;
 }
 
@@ -566,4 +567,13 @@ export interface AutomationLog {
   error_message?: string | null;
   created_at: string;
   contact?: Contact;
+}
+
+export interface QuickReply {
+  id: string;
+  user_id: string;
+  shortcut: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }

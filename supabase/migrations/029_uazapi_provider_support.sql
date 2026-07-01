@@ -77,7 +77,19 @@ CREATE UNIQUE INDEX idx_whatsapp_config_one_default_per_account
 -- Every pre-existing row is Meta and was the only connection for its
 -- account — mark it default so outbound routing has an answer without
 -- requiring a manual step post-migration.
-UPDATE whatsapp_config SET is_default = true WHERE is_default = false;
+--
+-- Guarded by "account has no default yet" (not just "this row isn't
+-- default") so re-running the migration on a DB where an account has
+-- since added a second provider (with is_default correctly split
+-- between the two rows via the app) doesn't flip the non-default row
+-- to true too and trip the partial unique index above.
+UPDATE whatsapp_config wc
+SET is_default = true
+WHERE is_default = false
+  AND NOT EXISTS (
+    SELECT 1 FROM whatsapp_config wc2
+    WHERE wc2.account_id = wc.account_id AND wc2.is_default = true
+  );
 
 -- ---- 5. provider routing column on conversations/messages ----------
 ALTER TABLE conversations

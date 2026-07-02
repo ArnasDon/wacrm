@@ -121,6 +121,30 @@ describe('UazapiProvider.downloadMedia', () => {
     )
   })
 
+  // Regression: a real production incident showed this exact error spamming
+  // logs with zero context, because a 200-with-no-payload response (Uazapi
+  // rejecting the download at the application level — e.g. rate limiting a
+  // burst of concurrent downloads when a long conversation loads) looked
+  // identical to every other "missing field" case. The thrown error must
+  // carry whatever Uazapi actually said, so a production log line is
+  // diagnosable without re-running the request by hand.
+  it('includes Uazapi\'s own response.message when base64Data is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ response: { status: 'error', message: 'rate limit exceeded' } }))
+    )
+    const provider = new UazapiProvider(CONFIG)
+    await expect(provider.downloadMedia({ mediaRef: 'owner:ABC123' })).rejects.toThrow(
+      /rate limit exceeded/
+    )
+  })
+
+  it('falls back to a raw JSON snippet when there is no response.message either', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ weird: 'shape' })))
+    const provider = new UazapiProvider(CONFIG)
+    await expect(provider.downloadMedia({ mediaRef: 'owner:ABC123' })).rejects.toThrow(/weird/)
+  })
+
   it('surfaces the Uazapi error body on a non-2xx response instead of a generic message', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'media expired' }, false, 404)))
     const provider = new UazapiProvider(CONFIG)

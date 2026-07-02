@@ -134,9 +134,20 @@ export class UazapiProvider implements WhatsAppProvider {
     // Uazapi's actual response field is `base64Data`, not `base64` (see
     // openapi spec for POST /message/download) — this was silently
     // throwing on every single download before the fix.
-    const data = (await response.json()) as { base64Data?: string; mimetype?: string; mimeType?: string }
+    const data = (await response.json()) as {
+      base64Data?: string
+      mimetype?: string
+      mimeType?: string
+      response?: { status?: string; message?: string }
+    }
     if (!data.base64Data) {
-      throw new Error('Uazapi media download returned no base64 payload')
+      // A 200 with no payload usually means Uazapi rejected the request at
+      // the application level (rate limit, expired media, disconnected
+      // instance) rather than an HTTP-level error — surface whatever it
+      // sent back instead of a bare "no payload" so this doesn't need a
+      // production log dive to diagnose next time.
+      const detail = data.response?.message || JSON.stringify(data).slice(0, 300)
+      throw new Error(`Uazapi media download returned no base64 payload: ${detail}`)
     }
     return {
       buffer: Buffer.from(data.base64Data, 'base64'),

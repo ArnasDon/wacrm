@@ -6,6 +6,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { enterFunnelIfNew } from '@/lib/journey/enter-funnel'
 
 // Mirrors the Meta webhook route's maxDuration — inbound processing can
 // fan out to a media download + automations/flows dispatch.
@@ -344,6 +345,13 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
         conversation_id: conversation.id,
       },
     }).catch((err) => console.error('[uazapi-webhook] automations dispatch failed:', err))
+  }
+
+  // Sales-funnel Kanban entry point — see the Meta webhook's identical
+  // hook for the full rationale. Idempotent; failures are logged inside
+  // and never throw.
+  if (isFirstInboundMessage) {
+    await enterFunnelIfNew(db, accountId, contactId)
   }
 
   await dispatchWebhookEvent(db, accountId, 'message.received', {

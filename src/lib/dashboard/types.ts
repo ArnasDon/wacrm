@@ -34,6 +34,21 @@ export interface PipelineDonutData {
   totalValue: number
 }
 
+export interface FunnelMetricsBundle {
+  newLeadsToday: MetricDelta
+  /** Leads sitting in a non-terminal stage past the stale threshold (see STALE_AFTER_MS). */
+  stalledLeads: number
+  /**
+   * % of leads that entered the funnel in the last 30 days and have
+   * since reached the "customer" stage. Null when the cohort is empty
+   * (nothing to divide by) rather than 0, so the UI can show "—"
+   * instead of a misleading 0%.
+   */
+  leadConversionRate: number | null
+  /** Cohort size behind `leadConversionRate` — shown as its subtitle. */
+  leadConversionCohortSize: number
+}
+
 export interface ResponseTimeBucket {
   /** 0 = Mon … 6 = Sun (Monday-first). */
   dow: number

@@ -134,7 +134,12 @@ function normalizeInbound(body: any): NormalizedInbound | null {
       : Date.now()
 
   return {
-    externalId: msg.messageid || msg.id || '',
+    // `id` is the full `owner:messageid` composite — same field the send
+    // path (uazapi.ts) prefers when persisting `messages.message_id`. This
+    // MUST match that priority order, or the fromMe-echo dedupe below never
+    // finds the row the CRM already inserted and double-inserts every
+    // outbound message.
+    externalId: msg.id || msg.messageid || '',
     fromPhone,
     senderName: chat.name || msg.senderName || fromPhone,
     isGroup,

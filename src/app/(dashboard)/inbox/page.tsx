@@ -15,6 +15,7 @@ import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isAnyProviderConnected } from "@/lib/whatsapp/connection-status";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -170,12 +171,14 @@ export default function InboxPage() {
 
       if (!user) return;
 
-      // whatsapp_config is one-row-per-account post-multi-user, so
-      // the previous `.eq('user_id', user.id)` would miss the row
-      // for any teammate who didn't personally save the config —
-      // the "WhatsApp not connected" banner would show in the
-      // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
+      // whatsapp_config is one-row-per-account-per-provider (migration
+      // 029 widened the uniqueness from one-row-per-account to
+      // (account_id, provider) so Meta and Uazapi can coexist), so the
+      // previous `.eq('user_id', user.id)` would miss the row for any
+      // teammate who didn't personally save the config — the "WhatsApp
+      // not connected" banner would show in the shared inbox even
+      // though the admin had it configured. Resolve account_id via the
+      // profile and query by that.
       const { data: profile } = await supabase
         .from("profiles")
         .select("account_id")
@@ -187,13 +190,17 @@ export default function InboxPage() {
         return;
       }
 
+      // An account can have both a `meta` and a `uazapi` row — `.maybeSingle()`
+      // errors (and silently resolves to no data) when more than one row
+      // matches, which made the banner show "not connected" even with a
+      // working Uazapi connection whenever a Meta row also existed. Any
+      // one connected provider is enough.
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
-        .eq("account_id", accountId)
-        .maybeSingle();
+        .eq("account_id", accountId);
 
-      setWhatsappConnected(data?.status === "connected");
+      setWhatsappConnected(isAnyProviderConnected(data));
     };
 
     checkConnection();

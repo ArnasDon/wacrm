@@ -1,0 +1,48 @@
+# Stack Swarm do wacrm para crm-docker.hiperfoco.net
+# Espelha o padrão de roteamento já usado nesta VPS (ex: stack meunobre):
+#   - rede overlay externa OrionNet (a mesma que o Traefik observa)
+#   - Traefik com providers.swarm=true -> labels ficam em deploy.labels
+#   - HTTP (web) redireciona p/ HTTPS; HTTPS (websecure) com Let's Encrypt
+#   - app escuta na porta 3000
+version: "3.8"
+
+services:
+  app:
+    image: wacrm:latest
+    networks:
+      - OrionNet
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        # App é leve (~115 MiB em prod). Reserva garante escalonamento;
+        # limite protege os vizinhos num pico. Ajuste se o uso crescer.
+        reservations:
+          memory: 256M
+        limits:
+          memory: 512M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=OrionNet
+        - traefik.http.middlewares.wacrm-gzip.compress=true
+        - traefik.http.middlewares.wacrm-redirect.redirectscheme.scheme=https
+        # ---- HTTP: redireciona para HTTPS ----
+        - traefik.http.routers.http-0-wacrm.entryPoints=web
+        - traefik.http.routers.http-0-wacrm.middlewares=wacrm-redirect
+        - "traefik.http.routers.http-0-wacrm.rule=Host(`crm-docker.hiperfoco.net`) && PathPrefix(`/`)"
+        - traefik.http.routers.http-0-wacrm.service=http-0-wacrm
+        # ---- HTTPS: TLS via letsencryptresolver ----
+        - traefik.http.routers.https-0-wacrm.entryPoints=websecure
+        - traefik.http.routers.https-0-wacrm.middlewares=wacrm-gzip
+        - "traefik.http.routers.https-0-wacrm.rule=Host(`crm-docker.hiperfoco.net`) && PathPrefix(`/`)"
+        - traefik.http.routers.https-0-wacrm.service=https-0-wacrm
+        - traefik.http.routers.https-0-wacrm.tls=true
+        - traefik.http.routers.https-0-wacrm.tls.certresolver=letsencryptresolver
+        # ---- serviços (porta interna do container) ----
+        - traefik.http.services.http-0-wacrm.loadbalancer.server.port=3000
+        - traefik.http.services.https-0-wacrm.loadbalancer.server.port=3000
+
+networks:
+  OrionNet:
+    external: true

@@ -72,12 +72,19 @@ interface NormalizedInbound {
   type: string
   text: string | null
   timestampMs: number
+  /**
+   * Set when this payload IS a reaction rather than a message — holds the
+   * `message_id` of the message being reacted to. Per Uazapi's schema, a
+   * reaction event carries the target's id in `message.reaction` and the
+   * emoji itself in `message.text` (empty string = reaction removed).
+   */
+  reactionTargetId: string | null
 }
 
 const TEXT_LIKE_TYPES = new Set(['text', 'chat', 'conversation', 'extendedtextmessage'])
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeInbound(body: any): NormalizedInbound | null {
+export function normalizeInbound(body: any): NormalizedInbound | null {
   const msg = body?.message
   if (!msg) return null
   const chat = body?.chat ?? {}
@@ -147,6 +154,7 @@ function normalizeInbound(body: any): NormalizedInbound | null {
     type,
     text,
     timestampMs,
+    reactionTargetId: msg.reaction || null,
   }
 }
 
@@ -154,11 +162,78 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'text', 'image', 'document', 'audio', 'video', 'location', 'template', 'interactive',
 ])
 
-function mapContentType(uazapiType: string): string {
+export function mapContentType(uazapiType: string): string {
   if (ALLOWED_CONTENT_TYPES.has(uazapiType)) return uazapiType
   if (uazapiType === 'sticker') return 'image'
   if (uazapiType === 'ptt' || uazapiType === 'myaudio') return 'audio'
   return 'text'
+}
+
+/**
+ * Persist an inbound reaction. Reactions are not new messages — they're
+ * per-(target, actor) state — so we upsert/delete on `message_reactions`
+ * and never write a row into `messages`. Mirrors `handleReaction` in the
+ * Meta webhook (src/app/api/whatsapp/webhook/route.ts).
+ */
+async function handleReaction(
+  db: ReturnType<typeof supabaseAdmin>,
+  inbound: NormalizedInbound,
+  conversationId: string,
+  contactId: string,
+  configOwnerUserId: string
+) {
+  if (!inbound.reactionTargetId) return
+
+  const { data: targetMsg } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('message_id', inbound.reactionTargetId)
+    .maybeSingle()
+
+  if (!targetMsg) {
+    console.warn(
+      '[uazapi-webhook] reaction target message not found; skipping',
+      inbound.reactionTargetId
+    )
+    return
+  }
+
+  // `fromMe` reactions come from the connected number's own phone (outside
+  // the CRM) — there's no logged-in agent to attribute them to, so they're
+  // filed under the account owner. Customer reactions are filed under the
+  // contact, matching the Meta webhook's convention.
+  const actorType = inbound.fromMe ? 'agent' : 'customer'
+  const actorId = inbound.fromMe ? configOwnerUserId : contactId
+
+  // Empty emoji = removal (WhatsApp sends the reaction event again with no
+  // text when the reaction is cleared).
+  if (!inbound.text) {
+    const { error: delError } = await db
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', targetMsg.id)
+      .eq('actor_type', actorType)
+      .eq('actor_id', actorId)
+    if (delError) {
+      console.error('[uazapi-webhook] reaction delete failed:', delError.message)
+    }
+    return
+  }
+
+  const { error: upsertError } = await db.from('message_reactions').upsert(
+    {
+      message_id: targetMsg.id,
+      conversation_id: conversationId,
+      actor_type: actorType,
+      actor_id: actorId,
+      emoji: inbound.text,
+    },
+    { onConflict: 'message_id,actor_type,actor_id' }
+  )
+  if (upsertError) {
+    console.error('[uazapi-webhook] reaction upsert failed:', upsertError.message)
+  }
 }
 
 export async function POST(request: Request) {
@@ -284,6 +359,11 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
       conversation_id: conversation.id,
       contact_id: contactId,
     })
+  }
+
+  if (inbound.reactionTargetId) {
+    await handleReaction(db, inbound, conversation.id, contactId, configOwnerUserId)
+    return
   }
 
   // Messages sent from the WhatsApp app itself (outside the CRM) echo back

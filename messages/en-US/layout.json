@@ -1,0 +1,44 @@
+{
+  "brandName": "CRM Template for WhatsApp",
+  "sidebar": {
+    "primaryNav": "Primary navigation",
+    "closeMenu": "Close menu"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "inbox": "Inbox",
+    "notifications": "Notifications",
+    "contacts": "Contacts",
+    "pipelines": "Pipelines",
+    "kanban": "Kanban",
+    "broadcasts": "Broadcasts",
+    "automations": "Automations",
+    "flows": "Flows",
+    "settings": "Settings",
+    "betaLabel": "Beta",
+    "betaAria": "Beta feature",
+    "unreadConversations": "{count, plural, one {# unread conversation} other {# unread conversations}}",
+    "unreadNotifications": "{count, plural, one {# unread notification} other {# unread notifications}}"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Viewer"
+  },
+  "userMenu": {
+    "profile": "Profile",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "defaultName": "User",
+    "avatarAlt": "Avatar"
+  },
+  "header": {
+    "openMenu": "Open menu",
+    "openAccountMenu": "Open account menu"
+  },
+  "modeToggle": {
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode"
+  }
+}

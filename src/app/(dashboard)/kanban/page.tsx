@@ -12,8 +12,10 @@ import { Filter, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
+import { useTranslations } from "next-intl";
 
 export default function KanbanPage() {
+  const t = useTranslations("kanban");
   const supabase = createClient();
   const canAddLead = useCan("send-messages");
   const { accountId } = useAuth();
@@ -106,7 +108,7 @@ export default function KanbanPage() {
         .limit(1)
         .maybeSingle();
       if (!pipeline) {
-        toast.error("No pipeline found — create one in Pipelines first");
+        toast.error(t("page.toast.noPipelineFound"));
         return;
       }
       const { data: firstStage } = await supabase
@@ -117,7 +119,7 @@ export default function KanbanPage() {
         .limit(1)
         .maybeSingle();
       if (!firstStage) {
-        toast.error("Selected pipeline has no stages");
+        toast.error(t("page.toast.pipelineNoStages"));
         return;
       }
       const {
@@ -126,23 +128,24 @@ export default function KanbanPage() {
       const user = session?.user;
       if (!user) return;
 
-      const contactLabel = journey.contact?.name || journey.contact?.phone || "Lead";
+      const contactLabel =
+        journey.contact?.name || journey.contact?.phone || t("page.leadFallbackLabel");
       const { error } = await supabase.from("deals").insert({
         user_id: user.id,
         account_id: accountId,
         pipeline_id: pipeline.id,
         stage_id: firstStage.id,
         contact_id: journey.contact_id,
-        title: `${contactLabel} — opportunity`,
+        title: t("page.dealTitle", { name: contactLabel }),
         value: 0,
       });
       if (error) {
-        toast.error("Failed to create deal");
+        toast.error(t("page.toast.dealCreateFailed"));
         return;
       }
-      toast.success("Deal created in Pipelines");
+      toast.success(t("page.toast.dealCreated"));
     },
-    [supabase, accountId],
+    [supabase, accountId, t],
   );
 
   const handleJourneyMoved = useCallback(
@@ -168,7 +171,7 @@ export default function KanbanPage() {
         .eq("id", journeyId);
 
       if (error) {
-        toast.error("Failed to move lead");
+        toast.error(t("page.toast.moveFailed"));
         refreshJourneys();
         return;
       }
@@ -186,16 +189,16 @@ export default function KanbanPage() {
       // context switch.
       const targetStage = stages.find((s) => s.id === newStageId);
       if (targetStage?.key === "negotiating") {
-        toast("Lead is negotiating", {
-          description: "Create an opportunity for this lead in Pipelines?",
+        toast(t("page.toast.negotiatingTitle"), {
+          description: t("page.toast.negotiatingDescription"),
           action: {
-            label: "Create Deal",
+            label: t("page.toast.createDealAction"),
             onClick: () => createDealForJourney(journey),
           },
         });
       }
     },
-    [supabase, journeys, stages, refreshJourneys, createDealForJourney],
+    [supabase, journeys, stages, refreshJourneys, createDealForJourney, t],
   );
 
   const handleOpenJourney = useCallback((journey: ContactJourney) => {
@@ -225,9 +228,9 @@ export default function KanbanPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-primary" />
-          <h1 className="text-lg font-semibold text-foreground">Kanban</h1>
+          <h1 className="text-lg font-semibold text-foreground">{t("page.title")}</h1>
           <span className="text-sm text-muted-foreground">
-            Customer journey — from first message to customer
+            {t("page.subtitle")}
           </span>
         </div>
 
@@ -238,7 +241,7 @@ export default function KanbanPage() {
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
           <Plus className="mr-1 h-4 w-4" />
-          Add Lead
+          {t("addLead")}
         </GatedButton>
       </div>
 

@@ -1,0 +1,78 @@
+{
+  "header": {
+    "title": "Dashboard",
+    "subtitle": "Análises em tempo real de conversas, contatos, negociações, transmissões e automações."
+  },
+  "metrics": {
+    "activeConversations": "Conversas Ativas",
+    "newContactsToday": "Novos Contatos Hoje",
+    "openDealsValue": "Valor em Negociações Abertas",
+    "openDealsSubtitle": "{count, plural, one {# negociação aberta} other {# negociações abertas}}",
+    "messagesSentToday": "Mensagens Enviadas Hoje"
+  },
+  "delta": {
+    "noChange": "Sem alteração {suffix}",
+    "change": "{sign}{value} {suffix}",
+    "suffixNewVsYesterday": "novo(s) hoje vs. ontem",
+    "suffixVsYesterday": "vs. ontem"
+  },
+  "funnel": {
+    "title": "Funil da Jornada do Cliente",
+    "newLeadsToday": "Novos Leads Hoje",
+    "stalledLeads": "Leads Parados",
+    "stalledLeadsSubtitle": "No mesmo estágio há 3+ dias",
+    "conversionRate": "Taxa de Lead → Cliente",
+    "conversionRateSubtitle": "{count, plural, one {# lead} other {# leads}} nos últimos 30 dias"
+  },
+  "quickActions": {
+    "newContact": "Novo Contato",
+    "newDeal": "Nova Negociação",
+    "newBroadcast": "Nova Transmissão",
+    "newAutomation": "Nova Automação"
+  },
+  "activityFeed": {
+    "title": "Atividade Recente",
+    "viewAll": "Ver tudo →",
+    "emptyTitle": "Nenhuma atividade ainda",
+    "emptyHint": "Atividades de mensagens, negociações, transmissões e automações aparecerão aqui.",
+    "showing": "Mostrando {visible} de {total}",
+    "show": "Mostrar",
+    "secondsAgo": "{n}s atrás",
+    "minutesAgo": "{n}m atrás",
+    "hoursAgo": "{n}h atrás",
+    "daysAgo": "{n}d atrás"
+  },
+  "conversationsChart": {
+    "title": "Conversas ao Longo do Tempo",
+    "subtitle": "Volume diário de mensagens por direção",
+    "rangeDays": "{days} dias",
+    "emptyTitle": "Nenhuma atividade de mensagens neste período",
+    "emptyHint": "Envie ou receba mensagens para começar a preencher este gráfico.",
+    "legendIncoming": "Recebidas",
+    "legendOutgoing": "Enviadas",
+    "tooltipIncoming": "{count} recebidas",
+    "tooltipOutgoing": "{count} enviadas",
+    "ariaLabel": "Conversas por dia"
+  },
+  "pipelineDonut": {
+    "title": "Valor do Funil de Vendas",
+    "subtitle": "Negociações abertas por estágio",
+    "emptyTitle": "Nenhuma negociação aberta ainda",
+    "emptyHint": "Crie negociações em Funis para ver o detalhamento por estágio aqui.",
+    "dealCount": "{count, plural, one {# negociação} other {# negociações}}",
+    "total": "Total",
+    "ariaLabel": "Valor do funil por estágio"
+  },
+  "responseTimeChart": {
+    "title": "Tempo Médio de Primeira Resposta",
+    "subtitle": "Minutos para responder à primeira mensagem não respondida do cliente, por dia da semana",
+    "target": "meta {minutes}m",
+    "thisWeek": "Esta semana:",
+    "lastWeek": "Semana passada:",
+    "emptyTitle": "Nenhuma resposta registrada ainda",
+    "emptyHint": "Este gráfico será preenchido conforme você responde às mensagens dos clientes."
+  },
+  "emptyState": {
+    "defaultTitle": "Ainda não há dados suficientes"
+  }
+}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
@@ -42,6 +43,7 @@ import { ActivityFeed } from '@/components/dashboard/activity-feed'
 type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
+  const t = useTranslations('dashboard')
   const { defaultCurrency } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
@@ -135,9 +137,9 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('header.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Live analytics across conversations, contacts, deals, broadcasts, and automations.
+          {t('header.subtitle')}
         </p>
       </div>
 
@@ -148,43 +150,49 @@ export default function DashboardPage() {
         ) : (
           <>
             <MetricCard
-              title="Active Conversations"
+              title={t('metrics.activeConversations')}
               value={metrics.activeConversations.current.toLocaleString()}
               icon={MessageSquare}
               delta={{
                 sign: metrics.activeConversations.previous,
-                label: deltaLabel(metrics.activeConversations.previous, 'new today vs yesterday'),
+                label: deltaLabel(
+                  t,
+                  metrics.activeConversations.previous,
+                  t('delta.suffixNewVsYesterday'),
+                ),
               }}
             />
             <MetricCard
-              title="New Contacts Today"
+              title={t('metrics.newContactsToday')}
               value={metrics.newContactsToday.current.toLocaleString()}
               icon={UserPlus}
               delta={{
                 sign:
                   metrics.newContactsToday.current - metrics.newContactsToday.previous,
                 label: deltaLabel(
+                  t,
                   metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                  'vs yesterday',
+                  t('delta.suffixVsYesterday'),
                 ),
               }}
             />
             <MetricCard
-              title="Open Deals Value"
+              title={t('metrics.openDealsValue')}
               value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
               icon={DollarSign}
-              subtitle={`${metrics.openDealsCount} open deal${metrics.openDealsCount === 1 ? '' : 's'}`}
+              subtitle={t('metrics.openDealsSubtitle', { count: metrics.openDealsCount })}
             />
             <MetricCard
-              title="Messages Sent Today"
+              title={t('metrics.messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}
               icon={Send}
               delta={{
                 sign:
                   metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
                 label: deltaLabel(
+                  t,
                   metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                  'vs yesterday',
+                  t('delta.suffixVsYesterday'),
                 ),
               }}
             />
@@ -194,42 +202,43 @@ export default function DashboardPage() {
 
       {/* Customer journey funnel (Kanban) */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-foreground">Customer Journey Funnel</h2>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">{t('funnel.title')}</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {funnelMetricsLoading || !funnelMetrics ? (
             Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
           ) : (
             <>
               <MetricCard
-                title="New Leads Today"
+                title={t('funnel.newLeadsToday')}
                 value={funnelMetrics.newLeadsToday.current.toLocaleString()}
                 icon={Filter}
                 delta={{
                   sign:
                     funnelMetrics.newLeadsToday.current - funnelMetrics.newLeadsToday.previous,
                   label: deltaLabel(
+                    t,
                     funnelMetrics.newLeadsToday.current - funnelMetrics.newLeadsToday.previous,
-                    'vs yesterday',
+                    t('delta.suffixVsYesterday'),
                   ),
                 }}
               />
               <MetricCard
-                title="Stalled Leads"
+                title={t('funnel.stalledLeads')}
                 value={funnelMetrics.stalledLeads.toLocaleString()}
                 icon={Clock}
-                subtitle="In the same stage 3+ days"
+                subtitle={t('funnel.stalledLeadsSubtitle')}
               />
               <MetricCard
-                title="Lead → Customer Rate"
+                title={t('funnel.conversionRate')}
                 value={
                   funnelMetrics.leadConversionRate === null
                     ? '—'
                     : `${funnelMetrics.leadConversionRate.toFixed(0)}%`
                 }
                 icon={TrendingUp}
-                subtitle={`${funnelMetrics.leadConversionCohortSize} lead${
-                  funnelMetrics.leadConversionCohortSize === 1 ? '' : 's'
-                } in the last 30 days`}
+                subtitle={t('funnel.conversionRateSubtitle', {
+                  count: funnelMetrics.leadConversionCohortSize,
+                })}
               />
             </>
           )}
@@ -275,8 +284,12 @@ export default function DashboardPage() {
 
 // ------------------------------------------------------------
 
-function deltaLabel(delta: number, suffix: string): string {
-  if (delta === 0) return `No change ${suffix}`
+function deltaLabel(
+  t: ReturnType<typeof useTranslations>,
+  delta: number,
+  suffix: string,
+): string {
+  if (delta === 0) return t('delta.noChange', { suffix })
   const sign = delta > 0 ? '+' : ''
-  return `${sign}${delta.toLocaleString()} ${suffix}`
+  return t('delta.change', { sign, value: delta.toLocaleString(), suffix })
 }

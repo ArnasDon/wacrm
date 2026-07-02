@@ -1,0 +1,194 @@
+{
+  "connectionBanner": {
+    "notConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+  },
+  "contactSidebar": {
+    "selectConversation": "Select a conversation",
+    "tags": "Tags",
+    "noTags": "No tags",
+    "activeDeals": "Active Deals",
+    "noDeals": "No deals",
+    "notes": "Notes",
+    "notePlaceholder": "Add a note..."
+  },
+  "conversationList": {
+    "searchPlaceholder": "Search conversations...",
+    "newConversation": "New conversation",
+    "filters": {
+      "all": "All",
+      "unread": "Unread",
+      "open": "Open",
+      "pending": "Pending",
+      "closed": "Closed"
+    },
+    "tags": "Tags",
+    "company": "Company",
+    "allCompanies": "All companies",
+    "tagFallback": "Tag",
+    "clearAll": "Clear all",
+    "noConversationsFound": "No conversations found",
+    "noMessagesYet": "No messages yet",
+    "unknownContact": "Unknown"
+  },
+  "imageLightbox": {
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "resetZoom": "Reset zoom",
+    "download": "Download image",
+    "close": "Close"
+  },
+  "messageActions": {
+    "react": "React",
+    "reactWith": "React with {emoji}",
+    "reply": "Reply",
+    "copy": "Copy",
+    "toasts": {
+      "nothingToCopy": "Nothing to copy",
+      "copied": "Copied",
+      "copyFailed": "Copy failed"
+    }
+  },
+  "messageBubble": {
+    "unavailable": "{label} unavailable",
+    "image": "Image",
+    "video": "Video",
+    "audio": "Audio",
+    "document": "Document",
+    "template": "Template",
+    "locationShared": "Location shared",
+    "buttonReply": "Button reply",
+    "interactiveFallback": "[Interactive reply]",
+    "unsupportedMessage": "[Unsupported message type]"
+  },
+  "messageComposer": {
+    "sessionExpiredWithTemplates": "24-hour session expired. Use a template to re-engage.",
+    "sessionExpiredNoTemplates": "24-hour session expired. Wait for the contact to message again.",
+    "templatesButton": "Templates",
+    "attachMenu": {
+      "readOnlyTitle": "Read-only — your role can't send messages",
+      "attachMedia": "Attach media",
+      "photo": "Photo",
+      "video": "Video",
+      "document": "Document",
+      "voiceNote": "Voice note"
+    },
+    "sendTemplate": "Send template",
+    "placeholder": {
+      "readOnly": "Read-only — viewers can browse but not reply",
+      "sessionExpired": "Session expired - use a template",
+      "default": "Type a message... (Shift+Enter for new line)"
+    },
+    "recording": {
+      "label": "Recording… {current} / {max}",
+      "cancel": "Cancel",
+      "stopAndAttach": "Stop and attach"
+    },
+    "quickReplyHint": "Type '/' for quick replies",
+    "captionPlaceholder": "Add a caption…",
+    "removeAttachment": "Remove attachment",
+    "toasts": {
+      "fileTooLarge": "File is {size} MB — {kind} limit is {limit} MB.",
+      "uploadFailed": "Upload failed.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "voiceNotSupported": "Voice recording isn't supported in this browser.",
+      "micDenied": "Microphone access denied or unavailable."
+    }
+  },
+  "messageThread": {
+    "dateToday": "Today",
+    "dateYesterday": "Yesterday",
+    "status": {
+      "open": "Open",
+      "pending": "Pending",
+      "closed": "Closed"
+    },
+    "statusFallback": "Status",
+    "backToConversations": "Back to conversations",
+    "hideContactPanel": "Hide contact panel",
+    "showContactPanel": "Show contact panel",
+    "hideContact": "Hide contact",
+    "showContact": "Show contact",
+    "refresh": "Refresh",
+    "refreshConversation": "Refresh conversation",
+    "assign": "Assign",
+    "assigned": "Assigned",
+    "unassign": "Unassign",
+    "noTeammates": "No teammates available",
+    "me": " (me)",
+    "session": {
+      "expired": "Expired",
+      "noCustomerMessages": "No customer messages",
+      "hoursRemaining": "{hours}h remaining",
+      "minutesRemaining": "{minutes}m remaining"
+    },
+    "emptyState": {
+      "title": "Select a conversation",
+      "description": "Choose a conversation from the left to start messaging"
+    },
+    "noMessages": {
+      "title": "No messages yet",
+      "description": "Send a template to start the conversation"
+    },
+    "customerFallback": "Customer",
+    "you": "You",
+    "toasts": {
+      "sendFailed": "Failed to send: {reason}",
+      "sendTemplateFailed": "Failed to send template: {reason}",
+      "assignmentFailed": "Failed to update assignment",
+      "reactionFailed": "Reaction failed: {reason}",
+      "waitForSend": "Wait for the message to finish sending"
+    }
+  },
+  "newConversationDialog": {
+    "title": "New conversation",
+    "description": "Message a phone number that isn't in your contacts yet. It'll appear in the conversation list right after you send.",
+    "phoneLabel": "Phone number",
+    "phonePlaceholder": "+14155550123",
+    "nameLabel": "Name",
+    "optional": "(optional)",
+    "namePlaceholder": "For your contacts list",
+    "sendVia": "Send via",
+    "providerMeta": "Meta (official)",
+    "providerUazapi": "Uazapi",
+    "messageLabel": "Message",
+    "messagePlaceholder": "Type the first message…",
+    "sendButton": "Send",
+    "sending": "Sending…",
+    "toasts": {
+      "invalidPhone": "Enter a valid phone number, e.g. +14155550123",
+      "emptyMessage": "Write a message to send.",
+      "sent": "Message sent.",
+      "sendFailed": "Failed to send message",
+      "networkError": "Could not reach the server. Try again?"
+    }
+  },
+  "replyQuote": {
+    "cancelReply": "Cancel reply",
+    "fallback": {
+      "image": "[Image]",
+      "video": "[Video]",
+      "audio": "[Audio]",
+      "document": "[Document]",
+      "location": "[Location]",
+      "template": "[Template]",
+      "message": "[Message]"
+    }
+  },
+  "templatePicker": {
+    "title": "Send template",
+    "descriptionFill": "Fill in the placeholders to render this template. Meta requires every variable to be set.",
+    "descriptionPick": "Pick an approved WhatsApp template to send to this contact.",
+    "noTemplates": "No approved templates",
+    "noTemplatesHint": "Approve a template in Meta WhatsApp Manager, then sync it from Settings → Templates.",
+    "previewLabel": "Preview",
+    "headerVarLabel": "Header '{{1}}'",
+    "headerVarPlaceholder": "Value for the header variable",
+    "bodyVarLabel": "Body '{{'{var}'}}'",
+    "bodyVarPlaceholder": "Value for '{{'{var}'}}'",
+    "urlButtonLabel": "URL button \"{text}\" — value for '{{1}}'",
+    "urlButtonPlaceholder": "URL suffix value",
+    "finalUrl": "Final URL: {url}",
+    "back": "Back",
+    "sendTemplate": "Send template"
+  }
+}

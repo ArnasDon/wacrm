@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
@@ -43,6 +44,7 @@ interface InstanceStatusResponse {
  */
 export function UazapiConfig() {
   const { user, accountId, loading: authLoading, profileLoading } = useAuth();
+  const t = useTranslations('uazapiConfig');
 
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -109,7 +111,7 @@ export function UazapiConfig() {
 
   async function handleAttach() {
     if (!tokenInput.trim()) {
-      toast.error('Instance token is required.');
+      toast.error(t('errors.tokenRequired'));
       return;
     }
     setAttaching(true);
@@ -127,21 +129,18 @@ export function UazapiConfig() {
       const data = await res.json();
 
       if (!res.ok) {
-        setErrorMessage(data.error || 'Failed to attach instance');
-        toast.error(data.error || 'Failed to attach instance');
+        setErrorMessage(data.error || t('errors.attachFailed'));
+        toast.error(data.error || t('errors.attachFailed'));
         return;
       }
 
       if (!data.webhook_configured) {
-        toast.warning(
-          'Instance attached, but the webhook could not be configured automatically — set NEXT_PUBLIC_SITE_URL and try again to receive inbound messages.',
-          { duration: 10000 },
-        );
+        toast.warning(t('toasts.webhookNotConfigured'), { duration: 10000 });
       } else {
         toast.success(
           data.connected
-            ? 'Instance attached and connected.'
-            : 'Instance attached. It is not logged into WhatsApp yet — log in via the Uazapi panel.',
+            ? t('toasts.attachedAndConnected')
+            : t('toasts.attachedNotLoggedIn'),
         );
       }
 
@@ -149,15 +148,15 @@ export function UazapiConfig() {
       await refresh();
     } catch (err) {
       console.error('[uazapi-config] attach failed:', err);
-      setErrorMessage('Failed to reach the server.');
-      toast.error('Failed to reach the server.');
+      setErrorMessage(t('errors.serverUnreachable'));
+      toast.error(t('errors.serverUnreachable'));
     } finally {
       setAttaching(false);
     }
   }
 
   async function handleDisconnect() {
-    if (!confirm('Detach this Uazapi instance from wacrm? Your WhatsApp session in Uazapi stays untouched — you can re-attach the same token any time.')) {
+    if (!confirm(t('confirmDetach'))) {
       return;
     }
     setDisconnecting(true);
@@ -165,17 +164,17 @@ export function UazapiConfig() {
       const res = await fetch('/api/uazapi/instance', { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'Failed to detach');
+        toast.error(data.error || t('errors.detachFailed'));
         return;
       }
-      toast.success('Uazapi instance detached.');
+      toast.success(t('toasts.detached'));
       setState('not_created');
       setInstanceName('');
       setInstanceBaseUrl('');
       setConnectedAt(null);
     } catch (err) {
       console.error('[uazapi-config] detach failed:', err);
-      toast.error('Failed to detach.');
+      toast.error(t('errors.detachFailedGeneric'));
     } finally {
       setDisconnecting(false);
     }
@@ -194,14 +193,10 @@ export function UazapiConfig() {
       <CardHeader>
         <CardTitle className="text-foreground flex items-center gap-2">
           <KeyRound className="size-4" />
-          Uazapi connection
+          {t('title')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          Connect a second WhatsApp number via Uazapi (unofficial API). Create the
-          instance and log it into WhatsApp directly in your Uazapi panel first — wacrm
-          only attaches to its token to send messages and receive inbound events via
-          webhook. Runs alongside your Meta connection above; each conversation sticks
-          to whichever provider it started on.
+          {t('description')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -210,24 +205,25 @@ export function UazapiConfig() {
             <div className="flex items-center gap-2">
               <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
               <AlertTitle className="text-emerald-700 dark:text-emerald-300 mb-0">
-                Connected{instanceName ? ` — ${instanceName}` : ''}
+                {instanceName
+                  ? t('connected.titleWithName', { name: instanceName })
+                  : t('connected.title')}
               </AlertTitle>
             </div>
             <AlertDescription className="text-muted-foreground mt-1">
-              WhatsApp session is active. Uazapi is the default provider for new
-              conversations on this account.
+              {t('connected.description')}
             </AlertDescription>
             <dl className="mt-3 grid gap-1.5 border-t border-emerald-500/20 pt-3 text-xs">
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-muted-foreground">Instance</dt>
+                <dt className="w-24 shrink-0 text-muted-foreground">{t('fields.instance')}</dt>
                 <dd className="font-mono text-foreground">{instanceName || '—'}</dd>
               </div>
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-muted-foreground">Server</dt>
+                <dt className="w-24 shrink-0 text-muted-foreground">{t('fields.server')}</dt>
                 <dd className="font-mono text-foreground break-all">{instanceBaseUrl || '—'}</dd>
               </div>
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-muted-foreground">Connected since</dt>
+                <dt className="w-24 shrink-0 text-muted-foreground">{t('fields.connectedSince')}</dt>
                 <dd className="text-foreground">
                   {connectedAt ? new Date(connectedAt).toLocaleString() : '—'}
                 </dd>
@@ -241,20 +237,19 @@ export function UazapiConfig() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
               <AlertTitle className="text-amber-700 dark:text-amber-300 mb-0">
-                Token attached, but not logged into WhatsApp
+                {t('notLoggedIn.title')}
               </AlertTitle>
             </div>
             <AlertDescription className="text-muted-foreground mt-1">
-              {errorMessage ||
-                'wacrm saved this token, but Uazapi reports the WhatsApp session isn’t connected. Log the instance into WhatsApp in the Uazapi panel, then click "Refresh status".'}
+              {errorMessage || t('notLoggedIn.description')}
             </AlertDescription>
             <dl className="mt-3 grid gap-1.5 border-t border-amber-500/20 pt-3 text-xs">
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-muted-foreground">Instance</dt>
+                <dt className="w-24 shrink-0 text-muted-foreground">{t('fields.instance')}</dt>
                 <dd className="font-mono text-foreground">{instanceName || '—'}</dd>
               </div>
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-muted-foreground">Server</dt>
+                <dt className="w-24 shrink-0 text-muted-foreground">{t('fields.server')}</dt>
                 <dd className="font-mono text-foreground break-all">{instanceBaseUrl || '—'}</dd>
               </div>
             </dl>
@@ -265,10 +260,10 @@ export function UazapiConfig() {
           <Alert className="bg-card border-border">
             <div className="flex items-center gap-2">
               <XCircle className="size-4 text-muted-foreground" />
-              <AlertTitle className="text-foreground mb-0">Not connected</AlertTitle>
+              <AlertTitle className="text-foreground mb-0">{t('notCreated.title')}</AlertTitle>
             </div>
             <AlertDescription className="text-muted-foreground">
-              {errorMessage || 'Paste your Uazapi instance token below to attach it.'}
+              {errorMessage || t('notCreated.description')}
             </AlertDescription>
           </Alert>
         )}
@@ -284,12 +279,12 @@ export function UazapiConfig() {
               {disconnecting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Detaching…
+                  {t('detaching')}
                 </>
               ) : (
                 <>
                   <Unplug className="size-4" />
-                  Detach
+                  {t('detach')}
                 </>
               )}
             </Button>
@@ -304,7 +299,7 @@ export function UazapiConfig() {
                   className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
                 >
                   <RotateCcw className="size-4" />
-                  Refresh status
+                  {t('refreshStatus')}
                 </Button>
                 <Button
                   variant="outline"
@@ -315,12 +310,12 @@ export function UazapiConfig() {
                   {disconnecting ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
-                      Detaching…
+                      {t('detaching')}
                     </>
                   ) : (
                     <>
                       <Unplug className="size-4" />
-                      Detach
+                      {t('detach')}
                     </>
                   )}
                 </Button>
@@ -329,30 +324,32 @@ export function UazapiConfig() {
 
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Instance token</Label>
+                <Label className="text-muted-foreground">{t('form.tokenLabel')}</Label>
                 <Input
                   type="password"
-                  placeholder="Paste your Uazapi instance token"
+                  placeholder={t('form.tokenPlaceholder')}
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Create the instance and log it into WhatsApp in your{' '}
-                  <a
-                    href="https://uazapi.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:text-primary/80"
-                  >
-                    Uazapi panel
-                  </a>{' '}
-                  first, then copy its token here.
+                  {t.rich('form.tokenHint', {
+                    a: (chunks) => (
+                      <a
+                        href="https://uazapi.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:text-primary/80"
+                      >
+                        {chunks}
+                      </a>
+                    ),
+                  })}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">
-                  Base URL <span className="text-muted-foreground">(optional)</span>
+                  {t('form.baseUrlLabel')} <span className="text-muted-foreground">{t('form.optional')}</span>
                 </Label>
                 <Input
                   placeholder="https://nuvtex.uazapi.com"
@@ -361,18 +358,17 @@ export function UazapiConfig() {
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Leave blank to use the server default (
-                  <code className="text-foreground">https://nuvtex.uazapi.com</code>).
-                  Override it if your instance lives on a different Uazapi server or
-                  self-hosted URL.
+                  {t.rich('form.baseUrlHint', {
+                    code: (chunks) => <code className="text-foreground">{chunks}</code>,
+                  })}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">
-                  Instance name <span className="text-muted-foreground">(optional)</span>
+                  {t('form.instanceNameLabel')} <span className="text-muted-foreground">{t('form.optional')}</span>
                 </Label>
                 <Input
-                  placeholder="For your own reference"
+                  placeholder={t('form.instanceNamePlaceholder')}
                   value={instanceNameInput}
                   onChange={(e) => setInstanceNameInput(e.target.value)}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
@@ -386,12 +382,12 @@ export function UazapiConfig() {
                 {attaching ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Verifying…
+                    {t('verifying')}
                   </>
                 ) : (
                   <>
                     <KeyRound className="size-4" />
-                    Attach instance
+                    {t('attachInstance')}
                   </>
                 )}
               </Button>

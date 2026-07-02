@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/core";
 import type { ContactJourney, FunnelStage } from "@/types";
 import { LeadCard } from "./lead-card";
+import { useTranslations } from "next-intl";
 
 interface KanbanBoardProps {
   stages: FunnelStage[];
@@ -168,6 +169,7 @@ function StageColumn({
   onOpenJourney: (journey: ContactJourney) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const t = useTranslations("kanban");
 
   return (
     <div className="flex w-[85vw] min-w-[260px] max-w-[320px] shrink-0 snap-start flex-col rounded-xl border border-border bg-card/60 p-4 lg:w-auto lg:max-w-none lg:flex-1 lg:basis-[260px] lg:shrink lg:snap-none">
@@ -195,7 +197,7 @@ function StageColumn({
       >
         {journeys.length === 0 ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-border py-10 text-xs text-muted-foreground">
-            No leads here
+            {t("board.emptyColumn")}
           </div>
         ) : (
           journeys.map((journey) => (

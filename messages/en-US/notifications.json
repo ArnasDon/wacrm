@@ -1,0 +1,14 @@
+{
+  "title": "Notifications",
+  "subtitle": "Conversations other teammates assign to you show up here.",
+  "markAllRead": "Mark all as read",
+  "empty": {
+    "title": "No notifications yet",
+    "body": "You'll see an alert here when someone assigns you a conversation."
+  },
+  "unreadAria": "Unread",
+  "toast": {
+    "markReadError": "Failed to mark notification as read",
+    "markAllError": "Failed to mark all as read"
+  }
+}

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
+import { useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {
   stages: PipelineStage[];
@@ -46,6 +47,7 @@ function computeStageProbability(
 }
 
 export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
+  const t = useTranslations("pipelines.analytics");
   const { defaultCurrency } = useAuth();
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -96,39 +98,45 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card/60 p-4 sm:grid-cols-3 xl:grid-cols-6">
         <Metric
           icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
-          label="Total Deals"
+          label={t("metrics.totalDeals")}
           value={String(stats.totalCount)}
-          tooltip="Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included."
+          tooltip={t("tooltips.totalDeals")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.totalDeals") })}
         />
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
-          label="Pipeline Value"
+          label={t("metrics.pipelineValue")}
           value={formatCurrency(stats.totalValue, defaultCurrency)}
-          tooltip="Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost."
+          tooltip={t("tooltips.pipelineValue")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.pipelineValue") })}
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
-          label="Avg Deal Size"
+          label={t("metrics.avgDealSize")}
           value={formatCurrency(stats.avgValue, defaultCurrency)}
-          tooltip="Pipeline Value divided by Total Deals — the average value of a single non-lost deal."
+          tooltip={t("tooltips.avgDealSize")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.avgDealSize") })}
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
-          label="Weighted Value"
+          label={t("metrics.weightedValue")}
           value={formatCurrency(stats.weightedValue, defaultCurrency)}
-          tooltip="Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded."
+          tooltip={t("tooltips.weightedValue")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.weightedValue") })}
         />
         <Metric
           icon={<Trophy className="h-4 w-4 text-primary" />}
-          label="Won This Month"
+          label={t("metrics.wonThisMonth")}
           value={String(stats.wonThisMonth)}
-          tooltip="Deals marked as Won since the first day of the current month."
+          tooltip={t("tooltips.wonThisMonth")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.wonThisMonth") })}
         />
         <Metric
           icon={<XCircle className="h-4 w-4 text-red-400" />}
-          label="Lost This Month"
+          label={t("metrics.lostThisMonth")}
           value={String(stats.lostThisMonth)}
-          tooltip="Deals marked as Lost since the first day of the current month."
+          tooltip={t("tooltips.lostThisMonth")}
+          ariaLabel={t("howCalculatedAria", { label: t("metrics.lostThisMonth") })}
         />
       </div>
     </TooltipProvider>
@@ -140,11 +148,13 @@ function Metric({
   label,
   value,
   tooltip,
+  ariaLabel,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   tooltip: string;
+  ariaLabel: string;
 }) {
   return (
     <div className="rounded-lg bg-muted/50 p-3">
@@ -156,7 +166,7 @@ function Metric({
             render={
               <button
                 type="button"
-                aria-label={`How ${label} is calculated`}
+                aria-label={ariaLabel}
                 className="ml-auto text-muted-foreground hover:text-foreground focus:outline-none"
               />
             }

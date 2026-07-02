@@ -1,0 +1,216 @@
+{
+  "list": {
+    "title": "Transmissões",
+    "description": "Envie mensagens em massa para seus contatos usando templates aprovados.",
+    "newBroadcast": "Nova Transmissão",
+    "inProgressAriaLabel": "Transmissão em andamento",
+    "retry": "Tentar novamente",
+    "loadError": "Não foi possível carregar as transmissões",
+    "empty": {
+      "title": "Nenhuma transmissão ainda",
+      "description": "Crie sua primeira transmissão para alcançar seus contatos em escala."
+    },
+    "columns": {
+      "name": "Nome",
+      "template": "Template",
+      "recipients": "Destinatários",
+      "delivery": "Entrega",
+      "read": "Leitura",
+      "status": "Status",
+      "date": "Data"
+    }
+  },
+  "new": {
+    "title": "Nova Transmissão",
+    "description": "Crie e envie uma mensagem de transmissão para seus contatos.",
+    "steps": {
+      "template": "Template",
+      "audience": "Público",
+      "personalize": "Personalizar",
+      "send": "Enviar"
+    },
+    "errors": {
+      "sendFailed": "Falha ao enviar transmissão",
+      "draftNameRequired": "Dê um nome à transmissão antes de salvar um rascunho.",
+      "notSignedIn": "Não autenticado.",
+      "accountNotLinked": "Seu perfil não está vinculado a uma conta.",
+      "draftSaveFailed": "Falha ao salvar rascunho: {message}"
+    },
+    "draftSaved": "Rascunho salvo"
+  },
+  "detail": {
+    "loadError": "Não foi possível carregar a transmissão",
+    "notFound": "Transmissão não encontrada",
+    "backToBroadcasts": "Voltar para Transmissões",
+    "templateLabel": "Template: {name}",
+    "createdLabel": "Criada em {date}",
+    "delete": {
+      "button": "Excluir",
+      "confirmQuestion": "Excluir esta transmissão?",
+      "confirming": "Excluindo…",
+      "tooltipDisabled": "Não é possível excluir enquanto uma transmissão está sendo enviada",
+      "tooltipEnabled": "Excluir esta transmissão",
+      "successToast": "Transmissão excluída",
+      "errorToast": "Falha ao excluir: {message}"
+    },
+    "stats": {
+      "totalRecipients": "Total de Destinatários",
+      "sent": "Enviadas",
+      "delivered": "Entregues",
+      "read": "Lidas",
+      "replied": "Respondidas",
+      "failed": "Falhas"
+    },
+    "funnel": {
+      "title": "Funil",
+      "sent": "Enviadas",
+      "delivered": "Entregues",
+      "read": "Lidas",
+      "replied": "Respondidas"
+    },
+    "recipients": {
+      "title": "Destinatários ({count})",
+      "titleFiltered": "Destinatários ({count} de {total})",
+      "allStatuses": "Todos os status",
+      "exportCsv": "Exportar CSV",
+      "empty": "Nenhum destinatário encontrado.",
+      "emptyFiltered": "Nenhum destinatário corresponde a este filtro.",
+      "unknownContact": "Desconhecido",
+      "columns": {
+        "contact": "Contato",
+        "phone": "Telefone",
+        "status": "Status",
+        "sent": "Enviada",
+        "delivered": "Entregue",
+        "read": "Lida",
+        "error": "Erro"
+      },
+      "csvHeaders": {
+        "contact": "Contato",
+        "phone": "Telefone",
+        "status": "Status",
+        "sentAt": "Enviada em",
+        "deliveredAt": "Entregue em",
+        "readAt": "Lida em",
+        "repliedAt": "Respondida em",
+        "error": "Erro"
+      }
+    }
+  },
+  "step1": {
+    "title": "Escolha um Template",
+    "description": "Selecione um template de mensagem aprovado para sua transmissão.",
+    "loadError": "Não foi possível carregar os templates",
+    "empty": {
+      "title": "Nenhum template disponível.",
+      "description": "Crie um template em Configurações primeiro."
+    }
+  },
+  "step2": {
+    "title": "Selecionar Público",
+    "description": "Escolha quem receberá esta transmissão.",
+    "audience": {
+      "all": {
+        "label": "Todos os Contatos",
+        "description": "Enviar para todos os contatos da sua base"
+      },
+      "tags": {
+        "label": "Filtrar por Tags",
+        "description": "Direcionar contatos com tags específicas"
+      },
+      "custom_field": {
+        "label": "Campo Personalizado",
+        "description": "Filtrar por um valor de campo personalizado"
+      },
+      "csv": {
+        "label": "Enviar CSV",
+        "description": "Envie uma lista de números de telefone"
+      }
+    },
+    "operators": {
+      "is": "é",
+      "is_not": "não é",
+      "contains": "contém"
+    },
+    "selectTags": "Selecionar Tags",
+    "noTags": "Nenhuma tag encontrada. Crie tags em Configurações.",
+    "customFieldFilter": "Filtro de Campo Personalizado",
+    "noCustomFields": "Nenhum campo personalizado definido. Crie um em Configurações → Campos Personalizados.",
+    "selectFieldPlaceholder": "Selecionar campo…",
+    "valuePlaceholder": "Valor",
+    "excludeTitle": "Excluir contatos com estas tags",
+    "optional": "(opcional)",
+    "noTagsAvailable": "Nenhuma tag disponível.",
+    "summary": {
+      "title": "Resumo do Público",
+      "calculating": "Calculando…",
+      "estimatedRecipients": "destinatários estimados",
+      "selectPrompt": "Selecione um tipo de público para ver a estimativa."
+    }
+  },
+  "step3": {
+    "title": "Personalizar Mensagem",
+    "description": "Mapeie as variáveis do template para campos de contato, campos personalizados ou valores estáticos.",
+    "headerMedia": {
+      "title": "Mídia do Cabeçalho",
+      "urlLabel": "URL da Mídia",
+      "urlPlaceholder": "https://exemplo.com/cabecalho.{ext}",
+      "helpText": "URL pública da(o) {type} enviada(o) como cabeçalho da mensagem. Usada para todos os destinatários desta transmissão.",
+      "previewAlt": "Prévia do cabeçalho",
+      "errorMissing": "É necessária uma URL de mídia para enviar este template.",
+      "errorInvalid": "Insira uma URL http(s) válida."
+    },
+    "noVariables": "Este template não tem variáveis para personalizar.",
+    "mappingType": "Tipo de Mapeamento",
+    "mappingOptions": {
+      "static": "Valor Estático",
+      "field": "Campo de Contato",
+      "custom_field": "Campo Personalizado"
+    },
+    "valueLabel": "Valor",
+    "fieldLabel": "Campo",
+    "valuePlaceholder": "Digite um valor...",
+    "selectFieldPlaceholder": "Selecionar campo...",
+    "loadingFields": "Carregando…",
+    "noCustomFields": "Nenhum campo personalizado",
+    "selectCustomFieldPlaceholder": "Selecionar campo personalizado…",
+    "contactFields": {
+      "name": "Nome do Contato",
+      "phone": "Número de Telefone",
+      "email": "Endereço de Email",
+      "company": "Empresa"
+    },
+    "livePreview": {
+      "title": "Prévia ao Vivo",
+      "sampleData": "dados de exemplo"
+    },
+    "unmappedWarning": "Mapeie todos os placeholders antes de continuar — ainda faltam <b>{keys}</b>. Caso contrário, esses placeholders serão enviados ao Meta como strings vazias."
+  },
+  "step4": {
+    "title": "Revisar e Enviar",
+    "description": "Nomeie sua transmissão, revise os detalhes e envie.",
+    "nameLabel": "Nome da Transmissão",
+    "namePlaceholder": "ex.: Anúncio de Promoção de Verão",
+    "summary": {
+      "title": "Resumo",
+      "template": "Template",
+      "audience": "Público",
+      "estimatedReach": "Alcance Estimado",
+      "language": "Idioma"
+    },
+    "audienceLabels": {
+      "allContacts": "Todos os Contatos",
+      "tagsSelected": "Tags ({count} selecionadas)",
+      "csvUpload": "Upload de CSV",
+      "custom": "Personalizado"
+    },
+    "sending": "Enviando transmissão...",
+    "saveAsDraft": "Salvar como Rascunho",
+    "sendBroadcast": "Enviar Transmissão",
+    "confirmDialog": {
+      "title": "Confirmar Transmissão",
+      "description": "Você está prestes a enviar esta transmissão para <b>{count}</b> contatos usando o template <b>{template}</b>. Esta ação não pode ser desfeita.",
+      "confirmAndSend": "Confirmar e Enviar"
+    }
+  }
+}

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useCan } from "@/hooks/use-can";
+import { useTranslations } from "next-intl";
 
 interface LeadDetailSheetProps {
   open: boolean;
@@ -29,6 +30,8 @@ export function LeadDetailSheet({
   onMoved,
 }: LeadDetailSheetProps) {
   const canMove = useCan("send-messages");
+  const t = useTranslations("kanban");
+  const tCommon = useTranslations("common");
 
   if (!journey) return null;
   const contact = journey.contact;
@@ -43,7 +46,7 @@ export function LeadDetailSheet({
         <div className="flex h-full flex-col">
           <SheetHeader className="border-b border-border/50 p-4">
             <SheetTitle className="text-popover-foreground">
-              {contact?.name || contact?.phone || "Lead"}
+              {contact?.name || contact?.phone || t("detailSheet.defaultTitle")}
             </SheetTitle>
           </SheetHeader>
 
@@ -51,7 +54,7 @@ export function LeadDetailSheet({
             {contact?.phone && (
               <div className="grid gap-1">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Phone
+                  {t("detailSheet.phone")}
                 </span>
                 <span className="text-sm text-foreground">{contact.phone}</span>
               </div>
@@ -59,7 +62,7 @@ export function LeadDetailSheet({
 
             <div className="grid gap-1">
               <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                In current stage since
+                {t("detailSheet.inStageSince")}
               </span>
               <span className="text-sm text-foreground">
                 {formatDistanceToNow(new Date(journey.entered_stage_at), {
@@ -71,7 +74,7 @@ export function LeadDetailSheet({
             {journey.conversation?.last_message_text && (
               <div className="grid gap-1">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Last message
+                  {t("detailSheet.lastMessage")}
                 </span>
                 <p className="text-sm text-foreground">
                   {journey.conversation.last_message_text}
@@ -81,7 +84,7 @@ export function LeadDetailSheet({
 
             <div className="grid gap-2">
               <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Stage
+                {t("detailSheet.stage")}
               </span>
               <select
                 value={journey.stage_id}
@@ -103,7 +106,7 @@ export function LeadDetailSheet({
                 className="inline-flex items-center gap-1.5 self-start rounded-md bg-primary/10 px-2 py-1.5 text-xs text-primary hover:bg-primary/20"
               >
                 <MessageSquare className="h-3 w-3" />
-                View conversation
+                {t("detailSheet.viewConversation")}
               </Link>
             )}
           </div>
@@ -114,7 +117,7 @@ export function LeadDetailSheet({
               onClick={() => onOpenChange(false)}
               className="w-full border-border bg-transparent text-muted-foreground hover:bg-muted"
             >
-              Close
+              {tCommon("actions.close")}
             </Button>
           </div>
         </div>

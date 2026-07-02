@@ -1,0 +1,42 @@
+{
+  "addLead": "Adicionar lead",
+  "page": {
+    "title": "Kanban",
+    "subtitle": "Jornada do cliente — da primeira mensagem até virar cliente",
+    "leadFallbackLabel": "Lead",
+    "dealTitle": "{name} — oportunidade",
+    "toast": {
+      "noPipelineFound": "Nenhum funil encontrado — crie um em Pipelines primeiro",
+      "pipelineNoStages": "O funil selecionado não tem etapas",
+      "dealCreateFailed": "Falha ao criar negociação",
+      "dealCreated": "Negociação criada em Pipelines",
+      "moveFailed": "Falha ao mover lead",
+      "negotiatingTitle": "Lead está em negociação",
+      "negotiatingDescription": "Criar uma oportunidade para este lead em Pipelines?",
+      "createDealAction": "Criar negociação"
+    }
+  },
+  "addLeadForm": {
+    "contactLabel": "Contato",
+    "selectContactPlaceholder": "Selecione um contato",
+    "entersAtStage": "Entra no funil na primeira etapa ({stage}).",
+    "noStagesConfigured": "Nenhuma etapa de funil configurada ainda",
+    "addFailed": "Falha ao adicionar lead",
+    "added": "Lead adicionado ao funil",
+    "adding": "Adicionando..."
+  },
+  "board": {
+    "emptyColumn": "Nenhum lead aqui"
+  },
+  "leadCard": {
+    "unknownContact": "Contato desconhecido"
+  },
+  "detailSheet": {
+    "defaultTitle": "Lead",
+    "phone": "Telefone",
+    "inStageSince": "Na etapa atual desde",
+    "lastMessage": "Última mensagem",
+    "stage": "Etapa",
+    "viewConversation": "Ver conversa"
+  }
+}

@@ -4,6 +4,7 @@ import type { ContactJourney, FunnelStage } from "@/types";
 import { MessageCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { STALE_AFTER_MS } from "@/lib/journey/funnel-stages";
+import { useTranslations } from "next-intl";
 
 interface LeadCardProps {
   journey: ContactJourney;
@@ -19,8 +20,9 @@ function initials(name?: string, fallback?: string) {
 }
 
 export function LeadCard({ journey, stage, onOpen, isOverlay }: LeadCardProps) {
+  const t = useTranslations("kanban");
   const contact = journey.contact;
-  const contactLabel = contact?.name || contact?.phone || "Unknown contact";
+  const contactLabel = contact?.name || contact?.phone || t("leadCard.unknownContact");
   const enteredAt = new Date(journey.entered_stage_at);
   const isStale = new Date().getTime() - enteredAt.getTime() > STALE_AFTER_MS;
   const lastMessage = journey.conversation?.last_message_text;

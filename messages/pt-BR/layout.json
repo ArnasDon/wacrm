@@ -1,0 +1,44 @@
+{
+  "brandName": "Modelo de CRM para WhatsApp",
+  "sidebar": {
+    "primaryNav": "Navegação principal",
+    "closeMenu": "Fechar menu"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "inbox": "Caixa de entrada",
+    "notifications": "Notificações",
+    "contacts": "Contatos",
+    "pipelines": "Funis",
+    "kanban": "Kanban",
+    "broadcasts": "Transmissões",
+    "automations": "Automações",
+    "flows": "Fluxos",
+    "settings": "Configurações",
+    "betaLabel": "Beta",
+    "betaAria": "Recurso beta",
+    "unreadConversations": "{count, plural, one {# conversa não lida} other {# conversas não lidas}}",
+    "unreadNotifications": "{count, plural, one {# notificação não lida} other {# notificações não lidas}}"
+  },
+  "roles": {
+    "owner": "Proprietário",
+    "admin": "Administrador",
+    "agent": "Agente",
+    "viewer": "Visualizador"
+  },
+  "userMenu": {
+    "profile": "Perfil",
+    "settings": "Configurações",
+    "signOut": "Sair",
+    "defaultName": "Usuário",
+    "avatarAlt": "Avatar"
+  },
+  "header": {
+    "openMenu": "Abrir menu",
+    "openAccountMenu": "Abrir menu da conta"
+  },
+  "modeToggle": {
+    "switchToLight": "Mudar para modo claro",
+    "switchToDark": "Mudar para modo escuro"
+  }
+}

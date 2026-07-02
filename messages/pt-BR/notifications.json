@@ -1,0 +1,14 @@
+{
+  "title": "Notificações",
+  "subtitle": "As conversas que outros atendentes atribuírem a você aparecem aqui.",
+  "markAllRead": "Marcar tudo como lido",
+  "empty": {
+    "title": "Nenhuma notificação ainda",
+    "body": "Você verá um alerta aqui quando alguém atribuir uma conversa a você."
+  },
+  "unreadAria": "Não lida",
+  "toast": {
+    "markReadError": "Não foi possível marcar a notificação como lida",
+    "markAllError": "Não foi possível marcar tudo como lido"
+  }
+}

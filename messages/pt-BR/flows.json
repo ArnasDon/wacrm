@@ -1,0 +1,285 @@
+{
+  "nodeTypes": {
+    "start": { "label": "Início", "blurb": "Ponto de entrada do flow" },
+    "send_message": { "label": "Enviar mensagem", "blurb": "Envia uma mensagem de texto no WhatsApp" },
+    "send_buttons": { "label": "Enviar botões", "blurb": "Envia botões de resposta rápida" },
+    "send_list": { "label": "Enviar lista", "blurb": "Envia uma lista de opções tocável" },
+    "send_media": { "label": "Enviar mídia", "blurb": "Envia uma imagem, vídeo ou documento" },
+    "collect_input": { "label": "Coletar resposta", "blurb": "Faz uma pergunta e salva a resposta" },
+    "condition": { "label": "Se / senão", "blurb": "Ramifica com base em uma regra" },
+    "set_tag": { "label": "Marcar contato", "blurb": "Adiciona ou remove uma tag do contato" },
+    "handoff": { "label": "Transferir para agente", "blurb": "Transfere a conversa para um humano" },
+    "end": { "label": "Fim", "blurb": "Encerra o flow" }
+  },
+  "nodeCategories": {
+    "messaging": "Mensagens",
+    "logic": "Lógica e dados",
+    "flow": "Controle de fluxo"
+  },
+  "nodePreview": {
+    "mediaType": {
+      "image": "Imagem",
+      "video": "Vídeo",
+      "document": "Documento",
+      "generic": "Mídia"
+    },
+    "mediaNoFile": "{label} (nenhum arquivo enviado)",
+    "mediaWithCaption": "{label}: {name} · {caption}",
+    "mediaWithName": "{label}: {name}",
+    "captureWithArrow": "{prompt} → vars.{key}",
+    "captureArrowOnly": "→ vars.{key}",
+    "conditionHasTag": "tem a tag {tag}",
+    "operator": {
+      "equals": "==",
+      "contains": "contém",
+      "present": "existe",
+      "absent": "ausente"
+    },
+    "tagMode": { "add": "Adicionar", "remove": "Remover" },
+    "tagNonePicked": "{mode} tag (nenhuma selecionada)",
+    "tagWithId": "{mode} tag {id}…",
+    "optionCount": "{count, plural, one {# opção} other {# opções}}",
+    "optionsAcrossSections": "{options} em {count, plural, one {# seção} other {# seções}}"
+  },
+  "list": {
+    "title": "Flows",
+    "betaBadge": "Beta",
+    "subtitle": "Crie conversas de WhatsApp ramificadas e guiadas por botões. Útil para menus, FAQs e triagem antes de um humano assumir.",
+    "newFlow": "Novo flow",
+    "loadError": "Não foi possível carregar os flows.",
+    "createError": "Não foi possível criar o flow.",
+    "deleteError": "Não foi possível excluir o flow.",
+    "deleteSuccess": "Flow excluído.",
+    "deleteConfirm": "Excluir \"{name}\"? Todas as execuções ativas serão encerradas imediatamente.",
+    "cloneError": "Falha ao clonar o modelo.",
+    "emptyState": {
+      "title": "Nenhum flow ainda",
+      "description": "Crie sua primeira conversa — um menu de boas-vindas, uma consulta de pedido, um bot de FAQ. Os clientes tocam em botões; o bot os direciona para a resposta certa (ou o agente certo).",
+      "cta": "Criar seu primeiro flow"
+    },
+    "statusLabels": {
+      "draft": "Rascunho",
+      "active": "Ativo",
+      "archived": "Arquivado"
+    },
+    "runsCount": "{count, plural, one {execução} other {execuções}}",
+    "createDialog": {
+      "title": "Criar um novo flow",
+      "description": "Comece a partir de um modelo ou crie do zero.",
+      "templatesHeading": "Começar a partir de um modelo",
+      "nodeCount": "{count, plural, one {nó} other {nós}}",
+      "blankHeading": "Ou comece em branco",
+      "namePlaceholder": "ex: Menu de boas-vindas",
+      "createBlank": "Criar flow em branco"
+    },
+    "trigger": {
+      "keywordNone": "Aciona por palavra-chave (nenhuma definida)",
+      "keywordList": "Aciona em: {keywords}",
+      "firstInbound": "Aciona na primeira mensagem recebida de um contato",
+      "manual": "Acionamento manual"
+    }
+  },
+  "runs": {
+    "notFound": "Flow não encontrado.",
+    "backToFlows": "Voltar para flows",
+    "title": "Execuções",
+    "subtitle": "As 50 execuções mais recentes deste flow. Expanda uma linha para ver o log detalhado do mecanismo.",
+    "empty": "Nenhuma execução ainda. Acione o flow a partir de um número de WhatsApp pessoal para vê-la aparecer aqui.",
+    "loadError": "Não foi possível carregar as execuções.",
+    "statusLabels": {
+      "active": "Ativa",
+      "completed": "Concluída",
+      "handed_off": "Transferida",
+      "timed_out": "Expirada",
+      "paused_by_agent": "Pausada pelo agente",
+      "failed": "Falhou"
+    },
+    "unknownContact": "Contato desconhecido",
+    "atNode": "em {node}",
+    "startedAt": "Iniciada em {date}",
+    "reprompts": "{count} reenvios",
+    "ranFor": "durou {duration}",
+    "capturedVars": "Variáveis capturadas ({count})",
+    "noEvents": "Nenhum evento registrado para esta execução."
+  },
+  "editorPage": {
+    "notFound": "Flow não encontrado.",
+    "backToFlows": "Voltar para flows",
+    "loadError": "Não foi possível carregar o flow."
+  },
+  "header": {
+    "backToFlows": "Voltar para Flows",
+    "namePlaceholder": "Nome do flow",
+    "nameLabel": "Nome do flow",
+    "descriptionPlaceholder": "Adicione uma breve descrição (interna — os clientes não veem isso)",
+    "descriptionLabel": "Descrição do flow",
+    "edited": "Editado",
+    "editedTitle": "Alterações não salvas — clique em Salvar para persistir",
+    "runs": "Execuções",
+    "pause": "Pausar",
+    "activate": "Ativar",
+    "activateDisabledTitle": "Corrija os problemas abaixo antes de ativar",
+    "statusLabels": {
+      "draft": "Rascunho",
+      "active": "Ativo",
+      "archived": "Arquivado"
+    }
+  },
+  "shell": {
+    "editorView": "Visualização do editor",
+    "canvas": "Diagrama",
+    "list": "Lista"
+  },
+  "builder": {
+    "triggerHeading": "Gatilho",
+    "whenLabel": "Quando…",
+    "triggerOptions": {
+      "keyword": "Uma mensagem contém uma palavra-chave",
+      "firstInbound": "Primeira mensagem recebida do cliente",
+      "manual": "Somente manual (sem acionamento automático)"
+    },
+    "keywordsLabel": "Palavras-chave (separadas por vírgula)",
+    "keywordsPlaceholder": "suporte, ajuda, oi",
+    "entryNodeLabel": "Nó de entrada:",
+    "entryNodePlaceholder": "Escolha o primeiro nó…",
+    "nodesHeading": "Nós ({count})",
+    "addNode": "Adicionar nó",
+    "emptyStateStart": "Adicione um nó",
+    "emptyStateStartNode": "Início",
+    "emptyStateThen1": "e depois um",
+    "emptyStateButtonsNode": "Enviar botões",
+    "emptyStateThen2": "e depois um",
+    "emptyStateHandoffNode": "Transferir para agente",
+    "emptyStateEnd": "— esse é o formato de menu de boas-vindas do briefing.",
+    "entryBadge": "Entrada",
+    "setAsEntry": "Definir como entrada",
+    "removeNode": "Remover nó",
+    "showAdvanced": "Mostrar avançado",
+    "hideAdvanced": "Ocultar avançado",
+    "nodeKeyLabel": "Chave do nó (identificador interno — mantenha estável para análises)",
+    "replyIdsHint": "Os IDs de resposta de cada opção são exibidos acima. Eles são retornados pelo WhatsApp quando um cliente toca; geralmente você não precisa mexer neles."
+  },
+  "canvas": {
+    "noNodes": "Nenhum nó ainda.",
+    "entryBadge": "Entrada",
+    "setAsEntry": "Definir como entrada",
+    "deleteNode": "Excluir nó",
+    "addNode": "Adicionar nó"
+  },
+  "validation": {
+    "ready": "Nenhum problema. Pronto para ativar.",
+    "summary": "{errors, plural, one {# erro} other {# erros}}, {warnings, plural, one {# aviso} other {# avisos}}",
+    "jumpToNode": "Ir para o nó {node}"
+  },
+  "forms": {
+    "nextNodeDefaultLabel": "Escolha um próximo nó…",
+    "selectNone": "— Nenhum —",
+    "selectPlaceholder": "—",
+    "advancesTo": "Avança para",
+    "sendMessage": {
+      "textLabel": "Texto enviado ao cliente"
+    },
+    "sendButtons": {
+      "bodyLabel": "Texto do corpo",
+      "footerLabel": "Rodapé (opcional, 60 caracteres)",
+      "buttonsLabel": "Botões (1–3) — cada um leva a um próximo nó diferente",
+      "replyIdPlaceholder": "reply_id",
+      "titlePlaceholder": "Título visível (≤20 caracteres)",
+      "nextNodePlaceholder": "Próximo nó…",
+      "addButton": "Adicionar botão"
+    },
+    "sendList": {
+      "buttonLabelLabel": "Rótulo do botão de expandir (≤20 caracteres)",
+      "footerLabel": "Rodapé (opcional, 60 caracteres)",
+      "rowsLabel": "Linhas (1–10 no total, em todas as seções)",
+      "sectionTitlePlaceholder": "Título da seção {index} (opcional)",
+      "removeSection": "Remover seção",
+      "replyIdPlaceholder": "reply_id",
+      "rowTitlePlaceholder": "Título da linha (≤24)",
+      "nextNodePlaceholder": "Próximo nó…",
+      "addRow": "Adicionar linha",
+      "addSection": "Adicionar seção"
+    },
+    "collectInput": {
+      "promptLabel": "Pergunta enviada ao cliente",
+      "varKeyLabel": "Chave da variável (armazenada em flow_runs.vars; alfanumérica + underscore)",
+      "varKeyPlaceholder": "ex: nome, email, empresa",
+      "varKeyHintPrefix": "Interpole em prompts e notas de transferência seguintes com",
+      "advanceLabel": "Após capturar, avança para"
+    },
+    "condition": {
+      "ifLabel": "Se",
+      "subjectOptions": {
+        "var": "Variável capturada",
+        "tag": "Contato tem tag",
+        "contact_field": "Campo do contato"
+      },
+      "subjectFieldLabel": {
+        "var": "nome da variável",
+        "tag": "Tag",
+        "contact_field": "Campo"
+      },
+      "varNamePlaceholder": "ex: email",
+      "tagUuidPlaceholder": "UUID da tag",
+      "pickTagPlaceholder": "Escolha uma tag…",
+      "pickFieldPlaceholder": "Escolha um campo…",
+      "operatorLabel": "Operador",
+      "operatorOptions": {
+        "present": "existe",
+        "absent": "não existe",
+        "equals": "é igual a",
+        "contains": "contém"
+      },
+      "valueLabel": "Valor",
+      "trueLabel": "Se verdadeiro → avança para",
+      "falseLabel": "Se falso → avança para"
+    },
+    "setTag": {
+      "actionLabel": "Ação",
+      "actionOptions": {
+        "add": "Adicionar tag",
+        "remove": "Remover tag"
+      },
+      "tagLabel": "Tag",
+      "pickTagPlaceholder": "Escolha uma tag…",
+      "tagUuidPlaceholder": "UUID da tag",
+      "advanceLabel": "Depois avança para"
+    },
+    "handoff": {
+      "noteLabel": "Nota interna (para o agente que vai atender)"
+    },
+    "end": {
+      "description": "Nó terminal. Quando o executor chega neste nó, a execução é marcada como concluída. Nenhuma configuração necessária."
+    },
+    "sendMedia": {
+      "typeLabel": "Tipo de mídia",
+      "typeOptions": {
+        "image": "Imagem (PNG, JPEG, WebP)",
+        "video": "Vídeo (MP4, 3GP)",
+        "document": "Documento (PDF, Word, Excel, PowerPoint, TXT)"
+      },
+      "fileLabel": "Arquivo",
+      "removeFile": "Remover arquivo",
+      "uploading": "Enviando…",
+      "uploadCta": "Clique para enviar (máx. 16 MB)",
+      "fileTooLarge": "O arquivo tem {size} MB — o limite é 16 MB.",
+      "uploadSuccess": "Arquivo enviado.",
+      "uploadError": "Falha no envio.",
+      "captionLabel": "Legenda (opcional, exibida abaixo da mídia)",
+      "filenameLabel": "Nome do arquivo exibido ao cliente (apenas documentos)",
+      "filenamePlaceholder": "fatura.pdf",
+      "advanceLabel": "Após enviar, avança para"
+    }
+  },
+  "state": {
+    "saved": "Salvo.",
+    "saveFailed": "Falha ao salvar",
+    "activateBlocked": "Corrija os problemas abaixo antes de ativar.",
+    "activated": "Flow ativado.",
+    "archived": "Arquivado.",
+    "savedAsDraft": "Salvo como rascunho.",
+    "statusUpdateFailed": "Falha ao atualizar o status",
+    "deleteConfirm": "Excluir \"{name}\"? Todas as execuções ativas serão encerradas imediatamente. Isso não pode ser desfeito.",
+    "deleteFailed": "Falha ao excluir"
+  }
+}

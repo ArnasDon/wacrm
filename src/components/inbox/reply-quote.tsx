@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
@@ -26,6 +27,7 @@ export function ReplyQuote({
   onDismiss,
   onPrimary = false,
 }: ReplyQuoteProps) {
+  const t = useTranslations("inbox.replyQuote");
   const isChip = !!onDismiss;
   return (
     <div
@@ -63,7 +65,7 @@ export function ReplyQuote({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Cancel reply"
+          aria-label={t("cancelReply")}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />
@@ -73,23 +75,30 @@ export function ReplyQuote({
   );
 }
 
-/** Build the one-line preview text shown inside a reply quote. */
-export function buildReplyPreview(message: Message): string {
+/**
+ * Build the one-line preview text shown inside a reply quote. Callers pass
+ * the `inbox.replyQuote` translator (this file isn't a component, so it
+ * can't call `useTranslations` itself).
+ */
+export function buildReplyPreview(
+  message: Message,
+  t: (key: string) => string,
+): string {
   if (message.content_text) return message.content_text;
   switch (message.content_type) {
     case "image":
-      return "[Image]";
+      return t("fallback.image");
     case "video":
-      return "[Video]";
+      return t("fallback.video");
     case "audio":
-      return "[Audio]";
+      return t("fallback.audio");
     case "document":
-      return "[Document]";
+      return t("fallback.document");
     case "location":
-      return "[Location]";
+      return t("fallback.location");
     case "template":
-      return "[Template]";
+      return t("fallback.template");
     default:
-      return "[Message]";
+      return t("fallback.message");
   }
 }

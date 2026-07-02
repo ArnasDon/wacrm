@@ -122,17 +122,24 @@ export class UazapiProvider implements WhatsAppProvider {
     const response = await fetch(this.url('/message/download'), {
       method: 'POST',
       headers: this.headers(),
-      body: JSON.stringify({ id: args.mediaRef, return_base64: true }),
+      // generate_mp3 converts voice notes (ogg/opus) to mp3 — Safari/iOS
+      // have no opus decoder in <audio>. It already defaults to true on
+      // Uazapi's side; passed explicitly so behavior doesn't depend on
+      // account-level defaults.
+      body: JSON.stringify({ id: args.mediaRef, return_base64: true, generate_mp3: true }),
     })
     if (!response.ok) {
       await throwUazapiError(response, `Uazapi media download failed: ${response.status}`)
     }
-    const data = (await response.json()) as { base64?: string; mimetype?: string; mimeType?: string }
-    if (!data.base64) {
+    // Uazapi's actual response field is `base64Data`, not `base64` (see
+    // openapi spec for POST /message/download) — this was silently
+    // throwing on every single download before the fix.
+    const data = (await response.json()) as { base64Data?: string; mimetype?: string; mimeType?: string }
+    if (!data.base64Data) {
       throw new Error('Uazapi media download returned no base64 payload')
     }
     return {
-      buffer: Buffer.from(data.base64, 'base64'),
+      buffer: Buffer.from(data.base64Data, 'base64'),
       contentType: data.mimetype || data.mimeType || 'application/octet-stream',
     }
   }

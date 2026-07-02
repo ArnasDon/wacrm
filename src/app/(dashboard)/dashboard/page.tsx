@@ -9,11 +9,15 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Filter,
+  Clock,
+  TrendingUp,
 } from 'lucide-react'
 
 import {
   loadActivity,
   loadConversationsSeries,
+  loadFunnelMetrics,
   loadMetrics,
   loadPipelineDonut,
   loadResponseTime,
@@ -21,6 +25,7 @@ import {
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  FunnelMetricsBundle,
   MetricsBundle,
   PipelineDonutData,
   ResponseTimeSummary,
@@ -40,6 +45,9 @@ export default function DashboardPage() {
   const { defaultCurrency } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
+
+  const [funnelMetrics, setFunnelMetrics] = useState<FunnelMetricsBundle | null>(null)
+  const [funnelMetricsLoading, setFunnelMetricsLoading] = useState(true)
 
   const [range, setRange] = useState<RangeDays>(30)
   // Keep a cache per range so switching tabs doesn't re-fetch what we
@@ -71,6 +79,11 @@ export default function DashboardPage() {
       .then((m) => setMetrics(m))
       .catch((err) => console.error('[dashboard] metrics failed:', err))
       .finally(() => setMetricsLoading(false))
+
+    void loadFunnelMetrics(db)
+      .then((m) => setFunnelMetrics(m))
+      .catch((err) => console.error('[dashboard] funnel metrics failed:', err))
+      .finally(() => setFunnelMetricsLoading(false))
 
     void loadConversationsSeries(db, 30)
       .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
@@ -177,6 +190,50 @@ export default function DashboardPage() {
             />
           </>
         )}
+      </div>
+
+      {/* Customer journey funnel (Kanban) */}
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">Customer Journey Funnel</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {funnelMetricsLoading || !funnelMetrics ? (
+            Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : (
+            <>
+              <MetricCard
+                title="New Leads Today"
+                value={funnelMetrics.newLeadsToday.current.toLocaleString()}
+                icon={Filter}
+                delta={{
+                  sign:
+                    funnelMetrics.newLeadsToday.current - funnelMetrics.newLeadsToday.previous,
+                  label: deltaLabel(
+                    funnelMetrics.newLeadsToday.current - funnelMetrics.newLeadsToday.previous,
+                    'vs yesterday',
+                  ),
+                }}
+              />
+              <MetricCard
+                title="Stalled Leads"
+                value={funnelMetrics.stalledLeads.toLocaleString()}
+                icon={Clock}
+                subtitle="In the same stage 3+ days"
+              />
+              <MetricCard
+                title="Lead → Customer Rate"
+                value={
+                  funnelMetrics.leadConversionRate === null
+                    ? '—'
+                    : `${funnelMetrics.leadConversionRate.toFixed(0)}%`
+                }
+                icon={TrendingUp}
+                subtitle={`${funnelMetrics.leadConversionCohortSize} lead${
+                  funnelMetrics.leadConversionCohortSize === 1 ? '' : 's'
+                } in the last 30 days`}
+              />
+            </>
+          )}
+        </div>
       </div>
 
       {/* Quick actions */}

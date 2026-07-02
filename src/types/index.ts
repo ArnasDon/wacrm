@@ -369,6 +369,52 @@ export interface Deal {
   assignee?: Profile;
 }
 
+// ---- Customer journey (sales-funnel Kanban, migration 030) --------
+//
+// Contact-centric counterpart to Pipeline/Deal above: every contact
+// enters `contact_journey` automatically on their first inbound
+// message (see src/lib/journey/enter-funnel.ts) and moves through
+// `funnel_stages` independently of whether a Deal has been opened.
+
+export interface FunnelStage {
+  id: string;
+  account_id: string;
+  key: string;
+  name: string;
+  position: number;
+  color: string;
+  created_at: string;
+}
+
+export interface ContactJourney {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  stage_id: string;
+  entered_stage_at: string;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact;
+  stage?: FunnelStage;
+  /**
+   * Attached client-side (not a DB join — `conversations.contact_id`
+   * has no unique constraint, so Supabase would embed it as an array).
+   * The Kanban page fetches conversations separately and indexes them
+   * by `contact_id` to populate this for the last-message preview.
+   */
+  conversation?: Pick<Conversation, "id" | "last_message_text" | "last_message_at">;
+}
+
+export interface ContactJourneyTransition {
+  id: string;
+  contact_journey_id: string;
+  account_id: string;
+  from_stage_id: string | null;
+  to_stage_id: string;
+  changed_by: string | null;
+  changed_at: string;
+}
+
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 

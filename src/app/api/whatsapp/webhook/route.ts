@@ -8,6 +8,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { enterFunnelIfNew } from '@/lib/journey/enter-funnel'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -782,6 +783,17 @@ async function processMessage(
         conversation_id: conversation.id,
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
+  }
+
+  // Sales-funnel Kanban entry point: a lead's first-ever inbound message
+  // (same signal as the `first_inbound_message` automation trigger above,
+  // a superset of `wasCreated` that also catches manually-imported
+  // contacts messaging for the first time) drops them into the funnel's
+  // first stage. Idempotent — no-ops if a journey row already exists.
+  // Awaited for the same `after()`-lifetime reason as dispatchWebhookEvent
+  // below; failures are logged inside and never throw.
+  if (isFirstInboundMessage) {
+    await enterFunnelIfNew(supabaseAdmin(), accountId, contactRecord.id)
   }
 
   // message.received webhook (public API). Awaited — not fire-and-forget

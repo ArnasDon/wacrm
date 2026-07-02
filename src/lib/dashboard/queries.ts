@@ -7,9 +7,11 @@ import {
   mondayIndex,
   startOfLocalDay,
 } from './date-utils'
+import { STALE_AFTER_MS } from '@/lib/journey/funnel-stages'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  FunnelMetricsBundle,
   MetricsBundle,
   PipelineDonutData,
   PipelineStageSlice,
@@ -96,6 +98,70 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
     },
+  }
+}
+
+// --- 1b. Sales-funnel (Kanban) metrics ---------------------------------
+
+export async function loadFunnelMetrics(db: DB): Promise<FunnelMetricsBundle> {
+  const todayStart = startOfLocalDay().toISOString()
+  const yesterdayStart = daysAgoStart(1).toISOString()
+  const thirtyDaysAgo = daysAgoStart(29).toISOString()
+  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS).toISOString()
+
+  const [stagesRes, newLeadsToday, newLeadsYesterday, cohortRes] = await Promise.all([
+    db.from('funnel_stages').select('id, key'),
+    db.from('contact_journey').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
+    db
+      .from('contact_journey')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', yesterdayStart)
+      .lt('created_at', todayStart),
+    // Cohort = every lead that entered the funnel in the last 30 days.
+    // `created_at` is a one-time stamp (one row per contact), unlike
+    // `entered_stage_at` which resets on every move — exactly the
+    // "when did this lead first show up" signal a conversion-rate
+    // cohort needs.
+    db.from('contact_journey').select('id').gte('created_at', thirtyDaysAgo),
+  ])
+
+  const stages = (stagesRes.data ?? []) as { id: string; key: string }[]
+  const customerStageId = stages.find((s) => s.key === 'customer')?.id ?? null
+  const terminalStageIds = stages.filter((s) => s.key === 'customer' || s.key === 'cold').map((s) => s.id)
+
+  const nonTerminalStageIds = stages.map((s) => s.id).filter((id) => !terminalStageIds.includes(id))
+  const stalledRes = nonTerminalStageIds.length
+    ? await db
+        .from('contact_journey')
+        .select('id', { count: 'exact', head: true })
+        .in('stage_id', nonTerminalStageIds)
+        .lt('entered_stage_at', staleThreshold)
+    : { count: 0 }
+
+  const cohortIds = ((cohortRes.data ?? []) as { id: string }[]).map((r) => r.id)
+  let converted = 0
+  if (customerStageId && cohortIds.length > 0) {
+    // Distinct count, not row count — a journey that bounced through
+    // "customer" more than once (e.g. churned back to Cold and won
+    // again) would otherwise be counted twice.
+    const { data: convertedRows } = await db
+      .from('contact_journey_transitions')
+      .select('contact_journey_id')
+      .eq('to_stage_id', customerStageId)
+      .in('contact_journey_id', cohortIds)
+    converted = new Set(
+      ((convertedRows ?? []) as { contact_journey_id: string }[]).map((r) => r.contact_journey_id),
+    ).size
+  }
+
+  return {
+    newLeadsToday: {
+      current: newLeadsToday.count ?? 0,
+      previous: newLeadsYesterday.count ?? 0,
+    },
+    stalledLeads: stalledRes.count ?? 0,
+    leadConversionRate: cohortIds.length > 0 ? (converted / cohortIds.length) * 100 : null,
+    leadConversionCohortSize: cohortIds.length,
   }
 }
 

@@ -93,15 +93,23 @@ function normalizeInbound(body: any): NormalizedInbound | null {
   // fallbacks only for group-detection and for the (rare) delivery
   // that has no `sender_pn` at all.
   const chatid: string = msg.chatid || msg.sender || ''
-  const senderPhoneRaw: string = msg.sender_pn || msg.sender || chatid.split('@')[0] || ''
-  let fromPhone = normalizePhone(senderPhoneRaw)
+  const fromMe = Boolean(msg.fromMe)
+
+  // On a `fromMe` echo, `sender`/`sender_pn` identify the WhatsApp account
+  // owner (the one who sent it), not the conversation partner — the other
+  // party is only available via `chatid`/`chat.phone`. Using sender fields
+  // there would file every app-sent message under "chat with yourself".
+  const conversationPhoneRaw: string = fromMe
+    ? chatid.split('@')[0] || chat.phone || ''
+    : msg.sender_pn || msg.sender || chatid.split('@')[0] || ''
+  let fromPhone = normalizePhone(conversationPhoneRaw)
   if (!fromPhone) fromPhone = normalizePhone(chat.phone || '')
 
   // TEMP DIAGNOSTIC — remove once the LID-vs-phone field mapping above
   // is confirmed against a few real deliveries. Only fires when there's
   // no dedicated phone field to fall back on, so the happy path stays
   // silent.
-  if (!msg.sender_pn) {
+  if (!fromMe && !msg.sender_pn) {
     console.warn('[uazapi-webhook] no sender_pn on inbound message — raw fields:', {
       chatid: msg.chatid,
       sender: msg.sender,
@@ -113,7 +121,6 @@ function normalizeInbound(body: any): NormalizedInbound | null {
   if (!fromPhone) return null
 
   const isGroup = Boolean(msg.isGroup ?? chat.wa_isGroup ?? chatid.includes('@g.us'))
-  const fromMe = Boolean(msg.fromMe)
 
   const rawType: string = (msg.type || '').toLowerCase()
   const mediaType: string = (msg.mediaType || '').toLowerCase()
@@ -187,8 +194,10 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
   const inbound = normalizeInbound(body)
   if (!inbound) return
 
-  // Groups and our own outbound echoes are not customer messages.
-  if (inbound.isGroup || inbound.fromMe) return
+  // Groups aren't customer conversations; `fromMe` (messages sent from the
+  // WhatsApp app itself, outside the CRM) is handled separately below so
+  // the history stays complete regardless of which surface sent it.
+  if (inbound.isGroup) return
 
   const db = supabaseAdmin()
 
@@ -198,7 +207,9 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
 
   if (existingContact) {
     contactId = existingContact.id
-    if (inbound.senderName && inbound.senderName !== existingContact.name) {
+    // The sender's own profile name rides along on `fromMe` echoes too —
+    // only trust it as the contact's name when the customer sent it.
+    if (!inbound.fromMe && inbound.senderName && inbound.senderName !== existingContact.name) {
       await db
         .from('contacts')
         .update({ name: inbound.senderName, updated_at: new Date().toISOString() })
@@ -211,7 +222,7 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
         account_id: accountId,
         user_id: configOwnerUserId,
         phone: inbound.fromPhone,
-        name: inbound.senderName || inbound.fromPhone,
+        name: (!inbound.fromMe && inbound.senderName) || inbound.fromPhone,
       })
       .select()
       .single()
@@ -268,6 +279,61 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
       conversation_id: conversation.id,
       contact_id: contactId,
     })
+  }
+
+  // Messages sent from the WhatsApp app itself (outside the CRM) echo back
+  // here with fromMe=true. Record them so the CRM's history stays complete,
+  // but skip everything that only makes sense for a customer reply
+  // (unread bump, flows/automations, funnel entry). Messages sent *through*
+  // the CRM already got inserted by sendMessageToConversation — dedupe on
+  // `message_id`, which uazapi echoes back as the same id it returned from
+  // the send call (there's no unique constraint on it, so this is a
+  // check-then-insert rather than an upsert; the CRM's own insert happens
+  // synchronously before this webhook can fire, so the race window here is
+  // effectively closed in practice).
+  if (inbound.fromMe) {
+    if (inbound.externalId) {
+      const { data: existingMsg } = await db
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversation.id)
+        .eq('message_id', inbound.externalId)
+        .maybeSingle()
+      if (existingMsg) return
+    }
+
+    const contentType = mapContentType(inbound.type)
+    const isMediaKind = ['image', 'video', 'document', 'audio'].includes(contentType)
+    const mediaUrl = isMediaKind && inbound.externalId
+      ? `/api/uazapi/media/${encodeURIComponent(inbound.externalId)}`
+      : null
+
+    const { error: msgError } = await db.from('messages').insert({
+      conversation_id: conversation.id,
+      sender_type: 'agent',
+      content_type: contentType,
+      content_text: inbound.text,
+      media_url: mediaUrl,
+      message_id: inbound.externalId || null,
+      status: 'sent',
+      created_at: new Date(inbound.timestampMs).toISOString(),
+      provider: 'uazapi',
+    })
+    if (msgError) {
+      console.error('[uazapi-webhook] error inserting fromMe message:', msgError)
+      return
+    }
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: inbound.text || `[${contentType}]`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
+
+    return
   }
 
   const contentType = mapContentType(inbound.type)

@@ -1,0 +1,13 @@
+# O que NÃO entra no contexto de build.
+# Atenção: .env.local NÃO está aqui — ele é necessário no build (NEXT_PUBLIC_*).
+node_modules
+.next
+.git
+.github
+npm-debug.log*
+*.log
+.DS_Store
+Dockerfile
+.dockerignore
+docker-stack.yml
+deploy.sh

@@ -1,0 +1,51 @@
+{
+  "actions": {
+    "save": "Save",
+    "saving": "Saving...",
+    "saveChanges": "Save changes",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleting": "Deleting...",
+    "edit": "Edit",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "confirm": "Confirm",
+    "add": "Add",
+    "remove": "Remove",
+    "create": "Create",
+    "update": "Update",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "search": "Search",
+    "filter": "Filter",
+    "clear": "Clear",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "viewAll": "View all",
+    "learnMore": "Learn more",
+    "send": "Send",
+    "download": "Download",
+    "upload": "Upload",
+    "select": "Select",
+    "continue": "Continue",
+    "done": "Done"
+  },
+  "status": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "empty": "Nothing here yet",
+    "success": "Success",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending"
+  },
+  "confirmDialog": {
+    "title": "Are you sure?",
+    "description": "This action cannot be undone."
+  },
+  "errors": {
+    "generic": "Couldn't complete the action. Please try again.",
+    "network": "Connection error. Check your internet and try again."
+  }
+}

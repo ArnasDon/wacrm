@@ -1,0 +1,42 @@
+{
+  "addLead": "Add Lead",
+  "page": {
+    "title": "Kanban",
+    "subtitle": "Customer journey — from first message to customer",
+    "leadFallbackLabel": "Lead",
+    "dealTitle": "{name} — opportunity",
+    "toast": {
+      "noPipelineFound": "No pipeline found — create one in Pipelines first",
+      "pipelineNoStages": "Selected pipeline has no stages",
+      "dealCreateFailed": "Failed to create deal",
+      "dealCreated": "Deal created in Pipelines",
+      "moveFailed": "Failed to move lead",
+      "negotiatingTitle": "Lead is negotiating",
+      "negotiatingDescription": "Create an opportunity for this lead in Pipelines?",
+      "createDealAction": "Create Deal"
+    }
+  },
+  "addLeadForm": {
+    "contactLabel": "Contact",
+    "selectContactPlaceholder": "Select a contact",
+    "entersAtStage": "Enters the funnel at its first stage ({stage}).",
+    "noStagesConfigured": "No funnel stages configured yet",
+    "addFailed": "Failed to add lead",
+    "added": "Lead added to funnel",
+    "adding": "Adding..."
+  },
+  "board": {
+    "emptyColumn": "No leads here"
+  },
+  "leadCard": {
+    "unknownContact": "Unknown contact"
+  },
+  "detailSheet": {
+    "defaultTitle": "Lead",
+    "phone": "Phone",
+    "inStageSince": "In current stage since",
+    "lastMessage": "Last message",
+    "stage": "Stage",
+    "viewConversation": "View conversation"
+  }
+}

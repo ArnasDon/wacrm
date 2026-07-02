@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { Shield, SlidersHorizontal } from 'lucide-react';
 
 import {
@@ -19,20 +20,21 @@ import { SettingsChip } from './settings-chip';
  * `custom_fields` RLS.
  */
 export function CustomFieldsSettings() {
+  const t = useTranslations('customFields');
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <SlidersHorizontal className="size-4 text-primary" />
-          Custom fields
+          {t('title')}
           <SettingsChip variant="admin" className="font-medium">
             <Shield />
-            Admin
+            {t('adminBadge')}
           </SettingsChip>
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          Extra contact fields (e.g. ZIP code, lead source). They appear on
-          every contact and in the “Update Contact Field” automation action.
+          {t('description')}
         </CardDescription>
       </CardHeader>
       <CardContent>

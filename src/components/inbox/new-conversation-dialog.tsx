@@ -15,6 +15,7 @@
 // ============================================================
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, MessageSquarePlus } from 'lucide-react';
 
@@ -54,6 +55,8 @@ export function NewConversationDialog({
   onOpenChange,
   onCreated,
 }: NewConversationDialogProps) {
+  const t = useTranslations('inbox.newConversationDialog');
+  const tCommon = useTranslations('common');
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [text, setText] = useState('');
@@ -108,11 +111,11 @@ export function NewConversationDialog({
   async function handleSubmit() {
     const sanitized = sanitizePhoneForMeta(phone);
     if (!isValidE164(sanitized)) {
-      toast.error('Enter a valid phone number, e.g. +14155550123');
+      toast.error(t('toasts.invalidPhone'));
       return;
     }
     if (!text.trim()) {
-      toast.error('Write a message to send.');
+      toast.error(t('toasts.emptyMessage'));
       return;
     }
 
@@ -132,16 +135,16 @@ export function NewConversationDialog({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to send message');
+        toast.error(data.error || t('toasts.sendFailed'));
         return;
       }
 
-      toast.success('Message sent.');
+      toast.success(t('toasts.sent'));
       onCreated(data.conversation_id);
       onOpenChange(false);
     } catch (err) {
       console.error('[NewConversationDialog] send failed:', err);
-      toast.error('Could not reach the server. Try again?');
+      toast.error(t('toasts.networkError'));
     } finally {
       setSubmitting(false);
     }
@@ -159,19 +162,18 @@ export function NewConversationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-popover-foreground">
             <MessageSquarePlus className="size-4 text-primary" />
-            New conversation
+            {t('title')}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Message a phone number that isn&apos;t in your contacts yet. It&apos;ll
-            appear in the conversation list right after you send.
+            {t('description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label className="text-muted-foreground">Phone number</Label>
+            <Label className="text-muted-foreground">{t('phoneLabel')}</Label>
             <Input
-              placeholder="+14155550123"
+              placeholder={t('phonePlaceholder')}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
@@ -180,10 +182,10 @@ export function NewConversationDialog({
 
           <div className="space-y-2">
             <Label className="text-muted-foreground">
-              Name <span className="text-muted-foreground">(optional)</span>
+              {t('nameLabel')} <span className="text-muted-foreground">{t('optional')}</span>
             </Label>
             <Input
-              placeholder="For your contacts list"
+              placeholder={t('namePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
@@ -192,7 +194,7 @@ export function NewConversationDialog({
 
           {availableProviders.length > 1 && (
             <div className="space-y-2">
-              <Label className="text-muted-foreground">Send via</Label>
+              <Label className="text-muted-foreground">{t('sendVia')}</Label>
               <Select
                 value={provider}
                 onValueChange={(v) => v && setProvider(v as ProviderOption)}
@@ -202,10 +204,10 @@ export function NewConversationDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {availableProviders.includes('meta') && (
-                    <SelectItem value="meta">Meta (official)</SelectItem>
+                    <SelectItem value="meta">{t('providerMeta')}</SelectItem>
                   )}
                   {availableProviders.includes('uazapi') && (
-                    <SelectItem value="uazapi">Uazapi</SelectItem>
+                    <SelectItem value="uazapi">{t('providerUazapi')}</SelectItem>
                   )}
                 </SelectContent>
               </Select>
@@ -213,9 +215,9 @@ export function NewConversationDialog({
           )}
 
           <div className="space-y-2">
-            <Label className="text-muted-foreground">Message</Label>
+            <Label className="text-muted-foreground">{t('messageLabel')}</Label>
             <Textarea
-              placeholder="Type the first message…"
+              placeholder={t('messagePlaceholder')}
               value={text}
               onChange={(e) => setText(e.target.value)}
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground min-h-24"
@@ -229,7 +231,7 @@ export function NewConversationDialog({
             onClick={() => onOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            Cancel
+            {tCommon('actions.cancel')}
           </Button>
           <Button
             onClick={handleSubmit}
@@ -239,10 +241,10 @@ export function NewConversationDialog({
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Sending…
+                {t('sending')}
               </>
             ) : (
-              'Send'
+              t('sendButton')
             )}
           </Button>
         </DialogFooter>

@@ -1,0 +1,57 @@
+{
+  "loading": "Verifying invitation…",
+  "roles": {
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Viewer"
+  },
+  "errors": {
+    "notFound": {
+      "title": "Invite not found",
+      "body": "This link doesn’t match a valid invitation. Double-check the URL or ask the person who invited you to send a new one."
+    },
+    "used": {
+      "title": "Invite already used",
+      "body": "This invitation has already been accepted. If that wasn’t you, ask the account admin to send a fresh link."
+    },
+    "expired": {
+      "title": "Invite expired",
+      "body": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate."
+    },
+    "serverError": {
+      "title": "Something went wrong",
+      "body": "We couldn’t verify this invitation right now. Try refreshing the page in a moment."
+    }
+  },
+  "createAccountInstead": "Create a new account instead",
+  "actions": {
+    "signIn": "Sign in"
+  },
+  "invite": {
+    "title": "You're invited to <accent>{accountName}</accent>",
+    "description": "You'll join as <role>{roleLabel}</role>. Link valid until {date}."
+  },
+  "accept": {
+    "button": "Accept invitation",
+    "loading": "Accepting…",
+    "helper": "Accepting moves your login into <accent>{accountName}</accent>. Your empty personal account from signup will be cleaned up."
+  },
+  "conflict": {
+    "title": "Can't join {accountName} with this account",
+    "body": "To join <accent>{accountName}</accent>, sign out and sign up again with a different email address. The invite link stays valid as long as it hasn't expired.",
+    "stayButton": "Stay signed in",
+    "signOutButton": "Sign out & use a different email",
+    "signingOut": "Signing out…"
+  },
+  "notAuthed": {
+    "createAndJoin": "Create account & join",
+    "haveAccount": "I already have an account"
+  },
+  "toast": {
+    "welcome": "Welcome to the team",
+    "acceptError": "Failed to accept invitation",
+    "conflictDefault": "You are already in another account. Sign in with a different email to join this one.",
+    "networkError": "Could not reach the server",
+    "signOutError": "Could not sign out. Try refreshing the page."
+  }
+}

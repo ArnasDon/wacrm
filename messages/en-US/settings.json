@@ -1,0 +1,596 @@
+{
+  "language": {
+    "title": "Language",
+    "active": "Active"
+  },
+  "fieldsAndTags": {
+    "title": "Fields & tags",
+    "description": "Two ways to organize contacts: colour-coded tags for quick grouping, and custom fields for structured data."
+  },
+  "customFields": {
+    "title": "Custom fields",
+    "adminBadge": "Admin",
+    "description": "Extra contact fields (e.g. ZIP code, lead source). They appear on every contact and in the “Update Contact Field” automation action."
+  },
+  "tagManager": {
+    "title": "Tags",
+    "description": "Colour-coded labels for grouping and filtering contacts.",
+    "colors": {
+      "red": "Red",
+      "orange": "Orange",
+      "amber": "Amber",
+      "emerald": "Emerald",
+      "cyan": "Cyan",
+      "blue": "Blue",
+      "violet": "Violet",
+      "pink": "Pink"
+    },
+    "errors": {
+      "loadFailed": "Failed to load tags",
+      "nameRequired": "Tag name is required",
+      "notAuthenticated": "Not authenticated",
+      "createFailed": "Failed to create tag",
+      "deleteFailed": "Failed to delete tag"
+    },
+    "toasts": {
+      "created": "Tag created",
+      "deleted": "Tag deleted"
+    },
+    "emptyState": "No tags yet — create your first one below.",
+    "namePlaceholder": "e.g. Newsletter",
+    "deleteTagAria": "Delete {name}",
+    "useColorAria": "Use {color}",
+    "addTag": "Add tag",
+    "deleteDialog": {
+      "title": "Delete tag",
+      "description": "Delete the tag \"{name}\"? This removes it from all contacts and cannot be undone.",
+      "deleting": "Deleting...",
+      "confirmButton": "Delete tag"
+    }
+  },
+  "dealsSettings": {
+    "title": "Deals & currency",
+    "description": "The currency used for new deals and for pipeline and dashboard totals.",
+    "defaultCurrency": "Default currency",
+    "defaultCurrencyDescription": "New deals default to this currency, and pipeline and dashboard totals are shown in it. Existing deals keep the currency they were saved with.",
+    "currencyLabel": "Currency",
+    "adminOnly": "Only account admins can change the default currency.",
+    "saveFailed": "Failed to save default currency",
+    "saveSuccess": "Default currency updated"
+  },
+  "templateManager": {
+    "title": "Message templates",
+    "description": "Create templates and submit them to Meta for approval. Use \"Sync from Meta\" to pull templates approved elsewhere.",
+    "syncTooltip": "Pull approved templates from your Meta WhatsApp Business Account",
+    "syncing": "Syncing…",
+    "syncFromMeta": "Sync from Meta",
+    "newTemplate": "New Template",
+    "emptyState": {
+      "title": "No templates yet.",
+      "description": "Create your first message template to get started."
+    },
+    "errors": {
+      "loadFailed": "Failed to load templates",
+      "editFailedHttp": "Edit failed (HTTP {status})",
+      "submitFailedHttp": "Submit failed (HTTP {status})",
+      "submitFailed": "Failed to submit",
+      "syncFailedHttp": "Sync failed (HTTP {status})",
+      "syncFailed": "Failed to sync templates",
+      "deleteFailedHttp": "Delete failed (HTTP {status})",
+      "deleteFailed": "Failed to delete template",
+      "headerImageType": "Header image must be a JPEG or PNG.",
+      "headerImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
+      "uploadFailed": "Upload failed."
+    },
+    "toasts": {
+      "updatedDryRun": "Template updated (dry-run — no Meta call)",
+      "savedDryRun": "Template saved (dry-run — no Meta call)",
+      "editSubmitted": "Edit submitted — Meta typically reviews within 24 hours.",
+      "submitted": "Submitted to Meta — typical review time is 24 hours. Status updates automatically.",
+      "syncedWithCounts": "Synced {total, plural, one {# template} other {# templates}} from Meta ({inserted} new, {updated} updated)",
+      "synced": "Synced {total, plural, one {# template} other {# templates}} from Meta",
+      "syncErrors": "Failed to sync: {list}",
+      "syncErrorsMore": ", +{count} more",
+      "syncTruncated": "Synced the first 2000 templates only — your account has more. Sync again to continue, or contact support if this persists.",
+      "deleted": "Template deleted",
+      "imageUploaded": "Image uploaded."
+    },
+    "card": {
+      "editTooltip": "Editing triggers Meta re-review — status flips to PENDING.",
+      "editAria": "Edit template",
+      "resubmitTooltip": "Edit the template and resubmit to Meta for review.",
+      "resubmitAria": "Edit and resubmit template",
+      "resubmit": "Resubmit",
+      "deleteMetaAria": "Delete template from Meta and locally",
+      "deleteLocalAria": "Delete template locally",
+      "deleteMetaTooltip": "Delete from Meta and locally",
+      "deleteLocalTooltip": "Delete locally"
+    },
+    "dialog": {
+      "editTitle": "Edit Message Template",
+      "newTitle": "New Message Template",
+      "editDescription": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
+      "newDescription": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
+      "authenticationNotice": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <strong>Sync from Meta</strong> to bring them in.",
+      "templateName": "Template Name",
+      "templateNamePlaceholder": "e.g. order_confirmation",
+      "nameFixedNote": "Name is fixed once a template exists on Meta — create a new template to change it.",
+      "nameFormatNote": "Lowercase letters, digits, and underscores only.",
+      "category": "Category",
+      "language": "Language",
+      "languageFixedNote": "Language is fixed once a template exists on Meta.",
+      "languageFormatNote": "Must match the exact code on Meta — <code1>en_US</code1> and <code2>en</code2> are distinct.",
+      "header": "Header",
+      "headerFormats": {
+        "none": "None",
+        "text": "Text",
+        "image": "Image",
+        "video": "Video",
+        "document": "Document"
+      },
+      "headerTextAria": "Header text",
+      "headerTextPlaceholder": "Header text (max 60 chars, optional '{{1}}')",
+      "headerSampleAria": "Sample value for header variable",
+      "headerSamplePlaceholder": "Sample value for '{{1}}' (required for Meta review)",
+      "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
+      "headerSampleAlt": "Header sample",
+      "mediaHintImage": "Upload a JPEG/PNG (≤5 MB, ≥800×418 px recommended) or paste a public HTTPS link — we upload it to Meta for review automatically.",
+      "mediaHintGeneric": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
+      "mediaHintVideo": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
+      "mediaHintDocument": " Recommended: PDF, ≤100 MB.",
+      "bodyText": "Body Text",
+      "bodyTextPlaceholder": "Hello '{{1}}', your order '{{2}}' is confirmed.",
+      "bodyVariablesNote": "Use '{{1}}', '{{2}}' for variables (must be contiguous starting at '{{1}}').",
+      "sampleValuesLabel": "Sample values (Meta uses these to review your template)",
+      "bodySampleAria": "Sample value for body variable '{{'{index}'}}'",
+      "bodySamplePlaceholder": "Sample for '{{'{index}'}}'",
+      "footer": "Footer (optional)",
+      "footerPlaceholder": "Optional footer text (max 60 chars)",
+      "buttons": "Buttons (optional)",
+      "addButton": "Add Button",
+      "buttonsHint": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
+      "buttonTypes": {
+        "quickReply": "Quick Reply",
+        "url": "URL",
+        "phone": "Phone",
+        "copyCode": "Copy Code"
+      },
+      "buttonLabelPlaceholder": "Button label",
+      "buttonUrlPlaceholder": "https://example.com/path or with '{{1}}' suffix",
+      "buttonUrlExamplePlaceholder": "Example value for '{{1}}' (required when URL has a variable)",
+      "buttonPhonePlaceholder": "+15551234567",
+      "buttonCopyCodePlaceholder": "Example code (e.g. SUMMER20)",
+      "savingEllipsis": "Saving…",
+      "submittingEllipsis": "Submitting…",
+      "saveAndResubmit": "Save & Resubmit",
+      "submitForApproval": "Submit for Approval"
+    },
+    "deleteDialog": {
+      "title": "Delete template?",
+      "descriptionMeta": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "descriptionLocal": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
+      "deleting": "Deleting…"
+    }
+  },
+  "whatsappConfig": {
+    "title": "WhatsApp connection",
+    "description": "Connect your Meta WhatsApp Business API. Credentials, webhook, and setup steps all live here.",
+    "errors": {
+      "loadFailed": "Failed to load WhatsApp configuration",
+      "phoneNumberIdRequired": "Phone Number ID is required",
+      "accessTokenRequired": "Access Token is required for initial setup",
+      "reenterToken": "Please re-enter the Access Token to save changes",
+      "saveFailed": "Failed to save configuration",
+      "connectionFailed": "API connection failed",
+      "connectionTestFailed": "Connection test failed. Check network and try again.",
+      "notFullyRegistered": "Number is not fully registered. See the checks below for which step failed.",
+      "verificationEndpointUnreachable": "Could not reach the verification endpoint.",
+      "resetFailed": "Failed to reset configuration"
+    },
+    "toasts": {
+      "registrationFailed": "Saved, but Meta couldn't register the number: {error}",
+      "registrationSkipped": "Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.",
+      "live": "Live — {name} can now receive events.",
+      "connected": "WhatsApp connected. Events will start flowing within a minute.",
+      "connectedTo": "Connected to {name}",
+      "connectionSuccessful": "API connection successful",
+      "fullyWired": "Number is fully wired — Meta is delivering events.",
+      "resetSuccess": "Configuration cleared. You can now re-enter your credentials.",
+      "webhookCopied": "Webhook URL copied to clipboard"
+    },
+    "confirmReset": "This will delete the current WhatsApp config so you can re-enter it. Continue?",
+    "tokenCorrupted": {
+      "title": "Stored token can't be decrypted"
+    },
+    "resetting": "Resetting...",
+    "resetConfiguration": "Reset Configuration",
+    "credentialsValid": "Credentials valid",
+    "notConnected": "Not Connected",
+    "connectionStatusConnectedDescription": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
+    "connectionStatusDisconnectedDescription": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
+    "registration": {
+      "registeredTitle": "Registered — Meta will deliver events to wacrm",
+      "notRegisteredTitle": "Not registered — Meta will not deliver events",
+      "subscribedSince": "Subscribed since {date}. Click <strong>Verify with Meta</strong> if events stop arriving.",
+      "unknownDate": "unknown",
+      "lastAttemptFailed": "Last attempt failed with:",
+      "retryHint": "Enter (or correct) the 2-step PIN below and click Save Configuration to retry.",
+      "neverRegisteredHint": "This number was saved before registration tracking existed, or registration was skipped. Enter the 2-step PIN below and click Save Configuration to subscribe it.",
+      "diagnosticLastRun": "Diagnostic — last run:",
+      "live": "live",
+      "notLive": "not live"
+    },
+    "verifyWithMeta": "Verify with Meta",
+    "apiCredentials": {
+      "title": "API Credentials",
+      "description": "Enter your Meta WhatsApp Business API credentials.",
+      "phoneNumberId": "Phone Number ID",
+      "wabaId": "WhatsApp Business Account ID",
+      "accessToken": "Permanent Access Token",
+      "accessTokenPlaceholder": "Enter your access token",
+      "tokenHiddenNote": "Token is hidden for security. Re-enter it to update configuration.",
+      "verifyToken": "Webhook Verify Token",
+      "verifyTokenPlaceholder": "Create a custom verify token",
+      "verifyTokenHint": "A custom string you create. Must match the token you set in Meta webhook settings.",
+      "pinLabel": "Two-step verification PIN",
+      "optional": "(optional)",
+      "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
+      "pinHint": "Needed only to wire <strong>inbound</strong> messages for a <strong>production</strong> number. Set it in <strong>Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification</strong>, then paste it here so wacrm can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). <strong>Meta test numbers</strong> have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched."
+    },
+    "webhook": {
+      "title": "Webhook Configuration",
+      "description": "Use this URL as your webhook callback in the Meta App Dashboard.",
+      "callbackUrlLabel": "Webhook Callback URL"
+    },
+    "saveConfiguration": "Save Configuration",
+    "testing": "Testing...",
+    "testApiConnection": "Test API Connection",
+    "setupInstructions": {
+      "title": "Setup Instructions",
+      "description": "Follow these steps to connect your WhatsApp Business API.",
+      "step1": {
+        "title": "Create a Meta App",
+        "item1": "Go to <span>developers.facebook.com</span>",
+        "item2": "Click \"My Apps\" and then \"Create App\"",
+        "item3": "Select \"Business\" as the app type",
+        "item4": "Fill in app details and create"
+      },
+      "step2": {
+        "title": "Add WhatsApp Product",
+        "item1": "In your app dashboard, click \"Add Product\"",
+        "item2": "Find \"WhatsApp\" and click \"Set Up\"",
+        "item3": "Follow the setup wizard to link your business"
+      },
+      "step3": {
+        "title": "Get API Credentials",
+        "item1": "Go to WhatsApp > API Setup",
+        "item2": "Copy your <strong>Phone Number ID</strong>",
+        "item3": "Copy your <strong>WhatsApp Business Account ID</strong>",
+        "item4": "Generate a <strong>Permanent Access Token</strong> from Business Settings > System Users"
+      },
+      "step4": {
+        "title": "Configure Webhooks",
+        "item1": "Go to WhatsApp > Configuration",
+        "item2": "Click \"Edit\" on the Webhook section",
+        "item3": "Paste the <strong>Webhook Callback URL</strong> from above",
+        "item4": "Enter the same <strong>Verify Token</strong> you set here",
+        "item5": "Subscribe to \"messages\" webhook field"
+      },
+      "docsLink": "Meta WhatsApp API Documentation"
+    }
+  },
+  "uazapiConfig": {
+    "title": "Uazapi connection",
+    "description": "Connect a second WhatsApp number via Uazapi (unofficial API). Create the instance and log it into WhatsApp directly in your Uazapi panel first — wacrm only attaches to its token to send messages and receive inbound events via webhook. Runs alongside your Meta connection above; each conversation sticks to whichever provider it started on.",
+    "errors": {
+      "tokenRequired": "Instance token is required.",
+      "attachFailed": "Failed to attach instance",
+      "serverUnreachable": "Failed to reach the server.",
+      "detachFailed": "Failed to detach",
+      "detachFailedGeneric": "Failed to detach."
+    },
+    "toasts": {
+      "webhookNotConfigured": "Instance attached, but the webhook could not be configured automatically — set NEXT_PUBLIC_SITE_URL and try again to receive inbound messages.",
+      "attachedAndConnected": "Instance attached and connected.",
+      "attachedNotLoggedIn": "Instance attached. It is not logged into WhatsApp yet — log in via the Uazapi panel.",
+      "detached": "Uazapi instance detached."
+    },
+    "confirmDetach": "Detach this Uazapi instance from wacrm? Your WhatsApp session in Uazapi stays untouched — you can re-attach the same token any time.",
+    "connected": {
+      "titleWithName": "Connected — {name}",
+      "title": "Connected",
+      "description": "WhatsApp session is active. Uazapi is the default provider for new conversations on this account."
+    },
+    "fields": {
+      "instance": "Instance",
+      "server": "Server",
+      "connectedSince": "Connected since"
+    },
+    "notLoggedIn": {
+      "title": "Token attached, but not logged into WhatsApp",
+      "description": "wacrm saved this token, but Uazapi reports the WhatsApp session isn’t connected. Log the instance into WhatsApp in the Uazapi panel, then click \"Refresh status\"."
+    },
+    "notCreated": {
+      "title": "Not connected",
+      "description": "Paste your Uazapi instance token below to attach it."
+    },
+    "detaching": "Detaching…",
+    "detach": "Detach",
+    "refreshStatus": "Refresh status",
+    "form": {
+      "tokenLabel": "Instance token",
+      "tokenPlaceholder": "Paste your Uazapi instance token",
+      "tokenHint": "Create the instance and log it into WhatsApp in your <a>Uazapi panel</a> first, then copy its token here.",
+      "baseUrlLabel": "Base URL",
+      "optional": "(optional)",
+      "baseUrlHint": "Leave blank to use the server default (<code>https://nuvtex.uazapi.com</code>). Override it if your instance lives on a different Uazapi server or self-hosted URL.",
+      "instanceNameLabel": "Instance name",
+      "instanceNamePlaceholder": "For your own reference"
+    },
+    "verifying": "Verifying…",
+    "attachInstance": "Attach instance"
+  },
+  "page": {
+    "title": "Settings",
+    "description": "Everything in one place — your account and your workspace. Pick a section to manage it."
+  },
+  "rail": {
+    "navLabel": "Settings sections",
+    "groups": {
+      "account": "Account",
+      "workspace": "Workspace"
+    }
+  },
+  "sections": {
+    "overview": "Overview",
+    "profile": "Your profile",
+    "security": "Login & security",
+    "appearance": "Appearance",
+    "whatsapp": "WhatsApp",
+    "templates": "Templates",
+    "fields": "Fields & tags",
+    "deals": "Deals & currency",
+    "members": "Team members",
+    "api": "API keys"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Viewer"
+  },
+  "overview": {
+    "fallbackAccountName": "Your account",
+    "whatsapp": {
+      "notConfigured": "Not set up yet",
+      "connected": "Connected",
+      "needsReconnect": "Needs reconnecting"
+    },
+    "members": {
+      "viewLink": "View team members",
+      "count": "{n, plural, one {# member} other {# members}}",
+      "countWithPending": "{members, plural, one {# member} other {# members}} · {pending, plural, one {# pending invite} other {# pending invites}}"
+    },
+    "templates": {
+      "manageLink": "Manage message templates",
+      "count": "{n, plural, one {# template} other {# templates}}",
+      "countWithPending": "{templates, plural, one {# template} other {# templates}} · {pending} pending review"
+    },
+    "fields": {
+      "tagsAndFields": "Tags and custom fields",
+      "count": "{tags, plural, one {# tag} other {# tags}} · {fields, plural, one {# custom field} other {# custom fields}}"
+    },
+    "appearance": {
+      "summary": "{mode} mode · {theme} accent"
+    }
+  },
+  "profileForm": {
+    "title": "Your profile",
+    "description": "How you show up across the app. Your avatar and name appear in the header, sidebar, and anywhere your teammates see you.",
+    "avatar": {
+      "unsupportedType": "Unsupported image type",
+      "allowedFormats": "Use PNG, JPG, WebP, or GIF.",
+      "tooLarge": "Image is too large",
+      "maxSize": "Maximum 2 MB.",
+      "changePhoto": "Change photo",
+      "uploadPhoto": "Upload photo",
+      "hint": "PNG, JPG, WebP, or GIF. Up to 2 MB."
+    },
+    "displayNameLabel": "Display name",
+    "displayNamePlaceholder": "Ada Lovelace",
+    "emailLabel": "Email",
+    "emailChangePending": "Check the inbox for <strong>{oldEmail}</strong> and <strong>{newEmail}</strong> — both need to confirm before the change takes effect.",
+    "accountDetails": {
+      "title": "Account details",
+      "role": "Role",
+      "joined": "Joined",
+      "userId": "User ID"
+    },
+    "loadingProfile": "Loading your profile…",
+    "errors": {
+      "nameRequired": "Display name is required",
+      "invalidEmail": "Enter a valid email address",
+      "uploadFailed": "Upload failed: {message}",
+      "saveFailed": "Save failed: {message}",
+      "emailChangeFailed": "Email change failed: {message}",
+      "unknown": "Unknown error"
+    },
+    "toasts": {
+      "profileSaved": "Profile saved",
+      "profileSavedEmailPending": "Profile saved — check your email to confirm the address change"
+    }
+  },
+  "passwordForm": {
+    "title": "Password",
+    "description": "Use at least {min} characters. You will stay signed in on this device after changing it.",
+    "currentPasswordLabel": "Current password",
+    "newPasswordLabel": "New password",
+    "confirmPasswordLabel": "Confirm new password",
+    "updating": "Updating…",
+    "updateButton": "Update password",
+    "errors": {
+      "noEmail": "Cannot change password without a current email",
+      "tooShort": "Password must be at least {min} characters",
+      "mismatch": "New password and confirmation do not match",
+      "incorrectCurrent": "Current password is incorrect",
+      "updateFailed": "Password update failed: {message}",
+      "unknown": "Unknown error"
+    },
+    "toasts": {
+      "updated": "Password updated"
+    }
+  },
+  "securityPanel": {
+    "title": "Login & security",
+    "description": "Change your password and sign out of your devices. These keep your account safe."
+  },
+  "sessionsCard": {
+    "title": "Active sessions",
+    "description": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
+    "signOutAllButton": "Sign out of all devices",
+    "confirmDialog": {
+      "title": "Sign out everywhere?",
+      "description": "Every device logged into this account will be signed out and will need to log in again. You will be redirected to the login page."
+    },
+    "signingOut": "Signing out…",
+    "confirmButton": "Sign out everywhere",
+    "errors": {
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknown": "Unknown error"
+    }
+  },
+  "membersTab": {
+    "title": "Team members",
+    "description": "People with access to this account. Roles control what each teammate can do.",
+    "inviteMemberButton": "Invite member",
+    "editableRoleHints": {
+      "admin": "Manage members + everything",
+      "agent": "Use features; no settings",
+      "viewer": "Read-only across the app"
+    },
+    "expiry": {
+      "expired": "expired",
+      "expiresInDays": "expires in {n, plural, one {# day} other {# days}}",
+      "expiresInHours": "expires in {n, plural, one {# hour} other {# hours}}"
+    },
+    "errors": {
+      "loadMembersFailed": "Failed to load members",
+      "loadInvitationsFailed": "Failed to load invitations",
+      "updateRoleFailed": "Failed to update role",
+      "removeMemberFailed": "Failed to remove member",
+      "revokeInvitationFailed": "Failed to revoke invitation"
+    },
+    "toasts": {
+      "roleUpdated": "Updated {name} to {role}",
+      "memberRemoved": "Removed {name}",
+      "invitationRevoked": "Invitation revoked"
+    },
+    "unnamedMember": "Unnamed",
+    "youBadge": "You",
+    "joinedOn": "Joined {date}",
+    "presence": {
+      "online": "{n} online",
+      "away": "{n} away",
+      "offline": "{n} offline"
+    },
+    "memberCount": "{n, plural, one {# member} other {# members}}",
+    "pendingInvitations": {
+      "title": "Pending invitations",
+      "noResendHint": "The plaintext invite URL is only shown once at creation for security — to re-share, revoke the invite below and create a new one.",
+      "empty": "No pending invitations.",
+      "emptyHint": "Click <highlight>Invite member</highlight> above to generate a shareable link.",
+      "untitled": "Untitled invite",
+      "createdMeta": "Created {date} · {expiry}",
+      "revokeButton": "Revoke"
+    },
+    "removeDialog": {
+      "title": "Remove member",
+      "description": "Remove <strong>{name}</strong> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
+      "fallbackName": "this teammate",
+      "removing": "Removing...",
+      "confirmButton": "Remove member"
+    }
+  },
+  "inviteMemberDialog": {
+    "expiryOptions": "{n, plural, one {# day} other {# days}}",
+    "roleDescriptions": {
+      "admin": "Can invite teammates, manage settings, send messages, and edit data.",
+      "agent": "Can use the inbox, contacts, broadcasts, automations, and flows. No settings or member access.",
+      "viewer": "Read-only access across every page. Cannot send or edit anything."
+    },
+    "errors": {
+      "labelTooLong": "Label must be {max} characters or fewer",
+      "createFailed": "Failed to create invitation",
+      "networkRetry": "Could not reach the server. Try again?",
+      "clipboardBlocked": "Clipboard blocked — copy the link manually"
+    },
+    "fallbackAccountName": "our wacrm account",
+    "toasts": {
+      "linkCopied": "Invite link copied"
+    },
+    "whatsappShareMessage": "Join {accountName} on wacrm using this link (valid for {days, plural, one {# day} other {# days}}): {url}",
+    "created": {
+      "title": "Invite created",
+      "linkLabel": "Invite link",
+      "sendViaWhatsApp": "Send via WhatsApp",
+      "description": "Share this link with your new teammate. They'll be able to sign up (or sign in) and join the account as <strong>{role}</strong>. The link is valid for <strong>{days, plural, one {# day} other {# days}}</strong>.",
+      "saveLinkWarning": "<strong>Save this link now.</strong> We never store the plaintext — once you close this dialog the URL is gone. To re-share, revoke this invite and create a new one."
+    },
+    "form": {
+      "title": "Invite a teammate",
+      "description": "Generate a one-time invite link. Share it via WhatsApp, Slack, or any channel you like — no email service required.",
+      "roleLabel": "Role",
+      "expiryLabel": "Link valid for",
+      "labelLabel": "Label",
+      "labelOptional": "(optional)",
+      "labelPlaceholder": "e.g. Sara — support team",
+      "labelHint": "Helps you remember who you sent the link to in the pending list below.",
+      "creating": "Creating...",
+      "generateButton": "Generate link"
+    }
+  },
+  "apiKeys": {
+    "title": "API keys",
+    "description": "Keys authenticate the public REST API (<code1>/api/v1</code1>) so you can build your own automations. Send them as <code2>Authorization: Bearer YOUR_KEY</code2>.",
+    "newKeyButton": "New API key",
+    "empty": {
+      "title": "No API keys yet.",
+      "adminHint": "Click <highlight>New API key</highlight> to create one.",
+      "memberHint": "Ask an admin to create one."
+    },
+    "status": {
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "noScopes": "No scopes",
+    "createdMeta": "Created {date}",
+    "lastUsed": "last used {date}",
+    "neverUsed": "never used",
+    "expiresOn": "expires {date}",
+    "revokeButton": "Revoke",
+    "errors": {
+      "loadFailed": "Failed to load API keys",
+      "revokeFailed": "Failed to revoke key",
+      "nameRequired": "Give the key a name",
+      "createFailed": "Failed to create key",
+      "copyFailed": "Copy failed — select and copy manually"
+    },
+    "toasts": {
+      "revoked": "Revoked \"{name}\"",
+      "keyCopied": "API key copied"
+    },
+    "createDialog": {
+      "revealTitle": "Copy your API key",
+      "revealDescription": "This is the only time the full key is shown. Store it somewhere safe — if you lose it, revoke it and create a new one.",
+      "keyLabel": "API key",
+      "title": "New API key",
+      "description": "Name it after the integration that will use it, and grant only the scopes it needs.",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Zapier automation",
+      "scopesLabel": "Scopes",
+      "noScopesHint": "A key with no scopes can still call <code>GET /api/v1/me</code> to verify it works.",
+      "creating": "Creating…",
+      "createButton": "Create key"
+    }
+  }
+}

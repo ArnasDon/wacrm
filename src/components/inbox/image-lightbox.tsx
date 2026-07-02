@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { Download, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ function clampZoom(value: number) {
 }
 
 export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
+  const t = useTranslations("inbox.imageLightbox");
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -135,7 +137,7 @@ export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
           onClick={() => applyZoom((z) => z - ZOOM_STEP)}
           disabled={zoom <= MIN_ZOOM}
           className="rounded-full p-2 text-white transition-colors hover:bg-white/10 disabled:opacity-30"
-          aria-label="Zoom out"
+          aria-label={t("zoomOut")}
         >
           <ZoomOut className="h-4 w-4" />
         </button>
@@ -147,7 +149,7 @@ export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
           onClick={() => applyZoom((z) => z + ZOOM_STEP)}
           disabled={zoom >= MAX_ZOOM}
           className="rounded-full p-2 text-white transition-colors hover:bg-white/10 disabled:opacity-30"
-          aria-label="Zoom in"
+          aria-label={t("zoomIn")}
         >
           <ZoomIn className="h-4 w-4" />
         </button>
@@ -156,7 +158,7 @@ export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
           onClick={reset}
           disabled={zoom === MIN_ZOOM && pan.x === 0 && pan.y === 0}
           className="rounded-full p-2 text-white transition-colors hover:bg-white/10 disabled:opacity-30"
-          aria-label="Reset zoom"
+          aria-label={t("resetZoom")}
         >
           <RotateCcw className="h-4 w-4" />
         </button>
@@ -164,7 +166,7 @@ export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
           type="button"
           onClick={handleDownload}
           className="rounded-full p-2 text-white transition-colors hover:bg-white/10"
-          aria-label="Download image"
+          aria-label={t("download")}
         >
           <Download className="h-4 w-4" />
         </button>
@@ -172,7 +174,7 @@ export function ImageLightbox({ src, alt, open, onClose }: ImageLightboxProps) {
           type="button"
           onClick={onClose}
           className="rounded-full p-2 text-white transition-colors hover:bg-white/10"
-          aria-label="Close"
+          aria-label={t("close")}
         >
           <X className="h-4 w-4" />
         </button>

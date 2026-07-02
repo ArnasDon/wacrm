@@ -1,0 +1,121 @@
+{
+  "shared": {
+    "accountNotLinked": "Seu perfil não está vinculado a uma conta."
+  },
+  "page": {
+    "selectPipelinePlaceholder": "Selecionar pipeline",
+    "noPipelinesDropdown": "Nenhum pipeline ainda",
+    "managePipelines": "Gerenciar pipelines",
+    "addPipeline": "Adicionar pipeline",
+    "addDeal": "Adicionar negócio",
+    "emptyState": {
+      "title": "Nenhum pipeline ainda",
+      "description": "Crie um pipeline para começar a acompanhar negócios",
+      "cta": "Criar pipeline"
+    },
+    "newPipelineDialog": {
+      "title": "Novo pipeline",
+      "nameLabel": "Nome do pipeline",
+      "namePlaceholder": "ex.: Vendas Enterprise",
+      "helperText": "Os estágios padrão (Novo Lead → Ganho) serão criados automaticamente.",
+      "create": "Criar pipeline",
+      "creating": "Criando..."
+    },
+    "toasts": {
+      "moveDealFailed": "Não foi possível mover o negócio",
+      "createPipelineFailed": "Não foi possível criar o pipeline",
+      "createPipelineSuccess": "Pipeline criado"
+    }
+  },
+  "dealCard": {
+    "noContact": "Sem contato",
+    "won": "Ganho",
+    "lost": "Perdido"
+  },
+  "analytics": {
+    "metrics": {
+      "totalDeals": "Total de negócios",
+      "pipelineValue": "Valor do pipeline",
+      "avgDealSize": "Ticket médio",
+      "weightedValue": "Valor ponderado",
+      "wonThisMonth": "Ganhos no mês",
+      "lostThisMonth": "Perdidos no mês"
+    },
+    "tooltips": {
+      "totalDeals": "Contagem de todos os negócios deste pipeline que não estão marcados como Perdidos. Negócios Ganhos continuam incluídos.",
+      "pipelineValue": "Soma dos valores de todos os negócios deste pipeline, exceto os marcados como Perdidos.",
+      "avgDealSize": "Valor do Pipeline dividido pelo Total de Negócios — o valor médio de um único negócio não perdido.",
+      "weightedValue": "Receita esperada: o valor de cada negócio em aberto × a probabilidade do seu estágio. O primeiro estágio é ≈ 10%, os estágios avançam até 90% e Ganho é 100%. Negócios Perdidos são excluídos.",
+      "wonThisMonth": "Negócios marcados como Ganhos desde o primeiro dia do mês atual.",
+      "lostThisMonth": "Negócios marcados como Perdidos desde o primeiro dia do mês atual."
+    },
+    "howCalculatedAria": "Como {label} é calculado"
+  },
+  "board": {
+    "dropHere": "Solte um negócio aqui",
+    "addDeal": "Adicionar negócio"
+  },
+  "dealForm": {
+    "editTitle": "Editar negócio",
+    "newTitle": "Novo negócio",
+    "titleLabel": "Título",
+    "titlePlaceholder": "Título do negócio",
+    "contactLabel": "Contato",
+    "selectContact": "Selecione um contato",
+    "linkToConversation": "Vincular à conversa",
+    "valueLabel": "Valor",
+    "valuePlaceholder": "0",
+    "currencyLabel": "Moeda",
+    "expectedCloseDateLabel": "Previsão de fechamento",
+    "stageLabel": "Estágio",
+    "assignedToLabel": "Responsável",
+    "unassigned": "Sem responsável",
+    "notesLabel": "Observações",
+    "notesPlaceholder": "Adicionar observações...",
+    "statusLabel": "Status",
+    "markAsWon": "Marcar como ganho",
+    "markAsLost": "Marcar como perdido",
+    "reopenDeal": "Reabrir negócio",
+    "createDeal": "Criar negócio",
+    "deleteConfirmText": "Excluir este negócio?",
+    "deleteDeal": "Excluir negócio",
+    "toasts": {
+      "requiredFields": "Título, contato e estágio são obrigatórios",
+      "saveFailed": "Não foi possível salvar o negócio",
+      "notSignedIn": "Você não está autenticado",
+      "createFailed": "Não foi possível criar o negócio",
+      "updated": "Negócio atualizado",
+      "created": "Negócio criado",
+      "markedWon": "Marcado como ganho",
+      "markedLost": "Marcado como perdido",
+      "reopened": "Negócio reaberto",
+      "statusUpdateFailed": "Não foi possível atualizar o status do negócio",
+      "deleteFailed": "Não foi possível excluir o negócio",
+      "deleteSuccess": "Negócio excluído"
+    }
+  },
+  "settings": {
+    "title": "Gerenciar pipeline",
+    "nameLabel": "Nome do pipeline",
+    "stagesLabel": "Estágios",
+    "pickColorAria": "Escolher cor {color}",
+    "newStagePlaceholder": "Nome do novo estágio",
+    "createNewPipeline": "Criar um novo pipeline",
+    "deletePipeline": "Excluir pipeline",
+    "dragToReorderAria": "Arrastar para reordenar",
+    "changeColorAria": "Alterar cor",
+    "deleteConfirm": {
+      "title": "Excluir pipeline",
+      "description": "Isso arquivará todos os negócios deste pipeline. Esta ação não pode ser desfeita."
+    },
+    "toasts": {
+      "saveFailed": "Não foi possível salvar o pipeline",
+      "saveSuccess": "Pipeline salvo",
+      "addStageFailed": "Não foi possível adicionar o estágio",
+      "stageInUse": "Mova ou exclua os negócios deste estágio primeiro",
+      "deleteStageFailed": "Não foi possível excluir o estágio",
+      "deletePipelineFailed": "Não foi possível excluir o pipeline",
+      "deletePipelineSuccess": "Pipeline excluído"
+    }
+  }
+}

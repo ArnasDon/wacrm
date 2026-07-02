@@ -1,0 +1,57 @@
+{
+  "loading": "Verificando convite…",
+  "roles": {
+    "admin": "Administrador",
+    "agent": "Agente",
+    "viewer": "Visualizador"
+  },
+  "errors": {
+    "notFound": {
+      "title": "Convite não encontrado",
+      "body": "Este link não corresponde a um convite válido. Confira a URL ou peça para quem te convidou enviar um novo link."
+    },
+    "used": {
+      "title": "Convite já utilizado",
+      "body": "Este convite já foi aceito. Se não foi você, peça ao administrador da conta para enviar um novo link."
+    },
+    "expired": {
+      "title": "Convite expirado",
+      "body": "Este convite expirou. Peça ao administrador da conta para enviar um novo — leva apenas alguns segundos para gerar."
+    },
+    "serverError": {
+      "title": "Algo deu errado",
+      "body": "Não conseguimos verificar este convite agora. Tente atualizar a página em instantes."
+    }
+  },
+  "createAccountInstead": "Criar uma nova conta",
+  "actions": {
+    "signIn": "Entrar"
+  },
+  "invite": {
+    "title": "Você foi convidado para <accent>{accountName}</accent>",
+    "description": "Você vai entrar como <role>{roleLabel}</role>. Link válido até {date}."
+  },
+  "accept": {
+    "button": "Aceitar convite",
+    "loading": "Aceitando…",
+    "helper": "Ao aceitar, seu login passa para <accent>{accountName}</accent>. Sua conta pessoal vazia criada no cadastro será removida."
+  },
+  "conflict": {
+    "title": "Não é possível entrar em {accountName} com esta conta",
+    "body": "Para entrar em <accent>{accountName}</accent>, saia e cadastre-se novamente com um endereço de e-mail diferente. O link de convite continua válido enquanto não expirar.",
+    "stayButton": "Continuar conectado",
+    "signOutButton": "Sair e usar outro e-mail",
+    "signingOut": "Saindo…"
+  },
+  "notAuthed": {
+    "createAndJoin": "Criar conta e entrar",
+    "haveAccount": "Já tenho uma conta"
+  },
+  "toast": {
+    "welcome": "Bem-vindo(a) à equipe",
+    "acceptError": "Não foi possível aceitar o convite",
+    "conflictDefault": "Você já está em outra conta. Entre com um e-mail diferente para participar desta.",
+    "networkError": "Não foi possível conectar ao servidor",
+    "signOutError": "Não foi possível sair. Tente atualizar a página."
+  }
+}

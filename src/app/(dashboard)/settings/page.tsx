@@ -2,6 +2,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
@@ -26,6 +27,7 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { defaultCurrency } = useAuth();
   const { mode } = useTheme();
+  const t = useTranslations('settings.page');
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
@@ -67,11 +69,10 @@ export default function SettingsPage() {
     <div>
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Settings
+          {t('title')}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything in one place — your account and your workspace. Pick a
-          section to manage it.
+          {t('description')}
         </p>
       </div>
 

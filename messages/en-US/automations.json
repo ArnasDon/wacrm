@@ -1,0 +1,185 @@
+{
+  "page": {
+    "title": "Automations",
+    "subtitle": "Build workflows that react to WhatsApp® events automatically.",
+    "createButton": "Create Automation",
+    "loadError": "Failed to load automations",
+    "templatesHeading": "Quick-start templates",
+    "emptyTitle": "No automations yet",
+    "emptyDescription": "Pick a template above or create one from scratch.",
+    "toggleOn": "Automation activated",
+    "toggleOff": "Automation paused",
+    "toggleError": "Failed to update",
+    "duplicateSuccess": "Automation duplicated",
+    "duplicateError": "Failed to duplicate",
+    "deleteSuccess": "Automation deleted",
+    "deleteError": "Failed to delete",
+    "activeLabel": "active",
+    "deactivateLabel": "Deactivate",
+    "activateLabel": "Activate",
+    "openMenu": "Open menu",
+    "viewLogs": "View Logs",
+    "duplicate": "Duplicate",
+    "runsCount": "{n, plural, one {# run} other {# runs}}",
+    "lastRun": "last {time}",
+    "deleteDialog": {
+      "title": "Delete automation",
+      "description": "This permanently removes <bold>{name}</bold> and its execution history. This cannot be undone."
+    }
+  },
+  "logs": {
+    "subtitle": "Execution logs",
+    "loadError": "Failed to load logs",
+    "backAriaLabel": "Back",
+    "backButton": "Back",
+    "emptyTitle": "No executions yet",
+    "emptyDescription": "Trigger this automation to see runs here.",
+    "unknownContact": "Unknown contact",
+    "stepsCount": "{n, plural, one {# step} other {# steps}}",
+    "noStepsRecorded": "No steps recorded."
+  },
+  "edit": {
+    "loadError": "Failed to load ({status})",
+    "backToAutomations": "Back to Automations"
+  },
+  "builder": {
+    "backAriaLabel": "Back to automations",
+    "namePlaceholder": "Untitled automation",
+    "defaultName": "Untitled automation",
+    "activeLabel": "Active",
+    "saveDraft": "Save Draft",
+    "saveSuccess": "Automation saved",
+    "createSuccess": "Automation created",
+    "saveFailed": "Save failed",
+    "issueAt": "at {path}",
+    "trigger": {
+      "badge": "Trigger",
+      "typeLabel": "Trigger type",
+      "tagLabel": "Tag",
+      "schedulePlaceholder": "Cron expression or HH:mm",
+      "options": {
+        "new_message_received": {
+          "label": "New Message Received",
+          "hint": "Any incoming message"
+        },
+        "first_inbound_message": {
+          "label": "First Message from Contact",
+          "hint": "First time this contact ever messages you (works for manually-added contacts too)"
+        },
+        "keyword_match": {
+          "label": "Keyword Match",
+          "hint": "Message contains specific keyword(s)"
+        },
+        "new_contact_created": {
+          "label": "New Contact Created",
+          "hint": "When a contact is auto-created from an incoming message"
+        },
+        "conversation_assigned": {
+          "label": "Conversation Assigned",
+          "hint": "When assigned to an agent"
+        },
+        "tag_added": {
+          "label": "Tag Added",
+          "hint": "When a tag is added to a contact"
+        },
+        "time_based": {
+          "label": "Time-Based",
+          "hint": "On a recurring schedule"
+        }
+      }
+    },
+    "keywordMatch": {
+      "keywordsLabel": "Keywords (comma-separated)",
+      "keywordsPlaceholder": "e.g. pricing, demo request, talk to sales",
+      "matchTypeLabel": "Match type",
+      "contains": "Contains",
+      "exact": "Exact"
+    },
+    "stepMeta": {
+      "send_message": "Send Message",
+      "send_template": "Send Template",
+      "add_tag": "Add Tag",
+      "remove_tag": "Remove Tag",
+      "assign_conversation": "Assign Conversation",
+      "update_contact_field": "Update Contact Field",
+      "create_deal": "Create Deal",
+      "wait": "Wait",
+      "condition": "Condition (If/Else)",
+      "send_webhook": "Send Webhook",
+      "close_conversation": "Close Conversation"
+    },
+    "stepBadge": {
+      "condition": "Condition",
+      "wait": "Wait",
+      "action": "Action"
+    },
+    "preview": {
+      "noText": "no text yet",
+      "pickTemplate": "pick a template",
+      "when": "when {subject}",
+      "noUrl": "no url"
+    },
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "branches": {
+      "yes": "Yes",
+      "no": "No"
+    },
+    "addStep": "Add step",
+    "fields": {
+      "messageText": "Message text",
+      "messageTextPlaceholder": "Hi! Thanks for reaching out…",
+      "templateName": "Template name",
+      "language": "Language",
+      "template": "Template",
+      "selectTemplate": "Select a template…",
+      "notApproved": "not in approved list",
+      "tag": "Tag",
+      "tagIdPlaceholder": "Tag id",
+      "selectTag": "Select a tag…",
+      "unknownTag": "(unknown tag)",
+      "name": "Name",
+      "email": "Email",
+      "company": "Company",
+      "customFields": "Custom fields",
+      "unknownField": "(unknown field)",
+      "mode": "Mode",
+      "roundRobin": "Round-robin",
+      "specificAgent": "Specific agent",
+      "agent": "Agent",
+      "agentIdPlaceholder": "Agent id",
+      "selectAgent": "Select an agent…",
+      "unknownAgent": "(unknown agent)",
+      "field": "Field",
+      "value": "Value",
+      "valuePlaceholder": "Text or '{{ vars.x }}' / '{{ message.text }}'",
+      "pipelineId": "Pipeline id",
+      "stageId": "Stage id",
+      "pipeline": "Pipeline",
+      "stage": "Stage",
+      "selectPipeline": "Select a pipeline…",
+      "selectStage": "Select a stage…",
+      "selectPipelineFirst": "Select a pipeline first…",
+      "unknownPipeline": "(unknown pipeline)",
+      "unknownStage": "(unknown stage)",
+      "title": "Title",
+      "amount": "Amount",
+      "unit": "Unit",
+      "minutes": "Minutes",
+      "hours": "Hours",
+      "days": "Days",
+      "subject": "Subject",
+      "tagPresence": "Tag presence",
+      "contactField": "Contact field",
+      "messageContent": "Message content",
+      "timeOfDay": "Time of day",
+      "operand": "Operand",
+      "operandTimeOfDay": "HH:mm-HH:mm",
+      "operandContactField": "name / email / company",
+      "operandTagPresence": "tag id",
+      "url": "URL",
+      "bodyTemplate": "Body template (JSON)",
+      "closeConversationNote": "Sets the conversation status to \"closed\". No configuration needed."
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "header": {
+    "title": "Dashboard",
+    "subtitle": "Live analytics across conversations, contacts, deals, broadcasts, and automations."
+  },
+  "metrics": {
+    "activeConversations": "Active Conversations",
+    "newContactsToday": "New Contacts Today",
+    "openDealsValue": "Open Deals Value",
+    "openDealsSubtitle": "{count, plural, one {# open deal} other {# open deals}}",
+    "messagesSentToday": "Messages Sent Today"
+  },
+  "delta": {
+    "noChange": "No change {suffix}",
+    "change": "{sign}{value} {suffix}",
+    "suffixNewVsYesterday": "new today vs yesterday",
+    "suffixVsYesterday": "vs yesterday"
+  },
+  "funnel": {
+    "title": "Customer Journey Funnel",
+    "newLeadsToday": "New Leads Today",
+    "stalledLeads": "Stalled Leads",
+    "stalledLeadsSubtitle": "In the same stage 3+ days",
+    "conversionRate": "Lead → Customer Rate",
+    "conversionRateSubtitle": "{count, plural, one {# lead} other {# leads}} in the last 30 days"
+  },
+  "quickActions": {
+    "newContact": "New Contact",
+    "newDeal": "New Deal",
+    "newBroadcast": "New Broadcast",
+    "newAutomation": "New Automation"
+  },
+  "activityFeed": {
+    "title": "Recent Activity",
+    "viewAll": "View all →",
+    "emptyTitle": "No activity yet",
+    "emptyHint": "Activity from messages, deals, broadcasts, and automations will appear here.",
+    "showing": "Showing {visible} of {total}",
+    "show": "Show",
+    "secondsAgo": "{n}s ago",
+    "minutesAgo": "{n}m ago",
+    "hoursAgo": "{n}h ago",
+    "daysAgo": "{n}d ago"
+  },
+  "conversationsChart": {
+    "title": "Conversations Over Time",
+    "subtitle": "Daily message volume by direction",
+    "rangeDays": "{days} days",
+    "emptyTitle": "No message activity in this range",
+    "emptyHint": "Send or receive messages to start populating this chart.",
+    "legendIncoming": "Incoming",
+    "legendOutgoing": "Outgoing",
+    "tooltipIncoming": "{count} incoming",
+    "tooltipOutgoing": "{count} outgoing",
+    "ariaLabel": "Conversations per day"
+  },
+  "pipelineDonut": {
+    "title": "Pipeline Value",
+    "subtitle": "Open deals by stage",
+    "emptyTitle": "No open deals yet",
+    "emptyHint": "Create deals in Pipelines to see stage breakdowns here.",
+    "dealCount": "{count, plural, one {# deal} other {# deals}}",
+    "total": "Total",
+    "ariaLabel": "Pipeline value by stage"
+  },
+  "responseTimeChart": {
+    "title": "Average First Response Time",
+    "subtitle": "Minutes to reply to a customer's first unreplied message, by weekday",
+    "target": "target {minutes}m",
+    "thisWeek": "This week:",
+    "lastWeek": "Last week:",
+    "emptyTitle": "No replies recorded yet",
+    "emptyHint": "This chart fills in as you reply to customer messages."
+  },
+  "emptyState": {
+    "defaultTitle": "Not enough data yet"
+  }
+}

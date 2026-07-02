@@ -10,6 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
@@ -20,6 +21,16 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import { setLocale } from "@/i18n/actions";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, isLocale } from "@/i18n/config";
+
+function readLocaleCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${LOCALE_COOKIE}=([^;]*)`),
+  );
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 interface Profile {
   id: string;
@@ -35,6 +46,8 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  /** User's preferred UI language (migration 031), e.g. "pt-BR". */
+  locale: string;
 }
 
 interface AccountSummary {
@@ -112,6 +125,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * component, avoiding internal lock contention in the Supabase client.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
@@ -138,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, locale",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -212,8 +226,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          locale: data.locale ?? DEFAULT_LOCALE,
         });
         setAccount(accountRow);
+
+        // The server rendered with whatever locale the cookie held
+        // (or a guess from Accept-Language) before we knew the user's
+        // saved preference. If the profile's locale disagrees, sync
+        // the cookie and refresh so subsequent server renders match —
+        // this only fires once per mismatch, not on every profile poll.
+        if (isLocale(data.locale) && readLocaleCookie() !== data.locale) {
+          void setLocale(data.locale).then(() => router.refresh());
+        }
       } else {
         lastFetchedUserIdRef.current = null;
       }
@@ -223,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const supabase = createClient();

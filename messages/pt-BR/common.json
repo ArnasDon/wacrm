@@ -1,0 +1,51 @@
+{
+  "actions": {
+    "save": "Salvar",
+    "saving": "Salvando...",
+    "saveChanges": "Salvar alterações",
+    "cancel": "Cancelar",
+    "delete": "Excluir",
+    "deleting": "Excluindo...",
+    "edit": "Editar",
+    "close": "Fechar",
+    "back": "Voltar",
+    "next": "Próximo",
+    "confirm": "Confirmar",
+    "add": "Adicionar",
+    "remove": "Remover",
+    "create": "Criar",
+    "update": "Atualizar",
+    "copy": "Copiar",
+    "copied": "Copiado!",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "clear": "Limpar",
+    "retry": "Tentar novamente",
+    "loadMore": "Carregar mais",
+    "viewAll": "Ver tudo",
+    "learnMore": "Saiba mais",
+    "send": "Enviar",
+    "download": "Baixar",
+    "upload": "Enviar arquivo",
+    "select": "Selecionar",
+    "continue": "Continuar",
+    "done": "Concluído"
+  },
+  "status": {
+    "loading": "Carregando...",
+    "error": "Algo deu errado",
+    "empty": "Nada por aqui ainda",
+    "success": "Sucesso",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "pending": "Pendente"
+  },
+  "confirmDialog": {
+    "title": "Tem certeza?",
+    "description": "Esta ação não pode ser desfeita."
+  },
+  "errors": {
+    "generic": "Não foi possível concluir a ação. Tente novamente.",
+    "network": "Erro de conexão. Verifique sua internet e tente novamente."
+  }
+}

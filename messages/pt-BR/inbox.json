@@ -1,0 +1,194 @@
+{
+  "connectionBanner": {
+    "notConnected": "O WhatsApp® não está conectado. Acesse Configurações para conectar sua conta."
+  },
+  "contactSidebar": {
+    "selectConversation": "Selecione uma conversa",
+    "tags": "Tags",
+    "noTags": "Sem tags",
+    "activeDeals": "Negócios ativos",
+    "noDeals": "Sem negócios",
+    "notes": "Notas",
+    "notePlaceholder": "Adicionar uma nota..."
+  },
+  "conversationList": {
+    "searchPlaceholder": "Buscar conversas...",
+    "newConversation": "Nova conversa",
+    "filters": {
+      "all": "Todas",
+      "unread": "Não lidas",
+      "open": "Abertas",
+      "pending": "Pendentes",
+      "closed": "Fechadas"
+    },
+    "tags": "Tags",
+    "company": "Empresa",
+    "allCompanies": "Todas as empresas",
+    "tagFallback": "Tag",
+    "clearAll": "Limpar tudo",
+    "noConversationsFound": "Nenhuma conversa encontrada",
+    "noMessagesYet": "Sem mensagens ainda",
+    "unknownContact": "Desconhecido"
+  },
+  "imageLightbox": {
+    "zoomOut": "Reduzir zoom",
+    "zoomIn": "Aumentar zoom",
+    "resetZoom": "Redefinir zoom",
+    "download": "Baixar imagem",
+    "close": "Fechar"
+  },
+  "messageActions": {
+    "react": "Reagir",
+    "reactWith": "Reagir com {emoji}",
+    "reply": "Responder",
+    "copy": "Copiar",
+    "toasts": {
+      "nothingToCopy": "Nada para copiar",
+      "copied": "Copiado",
+      "copyFailed": "Falha ao copiar"
+    }
+  },
+  "messageBubble": {
+    "unavailable": "{label} indisponível",
+    "image": "Imagem",
+    "video": "Vídeo",
+    "audio": "Áudio",
+    "document": "Documento",
+    "template": "Modelo",
+    "locationShared": "Localização compartilhada",
+    "buttonReply": "Resposta por botão",
+    "interactiveFallback": "[Resposta interativa]",
+    "unsupportedMessage": "[Tipo de mensagem não suportado]"
+  },
+  "messageComposer": {
+    "sessionExpiredWithTemplates": "Sessão de 24 horas expirada. Use um modelo para reengajar.",
+    "sessionExpiredNoTemplates": "Sessão de 24 horas expirada. Aguarde o contato enviar uma mensagem.",
+    "templatesButton": "Modelos",
+    "attachMenu": {
+      "readOnlyTitle": "Somente leitura — sua função não permite enviar mensagens",
+      "attachMedia": "Anexar mídia",
+      "photo": "Foto",
+      "video": "Vídeo",
+      "document": "Documento",
+      "voiceNote": "Nota de voz"
+    },
+    "sendTemplate": "Enviar modelo",
+    "placeholder": {
+      "readOnly": "Somente leitura — visualizadores podem navegar mas não responder",
+      "sessionExpired": "Sessão expirada - use um modelo",
+      "default": "Digite uma mensagem... (Shift+Enter para nova linha)"
+    },
+    "recording": {
+      "label": "Gravando… {current} / {max}",
+      "cancel": "Cancelar",
+      "stopAndAttach": "Parar e anexar"
+    },
+    "quickReplyHint": "Digite '/' para respostas rápidas",
+    "captionPlaceholder": "Adicionar uma legenda…",
+    "removeAttachment": "Remover anexo",
+    "toasts": {
+      "fileTooLarge": "O arquivo tem {size} MB — o limite para {kind} é {limit} MB.",
+      "uploadFailed": "Falha no upload.",
+      "recordingTooLong": "A gravação é muito longa (acima de 16 MB).",
+      "voiceNotSupported": "A gravação de voz não é suportada neste navegador.",
+      "micDenied": "Acesso ao microfone negado ou indisponível."
+    }
+  },
+  "messageThread": {
+    "dateToday": "Hoje",
+    "dateYesterday": "Ontem",
+    "status": {
+      "open": "Aberta",
+      "pending": "Pendente",
+      "closed": "Fechada"
+    },
+    "statusFallback": "Status",
+    "backToConversations": "Voltar para conversas",
+    "hideContactPanel": "Ocultar painel de contato",
+    "showContactPanel": "Mostrar painel de contato",
+    "hideContact": "Ocultar contato",
+    "showContact": "Mostrar contato",
+    "refresh": "Atualizar",
+    "refreshConversation": "Atualizar conversa",
+    "assign": "Atribuir",
+    "assigned": "Atribuído",
+    "unassign": "Remover atribuição",
+    "noTeammates": "Nenhum colega de equipe disponível",
+    "me": " (eu)",
+    "session": {
+      "expired": "Expirada",
+      "noCustomerMessages": "Sem mensagens do cliente",
+      "hoursRemaining": "{hours}h restantes",
+      "minutesRemaining": "{minutes}min restantes"
+    },
+    "emptyState": {
+      "title": "Selecione uma conversa",
+      "description": "Escolha uma conversa à esquerda para começar a enviar mensagens"
+    },
+    "noMessages": {
+      "title": "Sem mensagens ainda",
+      "description": "Envie um modelo para iniciar a conversa"
+    },
+    "customerFallback": "Cliente",
+    "you": "Você",
+    "toasts": {
+      "sendFailed": "Falha ao enviar: {reason}",
+      "sendTemplateFailed": "Falha ao enviar modelo: {reason}",
+      "assignmentFailed": "Falha ao atualizar atribuição",
+      "reactionFailed": "Falha na reação: {reason}",
+      "waitForSend": "Aguarde a mensagem terminar de ser enviada"
+    }
+  },
+  "newConversationDialog": {
+    "title": "Nova conversa",
+    "description": "Envie uma mensagem para um número de telefone que ainda não está nos seus contatos. Ele aparecerá na lista de conversas logo após o envio.",
+    "phoneLabel": "Número de telefone",
+    "phonePlaceholder": "+5511999999999",
+    "nameLabel": "Nome",
+    "optional": "(opcional)",
+    "namePlaceholder": "Para sua lista de contatos",
+    "sendVia": "Enviar via",
+    "providerMeta": "Meta (oficial)",
+    "providerUazapi": "Uazapi",
+    "messageLabel": "Mensagem",
+    "messagePlaceholder": "Digite a primeira mensagem…",
+    "sendButton": "Enviar",
+    "sending": "Enviando…",
+    "toasts": {
+      "invalidPhone": "Informe um número de telefone válido, ex: +5511999999999",
+      "emptyMessage": "Escreva uma mensagem para enviar.",
+      "sent": "Mensagem enviada.",
+      "sendFailed": "Falha ao enviar mensagem",
+      "networkError": "Não foi possível conectar ao servidor. Tente novamente?"
+    }
+  },
+  "replyQuote": {
+    "cancelReply": "Cancelar resposta",
+    "fallback": {
+      "image": "[Imagem]",
+      "video": "[Vídeo]",
+      "audio": "[Áudio]",
+      "document": "[Documento]",
+      "location": "[Localização]",
+      "template": "[Modelo]",
+      "message": "[Mensagem]"
+    }
+  },
+  "templatePicker": {
+    "title": "Enviar modelo",
+    "descriptionFill": "Preencha os campos para renderizar este modelo. A Meta exige que toda variável seja definida.",
+    "descriptionPick": "Escolha um modelo aprovado do WhatsApp para enviar a este contato.",
+    "noTemplates": "Nenhum modelo aprovado",
+    "noTemplatesHint": "Aprove um modelo no Meta WhatsApp Manager e sincronize-o em Configurações → Modelos.",
+    "previewLabel": "Pré-visualização",
+    "headerVarLabel": "Cabeçalho '{{1}}'",
+    "headerVarPlaceholder": "Valor da variável do cabeçalho",
+    "bodyVarLabel": "Corpo '{{'{var}'}}'",
+    "bodyVarPlaceholder": "Valor para '{{'{var}'}}'",
+    "urlButtonLabel": "Botão de URL \"{text}\" — valor para '{{1}}'",
+    "urlButtonPlaceholder": "Valor do sufixo da URL",
+    "finalUrl": "URL final: {url}",
+    "back": "Voltar",
+    "sendTemplate": "Enviar modelo"
+  }
+}

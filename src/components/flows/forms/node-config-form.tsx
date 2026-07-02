@@ -25,6 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   Loader2,
   Paperclip,
@@ -62,6 +63,7 @@ export function NodeConfigForm({
   showAdvanced,
   onUpdateConfig,
 }: NodeConfigFormProps) {
+  const t = useTranslations("flows.forms");
   const cfg = node.config;
   switch (node.node_type) {
     case "start":
@@ -71,7 +73,7 @@ export function NodeConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onChange={(v) => onUpdateConfig({ next_node_key: v })}
-          label="Advances to"
+          label={t("advancesTo")}
         />
       );
 
@@ -79,7 +81,7 @@ export function NodeConfigForm({
       return (
         <>
           <TextRow
-            label="Text sent to the customer"
+            label={t("sendMessage.textLabel")}
             value={(cfg as { text?: string }).text ?? ""}
             onChange={(v) => onUpdateConfig({ text: v })}
           />
@@ -88,7 +90,7 @@ export function NodeConfigForm({
             allNodes={allNodes}
             currentKey={node.node_key}
             onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label="Advances to"
+            label={t("advancesTo")}
           />
         </>
       );
@@ -129,14 +131,14 @@ export function NodeConfigForm({
       return (
         <>
           <TextRow
-            label="Prompt sent to the customer"
+            label={t("collectInput.promptLabel")}
             value={(cfg as { prompt_text?: string }).prompt_text ?? ""}
             onChange={(v) => onUpdateConfig({ prompt_text: v })}
             rows={2}
           />
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">
-              Variable key (stored in flow_runs.vars; alphanumeric + underscore)
+              {t("collectInput.varKeyLabel")}
             </label>
             <Input
               value={(cfg as { var_key?: string }).var_key ?? ""}
@@ -145,11 +147,11 @@ export function NodeConfigForm({
                   var_key: e.target.value.replace(/[^a-zA-Z0-9_]/g, ""),
                 })
               }
-              placeholder="e.g. name, email, company"
+              placeholder={t("collectInput.varKeyPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
             <p className="mt-1 text-[10px] text-muted-foreground">
-              Interpolate in downstream prompts and handoff notes with{" "}
+              {t("collectInput.varKeyHintPrefix")}{" "}
               <code className="rounded bg-muted px-1">
                 {"{{vars."}
                 {(cfg as { var_key?: string }).var_key || "name"}
@@ -163,7 +165,7 @@ export function NodeConfigForm({
             allNodes={allNodes}
             currentKey={node.node_key}
             onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label="After capturing, advance to"
+            label={t("collectInput.advanceLabel")}
           />
         </>
       );
@@ -191,7 +193,7 @@ export function NodeConfigForm({
     case "handoff":
       return (
         <TextRow
-          label="Internal note (for the agent picking up)"
+          label={t("handoff.noteLabel")}
           value={(cfg as { note?: string }).note ?? ""}
           onChange={(v) => onUpdateConfig({ note: v })}
           rows={2}
@@ -201,8 +203,7 @@ export function NodeConfigForm({
     case "end":
       return (
         <p className="text-xs text-muted-foreground">
-          Terminal node. When the runner reaches this node the run is marked
-          complete. No config needed.
+          {t("end.description")}
         </p>
       );
   }
@@ -231,6 +232,7 @@ function SendButtonsForm({
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   showAdvanced: boolean;
 }) {
+  const t = useTranslations("flows.forms");
   const buttons = cfg.buttons ?? [];
   const updateButton = (
     idx: number,
@@ -257,20 +259,20 @@ function SendButtonsForm({
   return (
     <>
       <TextRow
-        label="Body text"
+        label={t("sendButtons.bodyLabel")}
         value={cfg.text ?? ""}
         onChange={(v) => onUpdateConfig({ text: v })}
         rows={3}
       />
       <TextRow
-        label="Footer (optional, 60 chars)"
+        label={t("sendButtons.footerLabel")}
         value={cfg.footer_text ?? ""}
         onChange={(v) => onUpdateConfig({ footer_text: v })}
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-xs text-muted-foreground">
-            Buttons (1–3) — each one routes to a different next node
+            {t("sendButtons.buttonsLabel")}
           </label>
         </div>
         <div className="flex flex-col gap-3">
@@ -292,14 +294,14 @@ function SendButtonsForm({
                       reply_id: slugify(e.target.value, `btn_${i + 1}`),
                     })
                   }
-                  placeholder="reply_id"
+                  placeholder={t("sendButtons.replyIdPlaceholder")}
                   className="bg-muted font-mono text-xs"
                 />
               )}
               <Input
                 value={b.title}
                 onChange={(e) => updateButton(i, { title: e.target.value })}
-                placeholder="Visible title (≤20 chars)"
+                placeholder={t("sendButtons.titlePlaceholder")}
                 className="bg-muted"
                 maxLength={20}
               />
@@ -308,7 +310,7 @@ function SendButtonsForm({
                 nodes={allNodes}
                 excludeKey={currentKey}
                 onChange={(v) => updateButton(i, { next_node_key: v ?? "" })}
-                placeholder="Next node…"
+                placeholder={t("sendButtons.nextNodePlaceholder")}
               />
               <Button
                 variant="ghost"
@@ -329,7 +331,7 @@ function SendButtonsForm({
             className="mt-2"
           >
             <Plus className="h-3.5 w-3.5" />
-            Add button
+            {t("sendButtons.addButton")}
           </Button>
         )}
       </div>
@@ -369,6 +371,7 @@ function SendListForm({
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   showAdvanced: boolean;
 }) {
+  const t = useTranslations("flows.forms");
   const sections = cfg.sections ?? [];
   const totalRows = sections.reduce((sum, s) => sum + s.rows.length, 0);
 
@@ -446,19 +449,19 @@ function SendListForm({
   return (
     <>
       <TextRow
-        label="Body text"
+        label={t("sendButtons.bodyLabel")}
         value={cfg.text ?? ""}
         onChange={(v) => onUpdateConfig({ text: v })}
         rows={3}
       />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <TextRow
-          label="Tap-to-expand button label (≤20 chars)"
+          label={t("sendList.buttonLabelLabel")}
           value={cfg.button_label ?? ""}
           onChange={(v) => onUpdateConfig({ button_label: v })}
         />
         <TextRow
-          label="Footer (optional, 60 chars)"
+          label={t("sendList.footerLabel")}
           value={cfg.footer_text ?? ""}
           onChange={(v) => onUpdateConfig({ footer_text: v })}
         />
@@ -466,7 +469,7 @@ function SendListForm({
 
       <div className="mt-2">
         <label className="mb-2 block text-xs text-muted-foreground">
-          Rows (1–10 total across all sections)
+          {t("sendList.rowsLabel")}
         </label>
         {sections.map((section, sIdx) => (
           <div
@@ -479,7 +482,7 @@ function SendListForm({
                 onChange={(e) =>
                   updateSection(sIdx, { title: e.target.value })
                 }
-                placeholder={`Section ${sIdx + 1} title (optional)`}
+                placeholder={t("sendList.sectionTitlePlaceholder", { index: sIdx + 1 })}
                 className="bg-muted text-xs"
               />
               {sections.length > 1 && (
@@ -488,7 +491,7 @@ function SendListForm({
                   size="sm"
                   onClick={() => removeSection(sIdx)}
                   className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                  aria-label="Remove section"
+                  aria-label={t("sendList.removeSection")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -515,7 +518,7 @@ function SendListForm({
                         ),
                       })
                     }
-                    placeholder="reply_id"
+                    placeholder={t("sendList.replyIdPlaceholder")}
                     className="bg-muted font-mono text-xs"
                   />
                 )}
@@ -524,7 +527,7 @@ function SendListForm({
                   onChange={(e) =>
                     updateRow(sIdx, rIdx, { title: e.target.value })
                   }
-                  placeholder="Row title (≤24)"
+                  placeholder={t("sendList.rowTitlePlaceholder")}
                   className="bg-muted"
                   maxLength={24}
                 />
@@ -535,7 +538,7 @@ function SendListForm({
                   onChange={(v) =>
                     updateRow(sIdx, rIdx, { next_node_key: v ?? "" })
                   }
-                  placeholder="Next node…"
+                  placeholder={t("sendList.nextNodePlaceholder")}
                 />
                 <Button
                   variant="ghost"
@@ -555,7 +558,7 @@ function SendListForm({
                 className="mt-1"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add row
+                {t("sendList.addRow")}
               </Button>
             )}
           </div>
@@ -566,7 +569,7 @@ function SendListForm({
         {sections.length < 10 && (
           <Button variant="outline" size="sm" onClick={addSection}>
             <Plus className="h-3.5 w-3.5" />
-            Add section
+            {t("sendList.addSection")}
           </Button>
         )}
       </div>
@@ -604,6 +607,7 @@ function ConditionForm({
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
+  const t = useTranslations("flows.forms");
   const tags = useUserTags();
 
   const subject = cfg.subject ?? "var";
@@ -614,7 +618,7 @@ function ConditionForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">If</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("condition.ifLabel")}</label>
           <Select
             value={subject}
             onValueChange={(v) =>
@@ -625,19 +629,19 @@ function ConditionForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="var">Captured variable</SelectItem>
-              <SelectItem value="tag">Contact has tag</SelectItem>
-              <SelectItem value="contact_field">Contact field</SelectItem>
+              <SelectItem value="var">{t("condition.subjectOptions.var")}</SelectItem>
+              <SelectItem value="tag">{t("condition.subjectOptions.tag")}</SelectItem>
+              <SelectItem value="contact_field">{t("condition.subjectOptions.contact_field")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="md:col-span-2">
           <label className="mb-1 block text-xs text-muted-foreground">
             {subject === "var"
-              ? "var name"
+              ? t("condition.subjectFieldLabel.var")
               : subject === "tag"
-                ? "Tag"
-                : "Field"}
+                ? t("condition.subjectFieldLabel.tag")
+                : t("condition.subjectFieldLabel.contact_field")}
           </label>
           {subject === "tag" && tags.length > 0 ? (
             <Select
@@ -645,12 +649,12 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("condition.pickTagPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                {tags.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                {tags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    {tag.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -661,7 +665,7 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a field…" />
+                <SelectValue placeholder={t("condition.pickFieldPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="name">name</SelectItem>
@@ -676,7 +680,11 @@ function ConditionForm({
               onChange={(e) =>
                 onUpdateConfig({ subject_key: e.target.value })
               }
-              placeholder={subject === "var" ? "e.g. email" : "tag UUID"}
+              placeholder={
+                subject === "var"
+                  ? t("condition.varNamePlaceholder")
+                  : t("condition.tagUuidPlaceholder")
+              }
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -690,7 +698,7 @@ function ConditionForm({
         )}
       >
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Operator</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("condition.operatorLabel")}</label>
           <Select
             value={operator}
             onValueChange={(v) =>
@@ -701,16 +709,16 @@ function ConditionForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="present">is present</SelectItem>
-              <SelectItem value="absent">is absent</SelectItem>
-              <SelectItem value="equals">equals</SelectItem>
-              <SelectItem value="contains">contains</SelectItem>
+              <SelectItem value="present">{t("condition.operatorOptions.present")}</SelectItem>
+              <SelectItem value="absent">{t("condition.operatorOptions.absent")}</SelectItem>
+              <SelectItem value="equals">{t("condition.operatorOptions.equals")}</SelectItem>
+              <SelectItem value="contains">{t("condition.operatorOptions.contains")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         {showValue && (
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Value</label>
+            <label className="mb-1 block text-xs text-muted-foreground">{t("condition.valueLabel")}</label>
             <Input
               value={cfg.value ?? ""}
               onChange={(e) => onUpdateConfig({ value: e.target.value })}
@@ -726,14 +734,14 @@ function ConditionForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ true_next: v })}
-          label="If true → advance to"
+          label={t("condition.trueLabel")}
         />
         <NextNodeRow
           value={cfg.false_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ false_next: v })}
-          label="If false → advance to"
+          label={t("condition.falseLabel")}
         />
       </div>
     </>
@@ -761,13 +769,14 @@ function SetTagForm({
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
+  const t = useTranslations("flows.forms");
   const tags = useUserTags();
 
   return (
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Action</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("setTag.actionLabel")}</label>
           <Select
             value={cfg.mode ?? "add"}
             onValueChange={(v) =>
@@ -778,25 +787,25 @@ function SetTagForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="add">Add tag</SelectItem>
-              <SelectItem value="remove">Remove tag</SelectItem>
+              <SelectItem value="add">{t("setTag.actionOptions.add")}</SelectItem>
+              <SelectItem value="remove">{t("setTag.actionOptions.remove")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Tag</label>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("setTag.tagLabel")}</label>
           {tags.length > 0 ? (
             <Select
               value={cfg.tag_id ?? ""}
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("setTag.pickTagPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                {tags.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                {tags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    {tag.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -805,7 +814,7 @@ function SetTagForm({
             <Input
               value={cfg.tag_id ?? ""}
               onChange={(e) => onUpdateConfig({ tag_id: e.target.value })}
-              placeholder="Tag UUID"
+              placeholder={t("setTag.tagUuidPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -816,7 +825,7 @@ function SetTagForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(v) => onUpdateConfig({ next_node_key: v })}
-        label="Then advance to"
+        label={t("setTag.advanceLabel")}
       />
     </>
   );
@@ -884,6 +893,7 @@ function SendMediaForm({
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
+  const t = useTranslations("flows.forms");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -897,7 +907,7 @@ function SendMediaForm({
     async (file: File) => {
       if (file.size > MEDIA_MAX_BYTES) {
         toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — limit is 16 MB.`,
+          t("sendMedia.fileTooLarge", { size: (file.size / 1024 / 1024).toFixed(1) }),
         );
         return;
       }
@@ -912,15 +922,15 @@ function SendMediaForm({
           media_url: publicUrl,
           filename: file.name,
         });
-        toast.success("File uploaded.");
+        toast.success(t("sendMedia.uploadSuccess"));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed.";
+        const msg = err instanceof Error ? err.message : t("sendMedia.uploadError");
         toast.error(msg);
       } finally {
         setUploading(false);
       }
     },
-    [onUpdateConfig],
+    [onUpdateConfig, t],
   );
 
   const handleClear = () => {
@@ -930,7 +940,7 @@ function SendMediaForm({
   return (
     <>
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">Media type</label>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("sendMedia.typeLabel")}</label>
         <Select
           value={mediaType}
           onValueChange={(v) => {
@@ -948,17 +958,17 @@ function SendMediaForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="image">Image (PNG, JPEG, WebP)</SelectItem>
-            <SelectItem value="video">Video (MP4, 3GP)</SelectItem>
+            <SelectItem value="image">{t("sendMedia.typeOptions.image")}</SelectItem>
+            <SelectItem value="video">{t("sendMedia.typeOptions.video")}</SelectItem>
             <SelectItem value="document">
-              Document (PDF, Word, Excel, PowerPoint, TXT)
+              {t("sendMedia.typeOptions.document")}
             </SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">File</label>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("sendMedia.fileLabel")}</label>
         {cfg.media_url ? (
           <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
@@ -975,7 +985,7 @@ function SendMediaForm({
               type="button"
               onClick={handleClear}
               className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Remove file"
+              aria-label={t("sendMedia.removeFile")}
               disabled={uploading}
             >
               <X className="h-3.5 w-3.5" />
@@ -991,12 +1001,12 @@ function SendMediaForm({
             {uploading ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Uploading…
+                {t("sendMedia.uploading")}
               </>
             ) : (
               <>
                 <Upload className="h-3.5 w-3.5" />
-                Click to upload (max 16 MB)
+                {t("sendMedia.uploadCta")}
               </>
             )}
           </button>
@@ -1016,7 +1026,7 @@ function SendMediaForm({
       </div>
 
       <TextRow
-        label="Caption (optional, shown under the media)"
+        label={t("sendMedia.captionLabel")}
         value={cfg.caption ?? ""}
         onChange={(v) => onUpdateConfig({ caption: v })}
         rows={2}
@@ -1025,12 +1035,12 @@ function SendMediaForm({
       {isDocument && (
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            Filename shown to the customer (documents only)
+            {t("sendMedia.filenameLabel")}
           </label>
           <Input
             value={cfg.filename ?? ""}
             onChange={(e) => onUpdateConfig({ filename: e.target.value })}
-            placeholder="invoice.pdf"
+            placeholder={t("sendMedia.filenamePlaceholder")}
             className="bg-muted text-xs"
           />
         </div>
@@ -1041,7 +1051,7 @@ function SendMediaForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(v) => onUpdateConfig({ next_node_key: v })}
-        label="After sending, advance to"
+        label={t("sendMedia.advanceLabel")}
       />
     </>
   );

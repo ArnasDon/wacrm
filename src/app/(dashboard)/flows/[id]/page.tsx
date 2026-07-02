@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +24,7 @@ import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 export default function FlowEditorPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const t = useTranslations("flows.editorPage");
 
   const [flow, setFlow] = useState<FlowRow | null>(null);
   const [nodes, setNodes] = useState<FlowNodeRow[]>([]);
@@ -51,7 +53,7 @@ export default function FlowEditorPage() {
       } catch (err) {
         if (!cancelled) {
           console.error(err);
-          toast.error("Couldn't load flow.");
+          toast.error(t("loadError"));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -60,7 +62,7 @@ export default function FlowEditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [params.id]);
+  }, [params.id, t]);
 
   if (loading) {
     return (
@@ -72,13 +74,13 @@ export default function FlowEditorPage() {
   if (notFound || !flow) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">Flow not found.</p>
+        <p className="text-sm text-muted-foreground">{t("notFound")}</p>
         <button
           type="button"
           onClick={() => router.push("/flows")}
           className="text-sm text-primary hover:opacity-80"
         >
-          ← Back to flows
+          ← {t("backToFlows")}
         </button>
       </div>
     );

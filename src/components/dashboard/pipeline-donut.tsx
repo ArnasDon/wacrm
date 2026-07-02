@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from 'next-intl'
 import { GitBranch } from 'lucide-react'
 import type { PipelineDonutData } from '@/lib/dashboard/types'
 import { formatCurrencyShort } from '@/lib/currency'
@@ -14,12 +15,13 @@ interface PipelineDonutProps {
 }
 
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
+  const t = useTranslations('dashboard')
   return (
     <section className="flex h-full flex-col rounded-xl border border-border bg-card">
       <header className="border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">Pipeline Value</h2>
+        <h2 className="text-sm font-semibold text-foreground">{t('pipelineDonut.title')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Open deals by stage
+          {t('pipelineDonut.subtitle')}
         </p>
       </header>
 
@@ -29,12 +31,17 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
         ) : data.stages.length === 0 ? (
           <EmptyState
             icon={GitBranch}
-            title="No open deals yet"
-            hint="Create deals in Pipelines to see stage breakdowns here."
+            title={t('pipelineDonut.emptyTitle')}
+            hint={t('pipelineDonut.emptyHint')}
           />
         ) : (
           <>
-            <Donut data={data} currency={currency} />
+            <Donut
+              data={data}
+              currency={currency}
+              totalLabel={t('pipelineDonut.total')}
+              ariaLabel={t('pipelineDonut.ariaLabel')}
+            />
             <ul className="mt-5 space-y-2">
               {data.stages.map((s) => (
                 <li key={s.id} className="flex items-center gap-3 text-xs">
@@ -45,7 +52,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
                   />
                   <span className="flex-1 truncate text-muted-foreground">{s.name}</span>
                   <span className="text-muted-foreground tabular-nums">
-                    {s.dealCount} deal{s.dealCount === 1 ? '' : 's'}
+                    {t('pipelineDonut.dealCount', { count: s.dealCount })}
                   </span>
                   <span className="w-20 text-right text-muted-foreground tabular-nums">
                     {formatCurrencyShort(s.totalValue, currency)}
@@ -66,7 +73,17 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
 // between segments are implied by a thin slate-900 stroke between
 // them for a cleaner look.
 // ------------------------------------------------------------
-function Donut({ data, currency }: { data: PipelineDonutData; currency: string }) {
+function Donut({
+  data,
+  currency,
+  totalLabel,
+  ariaLabel,
+}: {
+  data: PipelineDonutData
+  currency: string
+  totalLabel: string
+  ariaLabel: string
+}) {
   const size = 200
   const r = 80
   const ringWidth = 18
@@ -96,7 +113,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
 
   return (
     <div className="flex items-center justify-center">
-      <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label="Pipeline value by stage">
+      <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label={ariaLabel}>
         {/* background ring */}
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--muted)" strokeWidth={ringWidth} />
         {segments.map((seg) => (
@@ -116,7 +133,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
           textAnchor="middle"
           className="fill-muted-foreground text-[11px]"
         >
-          Total
+          {totalLabel}
         </text>
         <text
           x={cx}

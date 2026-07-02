@@ -1,3 +1,6 @@
+"use client"
+
+import { useTranslations } from 'next-intl'
 import { BarChart3 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { cn } from '@/lib/utils'
@@ -9,7 +12,7 @@ import { cn } from '@/lib/utils'
  * different widget.
  */
 export function EmptyState({
-  title = 'Not enough data yet',
+  title,
   hint,
   icon: Icon = BarChart3,
   className,
@@ -19,6 +22,8 @@ export function EmptyState({
   icon?: ComponentType<{ className?: string }>
   className?: string
 }) {
+  const t = useTranslations('dashboard')
+  const resolvedTitle = title ?? t('emptyState.defaultTitle')
   return (
     <div
       className={cn(
@@ -29,7 +34,7 @@ export function EmptyState({
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="h-5 w-5" />
       </div>
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      <p className="text-sm font-medium text-muted-foreground">{resolvedTitle}</p>
       {hint && <p className="max-w-xs text-xs text-muted-foreground">{hint}</p>}
     </div>
   )

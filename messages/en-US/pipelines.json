@@ -1,0 +1,121 @@
+{
+  "shared": {
+    "accountNotLinked": "Your profile is not linked to an account."
+  },
+  "page": {
+    "selectPipelinePlaceholder": "Select Pipeline",
+    "noPipelinesDropdown": "No pipelines yet",
+    "managePipelines": "Manage Pipelines",
+    "addPipeline": "Add Pipeline",
+    "addDeal": "Add Deal",
+    "emptyState": {
+      "title": "No pipelines yet",
+      "description": "Create a pipeline to start tracking deals",
+      "cta": "Create Pipeline"
+    },
+    "newPipelineDialog": {
+      "title": "New Pipeline",
+      "nameLabel": "Pipeline Name",
+      "namePlaceholder": "e.g., Enterprise Sales",
+      "helperText": "Default stages (New Lead → Won) will be created automatically.",
+      "create": "Create Pipeline",
+      "creating": "Creating..."
+    },
+    "toasts": {
+      "moveDealFailed": "Failed to move deal",
+      "createPipelineFailed": "Failed to create pipeline",
+      "createPipelineSuccess": "Pipeline created"
+    }
+  },
+  "dealCard": {
+    "noContact": "No contact",
+    "won": "Won",
+    "lost": "Lost"
+  },
+  "analytics": {
+    "metrics": {
+      "totalDeals": "Total Deals",
+      "pipelineValue": "Pipeline Value",
+      "avgDealSize": "Avg Deal Size",
+      "weightedValue": "Weighted Value",
+      "wonThisMonth": "Won This Month",
+      "lostThisMonth": "Lost This Month"
+    },
+    "tooltips": {
+      "totalDeals": "Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included.",
+      "pipelineValue": "Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost.",
+      "avgDealSize": "Pipeline Value divided by Total Deals — the average value of a single non-lost deal.",
+      "weightedValue": "Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded.",
+      "wonThisMonth": "Deals marked as Won since the first day of the current month.",
+      "lostThisMonth": "Deals marked as Lost since the first day of the current month."
+    },
+    "howCalculatedAria": "How {label} is calculated"
+  },
+  "board": {
+    "dropHere": "Drop a deal here",
+    "addDeal": "Add Deal"
+  },
+  "dealForm": {
+    "editTitle": "Edit Deal",
+    "newTitle": "New Deal",
+    "titleLabel": "Title",
+    "titlePlaceholder": "Deal title",
+    "contactLabel": "Contact",
+    "selectContact": "Select a contact",
+    "linkToConversation": "Link to Conversation",
+    "valueLabel": "Value",
+    "valuePlaceholder": "0",
+    "currencyLabel": "Currency",
+    "expectedCloseDateLabel": "Expected Close Date",
+    "stageLabel": "Stage",
+    "assignedToLabel": "Assigned To",
+    "unassigned": "Unassigned",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Add notes...",
+    "statusLabel": "Status",
+    "markAsWon": "Mark as Won",
+    "markAsLost": "Mark as Lost",
+    "reopenDeal": "Reopen deal",
+    "createDeal": "Create Deal",
+    "deleteConfirmText": "Delete this deal?",
+    "deleteDeal": "Delete Deal",
+    "toasts": {
+      "requiredFields": "Title, contact, and stage are required",
+      "saveFailed": "Failed to save deal",
+      "notSignedIn": "Not signed in",
+      "createFailed": "Failed to create deal",
+      "updated": "Deal updated",
+      "created": "Deal created",
+      "markedWon": "Marked as won",
+      "markedLost": "Marked as lost",
+      "reopened": "Deal reopened",
+      "statusUpdateFailed": "Failed to update deal status",
+      "deleteFailed": "Failed to delete deal",
+      "deleteSuccess": "Deal deleted"
+    }
+  },
+  "settings": {
+    "title": "Manage Pipeline",
+    "nameLabel": "Pipeline Name",
+    "stagesLabel": "Stages",
+    "pickColorAria": "Pick color {color}",
+    "newStagePlaceholder": "New stage name",
+    "createNewPipeline": "Create a new pipeline",
+    "deletePipeline": "Delete Pipeline",
+    "dragToReorderAria": "Drag to reorder",
+    "changeColorAria": "Change color",
+    "deleteConfirm": {
+      "title": "Delete Pipeline",
+      "description": "This will archive all deals in this pipeline. This cannot be undone."
+    },
+    "toasts": {
+      "saveFailed": "Failed to save pipeline",
+      "saveSuccess": "Pipeline saved",
+      "addStageFailed": "Failed to add stage",
+      "stageInUse": "Move or delete deals in this stage first",
+      "deleteStageFailed": "Failed to delete stage",
+      "deletePipelineFailed": "Failed to delete pipeline",
+      "deletePipelineSuccess": "Pipeline deleted"
+    }
+  }
+}

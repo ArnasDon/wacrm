@@ -1,0 +1,285 @@
+{
+  "nodeTypes": {
+    "start": { "label": "Start", "blurb": "Entry point of the flow" },
+    "send_message": { "label": "Send message", "blurb": "Sends a WhatsApp text message" },
+    "send_buttons": { "label": "Send buttons", "blurb": "Sends quick-reply buttons" },
+    "send_list": { "label": "Send list", "blurb": "Sends a tappable list of options" },
+    "send_media": { "label": "Send media", "blurb": "Sends an image, video, or document" },
+    "collect_input": { "label": "Collect input", "blurb": "Asks a question, saves the reply" },
+    "condition": { "label": "If / else", "blurb": "Branches on a rule" },
+    "set_tag": { "label": "Tag contact", "blurb": "Adds or removes a contact tag" },
+    "handoff": { "label": "Handoff to agent", "blurb": "Hands the conversation to a human" },
+    "end": { "label": "End", "blurb": "Ends the flow" }
+  },
+  "nodeCategories": {
+    "messaging": "Messaging",
+    "logic": "Logic & data",
+    "flow": "Flow control"
+  },
+  "nodePreview": {
+    "mediaType": {
+      "image": "Image",
+      "video": "Video",
+      "document": "Document",
+      "generic": "Media"
+    },
+    "mediaNoFile": "{label} (no file uploaded)",
+    "mediaWithCaption": "{label}: {name} · {caption}",
+    "mediaWithName": "{label}: {name}",
+    "captureWithArrow": "{prompt} → vars.{key}",
+    "captureArrowOnly": "→ vars.{key}",
+    "conditionHasTag": "has tag {tag}",
+    "operator": {
+      "equals": "==",
+      "contains": "contains",
+      "present": "exists",
+      "absent": "missing"
+    },
+    "tagMode": { "add": "Add", "remove": "Remove" },
+    "tagNonePicked": "{mode} tag (none picked)",
+    "tagWithId": "{mode} tag {id}…",
+    "optionCount": "{count, plural, one {# option} other {# options}}",
+    "optionsAcrossSections": "{options} across {count, plural, one {# section} other {# sections}}"
+  },
+  "list": {
+    "title": "Flows",
+    "betaBadge": "Beta",
+    "subtitle": "Build branching, button-driven WhatsApp conversations. Useful for menus, FAQs, and triage before a human steps in.",
+    "newFlow": "New flow",
+    "loadError": "Couldn't load flows.",
+    "createError": "Couldn't create flow.",
+    "deleteError": "Couldn't delete flow.",
+    "deleteSuccess": "Flow deleted.",
+    "deleteConfirm": "Delete \"{name}\"? Any active runs will end immediately.",
+    "cloneError": "Clone failed.",
+    "emptyState": {
+      "title": "No flows yet",
+      "description": "Build your first conversation — a welcome menu, an order lookup, an FAQ bot. Customers tap buttons; the bot routes them to the right answer (or the right agent).",
+      "cta": "Create your first flow"
+    },
+    "statusLabels": {
+      "draft": "Draft",
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "runsCount": "{count, plural, one {run} other {runs}}",
+    "createDialog": {
+      "title": "Create a new flow",
+      "description": "Start from a template or build from scratch.",
+      "templatesHeading": "Start from a template",
+      "nodeCount": "{count, plural, one {node} other {nodes}}",
+      "blankHeading": "Or start blank",
+      "namePlaceholder": "e.g. Welcome menu",
+      "createBlank": "Create blank flow"
+    },
+    "trigger": {
+      "keywordNone": "Triggers on keyword (none set)",
+      "keywordList": "Triggers on: {keywords}",
+      "firstInbound": "Triggers on a contact's first-ever inbound message",
+      "manual": "Manual trigger"
+    }
+  },
+  "runs": {
+    "notFound": "Flow not found.",
+    "backToFlows": "Back to flows",
+    "title": "Runs",
+    "subtitle": "The 50 most recent times this flow ran. Expand a row to see the engine's per-step log.",
+    "empty": "No runs yet. Trigger the flow from a personal WhatsApp number to see it appear here.",
+    "loadError": "Couldn't load runs.",
+    "statusLabels": {
+      "active": "Active",
+      "completed": "Completed",
+      "handed_off": "Handed off",
+      "timed_out": "Timed out",
+      "paused_by_agent": "Paused by agent",
+      "failed": "Failed"
+    },
+    "unknownContact": "Unknown contact",
+    "atNode": "at {node}",
+    "startedAt": "Started {date}",
+    "reprompts": "{count} re-prompts",
+    "ranFor": "ran for {duration}",
+    "capturedVars": "Captured vars ({count})",
+    "noEvents": "No events recorded for this run."
+  },
+  "editorPage": {
+    "notFound": "Flow not found.",
+    "backToFlows": "Back to flows",
+    "loadError": "Couldn't load flow."
+  },
+  "header": {
+    "backToFlows": "Back to Flows",
+    "namePlaceholder": "Flow name",
+    "nameLabel": "Flow name",
+    "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
+    "descriptionLabel": "Flow description",
+    "edited": "Edited",
+    "editedTitle": "Unsaved changes — hit Save to persist",
+    "runs": "Runs",
+    "pause": "Pause",
+    "activate": "Activate",
+    "activateDisabledTitle": "Fix the issues below before activating",
+    "statusLabels": {
+      "draft": "Draft",
+      "active": "Active",
+      "archived": "Archived"
+    }
+  },
+  "shell": {
+    "editorView": "Editor view",
+    "canvas": "Canvas",
+    "list": "List"
+  },
+  "builder": {
+    "triggerHeading": "Trigger",
+    "whenLabel": "When…",
+    "triggerOptions": {
+      "keyword": "A message contains a keyword",
+      "firstInbound": "Customer's first ever inbound message",
+      "manual": "Manual only (no auto-trigger)"
+    },
+    "keywordsLabel": "Keywords (comma-separated)",
+    "keywordsPlaceholder": "support, help, hi",
+    "entryNodeLabel": "Entry node:",
+    "entryNodePlaceholder": "Pick the first node…",
+    "nodesHeading": "Nodes ({count})",
+    "addNode": "Add node",
+    "emptyStateStart": "Add a",
+    "emptyStateStartNode": "Start",
+    "emptyStateThen1": "node, then a",
+    "emptyStateButtonsNode": "Send buttons",
+    "emptyStateThen2": "node, then a",
+    "emptyStateHandoffNode": "Handoff",
+    "emptyStateEnd": "— that's the welcome-menu shape from the brief.",
+    "entryBadge": "Entry",
+    "setAsEntry": "Set as entry",
+    "removeNode": "Remove node",
+    "showAdvanced": "Show advanced",
+    "hideAdvanced": "Hide advanced",
+    "nodeKeyLabel": "Node key (internal identifier — keep stable for analytics)",
+    "replyIdsHint": "Reply IDs for each option are shown inline above. They're returned by WhatsApp when a customer taps; you usually don't need to touch them."
+  },
+  "canvas": {
+    "noNodes": "No nodes yet.",
+    "entryBadge": "Entry",
+    "setAsEntry": "Set as entry",
+    "deleteNode": "Delete node",
+    "addNode": "Add node"
+  },
+  "validation": {
+    "ready": "No issues. Ready to activate.",
+    "summary": "{errors, plural, one {# error} other {# errors}}, {warnings, plural, one {# warning} other {# warnings}}",
+    "jumpToNode": "Jump to node {node}"
+  },
+  "forms": {
+    "nextNodeDefaultLabel": "Pick a next node…",
+    "selectNone": "— None —",
+    "selectPlaceholder": "—",
+    "advancesTo": "Advances to",
+    "sendMessage": {
+      "textLabel": "Text sent to the customer"
+    },
+    "sendButtons": {
+      "bodyLabel": "Body text",
+      "footerLabel": "Footer (optional, 60 chars)",
+      "buttonsLabel": "Buttons (1–3) — each one routes to a different next node",
+      "replyIdPlaceholder": "reply_id",
+      "titlePlaceholder": "Visible title (≤20 chars)",
+      "nextNodePlaceholder": "Next node…",
+      "addButton": "Add button"
+    },
+    "sendList": {
+      "buttonLabelLabel": "Tap-to-expand button label (≤20 chars)",
+      "footerLabel": "Footer (optional, 60 chars)",
+      "rowsLabel": "Rows (1–10 total across all sections)",
+      "sectionTitlePlaceholder": "Section {index} title (optional)",
+      "removeSection": "Remove section",
+      "replyIdPlaceholder": "reply_id",
+      "rowTitlePlaceholder": "Row title (≤24)",
+      "nextNodePlaceholder": "Next node…",
+      "addRow": "Add row",
+      "addSection": "Add section"
+    },
+    "collectInput": {
+      "promptLabel": "Prompt sent to the customer",
+      "varKeyLabel": "Variable key (stored in flow_runs.vars; alphanumeric + underscore)",
+      "varKeyPlaceholder": "e.g. name, email, company",
+      "varKeyHintPrefix": "Interpolate in downstream prompts and handoff notes with",
+      "advanceLabel": "After capturing, advance to"
+    },
+    "condition": {
+      "ifLabel": "If",
+      "subjectOptions": {
+        "var": "Captured variable",
+        "tag": "Contact has tag",
+        "contact_field": "Contact field"
+      },
+      "subjectFieldLabel": {
+        "var": "var name",
+        "tag": "Tag",
+        "contact_field": "Field"
+      },
+      "varNamePlaceholder": "e.g. email",
+      "tagUuidPlaceholder": "tag UUID",
+      "pickTagPlaceholder": "Pick a tag…",
+      "pickFieldPlaceholder": "Pick a field…",
+      "operatorLabel": "Operator",
+      "operatorOptions": {
+        "present": "is present",
+        "absent": "is absent",
+        "equals": "equals",
+        "contains": "contains"
+      },
+      "valueLabel": "Value",
+      "trueLabel": "If true → advance to",
+      "falseLabel": "If false → advance to"
+    },
+    "setTag": {
+      "actionLabel": "Action",
+      "actionOptions": {
+        "add": "Add tag",
+        "remove": "Remove tag"
+      },
+      "tagLabel": "Tag",
+      "pickTagPlaceholder": "Pick a tag…",
+      "tagUuidPlaceholder": "Tag UUID",
+      "advanceLabel": "Then advance to"
+    },
+    "handoff": {
+      "noteLabel": "Internal note (for the agent picking up)"
+    },
+    "end": {
+      "description": "Terminal node. When the runner reaches this node the run is marked complete. No config needed."
+    },
+    "sendMedia": {
+      "typeLabel": "Media type",
+      "typeOptions": {
+        "image": "Image (PNG, JPEG, WebP)",
+        "video": "Video (MP4, 3GP)",
+        "document": "Document (PDF, Word, Excel, PowerPoint, TXT)"
+      },
+      "fileLabel": "File",
+      "removeFile": "Remove file",
+      "uploading": "Uploading…",
+      "uploadCta": "Click to upload (max 16 MB)",
+      "fileTooLarge": "File is {size} MB — limit is 16 MB.",
+      "uploadSuccess": "File uploaded.",
+      "uploadError": "Upload failed.",
+      "captionLabel": "Caption (optional, shown under the media)",
+      "filenameLabel": "Filename shown to the customer (documents only)",
+      "filenamePlaceholder": "invoice.pdf",
+      "advanceLabel": "After sending, advance to"
+    }
+  },
+  "state": {
+    "saved": "Saved.",
+    "saveFailed": "Save failed",
+    "activateBlocked": "Fix the issues below before activating.",
+    "activated": "Flow activated.",
+    "archived": "Archived.",
+    "savedAsDraft": "Saved as draft.",
+    "statusUpdateFailed": "Status update failed",
+    "deleteConfirm": "Delete \"{name}\"? Any active runs end immediately. This can't be undone.",
+    "deleteFailed": "Delete failed"
+  }
+}

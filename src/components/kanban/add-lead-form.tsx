@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 interface AddLeadFormProps {
   open: boolean;
@@ -37,6 +38,8 @@ export function AddLeadForm({
 }: AddLeadFormProps) {
   const supabase = createClient();
   const { accountId } = useAuth();
+  const t = useTranslations("kanban");
+  const tCommon = useTranslations("common");
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactId, setContactId] = useState("");
@@ -62,7 +65,7 @@ export function AddLeadForm({
     if (!contactId || !accountId) return;
     const firstStage = [...stages].sort((a, b) => a.position - b.position)[0];
     if (!firstStage) {
-      toast.error("No funnel stages configured yet");
+      toast.error(t("addLeadForm.noStagesConfigured"));
       return;
     }
     setSaving(true);
@@ -74,7 +77,7 @@ export function AddLeadForm({
       .single();
 
     if (error || !created) {
-      toast.error("Failed to add lead");
+      toast.error(t("addLeadForm.addFailed"));
       setSaving(false);
       return;
     }
@@ -87,7 +90,7 @@ export function AddLeadForm({
     });
 
     setSaving(false);
-    toast.success("Lead added to funnel");
+    toast.success(t("addLeadForm.added"));
     onOpenChange(false);
     onCreated();
   }
@@ -100,18 +103,18 @@ export function AddLeadForm({
       >
         <div className="flex h-full flex-col">
           <SheetHeader className="border-b border-border/50 p-4">
-            <SheetTitle className="text-popover-foreground">Add Lead</SheetTitle>
+            <SheetTitle className="text-popover-foreground">{t("addLead")}</SheetTitle>
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">Contact</Label>
+              <Label className="text-muted-foreground">{t("addLeadForm.contactLabel")}</Label>
               <select
                 value={contactId}
                 onChange={(e) => setContactId(e.target.value)}
                 className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="">Select a contact</option>
+                <option value="">{t("addLeadForm.selectContactPlaceholder")}</option>
                 {availableContacts.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name || c.phone}
@@ -119,7 +122,7 @@ export function AddLeadForm({
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Enters the funnel at its first stage ({stages[0]?.name ?? "—"}).
+                {t("addLeadForm.entersAtStage", { stage: stages[0]?.name ?? "—" })}
               </p>
             </div>
           </div>
@@ -131,14 +134,14 @@ export function AddLeadForm({
                 onClick={() => onOpenChange(false)}
                 className="flex-1 border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                Cancel
+                {tCommon("actions.cancel")}
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={saving || !contactId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {saving ? "Adding..." : "Add Lead"}
+                {saving ? t("addLeadForm.adding") : t("addLead")}
               </Button>
             </div>
           </div>

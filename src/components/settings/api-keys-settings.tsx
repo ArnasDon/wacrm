@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Copy, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,8 @@ function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
 
 export function ApiKeysSettings() {
   const { canEditSettings } = useAuth();
+  const t = useTranslations('settings.apiKeys');
+  const tCommon = useTranslations('common');
 
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,18 +84,18 @@ export function ApiKeysSettings() {
       const res = await fetch('/api/account/api-keys', { cache: 'no-store' });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
-        toast.error(payload.error || 'Failed to load API keys');
+        toast.error(payload.error || t('errors.loadFailed'));
         return;
       }
       const data = (await res.json()) as { keys: ApiKey[] };
       setKeys(data.keys);
     } catch (err) {
       console.error('[ApiKeysSettings] load error:', err);
-      toast.error('Could not reach the server');
+      toast.error(tCommon('errors.network'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t, tCommon]);
 
   useEffect(() => {
     void load();
@@ -106,10 +109,10 @@ export function ApiKeysSettings() {
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
-        toast.error(payload.error || 'Failed to revoke key');
+        toast.error(payload.error || t('errors.revokeFailed'));
         return;
       }
-      toast.success(`Revoked "${key.name}"`);
+      toast.success(t('toasts.revoked', { name: key.name }));
       // Reflect the revoke locally without a refetch.
       setKeys((prev) =>
         prev.map((k) =>
@@ -118,7 +121,7 @@ export function ApiKeysSettings() {
       );
     } catch (err) {
       console.error('[ApiKeysSettings] revoke error:', err);
-      toast.error('Could not reach the server');
+      toast.error(tCommon('errors.network'));
     } finally {
       setRevoking(null);
     }
@@ -135,20 +138,20 @@ export function ApiKeysSettings() {
   return (
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
-        title="API keys"
+        title={t('title')}
         description={
           <>
-            Keys authenticate the public REST API (
-            <code className="text-xs">/api/v1</code>) so you can build your own
-            automations. Send them as{' '}
-            <code className="text-xs">Authorization: Bearer &lt;key&gt;</code>.
+            {t.rich('description', {
+              code1: (chunks) => <code className="text-xs">{chunks}</code>,
+              code2: (chunks) => <code className="text-xs">{chunks}</code>,
+            })}
           </>
         }
         action={
           <RequireRole min="admin">
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-4" />
-              New API key
+              {t('newKeyButton')}
             </Button>
           </RequireRole>
         }
@@ -159,16 +162,19 @@ export function ApiKeysSettings() {
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <KeyRound className="text-muted-foreground size-6" />
             <p className="text-muted-foreground mt-2 text-sm">
-              No API keys yet.
+              {t('empty.title')}
             </p>
             {canEditSettings ? (
               <p className="text-muted-foreground mt-1 text-xs">
-                Click <span className="text-foreground">New API key</span> to
-                create one.
+                {t.rich('empty.adminHint', {
+                  highlight: (chunks) => (
+                    <span className="text-foreground">{chunks}</span>
+                  ),
+                })}
               </p>
             ) : (
               <p className="text-muted-foreground mt-1 text-xs">
-                Ask an admin to create one.
+                {t('empty.memberHint')}
               </p>
             )}
           </CardContent>
@@ -198,12 +204,12 @@ export function ApiKeysSettings() {
                         </span>
                         {status === 'revoked' && (
                           <Badge className="border-border bg-muted text-muted-foreground text-[10px] tracking-wide uppercase">
-                            Revoked
+                            {t('status.revoked')}
                           </Badge>
                         )}
                         {status === 'expired' && (
                           <Badge className="border-border bg-muted text-muted-foreground text-[10px] tracking-wide uppercase">
-                            Expired
+                            {t('status.expired')}
                           </Badge>
                         )}
                       </div>
@@ -213,7 +219,7 @@ export function ApiKeysSettings() {
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {k.scopes.length === 0 ? (
                           <span className="text-muted-foreground text-xs">
-                            No scopes
+                            {t('noScopes')}
                           </span>
                         ) : (
                           k.scopes.map((s) => (
@@ -227,13 +233,13 @@ export function ApiKeysSettings() {
                         )}
                       </div>
                       <p className="text-muted-foreground mt-1.5 text-xs">
-                        Created {fmtDate(k.created_at)}
+                        {t('createdMeta', { date: fmtDate(k.created_at) })}
                         {' · '}
                         {k.last_used_at
-                          ? `last used ${fmtDate(k.last_used_at)}`
-                          : 'never used'}
+                          ? t('lastUsed', { date: fmtDate(k.last_used_at) })
+                          : t('neverUsed')}
                         {k.expires_at && status !== 'expired'
-                          ? ` · expires ${fmtDate(k.expires_at)}`
+                          ? ` · ${t('expiresOn', { date: fmtDate(k.expires_at) })}`
                           : ''}
                       </p>
                     </div>
@@ -252,7 +258,7 @@ export function ApiKeysSettings() {
                           ) : (
                             <Trash2 className="size-4" />
                           )}
-                          Revoke
+                          {t('revokeButton')}
                         </Button>
                       </RequireRole>
                     )}
@@ -286,6 +292,8 @@ function CreateKeyDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const t = useTranslations('settings.apiKeys');
+  const tCommon = useTranslations('common');
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ApiScope[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -308,7 +316,7 @@ function CreateKeyDialog({
   async function handleCreate() {
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('Give the key a name');
+      toast.error(t('errors.nameRequired'));
       return;
     }
     setSubmitting(true);
@@ -320,14 +328,14 @@ function CreateKeyDialog({
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(payload.error || 'Failed to create key');
+        toast.error(payload.error || t('errors.createFailed'));
         return;
       }
       setCreatedKey(payload.plaintext as string);
       onCreated();
     } catch (err) {
       console.error('[CreateKeyDialog] create error:', err);
-      toast.error('Could not reach the server');
+      toast.error(tCommon('errors.network'));
     } finally {
       setSubmitting(false);
     }
@@ -337,9 +345,9 @@ function CreateKeyDialog({
     if (!createdKey) return;
     try {
       await navigator.clipboard.writeText(createdKey);
-      toast.success('API key copied');
+      toast.success(t('toasts.keyCopied'));
     } catch {
-      toast.error('Copy failed — select and copy manually');
+      toast.error(t('errors.copyFailed'));
     }
   }
 
@@ -356,16 +364,15 @@ function CreateKeyDialog({
           <>
             <DialogHeader>
               <DialogTitle className="text-popover-foreground">
-                Copy your API key
+                {t('createDialog.revealTitle')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                This is the only time the full key is shown. Store it somewhere
-                safe — if you lose it, revoke it and create a new one.
+                {t('createDialog.revealDescription')}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">API key</Label>
+              <Label className="text-muted-foreground">{t('createDialog.keyLabel')}</Label>
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -375,7 +382,7 @@ function CreateKeyDialog({
                 />
                 <Button type="button" variant="outline" onClick={copyKey}>
                   <Copy className="size-4" />
-                  Copy
+                  {tCommon('actions.copy')}
                 </Button>
               </div>
             </div>
@@ -387,7 +394,7 @@ function CreateKeyDialog({
                   onOpenChange(false);
                 }}
               >
-                Done
+                {tCommon('actions.done')}
               </Button>
             </DialogFooter>
           </>
@@ -395,30 +402,29 @@ function CreateKeyDialog({
           <>
             <DialogHeader>
               <DialogTitle className="text-popover-foreground">
-                New API key
+                {t('createDialog.title')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                Name it after the integration that will use it, and grant only
-                the scopes it needs.
+                {t('createDialog.description')}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="api-key-name" className="text-muted-foreground">
-                  Name
+                  {t('createDialog.nameLabel')}
                 </Label>
                 <Input
                   id="api-key-name"
                   value={name}
                   maxLength={80}
-                  placeholder="e.g. Zapier automation"
+                  placeholder={t('createDialog.namePlaceholder')}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Scopes</Label>
+                <Label className="text-muted-foreground">{t('createDialog.scopesLabel')}</Label>
                 <div className="border-border space-y-2 rounded-md border p-3">
                   {API_SCOPES.map((scope) => (
                     <label
@@ -444,9 +450,9 @@ function CreateKeyDialog({
                   ))}
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  A key with no scopes can still call{' '}
-                  <code className="text-[11px]">GET /api/v1/me</code> to verify
-                  it works.
+                  {t.rich('createDialog.noScopesHint', {
+                    code: (chunks) => <code className="text-[11px]">{chunks}</code>,
+                  })}
                 </p>
               </div>
             </div>
@@ -460,16 +466,16 @@ function CreateKeyDialog({
                 }}
                 className="border-border text-muted-foreground hover:bg-muted"
               >
-                Cancel
+                {tCommon('actions.cancel')}
               </Button>
               <Button onClick={handleCreate} disabled={submitting}>
                 {submitting ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Creating…
+                    {t('createDialog.creating')}
                   </>
                 ) : (
-                  'Create key'
+                  t('createDialog.createButton')
                 )}
               </Button>
             </DialogFooter>

@@ -1,0 +1,185 @@
+{
+  "page": {
+    "title": "Contacts",
+    "subtitle": "Manage your contact list.",
+    "totalContacts": "{count, plural, one {# total contact.} other {# total contacts.}}",
+    "customFieldsButton": "Custom fields",
+    "importButton": "Import",
+    "addContactButton": "Add Contact",
+    "searchPlaceholder": "Search by name, phone, or email...",
+    "filterByTags": "Filter by tags",
+    "clearAll": "Clear all",
+    "noTagsYet": "No tags yet.",
+    "filterByTagAria": "Filter by {name}",
+    "removeTagFilterAria": "Remove {name} filter",
+    "selectedCount": "<b>{count}</b> {count, plural, one {contact} other {contacts}} selected",
+    "deleteSelected": "Delete selected",
+    "selectAllAria": "Select all contacts on this page",
+    "selectContactAria": "Select {name}",
+    "columns": {
+      "name": "Name",
+      "phone": "Phone",
+      "email": "Email",
+      "company": "Company",
+      "tags": "Tags",
+      "created": "Created"
+    },
+    "loadingContacts": "Loading contacts...",
+    "noContactsMatch": "No contacts match your filters.",
+    "noContactsYet": "No contacts yet.",
+    "addFirstContact": "Add your first contact",
+    "unnamed": "Unnamed",
+    "moreTagsCount": "+{count}",
+    "showingRange": "Showing {from}-{to} of {total}",
+    "pageOf": "Page {page} of {total}",
+    "deleteContactDialog": {
+      "title": "Delete Contact",
+      "description": "Are you sure you want to delete <b>{name}</b>? This action cannot be undone."
+    },
+    "deleteContactsDialog": {
+      "title": "Delete {count, plural, one {Contact} other {Contacts}}",
+      "description": "Are you sure you want to delete <b>{count, plural, one {# contact} other {# contacts}}</b>? This action cannot be undone."
+    },
+    "toasts": {
+      "loadFailed": "Failed to load contacts",
+      "deleteFailed": "Failed to delete contact",
+      "deleted": "Contact deleted",
+      "bulkDeleteFailed": "Failed to delete contacts",
+      "bulkDeleted": "{count, plural, one {# contact deleted} other {# contacts deleted}}"
+    }
+  },
+  "detail": {
+    "unknown": "Unknown",
+    "contactDetails": "Contact details",
+    "sendTemplate": "Send template",
+    "tabs": {
+      "details": "Details",
+      "tags": "Tags",
+      "notes": "Notes",
+      "customFields": "Custom Fields",
+      "deals": "Deals"
+    },
+    "details": {
+      "nameLabel": "Name",
+      "phoneLabel": "Phone",
+      "emailLabel": "Email",
+      "companyLabel": "Company"
+    },
+    "tags": {
+      "hint": "Click a tag to add or remove it from this contact.",
+      "none": "No tags available. Create tags in Settings."
+    },
+    "notes": {
+      "placeholder": "Write a note...",
+      "addButton": "Add Note",
+      "none": "No notes yet."
+    },
+    "customFields": {
+      "none": "No custom fields defined. Create them in Settings.",
+      "valuePlaceholder": "Enter {field}...",
+      "saveButton": "Save Custom Fields"
+    },
+    "deals": {
+      "none": "No deals yet"
+    },
+    "toasts": {
+      "phoneRequired": "Phone number is required",
+      "updateFailed": "Failed to update contact",
+      "updated": "Contact updated",
+      "noteFailed": "Failed to add note",
+      "noteDeleteFailed": "Failed to delete note",
+      "noteDeleted": "Note deleted",
+      "noteAdded": "Note added",
+      "customFieldsSaved": "Custom fields saved",
+      "customFieldsSaveFailed": "Failed to save custom fields",
+      "notAuthenticated": "Not authenticated",
+      "templateSendFailed": "Failed to send template: {reason}",
+      "templateSent": "Template \"{name}\" sent"
+    }
+  },
+  "form": {
+    "editTitle": "Edit Contact",
+    "addTitle": "Add Contact",
+    "editDescription": "Update the contact details below.",
+    "addDescription": "Fill in the details to create a new contact.",
+    "nameLabel": "Name",
+    "namePlaceholder": "John Doe",
+    "phoneLabel": "Phone",
+    "phonePlaceholder": "+1 234 567 8900",
+    "phoneHint": "Include country code, e.g. +1 for US",
+    "emailLabel": "Email",
+    "emailPlaceholder": "john@example.com",
+    "companyLabel": "Company",
+    "companyPlaceholder": "Acme Inc.",
+    "tagsLabel": "Tags",
+    "loadingTags": "Loading tags...",
+    "noTags": "No tags available. Create tags in Settings.",
+    "duplicateExact": "A contact with this phone number already exists.",
+    "duplicateFuzzy": "A contact with a very similar number already exists.",
+    "viewExisting": "View {name}",
+    "toasts": {
+      "phoneRequired": "Phone number is required",
+      "duplicateExists": "A contact with this phone number already exists",
+      "updated": "Contact updated",
+      "created": "Contact created",
+      "saveFailed": "Failed to save contact",
+      "notAuthenticated": "Not authenticated",
+      "profileNotLinked": "Your profile is not linked to an account."
+    }
+  },
+  "customFieldsManager": {
+    "title": "Custom fields",
+    "description": "Define extra contact fields (e.g. ZIP code, lead source). They appear on every contact and in the “Update Contact Field” automation action.",
+    "newFieldPlaceholder": "New field name…",
+    "noFields": "No custom fields yet.",
+    "renameAria": "Rename {name}",
+    "deleteFieldTitle": "Delete field",
+    "confirmDeleteField": "Delete \"{name}\"? This also removes its stored value on every contact. This cannot be undone.",
+    "toasts": {
+      "notLinked": "Your profile is not linked to an account.",
+      "duplicateName": "A field named \"{name}\" already exists.",
+      "createFailed": "Could not create field. You may not have permission.",
+      "created": "Created \"{name}\".",
+      "renameFailed": "Could not rename field.",
+      "deleteFailed": "Could not delete field.",
+      "deleted": "Deleted \"{name}\"."
+    }
+  },
+  "importModal": {
+    "title": "Import Contacts",
+    "description": "Upload a CSV with a required <phone>phone</phone> column. Optional: <name>name</name>, <email>email</email>, <company>company</company>, <tags>tags</tags> (comma-separated; quote multi-tag cells).",
+    "chooseFile": "Click to choose a CSV file",
+    "csvLimit": ".csv up to your browser limit",
+    "rowsReady": "{count, plural, one {# row} other {# rows}} ready",
+    "previewLabel": "Preview · first {count}",
+    "tagsStat": "{tagCount, plural, one {# tag} other {# tags}} · {rowCount, plural, one {# contact} other {# contacts}}",
+    "moreRowsNotShown": "+ {count, plural, one {# more row} other {# more rows}} not shown",
+    "columns": {
+      "phone": "Phone",
+      "name": "Name",
+      "email": "Email",
+      "company": "Company",
+      "tags": "Tags"
+    },
+    "willBeCreated": "{name} (will be created on import)",
+    "importComplete": "Import complete",
+    "importedCount": "{count} imported",
+    "tagsAssignedCount": "{count, plural, one {# tag assigned} other {# tags assigned}}",
+    "skippedCount": "{count} skipped",
+    "failedCount": "{count} failed",
+    "importButton": "{count, plural, one {Import # contact} other {Import # contacts}}",
+    "toasts": {
+      "noValidRows": "No valid rows found. Ensure CSV has a \"phone\" column header.",
+      "contactsImported": "{count, plural, one {# contact imported} other {# contacts imported}}",
+      "tagAssignmentsApplied": "{count, plural, one {# tag assignment applied} other {# tag assignments applied}}",
+      "unknownTagsSkipped": "Unknown tags skipped (create them in Settings first): {sample}",
+      "moreTagsSuffix": " (+{count} more)",
+      "duplicatesSkipped": "{count, plural, one {# duplicate skipped} other {# duplicates skipped}}",
+      "contactsFailedToImport": "{count, plural, one {# contact failed to import} other {# contacts failed to import}}",
+      "someTagAssignmentsFailed": "Contacts imported, but some tag assignments failed.",
+      "importFailed": "Import failed",
+      "notAuthenticated": "Not authenticated",
+      "profileNotLinked": "Your profile is not linked to an account."
+    }
+  }
+}

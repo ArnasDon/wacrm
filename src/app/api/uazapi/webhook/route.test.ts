@@ -81,6 +81,28 @@ describe('normalizeInbound — basic field mapping', () => {
     )
     expect(inbound?.fromPhone).toBe('5511888888888')
   })
+
+  it('exposes the partner chat name via chatName on a fromMe echo', () => {
+    const inbound = normalizeInbound(
+      payload(
+        { fromMe: true, chatid: '5511888888888@s.whatsapp.net', senderName: 'Account Owner' },
+        { name: 'Ligia Sao Camilo', phone: '5511888888888' }
+      )
+    )
+    // chatName is the conversation partner (chat.name), never the owner's
+    // own senderName that rides along on fromMe echoes.
+    expect(inbound?.chatName).toBe('Ligia Sao Camilo')
+  })
+
+  it('leaves chatName null when the payload carries no chat name', () => {
+    const inbound = normalizeInbound(payload({ fromMe: true }, { name: undefined }))
+    expect(inbound?.chatName).toBeNull()
+  })
+
+  it('sets chatName from chat.name for a customer message too', () => {
+    const inbound = normalizeInbound(payload({ text: 'oi' }, { name: 'Some Contact' }))
+    expect(inbound?.chatName).toBe('Some Contact')
+  })
 })
 
 describe('mapContentType', () => {

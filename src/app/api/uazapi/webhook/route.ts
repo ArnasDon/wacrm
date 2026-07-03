@@ -67,6 +67,14 @@ interface NormalizedInbound {
   externalId: string
   fromPhone: string
   senderName: string
+  /**
+   * The conversation partner's display name, taken from `chat.name`
+   * only. Unlike `senderName` (which falls back to `message.senderName`),
+   * this is safe to trust on a `fromMe` echo: `chat` always describes the
+   * OTHER party, whereas `message.senderName` there is the account owner.
+   * Null when the payload carries no chat name.
+   */
+  chatName: string | null
   isGroup: boolean
   fromMe: boolean
   type: string
@@ -149,6 +157,7 @@ export function normalizeInbound(body: any): NormalizedInbound | null {
     externalId: msg.id || msg.messageid || '',
     fromPhone,
     senderName: chat.name || msg.senderName || fromPhone,
+    chatName: chat.name || null,
     isGroup,
     fromMe,
     type,
@@ -285,15 +294,27 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
   let contactId: string
   let wasCreated = false
 
+  // The name to file this contact under. On a customer reply we trust
+  // `senderName` (their WhatsApp profile name). On a `fromMe` echo the
+  // only trustworthy name is `chatName` (the conversation partner from
+  // `chat.name`) — `senderName` there can be the account owner's own
+  // name, which must never become the contact's name.
+  const incomingName = inbound.fromMe ? inbound.chatName : inbound.senderName
+
   if (existingContact) {
     contactId = existingContact.id
-    // The sender's own profile name rides along on `fromMe` echoes too —
-    // only trust it as the contact's name when the customer sent it.
-    if (!inbound.fromMe && inbound.senderName && inbound.senderName !== existingContact.name) {
-      await db
-        .from('contacts')
-        .update({ name: inbound.senderName, updated_at: new Date().toISOString() })
-        .eq('id', contactId)
+    if (incomingName && incomingName !== existingContact.name) {
+      // On a `fromMe` echo only fill in a name when the contact is still
+      // on its phone-number placeholder — never clobber a name a customer
+      // reply or a manual edit already set. Customer replies (which carry
+      // the authoritative profile name) always win.
+      const isPlaceholder = !existingContact.name || existingContact.name === existingContact.phone
+      if (!inbound.fromMe || isPlaceholder) {
+        await db
+          .from('contacts')
+          .update({ name: incomingName, updated_at: new Date().toISOString() })
+          .eq('id', contactId)
+      }
     }
   } else {
     const { data: newContact, error: createError } = await db
@@ -302,7 +323,7 @@ async function processInbound(accountId: string, configOwnerUserId: string, body
         account_id: accountId,
         user_id: configOwnerUserId,
         phone: inbound.fromPhone,
-        name: (!inbound.fromMe && inbound.senderName) || inbound.fromPhone,
+        name: incomingName || inbound.fromPhone,
       })
       .select()
       .single()

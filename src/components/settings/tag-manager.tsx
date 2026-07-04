@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
+import { Loader2, Plus, Sparkles, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -119,6 +119,27 @@ export function TagManager() {
     }
   }
 
+  async function toggleAiAssignable(tag: Tag) {
+    const nextValue = !tag.ai_assignable;
+    // Optimistic update — this is a single boolean flip, not worth a
+    // loading state per tag.
+    setTags((prev) =>
+      prev.map((t) => (t.id === tag.id ? { ...t, ai_assignable: nextValue } : t)),
+    );
+    const { error } = await supabase
+      .from('tags')
+      .update({ ai_assignable: nextValue })
+      .eq('id', tag.id);
+
+    if (error) {
+      console.error('Failed to update ai_assignable:', error);
+      toast.error('Failed to update tag');
+      setTags((prev) =>
+        prev.map((t) => (t.id === tag.id ? { ...t, ai_assignable: !nextValue } : t)),
+      );
+    }
+  }
+
   function confirmDelete(tag: Tag) {
     setTagToDelete(tag);
     setDeleteDialogOpen(true);
@@ -183,6 +204,19 @@ export function TagManager() {
                       style={{ backgroundColor: tag.color }}
                     />
                     {tag.name}
+                    <button
+                      type="button"
+                      onClick={() => toggleAiAssignable(tag)}
+                      aria-label={`${tag.ai_assignable ? 'Disallow' : 'Allow'} AI to apply ${tag.name}`}
+                      aria-pressed={tag.ai_assignable}
+                      title="AI can apply this tag"
+                      className={cn(
+                        'ml-0.5 rounded-full p-0.5 transition-opacity hover:bg-black/10 dark:hover:bg-white/10',
+                        tag.ai_assignable ? 'opacity-100' : 'opacity-30 hover:opacity-60',
+                      )}
+                    >
+                      <Sparkles className="size-3" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => confirmDelete(tag)}

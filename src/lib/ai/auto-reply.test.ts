@@ -6,7 +6,10 @@ const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
-  generateReply: vi.fn(),
+  generateReplyWithTools: vi.fn(),
+  loadAssignableTags: vi.fn(),
+  buildAddTagTool: vi.fn(),
+  applyAiTag: vi.fn(),
   engineSendText: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
@@ -20,7 +23,16 @@ const h = vi.hoisted(() => ({
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
-vi.mock('./generate', () => ({ generateReply: h.generateReply }))
+vi.mock('./generate', () => ({ generateReplyWithTools: h.generateReplyWithTools }))
+vi.mock('./tag-tool', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./tag-tool')>()
+  return {
+    ...actual,
+    loadAssignableTags: h.loadAssignableTags,
+    buildAddTagTool: h.buildAddTagTool,
+  }
+})
+vi.mock('./apply-tag', () => ({ applyAiTag: h.applyAiTag }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
@@ -93,7 +105,10 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
+  h.loadAssignableTags.mockResolvedValue([])
+  h.buildAddTagTool.mockReturnValue(null)
+  h.applyAiTag.mockResolvedValue({ applied: true, tagName: 'Some Tag' })
+  h.generateReplyWithTools.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
 })
 
@@ -115,14 +130,14 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
     await dispatchInboundToAiReply(ARGS)
     expect(h.retrieveKnowledge).toHaveBeenCalled()
-    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    const systemPrompt = h.generateReplyWithTools.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
   it('stands down when an active message-level automation exists', async () => {
     h.state.autoResponders = [{ id: 'auto-1' }]
     await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
@@ -137,7 +152,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   it('skips when AI is off / not configured', async () => {
     h.loadAiConfig.mockResolvedValue(null)
     await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
@@ -180,17 +195,63 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   it('skips when there is nothing to reply to', async () => {
     h.buildConversationContext.mockResolvedValue([])
     await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
   it('disables auto-reply and does not send on handoff', async () => {
-    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.generateReplyWithTools.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: true })
     expect(h.state.rpcCalls).toHaveLength(0)
+  })
+})
+
+describe('dispatchInboundToAiReply — AI tag application', () => {
+  it('omits the tool entirely when the account has no ai_assignable tags', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReplyWithTools).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: null }),
+    )
+  })
+
+  it('caps at 2 applied tags per reply and dedupes by tag id', async () => {
+    h.buildAddTagTool.mockReturnValue({ name: 'add_tag', description: 'd', tagIds: ['t1', 't2', 't3'] })
+    await dispatchInboundToAiReply(ARGS)
+
+    const onToolCalls = h.generateReplyWithTools.mock.calls[0][0].onToolCalls
+    const results = await onToolCalls([
+      { id: 'c1', tagId: 't1', reason: 'r1' },
+      { id: 'c2', tagId: 't1', reason: 'duplicate call, same tag' },
+      { id: 'c3', tagId: 't2', reason: 'r2' },
+      { id: 'c4', tagId: 't3', reason: 'r3 — should be ignored, beyond the cap' },
+    ])
+
+    expect(h.applyAiTag).toHaveBeenCalledTimes(2)
+    expect(h.applyAiTag).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ tagId: 't1', contactId: 'contact-1', conversationId: 'conv-1' }),
+    )
+    expect(h.applyAiTag).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ tagId: 't2' }),
+    )
+    expect(results.map((r: { tagId: string }) => r.tagId)).toEqual(['t1', 't2'])
+  })
+
+  it('keeps the reply flowing when a tag application throws', async () => {
+    h.buildAddTagTool.mockReturnValue({ name: 'add_tag', description: 'd', tagIds: ['t1'] })
+    h.applyAiTag.mockRejectedValueOnce(new Error('db hiccup'))
+    await dispatchInboundToAiReply(ARGS)
+
+    const onToolCalls = h.generateReplyWithTools.mock.calls[0][0].onToolCalls
+    const results = await onToolCalls([{ id: 'c1', tagId: 't1', reason: 'r1' }])
+
+    expect(results).toEqual([{ tagId: 't1', applied: false }])
   })
 })

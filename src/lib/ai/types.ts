@@ -33,12 +33,22 @@ export interface ChatMessage {
   content: string
 }
 
+/** A single `add_tag` tool call the model made, as reported by the
+ *  provider (raw — not yet validated against current tag state). */
+export interface ToolCallResult {
+  tagId: string
+  reason: string
+}
+
 /** Outcome of a generation call. */
 export interface GenerateResult {
   /** The reply text, with any handoff sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** `add_tag` calls the model made, when tools were offered. Absent/[]
+   *  when no tool was attached or the model didn't call it. */
+  toolCalls?: ToolCallResult[]
 }
 
 /**

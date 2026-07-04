@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { generateReply, parseGeneration } from './generate'
+import { generateReply, generateReplyWithTools, parseGeneration } from './generate'
 import { AiError, type AiConfig } from './types'
+import type { ToolDef } from './tag-tool'
 
 function config(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -161,5 +162,205 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+const ADD_TAG_TOOL: ToolDef = {
+  name: 'add_tag',
+  description: 'desc',
+  tagIds: ['t1'],
+}
+
+describe('generateReplyWithTools — no tool offered', () => {
+  it('behaves exactly like generateReply when tool is null', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ choices: [{ message: { content: 'Hi!' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onToolCalls = vi.fn()
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tool: null,
+      onToolCalls,
+    })
+
+    expect(res).toEqual({ text: 'Hi!', handoff: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onToolCalls).not.toHaveBeenCalled()
+  })
+})
+
+describe('generateReplyWithTools — OpenAI', () => {
+  it('parses generation normally when the model does not call the tool', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ choices: [{ message: { content: 'No tag needed here.' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onToolCalls = vi.fn()
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Just chatting' }],
+      tool: ADD_TAG_TOOL,
+      onToolCalls,
+    })
+
+    expect(res).toEqual({ text: 'No tag needed here.', handoff: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onToolCalls).not.toHaveBeenCalled()
+  })
+
+  it('applies a tool call via onToolCalls and makes exactly one bounded follow-up for the final text', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_1',
+                    type: 'function',
+                    function: {
+                      name: 'add_tag',
+                      arguments: JSON.stringify({ tag_id: 't1', reason: 'asked for a consultant' }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({ choices: [{ message: { content: 'Sure, connecting you now!' } }] }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const onToolCalls = vi
+      .fn()
+      .mockResolvedValue([{ tagId: 't1', applied: true, tagName: 'quer-consultor' }])
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'I want to talk to a consultant' }],
+      tool: ADD_TAG_TOOL,
+      onToolCalls,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onToolCalls).toHaveBeenCalledWith([{ id: 'call_1', tagId: 't1', reason: 'asked for a consultant' }])
+    expect(res.text).toBe('Sure, connecting you now!')
+    expect(res.toolCalls).toEqual([{ tagId: 't1', reason: 'asked for a consultant' }])
+
+    // Every tool_call_id from the first turn must get a matching `tool`
+    // message in the follow-up, or OpenAI 400s.
+    const followUpBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    const toolMsg = followUpBody.messages.find((m: { role: string }) => m.role === 'tool')
+    expect(toolMsg).toEqual({
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: 'Tag applied: quer-consultor.',
+    })
+  })
+
+  it('ignores a malformed tool call rather than failing the whole reply', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: 'Here you go.',
+                tool_calls: [
+                  { id: 'call_1', type: 'function', function: { name: 'add_tag', arguments: 'not json' } },
+                ],
+              },
+            },
+          ],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const onToolCalls = vi.fn()
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tool: ADD_TAG_TOOL,
+      onToolCalls,
+    })
+
+    expect(res.text).toBe('Here you go.')
+    expect(onToolCalls).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('generateReplyWithTools — Anthropic', () => {
+  it('applies a tool call via onToolCalls and makes exactly one bounded follow-up for the final text', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          content: [
+            { type: 'tool_use', id: 'toolu_1', name: 'add_tag', input: { tag_id: 't1', reason: 'wants a consultant' } },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(okResponse({ content: [{ type: 'text', text: "I've flagged this for a consultant." }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const onToolCalls = vi
+      .fn()
+      .mockResolvedValue([{ tagId: 't1', applied: true, tagName: 'quer-consultor' }])
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'anthropic', apiKey: 'sk-ant-x' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'I want a consultant' }],
+      tool: ADD_TAG_TOOL,
+      onToolCalls,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onToolCalls).toHaveBeenCalledWith([{ id: 'toolu_1', tagId: 't1', reason: 'wants a consultant' }])
+    expect(res.text).toBe("I've flagged this for a consultant.")
+    expect(res.toolCalls).toEqual([{ tagId: 't1', reason: 'wants a consultant' }])
+
+    const followUpBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    const userTurn = followUpBody.messages.at(-1)
+    expect(userTurn).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'Tag applied: quer-consultor.' }],
+    })
+  })
+
+  it('parses generation normally when the model does not call the tool', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'Just chatting back.' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onToolCalls = vi.fn()
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tool: ADD_TAG_TOOL,
+      onToolCalls,
+    })
+
+    expect(res).toEqual({ text: 'Just chatting back.', handoff: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onToolCalls).not.toHaveBeenCalled()
   })
 })

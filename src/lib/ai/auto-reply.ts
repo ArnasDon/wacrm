@@ -2,9 +2,12 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
-import { generateReply } from './generate'
+import { generateReplyWithTools, type AppliedTagResult } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { latestUserMessage } from './query'
+import { loadAssignableTags, buildAddTagTool, dedupeAndCapToolCalls } from './tag-tool'
+import { applyAiTag } from './apply-tag'
+import type { ProviderToolCall } from './providers/shared'
 import { engineSendText } from '@/lib/flows/meta-send'
 
 interface DispatchArgs {
@@ -93,10 +96,41 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({
+    const assignableTags = await loadAssignableTags(db, accountId)
+    const tool = buildAddTagTool(assignableTags)
+
+    const onToolCalls = async (calls: ProviderToolCall[]): Promise<AppliedTagResult[]> => {
+      // Dedupe + cap (shared with the playground's preview path) — a
+      // call whose tag isn't in the returned results below still gets a
+      // "not applied" ack built downstream, satisfying the closed-scope
+      // rule ("if nothing fits / too many, apply nothing extra and
+      // continue").
+      const capped = dedupeAndCapToolCalls(calls)
+
+      const results: AppliedTagResult[] = []
+      for (const call of capped) {
+        try {
+          const { applied, tagName } = await applyAiTag(db, {
+            accountId,
+            contactId,
+            conversationId,
+            tagId: call.tagId,
+          })
+          results.push({ tagId: call.tagId, applied, tagName: tagName ?? undefined })
+        } catch (err) {
+          console.error('[ai auto-reply] tag apply failed:', err)
+          results.push({ tagId: call.tagId, applied: false })
+        }
+      }
+      return results
+    }
+
+    const { text, handoff } = await generateReplyWithTools({
       config,
       systemPrompt,
       messages,
+      tool,
+      onToolCalls,
     })
 
     if (handoff || !text) {

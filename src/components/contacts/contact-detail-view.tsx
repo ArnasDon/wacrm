@@ -239,10 +239,15 @@ export function ContactDetailView({
         onUpdated();
       }
     } else {
-      const { error } = await supabase
-        .from('contact_tags')
-        .insert({ contact_id: contactId, tag_id: tagId });
-      if (!error) {
+      // Server-side on purpose (unlike the rest of this view) — adding a
+      // tag needs to dispatch `tag_added` automations, which requires a
+      // service-role client the browser doesn't have.
+      const res = await fetch(`/api/contacts/${contactId}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_id: tagId }),
+      });
+      if (res.ok) {
         setContactTagIds((prev) => [...prev, tagId]);
         onUpdated();
       }

@@ -163,6 +163,43 @@ describe("runAutomationsForTrigger — tenant isolation", () => {
   });
 });
 
+describe("tag_added trigger matching", () => {
+  it("only fires the automation configured for the tag that was actually added", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [
+      automationWithTagTrigger("a1", { tag_id: "tag-a" }),
+      automationWithTagTrigger("a2", { tag_id: "tag-b" }),
+    ];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: "tag-a" },
+    });
+
+    // Both automations pass the SQL-level filter (trigger_type + active);
+    // only the one whose trigger_config.tag_id matches should execute.
+    expect(h.state.updateCalls).toHaveLength(1);
+  });
+
+  it("does not fire when the automation has no tag_id configured", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithTagTrigger("a1", {})];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: "tag-a" },
+    });
+
+    expect(h.state.updateCalls).toHaveLength(0);
+  });
+});
+
 describe("update_contact_field — custom fields", () => {
   it("upserts contact_custom_values when the field is account-owned", async () => {
     h.state.owned = { id: "c1" };
@@ -223,6 +260,17 @@ describe("update_contact_field — custom fields", () => {
     expect(h.state.updateCalls).toHaveLength(0);
   });
 });
+
+function automationWithTagTrigger(id: string, trigger_config: Record<string, unknown>) {
+  return {
+    id,
+    account_id: ACCOUNT,
+    user_id: "u1",
+    trigger_type: "tag_added",
+    trigger_config,
+    is_active: true,
+  };
+}
 
 function automationWithUpdateStep() {
   return {

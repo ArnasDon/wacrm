@@ -110,6 +110,8 @@ export interface Tag {
   user_id: string;
   name: string;
   color: string;
+  /** Opt-in flag exposing this tag to the AI assistant's tag-apply tool. */
+  ai_assignable: boolean;
   created_at: string;
 }
 

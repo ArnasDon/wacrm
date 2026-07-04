@@ -45,7 +45,20 @@ export interface DispatchInput {
   triggerType: AutomationTriggerType
   contactId?: string | null
   context?: AutomationContext
+  /** Internal — how many automation-triggered-automation hops led to
+   *  this dispatch. Callers outside this file should never set this;
+   *  it defaults to 0 (a fresh, top-level dispatch). Incremented by
+   *  `addContactTag` when an automation's own `add_tag` step fires a
+   *  further `tag_added` dispatch, so `runAutomationsForTrigger` can
+   *  refuse once `MAX_AUTOMATION_CHAIN_DEPTH` is exceeded. */
+  depth?: number
 }
+
+/** Safety cap on automation-triggered-automation chains (e.g. an
+ *  `add_tag` step firing a `tag_added` automation whose own `add_tag`
+ *  step fires another) — without this, two automations configured to
+ *  tag each other would recurse forever. */
+export const MAX_AUTOMATION_CHAIN_DEPTH = 5
 
 /**
  * Fire all active automations matching the given trigger for an
@@ -57,6 +70,15 @@ export interface DispatchInput {
  */
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
   try {
+    const depth = input.depth ?? 0
+    if (depth >= MAX_AUTOMATION_CHAIN_DEPTH) {
+      console.warn(
+        `[automations] chain depth limit (${MAX_AUTOMATION_CHAIN_DEPTH}) reached — refusing to dispatch further`,
+        { accountId: input.accountId, triggerType: input.triggerType },
+      )
+      return
+    }
+
     const db = supabaseAdmin()
 
     // Tenant isolation. `contactId` can be caller-supplied (the manual
@@ -152,6 +174,11 @@ export async function resumePendingExecution(pending: {
       startPosition: pending.next_step_position,
       logId: pending.log_id,
       triggerEvent: 'resumed_wait',
+      // Chain depth isn't persisted across a wait-step pause — a resumed
+      // run always restarts the chain-depth guard at 0. Acceptable: wait
+      // steps are an uncommon hop in an add_tag chain, and this only
+      // under-counts (never over-refuses) a legitimate resumption.
+      depth: 0,
     })
     await markPending(pending.id, 'done')
   } catch (err) {
@@ -199,6 +226,7 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
     startPosition: 0,
     logId: log.id,
     triggerEvent: input.triggerType,
+    depth: input.depth ?? 0,
   })
 
   // Atomic counter update via the SQL function from migration 007.
@@ -222,6 +250,10 @@ interface ExecuteArgs {
   startPosition: number
   logId: string | null
   triggerEvent: string
+  /** Chain depth this execution is running at — see
+   *  `MAX_AUTOMATION_CHAIN_DEPTH`. Passed to `addContactTag` (+1) when
+   *  the `add_tag` step fires a further `tag_added` dispatch. */
+  depth: number
 }
 
 async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
@@ -394,18 +426,18 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'add_tag': {
-      // contact_tags has no account_id column; cross-tenant protection for
-      // the attacker-supplied contactId comes from the ownership guard in
-      // runAutomationsForTrigger.
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
-      await db
-        .from('contact_tags')
-        .upsert(
-          { contact_id: args.contactId, tag_id: cfg.tag_id },
-          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
-        )
-      return `tag ${cfg.tag_id} added`
+      const { added } = await addContactTag({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagId: cfg.tag_id,
+        conversationId: args.context.conversation_id ?? null,
+        depth: args.depth + 1,
+      })
+      return added
+        ? `tag ${cfg.tag_id} added`
+        : `tag ${cfg.tag_id} not added (contact not found or write failed)`
     }
 
     case 'remove_tag': {
@@ -577,6 +609,61 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
   if (!data?.id) throw new Error('no conversation for contact')
   return data.id as string
+}
+
+/**
+ * Canonical "add a tag to a contact" — every code path that applies a
+ * tag (manually, via the public API, via an automation's own `add_tag`
+ * step, via the AI assistant) should call this, so `tag_added`
+ * automations fire consistently no matter who added the tag.
+ *
+ * `contact_tags` has no `account_id` column, so — unlike
+ * `runAutomationsForTrigger`'s own ownership check, which only guards
+ * the automation dispatch that happens *after* this upsert — this
+ * verifies the contact belongs to `accountId` itself, before writing.
+ * Fails closed (returns `{ added: false }`) rather than throwing, so a
+ * bad tag id or a cross-tenant contact id degrades to a silent no-op
+ * for every caller (matches the "if nothing fits, apply nothing" rule
+ * the AI tagging feature already relies on).
+ */
+export async function addContactTag(args: {
+  accountId: string
+  contactId: string
+  tagId: string
+  conversationId?: string | null
+  /** Internal — see `MAX_AUTOMATION_CHAIN_DEPTH`. Callers outside this
+   *  file should leave this unset (defaults to 0, a fresh top-level
+   *  add). Only the `add_tag` step passes `depth + 1`. */
+  depth?: number
+}): Promise<{ added: boolean }> {
+  const { accountId, contactId, tagId, conversationId, depth = 0 } = args
+  const db = supabaseAdmin()
+
+  const { data: owned, error: ownErr } = await db
+    .from('contacts')
+    .select('id')
+    .eq('id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (ownErr || !owned) return { added: false }
+
+  const { error: upsertErr } = await db
+    .from('contact_tags')
+    .upsert(
+      { contact_id: contactId, tag_id: tagId },
+      { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
+    )
+  if (upsertErr) return { added: false }
+
+  runAutomationsForTrigger({
+    accountId,
+    triggerType: 'tag_added',
+    contactId,
+    context: { tag_id: tagId, conversation_id: conversationId ?? undefined },
+    depth: depth + 1,
+  }).catch((err) => console.error('[automations] tag_added dispatch failed:', err))
+
+  return { added: true }
 }
 
 function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {

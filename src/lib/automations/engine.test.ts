@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
     fromCalls: [] as string[],
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
+    contactTagsUpsertError: null as unknown,
   },
 }));
 
@@ -38,6 +39,16 @@ vi.mock("./admin-client", () => {
     }
     if (table === "contact_custom_values") {
       if (type === "upsert") {
+        state.upsertCalls.push({ table, payload: ops.payload });
+        return { data: null, error: null };
+      }
+      return { data: null, error: null };
+    }
+    if (table === "contact_tags") {
+      if (type === "upsert") {
+        if (state.contactTagsUpsertError) {
+          return { data: null, error: state.contactTagsUpsertError };
+        }
         state.upsertCalls.push({ table, payload: ops.payload });
         return { data: null, error: null };
       }
@@ -95,7 +106,7 @@ vi.mock("./meta-send", () => ({
   engineSendTemplate: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
-import { runAutomationsForTrigger } from "./engine";
+import { runAutomationsForTrigger, addContactTag, MAX_AUTOMATION_CHAIN_DEPTH } from "./engine";
 
 const ACCOUNT = "acct-1";
 
@@ -107,6 +118,7 @@ beforeEach(() => {
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
+  h.state.contactTagsUpsertError = null;
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -197,6 +209,116 @@ describe("tag_added trigger matching", () => {
     });
 
     expect(h.state.updateCalls).toHaveLength(0);
+  });
+});
+
+describe("addContactTag", () => {
+  it("upserts contact_tags and fires a tag_added dispatch", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = []; // no automations configured; just proving the dispatch fires
+
+    const result = await addContactTag({
+      accountId: ACCOUNT,
+      contactId: "c1",
+      tagId: "tag-x",
+    });
+
+    expect(result).toEqual({ added: true });
+    expect(h.state.upsertCalls).toContainEqual({
+      table: "contact_tags",
+      payload: { contact_id: "c1", tag_id: "tag-x" },
+    });
+    // The tag_added dispatch is fire-and-forget — wait for it to fire.
+    await vi.waitFor(() => {
+      expect(h.state.fromCalls).toContain("automations");
+    });
+  });
+
+  it("fails closed when the contact isn't in the account", async () => {
+    h.state.owned = null;
+
+    const result = await addContactTag({
+      accountId: ACCOUNT,
+      contactId: "victim-contact-uuid",
+      tagId: "tag-x",
+    });
+
+    expect(result).toEqual({ added: false });
+    expect(h.state.upsertCalls).toHaveLength(0);
+  });
+
+  it("fails closed when the upsert errors", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.contactTagsUpsertError = { message: "db down" };
+
+    const result = await addContactTag({
+      accountId: ACCOUNT,
+      contactId: "c1",
+      tagId: "tag-x",
+    });
+
+    expect(result).toEqual({ added: false });
+  });
+});
+
+describe("MAX_AUTOMATION_CHAIN_DEPTH guard", () => {
+  it("refuses to dispatch once the chain depth limit is reached", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithTagTrigger("a1", { tag_id: "tag-a" })];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: "tag-a" },
+      depth: MAX_AUTOMATION_CHAIN_DEPTH,
+    });
+
+    expect(h.state.fromCalls).not.toContain("automations");
+    expect(h.state.updateCalls).toHaveLength(0);
+  });
+
+  it("still dispatches one hop below the limit", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithTagTrigger("a1", { tag_id: "tag-a" })];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: "tag-a" },
+      depth: MAX_AUTOMATION_CHAIN_DEPTH - 1,
+    });
+
+    expect(h.state.updateCalls).toHaveLength(1);
+  });
+});
+
+describe("add_tag step", () => {
+  it("adds the tag through the shared addContactTag helper", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [addTagStep("tag-z")];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.upsertCalls).toContainEqual({
+      table: "contact_tags",
+      payload: { contact_id: "c1", tag_id: "tag-z" },
+    });
+    // The step itself fires a further tag_added dispatch (fire-and-forget).
+    await vi.waitFor(() => {
+      expect(
+        h.state.fromCalls.filter((t) => t === "automations").length,
+      ).toBeGreaterThan(1);
+    });
   });
 });
 
@@ -291,6 +413,17 @@ function updateStep() {
     position: 0,
     parent_step_id: null,
     step_config: { field: "company", value: "pwned-by-automation" },
+  };
+}
+
+function addTagStep(tagId: string) {
+  return {
+    id: "s1",
+    automation_id: "a1",
+    step_type: "add_tag",
+    position: 0,
+    parent_step_id: null,
+    step_config: { tag_id: tagId },
   };
 }
 

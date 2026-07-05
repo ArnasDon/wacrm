@@ -12,6 +12,23 @@ export interface ProviderArgs {
   timeoutMs: number
 }
 
+/** A tool call the model made, normalized to the one shape both
+ *  provider adapters produce (`id` is the provider's own call id, needed
+ *  verbatim to build the tool-result follow-up turn). */
+export interface ProviderToolCall {
+  id: string
+  tagId: string
+  reason: string
+}
+
+/** A tool-result ack to send back for a given call id, keyed on the
+ *  provider's tool-call id (not the tag id — a duplicate tagId still
+ *  needs one ack per call id). */
+export interface ProviderToolResult {
+  id: string
+  content: string
+}
+
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */
 export function toNetworkError(err: unknown): AiError {
   if (err instanceof DOMException && err.name === 'TimeoutError') {

@@ -69,11 +69,11 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "prettier": "^3.9.1",
+    "prettier": "^3.9.4",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "postcss": "^8.5.10",

@@ -179,12 +179,12 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
-      return [{ id: "next", label: "Next" }];
+      return [{ id: "next", label: "Siguiente" }];
 
     case "condition":
       return [
-        { id: "true", label: "true" },
-        { id: "false", label: "false" },
+        { id: "true", label: "Sí" },
+        { id: "false", label: "No" },
       ];
 
     case "send_buttons": {

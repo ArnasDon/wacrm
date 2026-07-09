@@ -365,8 +365,8 @@ export function ContactDetailView({
 
       toast.success(t('toastTemplateSent', { name: template.name }));
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'network error';
-      toast.error(`Failed to send template: ${reason}`);
+      const reason = err instanceof Error ? err.message : 'error de red';
+      toast.error(`Error al enviar la plantilla: ${reason}`);
     } finally {
       setSendingTemplate(false);
     }
@@ -741,7 +741,7 @@ export function ContactDetailView({
                                   : 'text-red-400'
                               }
                             >
-                              {deal.status}
+                              {deal.status === 'won' ? 'Ganado' : 'Perdido'}
                             </span>
                           )}
                         </div>

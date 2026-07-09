@@ -319,7 +319,7 @@ describe("outgoingSlots", () => {
       config: {},
     });
     expect(slots.map((s) => s.id)).toEqual(["true", "false"]);
-    expect(slots.map((s) => s.label)).toEqual(["true", "false"]);
+    expect(slots.map((s) => s.label)).toEqual(["Sí", "No"]);
   });
 
   it("returns one slot per button, labelled with the title", () => {

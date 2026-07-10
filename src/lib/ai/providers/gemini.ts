@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AIResponse } from "../types";
+import { getSystemPrompt } from "../services/prompt.service";
 
 const apiKey = process.env.GEMINI_API_KEY;
 

@@ -1,0 +1,12 @@
+-- ============================================================
+-- 028_account_branding.sql — per-account branding
+--
+-- `accounts.name` already exists (017). This adds an optional logo
+-- shown in the sidebar brand row and edited in Settings → Branding
+-- (admin+). RLS is unchanged: the existing `accounts_update` policy
+-- already gates writes to `is_account_member(id, 'admin')`, so the
+-- same admins who can rename the account can set its logo.
+--
+-- Idempotent — safe to run multiple times.
+-- ============================================================
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS logo_url TEXT;

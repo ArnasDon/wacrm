@@ -1,5 +1,6 @@
 import {
   Bot,
+  Building2,
   Coins,
   FileText,
   KeyRound,
@@ -26,6 +27,7 @@ export const SETTINGS_SECTIONS = [
   'profile',
   'security',
   'appearance',
+  'branding',
   'whatsapp',
   'ai',
   'templates',
@@ -48,20 +50,74 @@ export interface SectionMeta {
 }
 
 export const SECTION_META: Record<SettingsSection, SectionMeta> = {
-  overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
-  profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
-  security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
-  appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
-  whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
+  overview: {
+    id: 'overview',
+    label: 'Overview',
+    icon: LayoutGrid,
+    group: 'top',
+  },
+  profile: {
+    id: 'profile',
+    label: 'Your profile',
+    icon: User,
+    group: 'account',
+  },
+  security: {
+    id: 'security',
+    label: 'Login & security',
+    icon: Shield,
+    group: 'account',
+  },
+  appearance: {
+    id: 'appearance',
+    label: 'Appearance',
+    icon: Palette,
+    group: 'account',
+  },
+  branding: {
+    id: 'branding',
+    label: 'Branding',
+    icon: Building2,
+    group: 'workspace',
+  },
+  whatsapp: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    icon: PlugZap,
+    group: 'workspace',
+  },
   ai: { id: 'ai', label: 'AI Assistant', icon: Bot, group: 'workspace' },
-  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
-  fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
-  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
-  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
+  templates: {
+    id: 'templates',
+    label: 'Templates',
+    icon: FileText,
+    group: 'workspace',
+  },
+  fields: {
+    id: 'fields',
+    label: 'Fields & tags',
+    icon: Tags,
+    group: 'workspace',
+  },
+  deals: {
+    id: 'deals',
+    label: 'Deals & currency',
+    icon: Coins,
+    group: 'workspace',
+  },
+  members: {
+    id: 'members',
+    label: 'Team members',
+    icon: UsersRound,
+    group: 'workspace',
+  },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
 };
 
-export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [
+export const RAIL_GROUPS: {
+  label: string | null;
+  group: SectionMeta['group'];
+}[] = [
   { label: null, group: 'top' },
   { label: 'Account', group: 'account' },
   { label: 'Workspace', group: 'workspace' },

@@ -10,6 +10,7 @@ import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
+import { BrandingSettings } from '@/components/settings/branding-settings';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { AiAssistantSettings } from '@/components/settings/ai-assistant-settings';
 import { TemplateManager } from '@/components/settings/template-manager';
@@ -48,7 +49,7 @@ export default function SettingsPage() {
       appearance: mode.charAt(0).toUpperCase() + mode.slice(1),
       deals: defaultCurrency,
     }),
-    [mode, defaultCurrency],
+    [mode, defaultCurrency]
   );
 
   const panel: Record<SettingsSection, ReactNode> = {
@@ -56,6 +57,7 @@ export default function SettingsPage() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
+    branding: <BrandingSettings />,
     whatsapp: <WhatsAppConfig />,
     ai: <AiAssistantSettings />,
     templates: <TemplateManager />,
@@ -68,10 +70,10 @@ export default function SettingsPage() {
   return (
     <div>
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-foreground text-2xl font-bold tracking-tight">
           Settings
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-1 text-sm">
           Everything in one place — your account and your workspace. Pick a
           section to manage it.
         </p>

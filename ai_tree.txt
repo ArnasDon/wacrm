@@ -1,0 +1,19 @@
+src/lib/ai
+├── constants.ts
+├── context
+│   ├── builder.ts
+│   ├── business.ts
+│   ├── conversation.ts
+│   ├── customer.ts
+│   ├── knowledge.ts
+│   └── types.ts
+├── crm-actions.ts
+├── gemini.ts
+├── providers
+│   ├── chatgpt.ts
+│   └── gemini.ts
+├── router.ts
+├── rule-router.ts
+└── types.ts
+
+3 directories, 14 files

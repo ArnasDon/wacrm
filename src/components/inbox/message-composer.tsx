@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  KeyboardEvent,
+} from "react";
 import { Send, LayoutTemplate } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -57,9 +63,14 @@ export function MessageComposer({
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
+
+if (textareaRef.current) {
+  textareaRef.current.style.height = "auto";
+
+  requestAnimationFrame(() => {
+    textareaRef.current?.focus();
+  });
+}
     } finally {
       setSending(false);
     }
@@ -83,8 +94,17 @@ export function MessageComposer({
     [adjustHeight]
   );
 
+  useEffect(() => {
+  requestAnimationFrame(() => {
+    textareaRef.current?.focus();
+  });
+}, [conversationId]);
+
   return (
-    <div className="border-t border-slate-800 bg-slate-900 p-3">
+    <div
+  className="border-t border-slate-800 bg-slate-900 p-3"
+  onClick={() => textareaRef.current?.focus()}
+>
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote

@@ -7,6 +7,7 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { ensureAccountBootstrap } from "@/lib/bootstrap";
 import { routeToAI } from '@/lib/ai/router'
 import { processAIIntent } from '@/lib/ai/crm-actions'
 import { engineSendText } from '@/lib/automations/meta-send'
@@ -213,8 +214,8 @@ export async function POST(request: Request) {
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
   console.log("=================================");
-console.log("PROCESS WEBHOOK START");
-console.log("=================================");
+  console.log("PROCESS WEBHOOK START");
+  console.log("=================================");
 
   if (!body.entry) return
 
@@ -268,13 +269,13 @@ console.log("=================================");
 
       if (!configRows || configRows.length === 0) {
         logger.error(
-           'whatsapp_config_not_found',
-         {
-           phoneNumberId,
+          'whatsapp_config_not_found',
+          {
+            phoneNumberId,
           }
-         )
-            continue
-          }
+        )
+        continue
+      }
 
       if (configRows.length > 1) {
         console.error(
@@ -294,6 +295,12 @@ console.log("=================================");
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
+
+        console.log("[WEBHOOK] Incoming customer message", {
+          id: message.id,
+          from: message.from,
+          type: message.type,
+        });
 
         await processMessage(
           message,
@@ -541,6 +548,13 @@ async function processMessage(
   configOwnerUserId: string,
   accessToken: string
 ) {
+
+  console.log("[PROCESS] processMessage()", {
+  accountId,
+  from: message.from,
+  type: message.type,
+});
+
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 
@@ -553,6 +567,13 @@ async function processMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  console.log("[PROCESS] Contact ready", contactRecord.id);
+
+  await ensureAccountBootstrap({
+    accountId,
+    userId: configOwnerUserId,
+  });
 
   // Find or create conversation
   const conversation = await findOrCreateConversation(
@@ -623,6 +644,7 @@ async function processMessage(
     .select('id', { count: 'exact', head: true })
     .eq('conversation_id', conversation.id)
     .eq('sender_type', 'customer')
+    
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
@@ -647,24 +669,24 @@ async function processMessage(
   }
 
   console.log(
-  '[WEBHOOK]',
-  conversation.id,
-  'current unread:',
-  conversation.unread_count
-)
+    '[WEBHOOK]',
+    conversation.id,
+    'current unread:',
+    conversation.unread_count
+  )
 
   // Update conversation atomically
-const { error: convError } = await supabaseAdmin().rpc(
-  'update_conversation_on_inbound',
-  {
-    p_conversation_id: conversation.id,
-    p_last_message: contentText || `[${message.type}]`,
-  }
-)
+  const { error: convError } = await supabaseAdmin().rpc(
+    'update_conversation_on_inbound',
+    {
+      p_conversation_id: conversation.id,
+      p_last_message: contentText || `[${message.type}]`,
+    }
+  )
 
-if (convError) {
-  console.error('Error updating conversation:', convError)
-}
+  if (convError) {
+    console.error('Error updating conversation:', convError)
+  }
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
@@ -698,86 +720,86 @@ if (convError) {
     message:
       interactiveReplyId
         ? {
-            kind: 'interactive_reply',
-            reply_id: interactiveReplyId,
-            reply_title: contentText ?? '',
-            meta_message_id: message.id,
-          }
+          kind: 'interactive_reply',
+          reply_id: interactiveReplyId,
+          reply_title: contentText ?? '',
+          meta_message_id: message.id,
+        }
         : {
-            kind: 'text',
-            text: contentText ?? message.text?.body ?? '',
-            meta_message_id: message.id,
-          },
+          kind: 'text',
+          text: contentText ?? message.text?.body ?? '',
+          meta_message_id: message.id,
+        },
     isFirstInboundMessage,
   })
   const flowConsumed = flowResult.consumed
-  
+
   const inboundText = contentText ?? message.text?.body ?? ''
 
   console.log(
-  "[AI DEBUG]",
-  {
-    flowConsumed,
-    inboundText,
-  }
-)
+    "[AI DEBUG]",
+    {
+      flowConsumed,
+      inboundText,
+    }
+  )
 
   if (!flowConsumed && inboundText.trim()) {
-  try {
-    const aiResult = await routeToAI(inboundText)
+    try {
+      const aiResult = await routeToAI(inboundText)
 
-    await processAIIntent({
-      intent: aiResult.intent,
-      contactId: contactRecord.id,
-      conversationId: conversation.id,
-      accountId,
-      userId: configOwnerUserId,
-    })
+      await processAIIntent({
+        intent: aiResult.intent,
+        contactId: contactRecord.id,
+        conversationId: conversation.id,
+        accountId,
+        userId: configOwnerUserId,
+      })
 
-    if (!aiResult.handoff) {
+      if (!aiResult.handoff) {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId: conversation.id,
+          contactId: contactRecord.id,
+          text: aiResult.reply,
+        })
+      }
+    } catch (error) {
+      console.error('[AI ERROR]', error)
+
+      await supabaseAdmin()
+        .from('tasks')
+        .insert({
+          account_id: accountId,
+          created_by: configOwnerUserId,
+          contact_id: contactRecord.id,
+          conversation_id: conversation.id,
+          title: 'AI Failure',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Unknown AI error',
+          priority: 'high',
+          status: 'pending',
+        })
+
       await engineSendText({
         accountId,
         userId: configOwnerUserId,
         conversationId: conversation.id,
         contactId: contactRecord.id,
-        text: aiResult.reply,
+        text:
+          'Dhanyavaad 😊 Aapka message mil gaya hai. Hamari team aapse jaldi connect karegi.',
       })
     }
-  } catch (error) {
-  console.error('[AI ERROR]', error)
-
-  await supabaseAdmin()
-  .from('tasks')
-  .insert({
-    account_id: accountId,
-    created_by: configOwnerUserId,
-    contact_id: contactRecord.id,
-    conversation_id: conversation.id,
-    title: 'AI Failure',
-    description:
-      error instanceof Error
-        ? error.message
-        : 'Unknown AI error',
-    priority: 'high',
-    status: 'pending',
-  })
-
-  await engineSendText({
-    accountId,
-    userId: configOwnerUserId,
-    conversationId: conversation.id,
-    contactId: contactRecord.id,
-    text:
-      'Dhanyavaad 😊 Aapka message mil gaya hai. Hamari team aapse jaldi connect karegi.',
-  })
-}
-}
+  }
   // Fire any automations that react to this webhook event. All dispatches
   // run here (not earlier) so the contact, conversation, and inbound
   // message all exist before any step — including send_message — runs.
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
-  
+
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
@@ -797,17 +819,31 @@ if (convError) {
   // listens to only one trigger runs only when that trigger matches.
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
-      accountId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
-  }
+console.log("[WEBHOOK] Automation triggers:", automationTriggers);
+
+for (const triggerType of automationTriggers) {
+
+  console.log("[WEBHOOK] Dispatching automation:", triggerType);
+
+  console.log("[WEBHOOK] MESSAGE", {
+  trigger: triggerType,
+  messageId: message.id,
+  contact: contactRecord.id,
+  text: inboundText,
+});
+
+  runAutomationsForTrigger({
+    accountId,
+    triggerType,
+    contactId: contactRecord.id,
+    context: {
+      message_text: inboundText,
+      conversation_id: conversation.id,
+    },
+  }).catch((err) =>
+    console.error("[automations] dispatch failed:", err)
+  );
+}
 }
 
 async function parseMessageContent(
@@ -1037,13 +1073,13 @@ async function findOrCreateContact(
 
   if (createError) {
     logger.error(
-  'contact_creation_failed',
-  {
-    error: createError?.message,
-    accountId,
-    phone,
-  }
-)
+      'contact_creation_failed',
+      {
+        error: createError?.message,
+        accountId,
+        phone,
+      }
+    )
     return null
   }
 
@@ -1081,13 +1117,13 @@ async function findOrCreateConversation(
 
   if (createError) {
     logger.error(
-  'conversation_creation_failed',
-  {
-    error: createError?.message,
-    accountId,
-    contactId,
-  }
-)
+      'conversation_creation_failed',
+      {
+        error: createError?.message,
+        accountId,
+        contactId,
+      }
+    )
     return null
   }
 

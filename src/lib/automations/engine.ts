@@ -60,19 +60,25 @@ export interface DispatchInput {
  */
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
 
-  const limit = checkRateLimit(
-  `automation:${input.accountId}`,
-  RATE_LIMITS.automationDispatch
-)
+  console.log("[AUTOMATION] Dispatcher entered", {
+    trigger: input.triggerType,
+    accountId: input.accountId,
+    contactId: input.contactId,
+  });
 
-if (!limit.success) {
-  console.warn(
-    '[automations] rate limit exceeded',
-    input.accountId
+  const limit = checkRateLimit(
+    `automation:${input.accountId}`,
+    RATE_LIMITS.automationDispatch
   )
 
-  return
-}
+  if (!limit.success) {
+    console.warn(
+      '[automations] rate limit exceeded',
+      input.accountId
+    )
+
+    return
+  }
 
   try {
     const db = supabaseAdmin()
@@ -112,7 +118,14 @@ if (!limit.success) {
       console.error('[automations] fetch failed:', error)
       return
     }
-    if (!automations || automations.length === 0) return
+    console.log(
+      "[AUTOMATION] Found",
+      automations?.length ?? 0,
+      "automation(s) for",
+      input.triggerType
+    );
+
+    if (!automations || automations.length === 0) return;
 
     for (const automation of automations as Automation[]) {
       if (!triggerMatches(automation, input.context)) continue
@@ -147,8 +160,12 @@ export async function resumePendingExecution(pending: {
   next_step_position: number
   context: AutomationContext
 }): Promise<void> {
+
+  console.log("[CRON] resumePendingExecution()", pending)
+
   const db = supabaseAdmin()
 
+  console.log("[AUTOMATION] resumePendingExecution()", pending.id)
   const { data: pendingRow } = await db
     .from('automation_pending_executions')
     .select('attempt_count, max_attempts')
@@ -156,7 +173,7 @@ export async function resumePendingExecution(pending: {
     .single()
 
   const { data: automation, error } = await db
-    .from('automations')    .select('*')
+    .from('automations').select('*')
     .eq('id', pending.automation_id)
     .single()
 
@@ -167,6 +184,19 @@ export async function resumePendingExecution(pending: {
   }
 
   try {
+
+    console.log(
+      "[AUTOMATION] Resuming at position",
+      pending.next_step_position
+    )
+    console.log("[RESUME DEBUG]", {
+  resumed: true,
+  contact: pending.contact_id,
+  startPosition: pending.next_step_position,
+  parentStepId: pending.parent_step_id,
+  branch: pending.branch,
+})
+
     await executeStepsFrom({
       automation: automation as Automation,
       contactId: pending.contact_id,
@@ -178,30 +208,33 @@ export async function resumePendingExecution(pending: {
       startedAt: Date.now(),
       depth: 0,
       triggerEvent: 'resumed_wait',
+      resumed: true,
     })
+
+    console.log("[AUTOMATION] Resume completed")
     await markPending(pending.id, 'done')
   } catch (err) {
-  console.error('[automations] resume failed:', err)
+    console.error('[automations] resume failed:', err)
 
-  const message =
-    err instanceof Error ? err.message : String(err)
+    const message =
+      err instanceof Error ? err.message : String(err)
 
-  const nextAttempt =
-    (pendingRow?.attempt_count ?? 0) + 1
+    const nextAttempt =
+      (pendingRow?.attempt_count ?? 0) + 1
 
-  const maxAttempts =
-    pendingRow?.max_attempts ?? 5
+    const maxAttempts =
+      pendingRow?.max_attempts ?? 5
 
-  if (nextAttempt >= maxAttempts) {
-    await markPending(pending.id, 'failed')
-  } else {
-    await scheduleRetry(
-      pending.id,
-      nextAttempt,
-      message,
-    )
+    if (nextAttempt >= maxAttempts) {
+      await markPending(pending.id, 'failed')
+    } else {
+      await scheduleRetry(
+        pending.id,
+        nextAttempt,
+        message,
+      )
+    }
   }
-}
 }
 
 export async function replayAutomation(params: {
@@ -240,6 +273,15 @@ export async function replayAutomation(params: {
 async function executeAutomation(automation: Automation, input: DispatchInput) {
   const db = supabaseAdmin()
 
+  console.log("[AUTOMATION] executeAutomation()", {
+    automationId: automation.id,
+    automationName: automation.name,
+    trigger: input.triggerType,
+    contactId: input.contactId,
+  })
+
+  console.log("[AUTOMATION] inserting automation_logs");
+
   const { data: log, error: logErr } = await db
     .from('automation_logs')
     .insert({
@@ -258,10 +300,12 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
     .select()
     .single()
 
-  if (logErr || !log) {
-    console.error('[automations] cannot create log:', logErr)
-    return
-  }
+  console.log("[AUTOMATION] log insert", {
+    log,
+    logErr,
+  })
+
+  console.log("[AUTOMATION] About to execute steps")
 
   await executeStepsFrom({
     automation,
@@ -299,6 +343,8 @@ interface ExecuteArgs {
   triggerEvent: string
   startedAt: number
   depth: number
+
+  resumed?: boolean
 }
 
 const MAX_STEPS_PER_RUN = 100
@@ -309,24 +355,24 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   const db = supabaseAdmin()
 
   if (args.depth > MAX_BRANCH_DEPTH) {
-  await finalizeLog(
-    args.logId,
-    'failed',
-    `Maximum automation depth exceeded (${MAX_BRANCH_DEPTH})`
-  )
+    await finalizeLog(
+      args.logId,
+      'failed',
+      `Maximum automation depth exceeded (${MAX_BRANCH_DEPTH})`
+    )
 
-  return
-}
+    return
+  }
 
   if (Date.now() - args.startedAt > MAX_EXECUTION_TIME_MS) {
-  await finalizeLog(
-    args.logId,
-    'failed',
-    `Automation exceeded runtime limit (${MAX_EXECUTION_TIME_MS}ms)`
-  )
+    await finalizeLog(
+      args.logId,
+      'failed',
+      `Automation exceeded runtime limit (${MAX_EXECUTION_TIME_MS}ms)`
+    )
 
-  return
-}
+    return
+  }
 
   const baseQuery = db
     .from('automation_steps')
@@ -342,6 +388,13 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
 
   const { data: steps, error: stepsErr } = await scoped
 
+  console.log("[AUTOMATION] Steps fetched", {
+    automation: args.automation.name,
+    count: steps?.length ?? 0,
+    steps,
+    stepsErr,
+  });
+
   if (stepsErr) {
     await finalizeLog(args.logId, 'failed', stepsErr.message)
     return
@@ -354,14 +407,14 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 
   if (steps.length > MAX_STEPS_PER_RUN) {
-  await finalizeLog(
-    args.logId,
-    'failed',
-    `Automation exceeded step limit (${MAX_STEPS_PER_RUN})`
-  )
+    await finalizeLog(
+      args.logId,
+      'failed',
+      `Automation exceeded step limit (${MAX_STEPS_PER_RUN})`
+    )
 
-  return
-}
+    return
+  }
 
   const results: AutomationLogStepResult[] = []
   let status: 'success' | 'partial' | 'failed' = 'success'
@@ -370,7 +423,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   for (const step of steps as AutomationStep[]) {
     // `wait` is the suspension point: enqueue and stop processing this
     // scope. The cron endpoint will pick it up later.
-    if (step.step_type === 'wait') {
+    if (step.step_type === 'wait' && !args.resumed) {
       const cfg = step.step_config as WaitStepConfig
       const ms = waitMs(cfg)
       await db.from('automation_pending_executions').insert({
@@ -399,6 +452,15 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     }
 
     try {
+      console.log("[AUTOMATION] Running step", {
+        automation: args.automation.name,
+        position: step.position,
+        type: step.step_type,
+        config: step.step_config,
+      })
+
+      console.log("[AUTOMATION] resumed =", args.resumed);
+
       if (step.step_type === 'condition') {
         const cfg = step.step_config as ConditionStepConfig
         const taken = await evaluateCondition(cfg, args)
@@ -417,7 +479,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
           startPosition: 0,
           logId: args.logId,
           depth: args.depth + 1,
-       })
+        })
         continue
       }
 
@@ -429,6 +491,14 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         detail,
       })
     } catch (err) {
+
+      console.error("[AUTOMATION ERROR]", {
+        automation: args.automation.name,
+        position: step.position,
+        type: step.step_type,
+        error: err,
+      })
+
       const msg = err instanceof Error ? err.message : String(err)
       results.push({
         step_id: step.id,
@@ -455,11 +525,26 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
   switch (step.step_type) {
     case 'send_message': {
-      const cfg = step.step_config as SendMessageStepConfig
+  const cfg = step.step_config as SendMessageStepConfig
+
+  console.log("[SEND_MESSAGE STEP]", {
+    automation: args.automation.name,
+    logId: args.logId,
+    contact: args.contactId,
+    text: cfg.text,
+  })
+
+      console.log("[SEND_MESSAGE] Entered", {
+        contactId: args.contactId,
+        automation: args.automation.name,
+      });
+
       if (!args.contactId) throw new Error('send_message needs a contact')
       const text = interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
+    console.log("[SEND_MESSAGE] conversationId =", conversationId);
+    console.log("[SEND_MESSAGE] About to call engineSendText");
       const { whatsapp_message_id } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -467,6 +552,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         contactId: args.contactId,
         text,
       })
+
+      console.log("[SEND_MESSAGE] Meta response =", whatsapp_message_id);
+
       return `sent via Meta (${whatsapp_message_id})`
     }
 
@@ -481,17 +569,17 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       // scrambles every template with ≥10 variables.
       const params = cfg.variables
         ? Object.keys(cfg.variables)
-            .sort((a, b) => {
-              const na = Number(a)
-              const nb = Number(b)
-              const aNum = Number.isFinite(na)
-              const bNum = Number.isFinite(nb)
-              if (aNum && bNum) return na - nb
-              if (aNum) return -1
-              if (bNum) return 1
-              return a.localeCompare(b)
-            })
-            .map((k) => String(cfg.variables![k]))
+          .sort((a, b) => {
+            const na = Number(a)
+            const nb = Number(b)
+            const aNum = Number.isFinite(na)
+            const bNum = Number.isFinite(nb)
+            if (aNum && bNum) return na - nb
+            if (aNum) return -1
+            if (bNum) return 1
+            return a.localeCompare(b)
+          })
+          .map((k) => String(cfg.variables![k]))
         : []
       const { whatsapp_message_id } = await engineSendTemplate({
         accountId: args.automation.account_id,
@@ -576,98 +664,118 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'create_deal': {
-const cfg = step.step_config as CreateDealStepConfig
+      const cfg = step.step_config as CreateDealStepConfig
 
-if (!cfg.pipeline_id || !cfg.stage_id) {
-throw new Error('create_deal needs pipeline + stage')
+      if (!args.contactId) {
+  throw new Error("create_deal needs contact")
 }
 
-const existingDeal = await db
-.from('deals')
-.select('id')
-.eq('contact_id', args.contactId)
-.eq('status', 'open')
-.limit(1)
-.maybeSingle()
+      if (!cfg.pipeline_id || !cfg.stage_id) {
+        throw new Error('create_deal needs pipeline + stage')
+      }
 
-if (existingDeal.data) {
-return 'deal already exists'
-}
-
-await db.from('deals').insert({
-account_id: args.automation.account_id,
-user_id: args.automation.user_id,
-pipeline_id: cfg.pipeline_id,
-stage_id: cfg.stage_id,
-contact_id: args.contactId,
-title: interpolate(cfg.title, args),
-value: cfg.value ?? 0,
-status: 'open',
-})
-
-return 'deal created'
-}
-
-
-    case 'create_task': {
-  const cfg = step.step_config as any
-
-  const dueAt =
-    cfg.due_in_minutes
-      ? new Date(
-          Date.now() + cfg.due_in_minutes * 60 * 1000
-        ).toISOString()
-      : null
-
-      const existingTask = await db
-  .from('tasks')
+      const existingDeal = await db
+  .from('deals')
   .select('id')
+  .eq('account_id', args.automation.account_id)
   .eq('contact_id', args.contactId)
-  .eq('status', 'pending')
-  .eq(
-    'title',
-    interpolate(cfg.title ?? 'Follow Up', args)
-  )
+  .eq('pipeline_id', cfg.pipeline_id)
+  .eq('status', 'open')
   .limit(1)
   .maybeSingle()
 
-if (existingTask.data) {
-  return 'task already exists'
+      if (existingDeal.data) {
+        return 'deal already exists'
+      }
+
+      console.log("[CREATE_DEAL]", {
+  contact: args.contactId,
+  pipeline: cfg.pipeline_id,
+  stage: cfg.stage_id,
+})
+
+const { error } = await db
+  .from('deals')
+  .insert({
+    account_id: args.automation.account_id,
+    user_id: args.automation.user_id,
+    pipeline_id: cfg.pipeline_id,
+    stage_id: cfg.stage_id,
+    contact_id: args.contactId,
+    title: interpolate(cfg.title, args),
+    value: cfg.value ?? 0,
+    status: 'open',
+  })
+
+if (error) {
+  throw error
 }
 
-  const { data, error } = await db
-    .from('tasks')
-    .insert({
-      account_id: args.automation.account_id,
-      created_by: args.automation.user_id,
-      contact_id: args.contactId ?? null,
-      conversation_id:
-        args.context.conversation_id ?? null,
-      title: interpolate(
-        cfg.title ?? 'Follow Up',
-        args
-      ),
-      description: cfg.description
-        ? interpolate(cfg.description, args)
-        : null,
-      priority: cfg.priority ?? 'medium',
-      status: 'pending',
-      due_at: dueAt,
-      assigned_to:
-        cfg.assigned_to &&
-        String(cfg.assigned_to).trim() !== ''
-          ? cfg.assigned_to
-          : null,
-    })
-    .select()
-    .single()
+console.log("[CREATE_DEAL] success")
 
-  if (error) {
-    throw new Error(error.message)
-  }
+return "deal created"
+    }
 
-  return `task created (${data.id})`
-}
+
+    case 'create_task': {
+      const cfg = step.step_config as any
+
+      const dueAt =
+        cfg.due_in_minutes
+          ? new Date(
+            Date.now() + cfg.due_in_minutes * 60 * 1000
+          ).toISOString()
+          : null
+
+      const existingTask = await db
+        .from('tasks')
+        .select('id')
+        .eq('contact_id', args.contactId)
+        .eq('status', 'pending')
+        .eq(
+          'title',
+          interpolate(cfg.title ?? 'Follow Up', args)
+        )
+        .limit(1)
+        .maybeSingle()
+
+      if (existingTask.data) {
+        return 'task already exists'
+      }
+
+      const { data, error } = await db
+        .from('tasks')
+        .insert({
+          account_id: args.automation.account_id,
+          created_by: args.automation.user_id,
+          contact_id: args.contactId ?? null,
+          conversation_id:
+            args.context.conversation_id ?? null,
+          title: interpolate(
+            cfg.title ?? 'Follow Up',
+            args
+          ),
+          description: cfg.description
+            ? interpolate(cfg.description, args)
+            : null,
+          priority: cfg.priority ?? 'medium',
+          status: 'pending',
+          due_at: dueAt,
+          assigned_to:
+            cfg.assigned_to &&
+              String(cfg.assigned_to).trim() !== ''
+              ? cfg.assigned_to
+              : null,
+        })
+        .select()
+        .single()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      return `task created (${data.id})`
+    }
 
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
@@ -840,10 +948,10 @@ function interpolate(s: string, args: ExecuteArgs): string {
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''
-    })
-   } 
+  })
+}
 
-   async function appendResults(
+async function appendResults(
   logId: string | null,
   newItems: AutomationLogStepResult[],
   status: 'success' | 'partial' | 'failed' | null,
@@ -880,71 +988,71 @@ function interpolate(s: string, args: ExecuteArgs): string {
     .from('automation_logs')
     .update(update)
     .eq('id', logId)
-   }
+}
 
-  async function finalizeLog(
-logId: string | null,
-status: 'success' | 'partial' | 'failed',
-errorMessage: string | null,
+async function finalizeLog(
+  logId: string | null,
+  status: 'success' | 'partial' | 'failed',
+  errorMessage: string | null,
 ) {
-if (!logId) return
+  if (!logId) return
 
-const db = supabaseAdmin()
+  const db = supabaseAdmin()
 
-await db
-.from('automation_logs')
-.update({
-status,
-error_message: errorMessage,
-})
-.eq('id', logId)
+  await db
+    .from('automation_logs')
+    .update({
+      status,
+      error_message: errorMessage,
+    })
+    .eq('id', logId)
 
-// Supervisor Layer
-if (status === 'failed') {
-const { data: log } = await db
-.from('automation_logs')
-.select('*')
-.eq('id', logId)
-.single()
-
-if (log?.account_id) {
+  // Supervisor Layer
   if (status === 'failed') {
+    const { data: log } = await db
+      .from('automation_logs')
+      .select('*')
+      .eq('id', logId)
+      .single()
 
-const { data: existingTask } = await db
-.from('tasks')
-.select('id')
-.eq('contact_id', log.contact_id)
-.eq('title', 'Automation Failure')
-.eq('status', 'pending')
-.maybeSingle()
+    if (log?.account_id) {
+      if (status === 'failed') {
 
-if (!existingTask) {
+        const { data: existingTask } = await db
+          .from('tasks')
+          .select('id')
+          .eq('contact_id', log.contact_id)
+          .eq('title', 'Automation Failure')
+          .eq('status', 'pending')
+          .maybeSingle()
 
-await db
-.from('tasks')
-.insert({
-account_id: log.account_id,
-created_by: log.user_id,
-contact_id: log.contact_id,
-title: 'Automation Failure',
-description:
-errorMessage ??
-'Automation failed. Check automation logs.',
-priority: 'high',
-status: 'pending',
-})
+        if (!existingTask) {
 
-} // if (!existingTask)
+          await db
+            .from('tasks')
+            .insert({
+              account_id: log.account_id,
+              created_by: log.user_id,
+              contact_id: log.contact_id,
+              title: 'Automation Failure',
+              description:
+                errorMessage ??
+                'Automation failed. Check automation logs.',
+              priority: 'high',
+              status: 'pending',
+            })
 
-} // inner if (status === 'failed')
+        } // if (!existingTask)
 
-} // if (log?.account_id)
+      } // inner if (status === 'failed')
 
-} // outer if (status === 'failed')
+    } // if (log?.account_id)
+
+  } // outer if (status === 'failed')
 
 } // finalizeLog function
 
-function getRetryDelayMinutes(attempt:number): number {
+function getRetryDelayMinutes(attempt: number): number {
   const delays = [1, 5, 15, 60, 360]
 
   return delays[Math.min(attempt - 1, delays.length - 1)]

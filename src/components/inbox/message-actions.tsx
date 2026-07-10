@@ -90,7 +90,7 @@ export function MessageActions({
        *  an unbroken URL) push past the cap and shove the row past
        *  100%, which used to bleed across into the contact-sidebar
        *  area. See issue #165. */}
-      <div className="group/actions relative min-w-0 max-w-[75%]">
+      <div className="relative w-fit max-w-[75%] min-w-0 group/actions">
         {children}
       <div
         data-touch-open={touchOpen || pickerOpen ? "true" : undefined}

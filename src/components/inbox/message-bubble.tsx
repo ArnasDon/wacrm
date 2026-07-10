@@ -110,7 +110,7 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
     <img
       src={src ?? ""}
       alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
+      className="max-h-72 w-full max-w-[320px] rounded-xl object-cover"
       onError={() => setError(true)}
     />
   );
@@ -120,7 +120,7 @@ function MessageContent({ message }: { message: Message }) {
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="whitespace-pre-wrap break-all text-sm leading-6">
           {message.content_text}
         </p>
       );
@@ -148,7 +148,7 @@ function MessageContent({ message }: { message: Message }) {
             <video
               src={message.media_url}
               controls
-              className="max-h-64 max-w-60 rounded-lg"
+              className="max-h-72 w-full max-w-[320px] rounded-xl"
             />
           ) : (
             <MediaUnavailable label="Video" />
@@ -225,7 +225,7 @@ function MessageContent({ message }: { message: Message }) {
             <CornerDownLeft className="h-3 w-3" />
             Button reply
           </span>
-          <p className="whitespace-pre-wrap break-words text-sm">
+          <p className="max-w-full whitespace-pre-wrap break-words text-sm">
             {message.content_text || "[Interactive reply]"}
           </p>
         </div>
@@ -256,13 +256,13 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex flex-col",
+        "flex w-full flex-col",
         isAgent ? "items-end" : "items-start",
       )}
     >
       <div
-        className={cn(
-          "relative rounded-2xl px-3 py-2",
+  className={cn(
+    "relative inline-block w-fit max-w-full rounded-2xl px-3 py-2",
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-slate-800 text-slate-100",
@@ -271,7 +271,9 @@ export function MessageBubble({
         {reply && (
           <ReplyQuote authorLabel={reply.authorLabel} preview={reply.preview} />
         )}
-        <MessageContent message={message} />
+        <div className="min-w-[120px]">
+          <MessageContent message={message} />
+        </div>
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

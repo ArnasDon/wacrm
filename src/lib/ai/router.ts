@@ -1,16 +1,14 @@
-import { generateAIReply } from "./gemini";
+import { generateAIReply } from "./providers/gemini";
 import { getRuleBasedReply } from "./rule-router";
 
-export async function routeToAI(
-  message: string,
-) {
+export async function routeToAI(message: string) {
 
-  const ruleReply =
-    getRuleBasedReply(message);
+  const rule = getRuleBasedReply(message);
 
-  if (ruleReply) {
-    return ruleReply;
+  if (rule) {
+    return rule;
   }
 
+  // Gemini handles everything for now.
   return generateAIReply(message);
 }

@@ -1,0 +1,14 @@
+# Criado em: 10/07/2026 01:30
+# Modificado em: 10/07/2026 01:30
+# Mantém o contexto de build enxuto e impede vazamento de segredos.
+node_modules
+.next
+.git
+.secrets
+.env*
+!.env.local.example
+deploy/.env
+logs
+tmp
+docs
+mcp-server/node_modules

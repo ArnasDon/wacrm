@@ -1,0 +1,257 @@
+# Criado em: 10/07/2026 00:40
+# Modificado em: 10/07/2026 01:45
+#
+# Stack de produção do enterprise-evolui-crm:
+#   app (Next.js) + Supabase self-hosted + Evolution API.
+#
+# Redes:
+#   app-network — externa, já usada pelo Traefik do host. Só entram nela
+#                 os serviços roteados publicamente (app, kong, evolution).
+#   db-network  — interna (internal: true). Banco e serviços Supabase.
+#                 NENHUM serviço de banco publica portas no host.
+#
+# Uso:
+#   cp env.example .env    # preencher (nunca versionar)
+#   docker compose up -d --build
+
+name: evolui-crm
+
+networks:
+  app-network:
+    external: true
+  db-network:
+    internal: true
+
+# Dados persistidos em bind mounts sob DATA_DIR (padrão
+# /opt/docker_user/enterprise-evolui-crm). Criar as pastas antes do
+# primeiro up:
+#   sudo mkdir -p /opt/docker_user/enterprise-evolui-crm/{supabase-db-data,supabase-db-backups,supabase-storage-data}
+
+services:
+  # ------------------------------------------------------------------
+  # Aplicação (Next.js)
+  # ------------------------------------------------------------------
+  app:
+    # Imagem pré-buildada GENÉRICA — gere e publique com scripts/build-push.sh.
+    # Toda a configuração vem do .env em runtime (docker-entrypoint.sh
+    # injeta as NEXT_PUBLIC_* no bundle no start do container).
+    image: adminvyadigital/enterprise-evolui-crm:${APP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      supabase-kong:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_APP_ID: ${META_APP_ID:-}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://evolui-crm.vya.digital}
+      NEXT_PUBLIC_APP_LOCALE: ${NEXT_PUBLIC_APP_LOCALE:-pt-BR}
+      AUTOMATION_CRON_SECRET: ${AUTOMATION_CRON_SECRET:-}
+      ALLOWED_INVITE_HOSTS: ${ALLOWED_INVITE_HOSTS:-evolui-crm.vya.digital}
+    networks:
+      - app-network
+      - db-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=app-network
+      - traefik.http.routers.evolui-crm.rule=Host(`evolui-crm.vya.digital`)
+      - traefik.http.routers.evolui-crm.entrypoints=websecure
+      - traefik.http.routers.evolui-crm.tls.certresolver=lets-encrypt
+      - traefik.http.services.evolui-crm.loadbalancer.server.port=3000
+
+  # ------------------------------------------------------------------
+  # Supabase — banco de dados (sem portas expostas)
+  # ------------------------------------------------------------------
+  supabase-db:
+    image: supabase/postgres:15.8.1.049
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - ${DATA_DIR:-/opt/docker_user/enterprise-evolui-crm}/supabase-db-data:/var/lib/postgresql/data
+      - ${DATA_DIR:-/opt/docker_user/enterprise-evolui-crm}/supabase-db-backups:/backups
+      # Roda só no PRIMEIRO boot (data dir vazio): alinha as senhas dos
+      # roles internos (supabase_auth_admin etc.) com POSTGRES_PASSWORD.
+      - ./supabase/init/zz-align-role-passwords.sh:/docker-entrypoint-initdb.d/zz-align-role-passwords.sh:ro
+    networks:
+      - db-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Backup diário via pg_dump para o volume supabase-db-backups.
+  # Retenção controlada por BACKUP_RETENTION_DAYS (padrão 7).
+  db-backup:
+    image: supabase/postgres:15.8.1.049
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ${DATA_DIR:-/opt/docker_user/enterprise-evolui-crm}/supabase-db-backups:/backups
+      - ./scripts/backup-db.sh:/usr/local/bin/backup-db.sh:ro
+    networks:
+      - db-network
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          /usr/local/bin/backup-db.sh
+          sleep 86400
+        done
+
+  # ------------------------------------------------------------------
+  # Supabase — gateway (único serviço Supabase roteado pelo Traefik)
+  # ------------------------------------------------------------------
+  supabase-kong:
+    image: kong:2.8.1
+    restart: unless-stopped
+    depends_on:
+      supabase-auth:
+        condition: service_started
+      supabase-rest:
+        condition: service_started
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./supabase/kong.yml:/home/kong/temp.yml:ro
+    # Interpola SUPABASE_ANON_KEY/SUPABASE_SERVICE_KEY no template
+    # (mesmo mecanismo do compose oficial de self-hosting do Supabase).
+    entrypoint: bash -c 'eval "echo \"$$(cat /home/kong/temp.yml)\"" > /home/kong/kong.yml && /docker-entrypoint.sh kong docker-start'
+    networks:
+      - app-network
+      - db-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=app-network
+      - traefik.http.routers.evolui-supabase.rule=Host(`supabase.evolui-crm.vya.digital`)
+      - traefik.http.routers.evolui-supabase.entrypoints=websecure
+      - traefik.http.routers.evolui-supabase.tls.certresolver=lets-encrypt
+      - traefik.http.services.evolui-supabase.loadbalancer.server.port=8000
+
+  supabase-auth:
+    image: supabase/gotrue:v2.170.0
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      GOTRUE_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://evolui-crm.vya.digital}
+      GOTRUE_URI_ALLOW_LIST: ${NEXT_PUBLIC_SITE_URL:-https://evolui-crm.vya.digital}/*
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      # Sem SMTP configurado: confirma e-mails automaticamente.
+      # Configurar GOTRUE_SMTP_* e desligar isto quando houver SMTP.
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+    networks:
+      - db-network
+
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    networks:
+      - db-network
+
+  supabase-realtime:
+    image: supabase/realtime:v2.34.47
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: supabase-db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+    networks:
+      - db-network
+
+  supabase-storage:
+    image: supabase/storage-api:v1.19.3
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://supabase-rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+    volumes:
+      - ${DATA_DIR:-/opt/docker_user/enterprise-evolui-crm}/supabase-storage-data:/var/lib/storage
+    networks:
+      - db-network
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.89.3
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - db-network
+
+  # Evolution API: movida para a Fase 2 — ver docker-compose.evolution.yml.
+  # Ativar com: docker compose -f docker-compose.yml -f docker-compose.evolution.yml up -d

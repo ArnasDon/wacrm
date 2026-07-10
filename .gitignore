@@ -42,3 +42,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local (enterprise-evolui-crm)
+.secrets/
+logs/
+.claude/
+.vscode/
+*.code-workspace
+tmp/
+__pycache__/

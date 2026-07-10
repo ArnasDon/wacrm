@@ -19,6 +19,20 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
  *     deny them. A supply-chain compromise or a forgotten plugin
  *     can't silently opt back in.
  */
+/**
+ * Self-hosted Supabase lives on its own hostname (not *.supabase.co),
+ * so the CSP must also allow the origin from NEXT_PUBLIC_SUPABASE_URL.
+ * Inlined at build time — rebuild the image when the URL changes.
+ */
+const SUPABASE_ORIGIN = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").origin;
+  } catch {
+    return "";
+  }
+})();
+const SUPABASE_WSS = SUPABASE_ORIGIN.replace(/^https:/, "wss:");
+
 const SECURITY_HEADERS = [
   {
     key: "Strict-Transport-Security",
@@ -51,11 +65,11 @@ const SECURITY_HEADERS = [
       "img-src 'self' data: blob: https:",
       // Outbound media previews (blob: from MediaRecorder + file picker)
       // and Supabase public-bucket audio/video the inbox renders.
-      "media-src 'self' blob: https://*.supabase.co",
+      `media-src 'self' blob: https://*.supabase.co ${SUPABASE_ORIGIN}`.trim(),
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      `connect-src 'self' https://*.supabase.co wss://*.supabase.co ${SUPABASE_ORIGIN} ${SUPABASE_WSS}`.trim(),
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -64,6 +78,11 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Standalone server bundle for the Docker image (deploy/Dockerfile):
+  // .next/standalone carries its own node_modules subset, so the final
+  // image ships without the full dependency tree.
+  output: "standalone",
+
   /**
    * Cache-Control policy.
    *

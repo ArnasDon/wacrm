@@ -1,0 +1,38 @@
+# Criado em: 10/07/2026 01:10
+# Modificado em: 10/07/2026 01:45
+#
+# FASE 2 — Evolution API (override opcional; fora do stack padrão).
+# A integração no código do CRM (camada de provider) ainda não existe:
+# o app hoje só fala com a Meta Cloud API.
+#
+# Ativar:
+#   docker compose -f docker-compose.yml -f docker-compose.evolution.yml up -d
+
+services:
+  evolution-api:
+    image: atendai/evolution-api:v2.2.3
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      SERVER_URL: https://evolution.evolui-crm.vya.digital
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      # Schema próprio ("evolution") no mesmo Postgres — isolado do CRM.
+      DATABASE_CONNECTION_URI: postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres?schema=evolution
+      CACHE_LOCAL_ENABLED: "true"
+      LOG_LEVEL: ERROR
+    volumes:
+      - ${DATA_DIR:-/opt/docker_user/enterprise-evolui-crm}/evolution-instances:/evolution/instances
+    networks:
+      - app-network
+      - db-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=app-network
+      - traefik.http.routers.evolui-evolution.rule=Host(`evolution.evolui-crm.vya.digital`)
+      - traefik.http.routers.evolui-evolution.entrypoints=websecure
+      - traefik.http.routers.evolui-evolution.tls.certresolver=letsencrypt
+      - traefik.http.services.evolui-evolution.loadbalancer.server.port=8080

@@ -304,7 +304,7 @@ export function DealForm({
                     type="number"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
-                    placeholder="0"
+                    placeholder={t("valuePlaceholder")}
                     className="border-border bg-muted pl-7 text-foreground"
                   />
                 </div>

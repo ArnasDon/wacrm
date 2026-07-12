@@ -64,8 +64,6 @@ export function AppearancePanel() {
             <ThemeCard
               key={tObj.id}
               id={tObj.id}
-              name={tObj.name}
-              tagline={tObj.tagline}
               swatch={tObj.swatch}
               isActive={tObj.id === theme}
               onPick={() => setTheme(tObj.id)}
@@ -124,20 +122,19 @@ function ModeCard({
 
 function ThemeCard({
   id,
-  name,
-  tagline,
   swatch,
   isActive,
   onPick,
 }: {
   id: ThemeId;
-  name: string;
-  tagline: string;
   swatch: string;
   isActive: boolean;
   onPick: () => void;
 }) {
   const t = useTranslations("Settings.appearance");
+  const themeT = useTranslations("Themes");
+  const name = themeT(`${id}.name`);
+  const tagline = themeT(`${id}.description`);
   return (
     <button
       type="button"

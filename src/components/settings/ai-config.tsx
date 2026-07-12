@@ -274,7 +274,13 @@ export function AiConfig() {
                   disabled={disabled}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) =>
+                        value === 'anthropic'
+                          ? PROVIDER_LABEL.anthropic
+                          : PROVIDER_LABEL.openai
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
@@ -469,7 +475,14 @@ export function AiConfig() {
                 disabled={disabled || !autoReplyEnabled}
               >
                 <SelectTrigger id="ai-handoff">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value) => {
+                      if (!value || value === HANDOFF_QUEUE)
+                        return t('handoffQueue');
+                      const m = members.find((m) => m.user_id === value);
+                      return m ? memberLabel(m) : null;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={HANDOFF_QUEUE}>

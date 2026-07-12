@@ -634,7 +634,17 @@ function ConditionForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {(value) =>
+                  value === "var"
+                    ? t("capturedVariable")
+                    : value === "tag"
+                      ? t("contactHasTag")
+                      : value === "contact_field"
+                        ? t("contactField")
+                        : null
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="var">{t("capturedVariable")}</SelectItem>
@@ -710,7 +720,19 @@ function ConditionForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {(value) =>
+                  value === "present"
+                    ? t("isPresent")
+                    : value === "absent"
+                      ? t("isAbsent")
+                      : value === "equals"
+                        ? t("equals")
+                        : value === "contains"
+                          ? t("contains")
+                          : null
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="present">{t("isPresent")}</SelectItem>
@@ -789,7 +811,11 @@ function SetTagForm({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {(value) =>
+                  value === "remove" ? t("removeTag") : t("addTag")
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="add">{t("addTag")}</SelectItem>
@@ -961,7 +987,15 @@ function SendMediaForm({
           }}
         >
           <SelectTrigger className="bg-muted">
-            <SelectValue />
+            <SelectValue>
+              {(value) =>
+                value === "video"
+                  ? t("videoLabel")
+                  : value === "document"
+                    ? t("documentLabel")
+                    : t("imageLabel")
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="image">{t("imageLabel")}</SelectItem>

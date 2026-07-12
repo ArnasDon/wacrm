@@ -292,7 +292,17 @@ function TriggerPanel({
             }
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue />
+              <SelectValue>
+                {(value) =>
+                  value === 'keyword'
+                    ? t('triggerKeywordTitle')
+                    : value === 'first_inbound_message'
+                      ? t('triggerFirstInboundTitle')
+                      : value === 'manual'
+                        ? t('triggerManualTitle')
+                        : null
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="keyword">

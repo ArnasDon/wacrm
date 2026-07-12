@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { List, Reply } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
@@ -21,6 +22,7 @@ export function InteractivePreview({
   payload: InteractiveMessagePayload;
   className?: string;
 }) {
+  const t = useTranslations("InteractivePreview");
   return (
     <div
       className={cn(
@@ -36,7 +38,7 @@ export function InteractivePreview({
         ) : null}
         <p className="whitespace-pre-wrap break-words text-sm">
           {payload.body || (
-            <span className="text-muted-foreground">Message body…</span>
+            <span className="text-muted-foreground">{t("messageBody")}</span>
           )}
         </p>
         {payload.footer ? (
@@ -56,7 +58,7 @@ export function InteractivePreview({
               className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary first:border-t-0"
             >
               <Reply className="h-3.5 w-3.5" />
-              <span className="truncate">{b.title || "Button"}</span>
+              <span className="truncate">{b.title || t("button")}</span>
             </button>
           ))}
         </div>
@@ -67,7 +69,7 @@ export function InteractivePreview({
           className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
         >
           <List className="h-3.5 w-3.5" />
-          <span className="truncate">{payload.button_label || "Menu"}</span>
+          <span className="truncate">{payload.button_label || t("menu")}</span>
         </button>
       )}
     </div>

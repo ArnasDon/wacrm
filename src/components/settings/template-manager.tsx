@@ -748,7 +748,20 @@ export function TemplateManager() {
                 }
               >
                 <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                  <SelectValue />
+                  <SelectValue placeholder={t('headerNone')}>
+                    {(value) => {
+                      const type = (value || 'none') as HeaderFormat;
+                      return type === 'none'
+                        ? t('headerNone')
+                        : type === 'text'
+                          ? t('headerText')
+                          : type === 'image'
+                            ? t('headerImage')
+                            : type === 'video'
+                              ? t('headerVideo')
+                              : t('headerDocument');
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border">
                   {HEADER_FORMATS.map((type) => (
@@ -956,7 +969,19 @@ export function TemplateManager() {
                           }}
                         >
                           <SelectTrigger className="w-40 bg-muted border-border text-foreground h-8 text-xs">
-                            <SelectValue />
+                            <SelectValue>
+                              {(value) =>
+                                value === 'QUICK_REPLY'
+                                  ? t('btnQuickReply')
+                                  : value === 'URL'
+                                    ? t('btnUrl')
+                                    : value === 'PHONE_NUMBER'
+                                      ? t('btnPhone')
+                                      : value === 'COPY_CODE'
+                                        ? t('btnCopyCode')
+                                        : null
+                              }
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent className="bg-popover border-border">
                             <SelectItem

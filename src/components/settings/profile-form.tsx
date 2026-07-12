@@ -270,7 +270,7 @@ export function ProfileForm() {
               id="profile-full-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Ada Lovelace"
+              placeholder={t('displayNamePlaceholder')}
               maxLength={120}
               disabled={saving}
               required

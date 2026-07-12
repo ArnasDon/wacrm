@@ -117,7 +117,7 @@ export function InviteMemberDialog({
 
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
-        toast.error(payload.error || 'Failed to create invitation');
+        toast.error(payload.error || t('createFailed'));
         return;
       }
 
@@ -140,7 +140,7 @@ export function InviteMemberDialog({
       onCreated();
     } catch (err) {
       console.error('[InviteMemberDialog] create error:', err);
-      toast.error('Could not reach the server. Try again?');
+      toast.error(t('serverUnreachable'));
     } finally {
       setSubmitting(false);
     }
@@ -274,7 +274,17 @@ export function InviteMemberDialog({
                   onValueChange={(v) => v && setRole(v as InviteRole)}
                 >
                   <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) =>
+                        value === 'admin'
+                          ? tRoles('admin')
+                          : value === 'agent'
+                            ? tRoles('agent')
+                            : value === 'viewer'
+                              ? tRoles('viewer')
+                              : null
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">{tRoles('admin')}</SelectItem>
@@ -294,7 +304,16 @@ export function InviteMemberDialog({
                   onValueChange={(v) => v && setExpiry(v)}
                 >
                   <SelectTrigger className="w-full bg-muted border-border text-foreground">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) => {
+                        const opt = EXPIRY_OPTIONS.find(
+                          (o) => o.value === value,
+                        );
+                        return opt
+                          ? t(opt.labelKey as Parameters<typeof t>[0])
+                          : null;
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {EXPIRY_OPTIONS.map((opt) => (

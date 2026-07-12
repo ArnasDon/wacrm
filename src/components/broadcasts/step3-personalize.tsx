@@ -322,7 +322,17 @@ export function Step3Personalize({
                       }
                     >
                       <SelectTrigger className="w-full border-border bg-muted text-foreground">
-                        <SelectValue />
+                        <SelectValue>
+                          {(value) =>
+                            value === 'static'
+                              ? t('personalize.typeStatic')
+                              : value === 'field'
+                                ? t('personalize.typeContact')
+                                : value === 'custom_field'
+                                  ? t('personalize.typeCustom')
+                                  : null
+                          }
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="border-border bg-popover">
                         <SelectItem value="static">{t('personalize.typeStatic')}</SelectItem>
@@ -344,7 +354,7 @@ export function Step3Personalize({
                         onChange={(e) =>
                           updateVariable(key, { value: e.target.value })
                         }
-                        placeholder="Enter value..."
+                        placeholder={t('personalize.enterValuePlaceholder')}
                         className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
                       />
                     ) : mapping.type === 'field' ? (

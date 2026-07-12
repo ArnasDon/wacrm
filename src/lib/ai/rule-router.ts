@@ -1,4 +1,31 @@
-import type { AIResponse } from "./types";
+import type {
+  AIResponse,
+  AILeadScore,
+} from "./types";
+
+const bookingLead: AILeadScore = {
+  score: 90,
+  grade: "HOT",
+  reason: "Booking intent detected",
+  pipeline: "BOOKING",
+  nextAction: "Ask preferred visit date",
+};
+
+const pricingLead: AILeadScore = {
+  score: 75,
+  grade: "HOT",
+  reason: "Customer asked about pricing",
+  pipeline: "QUALIFIED",
+  nextAction: "Identify required service",
+};
+
+const generalLead: AILeadScore = {
+  score: 40,
+  grade: "WARM",
+  reason: "General enquiry",
+  pipeline: "NEW",
+  nextAction: "",
+};
 
 export function getRuleBasedReply(
 message: string,
@@ -15,11 +42,12 @@ msg.includes("charges") ||
 msg.includes("rate")
 ) {
 return {
-reply:
-"Pricing service aur therapist preference ke according hoti hai 😊 Aap kis service me interested hain?",
-intent: "PRICE_QUERY",
-confidence: 95,
-handoff: false,
+  reply:
+    "Current offers availability ke hisab se rehti hain 😊 Aap kis service ke liye inquiry kar rahe hain?",
+  intent: "PRICE_QUERY",
+  confidence: 95,
+  handoff: false,
+  lead: pricingLead,
 };
 }
 
@@ -48,11 +76,12 @@ msg.includes("address") ||
 msg.includes("where")
 ) {
 return {
-reply:
-"Hamari spa branch Gomti Nagar me Patrakarpuram Chauraha ke paas hai 😊 Agar location chahiye to main Google Maps link share kar sakta hoon.",
-intent: "GENERAL_CHAT",
-confidence: 95,
-handoff: false,
+  reply:
+    "Hamari spa branch Vivek Khand-4, Gomti Nagar me near Brijwasi Bakery ke paas hai.",
+  intent: "GENERAL_CHAT",
+  confidence: 95,
+  handoff: false,
+  lead: generalLead,
 };
 }
 
@@ -68,6 +97,7 @@ reply:
 intent: "GENERAL_CHAT",
 confidence: 95,
 handoff: false,
+lead: generalLead,
 };
 }
 
@@ -84,6 +114,7 @@ reply:
 intent: "BOOK_APPOINTMENT",
 confidence: 95,
 handoff: false,
+lead: bookingLead,
 };
 }
 
@@ -98,6 +129,7 @@ reply:
 intent: "BOOK_APPOINTMENT",
 confidence: 95,
 handoff: false,
+lead: bookingLead,
 };
 }
 
@@ -115,6 +147,7 @@ reply:
 intent: "BOOK_APPOINTMENT",
 confidence: 95,
 handoff: false,
+lead: bookingLead,
 };
 }
 
@@ -129,11 +162,12 @@ msg.includes("deep tissue") ||
 msg.includes("massage")
 ) {
 return {
-reply:
-"Excellent choice 😊 Aap kis date par appointment book karna chahenge?",
-intent: "BOOK_APPOINTMENT",
-confidence: 95,
-handoff: false,
+  reply:
+    "Bilkul 😊 Aap kis date ke liye appointment book karna chahenge?",
+  intent: "BOOK_APPOINTMENT",
+  confidence: 95,
+  handoff: false,
+  lead: bookingLead,
 };
 }
 
@@ -145,11 +179,12 @@ msg.includes("booking") ||
 msg.includes("appointment")
 ) {
 return {
-reply:
-"Bilkul 😊 Aap kis date ke liye appointment book karna chahenge?",
-intent: "BOOK_APPOINTMENT",
-confidence: 95,
-handoff: false,
+  reply:
+    "Bilkul 😊 Aap kis date ke liye appointment book karna chahenge?",
+  intent: "BOOK_APPOINTMENT",
+  confidence: 95,
+  handoff: false,
+  lead: bookingLead,
 };
 }
 

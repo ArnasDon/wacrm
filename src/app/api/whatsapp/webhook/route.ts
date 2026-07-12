@@ -10,6 +10,7 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { ensureAccountBootstrap } from "@/lib/bootstrap";
 import { routeToAI } from '@/lib/ai/router'
 import { processAIIntent } from '@/lib/ai/crm-actions'
+import { saveLeadScore } from "@/lib/ai/lead-scoring/service";
 import { engineSendText } from '@/lib/automations/meta-send'
 import {
   handleTemplateWebhookChange,
@@ -746,7 +747,12 @@ async function processMessage(
 
   if (!flowConsumed && inboundText.trim()) {
     try {
-      const aiResult = await routeToAI(inboundText)
+      const aiResult = await routeToAI({
+  message: inboundText,
+  accountId,
+  contactId: contactRecord.id,
+  conversationId: conversation.id,
+})
 
       await processAIIntent({
         intent: aiResult.intent,
@@ -765,6 +771,40 @@ async function processMessage(
           text: aiResult.reply,
         })
       }
+
+if (aiResult.lead) {
+
+  console.log("[AI LEAD]", aiResult.lead);
+
+  await saveLeadScore({
+
+    accountId,
+
+    contactId: contactRecord.id,
+
+    conversationId: conversation.id,
+
+    score: aiResult.lead.score,
+
+    grade: aiResult.lead.grade,
+
+    reason: aiResult.lead.reason,
+
+    pipeline: aiResult.lead.pipeline,
+
+    nextAction: aiResult.lead.nextAction,
+
+    confidence: aiResult.confidence,
+
+    intent: aiResult.intent,
+
+    updatedBy: "AI",
+
+  });
+
+  console.log("[AI LEAD SAVED]");
+
+}
     } catch (error) {
       console.error('[AI ERROR]', error)
 

@@ -1,27 +1,49 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AIResponse } from "../types";
+import type { AIContext } from "../context/builder";
 import { getSystemPrompt } from "../services/prompt.service";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
 export async function generateAIReply(
-  message: string,
+  context: AIContext,
 ): Promise<AIResponse> {
+
+  const message = context.message;
 
   if (!apiKey) {
     return {
-      reply: "AI is not configured.",
-      intent: "GENERAL_CHAT",
-      confidence: 0,
-      handoff: true,
-    };
+  reply: "AI is not configured.",
+  intent: "GENERAL_CHAT",
+  confidence: 0,
+  handoff: true,
+  lead: {
+    score: 0,
+    grade: "COLD",
+    reason: "AI provider not configured",
+    pipeline: "NEW",
+    nextAction: ""
+  }
+};
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
+  const modelName =
+  process.env.GEMINI_MODEL ||
+  "gemini-2.5-flash";
+
+console.log("[GEMINI MODEL]", modelName);
+
+const model = genAI.getGenerativeModel({
+  model: modelName,
+});
+
+  const promptConfig = await getSystemPrompt({
+  accountId: context.accountId,
+  provider: "gemini",
+  context,
+});
 
   const prompt = `
 You are Relaxio Spa's AI Sales and Booking Assistant.
@@ -340,8 +362,31 @@ Customer:
 Reply:
 "Sure 😊 Main follow-up request note kar raha hoon. Kis time call karna theek rahega?"
 
+${promptConfig.prompt}
+
 Customer message:
 ${message}
+
+Return ONLY valid JSON.
+
+Lead Scoring Rules:
+
+After every customer message evaluate the lead.
+
+Return:
+
+lead.score (0-100)
+
+lead.grade
+(COLD, WARM, HOT, QUALIFIED)
+
+lead.reason
+
+lead.pipeline
+
+lead.nextAction
+
+Score should depend on the entire conversation, customer intent, booking likelihood, urgency and buying interest.
 
 Return ONLY valid JSON.
 
@@ -351,12 +396,21 @@ Format:
   "reply":"response",
   "intent":"BOOK_APPOINTMENT",
   "confidence":95,
-  "handoff":false
+  "handoff":false,
+  "lead":{
+      "score":90,
+      "grade":"HOT",
+      "reason":"Short explanation of buying intent.",
+      "pipeline":"BOOKING",
+      "nextAction":"Ask preferred date"
+  }
 }
 `;
 
   try {
-  const result = (await Promise.race([
+  console.log("[GEMINI REQUEST START]");
+
+const result = (await Promise.race([
   model.generateContent(prompt),
   new Promise((_, reject) =>
     setTimeout(
@@ -368,22 +422,73 @@ Format:
 
   const text = result.response.text();
 
+console.log("[GEMINI RAW]", text);
+
   const cleaned = text
     .replace(/```json/g, "")
     .replace(/```/g, "")
     .trim();
 
-  try {
-    return JSON.parse(cleaned);
+    try {
+  const parsed = JSON.parse(cleaned);
+
+  console.log("[GEMINI PARSED]", parsed);
+
+if (!parsed.lead) {
+
+  parsed.lead = {
+
+    score:
+      parsed.intent === "BOOK_APPOINTMENT"
+        ? 90
+        : parsed.intent === "PRICE_QUERY"
+        ? 60
+        : parsed.intent === "SERVICE_QUERY"
+        ? 45
+        : 20,
+
+    grade:
+      parsed.intent === "BOOK_APPOINTMENT"
+        ? "QUALIFIED"
+        : parsed.intent === "PRICE_QUERY"
+        ? "HOT"
+        : parsed.intent === "SERVICE_QUERY"
+        ? "WARM"
+        : "COLD",
+
+    reason: "Fallback AI lead scoring",
+
+    pipeline:
+  parsed.intent === "BOOK_APPOINTMENT"
+    ? "BOOKING"
+    : "NEW",
+
+    nextAction: "",
+
+  };
+
+}
+
+console.log("[GEMINI RETURN]", parsed);
+
+return parsed as AIResponse;
   } catch (error) {
+    console.error("[GEMINI ERROR OBJECT]", error);
     console.error("AI JSON Parse Error:", error);
 
     return {
-      reply: cleaned,
-      intent: "GENERAL_CHAT",
-      confidence: 50,
-      handoff: false,
-    };
+  reply: cleaned,
+  intent: "GENERAL_CHAT",
+  confidence: 50,
+  handoff: false,
+  lead: {
+    score: 20,
+    grade: "COLD",
+    reason: "Invalid AI JSON response",
+    pipeline: "NEW",
+    nextAction: "",
+  },
+};
   }
 } catch (error) {
   console.error("Gemini Request Failed:", error);
@@ -398,11 +503,18 @@ Format:
     msg.includes("spa")
   ) {
     return {
-      reply: "Kis date par appointment book karni hai? 😊",
-      intent: "BOOK_APPOINTMENT",
-      confidence: 80,
-      handoff: false,
-    };
+  reply: "Kis date par appointment book karni hai sir? 😊",
+  intent: "BOOK_APPOINTMENT",
+  confidence: 80,
+  handoff: false,
+  lead: {
+    score: 85,
+    grade: "QUALIFIED",
+    reason: "Booking intent detected from fallback",
+    pipeline: "BOOKING",
+    nextAction: "Ask preferred visit date",
+  },
+};
   }
 
   if (
@@ -418,11 +530,18 @@ Format:
     msg.includes("call karna") 
   ) {
     return {
-      reply: "Sure 😊 Main follow-up request note kar raha hoon.",
-      intent: "FOLLOWUP_REQUEST",
-      confidence: 80,
-      handoff: false,
-    };
+  reply: "Sure 😊 Main follow-up request note kar raha hoon.",
+  intent: "FOLLOWUP_REQUEST",
+  confidence: 80,
+  handoff: false,
+  lead: {
+    score: 70,
+    grade: "HOT",
+    reason: "Customer requested follow-up",
+    pipeline: "FOLLOW_UP",
+    nextAction: "Schedule follow-up",
+  },
+};
   }
 
   if (
@@ -432,19 +551,34 @@ Format:
     msg.includes("rate")
   ) {
     return {
-      reply: "Pricing ke liye aap kis service me interested hain? 😊",
-      intent: "PRICE_QUERY",
-      confidence: 80,
-      handoff: false,
-    };
+  reply: "Pricing ke liye aap kis service me interested hain? 😊",
+  intent: "PRICE_QUERY",
+  confidence: 80,
+  handoff: false,
+  lead: {
+    score: 60,
+    grade: "HOT",
+    reason: "Customer is asking about pricing",
+    pipeline: "QUALIFIED",
+    nextAction: "Identify service",
+  },
+};
   }
 
   return {
-    reply:
-      "Thank you 😊 Hamari team aapse shortly connect karegi.",
-    intent: "HUMAN_SUPPORT",
-    confidence: 100,
-    handoff: true,
-  };
+  reply:
+    "Thank you 😊 Hamari team aapse shortly connect karegi.",
+  intent: "HUMAN_SUPPORT",
+  confidence: 100,
+  handoff: true,
+  lead: {
+    score: 40,
+    grade: "WARM",
+    reason: "Escalated to human support",
+    pipeline: "NEW",
+    nextAction: "Human follow-up",
+  },
+};
 }
 }
+

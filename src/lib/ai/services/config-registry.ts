@@ -20,7 +20,9 @@ export async function getAIConfiguration(): Promise<AIConfiguration> {
 
     provider: "gemini",
 
-    model: "gemini-2.5-flash",
+    model:
+  process.env.GEMINI_MODEL ??
+  "gemini-2.5-flash",
 
     promptVersion: 1,
 

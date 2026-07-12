@@ -18,9 +18,13 @@ export async function generateAIReply(
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
+  const modelName =
+  process.env.GEMINI_MODEL ||
+  "gemini-2.5-flash";
+
+const model = genAI.getGenerativeModel({
+  model: modelName,
+});
 
   const prompt = `
 You are Relaxio Spa's AI Sales and Booking Assistant.

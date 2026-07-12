@@ -149,6 +149,12 @@ interface ProcessAIIntentArgs {
           tag_id: AI_TAGS.MEMBERSHIP,
          });
 
+         console.log(
+  "[AI TAG ADDED]",
+  AI_TAGS.MEMBERSHIP,
+  args.contactId,
+);
+
          await runAutomationsForTrigger({
           accountId: args.accountId,
           triggerType: "tag_added",
@@ -177,6 +183,15 @@ interface ProcessAIIntentArgs {
               contact_id: args.contactId,
               tag_id: AI_TAGS.FOLLOWUP_LEAD,
             });
+
+            await runAutomationsForTrigger({
+  accountId: args.accountId,
+  triggerType: "tag_added",
+  contactId: args.contactId,
+  context: {
+    tag_id: AI_TAGS.FOLLOWUP_LEAD,
+  },
+});
 
              console.log(
              "[AI TAG ADDED]",

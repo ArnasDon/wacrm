@@ -1,28 +1,16 @@
-import type { AIProvider } from "./gateway";
+import type { AIProviderName } from "./services/prompt.types";
+import { getActiveProvider } from "./services/provider.service";
 
 export interface ProviderSelection {
-
-  provider: AIProvider;
-
+  provider: AIProviderName;
+  model: string;
 }
 
-export function selectProvider(): ProviderSelection {
-
-  /**
-   * Temporary strategy.
-   *
-   * Phase-2:
-   *
-   * - Intent
-   * - Cost
-   * - Health
-   * - Fallback
-   */
+export async function selectProvider(): Promise<ProviderSelection> {
+  const config = await getActiveProvider();
 
   return {
-
-    provider: "gemini",
-
+    provider: config.provider,
+    model: config.model,
   };
-
 }

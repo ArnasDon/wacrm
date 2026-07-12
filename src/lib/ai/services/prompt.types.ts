@@ -1,3 +1,5 @@
+import type { AIContext } from "@/lib/ai/context/builder";
+
 export type AIProviderName =
   | "gemini"
   | "openai"
@@ -41,6 +43,8 @@ export interface PromptRequest {
   provider: AIProviderName;
 
   intent?: string;
+
+  context: AIContext;
 
 }
 

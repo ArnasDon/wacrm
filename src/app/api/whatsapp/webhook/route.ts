@@ -59,6 +59,15 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  order?: {
+  catalog_id: string
+  product_items: Array<{
+    product_retailer_id: string
+    quantity: number
+    item_price: number
+    currency: string
+  }>
+}
 }
 
 interface WhatsAppWebhookEntry {
@@ -647,7 +656,7 @@ async function processMessage(
   // allowed value so the INSERT doesn't fail with a constraint error.
   const ALLOWED_CONTENT_TYPES = new Set([
     'text', 'image', 'document', 'audio', 'video',
-    'location', 'template', 'interactive',
+    'location', 'template', 'interactive', 'order'
   ])
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
@@ -962,6 +971,30 @@ async function parseMessageContent(
       }
       return { ...empty, contentText: '[Interactive reply]' }
     }
+
+    case 'order':
+      if (message.order) {
+        const items = message.order.product_items
+
+        return {
+          ...empty,
+          contentText: JSON.stringify({
+            type: 'order',
+            catalog_id: message.order.catalog_id,
+            items: items.map(item => ({
+              product_id: item.product_retailer_id,
+              quantity: item.quantity,
+              price: item.item_price,
+              currency: item.currency,
+            })),
+          }),
+        }
+      }
+
+      return {
+        ...empty,
+        contentText: '[Empty order]',
+      }
 
     default:
       return {

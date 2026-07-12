@@ -62,7 +62,7 @@ ALTER TABLE messages
   ADD CONSTRAINT messages_content_type_check
   CHECK (content_type IN (
     'text', 'image', 'document', 'audio', 'video',
-    'location', 'template', 'interactive'
+    'location', 'template', 'interactive', 'order'
   ));
 
 -- Reply id of the button / list row the customer tapped. NULL for

@@ -703,9 +703,16 @@ function waitMs(cfg: WaitStepConfig): number {
 }
 
 function interpolate(s: string, args: ExecuteArgs): string {
+  console.log(JSON.stringify(args, null, 2))
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
+    if (ns === 'conversation' && prop === 'id') {
+      return String(args.context.conversation_id ?? '')
+    }
+    if (ns === 'contact' && prop === 'id') {
+      return String(args.contactId ?? '')
+    }
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''
   })

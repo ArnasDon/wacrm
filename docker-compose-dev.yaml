@@ -1,0 +1,10 @@
+services:
+  wacrm:
+    image: node:lts
+    container_name: wacrm
+    ports:
+      - "${WACRM_PORT}:3000"
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: "npm run dev"

@@ -90,6 +90,9 @@ npm run dev
 Open <http://localhost:3000>. You'll be redirected to `/login` (or
 `/dashboard` if already signed in).
 
+Prefer containers? See [docs/docker.md](./docs/docker.md) for the
+Dockerfile + Docker Compose setup.
+
 ## 🚀 Deploy on Hostinger (recommended)
 
 <p align="center">

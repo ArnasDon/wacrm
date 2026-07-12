@@ -80,7 +80,7 @@ export function toErrorResponse(err: unknown): NextResponse {
 
 /**
  * Repair a missing profile/account link for the calling user by
- * invoking the `ensure_account_for_current_user` RPC (migration 037).
+ * invoking the `ensure_account_for_current_user` RPC (migration 038).
  *
  * The signup trigger swallows exceptions by design (a failed
  * bootstrap must never block auth), so a user can end up
@@ -91,7 +91,7 @@ export function toErrorResponse(err: unknown): NextResponse {
  * `auth.uid()`), turning that dead end into a one-time repair.
  *
  * Returns the healed `account_id`, or `null` when the RPC is
- * unavailable (older DB without migration 037) or failed — callers
+ * unavailable (older DB without migration 038) or failed — callers
  * fall back to their existing "not linked" handling.
  */
 export async function healAccountLink(

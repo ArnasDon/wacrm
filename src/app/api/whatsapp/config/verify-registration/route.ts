@@ -43,7 +43,7 @@ export async function GET() {
   // caller's account_id so a teammate who joined an existing account
   // sees the same registration state as the admin who set it up.
   // `ensureAccountId` self-heals a profile whose signup bootstrap
-  // failed (missing row / NULL account_id) via the migration-037 RPC.
+  // failed (missing row / NULL account_id) via the migration-038 RPC.
   const accountId = await ensureAccountId(supabase, user.id)
   if (!accountId) {
     return NextResponse.json({

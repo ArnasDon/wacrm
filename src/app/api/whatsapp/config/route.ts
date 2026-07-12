@@ -17,7 +17,7 @@ import { ensureAccountId } from '@/lib/auth/account'
  * stuck on "Your profile is not linked to an account." forever.
  *
  * Returns null only when the profile is unlinked AND the repair RPC
- * (migration 037) is unavailable or failed; callers treat that the
+ * (migration 038) is unavailable or failed; callers treat that the
  * same as "not connected".
  */
 async function resolveAccountId(

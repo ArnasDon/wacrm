@@ -161,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // design, so a user can be authenticated with no profile row or
       // a NULL account_id — every account-scoped screen then shows
       // "profile is not linked to an account". The
-      // ensure_account_for_current_user RPC (migration 037) recreates
+      // ensure_account_for_current_user RPC (migration 038) recreates
       // the missing pieces for auth.uid(); one retry, then re-read.
       if (!data || !data.account_id) {
         try {
@@ -169,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             "ensure_account_for_current_user",
           );
           if (healErr) {
-            // Older DB without migration 037, or RPC failure — fall
+            // Older DB without migration 038, or RPC failure — fall
             // through with whatever we already have.
             console.warn(
               "[AuthProvider] account self-heal unavailable:",

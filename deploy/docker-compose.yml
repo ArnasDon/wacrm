@@ -1,5 +1,5 @@
 # Criado em: 10/07/2026 00:40
-# Modificado em: 10/07/2026 01:45
+# Modificado em: 13/07/2026 11:17
 #
 # Stack de produção do enterprise-evolui-crm:
 #   app (Next.js) + Supabase self-hosted + Evolution API.
@@ -13,6 +13,14 @@
 # Uso:
 #   cp env.example .env    # preencher (nunca versionar)
 #   docker compose up -d --build
+#
+# Extras opcionais no .env:
+#   ADMIN_EMAIL/ADMIN_PASSWORD — cria o admin padrão no boot
+#     (serviço one-shot admin-bootstrap; idempotente).
+#   SMTP_* — envio de e-mail do GoTrue via conta no-reply
+#     (com SMTP ativo, setar GOTRUE_MAILER_AUTOCONFIRM=false).
+#   DISABLE_SIGNUP / NEXT_PUBLIC_SIGNUP_ENABLED — signup público
+#     (padrão: fechado).
 
 name: evolui-crm
 
@@ -49,6 +57,8 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://evolui-crm.vya.digital}
       NEXT_PUBLIC_APP_LOCALE: ${NEXT_PUBLIC_APP_LOCALE:-pt-BR}
+      # Espelha DISABLE_SIGNUP para o frontend (esconde /signup).
+      NEXT_PUBLIC_SIGNUP_ENABLED: ${NEXT_PUBLIC_SIGNUP_ENABLED:-false}
       AUTOMATION_CRON_SECRET: ${AUTOMATION_CRON_SECRET:-}
       ALLOWED_INVITE_HOSTS: ${ALLOWED_INVITE_HOSTS:-evolui-crm.vya.digital}
     networks:
@@ -164,11 +174,44 @@ services:
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
       GOTRUE_JWT_ADMIN_ROLES: service_role
       GOTRUE_JWT_AUD: authenticated
-      GOTRUE_DISABLE_SIGNUP: "true"
+      # Signup público controlado por DISABLE_SIGNUP no .env
+      # (padrão: desabilitado — entrada só por convite ou bootstrap).
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-true}
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      # Sem SMTP configurado: confirma e-mails automaticamente.
-      # Configurar GOTRUE_SMTP_* e desligar isto quando houver SMTP.
-      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      # SMTP da conta no-reply (SMTP_* no .env). Enquanto o SMTP não
+      # estiver preenchido, manter GOTRUE_MAILER_AUTOCONFIRM=true;
+      # com SMTP ativo, setar false no .env para exigir confirmação.
+      GOTRUE_MAILER_AUTOCONFIRM: ${GOTRUE_MAILER_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-Evolui CRM}
+    networks:
+      - db-network
+
+  # ------------------------------------------------------------------
+  # Bootstrap do usuário admin padrão (one-shot; roda a cada `up` e é
+  # idempotente — se ADMIN_EMAIL/ADMIN_PASSWORD não estiverem no .env,
+  # apenas loga que está desativado e sai).
+  # ------------------------------------------------------------------
+  admin-bootstrap:
+    image: curlimages/curl:8.12.1
+    restart: "no"
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_started
+    environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Administrador}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./scripts/bootstrap-admin.sh:/usr/local/bin/bootstrap-admin.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/bootstrap-admin.sh"]
     networks:
       - db-network
 

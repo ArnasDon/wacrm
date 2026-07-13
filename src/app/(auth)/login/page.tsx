@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { isSignupEnabled } from "@/lib/auth/signup-flag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -143,19 +144,23 @@ function LoginPageInner() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t('noAccount')}{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              {t('createAccount')}
-            </Link>
-          </p>
+          {/* Link de cadastro só com signup público habilitado; com
+              token de convite o fluxo /join continua disponível. */}
+          {(isSignupEnabled() || inviteToken) && (
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              {t('noAccount')}{" "}
+              <Link
+                href={
+                  inviteToken
+                    ? `/signup?invite=${encodeURIComponent(inviteToken)}`
+                    : "/signup"
+                }
+                className="text-primary hover:text-primary/80"
+              >
+                {t('createAccount')}
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

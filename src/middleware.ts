@@ -69,6 +69,21 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
+  // Signup público desabilitado (NEXT_PUBLIC_SIGNUP_ENABLED !== 'true'):
+  // /signup redireciona para /login. Exceção: com token de convite na
+  // query o fluxo /join continua usando a página de signup.
+  if (
+    !user &&
+    request.nextUrl.pathname === '/signup' &&
+    process.env.NEXT_PUBLIC_SIGNUP_ENABLED !== 'true' &&
+    !request.nextUrl.searchParams.get('invite')
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.search = ''
+    return withRefreshedCookies(NextResponse.redirect(url))
+  }
+
   // Protected pages - redirect to login if not authenticated
   const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {

@@ -1,5 +1,5 @@
 # Criado em: 10/07/2026 00:40
-# Modificado em: 10/07/2026 01:30
+# Modificado em: 13/07/2026 11:17
 #
 # Build multi-stage do enterprise-evolui-crm (Next.js 16, output standalone).
 # Contexto de build = raiz do repositório:
@@ -22,6 +22,7 @@ WORKDIR /app
 ENV NEXT_PUBLIC_SUPABASE_URL=https://supabase-placeholder.invalid \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY_PLACEHOLDER \
     NEXT_PUBLIC_SITE_URL=https://site-placeholder.invalid \
+    NEXT_PUBLIC_SIGNUP_ENABLED=NEXT_PUBLIC_SIGNUP_ENABLED_PLACEHOLDER \
     NEXT_PUBLIC_APP_LOCALE=pt-BR \
     NEXT_TELEMETRY_DISABLED=1
 

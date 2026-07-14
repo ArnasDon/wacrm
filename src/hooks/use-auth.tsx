@@ -16,6 +16,7 @@ import { DEFAULT_CURRENCY } from "@/lib/currency";
 import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
+  canManageTemplates as canManageTemplatesFor,
   canSendMessages as canSendMessagesFor,
   isAccountRole,
   type AccountRole,
@@ -102,6 +103,8 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /** True if the caller can manage WhatsApp message templates (agent+). */
+  canManageTemplates: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -250,6 +253,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
+        if (session?.access_token) {
+          supabase.realtime.setAuth(session.access_token);
+        }
+
         if (currentUser) {
           // Don't block session loading on profile fetch — chrome
           // (header, sidebar) can render from the user object alone,
@@ -278,6 +285,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       const currentUser = session?.user ?? null;
       setUser(currentUser);
+
+      if (session?.access_token) {
+        supabase.realtime.setAuth(session.access_token);
+      } else {
+        supabase.realtime.setAuth(null);
+      }
 
       if (currentUser) {
         if (currentUser.id !== lastFetchedUserIdRef.current) {
@@ -330,6 +343,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      canManageTemplates: role ? canManageTemplatesFor(role) : false,
     };
   }, [profile?.account_role, profile?.account_id]);
 
@@ -383,6 +397,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      canManageTemplates: false,
     };
   }
   return ctx;

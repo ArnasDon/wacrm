@@ -226,6 +226,36 @@ export function MessageThread({
     };
   }, []);
 
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("message_templates")
+      .select("*")
+      .eq("status", "APPROVED")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to fetch templates for preview:", error);
+          return;
+        }
+        setTemplates((data as MessageTemplate[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const templatesMap = useMemo(() => {
+    const map = new Map<string, MessageTemplate>();
+    templates.forEach((t) => {
+      map.set(t.name, t);
+    });
+    return map;
+  }, [templates]);
+
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
     if (!messages.length) return { expired: false, remaining: "" };
@@ -646,6 +676,7 @@ export function MessageThread({
       values: {
         body: string[];
         headerText?: string;
+        headerMediaUrl?: string;
         buttonParams?: Record<number, string>;
       },
     ) => {
@@ -682,6 +713,7 @@ export function MessageThread({
             template_message_params: {
               body: values.body,
               headerText: values.headerText,
+              headerMediaUrl: values.headerMediaUrl,
               buttonParams: values.buttonParams,
             },
             template_params: values.body,
@@ -1122,6 +1154,7 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          templates={templatesMap}
                         />
                       </MessageActions>
                     );

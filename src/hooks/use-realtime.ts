@@ -44,8 +44,10 @@ export function useRealtime({
 
     const supabase = createClient();
 
+    const uniqueChannelName = `${channelName}-${Math.random().toString(36).substring(2, 9)}`;
+
     const channel = supabase
-      .channel(channelName)
+      .channel(uniqueChannelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages" },

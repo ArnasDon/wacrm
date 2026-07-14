@@ -1,4 +1,4 @@
-import { uploadResumableMedia } from '@/lib/whatsapp/meta-api'
+import { uploadResumableMedia, getMetaAppId } from '@/lib/whatsapp/meta-api'
 import type { TemplatePayload } from '@/lib/whatsapp/template-validators'
 
 /**
@@ -26,11 +26,16 @@ export async function ensureImageHeaderHandle(
   if (payload.header_handle) return // already have one
   if (!payload.header_media_url) return // validator already requires url-or-handle
 
-  const appId = process.env.META_APP_ID
+  let appId = process.env.META_APP_ID
   if (!appId) {
-    throw new Error(
-      'Image-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the image header.',
-    )
+    try {
+      appId = await getMetaAppId(accessToken)
+    } catch (e) {
+      console.error('Failed to dynamically resolve Meta App ID:', e)
+      throw new Error(
+        'Image-header templates need META_APP_ID set (used for Meta’s Resumable Upload), and dynamic resolution failed. Add it to your environment, or remove the image header.',
+      )
+    }
   }
 
   // Fetch the sample image bytes (works for our uploaded chat-media URL

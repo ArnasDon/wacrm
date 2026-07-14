@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Journey Tank WP CRM",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -25,6 +25,7 @@
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
+    "webhooks": "Webhooks",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -316,7 +317,14 @@
       "toastFailedDelete": "Failed to delete contact",
       "toastDeleted": "Contact deleted",
       "toastBulkFailedDelete": "Failed to delete contacts",
-      "toastBulkDeleted": "{count} contacts deleted"
+      "toastBulkDeleted": "{count} contacts deleted",
+      "bulkTags": "Bulk Tags",
+      "addTag": "Add Tag",
+      "removeTag": "Remove Tag",
+      "toastBulkTagAdded": "Tag added to {count} contacts",
+      "toastBulkTagAddFailed": "Failed to add tag in bulk",
+      "toastBulkTagRemoved": "Tag removed from {count} contacts",
+      "toastBulkTagRemoveFailed": "Failed to remove tag in bulk"
     },
     "form": {
       "addTitle": "Add Contact",
@@ -354,14 +362,14 @@
     "detailView": {
       "tabs": {
         "details": "Details",
-        "activity": "Activity",
+        "tags": "Tags",
         "notes": "Notes",
         "custom": "Custom Fields",
-        "deals": "Deals",
-      "noTags": "No tags",
-      "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+        "deals": "Deals"
       },
+      "noTags": "No tags",
+      "noDeals": "No Deals",
+      "addNotePlaceholder": "Add a note...",
       "actions": {
         "edit": "Edit",
         "message": "Message",
@@ -715,7 +723,8 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "remove": "Remove"
       },
       "personalize": {
         "title": "Personalize Variables",
@@ -1330,7 +1339,16 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
+      "viewTitle": "View template details",
+      "viewLabel": "View template",
+      "view": "View",
+      "cloneTitle": "Clone template details to a new draft",
+      "cloneLabel": "Clone template",
+      "clone": "Clone",
+      "close": "Close",
       
+      "dialogViewTitle": "View Message Template",
+      "dialogViewDesc": "Detailed view of the message template. All fields are read-only.",
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
@@ -1500,6 +1518,7 @@
       "appearance": "Appearance",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
+      "quick-replies": "Quick replies",
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",

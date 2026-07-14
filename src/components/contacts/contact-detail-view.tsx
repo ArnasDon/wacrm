@@ -336,6 +336,11 @@ export function ContactDetailView({
   ) {
     if (!contactId) return;
     setSendingTemplate(true);
+    const renderedBody = template.body_text.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+      const idx = Number(raw) - 1;
+      return values.body[idx] || `{{${raw}}}`;
+    });
+
     try {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
@@ -350,9 +355,11 @@ export function ContactDetailView({
           template_message_params: {
             body: values.body,
             headerText: values.headerText,
+            headerMediaUrl: values.headerMediaUrl,
             buttonParams: values.buttonParams,
           },
           template_params: values.body,
+          content_text: renderedBody,
         }),
       });
 

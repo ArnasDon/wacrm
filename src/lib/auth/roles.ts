@@ -73,11 +73,18 @@ export function canManageMembers(role: AccountRole): boolean {
 
 /**
  * Owner / admin: edit account-wide settings (WhatsApp config,
- * message templates, pipelines, tags, custom fields, account
- * name). Excludes per-user settings like avatar or own password.
+ * pipelines, tags, custom fields, account name). Excludes per-user
+ * settings like avatar or own password, and message templates.
  */
 export function canEditSettings(role: AccountRole): boolean {
   return hasMinRole(role, "admin");
+}
+
+/**
+ * Owner / admin / agent: create, edit, delete, and sync WhatsApp message templates.
+ */
+export function canManageTemplates(role: AccountRole): boolean {
+  return hasMinRole(role, "agent");
 }
 
 /**

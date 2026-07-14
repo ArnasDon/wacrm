@@ -21,6 +21,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
@@ -49,6 +52,7 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Tags,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -314,6 +318,48 @@ export default function ContactsPage() {
     setBulkDeleteOpen(false);
   }
 
+  async function handleBulkAddTag(tagId: string) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+
+    const rows = ids.map((contactId) => ({
+      contact_id: contactId,
+      tag_id: tagId,
+    }));
+
+    const { error } = await supabase.from('contact_tags').upsert(rows, {
+      onConflict: 'contact_id,tag_id',
+      ignoreDuplicates: true,
+    });
+
+    if (error) {
+      toast.error(t('toastBulkTagAddFailed'));
+    } else {
+      toast.success(t('toastBulkTagAdded', { count: ids.length }));
+      setSelected(new Set());
+      fetchContacts();
+    }
+  }
+
+  async function handleBulkRemoveTag(tagId: string) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+
+    const { error } = await supabase
+      .from('contact_tags')
+      .delete()
+      .in('contact_id', ids)
+      .eq('tag_id', tagId);
+
+    if (error) {
+      toast.error(t('toastBulkTagRemoveFailed'));
+    } else {
+      toast.success(t('toastBulkTagRemoved', { count: ids.length }));
+      setSelected(new Set());
+      fetchContacts();
+    }
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -513,6 +559,77 @@ export default function ContactsPage() {
             >
               {t('clearSelection')}
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canEdit}
+                    className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                }
+              >
+                <Tags className="size-4" />
+                {t('bulkTags')}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-popover border-border min-w-40">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="text-popover-foreground focus:bg-muted focus:text-foreground">
+                    {t('addTag')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="bg-popover border-border max-h-64 overflow-y-auto">
+                    {allTags.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No tags available
+                      </div>
+                    ) : (
+                      allTags.map((tag) => (
+                        <DropdownMenuItem
+                          key={tag.id}
+                          onClick={() => handleBulkAddTag(tag.id)}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                        >
+                          <span
+                            className="size-2 rounded-full mr-2"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="text-popover-foreground focus:bg-muted focus:text-foreground">
+                    {t('removeTag')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="bg-popover border-border max-h-64 overflow-y-auto">
+                    {allTags.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No tags available
+                      </div>
+                    ) : (
+                      allTags.map((tag) => (
+                        <DropdownMenuItem
+                          key={tag.id}
+                          onClick={() => handleBulkRemoveTag(tag.id)}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                        >
+                          <span
+                            className="size-2 rounded-full mr-2"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <GatedButton
               variant="destructive"
               size="sm"

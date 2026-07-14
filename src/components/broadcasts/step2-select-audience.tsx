@@ -13,8 +13,10 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -91,6 +93,11 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCsvError(null);
+  }, [audience.type]);
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -237,6 +244,48 @@ export function Step2SelectAudience({
     };
     onUpdate({ ...audience, customField: { ...prev, ...patch } });
   }
+
+  const handleCsvUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setCsvError(null);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        if (!text) {
+          setCsvError(t('selectAudience.errorCsvParse'));
+          return;
+        }
+
+        try {
+          const { rows } = parseContactCsv(text);
+          if (rows.length === 0) {
+            setCsvError(t('selectAudience.errorCsvMissingPhone'));
+            return;
+          }
+
+          const validContacts = rows.map((r) => ({
+            phone: r.phone,
+            name: r.name,
+          }));
+
+          onUpdate({
+            ...audience,
+            csvContacts: validContacts,
+          });
+        } catch (err) {
+          setCsvError(t('selectAudience.errorCsvParse'));
+        }
+      };
+      reader.onerror = () => {
+        setCsvError(t('selectAudience.errorCsvParse'));
+      };
+      reader.readAsText(file);
+    },
+    [audience, onUpdate, t],
+  );
 
   const isValid =
     audience.type === 'all' ||
@@ -386,6 +435,65 @@ export function Step2SelectAudience({
                 placeholder={t('selectAudience.valuePlaceholder')}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.uploadCsv')}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('selectAudience.csvFormatDesc')}
+          </p>
+
+          {csvError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-400">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{csvError}</span>
+            </div>
+          )}
+
+          {audience.csvContacts && audience.csvContacts.length > 0 ? (
+            <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                <span className="text-sm text-foreground font-medium">
+                  {t('selectAudience.csvContactsFound', { count: audience.csvContacts.length })}
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onUpdate({ ...audience, csvContacts: undefined })}
+                className="h-8 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/20"
+              >
+                <X className="mr-1 h-3 w-3" />
+                {t('selectAudience.remove')}
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <input
+                id="csv-upload-input"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvUpload}
+                className="hidden"
+              />
+              <label
+                htmlFor="csv-upload-input"
+                className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 py-8 text-center transition hover:bg-muted/50"
+              >
+                <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                <span className="text-sm font-medium text-foreground">
+                  {t('selectAudience.uploadCsv')}
+                </span>
+                <span className="text-xs text-muted-foreground mt-1">
+                  Click to select a file
+                </span>
+              </label>
             </div>
           )}
         </div>

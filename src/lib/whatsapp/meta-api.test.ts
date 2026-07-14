@@ -3,6 +3,7 @@ import {
   INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTemplateMessage,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -265,5 +266,102 @@ describe("sendInteractiveList — validation", () => {
         },
       },
     });
+  });
+});
+
+describe("sendTemplateMessage — dynamic routing", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(neverFetch));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const BASE_TEMPLATE_ARGS = {
+    phoneNumberId: "test-phone",
+    accessToken: "test-token",
+    to: "1234567890",
+    templateName: "my_template",
+    language: "en_US",
+  };
+
+  it("routes to standard /messages when template is undefined", async () => {
+    let capturedUrl: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        capturedUrl = url;
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.TEMPLATE_STANDARD" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await sendTemplateMessage(BASE_TEMPLATE_ARGS);
+
+    expect(result).toEqual({ messageId: "wamid.TEMPLATE_STANDARD" });
+    expect(capturedUrl).toContain("test-phone/messages");
+    expect(capturedUrl).not.toContain("marketing_messages");
+  });
+
+  it("routes to standard /messages when template category is Utility", async () => {
+    let capturedUrl: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        capturedUrl = url;
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.TEMPLATE_UTILITY" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await sendTemplateMessage({
+      ...BASE_TEMPLATE_ARGS,
+      template: {
+        id: "tpl-123",
+        user_id: "user-123",
+        name: "my_template",
+        category: "Utility",
+        body_text: "Hi",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    expect(result).toEqual({ messageId: "wamid.TEMPLATE_UTILITY" });
+    expect(capturedUrl).toContain("test-phone/messages");
+    expect(capturedUrl).not.toContain("marketing_messages");
+  });
+
+  it("routes to /marketing_messages when template category is Marketing", async () => {
+    let capturedUrl: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        capturedUrl = url;
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.TEMPLATE_MARKETING" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await sendTemplateMessage({
+      ...BASE_TEMPLATE_ARGS,
+      template: {
+        id: "tpl-123",
+        user_id: "user-123",
+        name: "my_template",
+        category: "Marketing",
+        body_text: "Hi",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    expect(result).toEqual({ messageId: "wamid.TEMPLATE_MARKETING" });
+    expect(capturedUrl).toContain("test-phone/marketing_messages");
+    expect(capturedUrl).not.toContain("test-phone/messages");
   });
 });

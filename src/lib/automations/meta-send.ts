@@ -1,5 +1,6 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import type { MessageTemplate } from '@/types'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -142,6 +143,22 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   const accessToken = decrypt(config.access_token)
 
+  // Load the template row once so sendTemplateMessage can build
+  // components and dynamically route marketing templates correctly.
+  let templateRow: MessageTemplate | undefined = undefined
+  if (input.kind === 'template') {
+    const { data } = await db
+      .from('message_templates')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .eq('name', input.templateName)
+      .eq('language', input.language || 'en_US')
+      .maybeSingle()
+    if (data) {
+      templateRow = data as MessageTemplate
+    }
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
@@ -150,6 +167,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         to: phone,
         templateName: input.templateName,
         language: input.language,
+        template: templateRow,
         params: input.params,
       })
       return r.messageId

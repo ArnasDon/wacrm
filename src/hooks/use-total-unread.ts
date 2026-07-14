@@ -12,7 +12,7 @@ import type { Conversation } from "@/types";
  * Lives on its own realtime channel (distinct from the inbox page's
  * "inbox-realtime") so both can coexist without sharing state.
  */
-export function useTotalUnread(): number {
+export function useTotalUnread({ enabled = true }: { enabled?: boolean } = {}): number {
   const [total, setTotal] = useState(0);
 
   // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
@@ -20,6 +20,8 @@ export function useTotalUnread(): number {
   const countsRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
+    if (!enabled) return;
+
     const supabase = createClient();
     let cancelled = false;
 
@@ -42,8 +44,9 @@ export function useTotalUnread(): number {
       setTotal(sum);
     })();
 
+    const uniqueChannelName = `total-unread-realtime-${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase
-      .channel("total-unread-realtime")
+      .channel(uniqueChannelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },

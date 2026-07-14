@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./light.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -55,6 +56,19 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Slate colors mapped to CSS variables for light mode overrides */
+  --color-slate-950: var(--slate-950, oklch(0.04 0.015 260));
+  --color-slate-900: var(--slate-900, oklch(0.13 0.015 260));
+  --color-slate-800: var(--slate-800, oklch(0.20 0.015 260));
+  --color-slate-700: var(--slate-700, oklch(0.28 0.015 260));
+  --color-slate-600: var(--slate-600, oklch(0.35 0.015 260));
+  --color-slate-500: var(--slate-500, oklch(0.45 0.015 260));
+  --color-slate-400: var(--slate-400, oklch(0.55 0.015 260));
+  --color-slate-300: var(--slate-300, oklch(0.65 0.015 260));
+  --color-slate-200: var(--slate-200, oklch(0.75 0.015 260));
+  --color-slate-100: var(--slate-100, oklch(0.85 0.015 260));
+  --color-slate-50: var(--slate-50, oklch(0.92 0.015 260));
 }
 
 /* ============================================================
@@ -226,5 +240,8 @@ html[data-theme="rose"] {
   }
   html {
     @apply font-sans;
+  }
+  button {
+    @apply cursor-pointer;
   }
 }

@@ -5,6 +5,7 @@ import {
   canDeleteAccount,
   canEditSettings,
   canManageMembers,
+  canManageTemplates,
   canSendMessages,
   canTransferOwnership,
   canViewOnly,
@@ -126,5 +127,12 @@ describe("capability predicates", () => {
     expect(canTransferOwnership("admin")).toBe(false);
     expect(canTransferOwnership("agent")).toBe(false);
     expect(canTransferOwnership("viewer")).toBe(false);
+  });
+
+  it("canManageTemplates: agent+ only", () => {
+    expect(canManageTemplates("owner")).toBe(true);
+    expect(canManageTemplates("admin")).toBe(true);
+    expect(canManageTemplates("agent")).toBe(true);
+    expect(canManageTemplates("viewer")).toBe(false);
   });
 });

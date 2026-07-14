@@ -1,0 +1,50 @@
+/* ============================================================
+ * LIGHT MODE THEME
+ * ============================================================ */
+
+html[data-mode="light"] {
+  --background: oklch(0.99 0.005 260); /* Clean white background */
+  --foreground: oklch(0.12 0.01 260); /* Very dark gray text */
+  --card: oklch(0.96 0.008 260); /* Light gray card */
+  --card-foreground: oklch(0.12 0.01 260);
+  --popover: oklch(0.97 0.008 260);
+  --popover-foreground: oklch(0.12 0.01 260);
+  --primary: oklch(0.526 0.247 293); /* Violet primary */
+  --primary-foreground: oklch(0.99 0.005 260);
+  --primary-hover: oklch(0.45 0.22 293);
+  --primary-soft: oklch(0.526 0.247 293 / 0.08);
+  --primary-soft-2: oklch(0.526 0.247 293 / 0.15);
+  --secondary: oklch(0.90 0.01 260);
+  --secondary-foreground: oklch(0.12 0.01 260);
+  --muted: oklch(0.93 0.008 260);
+  --muted-foreground: oklch(0.45 0.01 260);
+  --accent: oklch(0.90 0.01 260);
+  --accent-foreground: oklch(0.12 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.88 0.01 260);
+  --input: oklch(0.88 0.01 260);
+  --ring: oklch(0.526 0.247 293);
+  --radius: 0.625rem;
+  
+  --sidebar: oklch(0.95 0.008 260); /* Light sidebar */
+  --sidebar-foreground: oklch(0.12 0.01 260);
+  --sidebar-primary: oklch(0.526 0.247 293);
+  --sidebar-primary-foreground: oklch(0.99 0.005 260);
+  --sidebar-accent: oklch(0.90 0.01 260);
+  --sidebar-accent-foreground: oklch(0.12 0.01 260);
+  --sidebar-border: oklch(0.88 0.01 260);
+  --sidebar-ring: oklch(0.526 0.247 293);
+
+  /* Map standard slate colors to light mode equivalents */
+  --slate-950: oklch(0.99 0.005 260); /* Main background */
+  --slate-900: oklch(0.95 0.008 260); /* Sidebar & panels */
+  --slate-800: oklch(0.88 0.01 260);  /* Borders & secondary buttons */
+  --slate-700: oklch(0.78 0.01 260);  /* Inputs & dividers */
+  --slate-600: oklch(0.60 0.01 260);  /* Muted borders/icons */
+  --slate-500: oklch(0.48 0.01 260);  /* Muted labels */
+  --slate-400: oklch(0.38 0.01 260);  /* Subtext */
+  --slate-300: oklch(0.25 0.01 260);  /* Normal text secondary */
+  --slate-200: oklch(0.18 0.01 260);  /* Text heading primary */
+  --slate-100: oklch(0.12 0.01 260);
+  --slate-50: oklch(0.08 0.01 260);
+}

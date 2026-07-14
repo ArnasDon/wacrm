@@ -39,12 +39,7 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
   const supabase = createClient();
-  // After multi-user, whatsapp_config is one-row-per-account, not
-  // one-row-per-user. We pull `accountId` straight off the auth
-  // context and key every read off it — so a teammate who just
-  // joined an account sees the inviter's saved config without
-  // having to re-enter anything.
-  const { user, accountId, loading: authLoading, profileLoading } = useAuth();
+  const { user, accountId, canEditSettings, loading: authLoading, profileLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -183,6 +178,7 @@ export function WhatsAppConfig() {
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleSave() {
+    if (!canEditSettings) return;
     if (!phoneNumberId.trim()) {
       toast.error('Phone Number ID is required');
       return;
@@ -278,6 +274,7 @@ export function WhatsAppConfig() {
   }
 
   async function handleTestConnection() {
+    if (!canEditSettings) return;
     try {
       setTesting(true);
       const res = await fetch('/api/whatsapp/config', { method: 'GET' });
@@ -308,6 +305,7 @@ export function WhatsAppConfig() {
   }
 
   async function handleVerifyRegistration() {
+    if (!canEditSettings) return;
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
@@ -334,6 +332,7 @@ export function WhatsAppConfig() {
   }
 
   async function handleReset() {
+    if (!canEditSettings) return;
     if (!confirm('This will delete the current WhatsApp config so you can re-enter it. Continue?')) {
       return;
     }
@@ -396,16 +395,26 @@ export function WhatsAppConfig() {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
+        {!canEditSettings && (
+          <Alert className="bg-muted/50 border-border">
+            <AlertTriangle className="size-4 text-muted-foreground" />
+            <AlertTitle className="text-foreground">Read-only access</AlertTitle>
+            <AlertDescription className="text-muted-foreground">
+              You must be an Owner or Admin to configure the WhatsApp connection.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
-          <Alert className="bg-amber-950/40 border-amber-600/40">
+          <Alert className="bg-amber-500/10 dark:bg-amber-950/40 border-amber-500/20 dark:border-amber-600/40">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
+              <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <AlertTitle className="text-amber-200 mb-1">
+                <AlertTitle className="text-amber-800 dark:text-amber-200 mb-1">
                   Stored token can&apos;t be decrypted
                 </AlertTitle>
-                <AlertDescription className="text-amber-100/80 text-sm">
+                <AlertDescription className="text-amber-700/80 dark:text-amber-100/80 text-sm">
                   {statusMessage}
                 </AlertDescription>
                 <Button
@@ -460,20 +469,20 @@ export function WhatsAppConfig() {
           <Alert
             className={
               isRegistered
-                ? 'bg-emerald-950/30 border-emerald-700/50'
-                : 'bg-amber-950/30 border-amber-700/50'
+                ? 'bg-emerald-500/10 dark:bg-emerald-950/30 border-emerald-500/20 dark:border-emerald-700/50'
+                : 'bg-amber-500/10 dark:bg-amber-950/30 border-amber-500/20 dark:border-amber-700/50'
             }
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 {isRegistered ? (
-                  <CheckCircle2 className="size-4 text-emerald-400" />
+                  <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
                 ) : (
-                  <AlertTriangle className="size-4 text-amber-400" />
+                  <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
                 )}
                 <AlertTitle
                   className={
-                    'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')
+                    'mb-0 ' + (isRegistered ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200')
                   }
                 >
                   {isRegistered
@@ -485,7 +494,7 @@ export function WhatsAppConfig() {
                 variant="outline"
                 size="sm"
                 onClick={handleVerifyRegistration}
-                disabled={verifyingRegistration}
+                disabled={verifyingRegistration || !canEditSettings}
                 className="border-border bg-transparent text-foreground hover:bg-muted h-7"
               >
                 {verifyingRegistration ? (
@@ -566,6 +575,7 @@ export function WhatsAppConfig() {
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('phoneNumberId')}</Label>
               <Input
+                disabled={!canEditSettings}
                 placeholder="e.g. 100234567890123"
                 value={phoneNumberId}
                 onChange={(e) => setPhoneNumberId(e.target.value)}
@@ -576,6 +586,7 @@ export function WhatsAppConfig() {
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('wabaId')}</Label>
               <Input
+                disabled={!canEditSettings}
                 placeholder="e.g. 100234567890456"
                 value={wabaId}
                 onChange={(e) => setWabaId(e.target.value)}
@@ -587,6 +598,7 @@ export function WhatsAppConfig() {
               <Label className="text-muted-foreground">{t('accessToken')}</Label>
               <div className="relative">
                 <Input
+                  disabled={!canEditSettings}
                   type={showToken ? 'text' : 'password'}
                   placeholder={t('accessTokenPlaceholder')}
                   value={accessToken}
@@ -604,8 +616,9 @@ export function WhatsAppConfig() {
                 />
                 <button
                   type="button"
+                  disabled={!canEditSettings}
                   onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 >
                   {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -620,6 +633,7 @@ export function WhatsAppConfig() {
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('webhookVerifyToken')}</Label>
               <Input
+                disabled={!canEditSettings}
                 placeholder={t('webhookVerifyTokenPlaceholder')}
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
@@ -636,6 +650,7 @@ export function WhatsAppConfig() {
                 <span className="ml-1 text-muted-foreground">{t('optional')}</span>
               </Label>
               <Input
+                disabled={!canEditSettings}
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
@@ -687,7 +702,7 @@ export function WhatsAppConfig() {
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !canEditSettings}
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             {saving ? (
@@ -702,7 +717,7 @@ export function WhatsAppConfig() {
           <Button
             variant="outline"
             onClick={handleTestConnection}
-            disabled={testing || !config}
+            disabled={testing || !config || !canEditSettings}
             className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
           >
             {testing ? (
@@ -721,7 +736,7 @@ export function WhatsAppConfig() {
             <Button
               variant="outline"
               onClick={handleReset}
-              disabled={resetting}
+              disabled={resetting || !canEditSettings}
               className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
             >
               {resetting ? (

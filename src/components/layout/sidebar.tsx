@@ -189,7 +189,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <MessageSquare className="h-4 w-4" />
             </div>
             <span className="text-sm font-semibold text-foreground">
-              CRM Template for WhatsApp
+              Chat Chacha
             </span>
           </Link>
           <button

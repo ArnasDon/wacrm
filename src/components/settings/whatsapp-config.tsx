@@ -756,8 +756,8 @@ export function WhatsAppConfig() {
         </div>
       </div>
 
-      {/* Setup Instructions Sidebar */}
-      <div>
+      {/* Setup Instructions Sidebar — hidden: managed by Chat Chacha team */}
+      <div className="hidden">
         <Card>
           <CardHeader>
             <CardTitle className="text-foreground text-base">Setup Instructions</CardTitle>

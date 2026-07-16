@@ -110,7 +110,7 @@ export function QuickRepliesManager() {
     } finally {
       setSaving(false);
     }
-  }, [draft, load]);
+  }, [draft, load, t]);
 
   const remove = useCallback(
     async (id: string) => {
@@ -122,7 +122,7 @@ export function QuickRepliesManager() {
       }
       await load();
     },
-    [load],
+    [load, t],
   );
 
   return (

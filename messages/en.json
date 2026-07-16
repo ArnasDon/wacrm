@@ -372,6 +372,7 @@
         "notes": "Notes",
         "custom": "Custom Fields",
         "deals": "Deals",
+        "tags": "Tags",
         "noTags": "No tags",
         "noDeals": "No deals",
         "addNotePlaceholder": "Add a note..."
@@ -1001,7 +1002,8 @@
       },
       "schedulePlaceholder": "Cron expression or HH:mm",
       "moveUp": "Move up",
-      "moveDown": "Move down"
+      "moveDown": "Move down",
+      "delete": "Delete"
     }
   },
   "Flows": {

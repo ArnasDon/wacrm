@@ -372,6 +372,7 @@
         "notes": "Notas",
         "custom": "Campos personalizados",
         "deals": "Negocios",
+        "tags": "Etiquetas",
         "noTags": "Sin etiquetas",
         "noDeals": "Sin negocios",
         "addNotePlaceholder": "Agregar una nota..."
@@ -1001,7 +1002,8 @@
       },
       "schedulePlaceholder": "Expresión cron u HH:mm",
       "moveUp": "Mover hacia arriba",
-      "moveDown": "Mover hacia abajo"
+      "moveDown": "Mover hacia abajo",
+      "delete": "Eliminar"
     }
   },
   "Flows": {

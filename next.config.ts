@@ -150,6 +150,21 @@ const nextConfig: NextConfig = {
    * they apply to every response regardless of which cache rule
    * matched.
    */
+  // Désactive le watcher de next.config et .env
+
+
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ignored: ["**/.next/**", "**/node_modules/**"],
+        poll: 5000,
+        aggregateTimeout: 500,
+      };
+    }
+    return config;
+  },
+
+
   async headers() {
     return [
       {

@@ -10,14 +10,18 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   Bell,
   Bot,
+  CalendarClock,
   Crown,
   GitBranch,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Package,
   Radio,
   Settings,
   Shield,
+  ShoppingCart,
+  Sparkles,
   User,
   UserCog,
   Users,
@@ -99,6 +103,10 @@ const navItems: NavItem[] = [
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/produits", labelKey: "produits", icon: Package },
+  { href: "/commandes", labelKey: "commandes", icon: ShoppingCart },
+  { href: "/services", labelKey: "services", icon: Sparkles },
+  { href: "/reservations", labelKey: "reservations", icon: CalendarClock },
 ];
 
 const bottomNavItems = [

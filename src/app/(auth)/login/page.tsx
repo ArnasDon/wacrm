@@ -157,12 +157,12 @@ function LoginPageInner() {
 
           {/* Title */}
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {inviteToken ? t('titleAccept') : 'Bienvenido de nuevo'}
+            {inviteToken ? t('titleAccept') : t('titleWelcome')}
           </h1>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
             {inviteToken
               ? t('descAccept')
-              : 'Inicia sesión en tu cuenta'}
+              : t('descWelcome')}
           </p>
 
           {/* Error */}
@@ -177,12 +177,12 @@ function LoginPageInner() {
             {/* Email */}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Correo electrónico
+                {t('emailLabel')}
               </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="tu@correo.com"
+                placeholder={t('emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -194,20 +194,20 @@ function LoginPageInner() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Contraseña
+                  {t('passwordLabel')}
                 </Label>
                 <Link
                   href="/forgot-password"
                   className="text-sm text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
                 >
-                  ¿Olvidaste tu contraseña?
+                  {t('forgotPassword')}
                 </Link>
               </div>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Ingresa tu contraseña"
+                  placeholder={t('passwordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -234,7 +234,7 @@ function LoginPageInner() {
                 className="h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500/20 dark:border-zinc-600"
               />
               <Label htmlFor="remember" className="text-sm text-zinc-500 dark:text-zinc-400">
-                Recordarme
+                Remember me
               </Label>
             </div>
 
@@ -244,13 +244,13 @@ function LoginPageInner() {
               disabled={loading}
               className="h-11 w-full rounded-lg bg-zinc-900 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
+              {loading ? 'Signing in...' : t('signIn')}
             </Button>
           </form>
 
           {/* Register link */}
           <p className="mt-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            ¿No tienes cuenta?{" "}
+            {t('noAccount')}{" "}
             <Link
               href={
                 inviteToken
@@ -259,7 +259,7 @@ function LoginPageInner() {
               }
               className="font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
             >
-              Regístrate
+              {t('createAccount')}
             </Link>
           </p>
         </div>

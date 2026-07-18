@@ -254,6 +254,58 @@ export interface Message {
   ai_generated?: boolean;
 }
 
+// ============================================================
+// AI Inbox Agent (migrations 037-039)
+// ============================================================
+
+export type AiConversationStateStatus = 'active' | 'paused' | 'handoff' | 'disabled';
+export type AiAgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+
+export interface AiAgent {
+  id: string;
+  account_id: string;
+  user_id: string | null;
+  name: string;
+  enabled: boolean;
+  model_provider: string;
+  model_name: string;
+  instructions: string;
+  auto_reply: boolean;
+  auto_move_deals: boolean;
+  handoff_keywords: string[];
+  max_messages: number;
+  cooldown_seconds: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiConversationState {
+  id: string;
+  account_id: string;
+  conversation_id: string;
+  ai_agent_id: string;
+  status: AiConversationStateStatus;
+  last_inbound_message_id?: string | null;
+  last_run_at?: string | null;
+  paused_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiAgentRun {
+  id: string;
+  account_id: string;
+  ai_agent_id: string;
+  conversation_id: string;
+  inbound_message_id?: string | null;
+  status: AiAgentRunStatus;
+  decision?: Record<string, unknown> | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
+}
+
 export type ReactionActor = 'customer' | 'agent';
 
 export interface MessageReaction {

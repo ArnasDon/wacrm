@@ -63,6 +63,22 @@ const SECURITY_HEADERS = [
   },
 ] as const;
 
+export const PRIVATE_PAGE_CACHE_CONTROL =
+  "private, no-cache, no-store, max-age=0, must-revalidate";
+
+const PROTECTED_PAGE_PREFIXES = [
+  "/agents",
+  "/dashboard",
+  "/inbox",
+  "/contacts",
+  "/pipelines",
+  "/broadcasts",
+  "/automations",
+  "/flows",
+  "/notifications",
+  "/settings",
+] as const;
+
 const nextConfig: NextConfig = {
   /**
    * Cross-origin dev access (Next.js 16).
@@ -135,8 +151,23 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
+      ...PROTECTED_PAGE_PREFIXES.flatMap((prefix) => [
+        {
+          source: prefix,
+          headers: [
+            { key: "Cache-Control", value: PRIVATE_PAGE_CACHE_CONTROL },
+          ],
+        },
+        {
+          source: `${prefix}/:path*`,
+          headers: [
+            { key: "Cache-Control", value: PRIVATE_PAGE_CACHE_CONTROL },
+          ],
+        },
+      ]),
       {
-        source: "/:path((?!_next/static|_next/image|api).*)",
+        source:
+          "/:path((?!_next/static|_next/image|api|agents|dashboard|inbox|contacts|pipelines|broadcasts|automations|flows|notifications|settings).*)",
         headers: [
           {
             key: "Cache-Control",

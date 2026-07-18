@@ -38,7 +38,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import {
@@ -49,6 +48,7 @@ import {
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
+import { AiAgentPanel } from "./ai-agent-panel";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -179,6 +179,7 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [aiAgentRefreshKey, setAiAgentRefreshKey] = useState(0);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -750,7 +751,7 @@ export function MessageThread({
         preview: buildReplyPreview(msg, tQuote),
       });
     },
-    [authorLabelFor],
+    [authorLabelFor, tQuote],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -834,6 +835,18 @@ export function MessageThread({
       }
 
       onAssignChange(conversation.id, agentId);
+      if (agentId) {
+        const response = await fetch(`/api/ai-agent/conversation/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "pause", reason: "manual_assignment" }),
+        });
+        if (!response.ok) {
+          console.error("Failed to pause AI agent after assignment:", await response.text());
+          toast.error("Assignment saved, but AI pause failed");
+        }
+      }
+      setAiAgentRefreshKey((value) => value + 1);
     },
     [conversation, onAssignChange],
   );
@@ -1147,6 +1160,11 @@ export function MessageThread({
             onAssignChange(conversation.id, patch.assigned_agent_id ?? null);
           }
         }}
+      />
+
+      <AiAgentPanel
+        conversationId={conversation.id}
+        refreshToken={aiAgentRefreshKey}
       />
 
       {/* Composer */}

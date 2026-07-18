@@ -84,6 +84,8 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  senderType?: 'agent' | 'bot';
+  aiGenerated?: boolean;
 }
 
 export interface SendMessageResult {
@@ -197,6 +199,8 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    senderType = 'agent',
+    aiGenerated = false,
   } = params;
 
   if (!conversationId) {
@@ -452,7 +456,7 @@ export async function sendMessageToConversation(
     .from('messages')
     .insert({
       conversation_id: conversationId,
-      sender_type: 'agent',
+      sender_type: senderType,
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,
@@ -462,6 +466,7 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      ai_generated: aiGenerated,
     })
     .select()
     .single();

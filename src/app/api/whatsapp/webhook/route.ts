@@ -1,12 +1,13 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { runAiAgentForInboundMessage } from '@/lib/ai-agent/run'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
@@ -666,23 +667,27 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
-  const { error: msgError } = await supabaseAdmin().from('messages').insert({
-    conversation_id: conversation.id,
-    sender_type: 'customer',
-    content_type: contentType,
-    content_text: contentText,
-    media_url: mediaUrl,
-    message_id: message.id,
-    status: 'delivered',
-    created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
+  const { data: storedMessage, error: msgError } = await supabaseAdmin()
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      sender_type: 'customer',
+      content_type: contentType,
+      content_text: contentText,
+      media_url: mediaUrl,
+      message_id: message.id,
+      status: 'delivered',
+      created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      interactive_reply_id: interactiveReplyId,
+    })
+    .select('id')
+    .single()
 
-  if (msgError) {
+  if (msgError || !storedMessage) {
     console.error('Error inserting message:', msgError)
     return
   }
@@ -796,18 +801,38 @@ async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
+  let allowLegacyAiReply = true
+  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+    try {
+      const aiAgentResult = await runAiAgentForInboundMessage({
+        accountId,
+        conversationId: conversation.id,
+        inboundMessageId: (storedMessage as { id: string }).id,
+      })
+      allowLegacyAiReply = shouldFallbackToLegacyAiReply(aiAgentResult)
+      if (aiAgentResult.outcome === 'failed') {
+        console.error('[webhook] AI inbox agent failed:', aiAgentResult.error)
+      }
+    } catch (error) {
+      allowLegacyAiReply = false
+      console.error('[webhook] AI inbox agent dispatch failed:', error)
+    }
+  }
+
+  // Legacy AI auto-reply. Runs only for plain-text inbound the deterministic
+  // flow runner and AI inbox agent did NOT consume, and only when the
+  // account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
-      conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
-    })
+    if (allowLegacyAiReply) {
+      await dispatchInboundToAiReply({
+        accountId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        configOwnerUserId,
+      })
+    }
   }
 
   // message.received webhook (public API). Awaited — not fire-and-forget
@@ -824,6 +849,19 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+}
+
+function shouldFallbackToLegacyAiReply(
+  result: Awaited<ReturnType<typeof runAiAgentForInboundMessage>>,
+): boolean {
+  if (result.outcome === 'succeeded' || result.outcome === 'failed') return false
+  return [
+    'missing_config',
+    'agent_disabled',
+    'provider_unavailable',
+    'rate_limited',
+    'duplicate_inbound',
+  ].includes(result.reason)
 }
 
 async function parseMessageContent(

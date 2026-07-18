@@ -1,6 +1,29 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const PRIVATE_PAGE_CACHE_CONTROL = 'private, no-cache, no-store, max-age=0, must-revalidate'
+const PROTECTED_PAGE_PREFIXES = [
+  '/agents',
+  '/dashboard',
+  '/inbox',
+  '/contacts',
+  '/pipelines',
+  '/broadcasts',
+  '/automations',
+  '/flows',
+  '/notifications',
+  '/settings',
+] as const
+
+function isProtectedPage(pathname: string): boolean {
+  return PROTECTED_PAGE_PREFIXES.some((path) => pathname.startsWith(path))
+}
+
+function withPrivatePageCache<T extends NextResponse>(response: T): T {
+  response.headers.set('Cache-Control', PRIVATE_PAGE_CACHE_CONTROL)
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -13,7 +36,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -70,11 +93,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // Protected pages - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
-  if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
+  if (!user && isProtectedPage(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return withRefreshedCookies(NextResponse.redirect(url))
+    return withPrivatePageCache(withRefreshedCookies(NextResponse.redirect(url)))
   }
 
   // API routes that need auth (not webhooks)
@@ -83,6 +105,10 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(
       NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     )
+  }
+
+  if (isProtectedPage(request.nextUrl.pathname)) {
+    return withPrivatePageCache(supabaseResponse)
   }
 
   return supabaseResponse

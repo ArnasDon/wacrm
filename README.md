@@ -1,7 +1,7 @@
-# wacrm — CRM Template for WhatsApp
+# waivy — CRM inteligente para WhatsApp
 
-> Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
-> sales pipelines, broadcasts, and no-code automations. Fork it, brand
+> waivy — CRM inteligente para WhatsApp® — bandeja compartida, contactos,
+> pipeline de ventas, broadcasts, automaciones sin código. Fork it, brand
 > it, host it.
 
 <p align="center">

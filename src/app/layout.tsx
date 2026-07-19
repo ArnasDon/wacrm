@@ -22,16 +22,16 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "Decizyon CRM",
+    template: "%s | Decizyon CRM",
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "CRM operacional para WhatsApp com identidade Decizyon.",
   robots: {
     index: false,
     follow: false,
   },
   icons: {
-    icon: [{ url: "/icon" }],
+    icon: [{ url: "/brand/decizyon-icon.png" }],
   },
   formatDetection: {
     email: false,

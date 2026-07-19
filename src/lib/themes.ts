@@ -14,6 +14,7 @@
  */
 
 export const THEME_IDS = [
+  "decizyon",
   "violet",
   "emerald",
   "cobalt",
@@ -23,9 +24,9 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "decizyon";
 
-export const STORAGE_KEY = "wacrm.theme";
+export const STORAGE_KEY = "decizyon.theme";
 
 /**
  * MODE — the light/dark dimension, orthogonal to the accent theme.
@@ -67,6 +68,12 @@ export interface ThemeMeta {
 }
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
+  {
+    id: "decizyon",
+    name: "Decizyon",
+    tagline: "Operational CRM identity with deep teal and aqua accents.",
+    swatch: "#073b45",
+  },
   {
     id: "violet",
     name: "Violet",

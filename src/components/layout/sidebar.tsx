@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -188,12 +189,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/15 bg-primary-soft text-primary">
+              <Image
+                src="/brand/decizyon-icon.png"
+                alt=""
+                width={28}
+                height={28}
+                priority
+              />
             </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
-            </span>
+            <div className="min-w-0">
+              <p className="truncate font-heading text-sm font-semibold text-foreground">
+                Decizyon CRM
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("operationalCommand")}
+              </p>
+            </div>
           </Link>
           <button
             type="button"

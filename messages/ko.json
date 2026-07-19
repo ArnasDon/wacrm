@@ -15,7 +15,8 @@
     "createAccount": "계정 만들기"
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "Decizyon CRM",
+    "operationalCommand": "운영 커맨드",
     "dashboard": "대시보드",
     "inbox": "인박스",
     "notifications": "알림",

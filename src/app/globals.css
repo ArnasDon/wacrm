@@ -88,10 +88,10 @@
 
 :root,
 html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
+  --background: #061b22;
+  --foreground: #f7fafa;
+  --card: #082a32;
+  --card-2: #0c3640;
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.18 0.01 260);
   --popover-foreground: oklch(0.985 0 0);
@@ -117,10 +117,10 @@ html[data-mode="dark"] {
 }
 
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
-  --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
+  --background: #f7fafa;
+  --foreground: #08202e;
+  --card: #ffffff;
+  --card-2: #eef5f5;
   --card-foreground: oklch(0.21 0.01 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.01 260);
@@ -148,6 +148,19 @@ html[data-mode="light"] {
 /* ---- ACCENT: primary color ---- */
 
 :root,
+html[data-theme="decizyon"] {
+  --primary: #073b45;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0b4f59;
+  --primary-soft: rgb(7 59 69 / 0.1);
+  --primary-soft-2: rgb(21 159 153 / 0.16);
+  --ring: #159f99;
+  --chart-1: #073b45;
+  --sidebar-primary: #073b45;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #159f99;
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);

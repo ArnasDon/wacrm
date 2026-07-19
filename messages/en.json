@@ -15,7 +15,8 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Decizyon CRM",
+    "operationalCommand": "Operational command",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",

@@ -29,6 +29,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.codex-next-dev-*.log
+
+# local browser automation artifacts
+.claude-playwright/
 
 # env files (can opt-in for committing if needed)
 .env*

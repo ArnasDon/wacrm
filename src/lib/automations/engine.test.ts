@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
     upsertCalls: [] as { table: string; payload: unknown }[],
     logUpdates: [] as Record<string, unknown>[],
     dealResults: [] as Array<Record<string, unknown> | null>,
+    dealFilters: [] as Array<[string, string, unknown][]>,
   },
   moveDealStage: vi.fn(),
 }));
@@ -70,7 +71,10 @@ vi.mock("./admin-client", () => {
       );
       return { data: steps, error: null };
     }
-    if (table === "deals") return { data: state.dealResults.shift() ?? null, error: null };
+    if (table === "deals") {
+      state.dealFilters.push(ops.filters);
+      return { data: state.dealResults.shift() ?? null, error: null };
+    }
     return { data: null, error: null };
   }
 
@@ -136,6 +140,7 @@ beforeEach(() => {
   h.state.upsertCalls = [];
   h.state.logUpdates = [];
   h.state.dealResults = [];
+  h.state.dealFilters = [];
   h.moveDealStage.mockReset();
 });
 
@@ -349,6 +354,10 @@ describe("deal_stage condition", () => {
     expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
       steps_executed: [expect.objectContaining({ detail: "branch=yes" })],
     }));
+    expect(h.state.dealFilters).toContainEqual(expect.arrayContaining([
+      ["eq", "id", "deal-1"],
+      ["eq", "account_id", ACCOUNT],
+    ]));
   });
 });
 

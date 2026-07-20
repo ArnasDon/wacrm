@@ -806,7 +806,12 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       if (!cfg.operand) return false
       const dealId = await resolveDealId(args)
       if (!dealId) return false
-      const { data } = await db.from('deals').select('stage_id').eq('id', dealId).maybeSingle()
+      const { data } = await db
+        .from('deals')
+        .select('stage_id')
+        .eq('id', dealId)
+        .eq('account_id', args.automation.account_id)
+        .maybeSingle()
       return data?.stage_id === cfg.operand
     }
     default:

@@ -1599,6 +1599,26 @@
       "saving": "저장 중...",
       "saveFailed": "기본 통화를 저장하지 못했습니다",
       "saveSuccess": "기본 통화가 업데이트되었습니다"
+    },
+    "agent": {
+      "title": "AI 에이전트",
+      "description": "AI 에이전트가 WhatsApp 고객에게 답장하고, 대화를 분류하고, 딜을 파이프라인 단계로 이동시키도록 합니다.",
+      "providerTitle": "제공자",
+      "providerDescription": "직접 발급받은 OpenAI 또는 Anthropic 키를 사용하세요. 암호화되어 저장되며 별도의 좌석당 AI 요금이 없습니다.",
+      "providerLabel": "제공자",
+      "modelLabel": "모델",
+      "apiKeyLabel": "API 키",
+      "apiKeyPlaceholder": "sk-...",
+      "apiKeyStoredPlaceholder": "키가 저장되었습니다 — 유지하려면 비워두세요",
+      "behaviorTitle": "동작",
+      "agentEnabledLabel": "고객에게 답장",
+      "agentEnabledHint": "에이전트가 아래 한도까지 자동으로 답장을 작성하고 전송합니다",
+      "pipelineMoveEnabledLabel": "파이프라인 단계 이동",
+      "pipelineMoveEnabledHint": "에이전트가 대화에 연결된 딜을 다른 단계로 이동할 수 있도록 허용합니다",
+      "replyCapLabel": "대화당 최대 자동 답장 수",
+      "save": "저장",
+      "saved": "AI 에이전트 설정이 저장되었습니다",
+      "saveError": "AI 에이전트 설정을 저장하지 못했습니다"
     }
   }
 }

@@ -74,4 +74,43 @@ describe('PUT /api/ai/config', () => {
     expect(res.status).toBe(200)
     expect(h.saveAiConfig).toHaveBeenCalled()
   })
+
+  it('keeps the existing key when apiKey is blank and a config already exists', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      accountId: 'acct-1',
+      provider: 'openai',
+      model: 'gpt-old',
+      apiKey: 'sk-existing',
+      agentEnabled: false,
+      pipelineMoveEnabled: false,
+      autoReplyMaxPerConversation: 3,
+      handoffAgentId: null,
+    })
+    const res = await PUT(
+      putReq({
+        provider: 'openai',
+        model: 'gpt-test',
+        apiKey: '',
+        agentEnabled: true,
+        pipelineMoveEnabled: false,
+        autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(h.saveAiConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({ apiKey: 'sk-existing' }),
+    )
+  })
+
+  it('400s on a blank apiKey when no config exists yet', async () => {
+    h.loadAiConfig.mockResolvedValue(null)
+    const res = await PUT(
+      putReq({ provider: 'openai', model: 'gpt-test', apiKey: '' }),
+    )
+    expect(res.status).toBe(400)
+    expect(h.saveAiConfig).not.toHaveBeenCalled()
+  })
 })

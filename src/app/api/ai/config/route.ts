@@ -20,7 +20,15 @@ export async function GET() {
   }
 }
 
-/** PUT /api/ai/config (admin+) */
+/**
+ * PUT /api/ai/config (admin+)
+ *
+ * A blank `apiKey` means "keep the current stored key" — the Settings
+ * UI always clears the field back to '' after load/save (it never
+ * echoes the decrypted key to the client), so every save after the
+ * first one submits apiKey: ''. Only reject when there is no existing
+ * config to fall back to (first-ever save must include a real key).
+ */
 export async function PUT(request: Request) {
   try {
     const { supabase, accountId } = await requireRole('admin')
@@ -32,14 +40,21 @@ export async function PUT(request: Request) {
     if (typeof body.model !== 'string' || !body.model.trim()) {
       return NextResponse.json({ error: 'model is required' }, { status: 400 })
     }
-    if (typeof body.apiKey !== 'string' || !body.apiKey.trim()) {
-      return NextResponse.json({ error: 'apiKey is required' }, { status: 400 })
+
+    const submittedApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
+    let apiKey = submittedApiKey
+    if (!apiKey) {
+      const existing = await loadAiConfig(supabase, accountId)
+      if (!existing) {
+        return NextResponse.json({ error: 'apiKey is required' }, { status: 400 })
+      }
+      apiKey = existing.apiKey
     }
 
     await saveAiConfig(supabase, accountId, {
       provider: body.provider,
       model: body.model.trim(),
-      apiKey: body.apiKey.trim(),
+      apiKey,
       agentEnabled: Boolean(body.agentEnabled),
       pipelineMoveEnabled: Boolean(body.pipelineMoveEnabled),
       autoReplyMaxPerConversation:

@@ -15,7 +15,7 @@
     "createAccount": "계정 만들기"
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "Decizyon CRM",
     "dashboard": "대시보드",
     "inbox": "인박스",
     "notifications": "알림",
@@ -24,7 +24,6 @@
     "broadcasts": "브로드캐스트",
     "automations": "자동화",
     "flows": "플로우",
-    "aiAgents": "AI 에이전트",
     "settings": "설정",
     "beta": "베타",
     "unreadConversations": "읽지 않은 대화 {count}건",
@@ -175,7 +174,6 @@
       "noCustomerMessages": "고객 메시지 없음"
     },
     "composer": {
-      "draftHint": "✨를 눌러 AI로 답장 초안을 작성하세요 — 보내기 전에 수정할 수 있습니다",
       "sessionExpiredHint": "24시간 세션이 만료되었습니다. 다시 연결하려면 템플릿을 사용하세요.",
       "templates": "템플릿",
       "readOnlyPlaceholder": "읽기 전용 — 뷰어는 열람만 가능하고 답장할 수 없습니다",
@@ -191,7 +189,6 @@
       "document": "문서",
       "voiceNote": "음성 메모",
       "sendTemplate": "템플릿 보내기",
-      "draftWithAI": "AI로 답장 초안 작성",
       "addCaption": "캡션 추가…",
       "removeAttachment": "첨부 파일 제거",
       "moreActions": "더보기",
@@ -214,9 +211,7 @@
       "template": "템플릿",
       "buttonReply": "버튼 응답",
       "interactiveReply": "[인터랙티브 응답]",
-      "unsupported": "[지원되지 않는 메시지 형식]",
-      "aiBadge": "AI",
-      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함"
+      "unsupported": "[지원되지 않는 메시지 형식]"
     },
     "actions": {
       "reply": "답장",
@@ -262,16 +257,6 @@
       "noTags": "태그 없음",
       "noDeals": "딜 없음",
       "addNotePlaceholder": "메모 추가..."
-    },
-    "aiBanner": {
-      "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
-      "activeText": "AI 어시스턴트가 자동으로 응답 중입니다",
-      "takeOver": "직접 처리",
-      "resume": "AI 재개",
-      "tookOver": "이 대화를 직접 처리하기 시작했습니다.",
-      "resumed": "AI가 재개되었습니다.",
-      "updateError": "AI 어시스턴트를 업데이트하지 못했습니다.",
-      "networkError": "서버에 연결할 수 없습니다."
     }
   },
   "Contacts": {
@@ -360,7 +345,8 @@
         "deals": "딜",
         "noTags": "태그 없음",
         "noDeals": "딜 없음",
-        "addNotePlaceholder": "메모 추가..."
+        "addNotePlaceholder": "메모 추가...",
+        "tags": "??"
       },
       "actions": {
         "edit": "수정",
@@ -1330,13 +1316,11 @@
       "deleteLocallyAria": "로컬에서 템플릿 삭제",
       "deleteMetaLocallyTitle": "Meta와 로컬에서 삭제",
       "deleteLocallyTitle": "로컬에서 삭제",
-
       "dialogEditTitle": "메시지 템플릿 수정",
       "dialogNewTitle": "새 메시지 템플릿",
       "dialogEditDesc": "변경 사항을 저장해 Meta에 재제출하세요. 검토 중에는 상태가 다시 대기 중으로 바뀝니다.",
       "dialogNewDesc": "템플릿을 만들어 Meta 승인을 요청하세요. 승인되면 브로드캐스트와 인박스에서 사용할 수 있습니다.",
       "authWarning": "AUTHENTICATION 템플릿은 본문과 OTP 버튼 형식이 고정되어 있어 별도의 빌더가 필요합니다. 지금은 Meta WhatsApp 관리자에서 만든 뒤 <bold>Meta에서 동기화</bold>로 가져오세요.",
-
       "templateName": "템플릿 이름",
       "namePlaceholder": "예: order_confirmation",
       "nameFixed": "템플릿이 Meta에 존재하면 이름이 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
@@ -1345,7 +1329,6 @@
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
-
       "header": "헤더",
       "headerNone": "없음",
       "headerText": "텍스트",
@@ -1355,7 +1338,6 @@
       "headerTextPlaceholder": "헤더 텍스트 (최대 60자, {{1}} 선택 가능)",
       "headerSampleAria": "헤더 변수 샘플 값",
       "headerSamplePlaceholder": "{{1}}의 샘플 값 (Meta 검토에 필요)",
-
       "uploadImage": "이미지 업로드",
       "uploadHint": "JPEG 또는 PNG, 5MB 이하",
       "mediaUrlPlaceholder": "https://… (또는 공개 {format} 링크 붙여넣기)",
@@ -1363,17 +1345,14 @@
       "mediaHint": "공개적으로 접근 가능한 HTTPS 링크여야 합니다. Meta가 검토 중 한 번 가져오므로 약 24시간 동안 살아있어야 합니다.",
       "videoHint": " 권장: MP4 / 3GPP, 16MB 이하, 60초 이하.",
       "documentHint": " 권장: PDF, 100MB 이하.",
-
       "bodyText": "본문 텍스트",
       "bodyPlaceholder": "안녕하세요 {{1}}님, 주문 {{2}}이(가) 확정되었습니다.",
       "sampleValues": "샘플 값 (Meta가 템플릿 검토에 사용합니다)",
       "bodyHint": "변수에는 {{1}}, {{2}}를 사용하세요 ({{1}}부터 연속되어야 합니다).",
       "sampleAria": "본문 변수 {var}의 샘플 값",
       "samplePlaceholder": "{var}의 샘플",
-
       "footer": "푸터 (선택)",
       "footerPlaceholder": "선택적 푸터 텍스트 (최대 60자)",
-
       "buttons": "버튼 (선택)",
       "addButton": "버튼 추가",
       "buttonsLimit": "최대 {max}개 버튼. QUICK_REPLY 버튼은 URL / 전화 / 코드 복사 버튼보다 앞에 와야 합니다.",
@@ -1386,19 +1365,16 @@
       "urlSamplePlaceholder": "{{1}}의 예시 값 (URL에 변수가 있을 때 필요)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "예시 코드 (예: SUMMER20)",
-
       "cancel": "취소",
       "saving": "저장 중…",
       "submitting": "제출 중…",
       "saveResubmit": "저장 & 재제출",
       "submitApproval": "승인 요청",
-
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
       "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
       "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
-
       "toastLoadFailed": "템플릿을 불러오지 못했습니다",
       "toastSubmitFailed": "제출하지 못했습니다",
       "toastSubmitEditSuccess": "수정 사항이 제출되었습니다 — Meta는 보통 24시간 이내에 검토합니다.",
@@ -1503,7 +1479,8 @@
       "fields": "필드 & 태그",
       "deals": "딜 & 통화",
       "members": "팀원",
-      "api": "API 키"
+      "api": "API 키",
+      "quick-replies": "?? ??"
     },
     "groups": {
       "account": "계정",
@@ -1537,7 +1514,6 @@
       "profileSaved": "프로필이 저장되었습니다",
       "emailChangeFailed": "이메일 변경 실패: {message}",
       "profileSavedEmailCheck": "프로필이 저장되었습니다 — 이메일 주소 변경을 확인하려면 이메일을 확인하세요",
-
       "passwordTitle": "비밀번호",
       "passwordDesc": "최소 {min}자 이상 사용하세요. 변경 후에도 이 기기에서는 로그인이 유지됩니다.",
       "currentPassword": "현재 비밀번호",
@@ -1551,7 +1527,6 @@
       "currentPasswordIncorrect": "현재 비밀번호가 올바르지 않습니다",
       "passwordUpdateFailed": "비밀번호 업데이트 실패: {message}",
       "passwordUpdated": "비밀번호가 업데이트되었습니다",
-
       "sessionsTitle": "활성 세션",
       "sessionsDesc": "이 기기를 포함해 로그인되어 있는 모든 기기에서 로그아웃합니다. 노트북을 분실했거나 비밀번호를 공유한 경우 유용합니다.",
       "signOutAll": "모든 기기에서 로그아웃",
@@ -1624,73 +1599,6 @@
       "saving": "저장 중...",
       "saveFailed": "기본 통화를 저장하지 못했습니다",
       "saveSuccess": "기본 통화가 업데이트되었습니다"
-    },
-    "aiConfig": {
-      "title": "에이전트 설정",
-      "description": "직접 발급받은 OpenAI 또는 Anthropic 키를 사용하세요. wacrm은 회원님의 키로 공급자에 직접 요청하므로 좌석당 AI 비용이 없고 데이터도 온전히 회원님의 것입니다. 인박스의 AI 답장 초안, 자동 응답 봇, 플레이그라운드에 사용됩니다.",
-      "adminOnlyConfig": "관리자와 소유자만 AI 설정을 변경할 수 있습니다.",
-      "loadFailed": "AI 설정을 불러오지 못했습니다",
-      "providerAndKey": "공급자 & 키",
-      "encryptionNotice": "키는 저장 시 암호화되며(AES-256-GCM), 저장 후에는 다시 표시되지 않습니다.",
-      "provider": "공급자",
-      "model": "모델",
-      "apiKey": "API 키",
-      "testKey": "키 테스트",
-      "testSuccess": "키가 정상 작동합니다 — 공급자가 응답했습니다.",
-      "testRejected": "공급자가 요청을 거부했습니다.",
-      "testNetworkError": "공급자에 연결할 수 없습니다.",
-      "embeddingsKey": "임베딩 키",
-      "optionalSemanticSearch": "(선택 — 의미 기반 지식베이스 검색을 활성화합니다)",
-      "embeddingsHint": "지식베이스를 임베딩하는 데만 사용되는 OpenAI 키입니다(text-embedding-3-small){sameKeyText}. 비워두면 키워드 검색을 사용합니다. 비우면 의미 기반 검색이 꺼집니다.",
-      "sameKeyText": " — 위와 동일한 키를 사용할 수 있습니다",
-      "behaviour": "동작 방식",
-      "behaviourDesc": "비즈니스에 대해 어시스턴트에게 알려주세요 — 제품, 어조, 약속해도 되는 것과 안 되는 것. 이 맥락은 초안 작성과 자동 응답 모두에 반영됩니다.",
-      "businessContext": "비즈니스 맥락 & 지침",
-      "promptPlaceholder": "예: 저희는 커피 장비 매장 Acme입니다. 따뜻하고 간결하게 응대해주세요. 가격이나 배송일은 절대 언급하지 말고 사람에게 인계하세요.",
-      "enableAssistant": "AI 어시스턴트 활성화",
-      "enableAssistantDesc": "마스터 스위치입니다. 인박스의 \"AI로 초안 작성\" 버튼을 켭니다.",
-      "autoReply": "수신 메시지 자동 응답",
-      "autoReplyDesc": "봇이 새 수신 메시지에 자동으로 응답합니다(플로우가 처리하지 않고 담당 상담원이 없는 경우에만). 도움을 줄 수 없으면 사람에게 인계합니다.",
-      "maxAutoReplies": "대화당 최대 자동 응답 횟수",
-      "maxAutoRepliesDesc": "한 대화에서 이 횟수만큼 봇이 응답하면 더 이상 응답하지 않습니다.",
-      "handoffTo": "인계 대상",
-      "handoffToDesc": "봇이 도움을 줄 수 없거나 응답 한도에 도달하면 일시 중지하고 무슨 일이 있었는지 짧은 메모와 함께 이 대상에게 대화를 넘깁니다.",
-      "handoffQueue": "미배정 대기열 (모든 상담원이 처리 가능)",
-      "remove": "제거",
-      "save": "저장",
-      "missingModel": "모델 이름을 입력하세요.",
-      "missingApiKey": "API 키를 입력하세요.",
-      "saveSuccess": "AI 어시스턴트가 저장되었습니다.",
-      "saveFailed": "저장하지 못했습니다.",
-      "removeSuccess": "AI 설정이 제거되었습니다.",
-      "removeFailed": "제거하지 못했습니다."
-    },
-    "aiKnowledge": {
-      "loadFailed": "지식베이스를 불러오지 못했습니다",
-      "openFailed": "문서를 열지 못했습니다",
-      "titleContentRequired": "제목과 내용은 필수입니다.",
-      "saveSuccessNew": "문서가 추가되었습니다.",
-      "saveSuccessUpdate": "문서가 업데이트되었습니다.",
-      "saveFailed": "저장하지 못했습니다.",
-      "removeSuccess": "문서가 제거되었습니다.",
-      "removeFailed": "제거하지 못했습니다.",
-      "reindexSuccess": "문서 {count}개를 재색인했습니다.",
-      "reindexFailed": "재색인에 실패했습니다.",
-      "title": "지식베이스",
-      "description": "FAQ, 정책, 제품 정보를 추가하세요. 어시스턴트가 초안 작성과 자동 응답 시 관련된 부분을 검색해 인계 대신 직접 답변할 수 있습니다.{searchType}",
-      "semanticSearchOn": " 의미 기반 검색이 켜져 있습니다 (임베딩 키 설정됨).",
-      "keywordSearchOn": " 키워드 검색을 사용 중입니다 — 의미 기반 검색을 사용하려면 위에서 임베딩 키를 추가하세요.",
-      "noDocs": "아직 문서가 없습니다.",
-      "editDocTitle": "제목",
-      "editDocTitlePlaceholder": "예: 반품 & 환불 정책",
-      "editDocContent": "내용",
-      "editDocContentPlaceholder": "FAQ 답변, 정책 텍스트, 제품 정보를 붙여넣으세요…",
-      "cancel": "취소",
-      "saveDoc": "문서 저장",
-      "addDoc": "문서 추가",
-      "reindex": "재색인",
-      "reindexTooltip": "모든 문서를 다시 임베딩합니다 (예: 임베딩 키 추가 후)",
-      "loading": "불러오는 중…"
     }
   }
 }

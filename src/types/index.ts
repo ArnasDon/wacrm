@@ -169,18 +169,6 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
-  /**
-   * AI auto-reply state for this thread (migration 029 + 033):
-   *  - `ai_autoreply_disabled` — the bot is paused here (a human took
-   *    over, or the model handed off). Sticky until re-enabled.
-   *  - `ai_reply_count` — how many times the bot has auto-replied,
-   *    checked against the account's per-conversation cap.
-   *  - `ai_handoff_summary` — short internal note the bot wrote when it
-   *    handed off, shown to whoever takes the thread over.
-   */
-  ai_autoreply_disabled?: boolean;
-  ai_reply_count?: number;
-  ai_handoff_summary?: string | null;
 }
 
 // ============================================================
@@ -245,13 +233,6 @@ export interface Message {
    * 'interactive'` and `sender_type` is agent/bot. Migration 035.
    */
   interactive_payload?: InteractiveMessagePayload;
-  /**
-   * True when the AI auto-reply bot generated + sent this message (as
-   * opposed to a human agent or a deterministic Flow/automation send,
-   * which all share `sender_type='bot'`/`'agent'`). Drives the "AI"
-   * badge in the inbox. Migration 033.
-   */
-  ai_generated?: boolean;
 }
 
 export type ReactionActor = 'customer' | 'agent';

@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local Claude/Codex worktrees can contain generated builds from
+    // other branches; they are not part of this app's source tree.
+    ".claude/**",
     // Vendored minified opus-recorder encoder worker (served statically).
     "public/opus/**",
   ]),

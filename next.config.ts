@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Baseline security headers applied to every response.
@@ -64,6 +67,14 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // The workspace root can be inferred incorrectly when a parent
+    // directory also has a lockfile. Pin Turbopack to this checkout so
+    // dev HMR and filesystem watching stay tied to the app we are
+    // actively editing.
+    root: repoRoot,
+  },
+
   /**
    * Cross-origin dev access (Next.js 16).
    *

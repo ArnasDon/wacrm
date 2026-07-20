@@ -1,20 +1,21 @@
-"use client";
+'use client';
 
-import { Suspense, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Suspense, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { DecizyonLogo } from '@/components/brand/decizyon-logo';
+import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+} from '@/components/ui/card';
+import { CheckCircle, UsersRound } from 'lucide-react';
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -33,12 +34,12 @@ function SignupPageInner() {
   // verification → redirect round-trip. `emailRedirectTo` below
   // points back at /join/<token> so the user lands on the redeem
   // step after verifying instead of being dropped on /dashboard.
-  const inviteToken = searchParams.get("invite");
+  const inviteToken = searchParams.get('invite');
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -49,12 +50,12 @@ function SignupPageInner() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError('Passwords do not match');
       return;
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+      setError('Password must be at least 6 characters');
       return;
     }
 
@@ -91,19 +92,20 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="decizyon-shell flex min-h-screen items-center justify-center px-4 py-10">
+        <Card className="decizyon-card border-border w-full max-w-md rounded-lg bg-white/92 backdrop-blur">
           <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
+            <DecizyonLogo className="mb-3 w-44" priority />
+            <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-lg">
+              <CheckCircle className="text-primary h-6 w-6" />
             </div>
-            <CardTitle className="text-xl text-foreground">
+            <CardTitle className="text-foreground text-xl">
               Check your email
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              We&apos;ve sent a confirmation link to{" "}
-              <span className="text-foreground">{email}</span>. Please check your
-              inbox and click the link to verify your account.
+              We&apos;ve sent a confirmation link to{' '}
+              <span className="text-foreground">{email}</span>. Please check
+              your inbox and click the link to verify your account.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -111,12 +113,12 @@ function SignupPageInner() {
               href={
                 inviteToken
                   ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
+                  : '/login'
               }
             >
               <Button
                 variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground w-full"
               >
                 Back to sign in
               </Button>
@@ -128,23 +130,22 @@ function SignupPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="decizyon-shell flex min-h-screen items-center justify-center px-4 py-10">
+      <Card className="decizyon-card border-border w-full max-w-md rounded-lg bg-white/92 backdrop-blur">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
-          </div>
-          <CardTitle className="text-xl text-foreground">
-            {inviteToken ? "Create account & join" : "Create account"}
+          <DecizyonLogo className="mb-3 w-44" priority />
+          {inviteToken ? (
+            <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-lg">
+              <UsersRound className="text-primary h-6 w-6" />
+            </div>
+          ) : null}
+          <CardTitle className="text-foreground text-xl">
+            {inviteToken ? 'Create account & join' : 'Create account'}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             {inviteToken
-              ? "Verify your email, then accept the invitation to join your team."
-              : "Get started with CRM Template for WhatsApp"}
+              ? 'Verify your email, then accept the invitation to join your team.'
+              : 'Organize conversations, contacts, deals, and automations in Decizyon CRM.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -201,7 +202,10 @@ function SignupPageInner() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="confirmPassword" className="text-muted-foreground">
+              <Label
+                htmlFor="confirmPassword"
+                className="text-muted-foreground"
+              >
                 Confirm password
               </Label>
               <Input
@@ -218,19 +222,19 @@ function SignupPageInner() {
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-10 w-full disabled:opacity-50"
             >
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? 'Creating account...' : 'Create account'}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
+          <p className="text-muted-foreground mt-6 text-center text-sm">
+            Already have an account?{' '}
             <Link
               href={
                 inviteToken
                   ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
+                  : '/login'
               }
               className="text-primary hover:text-primary/80"
             >

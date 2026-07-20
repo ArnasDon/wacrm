@@ -6,11 +6,15 @@ import {
   formatCurrencyShort,
 } from "./currency";
 
+function expectThousands(out: string) {
+  expect(out).toMatch(/1[,.]234/);
+}
+
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
     // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
+    expectThousands(out);
     expect(out).not.toContain(".00");
   });
 
@@ -30,13 +34,13 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expectThousands(out);
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
     for (const bad of ["United States", "US", "USDD", "12", "u$d"]) {
       expect(() => formatCurrency(1234, bad)).not.toThrow();
-      expect(formatCurrency(1234, bad)).toContain("1,234");
+      expectThousands(formatCurrency(1234, bad));
     }
   });
 

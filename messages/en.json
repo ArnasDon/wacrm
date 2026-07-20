@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Decizyon CRM",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -24,7 +24,6 @@
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
-    "aiAgents": "AI Agents",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -175,7 +174,6 @@
       "noCustomerMessages": "No customer messages"
     },
     "composer": {
-      "draftHint": "Tap the ✨ to draft a reply with AI — you can edit it before sending",
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
       "templates": "Templates",
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
@@ -191,7 +189,6 @@
       "document": "Document",
       "voiceNote": "Voice note",
       "sendTemplate": "Send template",
-      "draftWithAI": "Draft a reply with AI",
       "addCaption": "Add a caption…",
       "removeAttachment": "Remove attachment",
       "moreActions": "More",
@@ -214,9 +211,7 @@
       "template": "Template",
       "buttonReply": "Button reply",
       "interactiveReply": "[Interactive reply]",
-      "unsupported": "[Unsupported message type]",
-      "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "unsupported": "[Unsupported message type]"
     },
     "actions": {
       "reply": "Reply",
@@ -262,16 +257,6 @@
       "noTags": "No tags",
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note..."
-    },
-    "aiBanner": {
-      "pausedTitle": "AI assistant is paused here",
-      "activeText": "AI assistant is replying automatically",
-      "takeOver": "Take over",
-      "resume": "Resume AI",
-      "tookOver": "You’ve taken over this chat.",
-      "resumed": "AI resumed.",
-      "updateError": "Couldn’t update the AI assistant.",
-      "networkError": "Couldn’t reach the server."
     }
   },
   "Contacts": {
@@ -359,9 +344,9 @@
         "custom": "Custom Fields",
         "deals": "Deals",
         "tags": "Tags",
-      "noTags": "No tags",
-      "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+        "noTags": "No tags",
+        "noDeals": "No deals",
+        "addNotePlaceholder": "Add a note..."
       },
       "actions": {
         "edit": "Edit",
@@ -1331,13 +1316,11 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
-      
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-      
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
@@ -1346,7 +1329,6 @@
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
-      
       "header": "Header",
       "headerNone": "None",
       "headerText": "Text",
@@ -1356,7 +1338,6 @@
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
-      
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
@@ -1364,17 +1345,14 @@
       "mediaHint": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
       "videoHint": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
       "documentHint": " Recommended: PDF, ≤100 MB.",
-      
       "bodyText": "Body Text",
       "bodyPlaceholder": "Hello {{1}}, your order {{2}} is confirmed.",
       "bodyHint": "Use {{1}}, {{2}} for variables (must be contiguous starting at {{1}}).",
       "sampleValues": "Sample values (Meta uses these to review your template)",
       "sampleAria": "Sample value for body variable {var}",
       "samplePlaceholder": "Sample for {var}",
-      
       "footer": "Footer (optional)",
       "footerPlaceholder": "Optional footer text (max 60 chars)",
-      
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
       "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
@@ -1387,19 +1365,16 @@
       "urlSamplePlaceholder": "Example value for {{1}} (required when URL has a variable)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "Example code (e.g. SUMMER20)",
-      
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
-      
       "deleteDialogTitle": "Delete template?",
       "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
       "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
-      
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
@@ -1539,7 +1514,6 @@
       "profileSaved": "Profile saved",
       "emailChangeFailed": "Email change failed: {message}",
       "profileSavedEmailCheck": "Profile saved — check your email to confirm the address change",
-      
       "passwordTitle": "Password",
       "passwordDesc": "Use at least {min} characters. You will stay signed in on this device after changing it.",
       "currentPassword": "Current password",
@@ -1553,7 +1527,6 @@
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
       "passwordUpdated": "Password updated",
-      
       "sessionsTitle": "Active sessions",
       "sessionsDesc": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
       "signOutAll": "Sign out of all devices",
@@ -1626,73 +1599,6 @@
       "saving": "Saving...",
       "saveFailed": "Failed to save default currency",
       "saveSuccess": "Default currency updated"
-    },
-    "aiConfig": {
-      "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
-      "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
-      "loadFailed": "Failed to load AI configuration",
-      "providerAndKey": "Provider & key",
-      "encryptionNotice": "Your key is encrypted at rest (AES-256-GCM) and never shown again after saving.",
-      "provider": "Provider",
-      "model": "Model",
-      "apiKey": "API key",
-      "testKey": "Test key",
-      "testSuccess": "Key works — the provider responded.",
-      "testRejected": "The provider rejected the request.",
-      "testNetworkError": "Could not reach the provider.",
-      "embeddingsKey": "Embeddings key",
-      "optionalSemanticSearch": "(optional — enables semantic knowledge-base search)",
-      "embeddingsHint": "An OpenAI key used only to embed your knowledge base (text-embedding-3-small){sameKeyText}. Leave blank to use keyword search instead. Clear it to turn semantic search off.",
-      "sameKeyText": " — can be the same key as above",
-      "behaviour": "Behaviour",
-      "behaviourDesc": "Tell the assistant about your business — products, tone, what it may and may not promise. This context feeds both drafts and auto-replies.",
-      "businessContext": "Business context & instructions",
-      "promptPlaceholder": "e.g. We are Acme, a coffee-equipment store. Be warm and concise. Never quote prices or delivery dates — hand off to a human for those.",
-      "enableAssistant": "Enable AI assistant",
-      "enableAssistantDesc": "Master switch. Turns on the “Draft with AI” button in the inbox.",
-      "autoReply": "Auto-reply to inbound messages",
-      "autoReplyDesc": "The bot answers new inbound messages automatically (only when no flow handles them and no agent is assigned). Hands off to a human when it can’t help.",
-      "maxAutoReplies": "Max auto-replies per conversation",
-      "maxAutoRepliesDesc": "After this many bot replies in one thread, the bot goes quiet.",
-      "handoffTo": "Hand off to",
-      "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
-      "handoffQueue": "Unassigned queue (any agent can pick it up)",
-      "remove": "Remove",
-      "save": "Save",
-      "missingModel": "Enter a model name.",
-      "missingApiKey": "Enter your API key.",
-      "saveSuccess": "AI assistant saved.",
-      "saveFailed": "Failed to save.",
-      "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
-    },
-    "aiKnowledge": {
-      "loadFailed": "Failed to load knowledge base",
-      "openFailed": "Failed to open document",
-      "titleContentRequired": "Title and content are required.",
-      "saveSuccessNew": "Document added.",
-      "saveSuccessUpdate": "Document updated.",
-      "saveFailed": "Failed to save.",
-      "removeSuccess": "Document removed.",
-      "removeFailed": "Failed to remove.",
-      "reindexSuccess": "Reindexed {count} document(s).",
-      "reindexFailed": "Reindex failed.",
-      "title": "Knowledge base",
-      "description": "Add FAQs, policies, or product details. The assistant retrieves the relevant pieces when drafting and auto-replying, so it can answer instead of handing off.{searchType}",
-      "semanticSearchOn": " Semantic search is on (embeddings key set).",
-      "keywordSearchOn": " Using keyword search — add an embeddings key above for semantic search.",
-      "noDocs": "No documents yet.",
-      "editDocTitle": "Title",
-      "editDocTitlePlaceholder": "e.g. Returns & refunds policy",
-      "editDocContent": "Content",
-      "editDocContentPlaceholder": "Paste the FAQ answer, policy text, or product details…",
-      "cancel": "Cancel",
-      "saveDoc": "Save document",
-      "addDoc": "Add document",
-      "reindex": "Reindex",
-      "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
     }
   }
 }

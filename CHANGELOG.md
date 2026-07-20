@@ -9,6 +9,21 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-07-20
+
+Removes the AI reply assistant from the product.
+
+> **Migration required:** apply `supabase/migrations/037_drop_ai.sql`.
+> This migration is destructive: it drops AI configuration, knowledge
+> base, usage, message badge, and conversation auto-reply data.
+
+### Removed
+
+- **AI Agents and AI reply assistant.** Removed the `/agents` section,
+  `/api/ai/*` routes, inbox draft button, auto-reply handoff banner,
+  AI message badge, provider configuration, knowledge base UI, and the
+  internal AI runtime.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

@@ -16,11 +16,14 @@ import type {
   UpdateContactFieldStepConfig,
   WaitStepConfig,
   CreateDealStepConfig,
+  MoveDealStageStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
+import { MAX_STAGE_CHAIN_DEPTH, getStageChainDepth } from '@/lib/pipelines/stage-chain'
+import { moveDealStage } from '@/lib/pipelines/stage-move'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
@@ -42,6 +45,8 @@ export interface AutomationContext {
   agent_id?: string
   /** Button / list-row id the customer tapped, for interactive_reply. */
   interactive_reply_id?: string
+  /** The deal whose stage changed, for deal_stage_changed. */
+  deal_id?: string
 }
 
 export interface DispatchInput {
@@ -576,6 +581,44 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       return 'deal created'
     }
 
+    case 'move_deal_stage': {
+      const cfg = step.step_config as MoveDealStageStepConfig
+      if (!cfg.pipeline_id || !cfg.stage_id) {
+        throw new Error('move_deal_stage needs pipeline + stage')
+      }
+      const dealId = await resolveDealId(args)
+      if (!dealId) return 'no open deal found for this contact/conversation'
+
+      const result = await moveDealStage({
+        accountId: args.automation.account_id,
+        dealId,
+        toStageId: cfg.stage_id,
+        source: 'automation',
+      })
+      if (!result.moved) return result.detail
+
+      const depth = getStageChainDepth(args.context)
+      if (depth >= MAX_STAGE_CHAIN_DEPTH) {
+        console.warn('[automations] deal_stage_changed chain depth limit reached', {
+          automationId: args.automation.id,
+          dealId,
+          depth,
+        })
+        return `${result.detail}; deal_stage_changed dispatch skipped at depth ${depth}`
+      }
+      await runAutomationsForTrigger({
+        accountId: args.automation.account_id,
+        triggerType: 'deal_stage_changed',
+        contactId: args.contactId,
+        context: {
+          ...args.context,
+          deal_id: dealId,
+          vars: { ...(args.context.vars ?? {}), _stage_chain_depth: depth + 1 },
+        },
+      })
+      return result.detail
+    }
+
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
@@ -645,6 +688,37 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     throw new Error(`${prefix}: contact has no existing conversation`)
   }
   return data.id as string
+}
+
+/**
+ * Resolve which deal a step/condition operating on this event should
+ * act on: prefer the deal tied to the event's conversation, falling
+ * back to the contact's most recently updated open deal. Returns null
+ * when nothing resolves so callers can cleanly no-op.
+ */
+async function resolveDealId(args: ExecuteArgs): Promise<string | null> {
+  const db = supabaseAdmin()
+  const conversationId = args.context.conversation_id
+  if (conversationId) {
+    const { data } = await db
+      .from('deals')
+      .select('id')
+      .eq('account_id', args.automation.account_id)
+      .eq('conversation_id', conversationId)
+      .maybeSingle()
+    if (data?.id) return data.id as string
+  }
+  if (!args.contactId) return null
+  const { data } = await db
+    .from('deals')
+    .select('id')
+    .eq('account_id', args.automation.account_id)
+    .eq('contact_id', args.contactId)
+    .eq('status', 'open')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return (data?.id as string) ?? null
 }
 
 export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
@@ -727,6 +801,13 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       const f = parse(from)
       const t = parse(to)
       return f <= t ? mins >= f && mins < t : mins >= f || mins < t
+    }
+    case 'deal_stage': {
+      if (!cfg.operand) return false
+      const dealId = await resolveDealId(args)
+      if (!dealId) return false
+      const { data } = await db.from('deals').select('stage_id').eq('id', dealId).maybeSingle()
+      return data?.stage_id === cfg.operand
     }
     default:
       return false

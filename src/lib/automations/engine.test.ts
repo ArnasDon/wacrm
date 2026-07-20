@@ -12,7 +12,9 @@ const h = vi.hoisted(() => ({
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
     logUpdates: [] as Record<string, unknown>[],
+    dealResults: [] as Array<Record<string, unknown> | null>,
   },
+  moveDealStage: vi.fn(),
 }));
 
 vi.mock("./admin-client", () => {
@@ -44,7 +46,13 @@ vi.mock("./admin-client", () => {
       }
       return { data: null, error: null };
     }
-    if (table === "automations") return { data: state.automations, error: null };
+    if (table === "automations") {
+      const triggerType = ops.filters.find(([kind, key]) => kind === "eq" && key === "trigger_type")?.[2];
+      const automations = triggerType
+        ? state.automations.filter((automation) => automation.trigger_type === triggerType)
+        : state.automations;
+      return { data: automations, error: null };
+    }
     if (table === "automation_logs") {
       if (type === "insert") return { data: { id: "log1" }, error: null };
       if (type === "update") {
@@ -53,7 +61,16 @@ vi.mock("./admin-client", () => {
       }
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
-    if (table === "automation_steps") return { data: state.steps, error: null };
+    if (table === "automation_steps") {
+      const parentStepId = ops.filters.find(([kind, key]) =>
+        (kind === "eq" || kind === "is") && key === "parent_step_id"
+      )?.[2];
+      const steps = state.steps.filter((step) =>
+        (step.parent_step_id ?? null) === (parentStepId ?? null)
+      );
+      return { data: steps, error: null };
+    }
+    if (table === "deals") return { data: state.dealResults.shift() ?? null, error: null };
     return { data: null, error: null };
   }
 
@@ -72,7 +89,7 @@ vi.mock("./admin-client", () => {
       upsert: (p: unknown) => ((ops.type = "upsert"), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(["eq", k, v]), b),
       gte: () => b,
-      is: () => b,
+      is: (k: string, v: unknown) => (ops.filters.push(["is", k, v]), b),
       order: () => b,
       limit: () => b,
       single: () => Promise.resolve(resolve(ops)),
@@ -100,6 +117,10 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
+vi.mock("@/lib/pipelines/stage-move", () => ({
+  moveDealStage: h.moveDealStage,
+}));
+
 import { runAutomationsForTrigger, triggerMatches } from "./engine";
 import type { Automation } from "@/types";
 
@@ -114,6 +135,8 @@ beforeEach(() => {
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
   h.state.logUpdates = [];
+  h.state.dealResults = [];
+  h.moveDealStage.mockReset();
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -258,6 +281,77 @@ describe("send_webhook — SSRF guard (GHSA-8jqh-598v-rfxc)", () => {
   });
 });
 
+describe("move_deal_stage step", () => {
+  it("resolves the deal via conversation_id and calls moveDealStage", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moveDealStageStep()];
+    h.state.dealResults = [{ id: "deal-1" }];
+    h.moveDealStage.mockResolvedValue({
+      moved: true,
+      fromStageId: "stage-A",
+      toStageId: "stage-B",
+      detail: "moved from stage-A to stage-B",
+    });
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conversation-1" },
+    });
+
+    expect(h.moveDealStage).toHaveBeenCalledWith({
+      accountId: ACCOUNT,
+      dealId: "deal-1",
+      toStageId: "stage-B",
+      source: "automation",
+    });
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      steps_executed: [expect.objectContaining({ detail: "moved from stage-A to stage-B" })],
+    }));
+  });
+
+  it("no-ops with a clear detail when no deal is linked", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moveDealStageStep()];
+    h.state.dealResults = [null, null];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conversation-1" },
+    });
+
+    expect(h.moveDealStage).not.toHaveBeenCalled();
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      steps_executed: [expect.objectContaining({ detail: "no open deal found for this contact/conversation" })],
+    }));
+  });
+});
+
+describe("deal_stage condition", () => {
+  it("is true when the linked deal is in the given stage", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [conditionStep("deal_stage", "stage-B")];
+    h.state.dealResults = [{ id: "deal-1" }, { stage_id: "stage-B" }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conversation-1" },
+    });
+
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      steps_executed: [expect.objectContaining({ detail: "branch=yes" })],
+    }));
+  });
+});
+
 function webhookStep(url: string) {
   return {
     id: "s1",
@@ -266,6 +360,28 @@ function webhookStep(url: string) {
     position: 0,
     parent_step_id: null,
     step_config: { url, headers: { "Metadata-Flavor": "Google" }, body_template: "{}" },
+  };
+}
+
+function moveDealStageStep() {
+  return {
+    id: "s1",
+    automation_id: "a1",
+    step_type: "move_deal_stage",
+    position: 0,
+    parent_step_id: null,
+    step_config: { pipeline_id: "pipe-1", stage_id: "stage-B" },
+  };
+}
+
+function conditionStep(subject: string, operand: string) {
+  return {
+    id: "s1",
+    automation_id: "a1",
+    step_type: "condition",
+    position: 0,
+    parent_step_id: null,
+    step_config: { subject, operand },
   };
 }
 

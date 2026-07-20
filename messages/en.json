@@ -817,6 +817,7 @@
         "assign_conversation": "Assign Conversation",
         "update_contact_field": "Update Contact Field",
         "create_deal": "Create Deal",
+        "move_deal_stage": "Move Deal Stage",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -854,6 +855,10 @@
         "time_based": {
           "label": "Time-Based",
           "hint": "On a recurring schedule"
+        },
+        "deal_stage_changed": {
+          "label": "Deal Stage Changed",
+          "hint": "When a deal's pipeline stage changes (manual, automation, or AI)"
         }
       },
       "trigger": "Trigger",
@@ -943,7 +948,8 @@
           "tag_presence": "Tag presence",
           "contact_field": "Contact field",
           "message_content": "Message content",
-          "time_of_day": "Time of day"
+          "time_of_day": "Time of day",
+          "deal_stage": "Deal stage"
         },
         "operandLabel": "Operand",
         "placeholderTime": "HH:mm-HH:mm",

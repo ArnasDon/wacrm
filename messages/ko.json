@@ -817,6 +817,7 @@
         "assign_conversation": "대화 담당자 지정",
         "update_contact_field": "연락처 필드 업데이트",
         "create_deal": "딜 생성",
+        "move_deal_stage": "딜 단계 이동",
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
@@ -854,6 +855,10 @@
         "time_based": {
           "label": "시간 기반",
           "hint": "반복 일정에 따라"
+        },
+        "deal_stage_changed": {
+          "label": "딜 단계 변경됨",
+          "hint": "딜의 파이프라인 단계가 변경될 때 (수동, 자동화 또는 AI)"
         }
       },
       "trigger": "트리거",
@@ -943,7 +948,8 @@
           "tag_presence": "태그 존재 여부",
           "contact_field": "연락처 필드",
           "message_content": "메시지 내용",
-          "time_of_day": "시간대"
+          "time_of_day": "시간대",
+          "deal_stage": "딜 단계"
         },
         "operandLabel": "피연산자",
         "placeholderTime": "HH:mm-HH:mm",

@@ -120,6 +120,23 @@ describe("validateStepsForActivation", () => {
     ]);
   });
 
+  it("rejects move_deal_stage without pipeline/stage", () => {
+    const issues = validateStepsForActivation([
+      { step_type: "move_deal_stage", step_config: {} },
+    ]);
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a complete move_deal_stage step", () => {
+    const issues = validateStepsForActivation([
+      {
+        step_type: "move_deal_stage",
+        step_config: { pipeline_id: "p1", stage_id: "s1" },
+      },
+    ]);
+    expect(issues).toHaveLength(0);
+  });
+
   it("validates send_buttons / send_list interactive payloads", () => {
     const good = validateStepsForActivation([
       {

@@ -1618,7 +1618,8 @@
       "replyCapLabel": "Max auto-replies per conversation",
       "save": "Save",
       "saved": "AI agent settings saved",
-      "saveError": "Couldn't save AI agent settings"
+      "saveError": "Couldn't save AI agent settings",
+      "adminOnlyHint": "Only account admins can change AI agent settings."
     }
   }
 }

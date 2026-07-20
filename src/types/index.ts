@@ -420,7 +420,10 @@ export type AutomationTriggerType =
   | 'time_based'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
-  | 'interactive_reply';
+  | 'interactive_reply'
+  /** A deal's stage_id changed — fired by moveDealStage() regardless of
+   *  whether the move came from a move_deal_stage step or the AI agent. */
+  | 'deal_stage_changed';
 
 export type AutomationStepType =
   | 'send_message'
@@ -432,6 +435,7 @@ export type AutomationStepType =
   | 'assign_conversation'
   | 'update_contact_field'
   | 'create_deal'
+  | 'move_deal_stage'
   | 'wait'
   | 'condition'
   | 'send_webhook'
@@ -460,12 +464,18 @@ export interface InteractiveReplyTriggerConfig {
   reply_ids: string[];
 }
 
+export interface DealStageChangedTriggerConfig {
+  /** Optional filter — only fire for deals in this pipeline. Absent/empty = any pipeline. */
+  pipeline_id?: string;
+}
+
 export type AutomationTriggerConfig =
   | Record<string, never>
   | KeywordMatchTriggerConfig
   | TagTriggerConfig
   | TimeBasedTriggerConfig
   | InteractiveReplyTriggerConfig
+  | DealStageChangedTriggerConfig
   | Record<string, unknown>;
 
 export interface SendMessageStepConfig {
@@ -515,6 +525,11 @@ export interface CreateDealStepConfig {
   value?: number;
 }
 
+export interface MoveDealStageStepConfig {
+  pipeline_id: string;
+  stage_id: string;
+}
+
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
@@ -524,7 +539,10 @@ export type ConditionSubject =
   | 'contact_field'
   | 'tag_presence'
   | 'message_content'
-  | 'time_of_day';
+  | 'time_of_day'
+  /** operand = target pipeline_stages.id. True when the contact's/
+   *  conversation's linked open deal currently sits in that stage. */
+  | 'deal_stage';
 
 export interface ConditionStepConfig {
   subject: ConditionSubject;
@@ -549,6 +567,7 @@ export type AutomationStepConfig =
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
   | CreateDealStepConfig
+  | MoveDealStageStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

@@ -60,4 +60,4 @@ Manual browser verification of `/automations/new` could not be completed because
 - Reviewer finding fixed: the `deal_stage` condition query now explicitly scopes the deal lookup by `account_id` before `maybeSingle()`.
 - Files changed: `src/lib/automations/engine.ts`, `src/lib/automations/engine.test.ts`, `.superpowers/sdd/task-7-report.md`.
 - Commands run and results: `npx vitest run src/lib/automations/engine.test.ts` - PASS, 1 file and 17 tests; `npx tsc --noEmit` - PASS, exit code 0 with no errors.
-- Commit: `fix(automations): scope deal stage condition by account` (SHA recorded after commit).
+- Commit: `fix(automations): scope deal stage condition by account` (`95be8556881331f6491030e793d73d396489a2d6`).

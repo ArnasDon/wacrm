@@ -16,7 +16,7 @@
  *   - Pure decision logic (which button matched, where to advance to,
  *     when to fallback) — here.
  *   - DB shape (table reads/writes) — here.
- *   - Meta API calls — `meta-send.ts` (engineSendInteractive*).
+ *   - Z-API send calls — `zapi-send.ts` (engineSendInteractive*).
  *   - Policy resolution (reprompt vs handoff vs end) — `fallback.ts`.
  *   - Type definitions — `types.ts`.
  *
@@ -38,7 +38,7 @@ import {
   engineSendInteractiveList,
   engineSendMedia,
   engineSendText,
-} from "./meta-send";
+} from "./zapi-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
@@ -86,6 +86,40 @@ export function matchReplyId(
     }
     return null;
   }
+  return null;
+}
+
+function parsePositiveIntegerReply(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+export function matchTextOptionIndex(
+  node: { node_type: string; config: Record<string, unknown> },
+  text: string,
+): string | null {
+  const oneBased = parsePositiveIntegerReply(text);
+  if (!oneBased) return null;
+  const index = oneBased - 1;
+
+  if (node.node_type === "send_buttons") {
+    const cfg = node.config as unknown as SendButtonsNodeConfig;
+    return cfg.buttons?.[index]?.next_node_key ?? null;
+  }
+
+  if (node.node_type === "send_list") {
+    const cfg = node.config as unknown as SendListNodeConfig;
+    let cursor = 0;
+    for (const section of cfg.sections ?? []) {
+      for (const row of section.rows ?? []) {
+        if (cursor === index) return row.next_node_key;
+        cursor++;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -936,6 +970,12 @@ async function handleReplyForActiveRun(
       currentNode.node_type === "send_list")
   ) {
     matched = matchReplyId(currentNode, message.reply_id);
+  } else if (
+    message.kind === "text" &&
+    (currentNode.node_type === "send_buttons" ||
+      currentNode.node_type === "send_list")
+  ) {
+    matched = matchTextOptionIndex(currentNode, message.text);
   } else if (
     message.kind === "text" &&
     currentNode.node_type === "collect_input"

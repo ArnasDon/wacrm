@@ -234,3 +234,17 @@ export function buildSendComponents(
   }
   return out;
 }
+
+/**
+ * Replace {{1}}, {{2}}, ... in a local template body with the given params.
+ * Missing params stay visible instead of being silently blanked.
+ */
+export function interpolateTemplateText(
+  bodyText: string,
+  params: string[],
+): string {
+  return bodyText.replace(/\{\{(\d+)\}\}/g, (match, index) => {
+    const i = Number(index) - 1;
+    return i >= 0 && i < params.length ? params[i] : match;
+  });
+}

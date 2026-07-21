@@ -88,32 +88,32 @@
 
 :root,
 html[data-mode='dark'] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.12 0.014 254);
+  --foreground: oklch(0.985 0.003 255);
+  --card: oklch(0.175 0.014 254);
+  --card-2: oklch(0.21 0.014 254);
+  --card-foreground: oklch(0.985 0.003 255);
+  --popover: oklch(0.19 0.014 254);
+  --popover-foreground: oklch(0.985 0.003 255);
+  --secondary: oklch(0.245 0.014 254);
+  --secondary-foreground: oklch(0.96 0.003 255);
+  --muted: oklch(0.235 0.014 254);
+  --muted-foreground: oklch(0.76 0.012 254);
+  --accent: oklch(0.255 0.018 254);
+  --accent-foreground: oklch(0.985 0.003 255);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: oklch(0.345 0.016 254);
+  --input: oklch(0.36 0.016 254);
+  --chart-2: oklch(0.73 0.12 185);
+  --chart-3: oklch(0.79 0.03 254);
+  --chart-4: oklch(0.84 0.14 125);
+  --chart-5: oklch(0.67 0.02 254);
   --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
+  --sidebar: oklch(0.145 0.015 254);
+  --sidebar-foreground: oklch(0.985 0.003 255);
+  --sidebar-accent: oklch(0.255 0.018 254);
+  --sidebar-accent-foreground: oklch(0.985 0.003 255);
+  --sidebar-border: oklch(0.32 0.016 254);
 }
 
 html[data-mode='light'] {
@@ -241,9 +241,9 @@ html[data-theme='rose'] {
   body {
     @apply bg-background text-foreground;
     background-image:
-      linear-gradient(rgb(53 197 173 / 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(181 220 56 / 0.07) 1px, transparent 1px),
-      linear-gradient(180deg, rgb(247 250 250 / 0.98), rgb(255 255 255 / 0.82));
+      linear-gradient(rgb(53 197 173 / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(181 220 56 / 0.035) 1px, transparent 1px),
+      linear-gradient(180deg, oklch(0.135 0.018 254), oklch(0.115 0.014 254));
     background-size:
       72px 72px,
       72px 72px,
@@ -252,6 +252,13 @@ html[data-theme='rose'] {
   html {
     @apply font-sans;
   }
+
+  html[data-mode='light'] body {
+    background-image:
+      linear-gradient(rgb(53 197 173 / 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(181 220 56 / 0.07) 1px, transparent 1px),
+      linear-gradient(180deg, rgb(247 250 250 / 0.98), rgb(255 255 255 / 0.82));
+  }
 }
 
 @layer components {
@@ -259,22 +266,37 @@ html[data-theme='rose'] {
     background:
       radial-gradient(
         circle at top left,
-        rgb(181 220 56 / 0.14),
+        rgb(181 220 56 / 0.08),
         transparent 28rem
       ),
       radial-gradient(
         circle at top right,
-        rgb(53 197 173 / 0.16),
+        rgb(53 197 173 / 0.1),
         transparent 30rem
       ),
+      linear-gradient(180deg, oklch(0.145 0.018 254) 0%, oklch(0.12 0.014 254) 46%, oklch(0.105 0.012 254) 100%);
+  }
+
+  html[data-mode='light'] .decizyon-shell {
+    background:
+      radial-gradient(circle at top left, rgb(181 220 56 / 0.14), transparent 28rem),
+      radial-gradient(circle at top right, rgb(53 197 173 / 0.16), transparent 30rem),
       linear-gradient(180deg, #f7fafa 0%, #ffffff 46%, #f7fafa 100%);
   }
 
   .decizyon-card {
-    box-shadow: 0 16px 42px rgb(8 32 46 / 0.06);
+    box-shadow: 0 16px 42px rgb(0 0 0 / 0.24);
   }
 
   .decizyon-card:hover {
+    box-shadow: 0 20px 52px rgb(0 0 0 / 0.32);
+  }
+
+  html[data-mode='light'] .decizyon-card {
+    box-shadow: 0 16px 42px rgb(8 32 46 / 0.06);
+  }
+
+  html[data-mode='light'] .decizyon-card:hover {
     box-shadow: 0 20px 52px rgb(8 32 46 / 0.1);
   }
 

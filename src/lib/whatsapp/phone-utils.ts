@@ -8,6 +8,8 @@ export function sanitizePhoneForMeta(phone: string): string {
   return phone.replace(/\D/g, '')
 }
 
+export const sanitizePhone = sanitizePhoneForMeta
+
 /**
  * Normalize phone number by removing all non-digit characters.
  * Used for comparing phone numbers in different formats.

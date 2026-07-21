@@ -26,7 +26,7 @@ vi.mock('@/lib/automations/resources', () => ({ loadAutomationResources: h.loadA
 vi.mock('./agent-context', () => ({ buildAgentContext: h.buildAgentContext }))
 vi.mock('./agent-decide', () => ({ decideAgentAction: h.decideAgentAction }))
 vi.mock('@/lib/pipelines/stage-move', () => ({ moveDealStage: h.moveDealStage }))
-vi.mock('@/lib/automations/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/automations/zapi-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/contacts/tag-write', () => ({
   addContactTagIfAbsent: h.addContactTagIfAbsent,
   removeContactTag: h.removeContactTag,

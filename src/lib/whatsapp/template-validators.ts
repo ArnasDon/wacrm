@@ -1,13 +1,10 @@
 /**
- * Pure validators for message templates, run BEFORE the Meta submit
- * call so a misconfigured template fails at save time (with a specific
- * field-level error) rather than at the Meta API boundary (where the
- * error is a generic 400 + opaque rejection_reason hours later).
+ * Pure validators for local message templates, run before saving so a
+ * misconfigured template fails with a specific field-level error.
  *
  * Every validator throws `Error(message)` — callers catch and surface
- * to the UI. Caps follow Meta's published limits for the Cloud API
- * template surface (v21.0):
- *   https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates
+ * to the UI. Caps stay compatible with WhatsApp's template surface so
+ * existing templates remain portable.
  *
  * Per-element button validation lives here rather than as a JSONB CHECK
  * because Postgres CHECK constraints can't contain subqueries, and
@@ -30,7 +27,7 @@ export const TEMPLATE_LIMITS = {
   maxUrlButtons: 2,
   maxPhoneButtons: 1,
   maxCopyCodeButtons: 1,
-  /** Meta: lowercase a-z, digits, underscore. Up to 512 chars. */
+  /** Lowercase a-z, digits, underscore. Up to 512 chars. */
   nameRegex: /^[a-z0-9_]{1,512}$/,
 } as const;
 
@@ -72,8 +69,8 @@ export function extractVariableIndices(text: string): number[] {
 }
 
 /**
- * Meta requires contiguous, 1-indexed variables. `{{1}} {{3}}` is
- * invalid — it must be `{{1}} {{2}}`.
+ * Variables must be contiguous and 1-indexed. `{{1}} {{3}}` is invalid;
+ * use `{{1}} {{2}}`.
  */
 function assertContiguous(indices: number[], where: string): void {
   for (let i = 0; i < indices.length; i++) {
@@ -107,7 +104,7 @@ export function validateFooter(footerText: string | undefined): void {
     );
   }
   if (extractVariableIndices(footerText).length > 0) {
-    throw new Error('Footer text cannot contain {{N}} variables (Meta rule).');
+    throw new Error('Footer text cannot contain {{N}} variables.');
   }
 }
 
@@ -137,17 +134,16 @@ export function validateHeader(
     const indices = extractVariableIndices(header_content);
     if (indices.length > 1) {
       throw new Error(
-        `Text header supports at most one variable — found ${indices.length} (Meta rule).`,
+        `Text header supports at most one variable — found ${indices.length}.`,
       );
     }
     if (indices.length === 1 && indices[0] !== 1) {
-      throw new Error('Text header variable must be {{1}} (Meta rule).');
+      throw new Error('Text header variable must be {{1}}.');
     }
     return { variableCount: indices.length };
   }
 
-  // image / video / document need either a public URL or a Resumable
-  // Upload handle. Either one — Meta accepts both example forms.
+  // image / video / document need either a public URL or an upload handle.
   if (!header_media_url && !header_handle) {
     throw new Error(
       `${header_type} header requires either a public sample URL (header_media_url) or a Resumable Upload handle (header_handle).`,
@@ -204,8 +200,8 @@ export function validateButtons(buttons: TemplateButton[] | undefined): void {
     );
   }
 
-  // Meta rule: QUICK_REPLY buttons must be contiguous — they can't be
-  // interleaved with CTA buttons. Easiest check: walk the array; once
+  // WhatsApp-compatible rule: QUICK_REPLY buttons must be contiguous.
+  // Easiest check: walk the array; once
   // we leave the QUICK_REPLY block, we must not see another.
   let sawNonQR = false;
   for (const b of buttons) {
@@ -243,18 +239,18 @@ export function validateButtons(buttons: TemplateButton[] | undefined): void {
         const urlVars = extractVariableIndices(b.url);
         if (urlVars.length > 1) {
           throw new Error(
-            `URL button #${i + 1} can have at most one variable (Meta rule).`,
+            `URL button #${i + 1} can have at most one variable.`,
           );
         }
         if (urlVars.length === 1) {
           if (urlVars[0] !== 1) {
             throw new Error(
-              `URL button #${i + 1} variable must be {{1}} (Meta rule).`,
+              `URL button #${i + 1} variable must be {{1}}.`,
             );
           }
           if (!b.example?.trim()) {
             throw new Error(
-              `URL button #${i + 1} uses {{1}} — Meta requires an example value.`,
+              `URL button #${i + 1} uses {{1}} — provide an example value.`,
             );
           }
         }
@@ -279,8 +275,8 @@ export function validateButtons(buttons: TemplateButton[] | undefined): void {
 }
 
 /**
- * Sample values must be supplied 1:1 with the variables in the body
- * (and header, if it has one). Meta uses these for human review.
+ * Sample values, when required by a caller, must be supplied 1:1 with
+ * variables in the body and header.
  */
 export function validateSampleValues(
   payload: TemplatePayload,
@@ -316,7 +312,7 @@ export function validateSampleValues(
 /**
  * Run every validator. Throws on the first failure with a specific,
  * field-level message. Returns the variable counts so callers can
- * reuse them when building the Meta components payload.
+ * reuse them when building previews or provider-specific payloads.
  */
 export function validateTemplatePayload(payload: TemplatePayload): {
   bodyVarCount: number;

@@ -33,6 +33,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "zapi:check": "node scripts/zapi-readiness-check.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",

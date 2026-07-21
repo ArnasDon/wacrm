@@ -24,7 +24,7 @@ import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { MAX_STAGE_CHAIN_DEPTH, getStageChainDepth } from '@/lib/pipelines/stage-chain'
 import { moveDealStage } from '@/lib/pipelines/stage-move'
-import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { engineSendText, engineSendTemplate, engineSendInteractive } from './zapi-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
@@ -369,7 +369,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         contactId: args.contactId,
         text,
       })
-      return `sent via Meta (${whatsapp_message_id})`
+      return `sent via Z-API (${whatsapp_message_id})`
     }
 
     case 'send_buttons':
@@ -389,7 +389,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         contactId: args.contactId,
         payload,
       })
-      return `interactive sent via Meta (${whatsapp_message_id})`
+      return `interactive sent via Z-API (${whatsapp_message_id})`
     }
 
     case 'send_template': {

@@ -77,7 +77,7 @@ function LoginPageInner() {
 
   return (
     <div className="decizyon-shell flex min-h-screen items-center justify-center px-4 py-10">
-      <Card className="decizyon-card border-border w-full max-w-md rounded-lg bg-white/92 backdrop-blur">
+      <Card className="decizyon-card border-border w-full max-w-md rounded-lg bg-card/92 backdrop-blur">
         <CardHeader className="items-center text-center">
           <DecizyonLogo className="mb-3 w-44" priority />
           {inviteToken ? (

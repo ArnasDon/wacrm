@@ -29,7 +29,7 @@ export function MetricCard({
   subtitle,
 }: MetricCardProps) {
   return (
-    <div className="decizyon-card border-border rounded-lg border bg-white/92 p-5 transition-shadow">
+    <div className="decizyon-card border-border rounded-lg border bg-card/92 p-5 transition-shadow">
       <div className="flex items-start justify-between">
         <p className="text-muted-foreground text-sm font-medium">{title}</p>
         <div className="bg-primary/10 text-primary flex h-8 w-8 items-center justify-center rounded-lg">

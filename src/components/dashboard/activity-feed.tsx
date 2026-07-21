@@ -57,7 +57,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
     i === 0 || totalLoaded > PAGE_SIZES[i - 1];
 
   return (
-    <section className="decizyon-card border-border rounded-lg border bg-white/92">
+    <section className="decizyon-card border-border rounded-lg border bg-card/92">
       <header className="border-border flex items-center justify-between border-b px-5 py-4">
         <h2 className="text-foreground text-sm font-semibold">{t('title')}</h2>
         <Link

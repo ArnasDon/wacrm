@@ -28,19 +28,19 @@ const ACTIONS: Action[] = [
     labelKey: 'newDeal',
     href: '/pipelines',
     icon: Briefcase,
-    tint: 'text-[#0B4F59]',
+    tint: 'text-chart-2',
   },
   {
     labelKey: 'newBroadcast',
     href: '/broadcasts/new',
     icon: Radio,
-    tint: 'text-[#B5DC38]',
+    tint: 'text-primary',
   },
   {
     labelKey: 'newAutomation',
     href: '/automations/new',
     icon: Zap,
-    tint: 'text-[#35C5AD]',
+    tint: 'text-chart-2',
   },
 ];
 
@@ -55,7 +55,7 @@ export function QuickActions() {
           <Link
             key={a.href}
             href={a.href}
-            className="decizyon-card group border-border hover:border-primary/40 flex items-center gap-3 rounded-lg border bg-white/92 px-4 py-3 transition-all hover:-translate-y-0.5 hover:bg-white"
+            className="decizyon-card group border-border hover:border-primary/40 flex items-center gap-3 rounded-lg border bg-card/92 px-4 py-3 transition-all hover:-translate-y-0.5 hover:bg-card-2"
           >
             <div
               className={`bg-primary/10 flex h-9 w-9 items-center justify-center rounded-lg ${a.tint}`}

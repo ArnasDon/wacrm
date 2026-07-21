@@ -14,7 +14,7 @@ import {
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
 // `conversation_id` (inbox) or a `contact_id` (Contact detail →
-// find-or-create the conversation). The actual Meta plumbing (validate
+// find-or-create the conversation). The actual Z-API plumbing (validate
 // → send → persist → pause flows) lives in the shared
 // `sendMessageToConversation` core, which the public `/api/v1/messages`
 // endpoint reuses. This route is a thin adapter: resolve the
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 
     // Per-user rate limit. Bucket key is scoped to this route so
     // `/broadcast` has an independent budget.
-    const limit = checkRateLimit(`send:${user.id}`, RATE_LIMITS.send)
+    const limit = await checkRateLimit(`send:${user.id}`, RATE_LIMITS.send)
     if (!limit.success) {
       return rateLimitResponse(limit)
     }
@@ -75,7 +75,6 @@ export async function POST(request: Request) {
       template_language,
       template_params,
       template_message_params,
-      interactive_payload,
       reply_to_message_id,
     } = body
 
@@ -98,7 +97,6 @@ export async function POST(request: Request) {
         contentText: content_text,
         mediaUrl: media_url,
         templateName: template_name,
-        interactivePayload: interactive_payload,
       })
     } catch (err) {
       if (err instanceof SendMessageError) {
@@ -167,8 +165,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Delegate to the shared send core (validates, sends to Meta with
-    // phone-variant retry, persists, pauses active flow runs). Its
+    // Delegate to the shared send core (validates, sends through Z-API,
+    // persists, pauses active flow runs). Its
     // `SendMessageError` carries a machine code + HTTP status; the
     // dashboard maps it to the internal `{ error }` shape.
     try {
@@ -182,7 +180,6 @@ export async function POST(request: Request) {
         templateLanguage: template_language,
         templateParams: template_params,
         templateMessageParams: template_message_params,
-        interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
       })
 

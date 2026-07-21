@@ -51,7 +51,7 @@ export function ConversationsChart({
   }, [data]);
 
   return (
-    <section className="decizyon-card border-border flex h-full flex-col rounded-lg border bg-white/92">
+    <section className="decizyon-card border-border flex h-full flex-col rounded-lg border bg-card/92">
       <header className="border-border flex items-center justify-between border-b px-5 py-4">
         <div>
           <h2 className="text-foreground text-sm font-semibold">

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
-// Tests for the `contact_id` send path (issue #296): sending an approved
+// Tests for the `contact_id` send path (issue #296): sending a local
 // template to a single contact from the Contact detail view. The route must
 // find-or-create the contact's conversation server-side, then run the normal
 // send + persistence path — no inbound message required to bootstrap a thread.
@@ -47,13 +47,27 @@ function makeSupabaseMock() {
             data: {
               id: 'cfg-1',
               account_id: 'acct-1',
-              phone_number_id: 'PNID-1',
-              access_token: 'enc-token',
+              zapi_instance_id: 'inst-1',
+              zapi_instance_token: 'enc-instance-token',
+              zapi_client_token: 'enc-client-token',
             },
             error: null,
           }
         case 'message_templates':
-          return { data: null, error: null }
+          return {
+            data: {
+              id: 'tpl-1',
+              user_id: 'user-1',
+              account_id: 'acct-1',
+              name: 'order_update',
+              language: 'en_US',
+              category: 'Utility',
+              body_text: 'Hello {{1}}, order {{2}} is ready.',
+              status: 'APPROVED',
+              created_at: '2026-01-01T00:00:00.000Z',
+            },
+            error: null,
+          }
         default:
           return { data: null, error: null }
       }
@@ -138,18 +152,18 @@ vi.mock('@/lib/flows/admin-client', () => ({
 }))
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
-  decrypt: vi.fn(() => 'plaintext-token'),
+  decrypt: vi.fn((value: string) =>
+    value === 'enc-client-token' ? 'plaintext-client-token' : 'plaintext-instance-token'
+  ),
   encrypt: vi.fn(() => 'enc-token'),
   isLegacyFormat: vi.fn(() => false),
 }))
 
-const { sendTemplateMessage } = vi.hoisted(() => ({
-  sendTemplateMessage: vi.fn(async () => ({ messageId: 'wamid-1' })),
+const { sendText } = vi.hoisted(() => ({
+  sendText: vi.fn(async () => ({ messageId: 'wamid-1' })),
 }))
-vi.mock('@/lib/whatsapp/meta-api', () => ({
-  sendTemplateMessage,
-  sendTextMessage: vi.fn(),
-  sendMediaMessage: vi.fn(),
+vi.mock('@/lib/whatsapp/zapi-api', () => ({
+  sendText,
 }))
 
 import { POST } from './route'
@@ -180,7 +194,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     createdConversation = null
     contactRow = CONTACT
     supabaseMock = makeSupabaseMock()
-    sendTemplateMessage.mockClear()
+    sendText.mockClear()
   })
 
   afterEach(() => {
@@ -202,15 +216,21 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       contact_id: 'contact-1',
     })
 
-    // The template was sent to the contact's number.
-    expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
-    const args = (sendTemplateMessage.mock.calls[0] as unknown[])[0] as Record<
+    // The local template was rendered to text and sent through Z-API.
+    expect(sendText).toHaveBeenCalledTimes(1)
+    const args = (sendText.mock.calls[0] as unknown[])[0] as Record<
       string,
       unknown
     >
-    // Meta wants the bare E.164 digits — sanitizePhoneForMeta strips the '+'.
-    expect(args.to).toBe('15551234567')
-    expect(args.templateName).toBe('order_update')
+    expect(args).toMatchObject({
+      credentials: {
+        instanceId: 'inst-1',
+        instanceToken: 'plaintext-instance-token',
+        clientToken: 'plaintext-client-token',
+      },
+      phone: '15551234567',
+      text: 'Hello Acme, order #1234 is ready.',
+    })
 
     // The outbound message was persisted under the new conversation.
     expect(messageInserts).toHaveLength(1)
@@ -245,7 +265,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
 
     expect(res.status).toBe(404)
     expect(json.error).toMatch(/contact not found/i)
-    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(sendText).not.toHaveBeenCalled()
   })
 
   it('400s when neither conversation_id nor contact_id is provided', async () => {

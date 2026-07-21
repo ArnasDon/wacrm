@@ -18,7 +18,7 @@ import { useTranslations } from 'next-intl';
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
   const t = useTranslations('Dashboard.pipelineDonut');
   return (
-    <section className="decizyon-card border-border flex h-full flex-col rounded-lg border bg-white/92">
+    <section className="decizyon-card border-border flex h-full flex-col rounded-lg border bg-card/92">
       <header className="border-border border-b px-5 py-4">
         <h2 className="text-foreground text-sm font-semibold">{t('title')}</h2>
         <p className="text-muted-foreground mt-0.5 text-xs">

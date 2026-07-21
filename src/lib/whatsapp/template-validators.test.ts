@@ -192,7 +192,7 @@ describe('validateButtons', () => {
       validateButtons([
         { type: 'URL', text: 'Go', url: 'https://x/{{1}}' },
       ]),
-    ).toThrow(/Meta requires an example/);
+    ).toThrow(/provide an example/);
   });
   it('rejects URL with non-{{1}} variable', () => {
     expect(() =>

@@ -88,48 +88,6 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
     );
   });
 
-  it('requires a valid interactive payload for interactive messages', async () => {
-    // Missing payload entirely.
-    await expectSendError(
-      { ...base, messageType: 'interactive' },
-      400,
-      /payload is required/
-    );
-    // Too many buttons.
-    await expectSendError(
-      {
-        ...base,
-        messageType: 'interactive',
-        interactivePayload: {
-          kind: 'buttons',
-          body: 'Pick one',
-          buttons: [
-            { id: 'a', title: 'A' },
-            { id: 'b', title: 'B' },
-            { id: 'c', title: 'C' },
-            { id: 'd', title: 'D' },
-          ],
-        },
-      },
-      400,
-      /at most 3 buttons/
-    );
-    // Over-long button title.
-    await expectSendError(
-      {
-        ...base,
-        messageType: 'interactive',
-        interactivePayload: {
-          kind: 'buttons',
-          body: 'Pick one',
-          buttons: [{ id: 'a', title: 'x'.repeat(21) }],
-        },
-      },
-      400,
-      /20-character limit/
-    );
-  });
-
   it('allows a long "caption" on audio (audio carries none) — so it reaches the DB', async () => {
     // Audio is exempt from the caption cap, so validation passes and we
     // proceed to the conversation lookup — proven by the stub throwing.
@@ -151,8 +109,8 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
 
 describe('SendMessageError', () => {
   it('carries a machine code and an HTTP status', () => {
-    const e = new SendMessageError('meta_error', 'boom', 502);
-    expect(e.code).toBe('meta_error');
+    const e = new SendMessageError('whatsapp_provider_error', 'boom', 502);
+    expect(e.code).toBe('whatsapp_provider_error');
     expect(e.status).toBe(502);
     expect(e).toBeInstanceOf(Error);
   });

@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
 
 export async function GET(
   request: Request,
@@ -31,10 +29,6 @@ export async function GET(
       )
     }
 
-    // Resolve the caller's account_id — whatsapp_config is one-per-
-    // account post-multi-user, so a teammate fetching media for a
-    // conversation in the shared inbox needs the account's config,
-    // not their personal (non-existent) row.
     const { data: profile } = await supabase
       .from('profiles')
       .select('account_id')
@@ -48,35 +42,27 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // mediaId is the Z-API media URL (URL-encoded in the path)
+    const mediaUrl = decodeURIComponent(mediaId)
 
-    if (configError || !config) {
+    const response = await fetch(mediaUrl, {
+      headers: {
+        Accept: '*/*',
+      },
+    })
+    if (!response.ok) {
       return NextResponse.json(
-        { error: 'WhatsApp not configured' },
-        { status: 400 }
+        { error: `Media provider returned ${response.status}` },
+        { status: 502 }
       )
     }
-
-    const accessToken = decrypt(config.access_token)
-
-    // Get the download URL from Meta
-    const mediaInfo = await getMediaUrl({ mediaId, accessToken })
-
-    // Download the binary data
-    const { buffer, contentType } = await downloadMedia({
-      downloadUrl: mediaInfo.url,
-      accessToken,
-    })
+    const contentType = response.headers.get('content-type')
+    const buffer = await response.arrayBuffer()
 
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type': contentType || mediaInfo.mimeType || 'application/octet-stream',
+        'Content-Type': contentType || 'application/octet-stream',
         'Cache-Control': 'public, max-age=86400',
       },
     })

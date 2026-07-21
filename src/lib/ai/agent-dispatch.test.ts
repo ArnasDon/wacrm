@@ -11,16 +11,13 @@ const h = vi.hoisted(() => ({
   removeContactTag: vi.fn(),
   runAutomationsForTrigger: vi.fn(),
   checkRateLimit: vi.fn(),
+  // Mocks the `claim_ai_reply_slot` RPC (the real atomicity now lives in
+  // the Postgres function body itself — supabase/migrations/
+  // 039_ai_reply_cap_rpc.sql — not in this mock).
+  claimAiReplySlot: vi.fn(),
   state: {
     conversation: null as Record<string, unknown> | null,
     updateCalls: [] as Record<string, unknown>[],
-    // Controls the outcome of the atomic reply-cap claim update
-    // (`.update(...).eq(...).lt(...).select(...).maybeSingle()`).
-    // Defaults to "claim succeeds"; tests can override per-call via
-    // `claimResults` (shifted off for each successive claim attempt) or
-    // fall back to `claimResult` for a single fixed outcome.
-    claimResult: { data: { id: 'conv-1' }, error: null } as { data: Record<string, unknown> | null; error: unknown },
-    claimResults: null as Array<{ data: Record<string, unknown> | null; error: unknown }> | null,
   },
 }))
 
@@ -49,34 +46,15 @@ vi.mock('@/lib/automations/admin-client', () => ({
           }),
           update: (payload: Record<string, unknown>) => {
             h.state.updateCalls.push(payload)
-            // The reply-cap claim chains `.eq().lt().select().maybeSingle()`.
-            // The handoff/other updates just `await` the `.eq(...)` call
-            // directly. Support both shapes off the same `.eq()` return
-            // value: it's a thenable (so a bare `await` resolves it like the
-            // old `{ error: null }` update) that also exposes `.lt()`.
-            return {
-              eq: () => {
-                const chain = {
-                  lt: () => ({
-                    select: () => ({
-                      maybeSingle: () => {
-                        const next = h.state.claimResults?.shift() ?? h.state.claimResult
-                        return Promise.resolve(next)
-                      },
-                    }),
-                  }),
-                  then: (
-                    resolve: (value: { error: null }) => void,
-                    reject?: (reason: unknown) => void,
-                  ) => Promise.resolve({ error: null }).then(resolve, reject),
-                }
-                return chain
-              },
-            }
+            return { eq: () => Promise.resolve({ error: null }) }
           },
         }
       }
       throw new Error(`unexpected table ${table}`)
+    },
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      if (fn === 'claim_ai_reply_slot') return h.claimAiReplySlot(args)
+      throw new Error(`unexpected rpc ${fn}`)
     },
   }),
 }))
@@ -95,10 +73,11 @@ function baseArgs() {
 beforeEach(() => {
   vi.clearAllMocks()
   h.checkRateLimit.mockReturnValue({ success: true })
-  h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false, ai_reply_count: 0 }
+  h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false }
   h.state.updateCalls = []
-  h.state.claimResult = { data: { id: 'conv-1' }, error: null }
-  h.state.claimResults = null
+  // Default: the reply-cap RPC claims successfully. Tests that need the
+  // cap already hit override this per-test.
+  h.claimAiReplySlot.mockResolvedValue({ data: true, error: null })
   h.loadAiConfig.mockResolvedValue({
     accountId: 'acct-1',
     provider: 'openai',
@@ -123,12 +102,13 @@ describe('dispatchInboundToAgent', () => {
   })
 
   it('no-ops when the conversation has auto-reply disabled', async () => {
-    h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: true, ai_reply_count: 0 }
+    h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: true }
     await dispatchInboundToAgent(baseArgs())
     expect(h.decideAgentAction).not.toHaveBeenCalled()
   })
 
   it('sends a reply, tags, and moves the deal on a full decision', async () => {
+    h.claimAiReplySlot.mockResolvedValue({ data: true, error: null })
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'Thanks for reaching out!',
       add_tags: ['tag-1'],
@@ -138,6 +118,7 @@ describe('dispatchInboundToAgent', () => {
       handoff_reason: null,
     })
     await dispatchInboundToAgent(baseArgs())
+    expect(h.claimAiReplySlot).toHaveBeenCalledWith({ conversation_id: 'conv-1', max_replies: 3 })
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Thanks for reaching out!' }),
     )
@@ -162,11 +143,10 @@ describe('dispatchInboundToAgent', () => {
   })
 
   it('forces handoff instead of sending once the reply cap is hit', async () => {
-    h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false, ai_reply_count: 3 }
-    // The conditional claim update's `.lt('ai_reply_count', cap)` finds no
-    // matching row once the count is already at (or past) the cap, so
-    // `maybeSingle()` resolves with no data — same as a lost race.
-    h.state.claimResult = { data: null, error: null }
+    // The RPC's own `WHERE ai_reply_count < max_replies` evaluates false
+    // once the cap is already reached, so it returns false without
+    // incrementing anything.
+    h.claimAiReplySlot.mockResolvedValue({ data: false, error: null })
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'one more reply',
       add_tags: [],
@@ -180,38 +160,21 @@ describe('dispatchInboundToAgent', () => {
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
   })
 
-  it('skips sending when the atomic claim loses a race even though the initial read was under the cap', async () => {
-    // Simulates two concurrent dispatches for the same conversation: both
-    // read `ai_reply_count` under the cap, but only one's conditional
-    // `.lt()` update can match the row. This test represents the loser:
-    // the initial read looked fine, yet the claim still comes back empty
-    // because a concurrent run already pushed the count to the cap.
-    h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false, ai_reply_count: 2 }
-    h.state.claimResult = { data: null, error: null }
-    h.decideAgentAction.mockResolvedValue({
-      reply_text: 'racing reply',
-      add_tags: [],
-      remove_tags: [],
-      move_to_stage_id: null,
-      handoff: false,
-      handoff_reason: null,
-    })
-    await dispatchInboundToAgent(baseArgs())
-    expect(h.engineSendText).not.toHaveBeenCalled()
-    expect(
-      h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached'),
-    ).toBe(true)
-  })
-
-  it('only sends for the first of two concurrent claims when only one slot remains', async () => {
-    // Two concurrent dispatchInboundToAgent calls for the same conversation
-    // where only one more reply slot is available: the first claim's
-    // conditional update matches, the second's does not.
-    h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false, ai_reply_count: 2 }
-    h.state.claimResults = [
-      { data: { id: 'conv-1' }, error: null },
-      { data: null, error: null },
-    ]
+  it('hands off instead of sending when the reply-cap RPC reports the slot already claimed', async () => {
+    // Wiring-correctness only: this asserts that dispatchInboundToAgent
+    // calls the RPC with the right arguments and correctly branches on its
+    // boolean result (true -> send, anything else -> handoff). It does NOT
+    // exercise true concurrency — a JS-level mock can't simulate the
+    // database-level atomicity of a Postgres function racing two real
+    // connections. That guarantee now lives entirely in the
+    // claim_ai_reply_slot function body itself (supabase/migrations/
+    // 039_ai_reply_cap_rpc.sql), where the cap check and the increment
+    // happen inside one server-side UPDATE. Two sequential dispatches here
+    // stand in for "the second call raced against the first and lost":
+    // the mock returns true then false, as claim_ai_reply_slot would for
+    // two real concurrent callers with only one slot of headroom.
+    h.claimAiReplySlot.mockResolvedValueOnce({ data: true, error: null })
+    h.claimAiReplySlot.mockResolvedValueOnce({ data: false, error: null })
     h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'wamid-1' })
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'racing reply',
@@ -221,8 +184,15 @@ describe('dispatchInboundToAgent', () => {
       handoff: false,
       handoff_reason: null,
     })
-    await Promise.all([dispatchInboundToAgent(baseArgs()), dispatchInboundToAgent(baseArgs())])
+
+    await dispatchInboundToAgent(baseArgs())
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.claimAiReplySlot).toHaveBeenCalledTimes(2)
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(
+      h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached'),
+    ).toBe(true)
   })
 
   it('sets ai_autoreply_disabled on explicit handoff', async () => {

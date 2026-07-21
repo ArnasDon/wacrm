@@ -43,7 +43,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 
   const { data: conversation } = await db
     .from('conversations')
-    .select('id, ai_autoreply_disabled, ai_reply_count')
+    .select('id, ai_autoreply_disabled')
     .eq('id', conversationId)
     .maybeSingle()
   if (!conversation || conversation.ai_autoreply_disabled) return
@@ -59,25 +59,24 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
   let handoffReason = decision.handoff_reason
 
   if (decision.reply_text) {
-    const replyCount = (conversation.ai_reply_count as number) ?? 0
-
-    // Atomically claim the next reply slot: the conditional .lt() ensures
-    // the update only takes effect if the cap hasn't already been reached
-    // by a concurrent run for the same conversation (dispatchInboundToAgent
-    // is fire-and-forget and can run concurrently when a customer sends
-    // several messages in quick succession). A read-then-write here would
-    // let two concurrent runs both pass the cap check and both send.
-    const { data: claimed, error: claimError } = await db
-      .from('conversations')
-      .update({ ai_reply_count: replyCount + 1 })
-      .eq('id', conversationId)
-      .lt('ai_reply_count', config.autoReplyMaxPerConversation)
-      .select('id')
-      .maybeSingle()
+    // Atomically claim the next reply slot via the claim_ai_reply_slot
+    // Postgres function (see supabase/migrations/039_ai_reply_cap_rpc.sql).
+    // The cap check (`ai_reply_count < max_replies`) and the increment
+    // (`ai_reply_count = ai_reply_count + 1`, evaluated against the live
+    // row) happen inside a single server-side UPDATE, so Postgres
+    // serializes concurrent callers correctly. dispatchInboundToAgent is
+    // fire-and-forget and can run concurrently for the same conversation
+    // (a customer sending several messages in quick succession) — a
+    // client-computed read-then-write here would let two concurrent runs
+    // both pass the cap check and both send.
+    const { data: claimed, error: claimError } = await db.rpc('claim_ai_reply_slot', {
+      conversation_id: conversationId,
+      max_replies: config.autoReplyMaxPerConversation,
+    })
 
     if (claimError) {
       console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
-    } else if (!claimed) {
+    } else if (claimed !== true) {
       // Either the cap was already reached, or a concurrent run claimed the
       // last slot first. Either way, fall back to handoff instead of sending.
       handoff = true

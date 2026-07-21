@@ -18,15 +18,29 @@ export async function loadAutomationResources(
   const [
     { data: tags, error: tagsError },
     { data: pipelines, error: pipelinesError },
-    { data: stages, error: stagesError },
   ] = await Promise.all([
     supabase.from('tags').select('id, name').eq('account_id', accountId),
     supabase.from('pipelines').select('id, name').eq('account_id', accountId),
-    supabase.from('pipeline_stages').select('id, name, pipeline_id').order('position', { ascending: true }),
   ])
 
   if (tagsError) throw new Error(`Failed to load tags: ${tagsError.message}`)
   if (pipelinesError) throw new Error(`Failed to load pipelines: ${pipelinesError.message}`)
+
+  const pipelineIds = ((pipelines ?? []) as { id: string; name: string }[]).map((p) => p.id)
+
+  // pipeline_stages has no account_id column of its own — it's only isolated via
+  // RLS through the pipeline_id -> pipelines.account_id join. Callers on the
+  // service-role path (e.g. agent-dispatch.ts, which bypasses RLS entirely) must
+  // scope this fetch explicitly to the account's own pipeline ids.
+  const { data: stages, error: stagesError } =
+    pipelineIds.length > 0
+      ? await supabase
+          .from('pipeline_stages')
+          .select('id, name, pipeline_id')
+          .in('pipeline_id', pipelineIds)
+          .order('position', { ascending: true })
+      : { data: [] as { id: string; name: string; pipeline_id: string }[], error: null }
+
   if (stagesError) throw new Error(`Failed to load pipeline_stages: ${stagesError.message}`)
 
   const stagesByPipeline = new Map<string, { id: string; name: string }[]>()

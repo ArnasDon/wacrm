@@ -16,7 +16,17 @@ function fakeSupabase(data: {
         return { select: () => ({ eq: () => Promise.resolve({ data: data.pipelines, error: null }) }) }
       }
       if (table === 'pipeline_stages') {
-        return { select: () => ({ order: () => Promise.resolve({ data: data.stages, error: null }) }) }
+        return {
+          select: () => ({
+            in: (_column: string, pipelineIds: string[]) => ({
+              order: () =>
+                Promise.resolve({
+                  data: data.stages.filter((s) => pipelineIds.includes(s.pipeline_id)),
+                  error: null,
+                }),
+            }),
+          }),
+        }
       }
       throw new Error(`unexpected table ${table}`)
     },
@@ -67,5 +77,63 @@ describe('loadAutomationResources', () => {
     } as unknown as SupabaseClient
 
     await expect(loadAutomationResources(supabase, 'acct-1')).rejects.toThrow('Failed to load tags: connection timeout')
+  })
+
+  it('scopes pipeline_stages to the account\'s own pipeline ids and throws on stage-fetch failure', async () => {
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'tags') {
+          return { select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }
+        }
+        if (table === 'pipelines') {
+          return {
+            select: () => ({
+              eq: () => Promise.resolve({ data: [{ id: 'p1', name: 'Sales' }], error: null }),
+            }),
+          }
+        }
+        if (table === 'pipeline_stages') {
+          return {
+            select: () => ({
+              in: () => ({
+                order: () => Promise.resolve({ data: null, error: { message: 'db unavailable' } }),
+              }),
+            }),
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+    } as unknown as SupabaseClient
+
+    await expect(loadAutomationResources(supabase, 'acct-1')).rejects.toThrow(
+      'Failed to load pipeline_stages: db unavailable',
+    )
+  })
+
+  it('does not query pipeline_stages when the account has no pipelines', async () => {
+    let stagesQueried = false
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'tags') {
+          return { select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }
+        }
+        if (table === 'pipelines') {
+          return { select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }
+        }
+        if (table === 'pipeline_stages') {
+          stagesQueried = true
+          return {
+            select: () => ({
+              in: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+            }),
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+    } as unknown as SupabaseClient
+
+    const result = await loadAutomationResources(supabase, 'acct-1')
+    expect(result).toEqual({ tags: [], pipelines: [] })
+    expect(stagesQueried).toBe(false)
   })
 })

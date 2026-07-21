@@ -61,7 +61,8 @@ function sanitize(raw: RawDecision, resources: AutomationResources): AgentDecisi
   const validTagIds = new Set(resources.tags.map((t) => t.id))
   const validStageIds = new Set(resources.pipelines.flatMap((p) => p.stages.map((s) => s.id)))
 
-  const reply_text = typeof raw.reply_text === 'string' && raw.reply_text.trim() ? raw.reply_text.trim() : null
+  const reply_text =
+    typeof raw.reply_text === 'string' && raw.reply_text.trim() ? raw.reply_text.trim().slice(0, 4096) : null
   const add_tags = Array.isArray(raw.add_tags)
     ? raw.add_tags.filter((id): id is string => typeof id === 'string' && validTagIds.has(id))
     : []

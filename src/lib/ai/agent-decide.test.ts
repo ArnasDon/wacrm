@@ -81,6 +81,24 @@ describe('decideAgentAction', () => {
     expect(result.handoff_reason).toBe('needs a human')
   })
 
+  it('caps an oversized reply_text at 4096 chars (WhatsApp text message limit)', async () => {
+    const oversized = 'x'.repeat(5000)
+    h.generateJson.mockResolvedValue({
+      data: {
+        reply_text: oversized,
+        add_tags: [],
+        remove_tags: [],
+        move_to_stage_id: null,
+        handoff: false,
+        handoff_reason: null,
+      },
+      usage: null,
+    })
+    const result = await decideAgentAction({ config: config(), resources: RESOURCES, context: CONTEXT })
+    expect(result.reply_text).toHaveLength(4096)
+    expect(result.reply_text).toBe(oversized.slice(0, 4096))
+  })
+
   it('defaults malformed fields to safe empty values rather than throwing', async () => {
     h.generateJson.mockResolvedValue({ data: { reply_text: 123, add_tags: 'not-an-array' }, usage: null })
     const result = await decideAgentAction({ config: config(), resources: RESOURCES, context: CONTEXT })

@@ -139,7 +139,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
   }
 
   if (handoff) {
-    await db
+    const { error } = await db
       .from('conversations')
       .update({
         ai_autoreply_disabled: true,
@@ -147,5 +147,6 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
         ...(config.handoffAgentId ? { assigned_agent_id: config.handoffAgentId } : {}),
       })
       .eq('id', conversationId)
+    if (error) console.error('[ai-agent] handoff update failed:', error)
   }
 }

@@ -15,11 +15,19 @@ export async function loadAutomationResources(
   supabase: SupabaseClient,
   accountId: string,
 ): Promise<AutomationResources> {
-  const [{ data: tags }, { data: pipelines }, { data: stages }] = await Promise.all([
+  const [
+    { data: tags, error: tagsError },
+    { data: pipelines, error: pipelinesError },
+    { data: stages, error: stagesError },
+  ] = await Promise.all([
     supabase.from('tags').select('id, name').eq('account_id', accountId),
     supabase.from('pipelines').select('id, name').eq('account_id', accountId),
     supabase.from('pipeline_stages').select('id, name, pipeline_id').order('position', { ascending: true }),
   ])
+
+  if (tagsError) throw new Error(`Failed to load tags: ${tagsError.message}`)
+  if (pipelinesError) throw new Error(`Failed to load pipelines: ${pipelinesError.message}`)
+  if (stagesError) throw new Error(`Failed to load pipeline_stages: ${stagesError.message}`)
 
   const stagesByPipeline = new Map<string, { id: string; name: string }[]>()
   for (const s of (stages ?? []) as { id: string; name: string; pipeline_id: string }[]) {

@@ -45,4 +45,27 @@ describe('loadAutomationResources', () => {
     const result = await loadAutomationResources(supabase, 'acct-1')
     expect(result).toEqual({ tags: [], pipelines: [] })
   })
+
+  it('throws when Supabase returns an error instead of silently returning empty', async () => {
+    const supabase = {
+      from: (table: string) => {
+        if (table === 'tags') {
+          return {
+            select: () => ({
+              eq: () => Promise.resolve({ data: null, error: { message: 'connection timeout' } }),
+            }),
+          }
+        }
+        if (table === 'pipelines') {
+          return { select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }
+        }
+        if (table === 'pipeline_stages') {
+          return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+    } as unknown as SupabaseClient
+
+    await expect(loadAutomationResources(supabase, 'acct-1')).rejects.toThrow('Failed to load tags: connection timeout')
+  })
 })

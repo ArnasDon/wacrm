@@ -5,7 +5,7 @@ import { buildAgentContext } from './agent-context'
 import { decideAgentAction } from './agent-decide'
 import { moveDealStage } from '@/lib/pipelines/stage-move'
 import { engineSendText } from '@/lib/automations/meta-send'
-import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
+import { addContactTagIfAbsent, removeContactTag } from '@/lib/contacts/tag-write'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -60,7 +60,26 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 
   if (decision.reply_text) {
     const replyCount = (conversation.ai_reply_count as number) ?? 0
-    if (replyCount >= config.autoReplyMaxPerConversation) {
+
+    // Atomically claim the next reply slot: the conditional .lt() ensures
+    // the update only takes effect if the cap hasn't already been reached
+    // by a concurrent run for the same conversation (dispatchInboundToAgent
+    // is fire-and-forget and can run concurrently when a customer sends
+    // several messages in quick succession). A read-then-write here would
+    // let two concurrent runs both pass the cap check and both send.
+    const { data: claimed, error: claimError } = await db
+      .from('conversations')
+      .update({ ai_reply_count: replyCount + 1 })
+      .eq('id', conversationId)
+      .lt('ai_reply_count', config.autoReplyMaxPerConversation)
+      .select('id')
+      .maybeSingle()
+
+    if (claimError) {
+      console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
+    } else if (!claimed) {
+      // Either the cap was already reached, or a concurrent run claimed the
+      // last slot first. Either way, fall back to handoff instead of sending.
       handoff = true
       handoffReason = handoffReason ?? 'auto-reply cap reached'
     } else {
@@ -87,16 +106,18 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       } catch (err) {
         console.error('[ai-agent] failed to flag ai-generated message:', err)
       }
-      await db
-        .from('conversations')
-        .update({ ai_reply_count: replyCount + 1 })
-        .eq('id', conversationId)
     }
   }
 
   for (const tagId of decision.add_tags) {
     await addContactTagIfAbsent(db, { accountId, contactId, tagId }).catch((err) =>
       console.error('[ai-agent] add_tag failed:', err),
+    )
+  }
+
+  for (const tagId of decision.remove_tags) {
+    await removeContactTag(db, { accountId, contactId, tagId }).catch((err) =>
+      console.error('[ai-agent] remove_tag failed:', err),
     )
   }
 

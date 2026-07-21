@@ -154,7 +154,9 @@ describe('generateAutomationFromPrompt', () => {
         steps: [
           // self-reference: parent_index equals its own raw index
           { step_type: 'add_tag', step_config: { tag_id: 'tag-vip' }, branch: 'yes', parent_index: 0 },
-          // forward reference: parent_index points at a later step
+          // self-reference: parent_index equals its own raw index (index 1
+          // pointing at 1) — not a genuine forward reference to a later
+          // step, since there is no step at index 2 or beyond here.
           { step_type: 'add_tag', step_config: { tag_id: 'tag-vip' }, branch: 'yes', parent_index: 1 },
         ],
       },
@@ -166,5 +168,90 @@ describe('generateAutomationFromPrompt', () => {
     expect(result.automation.steps[0].branch).toBeNull()
     expect(result.automation.steps[1].parent_index).toBeNull()
     expect(result.automation.steps[1].branch).toBeNull()
+  })
+
+  it('never accepts a genuine forward reference: parent_index pointing at a later step in the array', async () => {
+    h.generateJson.mockResolvedValue({
+      data: {
+        kind: 'draft',
+        name: 'x',
+        trigger_type: 'new_message_received',
+        trigger_config: {},
+        steps: [
+          // raw index 0: points at raw index 1, which comes later in the
+          // array — a genuine forward reference, not a self-reference.
+          { step_type: 'add_tag', step_config: { tag_id: 'tag-vip' }, branch: 'yes', parent_index: 1 },
+          { step_type: 'condition', step_config: { subject: 'tag_presence', operand: 'tag-vip' } },
+        ],
+      },
+      usage: null,
+    })
+    const result = await generateAutomationFromPrompt({ config: config(), history: [], resources: RESOURCES })
+    if (result.kind !== 'draft') throw new Error('expected a draft')
+    expect(result.automation.steps[0].step_type).toBe('add_tag')
+    expect(result.automation.steps[0].parent_index).toBeNull()
+    expect(result.automation.steps[0].branch).toBeNull()
+  })
+
+  it('blanks a hallucinated tag_id in a tag_added trigger_config instead of passing it through', async () => {
+    h.generateJson.mockResolvedValue({
+      data: {
+        kind: 'draft',
+        name: 'x',
+        trigger_type: 'tag_added',
+        trigger_config: { tag_id: 'made-up-tag' },
+        steps: [],
+      },
+      usage: null,
+    })
+    const result = await generateAutomationFromPrompt({ config: config(), history: [], resources: RESOURCES })
+    if (result.kind !== 'draft') throw new Error('expected a draft')
+    expect(result.automation.trigger_config.tag_id).toBe('')
+  })
+
+  it('blanks a hallucinated pipeline_id in a deal_stage_changed trigger_config instead of passing it through', async () => {
+    h.generateJson.mockResolvedValue({
+      data: {
+        kind: 'draft',
+        name: 'x',
+        trigger_type: 'deal_stage_changed',
+        trigger_config: { pipeline_id: 'made-up-pipeline' },
+        steps: [],
+      },
+      usage: null,
+    })
+    const result = await generateAutomationFromPrompt({ config: config(), history: [], resources: RESOURCES })
+    if (result.kind !== 'draft') throw new Error('expected a draft')
+    expect(result.automation.trigger_config.pipeline_id).toBe('')
+  })
+
+  it('passes through a real tag_id/pipeline_id in trigger_config unchanged', async () => {
+    h.generateJson.mockResolvedValue({
+      data: {
+        kind: 'draft',
+        name: 'x',
+        trigger_type: 'tag_added',
+        trigger_config: { tag_id: 'tag-vip' },
+        steps: [],
+      },
+      usage: null,
+    })
+    const result = await generateAutomationFromPrompt({ config: config(), history: [], resources: RESOURCES })
+    if (result.kind !== 'draft') throw new Error('expected a draft')
+    expect(result.automation.trigger_config.tag_id).toBe('tag-vip')
+
+    h.generateJson.mockResolvedValue({
+      data: {
+        kind: 'draft',
+        name: 'x',
+        trigger_type: 'deal_stage_changed',
+        trigger_config: { pipeline_id: 'pipe-1' },
+        steps: [],
+      },
+      usage: null,
+    })
+    const result2 = await generateAutomationFromPrompt({ config: config(), history: [], resources: RESOURCES })
+    if (result2.kind !== 'draft') throw new Error('expected a draft')
+    expect(result2.automation.trigger_config.pipeline_id).toBe('pipe-1')
   })
 })

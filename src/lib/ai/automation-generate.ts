@@ -133,14 +133,28 @@ function sanitize(raw: RawTurn, resources: AutomationResources): CopilotTurn {
   const trigger_type = ALLOWED_TRIGGERS.includes(raw.trigger_type as AutomationTriggerType)
     ? (raw.trigger_type as AutomationTriggerType)
     : 'new_message_received'
-  const trigger_config =
+  const trigger_config: Record<string, unknown> =
     raw.trigger_config && typeof raw.trigger_config === 'object' && !Array.isArray(raw.trigger_config)
-      ? raw.trigger_config
+      ? { ...raw.trigger_config }
       : {}
 
   const validTagIds = new Set(resources.tags.map((t) => t.id))
   const validPipelineIds = new Set(resources.pipelines.map((p) => p.id))
   const validStageIds = new Set(resources.pipelines.flatMap((p) => p.stages.map((s) => s.id)))
+
+  // Ids can also hide inside trigger_config, not just step_config — a
+  // hallucinated tag_id/pipeline_id here is just as untrustworthy as one
+  // inside a step, so it gets the same blank-if-invalid treatment.
+  if (trigger_type === 'tag_added' && trigger_config.tag_id && !validTagIds.has(trigger_config.tag_id as string)) {
+    trigger_config.tag_id = ''
+  }
+  if (
+    trigger_type === 'deal_stage_changed' &&
+    trigger_config.pipeline_id &&
+    !validPipelineIds.has(trigger_config.pipeline_id as string)
+  ) {
+    trigger_config.pipeline_id = ''
+  }
 
   const rawSteps = Array.isArray(raw.steps) ? raw.steps : []
 

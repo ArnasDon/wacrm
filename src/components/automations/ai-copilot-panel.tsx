@@ -17,19 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { triggerMeta } from "@/lib/automations/trigger-meta"
-
-interface GeneratedAutomation {
-  name: string
-  description: string
-  trigger_type: string
-  trigger_config: Record<string, unknown>
-  steps: { step_type: string; step_config: Record<string, unknown>; branch: 'yes' | 'no' | null; parent_index: number | null }[]
-}
-
-interface ValidationIssue {
-  path: string
-  message: string
-}
+import type { GeneratedAutomation } from "@/lib/ai/automation-generate"
+import type { ValidationIssue } from "@/lib/automations/validate"
 
 type Turn =
   | { kind: 'question'; text: string }
@@ -76,7 +65,10 @@ export function AiCopilotPanel({ open, onOpenChange }: { open: boolean; onOpenCh
         setHistory((h) => [...h, { role: 'assistant', text: data.text }])
         setLastTurn({ kind: 'question', text: data.text })
       } else {
-        setLastTurn({ kind: 'draft', automation: data.automation, issues: data.issues })
+        const automation: GeneratedAutomation = data.automation
+        const summary = `Draft: "${automation.name}" — trigger: ${automation.trigger_type}, ${automation.steps.length} step(s)`
+        setHistory((h) => [...h, { role: 'assistant', text: summary }])
+        setLastTurn({ kind: 'draft', automation, issues: data.issues })
       }
     } catch {
       toast.error(t("networkError"))
@@ -164,9 +156,9 @@ export function AiCopilotPanel({ open, onOpenChange }: { open: boolean; onOpenCh
             placeholder={t("placeholder")}
             maxLength={2000}
             className="bg-muted text-foreground"
-            onKeyDown={(e) => { if (e.key === 'Enter' && !sending) handleSend() }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !sending && !creating) handleSend() }}
           />
-          <Button onClick={handleSend} disabled={sending || !input.trim()}>
+          <Button onClick={handleSend} disabled={sending || creating || !input.trim()}>
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>

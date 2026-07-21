@@ -7,6 +7,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { dispatchInboundToAgent } from '@/lib/ai/agent-dispatch'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -794,6 +795,18 @@ async function processMessage(
       },
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
+
+  // AI agent dispatch — fire-and-forget, same contract as the automation
+  // dispatch above. Runs regardless of flowConsumed: the agent reasons
+  // over the raw conversation, it doesn't compete with the flow runner's
+  // menu-navigation semantics. dispatchInboundToAgent never throws (it
+  // wraps its own body in try/catch), so `void` here is safe.
+  void dispatchInboundToAgent({
+    accountId,
+    userId: configOwnerUserId,
+    contactId: contactRecord.id,
+    conversationId: conversation.id,
+  })
 
   // message.received webhook (public API). Awaited — not fire-and-forget
   // — because we're inside the route's `after()` block, which only keeps

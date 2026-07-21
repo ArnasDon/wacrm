@@ -758,6 +758,7 @@
       "title": "Automations",
       "subtitle": "Build workflows that react to WhatsApp® events automatically.",
       "create": "Create Automation",
+      "askAi": "Ask AI",
       "retry": "Retry",
       "templatesTitle": "Quick-start templates",
       "emptyTitle": "No automations yet",
@@ -817,6 +818,7 @@
         "assign_conversation": "Assign Conversation",
         "update_contact_field": "Update Contact Field",
         "create_deal": "Create Deal",
+        "move_deal_stage": "Move Deal Stage",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -854,6 +856,10 @@
         "time_based": {
           "label": "Time-Based",
           "hint": "On a recurring schedule"
+        },
+        "deal_stage_changed": {
+          "label": "Deal Stage Changed",
+          "hint": "When a deal's pipeline stage changes (manual, automation, or AI)"
         }
       },
       "trigger": "Trigger",
@@ -943,7 +949,8 @@
           "tag_presence": "Tag presence",
           "contact_field": "Contact field",
           "message_content": "Message content",
-          "time_of_day": "Time of day"
+          "time_of_day": "Time of day",
+          "deal_stage": "Deal stage"
         },
         "operandLabel": "Operand",
         "placeholderTime": "HH:mm-HH:mm",
@@ -959,6 +966,22 @@
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
+    },
+    "copilot": {
+      "title": "Build an automation with AI",
+      "description": "Describe what you want in plain language. The assistant may ask a follow-up before showing you a draft to review.",
+      "placeholder": "e.g. When a customer messages the word \"refund\", tag them as VIP and assign the conversation to Maria.",
+      "you": "You",
+      "assistant": "Assistant",
+      "tryAgain": "Try again",
+      "createDraft": "Create draft",
+      "draftCreated": "Draft created — review it below",
+      "createError": "Couldn't create the draft automation",
+      "genericError": "Couldn't generate a response",
+      "networkError": "Network error — please try again",
+      "triggerLabel": "Trigger",
+      "branch": "branch",
+      "needsReview": "{count} {count, plural, =1 {field needs} other {fields need}} your input before this can be activated"
     }
   },
   "Flows": {
@@ -1599,6 +1622,27 @@
       "saving": "Saving...",
       "saveFailed": "Failed to save default currency",
       "saveSuccess": "Default currency updated"
+    },
+    "agent": {
+      "title": "AI agent",
+      "description": "Let an AI agent reply to WhatsApp customers, classify conversations, and move deals through your pipeline.",
+      "providerTitle": "Provider",
+      "providerDescription": "Bring your own OpenAI or Anthropic key. Stored encrypted — no per-seat AI fee.",
+      "providerLabel": "Provider",
+      "modelLabel": "Model",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "sk-...",
+      "apiKeyStoredPlaceholder": "Key saved — leave blank to keep it",
+      "behaviorTitle": "Behavior",
+      "agentEnabledLabel": "Reply to customers",
+      "agentEnabledHint": "The agent drafts and sends replies automatically, up to the cap below",
+      "pipelineMoveEnabledLabel": "Move pipeline stages",
+      "pipelineMoveEnabledHint": "Let the agent move a conversation's linked deal to a different stage",
+      "replyCapLabel": "Max auto-replies per conversation",
+      "save": "Save",
+      "saved": "AI agent settings saved",
+      "saveError": "Couldn't save AI agent settings",
+      "adminOnlyHint": "Only account admins can change AI agent settings."
     }
   }
 }

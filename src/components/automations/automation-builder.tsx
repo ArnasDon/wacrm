@@ -31,6 +31,7 @@ import {
   Loader2,
   ArrowDown,
   ArrowUp,
+  ArrowRightLeft,
   MousePointerClick,
   List,
 } from "lucide-react"
@@ -107,6 +108,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   assign_conversation: { label: "assign_conversation", icon: UserCheck, border: "border-l-primary" },
   update_contact_field: { label: "update_contact_field", icon: PencilLine, border: "border-l-primary" },
   create_deal: { label: "create_deal", icon: Briefcase, border: "border-l-primary" },
+  move_deal_stage: { label: "move_deal_stage", icon: ArrowRightLeft, border: "border-l-primary" },
   wait: { label: "wait", icon: Hourglass, border: "border-l-border" },
   condition: { label: "condition", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "send_webhook", icon: Webhook, border: "border-l-primary" },
@@ -123,6 +125,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "assign_conversation",
   "update_contact_field",
   "create_deal",
+  "move_deal_stage",
   "wait",
   "condition",
   "send_webhook",
@@ -138,6 +141,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "conversation_assigned" },
   { value: "tag_added" },
   { value: "time_based" },
+  { value: "deal_stage_changed" },
 ]
 
 function cid(): string {
@@ -180,6 +184,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { field: "name", value: "" }
     case "create_deal":
       return { pipeline_id: "", stage_id: "", title: "", value: 0 }
+    case "move_deal_stage":
+      return { pipeline_id: "", stage_id: "" }
     case "wait":
       return { amount: 1, unit: "hours" }
     case "condition":
@@ -538,6 +544,48 @@ function DealPipelineFields({
         </select>
       </FieldBlock>
     </>
+  )
+}
+
+/** Stage picker for conditions that only care about a deal's current stage. */
+function StageOnlyField({
+  stageId,
+  onChange,
+  t,
+}: {
+  stageId: string
+  onChange: (stageId: string) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { pipelines, stages } = useResources()
+
+  if (pipelines.length === 0) {
+    return (
+      <FieldBlock label={t("pipelines.stageIdLabel")}>
+        <Input value={stageId} onChange={(e) => onChange(e.target.value)} className="bg-muted text-foreground" />
+      </FieldBlock>
+    )
+  }
+
+  const selectedStage = stages.find((s) => s.id === stageId)
+  return (
+    <FieldBlock label={t("pipelines.stageLabel")}>
+      <select value={stageId} onChange={(e) => onChange(e.target.value)} className={SELECT_CLASS}>
+        <option value="">{t("pipelines.selectStage")}</option>
+        {pipelines.map((p) => (
+          <optgroup key={p.id} label={p.name}>
+            {stages
+              .filter((s) => s.pipeline_id === p.id)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+          </optgroup>
+        ))}
+        {stageId && !selectedStage && <option value={stageId}>{t("pipelines.unknownStage", { id: stageId })}</option>}
+      </select>
+    </FieldBlock>
   )
 }
 
@@ -1348,6 +1396,15 @@ function StepEditor({
           )}
         </>
       )
+    case "move_deal_stage":
+      return (
+        <DealPipelineFields
+          pipelineId={(cfg.pipeline_id as string) ?? ""}
+          stageId={(cfg.stage_id as string) ?? ""}
+          onChange={(patch) => set(patch)}
+          t={t}
+        />
+      )
     case "update_contact_field":
       return (
         <>
@@ -1432,24 +1489,33 @@ function StepEditor({
               <option value="contact_field">{t("config.subjects.contact_field")}</option>
               <option value="message_content">{t("config.subjects.message_content")}</option>
               <option value="time_of_day">{t("config.subjects.time_of_day")}</option>
+              <option value="deal_stage">{t("config.subjects.deal_stage")}</option>
             </select>
           </FieldBlock>
-          <FieldBlock label={t("config.operandLabel")}>
-            <Input
-              placeholder={
-                cfg.subject === "time_of_day"
-                  ? t("config.placeholderTime")
-                  : cfg.subject === "contact_field"
-                  ? t("config.placeholderContact")
-                  : cfg.subject === "tag_presence"
-                  ? t("config.placeholderTag")
-                  : ""
-              }
-              value={(cfg.operand as string) ?? ""}
-              onChange={(e) => set({ operand: e.target.value })}
-              className="bg-muted text-foreground"
+          {cfg.subject === "deal_stage" ? (
+            <StageOnlyField
+              stageId={(cfg.operand as string) ?? ""}
+              onChange={(stageId) => set({ operand: stageId })}
+              t={t}
             />
-          </FieldBlock>
+          ) : (
+            <FieldBlock label={t("config.operandLabel")}>
+              <Input
+                placeholder={
+                  cfg.subject === "time_of_day"
+                    ? t("config.placeholderTime")
+                    : cfg.subject === "contact_field"
+                    ? t("config.placeholderContact")
+                    : cfg.subject === "tag_presence"
+                    ? t("config.placeholderTag")
+                    : ""
+                }
+                value={(cfg.operand as string) ?? ""}
+                onChange={(e) => set({ operand: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+          )}
           {(cfg.subject === "contact_field" || cfg.subject === "message_content") && (
             <FieldBlock label="Value">
               <Input

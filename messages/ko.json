@@ -758,6 +758,7 @@
       "title": "자동화",
       "subtitle": "WhatsApp® 이벤트에 자동으로 반응하는 워크플로를 만드세요.",
       "create": "자동화 만들기",
+      "askAi": "AI에게 요청",
       "retry": "다시 시도",
       "templatesTitle": "빠른 시작 템플릿",
       "emptyTitle": "아직 자동화가 없습니다",
@@ -817,6 +818,7 @@
         "assign_conversation": "대화 담당자 지정",
         "update_contact_field": "연락처 필드 업데이트",
         "create_deal": "딜 생성",
+        "move_deal_stage": "딜 단계 이동",
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
@@ -854,6 +856,10 @@
         "time_based": {
           "label": "시간 기반",
           "hint": "반복 일정에 따라"
+        },
+        "deal_stage_changed": {
+          "label": "딜 단계 변경됨",
+          "hint": "딜의 파이프라인 단계가 변경될 때 (수동, 자동화 또는 AI)"
         }
       },
       "trigger": "트리거",
@@ -943,7 +949,8 @@
           "tag_presence": "태그 존재 여부",
           "contact_field": "연락처 필드",
           "message_content": "메시지 내용",
-          "time_of_day": "시간대"
+          "time_of_day": "시간대",
+          "deal_stage": "딜 단계"
         },
         "operandLabel": "피연산자",
         "placeholderTime": "HH:mm-HH:mm",
@@ -959,6 +966,22 @@
         "matchExact": "정확히 일치",
         "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
       }
+    },
+    "copilot": {
+      "title": "AI로 자동화 만들기",
+      "description": "원하는 내용을 자연어로 설명해 주세요. 어시스턴트가 초안을 보여주기 전에 추가 질문을 할 수 있습니다.",
+      "placeholder": "예: 고객이 \"환불\"이라는 단어로 메시지를 보내면 VIP 태그를 추가하고 대화를 Maria에게 배정",
+      "you": "나",
+      "assistant": "어시스턴트",
+      "tryAgain": "다시 시도",
+      "createDraft": "초안 만들기",
+      "draftCreated": "초안이 생성되었습니다 — 아래에서 검토하세요",
+      "createError": "초안 자동화를 만들지 못했습니다",
+      "genericError": "응답을 생성하지 못했습니다",
+      "networkError": "네트워크 오류 — 다시 시도해 주세요",
+      "triggerLabel": "트리거",
+      "branch": "분기",
+      "needsReview": "활성화하기 전에 {count}개 필드에 입력이 필요합니다"
     }
   },
   "Flows": {
@@ -1599,6 +1622,27 @@
       "saving": "저장 중...",
       "saveFailed": "기본 통화를 저장하지 못했습니다",
       "saveSuccess": "기본 통화가 업데이트되었습니다"
+    },
+    "agent": {
+      "title": "AI 에이전트",
+      "description": "AI 에이전트가 WhatsApp 고객에게 답장하고, 대화를 분류하고, 딜을 파이프라인 단계로 이동시키도록 합니다.",
+      "providerTitle": "제공자",
+      "providerDescription": "직접 발급받은 OpenAI 또는 Anthropic 키를 사용하세요. 암호화되어 저장되며 별도의 좌석당 AI 요금이 없습니다.",
+      "providerLabel": "제공자",
+      "modelLabel": "모델",
+      "apiKeyLabel": "API 키",
+      "apiKeyPlaceholder": "sk-...",
+      "apiKeyStoredPlaceholder": "키가 저장되었습니다 — 유지하려면 비워두세요",
+      "behaviorTitle": "동작",
+      "agentEnabledLabel": "고객에게 답장",
+      "agentEnabledHint": "에이전트가 아래 한도까지 자동으로 답장을 작성하고 전송합니다",
+      "pipelineMoveEnabledLabel": "파이프라인 단계 이동",
+      "pipelineMoveEnabledHint": "에이전트가 대화에 연결된 딜을 다른 단계로 이동할 수 있도록 허용합니다",
+      "replyCapLabel": "대화당 최대 자동 답장 수",
+      "save": "저장",
+      "saved": "AI 에이전트 설정이 저장되었습니다",
+      "saveError": "AI 에이전트 설정을 저장하지 못했습니다",
+      "adminOnlyHint": "AI 에이전트 설정은 계정 관리자만 변경할 수 있습니다."
     }
   }
 }

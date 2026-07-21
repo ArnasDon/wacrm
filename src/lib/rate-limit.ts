@@ -153,6 +153,10 @@ export const RATE_LIMITS = {
    *  comfortably covers a busy inbox without runaway BYOK spend from a
    *  misbehaving upstream retry storm. */
   aiAgentDecision: { limit: 30, windowMs: 60_000 },
+  /** Automation copilot turn. Human-paced ("type a message, wait for a
+   *  reply"), keyed per user. 20/min matches the existing click-paced
+   *  AI-action buckets' shape in this file. */
+  aiCopilot: { limit: 20, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

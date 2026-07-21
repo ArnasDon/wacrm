@@ -758,6 +758,7 @@
       "title": "Automations",
       "subtitle": "Build workflows that react to WhatsApp® events automatically.",
       "create": "Create Automation",
+      "askAi": "Ask AI",
       "retry": "Retry",
       "templatesTitle": "Quick-start templates",
       "emptyTitle": "No automations yet",
@@ -965,6 +966,22 @@
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
+    },
+    "copilot": {
+      "title": "Build an automation with AI",
+      "description": "Describe what you want in plain language. The assistant may ask a follow-up before showing you a draft to review.",
+      "placeholder": "e.g. When a customer messages the word \"refund\", tag them as VIP and assign the conversation to Maria.",
+      "you": "You",
+      "assistant": "Assistant",
+      "tryAgain": "Try again",
+      "createDraft": "Create draft",
+      "draftCreated": "Draft created — review it below",
+      "createError": "Couldn't create the draft automation",
+      "genericError": "Couldn't generate a response",
+      "networkError": "Network error — please try again",
+      "triggerLabel": "Trigger",
+      "branch": "branch",
+      "needsReview": "{count} {count, plural, =1 {field needs} other {fields need}} your input before this can be activated"
     }
   },
   "Flows": {

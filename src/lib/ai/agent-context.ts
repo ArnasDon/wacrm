@@ -19,12 +19,14 @@ export async function buildAgentContext(
   supabase: SupabaseClient,
   args: { accountId: string; conversationId: string },
 ): Promise<AgentContext> {
-  const { data: messageRows } = await supabase
+  const { data: messageRows, error: messagesError } = await supabase
     .from('messages')
     .select('sender_type, content_text, content_type')
     .eq('conversation_id', args.conversationId)
     .order('created_at', { ascending: false })
     .limit(MESSAGE_HISTORY_LIMIT)
+
+  if (messagesError) throw new Error(`Failed to load messages: ${messagesError.message}`)
 
   const messages = ((messageRows ?? []) as { sender_type: string; content_text: string | null; content_type: string }[])
     .filter((m) => m.content_type === 'text' && m.content_text)
@@ -34,12 +36,14 @@ export async function buildAgentContext(
       text: m.content_text as string,
     }))
 
-  const { data: deal } = await supabase
+  const { data: deal, error: dealError } = await supabase
     .from('deals')
     .select('id, stage_id, pipeline_id')
     .eq('account_id', args.accountId)
     .eq('conversation_id', args.conversationId)
     .maybeSingle()
+
+  if (dealError) throw new Error(`Failed to load deals: ${dealError.message}`)
 
   return {
     messages,

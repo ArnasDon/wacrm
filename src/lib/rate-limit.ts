@@ -148,6 +148,11 @@ export const RATE_LIMITS = {
    *  instance deploy needs the Redis swap described at the top of
    *  this file (the per-key call sites don't change). */
   publicApi: { limit: 120, windowMs: 60_000 },
+  /** AI agent decision per inbound WhatsApp message. Keyed per account
+   *  (not per user — the webhook has no authenticated user). 30/min
+   *  comfortably covers a busy inbox without runaway BYOK spend from a
+   *  misbehaving upstream retry storm. */
+  aiAgentDecision: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

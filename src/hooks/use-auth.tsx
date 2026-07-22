@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, locale",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -199,6 +199,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? data.account_role
           : null;
 
+        if (data.locale) {
+          const cookieMatch = document.cookie.match(/(?:^|; )NEXT_LOCALE=([^;]*)/);
+          const currentCookie = cookieMatch ? cookieMatch[1] : null;
+          if (currentCookie !== data.locale) {
+            document.cookie = `NEXT_LOCALE=${data.locale}; path=/; max-age=31536000; SameSite=Lax`;
+          }
+        }
+
         setProfile({
           id: data.id,
           full_name: data.full_name,
@@ -212,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          locale: data.locale ?? 'en',
         });
         setAccount(accountRow);
       } else {

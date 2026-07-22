@@ -15,6 +15,13 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { SettingsPanelHead } from './settings-panel-head';
 
@@ -39,6 +46,7 @@ export function ProfileForm() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [locale, setLocale] = useState('en');
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -50,6 +58,7 @@ export function ProfileForm() {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
+    setLocale(profile.locale ?? 'en');
   }, [profile]);
 
   // Cleanup object URLs to avoid leaks.
@@ -139,12 +148,13 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
+      // Persist name + avatar + locale to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           full_name: trimmedName,
           avatar_url: nextAvatarUrl,
+          locale: locale,
         })
         .eq('user_id', user.id);
       if (updateError) {
@@ -172,6 +182,11 @@ export function ProfileForm() {
         emailSent = true;
       }
 
+      const localeChanged = locale !== (profile.locale ?? 'en');
+      if (localeChanged) {
+        document.cookie = `NEXT_LOCALE=${locale}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+
       setEmailChangePending(emailSent);
       setPendingAvatar(null);
       setPreviewUrl(null);
@@ -183,6 +198,10 @@ export function ProfileForm() {
           ? t('profileSavedEmailCheck')
           : t('profileSaved'),
       );
+
+      if (localeChanged) {
+        window.location.reload();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       toast.error(msg);
@@ -195,6 +214,7 @@ export function ProfileForm() {
     !!profile &&
     (fullName.trim() !== (profile.full_name ?? '') ||
       email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+      locale !== (profile.locale ?? 'en') ||
       pendingAvatar !== null ||
       removeAvatar);
 
@@ -302,7 +322,22 @@ export function ProfileForm() {
                 </span>
               </p>
             )}
+          {/* Language Selector */}
+          <div className="space-y-2">
+            <Label htmlFor="profile-locale" className="text-foreground">
+              {t('language')}
+            </Label>
+            <Select value={locale} onValueChange={setLocale} disabled={saving}>
+              <SelectTrigger id="profile-locale" className="w-full bg-background border-border text-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="es">Español (Latinoamérica)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
 
           {/* Read-only block */}
           <div className="rounded-lg border border-border bg-muted p-4">

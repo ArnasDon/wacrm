@@ -1520,6 +1520,7 @@
       "photoHint": "PNG, JPG, WebP, or GIF. Up to 2 MB.",
       "displayName": "Display name",
       "email": "Email",
+      "language": "Language",
       "emailChangeHint": "Check the inbox for <bold>{oldEmail}</bold> and <bold>{newEmail}</bold> — both need to confirm before the change takes effect.",
       "accountDetails": "Account details",
       "role": "Role",

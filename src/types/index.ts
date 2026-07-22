@@ -46,6 +46,7 @@ export interface Profile {
    */
   account_role?: AccountRole;
   created_at: string;
+  locale?: string;
 }
 
 // ============================================================

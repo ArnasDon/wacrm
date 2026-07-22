@@ -322,6 +322,7 @@ export function ProfileForm() {
                 </span>
               </p>
             )}
+          </div>
           {/* Language Selector */}
           <div className="space-y-2">
             <Label htmlFor="profile-locale" className="text-foreground">

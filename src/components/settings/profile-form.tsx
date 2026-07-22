@@ -328,7 +328,7 @@ export function ProfileForm() {
             <Label htmlFor="profile-locale" className="text-foreground">
               {t('language')}
             </Label>
-            <Select value={locale} onValueChange={setLocale} disabled={saving}>
+            <Select value={locale} onValueChange={(val) => setLocale(val ?? 'en')} disabled={saving}>
               <SelectTrigger id="profile-locale" className="w-full bg-background border-border text-foreground">
                 <SelectValue />
               </SelectTrigger>

@@ -52,11 +52,11 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.22.0",
     "next": "16.2.6",
-    "next-intl": "^4.13.1",
+    "next-intl": "^4.13.2",
     "opus-recorder": "^8.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.8.1",
+    "recharts": "^3.9.2",
     "shadcn": "^4.11.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
@@ -69,11 +69,11 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "prettier": "^3.9.1",
+    "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "postcss": "^8.5.10",

@@ -358,6 +358,7 @@
         "notes": "Notes",
         "custom": "Custom Fields",
         "deals": "Deals",
+        "tags": "Tags",
       "noTags": "No tags",
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note..."
@@ -1500,6 +1501,7 @@
       "appearance": "Appearance",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
+      "quick-replies": "Quick replies",
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",

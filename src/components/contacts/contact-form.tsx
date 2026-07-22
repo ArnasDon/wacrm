@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
@@ -179,20 +180,16 @@ export function ContactForm({
 
       // Sync tags
       if (contactId) {
-        await supabase
-          .from('contact_tags')
-          .delete()
-          .eq('contact_id', contactId);
+        const existingTagIds = new Set(contactTags.map((tag) => tag.tag_id));
+        const desiredTagIds = new Set(selectedTagIds);
+        const toRemove = [...existingTagIds].filter((id) => !desiredTagIds.has(id));
+        const toAdd = [...desiredTagIds].filter((id) => !existingTagIds.has(id));
 
-        if (selectedTagIds.length > 0) {
-          const tagRows = selectedTagIds.map((tag_id) => ({
-            contact_id: contactId!,
-            tag_id,
-          }));
-          const { error: tagError } = await supabase
-            .from('contact_tags')
-            .insert(tagRows);
-          if (tagError) throw tagError;
+        for (const tagId of toRemove) {
+          await deleteContactTag(contactId, tagId);
+        }
+        for (const tagId of toAdd) {
+          await addContactTag(contactId, tagId);
         }
       }
 

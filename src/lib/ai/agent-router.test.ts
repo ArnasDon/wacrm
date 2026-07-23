@@ -40,6 +40,11 @@ describe('routeAgentRole', () => {
     await expect(routeAgentRole({ config, message: 'hello' })).resolves.toBe('triage')
   })
 
+  it('falls back to triage for non-object coordinator JSON', async () => {
+    h.generateJson.mockResolvedValue({ data: null, usage: null })
+    await expect(routeAgentRole({ config, message: 'hello' })).resolves.toBe('triage')
+  })
+
   it('propagates provider failures from the coordinator request', async () => {
     h.generateJson.mockRejectedValue(new Error('provider unavailable'))
 

@@ -16,5 +16,6 @@ export async function routeAgentRole(args: { config: AiConfig; message: string }
 
   const userPrompt = `Customer message:\n${args.message}\n\nReturn {"role":"support|sales|retention|triage"}.`
   const { data } = await generateJson<RawRoute>({ config: args.config, systemPrompt, userPrompt })
-  return ROUTABLE_ROLES.includes(data.role as AgentRole) ? (data.role as AgentRole) : 'triage'
+  const role = data && typeof data === 'object' ? data.role : null
+  return ROUTABLE_ROLES.includes(role as AgentRole) ? (role as AgentRole) : 'triage'
 }

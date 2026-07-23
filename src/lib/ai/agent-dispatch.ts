@@ -199,17 +199,12 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
         max_replies: config.autoReplyMaxPerConversation,
       })
 
-      if (claimError) {
-        console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
-        await logTool({
-          toolName: 'send_message',
-          arguments: toolArguments,
-          status: 'failed',
-          error: errorMessage(claimError),
-        })
-      } else if (claimed !== true) {
+      if (claimError || claimed !== true) {
+        const reason = claimError ? 'reply-cap check failed' : 'auto-reply cap reached'
         handoff = true
-        handoffReason = handoffReason ?? 'auto-reply cap reached'
+        handoffReason = handoffReason ?? reason
+        if (claimError) console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
+
         const { error: disableError } = await disableAutoreply(handoffReason, null)
         if (disableError) {
           console.error('[ai-agent] reply-cap safety update failed:', disableError)
@@ -224,13 +219,17 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
             status: 'failed',
             error: errorMessage(disableError),
           })
+          throw new Error(`Failed to disable autoreply after reply-cap failure: ${errorMessage(disableError)}`)
         }
+
         await logTool({
           toolName: 'send_message',
           arguments: toolArguments,
-          status: 'skipped',
-          result: { reason: 'auto-reply cap reached' },
+          status: claimError ? 'failed' : 'skipped',
+          ...(claimError ? { error: errorMessage(claimError) } : { result: { reason } }),
         })
+        await completeRun({ status: 'completed' })
+        return
       } else {
         try {
           const sent = await engineSendText({
@@ -444,5 +443,8 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 }
 
 function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
   return error instanceof Error ? error.message : String(error)
 }

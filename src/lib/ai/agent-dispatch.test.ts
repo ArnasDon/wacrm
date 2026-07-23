@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
     conversationSelectFilters: [] as Array<Array<[string, unknown]>>,
     updateCalls: [] as Record<string, unknown>[],
     updateFilters: [] as Array<Array<[string, unknown]>>,
+    updateError: null as { message: string } | null,
   },
 }))
 
@@ -92,7 +93,9 @@ vi.mock('@/lib/automations/admin-client', () => ({
                 filters.push([column, value])
                 return query
               },
-              error: null,
+              get error() {
+                return h.state.updateError
+              },
             }
             return query
           },
@@ -129,6 +132,7 @@ beforeEach(() => {
   h.state.conversationSelectFilters = []
   h.state.updateCalls = []
   h.state.updateFilters = []
+  h.state.updateError = null
   // Default: the reply-cap RPC claims successfully. Tests that need the
   // cap already hit override this per-test.
   h.claimAiReplySlot.mockResolvedValue({ data: true, error: null })
@@ -426,7 +430,7 @@ describe('dispatchInboundToAgent', () => {
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
   })
 
-  it('disables autoreply immediately on reply cap even if later specialist actions fail', async () => {
+  it('disables autoreply immediately on reply cap before later specialist actions can run', async () => {
     h.routeAgentRole.mockResolvedValue('sales')
     h.loadAgentDefinitions.mockResolvedValue([
       {
@@ -447,7 +451,6 @@ describe('dispatchInboundToAgent', () => {
     })
     h.attachKnowledgeToAgentContext.mockImplementation(async (_db, context) => context)
     h.claimAiReplySlot.mockResolvedValue({ data: false, error: null })
-    h.moveDealStage.mockRejectedValue(new Error('stage move failed'))
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'one more reply',
       add_tags: [],
@@ -469,10 +472,69 @@ describe('dispatchInboundToAgent', () => {
       ['id', 'conv-1'],
       ['account_id', 'acct-1'],
     ])
-    expect(h.moveDealStage).toHaveBeenCalled()
+    expect(h.moveDealStage).not.toHaveBeenCalled()
     expect(h.completeAiRun).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: 'failed', error: 'stage move failed' }),
+      expect.objectContaining({ status: 'completed' }),
+    )
+  })
+
+  it('fails closed by disabling autoreply when the reply-cap RPC errors', async () => {
+    h.claimAiReplySlot.mockResolvedValue({ data: null, error: { message: 'rpc unavailable' } })
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: 'one more reply',
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: null,
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updateCalls).toContainEqual({
+      ai_autoreply_disabled: true,
+      ai_handoff_summary: 'reply-cap check failed',
+    })
+    expect(h.completeAiRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'completed' }),
+    )
+  })
+
+  it('stops specialist execution if reply-cap safety persistence fails', async () => {
+    h.claimAiReplySlot.mockResolvedValue({ data: false, error: null })
+    h.state.updateError = { message: 'update failed' }
+    h.buildAgentContext.mockResolvedValue({
+      messages: [{ role: 'customer', text: 'Can I get pricing?' }],
+      dealId: 'deal-1',
+      currentStageId: 'stage-1',
+      currentPipelineId: 'pipeline-1',
+      knowledge: [],
+    })
+    h.attachKnowledgeToAgentContext.mockImplementation(async (_db, context) => context)
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: 'one more reply',
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: 'stage-2',
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.moveDealStage).not.toHaveBeenCalled()
+    expect(h.completeAiRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Failed to disable autoreply after reply-cap failure: update failed',
+      }),
     )
   })
 

@@ -70,6 +70,13 @@ export function WhatsAppConfig() {
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
+  // Transport selector. 'meta' = official Cloud API; 'evolution' =
+  // unofficial WhatsApp-Web bridge (Evolution API). Evolution reuses
+  // `accessToken` above as the instance apikey.
+  const [apiType, setApiType] = useState<'meta' | 'evolution'>('meta');
+  const [apiUrl, setApiUrl] = useState('');
+  const [instanceName, setInstanceName] = useState('');
+
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
   // Meta will silently drop every inbound event — that's the
@@ -91,7 +98,9 @@ export function WhatsAppConfig() {
 
   const webhookUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}/api/whatsapp/webhook`
+      ? `${window.location.origin}/api/whatsapp/${
+          apiType === 'evolution' ? 'evolution-webhook' : 'webhook'
+        }`
       : '';
 
   const fetchConfig = useCallback(async (acctId: string) => {
@@ -121,6 +130,9 @@ export function WhatsAppConfig() {
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        setApiType(data.api_type === 'evolution' ? 'evolution' : 'meta');
+        setApiUrl(data.api_url || '');
+        setInstanceName(data.instance_name || '');
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -129,12 +141,24 @@ export function WhatsAppConfig() {
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        setApiType('meta');
+        setApiUrl('');
+        setInstanceName('');
       }
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
 
-      // Then verify health via the API (decrypts token + pings Meta)
-      if (data) {
+      // Evolution rows can't be health-checked through the Meta GET path
+      // (it pings graph.facebook.com with a null phone_number_id). Trust
+      // the stored status, set at save time by the connection-state probe.
+      if (data && data.api_type === 'evolution') {
+        setConnectionStatus(
+          data.status === 'connected' ? 'connected' : 'disconnected'
+        );
+        setResetReason(null);
+        setStatusMessage('');
+      } else if (data) {
+        // Then verify health via the API (decrypts token + pings Meta)
         try {
           const res = await fetch('/api/whatsapp/config', { method: 'GET' });
           const payload = await res.json();
@@ -183,6 +207,9 @@ export function WhatsAppConfig() {
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleSave() {
+    if (apiType === 'evolution') {
+      return handleSaveEvolution();
+    }
     if (!phoneNumberId.trim()) {
       toast.error('Phone Number ID is required');
       return;
@@ -271,6 +298,56 @@ export function WhatsAppConfig() {
       if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
+      toast.error('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveEvolution() {
+    if (!apiUrl.trim() || !instanceName.trim()) {
+      toast.error(t('evoUrlInstanceRequired'));
+      return;
+    }
+    // First save needs the apikey; on update we can reuse the stored one.
+    if (!config && (!accessToken.trim() || !tokenEdited)) {
+      toast.error(t('evoApiKeyRequired'));
+      return;
+    }
+    try {
+      setSaving(true);
+      const payload: Record<string, unknown> = {
+        api_type: 'evolution',
+        api_url: apiUrl.trim(),
+        instance_name: instanceName.trim(),
+      };
+      // Only send the apikey when the user actually typed one — otherwise
+      // the server reuses the stored (encrypted) value.
+      if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
+        payload.access_token = accessToken.trim();
+      }
+
+      const res = await fetch('/api/whatsapp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to save configuration');
+        return;
+      }
+
+      if (data.connected) {
+        toast.success(t('evoConnected'));
+      } else {
+        toast.success(t('evoSavedNotConnected'), { duration: 9000 });
+      }
+
+      if (accountId) await fetchConfig(accountId);
+    } catch (err) {
+      console.error('Evolution save error:', err);
       toast.error('Failed to save configuration');
     } finally {
       setSaving(false);
@@ -563,6 +640,42 @@ export function WhatsAppConfig() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Transport selector: official Meta vs unofficial Evolution */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('apiTypeLabel')}</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setApiType('meta')}
+                  className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                    apiType === 'meta'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t('apiTypeMeta')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApiType('evolution')}
+                  className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                    apiType === 'evolution'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t('apiTypeEvolution')}
+                </button>
+              </div>
+              {apiType === 'evolution' && (
+                <p className="text-xs text-amber-500/90 leading-relaxed">
+                  {t('evoWarning')}
+                </p>
+              )}
+            </div>
+
+            {apiType === 'meta' && (
+            <>
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('phoneNumberId')}</Label>
               <Input
@@ -650,6 +763,66 @@ export function WhatsAppConfig() {
                 <span dangerouslySetInnerHTML={{ __html: t('pinHint') }} />
               </p>
             </div>
+            </>
+            )}
+
+            {apiType === 'evolution' && (
+            <>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('evoServerUrl')}</Label>
+              <Input
+                placeholder="http://localhost:8080"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">{t('evoServerUrlHint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('evoInstanceName')}</Label>
+              <Input
+                placeholder="pablo_crm"
+                value={instanceName}
+                onChange={(e) => setInstanceName(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">{t('evoInstanceNameHint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('evoApiKey')}</Label>
+              <div className="relative">
+                <Input
+                  type={showToken ? 'text' : 'password'}
+                  placeholder={t('evoApiKeyPlaceholder')}
+                  value={accessToken}
+                  onChange={(e) => {
+                    setAccessToken(e.target.value);
+                    setTokenEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (accessToken === MASKED_TOKEN) {
+                      setAccessToken('');
+                      setTokenEdited(true);
+                    }
+                  }}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+              {config && !tokenEdited && (
+                <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+              )}
+            </div>
+            </>
+            )}
           </CardContent>
         </Card>
 

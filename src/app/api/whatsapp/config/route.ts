@@ -158,6 +158,175 @@ export async function GET() {
 }
 
 /**
+ * Best-effort probe of an Evolution instance's connection state.
+ * GET {apiUrl}/instance/connectionState/{instance} → { instance: { state } }.
+ * `state === 'open'` means the phone is linked and messages will flow.
+ * Any network/API failure returns false — we still save the row so the
+ * user can fix the URL/instance and retry without re-entering the apikey.
+ */
+async function probeEvolutionConnection(
+  apiUrl: string,
+  instanceName: string,
+  apiKey: string
+): Promise<boolean> {
+  try {
+    const url = `${apiUrl.replace(/\/+$/, '')}/instance/connectionState/${encodeURIComponent(
+      instanceName
+    )}`
+    const res = await fetch(url, {
+      headers: { apikey: apiKey },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    return data?.instance?.state === 'open'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Save/update an Evolution (unofficial) WhatsApp config. Called from the
+ * POST handler when `api_type === 'evolution'`. Returns the same
+ * NextResponse envelope shape the Meta path uses.
+ */
+async function saveEvolutionConfig(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  accountId: string,
+  userId: string,
+  body: {
+    api_url?: unknown
+    instance_name?: unknown
+    access_token?: unknown
+  }
+) {
+  const apiUrl = typeof body.api_url === 'string' ? body.api_url.trim() : ''
+  const instanceName =
+    typeof body.instance_name === 'string' ? body.instance_name.trim() : ''
+  const rawApiKey =
+    typeof body.access_token === 'string' ? body.access_token.trim() : ''
+
+  if (!apiUrl || !instanceName) {
+    return NextResponse.json(
+      { error: 'Server URL and instance name are required.' },
+      { status: 400 }
+    )
+  }
+  try {
+    const u = new URL(apiUrl)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad')
+  } catch {
+    return NextResponse.json(
+      { error: 'Server URL must be a valid http(s) URL.' },
+      { status: 400 }
+    )
+  }
+
+  // Reject if another account already claimed this instance name — the
+  // UNIQUE index (migration 037) would trip anyway, but a friendly 409
+  // beats a 500. Mirrors the Meta phone_number_id claim check.
+  const { data: claimed } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('instance_name', instanceName)
+    .neq('account_id', accountId)
+    .maybeSingle()
+  if (claimed) {
+    return NextResponse.json(
+      { error: 'That instance name is already linked to another account.' },
+      { status: 409 }
+    )
+  }
+
+  // Existing row (if any) so we can reuse the stored apikey when the user
+  // didn't re-enter it (the client sends a masked value on load).
+  const { data: existing } = await supabase
+    .from('whatsapp_config')
+    .select('id, access_token')
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  const MASKED = '••••••••••••••••'
+  let apiKeyPlain = ''
+  if (rawApiKey && rawApiKey !== MASKED) {
+    apiKeyPlain = rawApiKey
+  } else if (existing?.access_token) {
+    try {
+      apiKeyPlain = decrypt(existing.access_token)
+    } catch {
+      apiKeyPlain = ''
+    }
+  }
+  if (!apiKeyPlain) {
+    return NextResponse.json(
+      { error: 'Instance API key is required.' },
+      { status: 400 }
+    )
+  }
+
+  let encryptedApiKey: string
+  try {
+    encryptedApiKey = encrypt(apiKeyPlain)
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'Failed to encrypt the API key. Check that ENCRYPTION_KEY is a valid 64-character hex string.',
+      },
+      { status: 500 }
+    )
+  }
+
+  const connected = await probeEvolutionConnection(apiUrl, instanceName, apiKeyPlain)
+
+  const row = {
+    api_type: 'evolution',
+    api_url: apiUrl,
+    instance_name: instanceName,
+    access_token: encryptedApiKey,
+    // Evolution rows carry no Meta coordinates.
+    phone_number_id: null,
+    waba_id: null,
+    verify_token: null,
+    status: connected ? 'connected' : 'disconnected',
+    connected_at: connected ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (existing) {
+    const { error } = await supabase
+      .from('whatsapp_config')
+      .update(row)
+      .eq('account_id', accountId)
+    if (error) {
+      console.error('Error updating evolution config:', error)
+      return NextResponse.json(
+        { error: 'Failed to update configuration' },
+        { status: 500 }
+      )
+    }
+  } else {
+    const { error } = await supabase
+      .from('whatsapp_config')
+      .insert({ account_id: accountId, user_id: userId, ...row })
+    if (error) {
+      console.error('Error inserting evolution config:', error)
+      return NextResponse.json(
+        { error: 'Failed to save configuration' },
+        { status: 500 }
+      )
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    saved: true,
+    api_type: 'evolution',
+    connected,
+  })
+}
+
+/**
  * POST /api/whatsapp/config
  *
  * Saves or updates the WhatsApp config for the authenticated user.
@@ -186,6 +355,15 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+
+    // ── Evolution API (unofficial) branch ──────────────────────────
+    // A separate save path: no Meta verification, registration, or
+    // phone_number_id claim. Validates the Evolution coordinates,
+    // encrypts the instance apikey into access_token, best-effort pings
+    // the instance's connection state, and upserts the row.
+    if (body.api_type === 'evolution') {
+      return saveEvolutionConfig(supabase, accountId, user.id, body)
+    }
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(

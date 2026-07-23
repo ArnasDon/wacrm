@@ -30,6 +30,11 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import {
+  sendEvolutionText,
+  sendEvolutionMedia,
+  type EvolutionMediaKind,
+} from '@/lib/whatsapp/evolution-api';
+import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
@@ -329,7 +334,48 @@ export async function sendMessageToConversation(
     templateRow = data ?? null;
   }
 
+  const isEvolution = config.api_type === 'evolution';
+
   const attempt = async (phone: string): Promise<string> => {
+    // Evolution (unofficial WhatsApp Web) transport. Templates and
+    // interactive messages are Meta-Cloud concepts with no reliable
+    // Evolution equivalent — reject them clearly instead of silently
+    // dropping the send. Text + media go through the Evolution client.
+    if (isEvolution) {
+      if (messageType === 'template') {
+        throw new SendMessageError(
+          'unsupported_for_evolution',
+          'Templates are a Meta official-API feature and are not available on the Evolution (unofficial) transport.',
+          400
+        );
+      }
+      if (messageType === 'interactive') {
+        throw new SendMessageError(
+          'unsupported_for_evolution',
+          'Interactive button/list messages are not supported on the Evolution (unofficial) transport.',
+          400
+        );
+      }
+      const evoBase = {
+        apiUrl: config.api_url as string,
+        instanceName: config.instance_name as string,
+        apiKey: accessToken,
+        to: phone,
+      };
+      if (isMediaKind) {
+        const result = await sendEvolutionMedia({
+          ...evoBase,
+          kind: messageType as EvolutionMediaKind,
+          link: mediaUrl!,
+          caption: contentText || undefined,
+          filename: filename || undefined,
+        });
+        return result.messageId;
+      }
+      const result = await sendEvolutionText({ ...evoBase, text: contentText! });
+      return result.messageId;
+    }
+
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,

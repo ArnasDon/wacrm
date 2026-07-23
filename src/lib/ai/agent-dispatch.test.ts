@@ -186,7 +186,11 @@ describe('dispatchInboundToAgent', () => {
       }),
       message: 'Can I get a refund?',
     })
-    expect(h.buildAgentContext).toHaveBeenCalledWith(expect.anything(), {
+    expect(h.buildAgentContext).toHaveBeenNthCalledWith(1, expect.anything(), {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+    })
+    expect(h.buildAgentContext).toHaveBeenNthCalledWith(2, expect.anything(), {
       accountId: 'acct-1',
       conversationId: 'conv-1',
       knowledge: {
@@ -232,6 +236,55 @@ describe('dispatchInboundToAgent', () => {
     })
     expect(h.addContactTagIfAbsent).toHaveBeenCalled()
     expect(h.moveDealStage).not.toHaveBeenCalled() // no linked deal in buildAgentContext mock above
+  })
+
+  it('uses the latest customer message when an agent message is the final context entry', async () => {
+    const customerMessage = 'I need help with my invoice'
+    const outboundMessage = 'Your invoice has been sent'
+    h.buildAgentContext.mockResolvedValue({
+      messages: [
+        { role: 'customer', text: customerMessage },
+        { role: 'agent', text: outboundMessage },
+      ],
+      dealId: null,
+      currentStageId: null,
+      currentPipelineId: null,
+      knowledge: [],
+    })
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: null,
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: null,
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.buildAgentContext).toHaveBeenNthCalledWith(2, expect.anything(), {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      knowledge: {
+        enabled: true,
+        query: customerMessage,
+        embedding: null,
+      },
+    })
+    expect(h.routeAgentRole).toHaveBeenCalledWith({
+      config: expect.anything(),
+      message: customerMessage,
+    })
+    expect(h.logAiRetrievalEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ query: customerMessage })
+    )
+    expect(h.routeAgentRole).not.toHaveBeenCalledWith(expect.objectContaining({ message: outboundMessage }))
+    expect(h.logAiRetrievalEvent).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ query: outboundMessage })
+    )
   })
 
   it('removes tags listed in decision.remove_tags', async () => {

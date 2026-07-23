@@ -68,7 +68,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
   try {
     const { data: conversation } = await db
       .from('conversations')
-      .select('id, ai_autoreply_disabled, last_message_text')
+      .select('id, ai_autoreply_disabled')
       .eq('id', conversationId)
       .maybeSingle()
     if (!conversation || conversation.ai_autoreply_disabled) {
@@ -76,27 +76,32 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       return
     }
 
-    const [resources, context] = await Promise.all([
+    const [resources, initialContext] = await Promise.all([
       loadAutomationResources(db, accountId),
-      buildAgentContext(db, {
-        accountId,
-        conversationId,
-        knowledge: {
-          enabled: true,
-          query: typeof conversation.last_message_text === 'string' ? conversation.last_message_text : '',
-          embedding: null,
-        },
-      }),
+      buildAgentContext(db, { accountId, conversationId }),
     ])
 
-    const latestMessage = context.messages.at(-1)?.text ?? ''
-    const agentRole = await routeAgentRole({ config, message: latestMessage })
+    const latestCustomerMessage = [...initialContext.messages]
+      .reverse()
+      .find((message) => message.role === 'customer')?.text ?? ''
+
+    const context = await buildAgentContext(db, {
+      accountId,
+      conversationId,
+      knowledge: {
+        enabled: true,
+        query: latestCustomerMessage,
+        embedding: null,
+      },
+    })
+
+    const agentRole = await routeAgentRole({ config, message: latestCustomerMessage })
 
     try {
       await logAiRetrievalEvent(db, {
         accountId,
         runId,
-        query: latestMessage,
+        query: latestCustomerMessage,
         retrievalMode: context.knowledge.some((knowledge) => knowledge.mode === 'semantic') ? 'hybrid' : 'fts',
         chunkIds: context.knowledge.map((knowledge) => knowledge.chunkId),
         scores: context.knowledge.map((knowledge) => ({

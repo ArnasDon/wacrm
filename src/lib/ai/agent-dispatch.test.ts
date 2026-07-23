@@ -11,6 +11,11 @@ const h = vi.hoisted(() => ({
   removeContactTag: vi.fn(),
   runAutomationsForTrigger: vi.fn(),
   checkRateLimit: vi.fn(),
+  createAiRun: vi.fn(),
+  completeAiRun: vi.fn(),
+  logAiRetrievalEvent: vi.fn(),
+  logAiToolCall: vi.fn(),
+  routeAgentRole: vi.fn(),
   // Mocks the `claim_ai_reply_slot` RPC (the real atomicity now lives in
   // the Postgres function body itself — supabase/migrations/
   // 039_ai_reply_cap_rpc.sql — not in this mock).
@@ -22,27 +27,44 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/ai/config', () => ({ loadAiConfig: h.loadAiConfig }))
-vi.mock('@/lib/automations/resources', () => ({ loadAutomationResources: h.loadAutomationResources }))
+vi.mock('@/lib/automations/resources', () => ({
+  loadAutomationResources: h.loadAutomationResources,
+}))
 vi.mock('./agent-context', () => ({ buildAgentContext: h.buildAgentContext }))
 vi.mock('./agent-decide', () => ({ decideAgentAction: h.decideAgentAction }))
-vi.mock('@/lib/pipelines/stage-move', () => ({ moveDealStage: h.moveDealStage }))
-vi.mock('@/lib/automations/zapi-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/pipelines/stage-move', () => ({
+  moveDealStage: h.moveDealStage,
+}))
+vi.mock('@/lib/automations/zapi-send', () => ({
+  engineSendText: h.engineSendText,
+}))
 vi.mock('@/lib/contacts/tag-write', () => ({
   addContactTagIfAbsent: h.addContactTagIfAbsent,
   removeContactTag: h.removeContactTag,
 }))
-vi.mock('@/lib/automations/engine', () => ({ runAutomationsForTrigger: h.runAutomationsForTrigger }))
+vi.mock('@/lib/automations/engine', () => ({
+  runAutomationsForTrigger: h.runAutomationsForTrigger,
+}))
 vi.mock('@/lib/rate-limit', () => ({
   checkRateLimit: h.checkRateLimit,
   RATE_LIMITS: { aiAgentDecision: { limit: 30, windowMs: 60_000 } },
 }))
+vi.mock('./run-log', () => ({
+  createAiRun: h.createAiRun,
+  completeAiRun: h.completeAiRun,
+  logAiRetrievalEvent: h.logAiRetrievalEvent,
+  logAiToolCall: h.logAiToolCall,
+}))
+vi.mock('./agent-router', () => ({ routeAgentRole: h.routeAgentRole }))
 vi.mock('@/lib/automations/admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
       if (table === 'conversations') {
         return {
           select: () => ({
-            eq: () => ({ maybeSingle: () => Promise.resolve({ data: h.state.conversation, error: null }) }),
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: h.state.conversation, error: null }),
+            }),
           }),
           update: (payload: Record<string, unknown>) => {
             h.state.updateCalls.push(payload)
@@ -73,7 +95,11 @@ function baseArgs() {
 beforeEach(() => {
   vi.clearAllMocks()
   h.checkRateLimit.mockReturnValue({ success: true })
-  h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: false }
+  h.state.conversation = {
+    id: 'conv-1',
+    ai_autoreply_disabled: false,
+    last_message_text: 'Can I get a refund?',
+  }
   h.state.updateCalls = []
   // Default: the reply-cap RPC claims successfully. Tests that need the
   // cap already hit override this per-test.
@@ -89,9 +115,29 @@ beforeEach(() => {
     handoffAgentId: null,
   })
   h.loadAutomationResources.mockResolvedValue({ tags: [], pipelines: [] })
-  h.buildAgentContext.mockResolvedValue({ messages: [], dealId: null, currentStageId: null, currentPipelineId: null })
+  h.buildAgentContext.mockResolvedValue({
+    messages: [{ role: 'customer', text: 'Can I get a refund?' }],
+    dealId: null,
+    currentStageId: null,
+    currentPipelineId: null,
+    knowledge: [
+      {
+        chunkId: 'c1',
+        documentId: 'd1',
+        content: 'Refunds within 7 days',
+        score: 0.8,
+        mode: 'fts',
+      },
+    ],
+  })
   h.addContactTagIfAbsent.mockResolvedValue(true)
   h.removeContactTag.mockResolvedValue(undefined)
+  h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'wamid-1' })
+  h.createAiRun.mockResolvedValue('run-1')
+  h.completeAiRun.mockResolvedValue(undefined)
+  h.logAiRetrievalEvent.mockResolvedValue(undefined)
+  h.logAiToolCall.mockResolvedValue(undefined)
+  h.routeAgentRole.mockResolvedValue('support')
 })
 
 describe('dispatchInboundToAgent', () => {
@@ -99,6 +145,7 @@ describe('dispatchInboundToAgent', () => {
     h.loadAiConfig.mockResolvedValue({ agentEnabled: false })
     await dispatchInboundToAgent(baseArgs())
     expect(h.decideAgentAction).not.toHaveBeenCalled()
+    expect(h.createAiRun).not.toHaveBeenCalled()
   })
 
   it('no-ops when the conversation has auto-reply disabled', async () => {
@@ -116,12 +163,73 @@ describe('dispatchInboundToAgent', () => {
       move_to_stage_id: 'stage-2',
       handoff: false,
       handoff_reason: null,
+      citations: [],
     })
     await dispatchInboundToAgent(baseArgs())
-    expect(h.claimAiReplySlot).toHaveBeenCalledWith({ conversation_id: 'conv-1', max_replies: 3 })
-    expect(h.engineSendText).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'Thanks for reaching out!' }),
+    expect(h.createAiRun).toHaveBeenCalledTimes(1)
+    expect(h.createAiRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        userId: 'user-1',
+        surface: 'whatsapp_agent',
+        agentRole: 'coordinator',
+        provider: 'openai',
+        model: 'gpt-test',
+      })
     )
+    expect(h.routeAgentRole).toHaveBeenCalledWith({
+      config: expect.objectContaining({
+        provider: 'openai',
+        model: 'gpt-test',
+      }),
+      message: 'Can I get a refund?',
+    })
+    expect(h.buildAgentContext).toHaveBeenCalledWith(expect.anything(), {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      knowledge: {
+        enabled: true,
+        query: 'Can I get a refund?',
+        embedding: null,
+      },
+    })
+    expect(h.logAiRetrievalEvent).toHaveBeenCalledWith(expect.anything(), {
+      accountId: 'acct-1',
+      runId: 'run-1',
+      query: 'Can I get a refund?',
+      retrievalMode: 'fts',
+      chunkIds: ['c1'],
+      scores: [{ chunkId: 'c1', score: 0.8, mode: 'fts' }],
+    })
+    expect(h.claimAiReplySlot).toHaveBeenCalledWith({
+      conversation_id: 'conv-1',
+      max_replies: 3,
+    })
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'Thanks for reaching out!' }))
+    expect(h.logAiToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: 'acct-1',
+        runId: 'run-1',
+        toolName: 'send_message',
+        status: 'proposed',
+      })
+    )
+    expect(h.logAiToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: 'acct-1',
+        runId: 'run-1',
+        toolName: 'send_message',
+        status: 'executed',
+      })
+    )
+    expect(h.completeAiRun).toHaveBeenCalledWith(expect.anything(), {
+      runId: 'run-1',
+      status: 'completed',
+    })
     expect(h.addContactTagIfAbsent).toHaveBeenCalled()
     expect(h.moveDealStage).not.toHaveBeenCalled() // no linked deal in buildAgentContext mock above
   })
@@ -134,11 +242,16 @@ describe('dispatchInboundToAgent', () => {
       move_to_stage_id: null,
       handoff: false,
       handoff_reason: null,
+      citations: [],
     })
     await dispatchInboundToAgent(baseArgs())
     expect(h.removeContactTag).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ accountId: 'acct-1', contactId: 'contact-1', tagId: 'tag-2' }),
+      expect.objectContaining({
+        accountId: 'acct-1',
+        contactId: 'contact-1',
+        tagId: 'tag-2',
+      })
     )
   })
 
@@ -154,6 +267,7 @@ describe('dispatchInboundToAgent', () => {
       move_to_stage_id: null,
       handoff: false,
       handoff_reason: null,
+      citations: [],
     })
     await dispatchInboundToAgent(baseArgs())
     expect(h.engineSendText).not.toHaveBeenCalled()
@@ -183,6 +297,7 @@ describe('dispatchInboundToAgent', () => {
       move_to_stage_id: null,
       handoff: false,
       handoff_reason: null,
+      citations: [],
     })
 
     await dispatchInboundToAgent(baseArgs())
@@ -191,7 +306,9 @@ describe('dispatchInboundToAgent', () => {
     expect(h.claimAiReplySlot).toHaveBeenCalledTimes(2)
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
     expect(
-      h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached'),
+      h.state.updateCalls.some(
+        (c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached'
+      )
     ).toBe(true)
   })
 
@@ -203,6 +320,7 @@ describe('dispatchInboundToAgent', () => {
       move_to_stage_id: null,
       handoff: true,
       handoff_reason: 'customer asked for a human',
+      citations: [],
     })
     await dispatchInboundToAgent(baseArgs())
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
@@ -211,5 +329,10 @@ describe('dispatchInboundToAgent', () => {
   it('never throws when a downstream call rejects', async () => {
     h.decideAgentAction.mockRejectedValue(new Error('provider down'))
     await expect(dispatchInboundToAgent(baseArgs())).resolves.toBeUndefined()
+    expect(h.completeAiRun).toHaveBeenCalledWith(expect.anything(), {
+      runId: 'run-1',
+      status: 'failed',
+      error: 'provider down',
+    })
   })
 })

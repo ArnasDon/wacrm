@@ -8,6 +8,8 @@ import { engineSendText } from '@/lib/automations/zapi-send'
 import { addContactTagIfAbsent, removeContactTag } from '@/lib/contacts/tag-write'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { completeAiRun, createAiRun, logAiRetrievalEvent, logAiToolCall } from './run-log'
+import { routeAgentRole } from './agent-router'
 
 export interface DispatchInboundToAgentArgs {
   accountId: string
@@ -18,7 +20,7 @@ export interface DispatchInboundToAgentArgs {
 
 /**
  * Fire-and-forget entry point called from the WhatsApp webhook after an
- * inbound message is stored. Never throws — a slow or failing AI call
+ * inbound message is stored. Never throws: a slow or failing AI call
  * must not affect the webhook's response to Meta.
  */
 export async function dispatchInboundToAgent(args: DispatchInboundToAgentArgs): Promise<void> {
@@ -36,117 +38,327 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
   const config = await loadAiConfig(db, accountId)
   if (!config || !config.agentEnabled) return
 
-  // Rate-limited before the AI call is ever made — a misbehaving
-  // upstream retry storm must not translate into runaway BYOK spend.
+  // Gate provider work before creating a run or spending BYOK quota.
   const limit = checkRateLimit(`ai-agent:${accountId}`, RATE_LIMITS.aiAgentDecision)
   if (!limit.success) return
 
-  const { data: conversation } = await db
-    .from('conversations')
-    .select('id, ai_autoreply_disabled')
-    .eq('id', conversationId)
-    .maybeSingle()
-  if (!conversation || conversation.ai_autoreply_disabled) return
-
-  const [resources, context] = await Promise.all([
-    loadAutomationResources(db, accountId),
-    buildAgentContext(db, { accountId, conversationId }),
-  ])
-
-  const decision = await decideAgentAction({ config, resources, context })
-
-  let handoff = decision.handoff
-  let handoffReason = decision.handoff_reason
-
-  if (decision.reply_text) {
-    // Atomically claim the next reply slot via the claim_ai_reply_slot
-    // Postgres function (see supabase/migrations/039_ai_reply_cap_rpc.sql).
-    // The cap check (`ai_reply_count < max_replies`) and the increment
-    // (`ai_reply_count = ai_reply_count + 1`, evaluated against the live
-    // row) happen inside a single server-side UPDATE, so Postgres
-    // serializes concurrent callers correctly. dispatchInboundToAgent is
-    // fire-and-forget and can run concurrently for the same conversation
-    // (a customer sending several messages in quick succession) — a
-    // client-computed read-then-write here would let two concurrent runs
-    // both pass the cap check and both send.
-    const { data: claimed, error: claimError } = await db.rpc('claim_ai_reply_slot', {
-      conversation_id: conversationId,
-      max_replies: config.autoReplyMaxPerConversation,
+  let runId: string | null = null
+  try {
+    runId = await createAiRun(db, {
+      accountId,
+      conversationId,
+      userId,
+      surface: 'whatsapp_agent',
+      agentRole: 'coordinator',
+      provider: config.provider,
+      model: config.model,
     })
+  } catch (err) {
+    console.error('[ai-agent] failed to create run log:', err)
+  }
 
-    if (claimError) {
-      console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
-    } else if (claimed !== true) {
-      // Either the cap was already reached, or a concurrent run claimed the
-      // last slot first. Either way, fall back to handoff instead of sending.
-      handoff = true
-      handoffReason = handoffReason ?? 'auto-reply cap reached'
-    } else {
-      const sent = await engineSendText({
-        accountId,
-        userId,
-        conversationId,
-        contactId,
-        text: decision.reply_text,
-      })
-      // Best-effort flag so the inbox can visually distinguish AI-authored
-      // replies from manual agent sends. Wrapped in try/catch (not just a
-      // promise .catch) because a synchronous throw while building the
-      // query — as opposed to a rejected promise — would otherwise abort
-      // the rest of the dispatch (tagging/stage-move/handoff still need
-      // to run even if this best-effort flag fails).
-      try {
-        const { error } = await db
-          .from('messages')
-          .update({ ai_generated: true })
-          .eq('message_id', sent.whatsapp_message_id)
-          .eq('conversation_id', conversationId)
-        if (error) console.error('[ai-agent] failed to flag ai-generated message:', error)
-      } catch (err) {
-        console.error('[ai-agent] failed to flag ai-generated message:', err)
-      }
+  const completeRun = async (input: { status: 'completed' | 'failed'; error?: string }) => {
+    try {
+      await completeAiRun(db, { runId, ...input })
+    } catch (err) {
+      console.error('[ai-agent] failed to complete run log:', err)
     }
   }
 
-  for (const tagId of decision.add_tags) {
-    await addContactTagIfAbsent(db, { accountId, contactId, tagId }).catch((err) =>
-      console.error('[ai-agent] add_tag failed:', err),
-    )
-  }
-
-  for (const tagId of decision.remove_tags) {
-    await removeContactTag(db, { accountId, contactId, tagId }).catch((err) =>
-      console.error('[ai-agent] remove_tag failed:', err),
-    )
-  }
-
-  if (config.pipelineMoveEnabled && decision.move_to_stage_id && context.dealId) {
-    await moveDealStage({
-      accountId,
-      dealId: context.dealId,
-      toStageId: decision.move_to_stage_id,
-      source: 'ai',
-      reason: 'AI agent classified the conversation',
-    }).then(async (result) => {
-      if (!result.moved) return
-      await runAutomationsForTrigger({
-        accountId,
-        triggerType: 'deal_stage_changed',
-        contactId,
-        context: { conversation_id: conversationId, deal_id: context.dealId! },
-      })
-    })
-  }
-
-  if (handoff) {
-    const { error } = await db
+  try {
+    const { data: conversation } = await db
       .from('conversations')
-      .update({
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: handoffReason,
-        ...(config.handoffAgentId ? { assigned_agent_id: config.handoffAgentId } : {}),
-      })
+      .select('id, ai_autoreply_disabled, last_message_text')
       .eq('id', conversationId)
-    if (error) console.error('[ai-agent] handoff update failed:', error)
+      .maybeSingle()
+    if (!conversation || conversation.ai_autoreply_disabled) {
+      await completeRun({ status: 'completed' })
+      return
+    }
+
+    const [resources, context] = await Promise.all([
+      loadAutomationResources(db, accountId),
+      buildAgentContext(db, {
+        accountId,
+        conversationId,
+        knowledge: {
+          enabled: true,
+          query: typeof conversation.last_message_text === 'string' ? conversation.last_message_text : '',
+          embedding: null,
+        },
+      }),
+    ])
+
+    const latestMessage = context.messages.at(-1)?.text ?? ''
+    const agentRole = await routeAgentRole({ config, message: latestMessage })
+
+    try {
+      await logAiRetrievalEvent(db, {
+        accountId,
+        runId,
+        query: latestMessage,
+        retrievalMode: context.knowledge.some((knowledge) => knowledge.mode === 'semantic') ? 'hybrid' : 'fts',
+        chunkIds: context.knowledge.map((knowledge) => knowledge.chunkId),
+        scores: context.knowledge.map((knowledge) => ({
+          chunkId: knowledge.chunkId,
+          score: knowledge.score,
+          mode: knowledge.mode,
+        })),
+      })
+    } catch (err) {
+      console.error('[ai-agent] failed to log retrieval:', err)
+    }
+
+    const logTool = async (input: {
+      toolName: string
+      arguments: Record<string, unknown>
+      status: 'proposed' | 'executed' | 'rejected' | 'skipped' | 'failed'
+      result?: Record<string, unknown>
+      error?: string | null
+    }) => {
+      try {
+        await logAiToolCall(db, { accountId, runId, ...input })
+      } catch (err) {
+        console.error('[ai-agent] failed to log tool call:', err)
+      }
+    }
+
+    const decision = await decideAgentAction({ config, resources, context })
+    let handoff = decision.handoff
+    let handoffReason = decision.handoff_reason
+
+    if (decision.reply_text) {
+      const toolArguments = {
+        agentRole,
+        contactId,
+        conversationId,
+        text: decision.reply_text,
+        citations: decision.citations,
+      }
+      await logTool({
+        toolName: 'send_message',
+        arguments: toolArguments,
+        status: 'proposed',
+      })
+
+      // The database RPC atomically checks and increments the reply cap.
+      const { data: claimed, error: claimError } = await db.rpc('claim_ai_reply_slot', {
+        conversation_id: conversationId,
+        max_replies: config.autoReplyMaxPerConversation,
+      })
+
+      if (claimError) {
+        console.error('[ai-agent] failed to claim reply-cap slot:', claimError)
+        await logTool({
+          toolName: 'send_message',
+          arguments: toolArguments,
+          status: 'failed',
+          error: errorMessage(claimError),
+        })
+      } else if (claimed !== true) {
+        handoff = true
+        handoffReason = handoffReason ?? 'auto-reply cap reached'
+        await logTool({
+          toolName: 'send_message',
+          arguments: toolArguments,
+          status: 'skipped',
+          result: { reason: 'auto-reply cap reached' },
+        })
+      } else {
+        try {
+          const sent = await engineSendText({
+            accountId,
+            userId,
+            conversationId,
+            contactId,
+            text: decision.reply_text,
+          })
+          await logTool({
+            toolName: 'send_message',
+            arguments: toolArguments,
+            status: 'executed',
+            result: { whatsappMessageId: sent.whatsapp_message_id },
+          })
+
+          try {
+            const { error } = await db
+              .from('messages')
+              .update({ ai_generated: true })
+              .eq('message_id', sent.whatsapp_message_id)
+              .eq('conversation_id', conversationId)
+            if (error) console.error('[ai-agent] failed to flag ai-generated message:', error)
+          } catch (err) {
+            console.error('[ai-agent] failed to flag ai-generated message:', err)
+          }
+        } catch (err) {
+          await logTool({
+            toolName: 'send_message',
+            arguments: toolArguments,
+            status: 'failed',
+            error: errorMessage(err),
+          })
+          throw err
+        }
+      }
+    }
+
+    for (const tagId of decision.add_tags) {
+      const toolArguments = { agentRole, accountId, contactId, tagId }
+      await logTool({
+        toolName: 'add_tag',
+        arguments: toolArguments,
+        status: 'proposed',
+      })
+      try {
+        const added = await addContactTagIfAbsent(db, {
+          accountId,
+          contactId,
+          tagId,
+        })
+        await logTool({
+          toolName: 'add_tag',
+          arguments: toolArguments,
+          status: 'executed',
+          result: { added },
+        })
+      } catch (err) {
+        console.error('[ai-agent] add_tag failed:', err)
+        await logTool({
+          toolName: 'add_tag',
+          arguments: toolArguments,
+          status: 'failed',
+          error: errorMessage(err),
+        })
+      }
+    }
+
+    for (const tagId of decision.remove_tags) {
+      const toolArguments = { agentRole, accountId, contactId, tagId }
+      await logTool({
+        toolName: 'remove_tag',
+        arguments: toolArguments,
+        status: 'proposed',
+      })
+      try {
+        await removeContactTag(db, { accountId, contactId, tagId })
+        await logTool({
+          toolName: 'remove_tag',
+          arguments: toolArguments,
+          status: 'executed',
+        })
+      } catch (err) {
+        console.error('[ai-agent] remove_tag failed:', err)
+        await logTool({
+          toolName: 'remove_tag',
+          arguments: toolArguments,
+          status: 'failed',
+          error: errorMessage(err),
+        })
+      }
+    }
+
+    if (config.pipelineMoveEnabled && decision.move_to_stage_id && context.dealId) {
+      const toolArguments = {
+        agentRole,
+        accountId,
+        dealId: context.dealId,
+        toStageId: decision.move_to_stage_id,
+      }
+      await logTool({
+        toolName: 'move_deal_stage',
+        arguments: toolArguments,
+        status: 'proposed',
+      })
+      try {
+        const result = await moveDealStage({
+          accountId,
+          dealId: context.dealId,
+          toStageId: decision.move_to_stage_id,
+          source: 'ai',
+          reason: 'AI agent classified the conversation',
+        })
+        await logTool({
+          toolName: 'move_deal_stage',
+          arguments: toolArguments,
+          status: result.moved ? 'executed' : 'skipped',
+          result: { moved: result.moved },
+        })
+        if (result.moved) {
+          await runAutomationsForTrigger({
+            accountId,
+            triggerType: 'deal_stage_changed',
+            contactId,
+            context: {
+              conversation_id: conversationId,
+              deal_id: context.dealId,
+            },
+          })
+        }
+      } catch (err) {
+        await logTool({
+          toolName: 'move_deal_stage',
+          arguments: toolArguments,
+          status: 'failed',
+          error: errorMessage(err),
+        })
+        throw err
+      }
+    }
+
+    if (handoff) {
+      const toolArguments = {
+        agentRole,
+        conversationId,
+        assignedAgentId: config.handoffAgentId,
+        reason: handoffReason,
+      }
+      await logTool({
+        toolName: 'assign_conversation',
+        arguments: toolArguments,
+        status: 'proposed',
+      })
+      try {
+        const { error } = await db
+          .from('conversations')
+          .update({
+            ai_autoreply_disabled: true,
+            ai_handoff_summary: handoffReason,
+            ...(config.handoffAgentId ? { assigned_agent_id: config.handoffAgentId } : {}),
+          })
+          .eq('id', conversationId)
+        if (error) {
+          console.error('[ai-agent] handoff update failed:', error)
+          await logTool({
+            toolName: 'assign_conversation',
+            arguments: toolArguments,
+            status: 'failed',
+            error: errorMessage(error),
+          })
+        } else {
+          await logTool({
+            toolName: 'assign_conversation',
+            arguments: toolArguments,
+            status: 'executed',
+          })
+        }
+      } catch (err) {
+        await logTool({
+          toolName: 'assign_conversation',
+          arguments: toolArguments,
+          status: 'failed',
+          error: errorMessage(err),
+        })
+        throw err
+      }
+    }
+
+    await completeRun({ status: 'completed' })
+  } catch (err) {
+    await completeRun({ status: 'failed', error: errorMessage(err) })
+    throw err
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

@@ -10,6 +10,7 @@ export interface AgentDecision {
   move_to_stage_id: string | null
   handoff: boolean
   handoff_reason: string | null
+  citations: string[]
 }
 
 interface RawDecision {
@@ -19,6 +20,7 @@ interface RawDecision {
   move_to_stage_id?: unknown
   handoff?: unknown
   handoff_reason?: unknown
+  citations?: unknown
 }
 
 export async function decideAgentAction(args: {
@@ -30,12 +32,14 @@ export async function decideAgentAction(args: {
 
   const tagList = resources.tags.map((t) => `- ${t.id}: ${t.name}`).join('\n') || '(none configured yet)'
   const stageList =
-    resources.pipelines
-      .flatMap((p) => p.stages.map((s) => `- ${s.id}: ${s.name} (pipeline: ${p.name})`))
-      .join('\n') || '(none configured yet)'
+    resources.pipelines.flatMap((p) => p.stages.map((s) => `- ${s.id}: ${s.name} (pipeline: ${p.name})`)).join('\n') ||
+    '(none configured yet)'
   const historyText =
     context.messages.map((m) => `${m.role === 'customer' ? 'Customer' : 'Agent'}: ${m.text}`).join('\n') ||
     '(no prior text messages)'
+  const knowledgeList =
+    context.knowledge.map((knowledge) => `- ${knowledge.chunkId}: ${knowledge.content}`).join('\n') ||
+    '(no knowledge matched)'
 
   const systemPrompt =
     'You are a WhatsApp customer-support agent for a CRM. For each customer message, decide what to do: ' +
@@ -48,18 +52,25 @@ export async function decideAgentAction(args: {
     `Available tags:\n${tagList}\n\n` +
     `Available pipeline stages:\n${stageList}\n\n` +
     `Deal's current stage: ${context.currentStageId ?? '(no linked deal)'}\n\n` +
+    `Relevant knowledge:\n${knowledgeList}\n\n` +
     `Conversation so far:\n${historyText}\n\n` +
     'Return a JSON object exactly shaped like:\n' +
     '{"reply_text": "..." | null, "add_tags": ["..."], "remove_tags": ["..."], ' +
-    '"move_to_stage_id": "..." | null, "handoff": true|false, "handoff_reason": "..." | null}'
+    '"move_to_stage_id": "..." | null, "handoff": true|false, "handoff_reason": "..." | null, ' +
+    '"citations": ["chunk-id"]}'
 
-  const { data } = await generateJson<RawDecision>({ config, systemPrompt, userPrompt })
-  return sanitize(data, resources)
+  const { data } = await generateJson<RawDecision>({
+    config,
+    systemPrompt,
+    userPrompt,
+  })
+  return sanitize(data, resources, context)
 }
 
-function sanitize(raw: RawDecision, resources: AutomationResources): AgentDecision {
+function sanitize(raw: RawDecision, resources: AutomationResources, context: AgentContext): AgentDecision {
   const validTagIds = new Set(resources.tags.map((t) => t.id))
   const validStageIds = new Set(resources.pipelines.flatMap((p) => p.stages.map((s) => s.id)))
+  const validChunkIds = new Set(context.knowledge.map((knowledge) => knowledge.chunkId))
 
   const reply_text =
     typeof raw.reply_text === 'string' && raw.reply_text.trim() ? raw.reply_text.trim().slice(0, 4096) : null
@@ -73,6 +84,17 @@ function sanitize(raw: RawDecision, resources: AutomationResources): AgentDecisi
     typeof raw.move_to_stage_id === 'string' && validStageIds.has(raw.move_to_stage_id) ? raw.move_to_stage_id : null
   const handoff = raw.handoff === true
   const handoff_reason = handoff && typeof raw.handoff_reason === 'string' ? raw.handoff_reason.slice(0, 500) : null
+  const citations = Array.isArray(raw.citations)
+    ? raw.citations.filter((id): id is string => typeof id === 'string' && validChunkIds.has(id))
+    : []
 
-  return { reply_text, add_tags, remove_tags, move_to_stage_id, handoff, handoff_reason }
+  return {
+    reply_text,
+    add_tags,
+    remove_tags,
+    move_to_stage_id,
+    handoff,
+    handoff_reason,
+    citations,
+  }
 }

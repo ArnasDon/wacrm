@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+const h = vi.hoisted(() => ({ retrieveKnowledge: vi.fn() }))
+vi.mock('./knowledge/retrieve', () => ({
+  retrieveKnowledge: h.retrieveKnowledge,
+}))
+
 import { buildAgentContext } from './agent-context'
 
 function fakeSupabase(data: {
-  messages: { sender_type: string; content_text: string | null; content_type: string }[]
+  messages: {
+    sender_type: string
+    content_text: string | null
+    content_type: string
+  }[]
   deal: { id: string; stage_id: string; pipeline_id: string } | null
 }): SupabaseClient {
   return {
@@ -36,15 +46,30 @@ function fakeSupabase(data: {
 }
 
 describe('buildAgentContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('loads messages and deal information', async () => {
     const supabase = fakeSupabase({
       messages: [
-        { sender_type: 'agent', content_text: 'Hi there', content_type: 'text' },
-        { sender_type: 'customer', content_text: 'Hello', content_type: 'text' },
+        {
+          sender_type: 'agent',
+          content_text: 'Hi there',
+          content_type: 'text',
+        },
+        {
+          sender_type: 'customer',
+          content_text: 'Hello',
+          content_type: 'text',
+        },
       ],
       deal: { id: 'd1', stage_id: 's1', pipeline_id: 'p1' },
     })
-    const result = await buildAgentContext(supabase, { accountId: 'acct-1', conversationId: 'conv-1' })
+    const result = await buildAgentContext(supabase, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+    })
     expect(result.messages).toEqual([
       { role: 'customer', text: 'Hello' },
       { role: 'agent', text: 'Hi there' },
@@ -57,17 +82,67 @@ describe('buildAgentContext', () => {
   it('filters out non-text messages and null content', async () => {
     const supabase = fakeSupabase({
       messages: [
-        { sender_type: 'customer', content_text: 'Image', content_type: 'image' },
+        {
+          sender_type: 'customer',
+          content_text: 'Image',
+          content_type: 'image',
+        },
         { sender_type: 'agent', content_text: null, content_type: 'text' },
-        { sender_type: 'customer', content_text: 'Hello', content_type: 'text' },
+        {
+          sender_type: 'customer',
+          content_text: 'Hello',
+          content_type: 'text',
+        },
       ],
       deal: null,
     })
-    const result = await buildAgentContext(supabase, { accountId: 'acct-1', conversationId: 'conv-1' })
+    const result = await buildAgentContext(supabase, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+    })
     expect(result.messages).toEqual([{ role: 'customer', text: 'Hello' }])
     expect(result.dealId).toBeNull()
     expect(result.currentStageId).toBeNull()
     expect(result.currentPipelineId).toBeNull()
+  })
+
+  it('includes retrieved knowledge when knowledge options are provided', async () => {
+    const supabase = fakeSupabase({
+      messages: [
+        {
+          sender_type: 'customer',
+          content_text: 'Can I get a refund?',
+          content_type: 'text',
+        },
+      ],
+      deal: null,
+    })
+    h.retrieveKnowledge.mockResolvedValue([
+      {
+        chunkId: 'c1',
+        documentId: 'd1',
+        content: 'Refunds within 7 days',
+        score: 0.8,
+        mode: 'fts',
+      },
+    ])
+
+    const result = await buildAgentContext(supabase, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      knowledge: {
+        enabled: true,
+        query: 'Can I get a refund?',
+        embedding: null,
+      },
+    })
+
+    expect(result.knowledge[0].chunkId).toBe('c1')
+    expect(h.retrieveKnowledge).toHaveBeenCalledWith(supabase, {
+      accountId: 'acct-1',
+      query: 'Can I get a refund?',
+      embedding: null,
+    })
   })
 
   it('throws when messages query returns an error', async () => {
@@ -78,7 +153,11 @@ describe('buildAgentContext', () => {
             select: () => ({
               eq: () => ({
                 order: () => ({
-                  limit: () => Promise.resolve({ data: null, error: { message: 'connection timeout' } }),
+                  limit: () =>
+                    Promise.resolve({
+                      data: null,
+                      error: { message: 'connection timeout' },
+                    }),
                 }),
               }),
             }),
@@ -99,9 +178,12 @@ describe('buildAgentContext', () => {
       },
     } as unknown as SupabaseClient
 
-    await expect(buildAgentContext(supabase, { accountId: 'acct-1', conversationId: 'conv-1' })).rejects.toThrow(
-      'Failed to load messages: connection timeout',
-    )
+    await expect(
+      buildAgentContext(supabase, {
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+      })
+    ).rejects.toThrow('Failed to load messages: connection timeout')
   })
 
   it('throws when deals query returns an error', async () => {
@@ -123,7 +205,11 @@ describe('buildAgentContext', () => {
             select: () => ({
               eq: () => ({
                 eq: () => ({
-                  maybeSingle: () => Promise.resolve({ data: null, error: { message: 'database error' } }),
+                  maybeSingle: () =>
+                    Promise.resolve({
+                      data: null,
+                      error: { message: 'database error' },
+                    }),
                 }),
               }),
             }),
@@ -133,8 +219,11 @@ describe('buildAgentContext', () => {
       },
     } as unknown as SupabaseClient
 
-    await expect(buildAgentContext(supabase, { accountId: 'acct-1', conversationId: 'conv-1' })).rejects.toThrow(
-      'Failed to load deals: database error',
-    )
+    await expect(
+      buildAgentContext(supabase, {
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+      })
+    ).rejects.toThrow('Failed to load deals: database error')
   })
 })

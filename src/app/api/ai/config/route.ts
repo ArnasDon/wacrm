@@ -5,6 +5,7 @@ import type { AiProvider } from '@/lib/ai/types'
 import { EncryptionConfigError } from '@/lib/whatsapp/encryption'
 
 const PROVIDERS: AiProvider[] = ['openai', 'anthropic']
+const EMBEDDING_MODELS = ['text-embedding-3-small'] as const
 
 function isMissingAiSchemaError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -111,6 +112,12 @@ export async function PUT(request: Request) {
       typeof body.embeddingsModel === 'string' && body.embeddingsModel.trim()
         ? body.embeddingsModel.trim()
         : 'text-embedding-3-small'
+    if (!EMBEDDING_MODELS.includes(embeddingsModel as (typeof EMBEDDING_MODELS)[number])) {
+      return NextResponse.json(
+        { error: 'embeddingsModel must be text-embedding-3-small' },
+        { status: 400 },
+      )
+    }
     const embeddingsApiKey = submittedEmbeddingsApiKey || existing?.embeddingsApiKey || null
 
     await saveAiConfig(supabase, accountId, {

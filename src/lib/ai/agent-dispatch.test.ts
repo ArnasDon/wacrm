@@ -426,7 +426,7 @@ describe('dispatchInboundToAgent', () => {
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
   })
 
-  it('disables autoreply on reply cap even when the specialist cannot assign conversations', async () => {
+  it('disables autoreply immediately on reply cap even if later specialist actions fail', async () => {
     h.routeAgentRole.mockResolvedValue('sales')
     h.loadAgentDefinitions.mockResolvedValue([
       {
@@ -434,16 +434,25 @@ describe('dispatchInboundToAgent', () => {
         name: 'Sales',
         instructions: 'Qualify leads.',
         enabled: true,
-        allowedActions: ['send_message'],
+        allowedActions: ['send_message', 'move_deal_stage'],
         knowledgeEnabled: true,
       },
     ])
+    h.buildAgentContext.mockResolvedValue({
+      messages: [{ role: 'customer', text: 'Can I get pricing?' }],
+      dealId: 'deal-1',
+      currentStageId: 'stage-1',
+      currentPipelineId: 'pipeline-1',
+      knowledge: [],
+    })
+    h.attachKnowledgeToAgentContext.mockImplementation(async (_db, context) => context)
     h.claimAiReplySlot.mockResolvedValue({ data: false, error: null })
+    h.moveDealStage.mockRejectedValue(new Error('stage move failed'))
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'one more reply',
       add_tags: [],
       remove_tags: [],
-      move_to_stage_id: null,
+      move_to_stage_id: 'stage-2',
       handoff: false,
       handoff_reason: null,
       citations: [],
@@ -460,12 +469,10 @@ describe('dispatchInboundToAgent', () => {
       ['id', 'conv-1'],
       ['account_id', 'acct-1'],
     ])
-    expect(h.logAiToolCall).toHaveBeenCalledWith(
+    expect(h.moveDealStage).toHaveBeenCalled()
+    expect(h.completeAiRun).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
-        toolName: 'assign_conversation',
-        status: 'skipped',
-      }),
+      expect.objectContaining({ status: 'failed', error: 'stage move failed' }),
     )
   })
 

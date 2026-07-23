@@ -210,6 +210,21 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       } else if (claimed !== true) {
         handoff = true
         handoffReason = handoffReason ?? 'auto-reply cap reached'
+        const { error: disableError } = await disableAutoreply(handoffReason, null)
+        if (disableError) {
+          console.error('[ai-agent] reply-cap safety update failed:', disableError)
+          await logTool({
+            toolName: 'assign_conversation',
+            arguments: {
+              agentRole,
+              conversationId,
+              assignedAgentId: null,
+              reason: handoffReason,
+            },
+            status: 'failed',
+            error: errorMessage(disableError),
+          })
+        }
         await logTool({
           toolName: 'send_message',
           arguments: toolArguments,
@@ -375,7 +390,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       }
     }
 
-    if (handoff) {
+    if (handoff && (handoffReason !== 'auto-reply cap reached' || allows('assign_conversation'))) {
       const toolArguments = {
         agentRole,
         conversationId,

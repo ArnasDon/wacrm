@@ -34,7 +34,6 @@ beforeEach(() => {
     userId: 'user-1',
   })
 })
-
 describe('GET /api/ai/config', () => {
   it('never returns plaintext provider or embeddings keys', async () => {
     h.loadAiConfig.mockResolvedValue({
@@ -45,7 +44,7 @@ describe('GET /api/ai/config', () => {
       agentEnabled: true,
       pipelineMoveEnabled: false,
       knowledgeEnabled: true,
-      embeddingsModel: 'text-embedding-test',
+      embeddingsModel: 'text-embedding-3-small',
       embeddingsApiKey: 'sk-embeddings-secret',
       autoReplyMaxPerConversation: 3,
       handoffAgentId: null,
@@ -65,7 +64,6 @@ describe('GET /api/ai/config', () => {
     expect(body.config).toBeNull()
   })
 })
-
 describe('PUT /api/ai/config', () => {
   it('400s on an invalid provider', async () => {
     const res = await PUT(putReq({ provider: 'bogus', model: 'x', apiKey: 'sk-1' }))
@@ -81,7 +79,7 @@ describe('PUT /api/ai/config', () => {
         agentEnabled: true,
         pipelineMoveEnabled: false,
         knowledgeEnabled: true,
-        embeddingsModel: 'text-embedding-test',
+        embeddingsModel: 'text-embedding-3-small',
         embeddingsApiKey: 'sk-embeddings',
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
@@ -89,6 +87,29 @@ describe('PUT /api/ai/config', () => {
     )
     expect(res.status).toBe(200)
     expect(h.saveAiConfig).toHaveBeenCalled()
+  })
+
+  it('400s on an embedding model that does not match the vector dimensions', async () => {
+    const res = await PUT(
+      putReq({
+        provider: 'openai',
+        model: 'gpt-test',
+        apiKey: 'sk-1',
+        agentEnabled: true,
+        pipelineMoveEnabled: false,
+        knowledgeEnabled: true,
+        embeddingsModel: 'text-embedding-3-large',
+        embeddingsApiKey: 'sk-embeddings',
+        autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
+      }),
+    )
+
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({
+      error: 'embeddingsModel must be text-embedding-3-small',
+    })
+    expect(h.saveAiConfig).not.toHaveBeenCalled()
   })
 
   it('keeps the existing key when apiKey is blank and a config already exists', async () => {
@@ -100,7 +121,7 @@ describe('PUT /api/ai/config', () => {
       agentEnabled: false,
       pipelineMoveEnabled: false,
       knowledgeEnabled: true,
-      embeddingsModel: 'text-embedding-old',
+      embeddingsModel: 'text-embedding-3-small',
       embeddingsApiKey: 'sk-embeddings-existing',
       autoReplyMaxPerConversation: 3,
       handoffAgentId: null,
@@ -113,7 +134,7 @@ describe('PUT /api/ai/config', () => {
         agentEnabled: true,
         pipelineMoveEnabled: false,
         knowledgeEnabled: true,
-        embeddingsModel: 'text-embedding-test',
+        embeddingsModel: 'text-embedding-3-small',
         embeddingsApiKey: '',
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
@@ -139,7 +160,7 @@ describe('PUT /api/ai/config', () => {
       agentEnabled: false,
       pipelineMoveEnabled: false,
       knowledgeEnabled: true,
-      embeddingsModel: 'text-embedding-old',
+      embeddingsModel: 'text-embedding-3-small',
       embeddingsApiKey: 'sk-embeddings-existing',
       autoReplyMaxPerConversation: 3,
       handoffAgentId: null,
@@ -153,7 +174,7 @@ describe('PUT /api/ai/config', () => {
         agentEnabled: true,
         pipelineMoveEnabled: false,
         knowledgeEnabled: true,
-        embeddingsModel: 'text-embedding-test',
+        embeddingsModel: 'text-embedding-3-small',
         embeddingsApiKey: '',
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,

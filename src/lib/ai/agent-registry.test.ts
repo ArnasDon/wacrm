@@ -31,7 +31,7 @@ describe('agent registry', () => {
   })
 
   it('sanitizes an invalid override role to triage', () => {
-    const sanitized = sanitizeAgentDefinition({ role: 'not_a_role' })
+    const sanitized = sanitizeAgentDefinition({ role: 'not_a_role' } as Parameters<typeof sanitizeAgentDefinition>[0])
 
     expect(sanitized).toMatchObject({ role: 'triage', name: 'triage' })
   })

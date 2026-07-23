@@ -25,6 +25,21 @@ describe('chunkKnowledgeText', () => {
     expect(chunks.every((chunk) => chunk.tokenEstimate > 0)).toBe(true)
   })
 
+  it('always advances with high overlap after early whitespace, sentence, or paragraph breaks', () => {
+    const inputs = [
+      'abcdefghijk lmnopqrstuv wxyz',
+      'abcdefghij. klmnopqrstuv wxyz',
+      'abcdefghijk\n\nlmnopqrstuv wxyz',
+    ]
+
+    for (const input of inputs) {
+      const chunks = chunkKnowledgeText(input, { maxChars: 20, overlapChars: 19 })
+
+      expect(chunks.length).toBeGreaterThan(1)
+      expect(chunks.every((chunk) => chunk.content.length <= 20)).toBe(true)
+    }
+  })
+
   it('rejects invalid chunk options', () => {
     expect(() => chunkKnowledgeText('hello', { maxChars: 10, overlapChars: 10 })).toThrow(
       'overlapChars must be smaller than maxChars',

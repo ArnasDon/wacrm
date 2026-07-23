@@ -60,7 +60,8 @@ export function chunkKnowledgeText(
     }
 
     if (end >= text.length) break
-    start = Math.max(0, end - overlapChars)
+    const nextStart = Math.max(0, end - overlapChars)
+    start = nextStart <= start ? end : nextStart
   }
 
   return chunks

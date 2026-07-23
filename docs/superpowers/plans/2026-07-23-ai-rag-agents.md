@@ -66,7 +66,7 @@
 
 **Interfaces:**
 - Produces: tables `ai_knowledge_documents`, `ai_knowledge_chunks`, `ai_knowledge_ingestion_jobs`, `ai_runs`, `ai_retrieval_events`, `ai_tool_calls`, `ai_agent_definitions`.
-- Produces: RPCs `match_ai_knowledge_fts(uuid, text, integer)` and `match_ai_knowledge_semantic(uuid, text, integer, integer)`.
+- Produces: RPCs `match_ai_knowledge_fts(uuid, text, integer)` and `match_ai_knowledge_semantic(uuid, text, integer)`.
 - Consumed by Tasks 3, 4, 6, 7, 8, and 9.
 
 - [ ] **Step 1: Create the migration**

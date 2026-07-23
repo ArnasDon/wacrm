@@ -12,6 +12,12 @@ export interface AgentContext {
   knowledge: RetrievedKnowledge[]
 }
 
+export interface AgentKnowledgeOptions {
+  enabled: boolean
+  query: string
+  embedding?: { apiKey: string; model: string } | null
+}
+
 /**
  * Loads the conversation's recent text history plus its linked deal's
  * current stage, if any — the grounding context for one agent decision
@@ -23,11 +29,7 @@ export async function buildAgentContext(
   args: {
     accountId: string
     conversationId: string
-    knowledge?: {
-      enabled: boolean
-      query: string
-      embedding?: { apiKey: string; model: string } | null
-    }
+    knowledge?: AgentKnowledgeOptions
   }
 ): Promise<AgentContext> {
   const { data: messageRows, error: messagesError } = await supabase
@@ -62,20 +64,35 @@ export async function buildAgentContext(
 
   if (dealError) throw new Error(`Failed to load deals: ${dealError.message}`)
 
+  return attachKnowledgeToAgentContext(
+    supabase,
+    {
+      messages,
+      dealId: (deal?.id as string) ?? null,
+      currentStageId: (deal?.stage_id as string) ?? null,
+      currentPipelineId: (deal?.pipeline_id as string) ?? null,
+      knowledge: [],
+    },
+    args.knowledge,
+    args.accountId
+  )
+}
+
+/** Attaches retrieval results without reloading the conversation snapshot. */
+export async function attachKnowledgeToAgentContext(
+  supabase: SupabaseClient,
+  context: AgentContext,
+  knowledgeOptions: AgentKnowledgeOptions | undefined,
+  accountId: string
+): Promise<AgentContext> {
   const knowledge =
-    args.knowledge?.enabled === true
+    knowledgeOptions?.enabled === true
       ? await retrieveKnowledge(supabase, {
-          accountId: args.accountId,
-          query: args.knowledge.query,
-          embedding: args.knowledge.embedding ?? null,
+          accountId,
+          query: knowledgeOptions.query,
+          embedding: knowledgeOptions.embedding ?? null,
         })
       : []
 
-  return {
-    messages,
-    dealId: (deal?.id as string) ?? null,
-    currentStageId: (deal?.stage_id as string) ?? null,
-    currentPipelineId: (deal?.pipeline_id as string) ?? null,
-    knowledge,
-  }
+  return { ...context, knowledge }
 }

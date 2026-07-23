@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   loadAutomationResources: vi.fn(),
   buildAgentContext: vi.fn(),
+  attachKnowledgeToAgentContext: vi.fn(),
   decideAgentAction: vi.fn(),
   moveDealStage: vi.fn(),
   engineSendText: vi.fn(),
@@ -30,7 +31,10 @@ vi.mock('@/lib/ai/config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('@/lib/automations/resources', () => ({
   loadAutomationResources: h.loadAutomationResources,
 }))
-vi.mock('./agent-context', () => ({ buildAgentContext: h.buildAgentContext }))
+vi.mock('./agent-context', () => ({
+  buildAgentContext: h.buildAgentContext,
+  attachKnowledgeToAgentContext: h.attachKnowledgeToAgentContext,
+}))
 vi.mock('./agent-decide', () => ({ decideAgentAction: h.decideAgentAction }))
 vi.mock('@/lib/pipelines/stage-move', () => ({
   moveDealStage: h.moveDealStage,
@@ -120,6 +124,13 @@ beforeEach(() => {
     dealId: null,
     currentStageId: null,
     currentPipelineId: null,
+    knowledge: [],
+  })
+  h.attachKnowledgeToAgentContext.mockResolvedValue({
+    messages: [{ role: 'customer', text: 'Can I get a refund?' }],
+    dealId: null,
+    currentStageId: null,
+    currentPipelineId: null,
     knowledge: [
       {
         chunkId: 'c1',
@@ -155,6 +166,27 @@ describe('dispatchInboundToAgent', () => {
   })
 
   it('sends a reply, tags, and moves the deal on a full decision', async () => {
+    const initialContext = {
+      messages: [{ role: 'customer' as const, text: 'Can I get a refund?' }],
+      dealId: null,
+      currentStageId: null,
+      currentPipelineId: null,
+      knowledge: [],
+    }
+    const contextWithKnowledge = {
+      ...initialContext,
+      knowledge: [
+        {
+          chunkId: 'c1',
+          documentId: 'd1',
+          content: 'Refunds within 7 days',
+          score: 0.8,
+          mode: 'fts',
+        },
+      ],
+    }
+    h.buildAgentContext.mockResolvedValue(initialContext)
+    h.attachKnowledgeToAgentContext.mockResolvedValue(contextWithKnowledge)
     h.claimAiReplySlot.mockResolvedValue({ data: true, error: null })
     h.decideAgentAction.mockResolvedValue({
       reply_text: 'Thanks for reaching out!',
@@ -186,19 +218,20 @@ describe('dispatchInboundToAgent', () => {
       }),
       message: 'Can I get a refund?',
     })
-    expect(h.buildAgentContext).toHaveBeenNthCalledWith(1, expect.anything(), {
+    expect(h.buildAgentContext).toHaveBeenCalledTimes(1)
+    expect(h.buildAgentContext).toHaveBeenCalledWith(expect.anything(), {
       accountId: 'acct-1',
       conversationId: 'conv-1',
     })
-    expect(h.buildAgentContext).toHaveBeenNthCalledWith(2, expect.anything(), {
-      accountId: 'acct-1',
-      conversationId: 'conv-1',
-      knowledge: {
-        enabled: true,
-        query: 'Can I get a refund?',
-        embedding: null,
-      },
-    })
+    expect(h.attachKnowledgeToAgentContext).toHaveBeenCalledWith(
+      expect.anything(),
+      initialContext,
+      { enabled: true, query: 'Can I get a refund?', embedding: null },
+      'acct-1'
+    )
+    expect(h.decideAgentAction).toHaveBeenCalledWith(
+      expect.objectContaining({ context: contextWithKnowledge })
+    )
     expect(h.logAiRetrievalEvent).toHaveBeenCalledWith(expect.anything(), {
       accountId: 'acct-1',
       runId: 'run-1',
@@ -241,7 +274,7 @@ describe('dispatchInboundToAgent', () => {
   it('uses the latest customer message when an agent message is the final context entry', async () => {
     const customerMessage = 'I need help with my invoice'
     const outboundMessage = 'Your invoice has been sent'
-    h.buildAgentContext.mockResolvedValue({
+    const initialContext = {
       messages: [
         { role: 'customer', text: customerMessage },
         { role: 'agent', text: outboundMessage },
@@ -250,7 +283,9 @@ describe('dispatchInboundToAgent', () => {
       currentStageId: null,
       currentPipelineId: null,
       knowledge: [],
-    })
+    }
+    h.buildAgentContext.mockResolvedValue(initialContext)
+    h.attachKnowledgeToAgentContext.mockResolvedValue({ ...initialContext, knowledge: [] })
     h.decideAgentAction.mockResolvedValue({
       reply_text: null,
       add_tags: [],
@@ -263,15 +298,13 @@ describe('dispatchInboundToAgent', () => {
 
     await dispatchInboundToAgent(baseArgs())
 
-    expect(h.buildAgentContext).toHaveBeenNthCalledWith(2, expect.anything(), {
-      accountId: 'acct-1',
-      conversationId: 'conv-1',
-      knowledge: {
-        enabled: true,
-        query: customerMessage,
-        embedding: null,
-      },
-    })
+    expect(h.buildAgentContext).toHaveBeenCalledTimes(1)
+    expect(h.attachKnowledgeToAgentContext).toHaveBeenCalledWith(
+      expect.anything(),
+      initialContext,
+      { enabled: true, query: customerMessage, embedding: null },
+      'acct-1'
+    )
     expect(h.routeAgentRole).toHaveBeenCalledWith({
       config: expect.anything(),
       message: customerMessage,

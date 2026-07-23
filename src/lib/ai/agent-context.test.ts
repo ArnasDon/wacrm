@@ -6,7 +6,7 @@ vi.mock('./knowledge/retrieve', () => ({
   retrieveKnowledge: h.retrieveKnowledge,
 }))
 
-import { buildAgentContext } from './agent-context'
+import { attachKnowledgeToAgentContext, buildAgentContext } from './agent-context'
 
 function fakeSupabase(data: {
   messages: {
@@ -138,6 +138,44 @@ describe('buildAgentContext', () => {
     })
 
     expect(result.knowledge[0].chunkId).toBe('c1')
+    expect(h.retrieveKnowledge).toHaveBeenCalledWith(supabase, {
+      accountId: 'acct-1',
+      query: 'Can I get a refund?',
+      embedding: null,
+    })
+  })
+
+  it('attaches knowledge to an existing context without reloading messages or deal', async () => {
+    const from = vi.fn()
+    const supabase = { from } as unknown as SupabaseClient
+    const context = {
+      messages: [{ role: 'customer' as const, text: 'Can I get a refund?' }],
+      dealId: 'd1',
+      currentStageId: 's1',
+      currentPipelineId: 'p1',
+      knowledge: [],
+    }
+    h.retrieveKnowledge.mockResolvedValue([
+      {
+        chunkId: 'c1',
+        documentId: 'd1',
+        content: 'Refunds within 7 days',
+        score: 0.8,
+        mode: 'fts',
+      },
+    ])
+
+    const result = await attachKnowledgeToAgentContext(
+      supabase,
+      context,
+      { enabled: true, query: 'Can I get a refund?', embedding: null },
+      'acct-1'
+    )
+
+    expect(from).not.toHaveBeenCalled()
+    expect(result.messages).toBe(context.messages)
+    expect(result.dealId).toBe(context.dealId)
+    expect(result.knowledge).toEqual([expect.objectContaining({ chunkId: 'c1' })])
     expect(h.retrieveKnowledge).toHaveBeenCalledWith(supabase, {
       accountId: 'acct-1',
       query: 'Can I get a refund?',

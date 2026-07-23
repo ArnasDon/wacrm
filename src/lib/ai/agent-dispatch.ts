@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { loadAiConfig } from './config'
 import { loadAutomationResources } from '@/lib/automations/resources'
-import { buildAgentContext } from './agent-context'
+import { attachKnowledgeToAgentContext, buildAgentContext } from './agent-context'
 import { decideAgentAction } from './agent-decide'
 import { moveDealStage } from '@/lib/pipelines/stage-move'
 import { engineSendText } from '@/lib/automations/zapi-send'
@@ -85,15 +85,16 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       .reverse()
       .find((message) => message.role === 'customer')?.text ?? ''
 
-    const context = await buildAgentContext(db, {
-      accountId,
-      conversationId,
-      knowledge: {
+    const context = await attachKnowledgeToAgentContext(
+      db,
+      initialContext,
+      {
         enabled: true,
         query: latestCustomerMessage,
         embedding: null,
       },
-    })
+      accountId
+    )
 
     const agentRole = await routeAgentRole({ config, message: latestCustomerMessage })
 

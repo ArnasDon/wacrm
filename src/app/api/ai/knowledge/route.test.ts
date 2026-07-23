@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
   ingestKnowledgeDocument: vi.fn(),
   toErrorResponse: vi.fn(),
   listFilters: [] as Array<[string, unknown]>,
+  listSelect: '',
+  listData: [] as Array<Record<string, unknown>>,
   listError: null as { message: string } | null,
 }))
 
@@ -35,6 +37,8 @@ function malformedRequest(): Request {
 beforeEach(() => {
   vi.clearAllMocks()
   h.listFilters.length = 0
+  h.listSelect = ''
+  h.listData = []
   h.listError = null
   h.toErrorResponse.mockImplementation((err: { status?: number }) => new Response(null, { status: err.status ?? 500 }))
   h.requireRole.mockResolvedValue({
@@ -42,24 +46,36 @@ beforeEach(() => {
     userId: 'user-1',
     supabase: {
       from: () => ({
-        select: () => ({
+        select: (columns: string) => {
+          h.listSelect = columns
+          return {
           eq: (column: string, value: unknown) => {
             h.listFilters.push([column, value])
-            return { order: async () => ({ data: [], error: h.listError }) }
+            return { order: async () => ({ data: h.listData, error: h.listError }) }
           },
-        }),
+          }
+        },
       }),
     },
   })
 })
 
 describe('GET /api/ai/knowledge', () => {
-  it('requires agent role and lists only account documents', async () => {
+  it('requires agent role and returns account documents with content for editing', async () => {
+    h.listData = [{
+      id: 'doc-1',
+      title: 'Refunds',
+      content: 'Refunds are available within 30 days.',
+      source_type: 'manual',
+    }]
+
     const res = await GET()
 
     expect(res.status).toBe(200)
     expect(h.requireRole).toHaveBeenCalledWith('agent')
     expect(h.listFilters).toEqual([['account_id', 'acct-1']])
+    expect(h.listSelect).toContain('content')
+    await expect(res.json()).resolves.toEqual({ documents: h.listData })
   })
 
   it('returns an error response when the document query fails', async () => {

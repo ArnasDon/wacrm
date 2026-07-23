@@ -9,7 +9,7 @@ export async function GET() {
     const { supabase, accountId } = await requireRole('agent')
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, source_type, source_uri, metadata, created_at, updated_at')
+      .select('id, title, content, source_type, source_uri, metadata, created_at, updated_at')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
 

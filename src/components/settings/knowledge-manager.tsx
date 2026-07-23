@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 interface KnowledgeDocument {
   id: string;
   title: string;
-  content?: string | null;
+  content: string;
   source_type: string;
   updated_at: string;
 }
@@ -191,7 +191,7 @@ export function KnowledgeManager() {
                     setDraft({
                       id: document.id,
                       title: document.title,
-                      content: document.content ?? '',
+                      content: document.content,
                     })
                   }
                   disabled={disabled || saving || deletingId === document.id}

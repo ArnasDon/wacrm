@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { chunkKnowledgeText } from './chunk'
 import { generateOpenAiEmbedding } from './embeddings'
 
+const EMBEDDING_DIMENSIONS = 1536
+
 export interface IngestKnowledgeDocumentArgs {
   accountId: string
   userId: string
@@ -14,6 +16,15 @@ export interface IngestKnowledgeDocumentArgs {
   embedding?: { apiKey: string; model: string } | null
 }
 
+interface ChunkRow {
+  account_id: string
+  document_id: string
+  chunk_index: number
+  content: string
+  token_estimate: number
+  embedding: string | null
+}
+
 export async function ingestKnowledgeDocument(
   supabase: SupabaseClient,
   args: IngestKnowledgeDocumentArgs,
@@ -22,6 +33,47 @@ export async function ingestKnowledgeDocument(
   const content = args.content.trim()
   if (!title) throw new Error('title is required')
   if (!content) throw new Error('content is required')
+
+  if (args.documentId) {
+    const { data: existingDocument, error: ownershipError } = await supabase
+      .from('ai_knowledge_documents')
+      .select('id')
+      .eq('id', args.documentId)
+      .eq('account_id', args.accountId)
+      .maybeSingle()
+
+    if (ownershipError) {
+      throw new Error(`Failed to validate knowledge document ownership: ${ownershipError.message}`)
+    }
+    if (!existingDocument) throw new Error('Knowledge document not found for this account')
+  }
+
+  const chunks = chunkKnowledgeText(content)
+  const preparedChunks: Omit<ChunkRow, 'account_id' | 'document_id'>[] = []
+  let embeddedCount = 0
+
+  for (const chunk of chunks) {
+    let embedding: string | null = null
+    if (args.embedding) {
+      const vector = await generateOpenAiEmbedding({
+        apiKey: args.embedding.apiKey,
+        model: args.embedding.model,
+        input: chunk.content,
+      })
+      if (vector.length !== EMBEDDING_DIMENSIONS || !vector.every(Number.isFinite)) {
+        throw new Error(`Embedding must contain exactly ${EMBEDDING_DIMENSIONS} finite dimensions`)
+      }
+      embedding = `[${vector.join(',')}]`
+      embeddedCount += 1
+    }
+
+    preparedChunks.push({
+      chunk_index: chunk.chunkIndex,
+      content: chunk.content,
+      token_estimate: chunk.tokenEstimate,
+      embedding,
+    })
+  }
 
   const { data: document, error: documentError } = await supabase
     .from('ai_knowledge_documents')
@@ -41,6 +93,12 @@ export async function ingestKnowledgeDocument(
   if (documentError) throw new Error(`Failed to save knowledge document: ${documentError.message}`)
 
   const documentId = (document as { id: string }).id
+  const rows: ChunkRow[] = preparedChunks.map((chunk) => ({
+    ...chunk,
+    account_id: args.accountId,
+    document_id: documentId,
+  }))
+
   const { error: deleteError } = await supabase
     .from('ai_knowledge_chunks')
     .delete()
@@ -48,39 +106,6 @@ export async function ingestKnowledgeDocument(
     .eq('document_id', documentId)
 
   if (deleteError) throw new Error(`Failed to replace knowledge chunks: ${deleteError.message}`)
-
-  const chunks = chunkKnowledgeText(content)
-  let embeddedCount = 0
-  const rows: {
-    account_id: string
-    document_id: string
-    chunk_index: number
-    content: string
-    token_estimate: number
-    embedding: string | null
-  }[] = []
-
-  for (const chunk of chunks) {
-    let embedding: string | null = null
-    if (args.embedding) {
-      const vector = await generateOpenAiEmbedding({
-        apiKey: args.embedding.apiKey,
-        model: args.embedding.model,
-        input: chunk.content,
-      })
-      embedding = `[${vector.join(',')}]`
-      embeddedCount += 1
-    }
-
-    rows.push({
-      account_id: args.accountId,
-      document_id: documentId,
-      chunk_index: chunk.chunkIndex,
-      content: chunk.content,
-      token_estimate: chunk.tokenEstimate,
-      embedding,
-    })
-  }
 
   if (rows.length > 0) {
     const { error: insertError } = await supabase.from('ai_knowledge_chunks').insert(rows)

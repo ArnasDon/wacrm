@@ -1669,7 +1669,20 @@
       "save": "저장",
       "saved": "AI 에이전트 설정이 저장되었습니다",
       "saveError": "AI 에이전트 설정을 저장하지 못했습니다",
-      "adminOnlyHint": "AI 에이전트 설정은 계정 관리자만 변경할 수 있습니다."
+      "adminOnlyHint": "AI 에이전트 설정은 계정 관리자만 변경할 수 있습니다.",
+      "knowledge": {
+        "title": "지식 베이스",
+        "description": "AI 에이전트가 답변하기 전에 사용할 신뢰할 수 있는 답변, 정책 및 제품 정보를 추가하세요.",
+        "documentTitle": "제목",
+        "documentContent": "내용",
+        "save": "지식 저장",
+        "saving": "저장 중...",
+        "empty": "아직 지식 문서가 없습니다.",
+        "edit": "수정",
+        "delete": "삭제",
+        "saved": "지식이 저장되었습니다",
+        "deleted": "지식이 삭제되었습니다"
+      }
     }
   }
 }

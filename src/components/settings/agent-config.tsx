@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { SettingsPanelHead } from './settings-panel-head';
+import { KnowledgeManager } from './knowledge-manager';
 
 interface AgentConfigState {
   provider: 'openai' | 'anthropic';
@@ -175,6 +176,8 @@ export function AgentConfig() {
           </div>
         </CardContent>
       </Card>
+
+      <KnowledgeManager />
 
       {canEditSettings && (
         <Button onClick={handleSave} disabled={saving || profileLoading}>

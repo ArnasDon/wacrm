@@ -1669,7 +1669,20 @@
       "save": "Save",
       "saved": "AI agent settings saved",
       "saveError": "Couldn't save AI agent settings",
-      "adminOnlyHint": "Only account admins can change AI agent settings."
+      "adminOnlyHint": "Only account admins can change AI agent settings.",
+      "knowledge": {
+        "title": "Knowledge base",
+        "description": "Add trusted answers, policies, and product details the AI agent can use before replying.",
+        "documentTitle": "Title",
+        "documentContent": "Content",
+        "save": "Save knowledge",
+        "saving": "Saving...",
+        "empty": "No knowledge documents yet.",
+        "edit": "Edit",
+        "delete": "Delete",
+        "saved": "Knowledge saved",
+        "deleted": "Knowledge deleted"
+      }
     }
   }
 }

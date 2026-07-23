@@ -157,6 +157,16 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
         console.error('[ai-agent] failed to log tool call:', err)
       }
     }
+    const disableAutoreply = async (reason: string | null, assignedAgentId: string | null) =>
+      db
+        .from('conversations')
+        .update({
+          ai_autoreply_disabled: true,
+          ai_handoff_summary: reason,
+          ...(assignedAgentId ? { assigned_agent_id: assignedAgentId } : {}),
+        })
+        .eq('id', conversationId)
+        .eq('account_id', accountId)
 
     const decision = await decideAgentAction({
       config,
@@ -365,28 +375,25 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       }
     }
 
-    if (handoff && allows('assign_conversation')) {
+    if (handoff) {
       const toolArguments = {
         agentRole,
         conversationId,
         assignedAgentId: config.handoffAgentId,
         reason: handoffReason,
       }
+      const canAssignConversation = allows('assign_conversation')
       await logTool({
         toolName: 'assign_conversation',
         arguments: toolArguments,
-        status: 'proposed',
+        status: canAssignConversation ? 'proposed' : 'skipped',
+        ...(canAssignConversation ? {} : { result: { reason: 'assignment action not allowed for specialist' } }),
       })
       try {
-        const { error } = await db
-          .from('conversations')
-          .update({
-            ai_autoreply_disabled: true,
-            ai_handoff_summary: handoffReason,
-            ...(config.handoffAgentId ? { assigned_agent_id: config.handoffAgentId } : {}),
-          })
-          .eq('id', conversationId)
-          .eq('account_id', accountId)
+        const { error } = await disableAutoreply(
+          handoffReason,
+          canAssignConversation ? config.handoffAgentId : null,
+        )
         if (error) {
           console.error('[ai-agent] handoff update failed:', error)
           await logTool({
@@ -399,7 +406,8 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
           await logTool({
             toolName: 'assign_conversation',
             arguments: toolArguments,
-            status: 'executed',
+            status: canAssignConversation ? 'executed' : 'skipped',
+            ...(canAssignConversation ? {} : { result: { reason: 'autoreply disabled without assignment' } }),
           })
         }
       } catch (err) {

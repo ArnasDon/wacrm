@@ -426,6 +426,49 @@ describe('dispatchInboundToAgent', () => {
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
   })
 
+  it('disables autoreply on reply cap even when the specialist cannot assign conversations', async () => {
+    h.routeAgentRole.mockResolvedValue('sales')
+    h.loadAgentDefinitions.mockResolvedValue([
+      {
+        role: 'sales',
+        name: 'Sales',
+        instructions: 'Qualify leads.',
+        enabled: true,
+        allowedActions: ['send_message'],
+        knowledgeEnabled: true,
+      },
+    ])
+    h.claimAiReplySlot.mockResolvedValue({ data: false, error: null })
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: 'one more reply',
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: null,
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updateCalls).toContainEqual({
+      ai_autoreply_disabled: true,
+      ai_handoff_summary: 'auto-reply cap reached',
+    })
+    expect(h.state.updateFilters).toContainEqual([
+      ['id', 'conv-1'],
+      ['account_id', 'acct-1'],
+    ])
+    expect(h.logAiToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        toolName: 'assign_conversation',
+        status: 'skipped',
+      }),
+    )
+  })
+
   it('hands off instead of sending when the reply-cap RPC reports the slot already claimed', async () => {
     // Wiring-correctness only: this asserts that dispatchInboundToAgent
     // calls the RPC with the right arguments and correctly branches on its

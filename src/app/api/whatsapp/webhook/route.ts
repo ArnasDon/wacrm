@@ -406,13 +406,19 @@ async function processZapiWebhook(
       await handleConnectionStatus(config, body, false, trace)
       break
     case 'MessageStatusCallback':
+    case 'DeliveryCallback':
       await handleMessageStatus(body, trace)
       break
     default:
       if (isReactionPayload(body)) {
         await handleInboundReaction(config, body, trace)
-      } else {
+      } else if (type === 'ReceivedCallback' || type === 'MessageReceivedCallback') {
         await handleInboundMessage(config, body, trace)
+      } else {
+        logAsyncEvent('warn', 'webhook.request.dropped', trace, {
+          reason: 'unsupported_callback_type',
+          zapi_event: type,
+        })
       }
       break
   }
@@ -621,10 +627,6 @@ async function applyMessageStatus(
   }
 
   if (messageStatusApplied && messageConversationId && messageAccountId) {
-    const accountTrace = extendAsyncEventTrace(statusTrace, {
-      accountId: messageAccountId,
-      conversationId: messageConversationId,
-    })
     await dispatchWebhookEvent(
       supabaseAdmin(),
       messageAccountId,
@@ -1082,7 +1084,7 @@ async function handleInboundMessage(
     }
   }
 
-  void dispatchInboundToAgent({
+  await dispatchInboundToAgent({
     accountId: config.account_id,
     userId: config.user_id,
     contactId: contactRecord.id,

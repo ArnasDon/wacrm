@@ -2,10 +2,55 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { loadAiConfig, saveAiConfig } from '@/lib/ai/config'
 import type { AiProvider } from '@/lib/ai/types'
+import { EncryptionConfigError } from '@/lib/whatsapp/encryption'
 
 const PROVIDERS: AiProvider[] = ['openai', 'anthropic']
 
-/** GET /api/ai/config (agent+) — never returns the raw key, only whether one is set. */
+function isMissingAiSchemaError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+
+  const candidate = err as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+  const code = typeof candidate.code === 'string' ? candidate.code : ''
+  const haystack = [candidate.message, candidate.details, candidate.hint]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase()
+
+  return (
+    code === '42P01' ||
+    code === '42703' ||
+    code === 'PGRST205' ||
+    haystack.includes('relation "ai_configs" does not exist') ||
+    haystack.includes("column 'api_key_encrypted' does not exist") ||
+    haystack.includes('column "api_key_encrypted" does not exist')
+  )
+}
+
+function toAiConfigErrorResponse(err: unknown): NextResponse | null {
+  if (err instanceof EncryptionConfigError) {
+    return NextResponse.json(
+      {
+        error: `${err.message} Configure the production server env before saving AI agent settings.`,
+        code: 'encryption_key_invalid',
+      },
+      { status: 503 },
+    )
+  }
+
+  if (isMissingAiSchemaError(err)) {
+    return NextResponse.json(
+      {
+        error: 'AI agent database schema is missing in this environment. Apply migration 038_ai_agent.sql.',
+        code: 'ai_schema_missing',
+      },
+      { status: 503 },
+    )
+  }
+
+  return null
+}
+
+/** GET /api/ai/config (agent+) - never returns the raw key, only whether one is set. */
 export async function GET() {
   try {
     const { supabase, accountId } = await requireRole('agent')
@@ -16,14 +61,14 @@ export async function GET() {
     void _apiKey
     return NextResponse.json({ config: safeConfig, hasApiKey: true })
   } catch (err) {
-    return toErrorResponse(err)
+    return toAiConfigErrorResponse(err) ?? toErrorResponse(err)
   }
 }
 
 /**
  * PUT /api/ai/config (admin+)
  *
- * A blank `apiKey` means "keep the current stored key" — the Settings
+ * A blank `apiKey` means "keep the current stored key" - the Settings
  * UI always clears the field back to '' after load/save (it never
  * echoes the decrypted key to the client), so every save after the
  * first one submits apiKey: ''. Only reject when there is no existing
@@ -66,6 +111,6 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return toErrorResponse(err)
+    return toAiConfigErrorResponse(err) ?? toErrorResponse(err)
   }
 }

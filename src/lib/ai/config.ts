@@ -17,7 +17,7 @@ export async function loadAiConfig(
   supabase: SupabaseClient,
   accountId: string,
 ): Promise<AiConfig | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('ai_configs')
     .select(
       'account_id, provider, model, api_key_encrypted, agent_enabled, pipeline_move_enabled, auto_reply_max_per_conversation, handoff_agent_id',
@@ -25,6 +25,7 @@ export async function loadAiConfig(
     .eq('account_id', accountId)
     .maybeSingle()
 
+  if (error) throw new Error(`Failed to load AI config: ${error.message}`)
   if (!data) return null
   const row = data as AiConfigRow
 

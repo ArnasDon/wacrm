@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { EncryptionConfigError } from '@/lib/whatsapp/encryption'
 
 const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
@@ -112,5 +113,50 @@ describe('PUT /api/ai/config', () => {
     )
     expect(res.status).toBe(400)
     expect(h.saveAiConfig).not.toHaveBeenCalled()
+  })
+
+  it('503s with a clear message when ENCRYPTION_KEY is missing or invalid', async () => {
+    h.saveAiConfig.mockRejectedValue(new EncryptionConfigError('ENCRYPTION_KEY is not configured.'))
+
+    const res = await PUT(
+      putReq({
+        provider: 'openai',
+        model: 'gpt-test',
+        apiKey: 'sk-1',
+        agentEnabled: true,
+        pipelineMoveEnabled: false,
+        autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
+      }),
+    )
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'encryption_key_invalid',
+    })
+  })
+
+  it('503s with a migration hint when the ai_configs schema is missing', async () => {
+    h.saveAiConfig.mockRejectedValue({
+      code: '42P01',
+      message: 'relation "ai_configs" does not exist',
+    })
+
+    const res = await PUT(
+      putReq({
+        provider: 'openai',
+        model: 'gpt-test',
+        apiKey: 'sk-1',
+        agentEnabled: true,
+        pipelineMoveEnabled: false,
+        autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
+      }),
+    )
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'ai_schema_missing',
+    })
   })
 })

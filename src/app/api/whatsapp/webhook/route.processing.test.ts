@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
     findExistingContact: vi.fn(),
     runAutomationsForTrigger: vi.fn(),
     dispatchInboundToFlows: vi.fn(),
+    dispatchInboundToAgent: vi.fn(),
     dispatchWebhookEvent: vi.fn(),
   },
 }))
@@ -230,6 +231,10 @@ vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.mocks.dispatchInboundToFlows,
 }))
 
+vi.mock('@/lib/ai/agent-dispatch', () => ({
+  dispatchInboundToAgent: h.mocks.dispatchInboundToAgent,
+}))
+
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.mocks.dispatchWebhookEvent,
 }))
@@ -239,6 +244,13 @@ import { POST } from './route'
 async function flushAfterQueue() {
   await Promise.all(h.state.afterPromises)
   h.state.afterPromises = []
+}
+
+async function waitForMockCall(mock: { mock: { calls: unknown[] } }, count = 1) {
+  for (let i = 0; i < 20; i += 1) {
+    if (mock.mock.calls.length >= count) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
 }
 
 beforeEach(() => {
@@ -279,6 +291,8 @@ beforeEach(() => {
     consumed: false,
     outcome: 'no_match',
   })
+  h.mocks.dispatchInboundToAgent.mockReset()
+  h.mocks.dispatchInboundToAgent.mockResolvedValue(undefined)
   h.mocks.dispatchWebhookEvent.mockReset()
   h.mocks.dispatchWebhookEvent.mockResolvedValue(undefined)
 })
@@ -343,5 +357,57 @@ describe('POST /api/whatsapp/webhook processing', () => {
     expect(h.mocks.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
     expect(h.mocks.runAutomationsForTrigger).not.toHaveBeenCalled()
     expect(h.state.messageRows).toHaveLength(1)
+  })
+
+  it('waits for AI dispatch before completing post-response processing', async () => {
+    let resolveAgent!: () => void
+    const agentDone = new Promise<void>((resolve) => {
+      resolveAgent = resolve
+    })
+    h.mocks.dispatchInboundToAgent.mockImplementation(() => agentDone)
+
+    const response = await POST(
+      buildRequest({
+        type: 'ReceivedCallback',
+        instanceId: 'inst-1',
+        messageId: 'wamid-ai-1',
+        phone: '5511999999999',
+        momment: 1_719_825_600,
+        text: { message: 'quero suporte' },
+      }),
+    )
+
+    let afterResolved = false
+    const afterDone = Promise.all(h.state.afterPromises).then(() => {
+      afterResolved = true
+    })
+    await waitForMockCall(h.mocks.dispatchInboundToAgent)
+
+    expect(response.status).toBe(200)
+    expect(h.mocks.dispatchInboundToAgent).toHaveBeenCalledTimes(1)
+    expect(afterResolved).toBe(false)
+
+    resolveAgent()
+    await afterDone
+
+    expect(afterResolved).toBe(true)
+  })
+
+  it('does not persist DeliveryCallback events as inbound customer messages', async () => {
+    const response = await POST(
+      buildRequest({
+        type: 'DeliveryCallback',
+        instanceId: 'inst-1',
+        messageId: 'wamid-delivery-1',
+        phone: '5511999999999',
+        momment: 1_719_825_600,
+      }),
+    )
+    await flushAfterQueue()
+
+    expect(response.status).toBe(200)
+    expect(h.state.messageRows).toHaveLength(0)
+    expect(h.mocks.dispatchInboundToFlows).not.toHaveBeenCalled()
+    expect(h.mocks.dispatchInboundToAgent).not.toHaveBeenCalled()
   })
 })

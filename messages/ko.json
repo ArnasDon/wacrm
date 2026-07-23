@@ -364,6 +364,19 @@
       "noCustomFields": "정의된 커스텀 필드가 없습니다. 설정에서 만드세요.",
       "manageFields": "필드 관리",
       "enterCustomField": "{name} 입력...",
+      "customFieldCheckboxYes": "예",
+      "customFieldCheckboxNo": "아니요",
+      "customFieldFormattedValue": "표시: {value}",
+      "customFieldErrors": {
+        "invalidNumber": "유효한 숫자를 입력하세요.",
+        "invalidDate": "유효한 날짜를 입력하세요.",
+        "selectOptionsRequired": "값을 저장하기 전에 선택 옵션을 추가하세요.",
+        "selectInvalidOption": "설정된 옵션 중 하나를 선택하세요.",
+        "invalidHttpUrl": "유효한 HTTP 또는 HTTPS URL을 입력하세요.",
+        "invalidUrl": "유효한 URL을 입력하세요.",
+        "invalidPhone": "유효한 전화번호를 입력하세요."
+      },
+      "toastCustomFieldsInvalid": "저장하기 전에 잘못된 커스텀 필드 값을 수정하세요.",
       "activityTab": {
         "title": "활동 내역",
         "noActivity": "아직 활동이 없습니다."
@@ -445,6 +458,18 @@
       "desc": "추가 연락처 필드를 정의하세요 (예: 우편번호, 리드 출처). 모든 연락처와 \"연락처 필드 업데이트\" 자동화 액션에 표시됩니다.",
       "addField": "추가",
       "fieldName": "새 필드 이름…",
+      "selectOptionsPlaceholder": "선택 옵션을 한 줄에 하나씩 또는 쉼표로 구분해 입력",
+      "selectOptionCount": "{count}개 옵션",
+      "typeLockedHint": "기존 값을 바꾸지 않도록 필드 유형은 생성 후 잠깁니다.",
+      "types": {
+        "text": "텍스트",
+        "number": "숫자",
+        "date": "날짜",
+        "select": "선택",
+        "checkbox": "체크박스",
+        "url": "URL",
+        "phone": "전화번호"
+      },
       "loading": "불러오는 중…",
       "empty": "아직 커스텀 필드가 없습니다.",
       "renameAria": "{name} 이름 변경",
@@ -452,6 +477,7 @@
       "deleteConfirm": "\"{name}\"을(를) 삭제하시겠습니까? 모든 연락처에 저장된 값도 함께 삭제되며, 되돌릴 수 없습니다.",
       "toastNoAccount": "프로필이 계정에 연결되어 있지 않습니다.",
       "toastDuplicate": "\"{name}\"이라는 필드가 이미 존재합니다.",
+      "toastSelectOptionsRequired": "선택 필드에는 옵션을 하나 이상 추가하세요.",
       "toastCreateFailed": "필드를 만들 수 없습니다. 권한이 없을 수 있습니다.",
       "toastCreated": "\"{name}\"을(를) 만들었습니다.",
       "toastRenameFailed": "필드 이름을 변경할 수 없습니다.",

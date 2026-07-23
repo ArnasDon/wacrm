@@ -14,8 +14,23 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import {
+  CUSTOM_FIELD_TYPE_DEFINITIONS,
+  coerceCustomFieldType,
+  parseSelectOptions,
+  type CustomFieldType,
+} from '@/lib/contacts/custom-field-types';
 
 interface CustomFieldsManagerProps {
   open: boolean;
@@ -37,7 +52,9 @@ export function CustomFieldsManager({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-popover text-popover-foreground sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">{t('title')}</DialogTitle>
+          <DialogTitle className="text-popover-foreground">
+            {t('title')}
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {t('desc')}
           </DialogDescription>
@@ -62,8 +79,16 @@ export function CustomFieldsPanel() {
   const [fields, setFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<CustomFieldType>('text');
+  const [selectOptionsText, setSelectOptionsText] = useState('');
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const draftSelectOptions = parseSelectOptions({
+    options: selectOptionsText.split(/\r?\n|,/),
+  });
+  const canCreate =
+    newName.trim().length > 0 &&
+    (newType !== 'select' || draftSelectOptions.length > 0);
 
   const fetchFields = useCallback(async () => {
     if (!accountId) return;
@@ -106,10 +131,17 @@ export function CustomFieldsPanel() {
       return;
     }
 
+    const selectOptions = draftSelectOptions;
+    if (newType === 'select' && selectOptions.length === 0) {
+      toast.error(t('toastSelectOptionsRequired'));
+      return;
+    }
+
     setCreating(true);
     const { error } = await supabase.from('custom_fields').insert({
       field_name: name,
-      field_type: 'text',
+      field_type: newType,
+      field_options: newType === 'select' ? { options: selectOptions } : null,
       user_id: user.id,
       account_id: accountId,
     });
@@ -121,6 +153,8 @@ export function CustomFieldsPanel() {
     }
     toast.success(t('toastCreated', { name }));
     setNewName('');
+    setNewType('text');
+    setSelectOptionsText('');
     await fetchFields();
   }
 
@@ -151,11 +185,7 @@ export function CustomFieldsPanel() {
   }
 
   async function handleDelete(field: CustomField) {
-    if (
-      !window.confirm(
-        t('deleteConfirm', { name: field.field_name })
-      )
-    ) {
+    if (!window.confirm(t('deleteConfirm', { name: field.field_name }))) {
       return;
     }
     setBusyId(field.id);
@@ -175,46 +205,73 @@ export function CustomFieldsPanel() {
   return (
     <div className="space-y-4">
       {/* Create */}
-      <div className="flex items-center gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              void handleCreate();
-            }
-          }}
-          placeholder={t('fieldName')}
-          className="bg-muted text-foreground"
-        />
-        <Button
-          onClick={handleCreate}
-          disabled={creating || !newName.trim()}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
-        >
-          {creating ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Plus className="size-4" />
-          )}
-          {t('addField')}
-        </Button>
+      <div className="border-border bg-muted/30 space-y-2 rounded-md border p-3">
+        <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto]">
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newType !== 'select') {
+                e.preventDefault();
+                void handleCreate();
+              }
+            }}
+            placeholder={t('fieldName')}
+            className="bg-muted text-foreground"
+          />
+          <Select
+            value={newType}
+            onValueChange={(value) => {
+              if (value) setNewType(value as CustomFieldType);
+            }}
+          >
+            <SelectTrigger className="bg-muted text-foreground w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-border bg-popover">
+              {CUSTOM_FIELD_TYPE_DEFINITIONS.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {t(`types.${type.value}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={handleCreate}
+            disabled={creating || !canCreate}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+          >
+            {creating ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            {t('addField')}
+          </Button>
+        </div>
+        {newType === 'select' && (
+          <Textarea
+            value={selectOptionsText}
+            onChange={(e) => setSelectOptionsText(e.target.value)}
+            placeholder={t('selectOptionsPlaceholder')}
+            className="bg-muted text-foreground placeholder:text-muted-foreground min-h-20 text-sm"
+          />
+        )}
       </div>
 
       {/* List */}
-      <div className="max-h-72 overflow-y-auto rounded-md border border-border">
+      <div className="border-border max-h-72 overflow-y-auto rounded-md border">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
             <Loader2 className="size-4 animate-spin" />
             {t('loading')}
           </div>
         ) : fields.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
+          <p className="text-muted-foreground py-8 text-center text-sm">
             {t('empty')}
           </p>
         ) : (
-          <ul className="divide-y divide-border">
+          <ul className="divide-border divide-y">
             {fields.map((field) => (
               <FieldRow
                 key={field.id}
@@ -246,6 +303,8 @@ function FieldRow({
 }) {
   const t = useTranslations('Contacts.customFields');
   const [name, setName] = useState(field.field_name);
+  const type = coerceCustomFieldType(field.field_type);
+  const selectOptionCount = parseSelectOptions(field.field_options).length;
 
   async function commit() {
     if (name.trim() === field.field_name) {
@@ -267,15 +326,25 @@ function FieldRow({
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
         aria-label={t('renameAria', { name: field.field_name })}
-        className="focus:border-primary h-8 border-transparent bg-transparent text-foreground hover:border-border"
+        className="focus:border-primary text-foreground hover:border-border h-8 border-transparent bg-transparent"
       />
+      <Badge
+        variant="secondary"
+        title={t('typeLockedHint')}
+        className="shrink-0 text-[11px]"
+      >
+        {t(`types.${type}`)}
+        {type === 'select' && selectOptionCount > 0
+          ? ` · ${t('selectOptionCount', { count: selectOptionCount })}`
+          : ''}
+      </Badge>
       <Button
         variant="ghost"
         size="icon-sm"
         disabled={busy}
         onClick={() => onDelete(field)}
         title={t('deleteTitle')}
-        className="shrink-0 text-muted-foreground hover:text-red-400"
+        className="text-muted-foreground shrink-0 hover:text-red-400"
       >
         {busy ? (
           <Loader2 className="size-4 animate-spin" />

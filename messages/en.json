@@ -364,6 +364,19 @@
       "noCustomFields": "No custom fields defined. Create them in Settings.",
       "manageFields": "Manage fields",
       "enterCustomField": "Enter {name}...",
+      "customFieldCheckboxYes": "Yes",
+      "customFieldCheckboxNo": "No",
+      "customFieldFormattedValue": "Display: {value}",
+      "customFieldErrors": {
+        "invalidNumber": "Enter a valid number.",
+        "invalidDate": "Enter a valid date.",
+        "selectOptionsRequired": "Add select options before saving a value.",
+        "selectInvalidOption": "Choose one of the configured options.",
+        "invalidHttpUrl": "Enter a valid HTTP or HTTPS URL.",
+        "invalidUrl": "Enter a valid URL.",
+        "invalidPhone": "Enter a valid phone number."
+      },
+      "toastCustomFieldsInvalid": "Fix invalid custom field values before saving.",
       "activityTab": {
         "title": "Activity History",
         "noActivity": "No activity yet."
@@ -445,6 +458,18 @@
       "desc": "Define extra contact fields (e.g. ZIP code, lead source). They appear on every contact and in the “Update Contact Field” automation action.",
       "addField": "Add",
       "fieldName": "New field name…",
+      "selectOptionsPlaceholder": "Select options, one per line or comma-separated",
+      "selectOptionCount": "{count} {count, plural, =1 {option} other {options}}",
+      "typeLockedHint": "Field type is locked after creation to avoid changing existing values.",
+      "types": {
+        "text": "Text",
+        "number": "Number",
+        "date": "Date",
+        "select": "Select",
+        "checkbox": "Checkbox",
+        "url": "URL",
+        "phone": "Phone"
+      },
       "loading": "Loading…",
       "empty": "No custom fields yet.",
       "renameAria": "Rename {name}",
@@ -452,6 +477,7 @@
       "deleteConfirm": "Delete \"{name}\"? This also removes its stored value on every contact. This cannot be undone.",
       "toastNoAccount": "Your profile is not linked to an account.",
       "toastDuplicate": "A field named \"{name}\" already exists.",
+      "toastSelectOptionsRequired": "Add at least one option for select fields.",
       "toastCreateFailed": "Could not create field. You may not have permission.",
       "toastCreated": "Created \"{name}\".",
       "toastRenameFailed": "Could not rename field.",

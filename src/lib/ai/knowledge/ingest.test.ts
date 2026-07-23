@@ -159,4 +159,24 @@ describe('ingestKnowledgeDocument', () => {
     })).rejects.toThrow('Embedding must contain exactly 1536 finite dimensions')
     expect(invalidVectorDb.calls).toEqual([])
   })
+
+  it('rejects a non-finite 1536-dimension vector before deleting existing chunks', async () => {
+    const nonFiniteVector = validVector()
+    nonFiniteVector[100] = Number.NaN
+    h.generateOpenAiEmbedding.mockResolvedValueOnce(nonFiniteVector)
+    const db = client({ documentId: 'doc-existing' })
+
+    await expect(ingestKnowledgeDocument(db as never, {
+      accountId: 'acct-1', userId: 'user-1', documentId: 'doc-existing', title: 'Policy', content: 'Text',
+      embedding: { apiKey: 'sk-test', model: 'text-embedding-3-small' },
+    })).rejects.toThrow('Embedding must contain exactly 1536 finite dimensions')
+
+    expect(db.calls).toEqual([
+      {
+        table: 'ai_knowledge_documents',
+        op: 'ownership',
+        filters: [['id', 'doc-existing'], ['account_id', 'acct-1']],
+      },
+    ])
+  })
 })

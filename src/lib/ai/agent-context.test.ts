@@ -9,6 +9,7 @@ vi.mock('./knowledge/retrieve', () => ({
 import { attachKnowledgeToAgentContext, buildAgentContext } from './agent-context'
 
 function fakeSupabase(data: {
+  conversation?: { id: string } | null
   messages: {
     sender_type: string
     content_text: string | null
@@ -18,6 +19,21 @@ function fakeSupabase(data: {
 }): SupabaseClient {
   return {
     from: (table: string) => {
+      if (table === 'conversations') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: data.conversation === undefined ? { id: 'conv-1' } : data.conversation,
+                    error: null,
+                  }),
+              }),
+            }),
+          }),
+        }
+      }
       if (table === 'messages') {
         return {
           select: () => ({
@@ -106,6 +122,41 @@ describe('buildAgentContext', () => {
     expect(result.currentPipelineId).toBeNull()
   })
 
+  it('does not read messages when the conversation belongs to another account', async () => {
+    const ownershipFilters: Array<[string, unknown]> = []
+    const from = vi.fn((table: string) => {
+      if (table === 'conversations') {
+        const query = {
+          eq: (column: string, value: unknown) => {
+            ownershipFilters.push([column, value])
+            return query
+          },
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        }
+        return {
+          select: () => query,
+        }
+      }
+      throw new Error(`unexpected transcript read from ${table}`)
+    })
+    const supabase = { from } as unknown as SupabaseClient
+
+    await expect(
+      buildAgentContext(supabase, {
+        accountId: 'acct-2',
+        conversationId: 'conv-1',
+      }),
+    ).rejects.toThrow('Conversation not found for this account')
+
+    expect(from).toHaveBeenCalledTimes(1)
+    expect(from).toHaveBeenCalledWith('conversations')
+    expect(ownershipFilters).toEqual([
+      ['id', 'conv-1'],
+      ['account_id', 'acct-2'],
+    ])
+    expect(h.retrieveKnowledge).not.toHaveBeenCalled()
+  })
+
   it('includes retrieved knowledge when knowledge options are provided', async () => {
     const supabase = fakeSupabase({
       messages: [
@@ -186,6 +237,17 @@ describe('buildAgentContext', () => {
   it('throws when messages query returns an error', async () => {
     const supabase = {
       from: (table: string) => {
+        if (table === 'conversations') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: () => Promise.resolve({ data: { id: 'conv-1' }, error: null }),
+                }),
+              }),
+            }),
+          }
+        }
         if (table === 'messages') {
           return {
             select: () => ({
@@ -227,6 +289,17 @@ describe('buildAgentContext', () => {
   it('throws when deals query returns an error', async () => {
     const supabase = {
       from: (table: string) => {
+        if (table === 'conversations') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: () => Promise.resolve({ data: { id: 'conv-1' }, error: null }),
+                }),
+              }),
+            }),
+          }
+        }
         if (table === 'messages') {
           return {
             select: () => ({

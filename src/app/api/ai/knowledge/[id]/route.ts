@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { loadAiConfig } from '@/lib/ai/config'
 import { ingestKnowledgeDocument } from '@/lib/ai/knowledge/ingest'
 
 const MAX_CONTENT_LENGTH = 200_000
@@ -18,6 +19,12 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
       return NextResponse.json({ error: `content is too long (max ${MAX_CONTENT_LENGTH} characters)` }, { status: 400 })
     }
 
+    const config = await loadAiConfig(supabase, accountId)
+    const embedding =
+      config?.knowledgeEnabled && config.embeddingsApiKey && config.embeddingsModel.trim()
+        ? { apiKey: config.embeddingsApiKey, model: config.embeddingsModel }
+        : null
+
     const result = await ingestKnowledgeDocument(supabase, {
       accountId,
       userId,
@@ -26,7 +33,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
       content,
       sourceType: 'manual',
       metadata: {},
-      embedding: null,
+      embedding,
     })
 
     return NextResponse.json(result)

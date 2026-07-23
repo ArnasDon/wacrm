@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
+  loadAiConfig: vi.fn(),
   ingestKnowledgeDocument: vi.fn(),
   toErrorResponse: vi.fn(),
   deleteFilters: [] as Array<[string, unknown]>,
@@ -12,6 +13,7 @@ vi.mock('@/lib/auth/account', () => ({
   requireRole: h.requireRole,
   toErrorResponse: h.toErrorResponse,
 }))
+vi.mock('@/lib/ai/config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('@/lib/ai/knowledge/ingest', () => ({ ingestKnowledgeDocument: h.ingestKnowledgeDocument }))
 
 import { DELETE, PUT } from './route'
@@ -33,6 +35,7 @@ beforeEach(() => {
   h.deleteFilters.length = 0
   h.deleteError = null
   h.toErrorResponse.mockImplementation((err: { status?: number }) => new Response(null, { status: err.status ?? 500 }))
+  h.loadAiConfig.mockResolvedValue(null)
   h.requireRole.mockResolvedValue({
     accountId: 'acct-1',
     userId: 'user-1',
@@ -94,6 +97,60 @@ describe('PUT /api/ai/knowledge/[id]', () => {
     const res = await PUT(req({ title: 'Updated', content: 'Updated content' }), ctx())
 
     expect(res.status).toBe(500)
+  })
+
+  it('passes decrypted embedding configuration when semantic knowledge is configured', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      knowledgeEnabled: true,
+      embeddingsApiKey: 'sk-embeddings',
+      embeddingsModel: 'text-embedding-test',
+    })
+    h.ingestKnowledgeDocument.mockResolvedValue({ documentId: 'doc-1', chunkCount: 1, embeddedCount: 1 })
+
+    const res = await PUT(req({ title: 'Updated', content: 'Updated content' }), ctx())
+
+    expect(res.status).toBe(200)
+    expect(h.loadAiConfig).toHaveBeenCalledWith(expect.anything(), 'acct-1')
+    expect(h.ingestKnowledgeDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        embedding: {
+          apiKey: 'sk-embeddings',
+          model: 'text-embedding-test',
+        },
+      }),
+    )
+    await expect(res.json()).resolves.not.toEqual(expect.objectContaining({ apiKey: expect.anything() }))
+  })
+
+  it.each([
+    ['missing config', null],
+    [
+      'disabled knowledge',
+      {
+        knowledgeEnabled: false,
+        embeddingsApiKey: 'sk-embeddings',
+        embeddingsModel: 'text-embedding-test',
+      },
+    ],
+    [
+      'unconfigured embeddings',
+      {
+        knowledgeEnabled: true,
+        embeddingsApiKey: null,
+        embeddingsModel: 'text-embedding-test',
+      },
+    ],
+  ])('passes null embeddings for %s', async (_case, config) => {
+    h.loadAiConfig.mockResolvedValue(config)
+    h.ingestKnowledgeDocument.mockResolvedValue({ documentId: 'doc-1', chunkCount: 1, embeddedCount: 0 })
+
+    await PUT(req({ title: 'Updated', content: 'Updated content' }), ctx())
+
+    expect(h.ingestKnowledgeDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ embedding: null }),
+    )
   })
 })
 

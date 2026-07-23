@@ -32,6 +32,20 @@ export async function buildAgentContext(
     knowledge?: AgentKnowledgeOptions
   }
 ): Promise<AgentContext> {
+  const { data: conversation, error: conversationError } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('id', args.conversationId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+
+  if (conversationError) {
+    throw new Error(`Failed to validate conversation ownership: ${conversationError.message}`)
+  }
+  if (!conversation) {
+    throw new Error('Conversation not found for this account')
+  }
+
   const { data: messageRows, error: messagesError } = await supabase
     .from('messages')
     .select('sender_type, content_text, content_type')

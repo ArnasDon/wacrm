@@ -57,6 +57,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       .from('conversations')
       .select('id, ai_autoreply_disabled')
       .eq('id', conversationId)
+      .eq('account_id', accountId)
       .maybeSingle()
     if (!conversation || conversation.ai_autoreply_disabled) {
       await completeRun({ status: 'completed' })
@@ -385,6 +386,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
             ...(config.handoffAgentId ? { assigned_agent_id: config.handoffAgentId } : {}),
           })
           .eq('id', conversationId)
+          .eq('account_id', accountId)
         if (error) {
           console.error('[ai-agent] handoff update failed:', error)
           await logTool({

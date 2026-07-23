@@ -24,7 +24,9 @@ const h = vi.hoisted(() => ({
   claimAiReplySlot: vi.fn(),
   state: {
     conversation: null as Record<string, unknown> | null,
+    conversationSelectFilters: [] as Array<Array<[string, unknown]>>,
     updateCalls: [] as Record<string, unknown>[],
+    updateFilters: [] as Array<Array<[string, unknown]>>,
   },
 }))
 
@@ -69,14 +71,30 @@ vi.mock('@/lib/automations/admin-client', () => ({
     from: (table: string) => {
       if (table === 'conversations') {
         return {
-          select: () => ({
-            eq: () => ({
+          select: () => {
+            const filters: Array<[string, unknown]> = []
+            h.state.conversationSelectFilters.push(filters)
+            const query = {
+              eq: (column: string, value: unknown) => {
+                filters.push([column, value])
+                return query
+              },
               maybeSingle: () => Promise.resolve({ data: h.state.conversation, error: null }),
-            }),
-          }),
+            }
+            return query
+          },
           update: (payload: Record<string, unknown>) => {
             h.state.updateCalls.push(payload)
-            return { eq: () => Promise.resolve({ error: null }) }
+            const filters: Array<[string, unknown]> = []
+            h.state.updateFilters.push(filters)
+            const query = {
+              eq: (column: string, value: unknown) => {
+                filters.push([column, value])
+                return query
+              },
+              error: null,
+            }
+            return query
           },
         }
       }
@@ -108,7 +126,9 @@ beforeEach(() => {
     ai_autoreply_disabled: false,
     last_message_text: 'Can I get a refund?',
   }
+  h.state.conversationSelectFilters = []
   h.state.updateCalls = []
+  h.state.updateFilters = []
   // Default: the reply-cap RPC claims successfully. Tests that need the
   // cap already hit override this per-test.
   h.claimAiReplySlot.mockResolvedValue({ data: true, error: null })
@@ -180,6 +200,27 @@ describe('dispatchInboundToAgent', () => {
     h.state.conversation = { id: 'conv-1', ai_autoreply_disabled: true }
     await dispatchInboundToAgent(baseArgs())
     expect(h.decideAgentAction).not.toHaveBeenCalled()
+  })
+
+  it('stops before transcript or provider work when the conversation is outside the account', async () => {
+    h.state.conversation = null
+
+    await dispatchInboundToAgent({ ...baseArgs(), accountId: 'acct-2' })
+
+    expect(h.state.conversationSelectFilters).toEqual([
+      [
+        ['id', 'conv-1'],
+        ['account_id', 'acct-2'],
+      ],
+    ])
+    expect(h.buildAgentContext).not.toHaveBeenCalled()
+    expect(h.loadAutomationResources).not.toHaveBeenCalled()
+    expect(h.loadAgentDefinitions).not.toHaveBeenCalled()
+    expect(h.routeAgentRole).not.toHaveBeenCalled()
+    expect(h.decideAgentAction).not.toHaveBeenCalled()
+    expect(h.attachKnowledgeToAgentContext).not.toHaveBeenCalled()
+    expect(h.claimAiReplySlot).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
   it('sends a reply, tags, and moves the deal on a full decision', async () => {
@@ -435,6 +476,10 @@ describe('dispatchInboundToAgent', () => {
     })
     await dispatchInboundToAgent(baseArgs())
     expect(h.state.updateCalls.some((c) => c.ai_autoreply_disabled === true)).toBe(true)
+    expect(h.state.updateFilters).toContainEqual([
+      ['id', 'conv-1'],
+      ['account_id', 'acct-1'],
+    ])
   })
 
   it('never throws when a downstream call rejects', async () => {

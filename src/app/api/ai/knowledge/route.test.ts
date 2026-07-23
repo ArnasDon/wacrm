@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
+  loadAiConfig: vi.fn(),
   ingestKnowledgeDocument: vi.fn(),
   toErrorResponse: vi.fn(),
   listFilters: [] as Array<[string, unknown]>,
@@ -14,6 +15,7 @@ vi.mock('@/lib/auth/account', () => ({
   requireRole: h.requireRole,
   toErrorResponse: h.toErrorResponse,
 }))
+vi.mock('@/lib/ai/config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('@/lib/ai/knowledge/ingest', () => ({ ingestKnowledgeDocument: h.ingestKnowledgeDocument }))
 
 import { GET, POST } from './route'
@@ -41,6 +43,7 @@ beforeEach(() => {
   h.listData = []
   h.listError = null
   h.toErrorResponse.mockImplementation((err: { status?: number }) => new Response(null, { status: err.status ?? 500 }))
+  h.loadAiConfig.mockResolvedValue(null)
   h.requireRole.mockResolvedValue({
     accountId: 'acct-1',
     userId: 'user-1',
@@ -136,6 +139,60 @@ describe('POST /api/ai/knowledge', () => {
     expect(h.ingestKnowledgeDocument).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ accountId: 'acct-1', userId: 'user-1' }),
+    )
+  })
+
+  it('passes decrypted embedding configuration when semantic knowledge is configured', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      knowledgeEnabled: true,
+      embeddingsApiKey: 'sk-embeddings',
+      embeddingsModel: 'text-embedding-test',
+    })
+    h.ingestKnowledgeDocument.mockResolvedValue({ documentId: 'doc-1', chunkCount: 1, embeddedCount: 1 })
+
+    const res = await POST(req({ title: 'Refunds', content: 'Refunds are available.' }))
+
+    expect(res.status).toBe(201)
+    expect(h.loadAiConfig).toHaveBeenCalledWith(expect.anything(), 'acct-1')
+    expect(h.ingestKnowledgeDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        embedding: {
+          apiKey: 'sk-embeddings',
+          model: 'text-embedding-test',
+        },
+      }),
+    )
+    await expect(res.json()).resolves.not.toEqual(expect.objectContaining({ apiKey: expect.anything() }))
+  })
+
+  it.each([
+    ['missing config', null],
+    [
+      'disabled knowledge',
+      {
+        knowledgeEnabled: false,
+        embeddingsApiKey: 'sk-embeddings',
+        embeddingsModel: 'text-embedding-test',
+      },
+    ],
+    [
+      'unconfigured embeddings',
+      {
+        knowledgeEnabled: true,
+        embeddingsApiKey: null,
+        embeddingsModel: 'text-embedding-test',
+      },
+    ],
+  ])('passes null embeddings for %s', async (_case, config) => {
+    h.loadAiConfig.mockResolvedValue(config)
+    h.ingestKnowledgeDocument.mockResolvedValue({ documentId: 'doc-1', chunkCount: 1, embeddedCount: 0 })
+
+    await POST(req({ title: 'Refunds', content: 'Refunds are available.' }))
+
+    expect(h.ingestKnowledgeDocument).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ embedding: null }),
     )
   })
 })

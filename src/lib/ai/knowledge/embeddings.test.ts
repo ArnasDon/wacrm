@@ -32,4 +32,22 @@ describe('generateOpenAiEmbedding', () => {
       generateOpenAiEmbedding({ apiKey: 'bad', model: 'text-embedding-3-small', input: 'hello' }),
     ).rejects.toMatchObject({ code: 'embedding_provider_error' } satisfies Partial<AiError>)
   })
+
+  it('throws AiError for invalid JSON responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{invalid', { status: 200 }))
+
+    await expect(
+      generateOpenAiEmbedding({ apiKey: 'sk-test', model: 'text-embedding-3-small', input: 'hello' }),
+    ).rejects.toMatchObject({ code: 'embedding_invalid_response' } satisfies Partial<AiError>)
+  })
+
+  it('throws AiError for empty vectors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ embedding: [] }] }), { status: 200 }),
+    )
+
+    await expect(
+      generateOpenAiEmbedding({ apiKey: 'sk-test', model: 'text-embedding-3-small', input: 'hello' }),
+    ).rejects.toMatchObject({ code: 'embedding_invalid_response' } satisfies Partial<AiError>)
+  })
 })

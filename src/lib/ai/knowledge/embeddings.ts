@@ -42,9 +42,22 @@ export async function generateOpenAiEmbedding(args: {
     })
   }
 
-  const json = (await res.json()) as { data?: { embedding?: unknown }[] }
+  let json: { data?: { embedding?: unknown }[] }
+  try {
+    json = (await res.json()) as { data?: { embedding?: unknown }[] }
+  } catch {
+    throw new AiError('Embedding provider returned an invalid response.', {
+      code: 'embedding_invalid_response',
+      status: 502,
+    })
+  }
+
   const embedding = json.data?.[0]?.embedding
-  if (!Array.isArray(embedding) || !embedding.every((value) => typeof value === 'number')) {
+  if (
+    !Array.isArray(embedding) ||
+    embedding.length === 0 ||
+    !embedding.every((value) => typeof value === 'number')
+  ) {
     throw new AiError('Embedding provider returned an invalid vector.', {
       code: 'embedding_invalid_response',
       status: 502,

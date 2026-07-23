@@ -7,6 +7,9 @@ export interface AiConfig {
   apiKey: string
   agentEnabled: boolean
   pipelineMoveEnabled: boolean
+  knowledgeEnabled: boolean
+  embeddingsModel: string
+  embeddingsApiKey: string | null
   autoReplyMaxPerConversation: number
   handoffAgentId: string | null
 }

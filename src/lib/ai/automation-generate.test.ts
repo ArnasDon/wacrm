@@ -15,6 +15,9 @@ function config(): AiConfig {
     apiKey: 'sk-test',
     agentEnabled: false,
     pipelineMoveEnabled: false,
+    knowledgeEnabled: false,
+    embeddingsModel: 'text-embedding-3-small',
+    embeddingsApiKey: null,
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
   }

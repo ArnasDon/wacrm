@@ -10,6 +10,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { completeAiRun, createAiRun, logAiRetrievalEvent, logAiToolCall } from './run-log'
 import { routeAgentRole } from './agent-router'
+import { loadAgentDefinitions, type AgentActionName } from './agent-registry'
 
 export interface DispatchInboundToAgentArgs {
   accountId: string
@@ -43,23 +44,9 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
   if (!limit.success) return
 
   let runId: string | null = null
-  try {
-    runId = await createAiRun(db, {
-      accountId,
-      conversationId,
-      userId,
-      surface: 'whatsapp_agent',
-      agentRole: 'coordinator',
-      provider: config.provider,
-      model: config.model,
-    })
-  } catch (err) {
-    console.error('[ai-agent] failed to create run log:', err)
-  }
-
-  const completeRun = async (input: { status: 'completed' | 'failed'; error?: string }) => {
+  const completeRun = async (input: { status: 'completed' | 'failed' | 'skipped'; error?: string }) => {
     try {
-      await completeAiRun(db, { runId, ...input })
+      await completeAiRun(db, { accountId, runId, ...input })
     } catch (err) {
       console.error('[ai-agent] failed to complete run log:', err)
     }
@@ -76,43 +63,84 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       return
     }
 
-    const [resources, initialContext] = await Promise.all([
+    const [resources, initialContext, agentDefinitions] = await Promise.all([
       loadAutomationResources(db, accountId),
       buildAgentContext(db, { accountId, conversationId }),
+      loadAgentDefinitions(db, accountId),
     ])
 
-    const latestCustomerMessage = [...initialContext.messages]
-      .reverse()
-      .find((message) => message.role === 'customer')?.text ?? ''
+    const latestCustomerMessage =
+      [...initialContext.messages].reverse().find((message) => message.role === 'customer')?.text ?? ''
 
+    const routedAgentRole = await routeAgentRole({
+      config,
+      message: latestCustomerMessage,
+    })
+    const agentDefinition = agentDefinitions.find((definition) => definition.role === routedAgentRole)
+    if (!agentDefinition) {
+      throw new Error(`No agent definition found for routed role: ${routedAgentRole}`)
+    }
+
+    try {
+      runId = await createAiRun(db, {
+        accountId,
+        conversationId,
+        userId,
+        surface: 'whatsapp_agent',
+        agentRole: agentDefinition.role,
+        provider: config.provider,
+        model: config.model,
+        metadata: {
+          routedAgentRole,
+          effectiveAgentRole: agentDefinition.role,
+          specialistName: agentDefinition.name,
+        },
+      })
+    } catch (err) {
+      console.error('[ai-agent] failed to create run log:', err)
+    }
+
+    if (!agentDefinition.enabled) {
+      await completeRun({ status: 'skipped' })
+      return
+    }
+
+    const knowledgeEnabled = config.knowledgeEnabled && agentDefinition.knowledgeEnabled
+    const embedding =
+      knowledgeEnabled && config.embeddingsApiKey
+        ? {
+            apiKey: config.embeddingsApiKey,
+            model: config.embeddingsModel,
+          }
+        : null
     const context = await attachKnowledgeToAgentContext(
       db,
       initialContext,
       {
-        enabled: true,
+        enabled: knowledgeEnabled,
         query: latestCustomerMessage,
-        embedding: null,
+        embedding,
       },
-      accountId
+      accountId,
     )
 
-    const agentRole = await routeAgentRole({ config, message: latestCustomerMessage })
-
-    try {
-      await logAiRetrievalEvent(db, {
-        accountId,
-        runId,
-        query: latestCustomerMessage,
-        retrievalMode: context.knowledge.some((knowledge) => knowledge.mode === 'semantic') ? 'hybrid' : 'fts',
-        chunkIds: context.knowledge.map((knowledge) => knowledge.chunkId),
-        scores: context.knowledge.map((knowledge) => ({
-          chunkId: knowledge.chunkId,
-          score: knowledge.score,
-          mode: knowledge.mode,
-        })),
-      })
-    } catch (err) {
-      console.error('[ai-agent] failed to log retrieval:', err)
+    if (knowledgeEnabled) {
+      try {
+        await logAiRetrievalEvent(db, {
+          accountId,
+          runId,
+          query: latestCustomerMessage,
+          retrievalMode: context.knowledge.some((knowledge) => knowledge.mode === 'semantic') ? 'hybrid' : 'fts',
+          chunkIds: context.knowledge.map((knowledge) => knowledge.chunkId),
+          scores: context.knowledge.map((knowledge) => ({
+            chunkId: knowledge.chunkId,
+            score: knowledge.score,
+            mode: knowledge.mode,
+          })),
+        })
+      } catch (err) {
+        console.error('[ai-agent] failed to log retrieval:', err)
+      }
     }
 
     const logTool = async (input: {
@@ -129,11 +157,18 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       }
     }
 
-    const decision = await decideAgentAction({ config, resources, context })
+    const decision = await decideAgentAction({
+      config,
+      resources,
+      context,
+      agentDefinition,
+    })
+    const allows = (action: AgentActionName) => agentDefinition.allowedActions.includes(action)
+    const agentRole = agentDefinition.role
     let handoff = decision.handoff
     let handoffReason = decision.handoff_reason
 
-    if (decision.reply_text) {
+    if (decision.reply_text && allows('send_message')) {
       const toolArguments = {
         agentRole,
         contactId,
@@ -210,6 +245,15 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 
     for (const tagId of decision.add_tags) {
       const toolArguments = { agentRole, accountId, contactId, tagId }
+      if (!allows('add_tag')) {
+        await logTool({
+          toolName: 'add_tag',
+          arguments: toolArguments,
+          status: 'rejected',
+          result: { reason: 'action not allowed for specialist' },
+        })
+        continue
+      }
       await logTool({
         toolName: 'add_tag',
         arguments: toolArguments,
@@ -240,6 +284,15 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 
     for (const tagId of decision.remove_tags) {
       const toolArguments = { agentRole, accountId, contactId, tagId }
+      if (!allows('remove_tag')) {
+        await logTool({
+          toolName: 'remove_tag',
+          arguments: toolArguments,
+          status: 'rejected',
+          result: { reason: 'action not allowed for specialist' },
+        })
+        continue
+      }
       await logTool({
         toolName: 'remove_tag',
         arguments: toolArguments,
@@ -263,7 +316,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       }
     }
 
-    if (config.pipelineMoveEnabled && decision.move_to_stage_id && context.dealId) {
+    if (config.pipelineMoveEnabled && allows('move_deal_stage') && decision.move_to_stage_id && context.dealId) {
       const toolArguments = {
         agentRole,
         accountId,
@@ -311,7 +364,7 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
       }
     }
 
-    if (handoff) {
+    if (handoff && allows('assign_conversation')) {
       const toolArguments = {
         agentRole,
         conversationId,

@@ -16,6 +16,9 @@ function config(): AiConfig {
     apiKey: 'sk-test',
     agentEnabled: true,
     pipelineMoveEnabled: true,
+    knowledgeEnabled: true,
+    embeddingsModel: 'text-embedding-3-small',
+    embeddingsApiKey: null,
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
   }
@@ -203,7 +206,51 @@ describe('decideAgentAction', () => {
     expect(h.generateJson).toHaveBeenCalledWith(
       expect.objectContaining({
         userPrompt: expect.stringContaining('Refunds within 7 days.'),
-      })
+      }),
+    )
+  })
+
+  it('applies specialist instructions and filters actions outside its allowlist', async () => {
+    h.generateJson.mockResolvedValue({
+      data: {
+        reply_text: 'I can help with that.',
+        add_tags: ['tag-vip'],
+        remove_tags: ['tag-vip'],
+        move_to_stage_id: 'stage-2',
+        handoff: true,
+        handoff_reason: 'model requested it',
+        citations: [],
+      },
+      usage: null,
+    })
+
+    const decision = await decideAgentAction({
+      config: config(),
+      resources: RESOURCES,
+      context: CONTEXT,
+      agentDefinition: {
+        role: 'support',
+        name: 'Account Support',
+        instructions: 'Use account policy and keep the answer concise.',
+        enabled: true,
+        allowedActions: ['send_message'],
+        knowledgeEnabled: true,
+      },
+    })
+
+    expect(decision).toMatchObject({
+      reply_text: 'I can help with that.',
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: null,
+      handoff: false,
+      handoff_reason: null,
+    })
+    expect(h.generateJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining('Use account policy and keep the answer concise.'),
+        userPrompt: expect.stringContaining('Allowed specialist actions: send_message.'),
+      }),
     )
   })
 })

@@ -42,6 +42,7 @@ export async function createAiRun(
 export async function completeAiRun(
   supabase: SupabaseClient,
   input: {
+    accountId: string
     runId: string | null
     status: AiRunStatus
     inputTokens?: number | null
@@ -60,6 +61,7 @@ export async function completeAiRun(
       completed_at: new Date().toISOString(),
     })
     .eq('id', input.runId)
+    .eq('account_id', input.accountId)
 
   if (error) console.error('[ai-run-log] completeAiRun failed:', error)
 }

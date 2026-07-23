@@ -11,7 +11,10 @@ vi.mock('@/lib/auth/account', () => ({
   requireRole: h.requireRole,
   toErrorResponse: (err: unknown) => new Response(JSON.stringify({ error: String(err) }), { status: 500 }),
 }))
-vi.mock('@/lib/ai/config', () => ({ loadAiConfig: h.loadAiConfig, saveAiConfig: h.saveAiConfig }))
+vi.mock('@/lib/ai/config', () => ({
+  loadAiConfig: h.loadAiConfig,
+  saveAiConfig: h.saveAiConfig,
+}))
 
 import { GET, PUT } from './route'
 
@@ -25,11 +28,15 @@ function putReq(body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  h.requireRole.mockResolvedValue({ supabase: {}, accountId: 'acct-1', userId: 'user-1' })
+  h.requireRole.mockResolvedValue({
+    supabase: {},
+    accountId: 'acct-1',
+    userId: 'user-1',
+  })
 })
 
 describe('GET /api/ai/config', () => {
-  it('never returns the raw api key', async () => {
+  it('never returns plaintext provider or embeddings keys', async () => {
     h.loadAiConfig.mockResolvedValue({
       accountId: 'acct-1',
       provider: 'openai',
@@ -37,13 +44,18 @@ describe('GET /api/ai/config', () => {
       apiKey: 'sk-real-secret',
       agentEnabled: true,
       pipelineMoveEnabled: false,
+      knowledgeEnabled: true,
+      embeddingsModel: 'text-embedding-test',
+      embeddingsApiKey: 'sk-embeddings-secret',
       autoReplyMaxPerConversation: 3,
       handoffAgentId: null,
     })
     const res = await GET()
     const body = await res.json()
     expect(JSON.stringify(body)).not.toContain('sk-real-secret')
+    expect(JSON.stringify(body)).not.toContain('sk-embeddings-secret')
     expect(body.hasApiKey).toBe(true)
+    expect(body.hasEmbeddingsApiKey).toBe(true)
   })
 
   it('returns null config as-is', async () => {
@@ -68,6 +80,9 @@ describe('PUT /api/ai/config', () => {
         apiKey: 'sk-1',
         agentEnabled: true,
         pipelineMoveEnabled: false,
+        knowledgeEnabled: true,
+        embeddingsModel: 'text-embedding-test',
+        embeddingsApiKey: 'sk-embeddings',
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
       }),
@@ -84,6 +99,9 @@ describe('PUT /api/ai/config', () => {
       apiKey: 'sk-existing',
       agentEnabled: false,
       pipelineMoveEnabled: false,
+      knowledgeEnabled: true,
+      embeddingsModel: 'text-embedding-old',
+      embeddingsApiKey: 'sk-embeddings-existing',
       autoReplyMaxPerConversation: 3,
       handoffAgentId: null,
     })
@@ -94,6 +112,9 @@ describe('PUT /api/ai/config', () => {
         apiKey: '',
         agentEnabled: true,
         pipelineMoveEnabled: false,
+        knowledgeEnabled: true,
+        embeddingsModel: 'text-embedding-test',
+        embeddingsApiKey: '',
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
       }),
@@ -102,15 +123,57 @@ describe('PUT /api/ai/config', () => {
     expect(h.saveAiConfig).toHaveBeenCalledWith(
       expect.anything(),
       'acct-1',
-      expect.objectContaining({ apiKey: 'sk-existing' }),
+      expect.objectContaining({
+        apiKey: 'sk-existing',
+        embeddingsApiKey: 'sk-embeddings-existing',
+      }),
+    )
+  })
+
+  it('preserves a stored embeddings key when only that field is blank', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      accountId: 'acct-1',
+      provider: 'openai',
+      model: 'gpt-old',
+      apiKey: 'sk-existing',
+      agentEnabled: false,
+      pipelineMoveEnabled: false,
+      knowledgeEnabled: true,
+      embeddingsModel: 'text-embedding-old',
+      embeddingsApiKey: 'sk-embeddings-existing',
+      autoReplyMaxPerConversation: 3,
+      handoffAgentId: null,
+    })
+
+    const res = await PUT(
+      putReq({
+        provider: 'openai',
+        model: 'gpt-test',
+        apiKey: 'sk-new',
+        agentEnabled: true,
+        pipelineMoveEnabled: false,
+        knowledgeEnabled: true,
+        embeddingsModel: 'text-embedding-test',
+        embeddingsApiKey: '',
+        autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(h.saveAiConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({
+        apiKey: 'sk-new',
+        embeddingsApiKey: 'sk-embeddings-existing',
+      }),
     )
   })
 
   it('400s on a blank apiKey when no config exists yet', async () => {
     h.loadAiConfig.mockResolvedValue(null)
-    const res = await PUT(
-      putReq({ provider: 'openai', model: 'gpt-test', apiKey: '' }),
-    )
+    const res = await PUT(putReq({ provider: 'openai', model: 'gpt-test', apiKey: '' }))
     expect(res.status).toBe(400)
     expect(h.saveAiConfig).not.toHaveBeenCalled()
   })

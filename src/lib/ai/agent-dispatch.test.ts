@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   logAiRetrievalEvent: vi.fn(),
   logAiToolCall: vi.fn(),
   routeAgentRole: vi.fn(),
+  loadAgentDefinitions: vi.fn(),
   // Mocks the `claim_ai_reply_slot` RPC (the real atomicity now lives in
   // the Postgres function body itself — supabase/migrations/
   // 039_ai_reply_cap_rpc.sql — not in this mock).
@@ -60,6 +61,9 @@ vi.mock('./run-log', () => ({
   logAiToolCall: h.logAiToolCall,
 }))
 vi.mock('./agent-router', () => ({ routeAgentRole: h.routeAgentRole }))
+vi.mock('./agent-registry', () => ({
+  loadAgentDefinitions: h.loadAgentDefinitions,
+}))
 vi.mock('@/lib/automations/admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -115,6 +119,9 @@ beforeEach(() => {
     apiKey: 'sk-test',
     agentEnabled: true,
     pipelineMoveEnabled: true,
+    knowledgeEnabled: true,
+    embeddingsModel: 'text-embedding-3-small',
+    embeddingsApiKey: null,
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
   })
@@ -149,6 +156,16 @@ beforeEach(() => {
   h.logAiRetrievalEvent.mockResolvedValue(undefined)
   h.logAiToolCall.mockResolvedValue(undefined)
   h.routeAgentRole.mockResolvedValue('support')
+  h.loadAgentDefinitions.mockResolvedValue([
+    {
+      role: 'support',
+      name: 'Support',
+      instructions: 'Answer account questions.',
+      enabled: true,
+      allowedActions: ['send_message', 'add_tag', 'remove_tag', 'move_deal_stage', 'assign_conversation'],
+      knowledgeEnabled: true,
+    },
+  ])
 })
 
 describe('dispatchInboundToAgent', () => {
@@ -206,10 +223,15 @@ describe('dispatchInboundToAgent', () => {
         conversationId: 'conv-1',
         userId: 'user-1',
         surface: 'whatsapp_agent',
-        agentRole: 'coordinator',
+        agentRole: 'support',
         provider: 'openai',
         model: 'gpt-test',
-      })
+        metadata: {
+          routedAgentRole: 'support',
+          effectiveAgentRole: 'support',
+          specialistName: 'Support',
+        },
+      }),
     )
     expect(h.routeAgentRole).toHaveBeenCalledWith({
       config: expect.objectContaining({
@@ -218,6 +240,7 @@ describe('dispatchInboundToAgent', () => {
       }),
       message: 'Can I get a refund?',
     })
+    expect(h.loadAgentDefinitions).toHaveBeenCalledWith(expect.anything(), 'acct-1')
     expect(h.buildAgentContext).toHaveBeenCalledTimes(1)
     expect(h.buildAgentContext).toHaveBeenCalledWith(expect.anything(), {
       accountId: 'acct-1',
@@ -227,11 +250,9 @@ describe('dispatchInboundToAgent', () => {
       expect.anything(),
       initialContext,
       { enabled: true, query: 'Can I get a refund?', embedding: null },
-      'acct-1'
+      'acct-1',
     )
-    expect(h.decideAgentAction).toHaveBeenCalledWith(
-      expect.objectContaining({ context: contextWithKnowledge })
-    )
+    expect(h.decideAgentAction).toHaveBeenCalledWith(expect.objectContaining({ context: contextWithKnowledge }))
     expect(h.logAiRetrievalEvent).toHaveBeenCalledWith(expect.anything(), {
       accountId: 'acct-1',
       runId: 'run-1',
@@ -252,7 +273,7 @@ describe('dispatchInboundToAgent', () => {
         runId: 'run-1',
         toolName: 'send_message',
         status: 'proposed',
-      })
+      }),
     )
     expect(h.logAiToolCall).toHaveBeenCalledWith(
       expect.anything(),
@@ -261,10 +282,11 @@ describe('dispatchInboundToAgent', () => {
         runId: 'run-1',
         toolName: 'send_message',
         status: 'executed',
-      })
+      }),
     )
     expect(h.completeAiRun).toHaveBeenCalledWith(expect.anything(), {
       runId: 'run-1',
+      accountId: 'acct-1',
       status: 'completed',
     })
     expect(h.addContactTagIfAbsent).toHaveBeenCalled()
@@ -285,7 +307,10 @@ describe('dispatchInboundToAgent', () => {
       knowledge: [],
     }
     h.buildAgentContext.mockResolvedValue(initialContext)
-    h.attachKnowledgeToAgentContext.mockResolvedValue({ ...initialContext, knowledge: [] })
+    h.attachKnowledgeToAgentContext.mockResolvedValue({
+      ...initialContext,
+      knowledge: [],
+    })
     h.decideAgentAction.mockResolvedValue({
       reply_text: null,
       add_tags: [],
@@ -303,7 +328,7 @@ describe('dispatchInboundToAgent', () => {
       expect.anything(),
       initialContext,
       { enabled: true, query: customerMessage, embedding: null },
-      'acct-1'
+      'acct-1',
     )
     expect(h.routeAgentRole).toHaveBeenCalledWith({
       config: expect.anything(),
@@ -311,12 +336,12 @@ describe('dispatchInboundToAgent', () => {
     })
     expect(h.logAiRetrievalEvent).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ query: customerMessage })
+      expect.objectContaining({ query: customerMessage }),
     )
     expect(h.routeAgentRole).not.toHaveBeenCalledWith(expect.objectContaining({ message: outboundMessage }))
     expect(h.logAiRetrievalEvent).not.toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ query: outboundMessage })
+      expect.objectContaining({ query: outboundMessage }),
     )
   })
 
@@ -337,7 +362,7 @@ describe('dispatchInboundToAgent', () => {
         accountId: 'acct-1',
         contactId: 'contact-1',
         tagId: 'tag-2',
-      })
+      }),
     )
   })
 
@@ -393,8 +418,8 @@ describe('dispatchInboundToAgent', () => {
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
     expect(
       h.state.updateCalls.some(
-        (c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached'
-      )
+        (c) => c.ai_autoreply_disabled === true && c.ai_handoff_summary === 'auto-reply cap reached',
+      ),
     ).toBe(true)
   })
 
@@ -417,8 +442,205 @@ describe('dispatchInboundToAgent', () => {
     await expect(dispatchInboundToAgent(baseArgs())).resolves.toBeUndefined()
     expect(h.completeAiRun).toHaveBeenCalledWith(expect.anything(), {
       runId: 'run-1',
+      accountId: 'acct-1',
       status: 'failed',
       error: 'provider down',
     })
+  })
+
+  it('skips a routed specialist when its account definition is disabled', async () => {
+    h.loadAgentDefinitions.mockResolvedValue([
+      {
+        role: 'support',
+        name: 'Disabled Support',
+        instructions: 'Do not run.',
+        enabled: false,
+        allowedActions: ['send_message'],
+        knowledgeEnabled: true,
+      },
+    ])
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.createAiRun).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        agentRole: 'support',
+        metadata: expect.objectContaining({
+          effectiveAgentRole: 'support',
+          specialistName: 'Disabled Support',
+        }),
+      }),
+    )
+    expect(h.attachKnowledgeToAgentContext).not.toHaveBeenCalled()
+    expect(h.decideAgentAction).not.toHaveBeenCalled()
+    expect(h.completeAiRun).toHaveBeenCalledWith(expect.anything(), {
+      accountId: 'acct-1',
+      runId: 'run-1',
+      status: 'skipped',
+    })
+  })
+
+  it('rejects specialist actions outside allowedActions before CRM writes', async () => {
+    h.loadAgentDefinitions.mockResolvedValue([
+      {
+        role: 'support',
+        name: 'Restricted Support',
+        instructions: 'Reply only.',
+        enabled: true,
+        allowedActions: ['send_message'],
+        knowledgeEnabled: true,
+      },
+    ])
+    h.buildAgentContext.mockResolvedValue({
+      messages: [{ role: 'customer', text: 'Can I get a refund?' }],
+      dealId: 'deal-1',
+      currentStageId: 'stage-1',
+      currentPipelineId: 'pipeline-1',
+      knowledge: [],
+    })
+    h.attachKnowledgeToAgentContext.mockImplementation(async (_db, context) => context)
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: null,
+      add_tags: ['tag-1'],
+      remove_tags: [],
+      move_to_stage_id: 'stage-2',
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.addContactTagIfAbsent).not.toHaveBeenCalled()
+    expect(h.moveDealStage).not.toHaveBeenCalled()
+    expect(h.logAiToolCall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        toolName: 'add_tag',
+        status: 'rejected',
+      }),
+    )
+  })
+
+  it('does not retrieve or pass embeddings when account knowledge is disabled', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      accountId: 'acct-1',
+      provider: 'openai',
+      model: 'gpt-test',
+      apiKey: 'sk-test',
+      agentEnabled: true,
+      pipelineMoveEnabled: true,
+      knowledgeEnabled: false,
+      embeddingsModel: 'text-embedding-test',
+      embeddingsApiKey: 'sk-embeddings',
+      autoReplyMaxPerConversation: 3,
+      handoffAgentId: null,
+    })
+    const initialContext = {
+      messages: [{ role: 'customer' as const, text: 'Can I get a refund?' }],
+      dealId: null,
+      currentStageId: null,
+      currentPipelineId: null,
+      knowledge: [],
+    }
+    h.buildAgentContext.mockResolvedValue(initialContext)
+    h.attachKnowledgeToAgentContext.mockResolvedValue(initialContext)
+    h.decideAgentAction.mockResolvedValue({
+      reply_text: null,
+      add_tags: [],
+      remove_tags: [],
+      move_to_stage_id: null,
+      handoff: false,
+      handoff_reason: null,
+      citations: [],
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.attachKnowledgeToAgentContext).toHaveBeenCalledWith(
+      expect.anything(),
+      initialContext,
+      {
+        enabled: false,
+        query: 'Can I get a refund?',
+        embedding: null,
+      },
+      'acct-1',
+    )
+    expect(h.logAiRetrievalEvent).not.toHaveBeenCalled()
+    expect(h.decideAgentAction).toHaveBeenCalledWith(expect.objectContaining({ context: initialContext }))
+  })
+
+  it('passes embedding configuration only when account and specialist knowledge are enabled', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      accountId: 'acct-1',
+      provider: 'openai',
+      model: 'gpt-test',
+      apiKey: 'sk-test',
+      agentEnabled: true,
+      pipelineMoveEnabled: true,
+      knowledgeEnabled: true,
+      embeddingsModel: 'text-embedding-test',
+      embeddingsApiKey: 'sk-embeddings',
+      autoReplyMaxPerConversation: 3,
+      handoffAgentId: null,
+    })
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.attachKnowledgeToAgentContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      {
+        enabled: true,
+        query: 'Can I get a refund?',
+        embedding: {
+          apiKey: 'sk-embeddings',
+          model: 'text-embedding-test',
+        },
+      },
+      'acct-1',
+    )
+  })
+
+  it('disables retrieval when the routed specialist opts out of knowledge', async () => {
+    h.loadAiConfig.mockResolvedValue({
+      accountId: 'acct-1',
+      provider: 'openai',
+      model: 'gpt-test',
+      apiKey: 'sk-test',
+      agentEnabled: true,
+      pipelineMoveEnabled: true,
+      knowledgeEnabled: true,
+      embeddingsModel: 'text-embedding-test',
+      embeddingsApiKey: 'sk-embeddings',
+      autoReplyMaxPerConversation: 3,
+      handoffAgentId: null,
+    })
+    h.loadAgentDefinitions.mockResolvedValue([
+      {
+        role: 'support',
+        name: 'Support Without Knowledge',
+        instructions: 'Reply without knowledge retrieval.',
+        enabled: true,
+        allowedActions: ['send_message'],
+        knowledgeEnabled: false,
+      },
+    ])
+
+    await dispatchInboundToAgent(baseArgs())
+
+    expect(h.attachKnowledgeToAgentContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      {
+        enabled: false,
+        query: 'Can I get a refund?',
+        embedding: null,
+      },
+      'acct-1',
+    )
+    expect(h.logAiRetrievalEvent).not.toHaveBeenCalled()
   })
 })

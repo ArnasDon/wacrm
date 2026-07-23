@@ -9,7 +9,12 @@ const PROVIDERS: AiProvider[] = ['openai', 'anthropic']
 function isMissingAiSchemaError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
 
-  const candidate = err as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown }
+  const candidate = err as {
+    code?: unknown
+    message?: unknown
+    details?: unknown
+    hint?: unknown
+  }
   const code = typeof candidate.code === 'string' ? candidate.code : ''
   const haystack = [candidate.message, candidate.details, candidate.hint]
     .filter((value): value is string => typeof value === 'string')
@@ -40,7 +45,8 @@ function toAiConfigErrorResponse(err: unknown): NextResponse | null {
   if (isMissingAiSchemaError(err)) {
     return NextResponse.json(
       {
-        error: 'AI agent database schema is missing in this environment. Apply migration 038_ai_agent.sql.',
+        error:
+          'AI agent database schema is missing in this environment. Apply migrations 038_ai_agent.sql and 041_ai_knowledge_rag.sql.',
         code: 'ai_schema_missing',
       },
       { status: 503 },
@@ -57,9 +63,14 @@ export async function GET() {
     const config = await loadAiConfig(supabase, accountId)
     if (!config) return NextResponse.json({ config: null })
 
-    const { apiKey: _apiKey, ...safeConfig } = config
+    const { apiKey: _apiKey, embeddingsApiKey: _embeddingsApiKey, ...safeConfig } = config
     void _apiKey
-    return NextResponse.json({ config: safeConfig, hasApiKey: true })
+    void _embeddingsApiKey
+    return NextResponse.json({
+      config: safeConfig,
+      hasApiKey: Boolean(config.apiKey),
+      hasEmbeddingsApiKey: Boolean(config.embeddingsApiKey),
+    })
   } catch (err) {
     return toAiConfigErrorResponse(err) ?? toErrorResponse(err)
   }
@@ -87,14 +98,20 @@ export async function PUT(request: Request) {
     }
 
     const submittedApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
+    const submittedEmbeddingsApiKey = typeof body.embeddingsApiKey === 'string' ? body.embeddingsApiKey.trim() : ''
+    const existing = !submittedApiKey || !submittedEmbeddingsApiKey ? await loadAiConfig(supabase, accountId) : null
     let apiKey = submittedApiKey
     if (!apiKey) {
-      const existing = await loadAiConfig(supabase, accountId)
       if (!existing) {
         return NextResponse.json({ error: 'apiKey is required' }, { status: 400 })
       }
       apiKey = existing.apiKey
     }
+    const embeddingsModel =
+      typeof body.embeddingsModel === 'string' && body.embeddingsModel.trim()
+        ? body.embeddingsModel.trim()
+        : 'text-embedding-3-small'
+    const embeddingsApiKey = submittedEmbeddingsApiKey || existing?.embeddingsApiKey || null
 
     await saveAiConfig(supabase, accountId, {
       provider: body.provider,
@@ -102,6 +119,9 @@ export async function PUT(request: Request) {
       apiKey,
       agentEnabled: Boolean(body.agentEnabled),
       pipelineMoveEnabled: Boolean(body.pipelineMoveEnabled),
+      knowledgeEnabled: Boolean(body.knowledgeEnabled),
+      embeddingsModel,
+      embeddingsApiKey,
       autoReplyMaxPerConversation:
         Number.isFinite(body.autoReplyMaxPerConversation) && body.autoReplyMaxPerConversation > 0
           ? Math.floor(body.autoReplyMaxPerConversation)

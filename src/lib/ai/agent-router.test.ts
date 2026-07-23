@@ -12,6 +12,9 @@ const config = {
   apiKey: 'sk-test',
   agentEnabled: true,
   pipelineMoveEnabled: false,
+  knowledgeEnabled: false,
+  embeddingsModel: 'text-embedding-3-small',
+  embeddingsApiKey: null,
   autoReplyMaxPerConversation: 3,
   handoffAgentId: null,
 }

@@ -19,6 +19,9 @@ interface AgentConfigState {
   apiKey: string;
   agentEnabled: boolean;
   pipelineMoveEnabled: boolean;
+  knowledgeEnabled: boolean;
+  embeddingsModel: string;
+  embeddingsApiKey: string;
   autoReplyMaxPerConversation: number;
 }
 
@@ -28,6 +31,9 @@ const DEFAULTS: AgentConfigState = {
   apiKey: '',
   agentEnabled: false,
   pipelineMoveEnabled: false,
+  knowledgeEnabled: false,
+  embeddingsModel: 'text-embedding-3-small',
+  embeddingsApiKey: '',
   autoReplyMaxPerConversation: 3,
 };
 
@@ -37,6 +43,7 @@ export function AgentConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasStoredKey, setHasStoredKey] = useState(false);
+  const [hasStoredEmbeddingsKey, setHasStoredEmbeddingsKey] = useState(false);
   const [form, setForm] = useState<AgentConfigState>(DEFAULTS);
 
   useEffect(() => {
@@ -46,8 +53,14 @@ export function AgentConfig() {
       .then((data) => {
         if (cancelled) return;
         if (data.config) {
-          setForm({ ...DEFAULTS, ...data.config, apiKey: '' });
+          setForm({
+            ...DEFAULTS,
+            ...data.config,
+            apiKey: '',
+            embeddingsApiKey: '',
+          });
           setHasStoredKey(Boolean(data.hasApiKey));
+          setHasStoredEmbeddingsKey(Boolean(data.hasEmbeddingsApiKey));
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -71,7 +84,8 @@ export function AgentConfig() {
       }
       toast.success(t('saved'));
       setHasStoredKey(true);
-      setForm((f) => ({ ...f, apiKey: '' }));
+      setHasStoredEmbeddingsKey((stored) => stored || Boolean(form.embeddingsApiKey.trim()));
+      setForm((f) => ({ ...f, apiKey: '', embeddingsApiKey: '' }));
     } catch {
       toast.error(t('saveError'));
     } finally {
@@ -173,6 +187,51 @@ export function AgentConfig() {
               disabled={!canEditSettings || profileLoading}
               className="w-24 bg-muted text-foreground"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('retrievalTitle')}</CardTitle>
+          <CardDescription>{t('retrievalDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">{t('knowledgeEnabledLabel')}</p>
+              <p className="text-xs text-muted-foreground">{t('knowledgeEnabledHint')}</p>
+            </div>
+            <Switch
+              checked={form.knowledgeEnabled}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, knowledgeEnabled: v }))}
+              disabled={!canEditSettings || profileLoading}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('embeddingsModelLabel')}</Label>
+            <Input
+              value={form.embeddingsModel}
+              onChange={(e) => setForm((f) => ({ ...f, embeddingsModel: e.target.value }))}
+              disabled={!canEditSettings || profileLoading || !form.knowledgeEnabled}
+              className="bg-muted text-foreground"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('embeddingsApiKeyLabel')}</Label>
+            <Input
+              type="password"
+              value={form.embeddingsApiKey}
+              onChange={(e) => setForm((f) => ({ ...f, embeddingsApiKey: e.target.value }))}
+              placeholder={
+                hasStoredEmbeddingsKey
+                  ? t('embeddingsApiKeyStoredPlaceholder')
+                  : t('embeddingsApiKeyPlaceholder')
+              }
+              disabled={!canEditSettings || profileLoading || !form.knowledgeEnabled}
+              className="bg-muted text-foreground"
+            />
+            <p className="text-xs text-muted-foreground">{t('embeddingsApiKeyHint')}</p>
           </div>
         </CardContent>
       </Card>

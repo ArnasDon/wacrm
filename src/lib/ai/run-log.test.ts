@@ -22,13 +22,17 @@ function client(options: { insertErrors?: Record<string, Error>; updateError?: E
         },
         update(value: unknown) {
           calls.push({ table, op: 'update', value })
-          return {
-            eq: async (column: string, filter: unknown) => {
+          const query = {
+            eq(column: string, filter: unknown) {
               const call = calls.at(-1)
-              if (call) call.filters = { [column]: filter }
-              return { error: options.updateError ?? null }
+              if (call) call.filters = { ...call.filters, [column]: filter }
+              return query
+            },
+            then(resolve: (value: { error: Error | null }) => unknown) {
+              return Promise.resolve({ error: options.updateError ?? null }).then(resolve)
             },
           }
+          return query
         },
       }
     },
@@ -55,7 +59,13 @@ describe('run-log helpers', () => {
       }),
     ).resolves.toBe('run-1')
 
-    await completeAiRun(db as never, { runId: 'run-1', status: 'completed', inputTokens: 1, outputTokens: 2 })
+    await completeAiRun(db as never, {
+      accountId: 'acct-1',
+      runId: 'run-1',
+      status: 'completed',
+      inputTokens: 1,
+      outputTokens: 2,
+    })
 
     expect(db.calls).toEqual([
       {
@@ -82,7 +92,7 @@ describe('run-log helpers', () => {
           error: null,
           completed_at: '2026-07-23T12:00:00.000Z',
         },
-        filters: { id: 'run-1' },
+        filters: { id: 'run-1', account_id: 'acct-1' },
       },
     ])
     expect(now).toHaveBeenCalled()
@@ -138,7 +148,11 @@ describe('run-log helpers', () => {
 
   it('does nothing when a run id is null', async () => {
     const db = client()
-    await completeAiRun(db as never, { runId: null, status: 'completed' })
+    await completeAiRun(db as never, {
+      accountId: 'acct-1',
+      runId: null,
+      status: 'completed',
+    })
     await logAiRetrievalEvent(db as never, {
       accountId: 'acct-1',
       runId: null,
@@ -174,7 +188,13 @@ describe('run-log helpers', () => {
       surface: 'manual_test',
       agentRole: 'support',
     })).resolves.toBeNull()
-    await expect(completeAiRun(db as never, { runId: 'run-1', status: 'failed' })).resolves.toBeUndefined()
+    await expect(
+      completeAiRun(db as never, {
+        accountId: 'acct-1',
+        runId: 'run-1',
+        status: 'failed',
+      }),
+    ).resolves.toBeUndefined()
     await expect(logAiRetrievalEvent(db as never, {
       accountId: 'acct-1',
       runId: 'run-1',

@@ -10,6 +10,10 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
+  recordReferralTouch,
+  type WhatsAppReferral,
+} from '@/lib/attribution/capture'
+import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
@@ -59,6 +63,14 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Present only on the FIRST message after a customer taps a
+   * Click-to-WhatsApp ad (or a click-to-WhatsApp post). `source_id` is
+   * the ad id — the only link that exists between a phone number and
+   * the campaign that paid for it. Captured by `recordReferralTouch`
+   * below; see src/lib/attribution/capture.ts.
+   */
+  referral?: WhatsAppReferral
 }
 
 interface WhatsAppWebhookEntry {
@@ -591,6 +603,24 @@ async function processMessage(
   )
   if (!convResult) return
   const conversation = convResult.conversation
+
+  // Record where this lead came from, if the message says. Runs before
+  // the reaction short-circuit so no referral is ever missed, and costs
+  // nothing on ordinary messages: with no `referral` the helper returns
+  // without a single query. Never throws — attribution is reporting
+  // metadata and must not cost the customer their message.
+  await recordReferralTouch({
+    db: supabaseAdmin(),
+    accountId,
+    contactId: contactRecord.id,
+    conversationId: conversation.id,
+    wamid: message.id,
+    referral: message.referral,
+    occurredAt: new Date(Number(message.timestamp) * 1000),
+  }).catch((error) => {
+    console.error('[attribution] capture failed:', error)
+    return null
+  })
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by

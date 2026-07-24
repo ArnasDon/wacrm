@@ -1,4 +1,5 @@
 import type { AccountRole } from "@/lib/auth/roles";
+import type { ContactSource } from "@/lib/attribution/sources";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 
 export type {
@@ -110,6 +111,16 @@ export interface Contact {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  /** Where this lead came from — first touch, never overwritten once
+   *  set (migration 037). See src/lib/attribution/sources.ts. */
+  source?: ContactSource;
+  /** Meta ad id from the Click-to-WhatsApp referral, when applicable. */
+  source_ad_id?: string | null;
+  /** Filled in by the ads sync once the ad is mapped to its campaign. */
+  source_campaign_id?: string | null;
+  /** Raw referral / tracked-link payload (ad headline, urls, utms). */
+  source_meta?: Record<string, string> | null;
+  source_captured_at?: string | null;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];

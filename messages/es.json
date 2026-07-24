@@ -284,6 +284,8 @@
       "addContactBtn": "Agregar contacto",
       "searchPlaceholder": "Buscar por nombre, teléfono o correo...",
       "filterByTags": "Filtrar por etiquetas",
+      "filterBySource": "Filtrar por fuente",
+      "allSources": "Todas las fuentes",
       "clearAll": "Limpiar todo",
       "noTagsYet": "Aún no hay etiquetas.",
       "selectedCount": "{count} seleccionados",
@@ -352,6 +354,21 @@
       "phoneRequired": "El número de teléfono es obligatorio"
     },
     "detailView": {
+      "source": {
+        "label": "Fuente",
+        "detected": "Detectada automáticamente por cómo llegó este lead.",
+        "detectedFrom": "Detectada automáticamente — anuncio: «{headline}».",
+        "options": {
+          "meta_ads": "Meta Ads",
+          "google_ads": "Google Ads",
+          "organic": "Orgánico",
+          "web": "Sitio web",
+          "referral": "Recomendación",
+          "manual": "Agregado a mano",
+          "other": "Otro",
+          "unknown": "Sin clasificar"
+        }
+      },
       "tabs": {
         "details": "Detalles",
         "activity": "Actividad",

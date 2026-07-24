@@ -5,6 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
+import {
+  AUTO_DETECTED_SOURCES,
+  SOURCE_PICKER_ORDER,
+  toContactSource,
+} from '@/lib/attribution/sources';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
 import {
@@ -74,6 +79,7 @@ export function ContactDetailView({
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
+  const [editSource, setEditSource] = useState('unknown');
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Tags tab
@@ -113,6 +119,7 @@ export function ContactDetailView({
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
+      setEditSource(toContactSource(data.source));
     }
     setLoading(false);
   }, [contactId, supabase]);
@@ -211,6 +218,7 @@ export function ContactDetailView({
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
+        source: editSource,
         updated_at: new Date().toISOString(),
       })
       .eq('id', contactId);
@@ -520,6 +528,32 @@ export function ContactDetailView({
                       onChange={(e) => setEditCompany(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">{t('source.label')}</Label>
+                    <select
+                      value={editSource}
+                      onChange={(e) => setEditSource(e.target.value)}
+                      className="h-8 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    >
+                      {SOURCE_PICKER_ORDER.map((s) => (
+                        <option key={s} value={s}>
+                          {t(`source.options.${s}`)}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Make it obvious the value came from the ad click and
+                        wasn't picked by a teammate — otherwise an agent may
+                        "correct" a correct attribution. */}
+                    {AUTO_DETECTED_SOURCES.has(toContactSource(contact.source)) && (
+                      <p className="text-xs text-muted-foreground">
+                        {contact.source_meta?.headline
+                          ? t('source.detectedFrom', {
+                              headline: contact.source_meta.headline,
+                            })
+                          : t('source.detected')}
+                      </p>
+                    )}
                   </div>
                   <Button
                     onClick={saveDetails}

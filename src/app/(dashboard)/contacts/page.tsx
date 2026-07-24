@@ -57,6 +57,7 @@ import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import { SOURCE_PICKER_ORDER } from '@/lib/attribution/sources';
 
 const PAGE_SIZE = 25;
 
@@ -66,6 +67,9 @@ interface ContactWithTags extends Contact {
 
 export default function ContactsPage() {
   const t = useTranslations('Contacts.page');
+  // Source labels live under the contact detail namespace so the picker
+  // and the filter can't drift apart.
+  const tSources = useTranslations('Contacts.detailView.source.options');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
@@ -77,6 +81,7 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [sourceFilter, setSourceFilter] = useState('');
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -143,6 +148,10 @@ export default function ContactsPage() {
         p_search: term || null,
         p_limit: PAGE_SIZE,
         p_offset: from,
+        // Narrowed inside the RPC, not here: filtering the returned
+        // page client-side would drop rows from the current page while
+        // still reporting the unfiltered total (migration 037).
+        p_source: sourceFilter || null,
       });
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
@@ -163,6 +172,10 @@ export default function ContactsPage() {
       if (term) {
         const like = `%${term}%`;
         query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+      }
+
+      if (sourceFilter) {
+        query = query.eq('source', sourceFilter);
       }
 
       const { data, count: exactCount, error } = await query;
@@ -207,7 +220,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, sourceFilter, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -323,7 +336,8 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
-  const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
+  const hasActiveFilters =
+    search.trim().length > 0 || selectedTagIds.length > 0 || sourceFilter !== '';
 
   function toggleTagFilter(tagId: string) {
     setSelectedTagIds((prev) =>
@@ -460,6 +474,28 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          {/* Lead source. A plain select rather than a multi-select: the
+              useful question is "show me the leads from X", and one
+              source per contact makes OR-ing them pointless. */}
+          <select
+            value={sourceFilter}
+            onChange={(e) => {
+              setSourceFilter(e.target.value);
+              // The result set changes size, so page N may no longer be
+              // valid (mirrors the search box and the tag filter).
+              setPage(0);
+            }}
+            aria-label={t('filterBySource')}
+            className="h-9 shrink-0 rounded-lg border border-border bg-card px-2.5 text-sm text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          >
+            <option value="">{t('allSources')}</option>
+            {SOURCE_PICKER_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {tSources(s)}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Active tag-filter chips */}

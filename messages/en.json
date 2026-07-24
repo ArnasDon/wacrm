@@ -284,6 +284,8 @@
       "addContactBtn": "Add Contact",
       "searchPlaceholder": "Search by name, phone, or email...",
       "filterByTags": "Filter by tags",
+      "filterBySource": "Filter by source",
+      "allSources": "All sources",
       "clearAll": "Clear all",
       "noTagsYet": "No tags yet.",
       "selectedCount": "{count} selected",
@@ -352,6 +354,21 @@
       "phoneRequired": "Phone number is required"
     },
     "detailView": {
+      "source": {
+        "label": "Source",
+        "detected": "Detected automatically from how this lead arrived.",
+        "detectedFrom": "Detected automatically — ad: “{headline}”.",
+        "options": {
+          "meta_ads": "Meta Ads",
+          "google_ads": "Google Ads",
+          "organic": "Organic",
+          "web": "Website",
+          "referral": "Referral",
+          "manual": "Added manually",
+          "other": "Other",
+          "unknown": "Not classified"
+        }
+      },
       "tabs": {
         "details": "Details",
         "activity": "Activity",

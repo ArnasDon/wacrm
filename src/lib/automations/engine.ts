@@ -17,11 +17,13 @@ import type {
   WaitStepConfig,
   CreateDealStepConfig,
   AssignConversationStepConfig,
+  AssignDealStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { pickRoundRobinDealAssignee, resolveAssigneeProfileId } from './round-robin'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
@@ -561,6 +563,24 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         .select('default_currency')
         .eq('id', args.automation.account_id)
         .maybeSingle()
+
+      // Optional — configs saved before Phase 4 have no `assignment`
+      // key at all, which resolves to undefined here and leaves the
+      // deal unassigned, exactly like before this field existed.
+      let assignedTo: string | undefined
+      if (cfg.assignment?.mode === 'specific' && cfg.assignment.assignee_id) {
+        // assignee_id is an auth.users id (the AgentSelect picker, shared
+        // with assign_conversation); deals.assigned_to wants profiles.id.
+        assignedTo =
+          (await resolveAssigneeProfileId(
+            db,
+            args.automation.account_id,
+            cfg.assignment.assignee_id,
+          )) ?? undefined
+      } else if (cfg.assignment?.mode === 'round_robin') {
+        assignedTo = (await pickRoundRobinDealAssignee(db, args.automation.account_id)) ?? undefined
+      }
+
       await db.from('deals').insert({
         // Tenancy + audit, same split as automation_logs above.
         account_id: args.automation.account_id,
@@ -572,8 +592,32 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         value: cfg.value ?? 0,
         currency: acct?.default_currency ?? 'USD',
         status: 'open',
+        assigned_to: assignedTo ?? null,
       })
-      return 'deal created'
+      return assignedTo ? `deal created, assigned to ${assignedTo}` : 'deal created'
+    }
+
+    case 'assign_deal': {
+      const cfg = step.step_config as AssignDealStepConfig
+      if (!args.contactId) throw new Error('assign_deal needs a contact')
+      let assigneeId: string | undefined
+      if (cfg.mode === 'specific' && cfg.assignee_id) {
+        assigneeId =
+          (await resolveAssigneeProfileId(db, args.automation.account_id, cfg.assignee_id)) ??
+          undefined
+      } else if (cfg.mode === 'round_robin') {
+        assigneeId = (await pickRoundRobinDealAssignee(db, args.automation.account_id)) ?? undefined
+      }
+      if (!assigneeId) return 'no assignee resolved'
+      // Only open deals — a won/lost deal is decided, not something a
+      // later automation step should silently hand to someone else.
+      await db
+        .from('deals')
+        .update({ assigned_to: assigneeId })
+        .eq('account_id', args.automation.account_id)
+        .eq('contact_id', args.contactId)
+        .eq('status', 'open')
+      return `assigned to ${assigneeId}`
     }
 
     case 'send_webhook': {

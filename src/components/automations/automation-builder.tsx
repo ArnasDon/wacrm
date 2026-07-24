@@ -107,6 +107,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   assign_conversation: { label: "assign_conversation", icon: UserCheck, border: "border-l-primary" },
   update_contact_field: { label: "update_contact_field", icon: PencilLine, border: "border-l-primary" },
   create_deal: { label: "create_deal", icon: Briefcase, border: "border-l-primary" },
+  assign_deal: { label: "assign_deal", icon: UserCheck, border: "border-l-primary" },
   wait: { label: "wait", icon: Hourglass, border: "border-l-border" },
   condition: { label: "condition", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "send_webhook", icon: Webhook, border: "border-l-primary" },
@@ -123,6 +124,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "assign_conversation",
   "update_contact_field",
   "create_deal",
+  "assign_deal",
   "wait",
   "condition",
   "send_webhook",
@@ -180,6 +182,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { field: "name", value: "" }
     case "create_deal":
       return { pipeline_id: "", stage_id: "", title: "", value: 0 }
+    case "assign_deal":
+      return { mode: "round_robin" }
     case "wait":
       return { amount: 1, unit: "hours" }
     case "condition":
@@ -1368,7 +1372,8 @@ function StepEditor({
           </FieldBlock>
         </>
       )
-    case "create_deal":
+    case "create_deal": {
+      const assignment = (cfg.assignment as { mode?: string; assignee_id?: string }) ?? {}
       return (
         <>
           <DealPipelineFields
@@ -1392,6 +1397,56 @@ function StepEditor({
               className="bg-muted text-foreground"
             />
           </FieldBlock>
+          <FieldBlock label={t("config.assignmentLabel")}>
+            <select
+              value={assignment.mode ?? "none"}
+              onChange={(e) =>
+                set({
+                  assignment:
+                    e.target.value === "none" ? undefined : { mode: e.target.value },
+                })
+              }
+              className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+            >
+              <option value="none">{t("config.assignmentModes.none")}</option>
+              <option value="round_robin">{t("config.modes.round_robin")}</option>
+              <option value="specific">{t("config.modes.specific")}</option>
+            </select>
+          </FieldBlock>
+          {assignment.mode === "specific" && (
+            <FieldBlock label={t("config.agentLabel")}>
+              <AgentSelect
+                value={assignment.assignee_id ?? ""}
+                onChange={(v) => set({ assignment: { mode: "specific", assignee_id: v } })}
+                t={t}
+              />
+            </FieldBlock>
+          )}
+        </>
+      )
+    }
+    case "assign_deal":
+      return (
+        <>
+          <FieldBlock label={t("config.modeLabel")}>
+            <select
+              value={(cfg.mode as string) ?? "round_robin"}
+              onChange={(e) => set({ mode: e.target.value })}
+              className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+            >
+              <option value="round_robin">{t("config.modes.round_robin")}</option>
+              <option value="specific">{t("config.modes.specific")}</option>
+            </select>
+          </FieldBlock>
+          {cfg.mode === "specific" && (
+            <FieldBlock label={t("config.agentLabel")}>
+              <AgentSelect
+                value={(cfg.assignee_id as string) ?? ""}
+                onChange={(v) => set({ assignee_id: v })}
+                t={t}
+              />
+            </FieldBlock>
+          )}
         </>
       )
     case "wait":

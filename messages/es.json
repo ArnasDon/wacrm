@@ -499,6 +499,9 @@
       "managePipelines": "Gestionar embudos",
       "addPipeline": "Agregar embudo",
       "addDeal": "Agregar negocio",
+      "filterByVendor": "Vendedor",
+      "allVendors": "Todos",
+      "onlyMine": "Solo míos",
       "createToStartTracking": "Crea un embudo para empezar a hacer seguimiento de negocios",
       "createPipeline": "Crear embudo",
       "newPipeline": "Nuevo embudo",
@@ -602,7 +605,15 @@
       "wonThisMonthTooltip": "Negocios marcados como Ganados desde el primer día del mes actual.",
       "lostThisMonth": "Perdidos este mes",
       "lostThisMonthTooltip": "Negocios marcados como Perdidos desde el primer día del mes actual.",
-      "howCalculated": "Cómo se calcula {label}"
+      "howCalculated": "Cómo se calcula {label}",
+      "byVendor": "Por vendedor",
+      "vendor": "Vendedor",
+      "vendorDeals": "Negocios",
+      "vendorValue": "Valor",
+      "vendorWon": "Ganados",
+      "vendorConversion": "Tasa de conversión",
+      "unassigned": "Sin asignar",
+      "notAvailable": "n/d"
     }
   },
   "Campaigns": {
@@ -939,6 +950,7 @@
         "assign_conversation": "Asignar conversación",
         "update_contact_field": "Actualizar campo de contacto",
         "create_deal": "Crear negocio",
+        "assign_deal": "Asignar negocio",
         "wait": "Esperar",
         "condition": "Condición (Si/Si no)",
         "send_webhook": "Enviar webhook",
@@ -1049,6 +1061,10 @@
           "specific": "Agente específico"
         },
         "agentLabel": "Agente",
+        "assignmentLabel": "Asignar a",
+        "assignmentModes": {
+          "none": "Dejar sin asignar"
+        },
         "fieldLabel": "Campo",
         "valueLabel": "Valor",
         "placeholderValue": "Texto o {{ vars.x }} / {{ message.text }}",

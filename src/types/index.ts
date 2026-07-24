@@ -195,10 +195,10 @@ export interface Conversation {
 }
 
 // ============================================================
-// Notifications (migration 027)
+// Notifications (migration 027, deal_assigned added in 041)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'deal_assigned';
 
 export interface Notification {
   id: string;
@@ -466,6 +466,7 @@ export type AutomationStepType =
   | 'assign_conversation'
   | 'update_contact_field'
   | 'create_deal'
+  | 'assign_deal'
   | 'wait'
   | 'condition'
   | 'send_webhook'
@@ -547,6 +548,15 @@ export interface CreateDealStepConfig {
   stage_id: string;
   title: string;
   value?: number;
+  /** Optional — omitted (pre-Phase-4 configs) leaves the deal unassigned. */
+  assignment?: { mode: 'specific' | 'round_robin'; assignee_id?: string };
+}
+
+/** Reassigns whichever open deals belong to the automation's triggering
+ *  contact — mirrors AssignConversationStepConfig's shape. */
+export interface AssignDealStepConfig {
+  mode: 'specific' | 'round_robin';
+  assignee_id?: string;
 }
 
 export interface WaitStepConfig {
@@ -583,6 +593,7 @@ export type AutomationStepConfig =
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
   | CreateDealStepConfig
+  | AssignDealStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

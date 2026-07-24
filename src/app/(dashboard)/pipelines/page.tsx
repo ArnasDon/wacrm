@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Pipeline, PipelineStage, Deal } from "@/types";
+import type { Pipeline, PipelineStage, Deal, Profile } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealForm } from "@/components/pipelines/deal-form";
@@ -50,13 +50,19 @@ export default function PipelinesPage() {
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
-  const { accountId } = useAuth();
+  const { accountId, profile } = useAuth();
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Vendor filter for the board — 'all', 'mine' (assigned_to === my own
+  // profile id), or a specific teammate's profile id. Team roster is
+  // loaded once; unrelated to which pipeline is selected.
+  const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
 
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
@@ -195,6 +201,28 @@ export default function PipelinesPage() {
       cancelled = true;
     };
   }, [selectedPipelineId, loadStages, loadDeals]);
+
+  // Team roster for the vendor filter — loaded once, independent of
+  // the selected pipeline. Same bare `profiles` query deal-form.tsx
+  // already uses to populate its "assigned to" picker.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("profiles").select("*").order("full_name");
+      if (!cancelled) setTeamProfiles((data ?? []) as Profile[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  const filteredDeals = useMemo(() => {
+    if (assigneeFilter === "all") return deals;
+    if (assigneeFilter === "mine") {
+      return deals.filter((d) => d.assigned_to === profile?.id);
+    }
+    return deals.filter((d) => d.assigned_to === assigneeFilter);
+  }, [deals, assigneeFilter, profile?.id]);
 
   const refreshPipelines = useCallback(async () => {
     const list = await loadPipelines();
@@ -390,6 +418,25 @@ export default function PipelinesPage() {
         </div>
       </div>
 
+      {pipelines.length > 0 && teamProfiles.length > 0 && (
+        <div className="mb-3 flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground">{t("filterByVendor")}</Label>
+          <select
+            value={assigneeFilter}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
+            className="h-8 rounded-lg border border-border bg-muted px-2.5 text-xs text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">{t("allVendors")}</option>
+            {profile && <option value="mine">{t("onlyMine")}</option>}
+            {teamProfiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Board */}
       {pipelines.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
@@ -412,10 +459,10 @@ export default function PipelinesPage() {
         </div>
       ) : (
         <>
-          <PipelineAnalytics stages={stages} deals={deals} />
+          <PipelineAnalytics stages={stages} deals={filteredDeals} teamDeals={deals} />
           <PipelineBoard
             stages={stages}
-            deals={deals}
+            deals={filteredDeals}
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}

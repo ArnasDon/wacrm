@@ -23,7 +23,15 @@ import { useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {
   stages: PipelineStage[];
+  /** Deals for the metric cards above — respects the board's own
+   *  vendor filter/"mine" toggle, so the headline numbers match what's
+   *  visible on the board underneath them. */
   deals: Deal[];
+  /** Every deal in the pipeline, filter-independent — the per-vendor
+   *  breakdown below always compares the whole team, otherwise
+   *  filtering to "mine" would hide the very comparison it's for.
+   *  Falls back to `deals` when omitted. */
+  teamDeals?: Deal[];
 }
 
 /**
@@ -46,7 +54,7 @@ function computeStageProbability(
   return 0.1 + t * (0.9 - 0.1);
 }
 
-export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
+export function PipelineAnalytics({ stages, deals, teamDeals }: PipelineAnalyticsProps) {
   const t = useTranslations("Pipelines.analytics");
   const { defaultCurrency } = useAuth();
   const sortedStages = useMemo(
@@ -98,6 +106,11 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
     };
   }, [deals, sortedStages]);
 
+  const byVendor = useMemo(
+    () => computeVendorStats(teamDeals ?? deals),
+    [teamDeals, deals],
+  );
+
   return (
     <TooltipProvider>
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card/60 p-4 sm:grid-cols-3 xl:grid-cols-6">
@@ -144,8 +157,100 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           t={t}
         />
       </div>
+
+      {byVendor.length > 0 && (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card/60 p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("byVendor")}
+          </h3>
+          <table className="w-full min-w-[480px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                <th className="pb-2 font-medium">{t("vendor")}</th>
+                <th className="pb-2 font-medium text-right">{t("vendorDeals")}</th>
+                <th className="pb-2 font-medium text-right">{t("vendorValue")}</th>
+                <th className="pb-2 font-medium text-right">{t("vendorWon")}</th>
+                <th className="pb-2 font-medium text-right">{t("vendorConversion")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byVendor.map((v) => (
+                <tr key={v.key} className="border-b border-border/50 last:border-0">
+                  <td className="py-2 text-foreground">
+                    {v.key === "unassigned" ? t("unassigned") : v.name}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-foreground">{v.dealCount}</td>
+                  <td className="py-2 text-right tabular-nums text-foreground">
+                    {formatCurrency(v.totalValue, defaultCurrency)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-foreground">{v.wonCount}</td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">
+                    {v.conversionRate === null
+                      ? t("notAvailable")
+                      : `${Math.round(v.conversionRate * 100)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </TooltipProvider>
   );
+}
+
+interface VendorStat {
+  key: string;
+  name: string;
+  /** Active (non-lost) deals — same "active" definition as the
+   *  headline pipeline-value metric above. */
+  dealCount: number;
+  totalValue: number;
+  wonCount: number;
+  /** won / (won + lost). Null when nothing has been decided yet, so
+   *  the table can show "n/a" instead of a misleading 0%. */
+  conversionRate: number | null;
+}
+
+/**
+ * Group deals by `assigned_to` (falling back to an "unassigned"
+ * bucket) and roll up the same active/value/won shape the headline
+ * metrics use, per vendor. Pure — testable without a component render.
+ */
+function computeVendorStats(deals: Deal[]): VendorStat[] {
+  const groups = new Map<string, { name: string; deals: Deal[] }>();
+  for (const d of deals) {
+    const key = d.assigned_to ?? "unassigned";
+    const existing = groups.get(key);
+    if (existing) {
+      existing.deals.push(d);
+    } else {
+      groups.set(key, { name: d.assignee?.full_name ?? "", deals: [d] });
+    }
+  }
+
+  const stats: VendorStat[] = [];
+  for (const [key, group] of groups) {
+    const active = group.deals.filter((d) => d.status !== "lost");
+    const won = group.deals.filter((d) => d.status === "won");
+    const lost = group.deals.filter((d) => d.status === "lost");
+    const decided = won.length + lost.length;
+    stats.push({
+      key,
+      name: group.name,
+      dealCount: active.length,
+      totalValue: active.reduce((sum, d) => sum + Number(d.value || 0), 0),
+      wonCount: won.length,
+      conversionRate: decided > 0 ? won.length / decided : null,
+    });
+  }
+
+  // Unassigned always last; everyone else by pipeline value, highest first.
+  return stats.sort((a, b) => {
+    if (a.key === "unassigned") return 1;
+    if (b.key === "unassigned") return -1;
+    return b.totalValue - a.totalValue;
+  });
 }
 
 function Metric({

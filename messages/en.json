@@ -499,6 +499,9 @@
       "managePipelines": "Manage Pipelines",
       "addPipeline": "Add Pipeline",
       "addDeal": "Add Deal",
+      "filterByVendor": "Salesperson",
+      "allVendors": "Everyone",
+      "onlyMine": "Only mine",
       "createToStartTracking": "Create a pipeline to start tracking deals",
       "createPipeline": "Create Pipeline",
       "newPipeline": "New Pipeline",
@@ -602,7 +605,15 @@
       "wonThisMonthTooltip": "Deals marked as Won since the first day of the current month.",
       "lostThisMonth": "Lost This Month",
       "lostThisMonthTooltip": "Deals marked as Lost since the first day of the current month.",
-      "howCalculated": "How {label} is calculated"
+      "howCalculated": "How {label} is calculated",
+      "byVendor": "By salesperson",
+      "vendor": "Salesperson",
+      "vendorDeals": "Deals",
+      "vendorValue": "Value",
+      "vendorWon": "Won",
+      "vendorConversion": "Win rate",
+      "unassigned": "Unassigned",
+      "notAvailable": "n/a"
     }
   },
   "Campaigns": {
@@ -939,6 +950,7 @@
         "assign_conversation": "Assign Conversation",
         "update_contact_field": "Update Contact Field",
         "create_deal": "Create Deal",
+        "assign_deal": "Assign Deal",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -1049,6 +1061,10 @@
           "specific": "Specific agent"
         },
         "agentLabel": "Agent",
+        "assignmentLabel": "Assign to",
+        "assignmentModes": {
+          "none": "Leave unassigned"
+        },
         "fieldLabel": "Field",
         "valueLabel": "Value",
         "placeholderValue": "Text or {{ vars.x }} / {{ message.text }}",

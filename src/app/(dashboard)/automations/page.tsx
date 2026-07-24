@@ -16,7 +16,6 @@ import {
   Users,
   PhoneCall,
   Loader2,
-  Sparkles,
 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
@@ -68,7 +67,6 @@ export default function AutomationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [aiPanelOpen, setAiPanelOpen] = useState(false)
 
   async function load() {
     try {
@@ -174,15 +172,6 @@ export default function AutomationsPage() {
           <GatedButton
             canAct={canCreate}
             gateReason="create automations"
-            onClick={() => setAiPanelOpen(true)}
-            variant="outline"
-          >
-            <Sparkles className="h-4 w-4" />
-            {t("askAi")}
-          </GatedButton>
-          <GatedButton
-            canAct={canCreate}
-            gateReason="create automations"
             onClick={() => router.push("/automations/new")}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
@@ -272,7 +261,7 @@ export default function AutomationsPage() {
         </DialogContent>
       </Dialog>
 
-      <AiCopilotPanel open={aiPanelOpen} onOpenChange={setAiPanelOpen} />
+      <AiCopilotPanel canCreate={canCreate} />
     </div>
   )
 }

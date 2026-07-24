@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { localDayKey } from '@/lib/dashboard/date-utils'
 import { costPerUnit, sumDailyMetrics, type DailyMetricRow } from './metrics'
+import { computeRoi, roiIsComparable } from './roi'
 
 type DB = SupabaseClient
 
@@ -33,6 +34,15 @@ export interface CampaignRow {
   /** Contacts the CRM attributes to this campaign, created in range. */
   leads: number
   costPerLead: number | null
+  /** Value of won deals attributed to this campaign, closed in range. */
+  revenue: number
+  dealsWon: number
+  roi: number | null
+  roas: number | null
+  /** False when the campaign's own currency differs from the account's
+   *  default — there's no FX conversion, so ROI/ROAS would silently mix
+   *  currencies if shown as a number. The page shows a warning instead. */
+  roiComparable: boolean
 }
 
 export interface CampaignsResult {
@@ -46,6 +56,7 @@ export interface CampaignsResult {
 export async function loadCampaigns(
   db: DB,
   range: { since: Date; until: Date },
+  accountCurrency: string,
 ): Promise<CampaignsResult> {
   const sinceKey = localDayKey(range.since)
   const untilKey = localDayKey(range.until)
@@ -78,24 +89,26 @@ export async function loadCampaigns(
   const campaignIds = campaignRows.map((c) => c.id as string)
   const externalIds = campaignRows.map((c) => c.external_id as string)
 
-  const [{ data: metricsRows, error: metricsError }, { data: contactRows, error: contactsError }] =
-    await Promise.all([
-      db
-        .from('ad_metrics_daily')
-        .select('campaign_id, date, spend, impressions, clicks, messaging_started')
-        .in('campaign_id', campaignIds)
-        .gte('date', sinceKey)
-        .lte('date', untilKey),
-      // Leads: contacts the webhook/ads-sync attributed to this
-      // campaign (by Meta's external campaign id — see migration 037),
-      // created within the same range as the spend we're comparing it to.
-      db
-        .from('contacts')
-        .select('source_campaign_id')
-        .in('source_campaign_id', externalIds)
-        .gte('created_at', range.since.toISOString())
-        .lte('created_at', range.until.toISOString()),
-    ])
+  const [
+    { data: metricsRows, error: metricsError },
+    { data: attributedContacts, error: contactsError },
+  ] = await Promise.all([
+    db
+      .from('ad_metrics_daily')
+      .select('campaign_id, date, spend, impressions, clicks, messaging_started')
+      .in('campaign_id', campaignIds)
+      .gte('date', sinceKey)
+      .lte('date', untilKey),
+    // Every contact ever attributed to one of these campaigns (by
+    // Meta's external campaign id — migration 037), regardless of when
+    // they were created. Needed both for "leads in range" below (an
+    // in-JS date filter, since a lead created just outside the window
+    // shouldn't count as this range's lead) and for revenue: a deal can
+    // close months after the contact first arrived, so restricting this
+    // query itself to the date range would silently drop revenue from
+    // older leads that just happened to close now.
+    db.from('contacts').select('id, source_campaign_id, created_at').in('source_campaign_id', externalIds),
+  ])
   if (metricsError) throw new Error(`Failed to load campaign metrics: ${metricsError.message}`)
   if (contactsError) throw new Error(`Failed to load campaign leads: ${contactsError.message}`)
 
@@ -120,22 +133,57 @@ export async function loadCampaigns(
   }
 
   const leadsByExternalId = new Map<string, number>()
-  for (const row of (contactRows ?? []) as { source_campaign_id: string }[]) {
-    leadsByExternalId.set(
-      row.source_campaign_id,
-      (leadsByExternalId.get(row.source_campaign_id) ?? 0) + 1,
-    )
+  const externalIdByContactId = new Map<string, string>()
+  for (const row of (attributedContacts ?? []) as {
+    id: string
+    source_campaign_id: string
+    created_at: string
+  }[]) {
+    externalIdByContactId.set(row.id, row.source_campaign_id)
+    const createdAt = new Date(row.created_at)
+    if (createdAt >= range.since && createdAt <= range.until) {
+      leadsByExternalId.set(
+        row.source_campaign_id,
+        (leadsByExternalId.get(row.source_campaign_id) ?? 0) + 1,
+      )
+    }
+  }
+
+  const contactIds = Array.from(externalIdByContactId.keys())
+  const revenueByExternalId = new Map<string, number>()
+  const dealsWonByExternalId = new Map<string, number>()
+  if (contactIds.length > 0) {
+    const { data: wonDeals, error: dealsError } = await db
+      .from('deals')
+      .select('contact_id, value')
+      .in('contact_id', contactIds)
+      .eq('status', 'won')
+      .gte('closed_at', range.since.toISOString())
+      .lte('closed_at', range.until.toISOString())
+    if (dealsError) throw new Error(`Failed to load campaign revenue: ${dealsError.message}`)
+
+    for (const deal of (wonDeals ?? []) as { contact_id: string; value: number }[]) {
+      const externalId = externalIdByContactId.get(deal.contact_id)
+      if (!externalId) continue
+      revenueByExternalId.set(externalId, (revenueByExternalId.get(externalId) ?? 0) + Number(deal.value || 0))
+      dealsWonByExternalId.set(externalId, (dealsWonByExternalId.get(externalId) ?? 0) + 1)
+    }
   }
 
   const campaigns: CampaignRow[] = campaignRows.map((c) => {
+    const externalId = c.external_id as string
     const agg = sumDailyMetrics(metricsByCampaign.get(c.id as string) ?? [])
-    const leads = leadsByExternalId.get(c.external_id as string) ?? 0
+    const leads = leadsByExternalId.get(externalId) ?? 0
+    const revenue = revenueByExternalId.get(externalId) ?? 0
+    const currency = c.currency as string
+    const comparable = roiIsComparable(currency, accountCurrency)
+    const { roi, roas } = comparable ? computeRoi({ spend: agg.spend, revenue }) : { roi: null, roas: null }
     return {
       id: c.id as string,
       name: c.name as string,
       platform: platformByAdAccount.get(c.ad_account_id as string) ?? 'other',
       effectiveStatus: c.effective_status as string | null,
-      currency: c.currency as string,
+      currency,
       isManual: c.is_manual as boolean,
       spend: agg.spend,
       impressions: agg.impressions,
@@ -143,6 +191,11 @@ export async function loadCampaigns(
       messagingStarted: agg.messagingStarted,
       leads,
       costPerLead: costPerUnit(agg.spend, leads),
+      revenue,
+      dealsWon: dealsWonByExternalId.get(externalId) ?? 0,
+      roi,
+      roas,
+      roiComparable: comparable,
     }
   })
 

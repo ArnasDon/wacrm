@@ -13,6 +13,7 @@ import {
   recordReferralTouch,
   type WhatsAppReferral,
 } from '@/lib/attribution/capture'
+import { captureTrackedLinkTouch } from '@/lib/attribution/tracked-links'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -621,6 +622,26 @@ async function processMessage(
     console.error('[attribution] capture failed:', error)
     return null
   })
+
+  // Fallback for channels with no referral of their own (Google Ads, a
+  // landing page, a flyer): look for a tracked-link tag in the message
+  // text. Only when Meta gave us nothing — a real referral is ground
+  // truth from the platform and always takes priority over a
+  // customer-editable text tag.
+  if (!message.referral) {
+    await captureTrackedLinkTouch({
+      db: supabaseAdmin(),
+      accountId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      wamid: message.id,
+      text: message.text?.body,
+      occurredAt: new Date(Number(message.timestamp) * 1000),
+    }).catch((error) => {
+      console.error('[attribution] tracked-link capture failed:', error)
+      return null
+    })
+  }
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by

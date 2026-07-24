@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { recordReferralTouch, referralToAttribution } from './capture';
+import {
+  recordReferralTouch,
+  recordTrackedLinkTouch,
+  referralToAttribution,
+  trackedLinkToAttribution,
+} from './capture';
 
 describe('referralToAttribution', () => {
   it('maps a Click-to-WhatsApp ad to meta_ads and keeps the ad id', () => {
@@ -14,6 +19,7 @@ describe('referralToAttribution', () => {
     expect(out).toEqual({
       source: 'meta_ads',
       adId: '120210000000000',
+      campaignExternalId: null,
       ctwaClid: 'clid-123',
       headline: 'Promo de verano',
       sourceUrl: 'https://fb.me/abc',
@@ -215,5 +221,90 @@ describe('recordReferralTouch', () => {
 
     const occurredAt = db.inserts[0].row.occurred_at as string;
     expect(Number.isNaN(Date.parse(occurredAt))).toBe(false);
+  });
+});
+
+describe('trackedLinkToAttribution', () => {
+  it('carries the link source and campaign straight through, no async resolution needed', () => {
+    // Unlike a Meta ad id, the campaign a tracked link belongs to is
+    // known synchronously — the operator picked it when creating the
+    // link — so campaignExternalId is set immediately, not left null
+    // for a later sync to resolve.
+    const out = trackedLinkToAttribution({
+      source: 'google_ads',
+      slug: 'a1b2c3',
+      campaignExternalId: 'google-search-brand',
+    });
+    expect(out).toEqual({
+      source: 'google_ads',
+      adId: null,
+      campaignExternalId: 'google-search-brand',
+      ctwaClid: null,
+      headline: null,
+      sourceUrl: '/l/a1b2c3',
+    });
+  });
+
+  it('still produces a valid attribution when the link has no campaign', () => {
+    const out = trackedLinkToAttribution({
+      source: 'web',
+      slug: 'x9y8z7',
+      campaignExternalId: null,
+    });
+    expect(out.campaignExternalId).toBeNull();
+    expect(out.source).toBe('web');
+  });
+});
+
+describe('recordTrackedLinkTouch', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('logs the event and stamps the contact with the linked campaign', async () => {
+    const db = fakeDb();
+    await recordTrackedLinkTouch({
+      db,
+      ...base,
+      link: { source: 'google_ads', slug: 'a1b2c3', campaignExternalId: 'gc-1' },
+      occurredAt: new Date('2026-07-01T10:00:00.000Z'),
+    });
+
+    expect(db.inserts).toHaveLength(1);
+    expect(db.inserts[0].row).toMatchObject({
+      source: 'google_ads',
+      ad_id: null,
+      campaign_id: 'gc-1',
+      occurred_at: '2026-07-01T10:00:00.000Z',
+    });
+
+    expect(db.updates).toHaveLength(1);
+    expect(db.updates[0].row).toMatchObject({
+      source: 'google_ads',
+      source_campaign_id: 'gc-1',
+    });
+  });
+
+  it('applies the same first-touch guard as a Meta referral', async () => {
+    const db = fakeDb();
+    await recordTrackedLinkTouch({
+      db,
+      ...base,
+      link: { source: 'organic', slug: 'x1', campaignExternalId: null },
+    });
+    expect(db.updates[0].filters).toEqual([
+      ['id', 'contact-1'],
+      ['source', 'unknown'],
+    ]);
+  });
+
+  it('does not re-stamp on a replayed wamid', async () => {
+    const db = fakeDb({ error: { code: '23505' } });
+    await recordTrackedLinkTouch({
+      db,
+      ...base,
+      link: { source: 'web', slug: 'x2', campaignExternalId: null },
+    });
+    expect(db.updates).toHaveLength(0);
   });
 });

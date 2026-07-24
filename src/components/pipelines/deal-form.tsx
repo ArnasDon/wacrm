@@ -216,7 +216,16 @@ export function DealForm({
     setStatusAction(status);
     const { error } = await supabase
       .from("deals")
-      .update({ status })
+      .update({
+        status,
+        // Set once, here, on the only transition that means "this deal
+        // is decided" — never touched by ordinary edits afterward, so
+        // ROI/reporting can trust it as the actual close date (see
+        // migration 039). Reopening clears it: an "open" deal has no
+        // close date, and if it closes again later this is where it
+        // gets stamped again.
+        closed_at: status === "open" ? null : new Date().toISOString(),
+      })
       .eq("id", deal.id);
     setStatusAction(null);
     if (error) {

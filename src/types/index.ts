@@ -382,6 +382,10 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Set exactly once, when marked won/lost; null again if reopened.
+   *  See migration 039 — the accurate close date for ROI/reporting,
+   *  unlike updated_at which moves on every unrelated edit. */
+  closed_at?: string | null;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

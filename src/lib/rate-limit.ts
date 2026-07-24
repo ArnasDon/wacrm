@@ -130,6 +130,12 @@ export const RATE_LIMITS = {
    *  enabling brute-force token enumeration. With 256-bit tokens the
    *  enumeration risk is theoretical; this is belt-and-braces. */
   invitationPeek: { limit: 30, windowMs: 60_000 },
+  /** Tracked-link redirect (public, per-IP). 60/min — real ad clicks
+   *  from many different people are many different IPs, so this only
+   *  bounds one IP retrying/scripting against a single link; worst
+   *  case of tripping it is an inflated click counter, not a security
+   *  issue, so it's generous. */
+  trackedLinkRedirect: { limit: 60, windowMs: 60_000 },
   /** Invitation redeem (authed, per-IP+user). Tighter than peek —
    *  successful redemption mutates two profiles and an invite row, so
    *  the abuse surface is "spam join attempts." */

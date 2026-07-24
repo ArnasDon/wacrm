@@ -23,12 +23,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { ManualCampaignDialog } from '@/components/campaigns/manual-campaign-dialog'
+import { EditSpendDialog } from '@/components/campaigns/edit-spend-dialog'
+import { TrackedLinksCard } from '@/components/campaigns/tracked-links-card'
 
 type RangeDays = 7 | 30 | 90
 
 export default function CampaignsPage() {
   const t = useTranslations('Campaigns.page')
-  const { canEditSettings } = useAuth()
+  const { canEditSettings, defaultCurrency } = useAuth()
   const supabase = createClient()
 
   const [range, setRange] = useState<RangeDays>(30)
@@ -42,17 +45,18 @@ export default function CampaignsPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await loadCampaigns(supabase, {
-        since: daysAgoStart(range - 1),
-        until: new Date(),
-      })
+      const result = await loadCampaigns(
+        supabase,
+        { since: daysAgoStart(range - 1), until: new Date() },
+        defaultCurrency,
+      )
       setCampaigns(result.campaigns)
       setHasAdAccounts(result.hasAdAccounts)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load campaigns')
     }
     setLoading(false)
-  }, [supabase, range])
+  }, [supabase, range, defaultCurrency])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -122,6 +126,9 @@ export default function CampaignsPage() {
               {t('syncNow')}
             </Button>
           )}
+          {canEditSettings && (
+            <ManualCampaignDialog defaultCurrency={defaultCurrency} onCreated={fetchCampaigns} />
+          )}
         </div>
       </div>
 
@@ -150,7 +157,11 @@ export default function CampaignsPage() {
                   <TableHead className="text-right">{t('columns.spend')}</TableHead>
                   <TableHead className="text-right">{t('columns.leads')}</TableHead>
                   <TableHead className="text-right">{t('columns.costPerLead')}</TableHead>
+                  <TableHead className="text-right">{t('columns.revenue')}</TableHead>
+                  <TableHead className="text-right">{t('columns.dealsWon')}</TableHead>
+                  <TableHead className="text-right">{t('columns.roi')}</TableHead>
                   <TableHead className="text-right">{t('columns.messagingStarted')}</TableHead>
+                  <TableHead className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -184,8 +195,35 @@ export default function CampaignsPage() {
                         ? t('notAvailable')
                         : formatCurrency(c.costPerLead, c.currency)}
                     </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(c.revenue, c.currency)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{c.dealsWon}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {!c.roiComparable ? (
+                        <span className="text-xs text-amber-500" title={t('roiCurrencyMismatch')}>
+                          {t('notComparable')}
+                        </span>
+                      ) : c.roi === null ? (
+                        t('notAvailable')
+                      ) : (
+                        <span className={c.roi >= 0 ? 'text-emerald-500' : 'text-destructive'}>
+                          {(c.roi * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {c.messagingStarted === null ? t('notAvailable') : c.messagingStarted}
+                    </TableCell>
+                    <TableCell>
+                      {c.isManual && canEditSettings && (
+                        <EditSpendDialog
+                          campaignId={c.id}
+                          campaignName={c.name}
+                          currentSpend={c.spend}
+                          onSaved={fetchCampaigns}
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -205,6 +243,8 @@ export default function CampaignsPage() {
           )}
         </p>
       )}
+
+      <TrackedLinksCard campaigns={campaigns.map((c) => ({ id: c.id, name: c.name }))} />
     </div>
   )
 }

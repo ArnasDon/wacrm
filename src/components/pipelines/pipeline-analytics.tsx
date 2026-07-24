@@ -73,7 +73,12 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const thisMonth = (d: Deal) => {
-      const ts = d.updated_at ?? d.created_at;
+      // closed_at (migration 039) is the real close date and is only
+      // ever set on the won/lost transition; updated_at/created_at
+      // stay as fallbacks for deals closed before that migration ran
+      // and never touched since (their closed_at was backfilled from
+      // updated_at, so this order changes nothing for them either).
+      const ts = d.closed_at ?? d.updated_at ?? d.created_at;
       return ts ? new Date(ts) >= monthStart : false;
     };
     const wonThisMonth = deals.filter(

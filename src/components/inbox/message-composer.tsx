@@ -576,6 +576,7 @@ export function MessageComposer({
             onClick={stopRecording}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
             title={t("stopAndAttach")}
+            aria-label={t("stopAndAttach")}
           >
             <Square className="h-4 w-4" />
           </Button>
@@ -586,6 +587,7 @@ export function MessageComposer({
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={inputsDisabled || busy}
+              aria-label={t("attachMedia")}
               title={
                 readOnly
                   ? t("readOnlyTitle")
@@ -626,6 +628,7 @@ export function MessageComposer({
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={inputsDisabled}
+              aria-label={t("moreActions")}
               title={
                 readOnly
                   ? t("readOnlyTitle")
@@ -655,6 +658,7 @@ export function MessageComposer({
             canAct={!readOnly}
             gateReason="send messages"
             title={readOnly ? undefined : t("sendTemplate")}
+            aria-label={t("sendTemplate")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
             onClick={onOpenTemplates}
           >
@@ -691,6 +695,8 @@ export function MessageComposer({
             gateReason="send messages"
             disabled={!text.trim() || sessionExpired || sending}
             onClick={handleSend}
+            title={t("send")}
+            aria-label={t("send")}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
             <Send className="h-4 w-4" />
@@ -793,6 +799,7 @@ function MediaDraftPreview({
           type="button"
           onClick={onDiscard}
           aria-label={t("removeAttachment")}
+          title={t("removeAttachment")}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />

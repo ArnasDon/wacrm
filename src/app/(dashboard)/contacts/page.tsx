@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
@@ -53,10 +54,13 @@ import {
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
-import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import {
+  isExactAction,
+  removeActionFromHref,
+} from '@/lib/operational-navigation';
 
 const PAGE_SIZE = 25;
 
@@ -65,6 +69,16 @@ interface ContactWithTags extends Contact {
 }
 
 export default function ContactsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactsPageInner />
+    </Suspense>
+  );
+}
+
+function ContactsPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
@@ -85,7 +99,6 @@ export default function ContactsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailContactId, setDetailContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [customFieldsOpen, setCustomFieldsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -229,6 +242,23 @@ export default function ContactsPage() {
     setFormOpen(true);
   }
 
+  useEffect(() => {
+    if (!isExactAction(searchParams.get('action'), 'new')) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditContact(null);
+    setEditContactTags([]);
+    setFormOpen(true);
+  }, [searchParams]);
+
+  function handleContactFormOpenChange(open: boolean) {
+    setFormOpen(open);
+    if (!open && isExactAction(searchParams.get('action'), 'new')) {
+      router.replace(removeActionFromHref('/contacts', searchParams), {
+        scroll: false,
+      });
+    }
+  }
+
   async function openEditForm(contact: Contact) {
     const { data } = await supabase
       .from('contact_tags')
@@ -353,7 +383,7 @@ export default function ContactsPage() {
           {canEditSettings && (
             <Button
               variant="outline"
-              onClick={() => setCustomFieldsOpen(true)}
+              onClick={() => router.push('/settings?tab=fields')}
               className="border-border text-muted-foreground hover:bg-muted"
             >
               <SlidersHorizontal className="size-4" />
@@ -647,6 +677,8 @@ export default function ContactsPage() {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger
+                        aria-label={t('moreActions')}
+                        title={t('moreActions')}
                         render={
                           <Button
                             variant="ghost"
@@ -709,6 +741,8 @@ export default function ContactsPage() {
               size="icon-sm"
               disabled={!hasPrev}
               onClick={() => setPage((p) => p - 1)}
+              aria-label={t('previousPage')}
+              title={t('previousPage')}
               className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             >
               <ChevronLeft className="size-4" />
@@ -721,6 +755,8 @@ export default function ContactsPage() {
               size="icon-sm"
               disabled={!hasNext}
               onClick={() => setPage((p) => p + 1)}
+              aria-label={t('nextPage')}
+              title={t('nextPage')}
               className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             >
               <ChevronRight className="size-4" />
@@ -732,7 +768,7 @@ export default function ContactsPage() {
       {/* Contact Form Dialog */}
       <ContactForm
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={handleContactFormOpenChange}
         contact={editContact}
         contactTags={editContactTags}
         onSaved={() => {
@@ -761,13 +797,6 @@ export default function ContactsPage() {
       />
 
       {/* Custom Fields Manager (admin+) */}
-      {canEditSettings && (
-        <CustomFieldsManager
-          open={customFieldsOpen}
-          onOpenChange={setCustomFieldsOpen}
-        />
-      )}
-
       {/* Delete Confirmation */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">

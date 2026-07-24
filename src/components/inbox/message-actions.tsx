@@ -108,6 +108,7 @@ export function MessageActions({
           <PopoverTrigger
             className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("react")}
+            title={t("react")}
           >
             <SmilePlus className="h-3.5 w-3.5" />
           </PopoverTrigger>
@@ -122,6 +123,7 @@ export function MessageActions({
                 onClick={() => handlePickEmoji(e)}
                 className="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none transition-transform hover:scale-125 hover:bg-muted"
                 aria-label={t("reactWith", { emoji: e })}
+                title={t("reactWith", { emoji: e })}
               >
                 {e}
               </button>
@@ -133,6 +135,7 @@ export function MessageActions({
           onClick={handleReply}
           className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
           aria-label={t("reply")}
+          title={t("reply")}
         >
           <CornerUpLeft className="h-3.5 w-3.5" />
         </button>
@@ -141,6 +144,7 @@ export function MessageActions({
           onClick={handleCopy}
           className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
           aria-label={t("copyText")}
+          title={t("copyText")}
         >
           <Copy className="h-3.5 w-3.5" />
         </button>

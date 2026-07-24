@@ -16,6 +16,10 @@ import type {
   ResponseTimeBucket,
   ResponseTimeSummary,
 } from './types'
+import {
+  groupIncomingMessages,
+  type IncomingMessageActivity,
+} from './activity-grouping'
 
 // ------------------------------------------------------------
 // All client-side aggregation. RLS scopes every query to the
@@ -302,6 +306,7 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
 
   // PostgREST returns nested selections as arrays by default, even when
   // the foreign key is 1:1. We normalise by taking [0] on each level.
+  const incomingMessages: IncomingMessageActivity[] = []
   for (const m of (msgs.data ?? []) as unknown as Array<{
     id: string
     content_text: string | null
@@ -315,14 +320,14 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations
     const contact = Array.isArray(conv?.contacts) ? conv?.contacts[0] : conv?.contacts
     const who = contact?.name || contact?.phone || 'Unknown'
-    items.push({
-      id: `msg-${m.id}`,
-      kind: 'message',
-      text: `New message from ${who}`,
+    incomingMessages.push({
+      id: m.id,
+      conversationId: m.conversation_id,
+      contactLabel: who,
       at: m.created_at,
-      href: `/inbox?c=${m.conversation_id}`,
     })
   }
+  items.push(...groupIncomingMessages(incomingMessages))
 
   for (const c of (contacts.data ?? []) as Array<{ id: string; name: string | null; phone: string; created_at: string }>) {
     items.push({

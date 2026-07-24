@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
@@ -30,6 +31,10 @@ import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
+import {
+  isExactAction,
+  removeActionFromHref,
+} from "@/lib/operational-navigation";
 
 // Pipeline creation is admin-class (settings-tier write under
 // the new RLS); deal creation is operational and only requires
@@ -46,6 +51,16 @@ const SPEC_DEFAULT_STAGES = [
 ];
 
 export default function PipelinesPage() {
+  return (
+    <Suspense fallback={null}>
+      <PipelinesPageInner />
+    </Suspense>
+  );
+}
+
+function PipelinesPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations("Pipelines.page");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
@@ -177,7 +192,6 @@ export default function PipelinesPage() {
     if (!selectedPipelineId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStages([]);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeals([]);
       return;
     }
@@ -246,6 +260,24 @@ export default function PipelinesPage() {
     setDefaultStageId(deal.stage_id);
     setDealFormOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (!isExactAction(searchParams.get("action"), "new-deal")) return;
+    if (loading || !selectedPipelineId || stages.length === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditingDeal(null);
+    setDefaultStageId(stages[0]?.id ?? "");
+    setDealFormOpen(true);
+  }, [loading, searchParams, selectedPipelineId, stages]);
+
+  function handleDealFormOpenChange(open: boolean) {
+    setDealFormOpen(open);
+    if (!open && isExactAction(searchParams.get("action"), "new-deal")) {
+      router.replace(removeActionFromHref("/pipelines", searchParams), {
+        scroll: false,
+      });
+    }
+  }
 
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
@@ -482,7 +514,7 @@ export default function PipelinesPage() {
       {/* Deal Form (Sheet) */}
       <DealForm
         open={dealFormOpen}
-        onOpenChange={setDealFormOpen}
+        onOpenChange={handleDealFormOpenChange}
         deal={editingDeal}
         pipelineId={selectedPipelineId}
         stages={stages}

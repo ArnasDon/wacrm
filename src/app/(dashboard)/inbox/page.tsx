@@ -8,14 +8,29 @@ import {
   CONVERSATION_SELECT,
   normalizeConversation,
 } from "@/lib/inbox/conversations";
-import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type {
+  Conversation,
+  Message,
+  Contact,
+  ConversationStatus,
+} from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
-import { toast } from "sonner";
-import { WifiOff } from "lucide-react";
+import { WifiOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -34,6 +49,8 @@ export default function InboxPage() {
 
 function InboxPageInner() {
   const t = useTranslations("Inbox.page");
+  const tThread = useTranslations("Inbox.messageThread");
+  const tSidebar = useTranslations("Inbox.sidebar");
   const router = useRouter();
   const searchParams = useSearchParams();
   /**
@@ -49,7 +66,7 @@ function InboxPageInner() {
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
-    null
+    null,
   );
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
@@ -69,6 +86,19 @@ function InboxPageInner() {
    * below reconciles to the stored value right after mount instead.
    */
   const [contactPanelOpen, setContactPanelOpen] = useState(true);
+  const [mobileContactPanelOpen, setMobileContactPanelOpen] = useState(false);
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 64rem)");
+    const closeMobilePanelOnDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) setMobileContactPanelOpen(false);
+    };
+
+    desktopQuery.addEventListener("change", closeMobilePanelOnDesktop);
+    return () => {
+      desktopQuery.removeEventListener("change", closeMobilePanelOnDesktop);
+    };
+  }, []);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CONTACT_PANEL_STORAGE_KEY);
@@ -228,7 +258,7 @@ function InboxPageInner() {
             if (prev.some((m) => m.id === newMsg.id)) return prev;
             // Replace optimistic message if it exists
             const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
+              (m) => !m.id.startsWith("temp-"),
             );
             return [...withoutOptimistic, newMsg];
           });
@@ -268,11 +298,11 @@ function InboxPageInner() {
       if (event.eventType === "UPDATE") {
         // Update message status
         setMessages((prev) =>
-          prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
+          prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m)),
         );
       }
     },
-    [activeConversation, hydrateConversation]
+    [activeConversation, hydrateConversation],
   );
 
   // Handle realtime conversation events
@@ -328,13 +358,11 @@ function InboxPageInner() {
 
         // Update active conversation if it changed
         if (activeConversation && conv.id === activeConversation.id) {
-          setActiveConversation((prev) =>
-            prev ? { ...prev, ...conv } : prev
-          );
+          setActiveConversation((prev) => (prev ? { ...prev, ...conv } : prev));
         }
       }
     },
-    [activeConversation, hydrateConversation]
+    [activeConversation, hydrateConversation],
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -443,11 +471,12 @@ function InboxPageInner() {
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, activeConversation?.id],
   );
 
   const handleSelectConversation = useCallback(
     (conv: Conversation) => {
+      setMobileContactPanelOpen(false);
       // Re-clicking the already-active conversation would clear the
       // messages array, but the fetch effect in MessageThread only re-runs
       // when conversationId changes — so messages would stay empty until
@@ -485,13 +514,14 @@ function InboxPageInner() {
       // replace() to avoid polluting browser history with every click.
       router.replace(`/inbox?c=${conv.id}`, { scroll: false });
     },
-    [activeConversation?.id, router]
+    [activeConversation?.id, router],
   );
 
   // Mobile "back" — deselect the conversation so the list pane comes
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
   const handleCloseConversation = useCallback(() => {
+    setMobileContactPanelOpen(false);
     setActiveConversation(null);
     setActiveContact(null);
     setMessages([]);
@@ -500,7 +530,6 @@ function InboxPageInner() {
     autoSelectedForDeepLinkRef.current = null;
     router.replace("/inbox", { scroll: false });
   }, [router]);
-
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
@@ -516,22 +545,22 @@ function InboxPageInner() {
   const handleUpdateMessage = useCallback(
     (id: string, updates: Partial<Message>) => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
+        prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
       );
     },
-    []
+    [],
   );
 
   const handleStatusChange = useCallback(
     (conversationId: string, status: ConversationStatus) => {
       setConversations((prev) =>
-        prev.map((c) => (c.id === conversationId ? { ...c, status } : c))
+        prev.map((c) => (c.id === conversationId ? { ...c, status } : c)),
       );
       if (activeConversation?.id === conversationId) {
         setActiveConversation((prev) => (prev ? { ...prev, status } : prev));
       }
     },
-    [activeConversation]
+    [activeConversation],
   );
 
   const handleAssignChange = useCallback(
@@ -540,18 +569,18 @@ function InboxPageInner() {
         prev.map((c) =>
           c.id === conversationId
             ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
-            : c
-        )
+            : c,
+        ),
       );
       if (activeConversation?.id === conversationId) {
         setActiveConversation((prev) =>
           prev
             ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-            : prev
+            : prev,
         );
       }
     },
-    [activeConversation]
+    [activeConversation],
   );
 
   // On mobile (<lg) we show a SINGLE pane — either the list or the
@@ -562,25 +591,23 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    <div className="-m-4 flex h-[calc(100vh-3.5rem)] max-w-[100vw] min-w-0 flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
           <WifiOff className="h-4 w-4 text-amber-400" />
-          <p className="text-xs text-amber-400">
-            {t("whatsappNotConnected")}
-          </p>
+          <p className="text-xs text-amber-400">{t("whatsappNotConnected")}</p>
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex max-w-full min-w-0 flex-1 overflow-hidden">
         {/* Left panel: Conversation list.
             Hidden on mobile when a conversation is selected so the
             thread can occupy the full width. Always visible on lg+. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex-none",
+            "h-full max-w-full min-w-0 flex-1 overflow-hidden lg:flex-none",
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >
@@ -623,6 +650,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            onOpenContactPanel={() => setMobileContactPanelOpen(true)}
           />
         </div>
 
@@ -635,6 +663,37 @@ function InboxPageInner() {
             <ContactSidebar contact={activeContact} />
           </div>
         )}
+
+        <Sheet
+          open={mobileContactPanelOpen}
+          onOpenChange={setMobileContactPanelOpen}
+        >
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="w-[min(22rem,calc(100vw-1rem))] max-w-full gap-0 p-0 lg:hidden"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{tSidebar("contactInfo")}</SheetTitle>
+            </SheetHeader>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={() => setMobileContactPanelOpen(false)}
+                    aria-label={tThread("hideContactPanel")}
+                    className="bg-card/90 text-muted-foreground hover:bg-muted hover:text-foreground absolute top-3 right-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-md shadow-sm transition-colors"
+                  />
+                }
+              >
+                <X className="h-4 w-4" />
+              </TooltipTrigger>
+              <TooltipContent>{tThread("hideContactPanel")}</TooltipContent>
+            </Tooltip>
+            <ContactSidebar contact={activeContact} variant="sheet" />
+          </SheetContent>
+        </Sheet>
       </div>
     </div>
   );

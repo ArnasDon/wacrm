@@ -5,6 +5,7 @@ import { UserPlus, Briefcase, Radio, Zap } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { useTranslations } from 'next-intl';
+import { OPERATIONAL_ACTION_HREFS } from '@/lib/operational-navigation';
 
 // Quick-action shortcuts. Each navigates to the page that owns the
 // relevant "create" flow. We deliberately don't try to auto-open any
@@ -20,13 +21,13 @@ interface Action {
 const ACTIONS: Action[] = [
   {
     labelKey: 'newContact',
-    href: '/contacts',
+    href: OPERATIONAL_ACTION_HREFS.newContact,
     icon: UserPlus,
     tint: 'text-primary',
   },
   {
     labelKey: 'newDeal',
-    href: '/pipelines',
+    href: OPERATIONAL_ACTION_HREFS.newDeal,
     icon: Briefcase,
     tint: 'text-chart-2',
   },

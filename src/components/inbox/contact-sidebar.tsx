@@ -10,7 +10,6 @@ import {
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
@@ -18,16 +17,24 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  variant?: "panel" | "sheet";
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  variant = "panel",
+}: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
-  const tThread = useTranslations("Inbox.messageThread");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -121,8 +128,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   if (!contact) {
     return (
-      <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
-        <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
+      <div
+        className={cn(
+          "bg-card flex h-full min-w-0 items-center justify-center",
+          variant === "sheet"
+            ? "w-full"
+            : "border-border w-70 shrink-0 border-l",
+        )}
+      >
+        <p className="text-sm text-muted-foreground">
+          {tSidebar("contactInfo")}
+        </p>
       </div>
     );
   }
@@ -131,13 +147,19 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
-      <ScrollArea className="flex-1">
-        <div className="p-4">
+    <div
+      className={cn(
+        "bg-card flex h-full min-w-0 flex-col overflow-hidden",
+        variant === "sheet" ? "w-full" : "border-border w-70 shrink-0 border-l",
+      )}
+    >
+      <ScrollArea className="min-h-0 w-full max-w-full min-w-0 flex-1 overflow-x-hidden [&_[data-slot=scroll-area-viewport]]:max-w-full [&_[data-slot=scroll-area-viewport]]:!overflow-x-hidden">
+        <div className="w-full max-w-full min-w-0 p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
               {contact.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={contact.avatar_url}
                   alt={displayName}
@@ -158,7 +180,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           {/* Phone */}
           <div className="mt-4 space-y-2">
             <button
+              type="button"
               onClick={handleCopyPhone}
+              aria-label={`${tSidebar("copyPhone")}: ${contact.phone}`}
+              title={tSidebar("copyPhone")}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
               <Phone className="h-4 w-4 text-muted-foreground" />
@@ -189,7 +214,9 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTags")}</p>
+                <p className="px-1 text-xs text-muted-foreground">
+                  {tSidebar("noTags")}
+                </p>
               ) : (
                 tags.map((tag) => (
                   <span
@@ -218,13 +245,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
+                <p className="px-1 text-xs text-muted-foreground">
+                  {tSidebar("noDeals")}
+                </p>
               ) : (
                 deals.map((deal) => (
-                  <div
-                    key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
+                  <div key={deal.id} className="rounded-lg bg-muted px-3 py-2">
                     <p className="text-sm font-medium text-foreground">
                       {deal.title}
                     </p>
@@ -269,22 +295,25 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                   rows={2}
                   className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
                 />
-                <Button
-                  size="sm"
-                  className="h-auto bg-primary px-2 hover:bg-primary/90"
-                  onClick={handleAddNote}
-                  disabled={!newNote.trim() || addingNote}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger render={<span className="inline-flex" />}>
+                    <Button
+                      size="sm"
+                      className="h-auto bg-primary px-2 hover:bg-primary/90"
+                      onClick={handleAddNote}
+                      disabled={!newNote.trim() || addingNote}
+                      aria-label={tSidebar("addNote")}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{tSidebar("addNote")}</TooltipContent>
+                </Tooltip>
               </div>
 
               <div className="mt-2 space-y-2">
                 {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
+                  <div key={note.id} className="rounded-lg bg-muted px-3 py-2">
                     <p className="whitespace-pre-wrap text-xs text-muted-foreground">
                       {note.note_text}
                     </p>

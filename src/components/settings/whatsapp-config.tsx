@@ -33,8 +33,54 @@ import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
+type SettingsWhatsAppConfig = WhatsAppConfigType & {
+  zapi_instance_id?: string | null;
+  zapi_instance_token?: string | null;
+  zapi_client_token?: string | null;
+};
+
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
+
+export function isZapiConfigActive(
+  config: Pick<
+    SettingsWhatsAppConfig,
+    'zapi_instance_id' | 'zapi_instance_token' | 'zapi_client_token'
+  > | null,
+) {
+  return Boolean(
+    config?.zapi_instance_id ||
+      config?.zapi_instance_token ||
+      config?.zapi_client_token,
+  );
+}
+
+export function getConnectionCopyKeys(
+  isZapiActive: boolean,
+  connectionStatus: ConnectionStatus,
+) {
+  if (isZapiActive) {
+    return connectionStatus === 'connected'
+      ? {
+          title: 'zapiConnected' as const,
+          description: 'zapiConnectedDesc' as const,
+        }
+      : {
+          title: 'zapiNotConnected' as const,
+          description: 'zapiNotConnectedDesc' as const,
+        };
+  }
+
+  return connectionStatus === 'connected'
+    ? {
+        title: 'credentialsValid' as const,
+        description: 'connectedDesc' as const,
+      }
+    : {
+        title: 'notConnected' as const,
+        description: 'notConnectedDesc' as const,
+      };
+}
 
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
@@ -51,7 +97,7 @@ export function WhatsAppConfig() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [config, setConfig] = useState<SettingsWhatsAppConfig | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -386,6 +432,15 @@ export function WhatsAppConfig() {
   }
 
   const showResetBanner = resetReason === 'token_corrupted';
+  // There is no provider discriminator in whatsapp_config. Migration 031 and
+  // the active API contract identify Z-API rows by their zapi_* credentials.
+  // Treat a partially configured row as Z-API too so this legacy Meta form
+  // never claims to have validated the fields displayed below.
+  const isZapiActive = isZapiConfigActive(config);
+  const connectionCopy = getConnectionCopyKeys(
+    isZapiActive,
+    connectionStatus,
+  );
 
   return (
     <section className="animate-in fade-in-50 duration-200">
@@ -431,6 +486,18 @@ export function WhatsAppConfig() {
           </Alert>
         )}
 
+        {isZapiActive && (
+          <Alert className="border-amber-600/40 bg-amber-950/30">
+            <AlertTriangle className="size-4 text-amber-400" />
+            <AlertTitle className="text-amber-200">
+              {t('zapiActiveTitle')}
+            </AlertTitle>
+            <AlertDescription className="text-amber-100/80">
+              {t('zapiActiveDesc')}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Connection Status */}
         <Alert className="bg-card border-border">
           <div className="flex items-center gap-2">
@@ -440,14 +507,13 @@ export function WhatsAppConfig() {
               <XCircle className="size-4 text-red-500" />
             )}
             <AlertTitle className="text-foreground mb-0">
-              {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
+              {t(connectionCopy.title)}
             </AlertTitle>
           </div>
           <AlertDescription className="text-muted-foreground">
             {connectionStatus === 'connected'
-              ? t('connectedDesc')
-              : statusMessage ||
-                t('notConnectedDesc')}
+              ? t(connectionCopy.description)
+              : statusMessage || t(connectionCopy.description)}
           </AlertDescription>
         </Alert>
 
@@ -456,7 +522,7 @@ export function WhatsAppConfig() {
             without a successful /register call the number won't
             receive inbound events. Surface this dimension separately
             so users don't trust a misleading green banner. */}
-        {config && (
+        {config && !isZapiActive && (
           <Alert
             className={
               isRegistered
@@ -498,15 +564,11 @@ export function WhatsAppConfig() {
             </div>
             <AlertDescription className="text-muted-foreground mt-2 text-xs leading-relaxed">
               {isRegistered ? (
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: t('subscribedSince', {
-                      date: config.registered_at
-                        ? new Date(config.registered_at).toLocaleString()
-                        : t('unknownDate'),
-                    }),
-                  }}
-                />
+                t('subscribedSince', {
+                  date: config.registered_at
+                    ? new Date(config.registered_at).toLocaleString()
+                    : t('unknownDate'),
+                })
               ) : lastRegistrationError ? (
                 <>
                   {t('lastAttemptFailed')}
@@ -647,7 +709,7 @@ export function WhatsAppConfig() {
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground tracking-widest"
               />
               <p className="text-xs text-muted-foreground leading-relaxed">
-                <span dangerouslySetInnerHTML={{ __html: t('pinHint') }} />
+                {t('pinHint')}
               </p>
             </div>
           </CardContent>
@@ -760,7 +822,7 @@ export function WhatsAppConfig() {
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground">
                   <ol className="list-decimal list-inside space-y-1 text-sm">
-                    <li dangerouslySetInnerHTML={{ __html: t('step1_1') }} />
+                    <li>{t('step1_1')}</li>
                     <li>{t('step1_2')}</li>
                     <li>{t('step1_3')}</li>
                     <li>{t('step1_4')}</li>
@@ -794,9 +856,27 @@ export function WhatsAppConfig() {
                 <AccordionContent className="text-muted-foreground">
                   <ol className="list-decimal list-inside space-y-1 text-sm">
                     <li>{t('step3_1')}</li>
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_2') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_3') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_4') }} />
+                    <li>
+                      {t.rich('step3_2', {
+                        strong: (chunks) => (
+                          <strong className="text-foreground">{chunks}</strong>
+                        ),
+                      })}
+                    </li>
+                    <li>
+                      {t.rich('step3_3', {
+                        strong: (chunks) => (
+                          <strong className="text-foreground">{chunks}</strong>
+                        ),
+                      })}
+                    </li>
+                    <li>
+                      {t.rich('step3_4', {
+                        strong: (chunks) => (
+                          <strong className="text-foreground">{chunks}</strong>
+                        ),
+                      })}
+                    </li>
                   </ol>
                 </AccordionContent>
               </AccordionItem>
@@ -812,8 +892,20 @@ export function WhatsAppConfig() {
                   <ol className="list-decimal list-inside space-y-1 text-sm">
                     <li>{t('step4_1')}</li>
                     <li>{t('step4_2')}</li>
-                    <li dangerouslySetInnerHTML={{ __html: t('step4_3') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step4_4') }} />
+                    <li>
+                      {t.rich('step4_3', {
+                        strong: (chunks) => (
+                          <strong className="text-foreground">{chunks}</strong>
+                        ),
+                      })}
+                    </li>
+                    <li>
+                      {t.rich('step4_4', {
+                        strong: (chunks) => (
+                          <strong className="text-foreground">{chunks}</strong>
+                        ),
+                      })}
+                    </li>
                     <li>{t('step4_5')}</li>
                   </ol>
                 </AccordionContent>

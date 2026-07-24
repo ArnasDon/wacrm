@@ -39,6 +39,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase local CLI state
+/supabase/.temp/
+
 # git worktrees (subagent-driven-development isolation)
 /.worktrees/
 

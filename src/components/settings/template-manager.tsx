@@ -124,7 +124,17 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
   }
 }
 
-export function TemplateManager() {
+interface TemplateManagerProps {
+  openCreateAction?: boolean;
+  onCreateActionClosed?: () => void;
+  onTemplateCreated?: (template: MessageTemplate) => void;
+}
+
+export function TemplateManager({
+  openCreateAction = false,
+  onCreateActionClosed,
+  onTemplateCreated,
+}: TemplateManagerProps = {}) {
   const t = useTranslations('Settings.templates');
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
@@ -186,6 +196,13 @@ export function TemplateManager() {
     fetchTemplates(user.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
+
+  useEffect(() => {
+    if (!openCreateAction) return;
+    setEditingId(null);
+    setForm(emptyForm);
+    setDialogOpen(true);
+  }, [openCreateAction]);
 
   async function fetchTemplates(userId: string) {
     try {
@@ -257,6 +274,13 @@ export function TemplateManager() {
     setDialogOpen(true);
   }
 
+  function closeEditor() {
+    setDialogOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
+    if (openCreateAction) onCreateActionClosed?.();
+  }
+
   async function handleSubmit() {
     // AUTHENTICATION is blocked by the persistent banner + disabled
     // submit button; this is a defensive second line of defense.
@@ -290,9 +314,10 @@ export function TemplateManager() {
             ? t('toastSubmitEditSuccess')
             : t('toastSubmitNewSuccess'),
       );
-      setDialogOpen(false);
-      setForm(emptyForm);
-      setEditingId(null);
+      if (!isEdit && data.template) {
+        onTemplateCreated?.(data.template as MessageTemplate);
+      }
+      closeEditor();
     } catch (err) {
       console.error('Submit error:', err);
       toast.error(err instanceof Error ? err.message : t('toastSubmitFailed'));
@@ -631,11 +656,8 @@ export function TemplateManager() {
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) {
-            setEditingId(null);
-            setForm(emptyForm);
-          }
+          if (open) setDialogOpen(true);
+          else closeEditor();
         }}
       >
         <DialogContent className="bg-popover border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1056,7 +1078,7 @@ export function TemplateManager() {
           <DialogFooter className="bg-popover border-border">
             <Button
               variant="outline"
-              onClick={() => setDialogOpen(false)}
+              onClick={closeEditor}
               className="border-border text-muted-foreground hover:bg-muted"
             >
               {t('cancel')}

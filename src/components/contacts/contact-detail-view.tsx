@@ -543,7 +543,7 @@ export function ContactDetailView({
                     value="tags"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
-                    {t('tabs.tags', { fallback: 'Tags' })}
+                    {t('tabs.tags')}
                   </TabsTrigger>
                   <TabsTrigger
                     value="notes"
@@ -573,7 +573,7 @@ export function ContactDetailView({
                   <div className="space-y-3">
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs">
-                        {t('company', { fallback: 'Name' })}
+                        {t('name')}
                       </Label>
                       <Input
                         value={editName}

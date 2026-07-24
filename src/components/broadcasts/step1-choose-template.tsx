@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileText, ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { OPERATIONAL_ACTION_HREFS } from '@/lib/operational-navigation';
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -15,13 +17,21 @@ const categoryColors: Record<string, string> = {
 
 interface Step1Props {
   selectedTemplate: MessageTemplate | null;
+  templateCreationPending?: boolean;
   onSelect: (template: MessageTemplate) => void;
   onNext: () => void;
   onBack: () => void;
 }
 
-export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
+export function Step1ChooseTemplate({
+  selectedTemplate,
+  templateCreationPending = false,
+  onSelect,
+  onNext,
+  onBack,
+}: Step1Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const tTemplates = useTranslations('Settings.templates');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +59,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
     }
 
     fetchTemplates();
-  }, []);
+  }, [templateCreationPending, t]);
 
   if (loading) {
     return (
@@ -76,11 +86,28 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         </p>
       </div>
 
+      {templateCreationPending && (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+        >
+          {tTemplates('toastSubmitNewSuccess')}
+        </div>
+      )}
+
       {templates.length === 0 ? (
-        <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-border bg-card/50">
+        <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-border bg-card/50 px-4 py-6 text-center">
           <FileText className="mb-2 h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{t('chooseTemplate.noTemplates')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{t('chooseTemplate.createFirst')}</p>
+          <Button
+            className="mt-4"
+            render={
+              <Link href={OPERATIONAL_ACTION_HREFS.newTemplateForBroadcast} />
+            }
+          >
+            {tTemplates('newTemplate')}
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

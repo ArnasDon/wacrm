@@ -1,8 +1,9 @@
 'use client';
 
-import { Suspense, useMemo, type ReactNode } from 'react';
+import { Suspense, useMemo, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ArrowLeft } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
@@ -23,6 +24,13 @@ import {
   resolveSection,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
+import { Button } from '@/components/ui/button';
+import {
+  buildBroadcastTemplateReturnHref,
+  getAllowedBroadcastReturnTo,
+  isExactAction,
+  removeActionFromHref,
+} from '@/lib/operational-navigation';
 
 // `useSearchParams` opts this page out of static prerendering unless it
 // sits under a Suspense boundary. Without one, the production build hits
@@ -46,17 +54,36 @@ function SettingsPageInner() {
   const { defaultCurrency } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
+  const tNewBroadcast = useTranslations('Broadcasts.new');
+  const tBroadcastWizard = useTranslations('Broadcasts.wizard');
+  const [createdTemplateStatus, setCreatedTemplateStatus] = useState<
+    string | null
+  >(null);
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
   const section = resolveSection(searchParams.get('tab'));
+  const returnTo = getAllowedBroadcastReturnTo(
+    searchParams.get('returnTo'),
+  );
+  const returnHref = buildBroadcastTemplateReturnHref(
+    returnTo,
+    createdTemplateStatus,
+  );
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', next);
+    params.delete('action');
     router.replace(`/settings?${params.toString()}`, { scroll: false });
+  };
+
+  const clearAction = () => {
+    router.replace(removeActionFromHref('/settings', searchParams), {
+      scroll: false,
+    });
   };
 
   // Cheap, fetch-free rail hints. The Overview landing carries the
@@ -76,7 +103,18 @@ function SettingsPageInner() {
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
-    templates: <TemplateManager />,
+    templates: (
+      <TemplateManager
+        openCreateAction={
+          section === 'templates' &&
+          isExactAction(searchParams.get('action'), 'new')
+        }
+        onCreateActionClosed={clearAction}
+        onTemplateCreated={(template) =>
+          setCreatedTemplateStatus(template.status ?? null)
+        }
+      />
+    ),
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
@@ -94,6 +132,17 @@ function SettingsPageInner() {
         <p className="mt-1 text-sm text-muted-foreground">
           {t('pageDesc')}
         </p>
+        {returnHref && (
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => router.push(returnHref)}
+            aria-label={`${tBroadcastWizard('back')}: ${tNewBroadcast('title')}`}
+          >
+            <ArrowLeft className="size-4" />
+            {tNewBroadcast('title')}
+          </Button>
+        )}
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">

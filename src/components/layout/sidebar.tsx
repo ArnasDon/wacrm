@@ -81,7 +81,7 @@ interface NavItem {
   beta?: boolean;
 }
 
-const navItems: NavItem[] = [
+export const sidebarNavItems: NavItem[] = [
   { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
   { href: '/inbox', labelKey: 'inbox', icon: MessageSquare },
   { href: '/notifications', labelKey: 'notifications', icon: Bell },
@@ -92,7 +92,7 @@ const navItems: NavItem[] = [
   { href: '/flows', labelKey: 'flows', icon: Workflow, beta: true },
 ];
 
-const bottomNavItems = [
+export const bottomNavItems: NavItem[] = [
   { href: '/settings', labelKey: 'settings', icon: Settings },
 ];
 
@@ -193,7 +193,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {sidebarNavItems.map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== '/dashboard' && pathname.startsWith(item.href));

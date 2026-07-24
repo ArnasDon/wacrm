@@ -21,6 +21,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
+    "campaigns": "Campaigns",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
@@ -602,6 +603,39 @@
       "lostThisMonth": "Lost This Month",
       "lostThisMonthTooltip": "Deals marked as Lost since the first day of the current month.",
       "howCalculated": "How {label} is calculated"
+    }
+  },
+  "Campaigns": {
+    "page": {
+      "title": "Campaigns",
+      "subtitle": "Spend, leads and cost per lead for the ads sending you WhatsApp messages.",
+      "days": "{count} days",
+      "syncNow": "Sync now",
+      "syncSuccess": "Campaigns synced",
+      "syncFailed": "Sync failed",
+      "loadError": "Failed to load campaigns",
+      "noAdAccountTitle": "No ad account connected",
+      "noAdAccountHintAdmin": "Connect Meta Ads in Settings to see spend and cost per lead here.",
+      "noAdAccountHint": "Ask an admin to connect an ad account in Settings.",
+      "noCampaignsTitle": "No campaigns yet",
+      "noCampaignsHint": "Nothing synced for this range yet. Try Sync now, or a wider range.",
+      "columns": {
+        "campaign": "Campaign",
+        "status": "Status",
+        "spend": "Spend",
+        "leads": "Leads",
+        "costPerLead": "Cost per lead",
+        "messagingStarted": "Conversations started (Meta)"
+      },
+      "platform": {
+        "meta": "Meta Ads",
+        "google": "Google Ads",
+        "other": "Other"
+      },
+      "manualEntry": "manual entry",
+      "notAvailable": "n/a",
+      "doubleCountNotice": "“Leads” counts contacts the CRM attributed to this campaign; “Conversations started” is Meta's own count with its own attribution window — the two won't always match exactly.",
+      "manageAdAccounts": "Manage ad accounts"
     }
   },
   "Broadcasts": {
@@ -1521,6 +1555,7 @@
       "quick-replies": "Quick replies",
       "fields": "Fields & tags",
       "deals": "Deals & currency",
+      "ads": "Ad accounts",
       "members": "Team members",
       "api": "API keys"
     },
@@ -1643,6 +1678,36 @@
       "saving": "Saving...",
       "saveFailed": "Failed to save default currency",
       "saveSuccess": "Default currency updated"
+    },
+    "ads": {
+      "title": "Ad accounts",
+      "description": "Connect Meta Ads to see spend and cost per lead for campaigns that send you WhatsApp leads.",
+      "connectedAccounts": "Connected accounts",
+      "connectedAccountsDesc": "Ad accounts synced into the Campaigns page.",
+      "loading": "Loading...",
+      "noAccounts": "No ad account connected yet.",
+      "status": {
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "error": "Error"
+      },
+      "lastSynced": "last synced {time}",
+      "disconnect": "Disconnect",
+      "disconnectFailed": "Failed to disconnect ad account",
+      "disconnected": "Ad account disconnected",
+      "syncNow": "Sync now",
+      "syncFailed": "Sync failed",
+      "syncSuccess": "Ad accounts synced",
+      "syncPartial": "{count} account(s) failed to sync — check the error below each one",
+      "connectMeta": "Connect Meta Ads",
+      "connectMetaDesc": "Needs a token with ads_read access to the ad account below.",
+      "adAccountIdLabel": "Ad account ID",
+      "adAccountIdHint": "Found in Meta Ads Manager — looks like act_1234567890.",
+      "accessTokenLabel": "Access token",
+      "accessTokenHint": "Never shown again after connecting.",
+      "connect": "Connect",
+      "connectFailed": "Failed to connect ad account",
+      "connected": "Connected to {name}"
     },
     "aiConfig": {
       "title": "Agent setup",

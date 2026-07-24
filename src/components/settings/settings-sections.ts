@@ -3,6 +3,7 @@ import {
   FileText,
   KeyRound,
   LayoutGrid,
+  Megaphone,
   Palette,
   PlugZap,
   Shield,
@@ -31,6 +32,7 @@ export const SETTINGS_SECTIONS = [
   'quick-replies',
   'fields',
   'deals',
+  'ads',
   'members',
   'api',
 ] as const;
@@ -57,6 +59,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
+  ads: { id: 'ads', label: 'Ad accounts', icon: Megaphone, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
 };

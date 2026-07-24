@@ -21,6 +21,7 @@
     "notifications": "Notificaciones",
     "contacts": "Contactos",
     "pipelines": "Embudos",
+    "campaigns": "Campañas",
     "broadcasts": "Difusiones",
     "automations": "Automatizaciones",
     "flows": "Flujos",
@@ -602,6 +603,39 @@
       "lostThisMonth": "Perdidos este mes",
       "lostThisMonthTooltip": "Negocios marcados como Perdidos desde el primer día del mes actual.",
       "howCalculated": "Cómo se calcula {label}"
+    }
+  },
+  "Campaigns": {
+    "page": {
+      "title": "Campañas",
+      "subtitle": "Gasto, leads y costo por lead de los anuncios que te envían mensajes de WhatsApp.",
+      "days": "{count} días",
+      "syncNow": "Sincronizar ahora",
+      "syncSuccess": "Campañas sincronizadas",
+      "syncFailed": "La sincronización falló",
+      "loadError": "No se pudieron cargar las campañas",
+      "noAdAccountTitle": "No hay ninguna cuenta publicitaria conectada",
+      "noAdAccountHintAdmin": "Conecta Meta Ads en Configuración para ver aquí el gasto y el costo por lead.",
+      "noAdAccountHint": "Pide a un administrador que conecte una cuenta publicitaria en Configuración.",
+      "noCampaignsTitle": "Aún no hay campañas",
+      "noCampaignsHint": "Nada sincronizado para este rango todavía. Prueba Sincronizar ahora, o un rango más amplio.",
+      "columns": {
+        "campaign": "Campaña",
+        "status": "Estado",
+        "spend": "Gasto",
+        "leads": "Leads",
+        "costPerLead": "Costo por lead",
+        "messagingStarted": "Conversaciones iniciadas (Meta)"
+      },
+      "platform": {
+        "meta": "Meta Ads",
+        "google": "Google Ads",
+        "other": "Otro"
+      },
+      "manualEntry": "entrada manual",
+      "notAvailable": "n/d",
+      "doubleCountNotice": "«Leads» cuenta los contactos que el CRM atribuyó a esta campaña; «Conversaciones iniciadas» es el conteo propio de Meta con su propia ventana de atribución — los dos números no siempre coincidirán.",
+      "manageAdAccounts": "Administrar cuentas publicitarias"
     }
   },
   "Broadcasts": {
@@ -1511,6 +1545,7 @@
       "quick-replies": "Respuestas rápidas",
       "fields": "Campos y etiquetas",
       "deals": "Negocios y moneda",
+      "ads": "Cuentas publicitarias",
       "members": "Miembros del equipo",
       "api": "Claves de API"
     },
@@ -1631,6 +1666,36 @@
       "saving": "Guardando...",
       "saveFailed": "No se pudo guardar la moneda por defecto",
       "saveSuccess": "Moneda por defecto actualizada"
+    },
+    "ads": {
+      "title": "Cuentas publicitarias",
+      "description": "Conecta Meta Ads para ver el gasto y el costo por lead de las campañas que te envían leads de WhatsApp.",
+      "connectedAccounts": "Cuentas conectadas",
+      "connectedAccountsDesc": "Cuentas publicitarias sincronizadas en la página de Campañas.",
+      "loading": "Cargando...",
+      "noAccounts": "Aún no hay ninguna cuenta publicitaria conectada.",
+      "status": {
+        "connected": "Conectada",
+        "disconnected": "Desconectada",
+        "error": "Error"
+      },
+      "lastSynced": "última sincronización {time}",
+      "disconnect": "Desconectar",
+      "disconnectFailed": "No se pudo desconectar la cuenta publicitaria",
+      "disconnected": "Cuenta publicitaria desconectada",
+      "syncNow": "Sincronizar ahora",
+      "syncFailed": "La sincronización falló",
+      "syncSuccess": "Cuentas publicitarias sincronizadas",
+      "syncPartial": "{count} cuenta(s) fallaron al sincronizar — revisa el error debajo de cada una",
+      "connectMeta": "Conectar Meta Ads",
+      "connectMetaDesc": "Necesita un token con acceso ads_read a la cuenta publicitaria de abajo.",
+      "adAccountIdLabel": "ID de la cuenta publicitaria",
+      "adAccountIdHint": "Se encuentra en el Administrador de anuncios de Meta — tiene el formato act_1234567890.",
+      "accessTokenLabel": "Token de acceso",
+      "accessTokenHint": "No se vuelve a mostrar después de conectar.",
+      "connect": "Conectar",
+      "connectFailed": "No se pudo conectar la cuenta publicitaria",
+      "connected": "Conectado a {name}"
     },
     "aiConfig": {
       "title": "Configuración del agente",

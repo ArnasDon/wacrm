@@ -34,18 +34,7 @@ function SignupPageInner() {
   // points back at /join/<token> so the user lands on the redeem
   // step after verifying instead of being dropped on /dashboard.
   const inviteToken = searchParams.get("invite");
-  // CHATCHACHA CUSTOM — disable public signup, invite-only
-  if (!inviteToken && process.env.NEXT_PUBLIC_INVITE_ONLY === 'true') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4 text-center">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground mb-2">Access by invitation only</h1>
-          <p className="text-muted-foreground text-sm">Chat Chacha is currently invite-only. Please contact <a href="mailto:contact@chatchacha.in" className="text-primary">contact@chatchacha.in</a> to get started.</p>
-        </div>
-      </div>
-    );
-  }
-
+  
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

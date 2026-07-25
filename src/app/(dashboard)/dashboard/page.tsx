@@ -27,6 +27,7 @@ import type {
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { ChannelHighlights } from '@/components/dashboard/channel-highlights'
+import { ExploreProducts } from '@/components/dashboard/explore-products'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
@@ -252,6 +253,11 @@ export default function DashboardPage() {
 
       <DashboardWidgetBoundary title="Activity feed">
         <ActivityFeed items={activity} loading={activityLoading} />
+      </DashboardWidgetBoundary>
+
+      {/* Last section — other VedMint platform products */}
+      <DashboardWidgetBoundary title="Explore products">
+        <ExploreProducts />
       </DashboardWidgetBoundary>
     </div>
   )

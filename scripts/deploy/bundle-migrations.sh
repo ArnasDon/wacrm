@@ -15,6 +15,7 @@ cd "$(dirname "$0")/../.."
 
 MIGRATIONS=(037 038 039 040 041 042)
 OUT=docs/deploy/ads-attribution.sql
+SANITIZE="$(dirname "$0")/sanitize-comments.py"
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -42,6 +43,13 @@ mkdir -p "$(dirname "$OUT")"
 -- ADD COLUMN IF NOT EXISTS, constraints and policies are dropped before
 -- being recreated, and functions use CREATE OR REPLACE.
 --
+-- IF THE EDITOR STILL REPORTS A SYNTAX ERROR
+--   It is splitting the script into statements and getting it wrong, not
+--   objecting to the SQL. Run the file one section at a time: each
+--   `-- ####` banner below starts a migration, and they are independent
+--   in that order. The apostrophes in comments that caused this once
+--   already are rewritten by the generator (see sanitize-comments.py).
+--
 -- One statement is not purely additive: 037 drops the 4-argument
 -- filter_contacts_by_tags so it can be recreated with a 5th, defaulted
 -- parameter. That is safe during the window before the redeploy,
@@ -61,6 +69,13 @@ HEADER
     echo ""
     cat "$file"
   done
-} > "$OUT"
+# Apostrophes in `--` comments are legal SQL but break the Supabase SQL
+# Editor's client-side statement splitter — see sanitize-comments.py.
+} | python3 "$SANITIZE" > "$OUT"
+
+remaining=$(grep -c "^[[:space:]]*--.*'" "$OUT" || true)
+if [ "$remaining" -ne 0 ]; then
+  echo "WARNING: $remaining comment line(s) still contain an apostrophe" >&2
+fi
 
 echo "Wrote $OUT ($(wc -l < "$OUT" | tr -d ' ') lines)"

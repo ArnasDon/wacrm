@@ -20,6 +20,13 @@
 -- ADD COLUMN IF NOT EXISTS, constraints and policies are dropped before
 -- being recreated, and functions use CREATE OR REPLACE.
 --
+-- IF THE EDITOR STILL REPORTS A SYNTAX ERROR
+--   It is splitting the script into statements and getting it wrong, not
+--   objecting to the SQL. Run the file one section at a time: each
+--   `-- ####` banner below starts a migration, and they are independent
+--   in that order. The apostrophes in comments that caused this once
+--   already are rewritten by the generator (see sanitize-comments.py).
+--
 -- One statement is not purely additive: 037 drops the 4-argument
 -- filter_contacts_by_tags so it can be recreated with a 5th, defaulted
 -- parameter. That is safe during the window before the redeploy,
@@ -47,7 +54,7 @@
 -- Meta already hands us the answer and we were dropping it on the
 -- floor: an inbound message that originated from a Click-to-WhatsApp
 -- ad carries a `referral` object whose `source_id` is the **ad id**
--- (plus `ctwa_clid`, the ad headline and the ad's URL). The webhook
+-- (plus `ctwa_clid`, the ad headline and the ad’s URL). The webhook
 -- never read that field. This migration gives it somewhere to live.
 --
 -- Two places, on purpose:
@@ -171,7 +178,7 @@ ALTER TABLE attribution_events ENABLE ROW LEVEL SECURITY;
 -- SELECT: any member (viewer+) — this is reporting data.
 -- No INSERT/UPDATE/DELETE policy: the webhook and the ads sync write
 -- through the service-role client, which bypasses RLS. Keeping the
--- log append-only from the client's point of view means a compromised
+-- log append-only from the client’s point of view means a compromised
 -- browser session cannot rewrite attribution history.
 DROP POLICY IF EXISTS attribution_events_select ON attribution_events;
 CREATE POLICY attribution_events_select ON attribution_events FOR SELECT
@@ -182,11 +189,11 @@ CREATE POLICY attribution_events_select ON attribution_events FOR SELECT
 --
 -- The Contacts page resolves its tag filter server-side through
 -- `filter_contacts_by_tags` (migration 025) so a tag covering many
--- contacts can't truncate the result or break the total count. The
+-- contacts can’t truncate the result or break the total count. The
 -- new source filter has to go through the same function: applying it
 -- client-side on top of an already-paginated result would filter
--- *within* the current page and report a total that doesn't match
--- what's shown.
+-- *within* the current page and report a total that doesn’t match
+-- what’s shown.
 --
 -- Adding a defaulted 5th parameter cannot be done with CREATE OR
 -- REPLACE — it produces an overload, and then the existing 4-argument
@@ -211,7 +218,7 @@ AS $$
   WITH matched AS (
     -- Distinct contacts having ANY of the selected tags (OR),
     -- narrowed by the same name/phone/email search as the list and,
-    -- when given, by lead source (AND — it narrows, it doesn't widen).
+    -- when given, by lead source (AND — it narrows, it doesn’t widen).
     SELECT DISTINCT c.id, c.created_at
     FROM contacts c
     JOIN contact_tags ct ON ct.contact_id = c.id
@@ -272,14 +279,14 @@ GRANT EXECUTE ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT,
 --                     in the WhatsApp API says what campaign that ad
 --                     belongs to. The sync asks the Marketing API and
 --                     stores the answer here, once per ad, so campaign
---                     rollups don't need a live API call per lead.
+--                     rollups don’t need a live API call per lead.
 --
 --   ad_metrics_daily — one row per campaign per day: spend, impressions,
 --                     clicks. UNIQUE(campaign_id, date) makes the sync
 --                     idempotent — re-running it for a date range
---                     overwrites that day's numbers instead of adding
+--                     overwrites that day’s numbers instead of adding
 --                     a second copy, which matters because Meta revises
---                     a day's spend for a short window after it ends.
+--                     a day’s spend for a short window after it ends.
 --
 -- All four are account-scoped and RLS-gated the same way as every
 -- other table since migration 017: is_account_member(account_id) for
@@ -302,7 +309,7 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   -- The currency Meta (or the operator, for manual platforms) reports
   -- spend in. Compared against accounts.default_currency at read time
   -- to decide whether ROI can be shown as a number or only as a
-  -- warning — there is no FX conversion (migration 021's precedent).
+  -- warning — there is no FX conversion (migration 021’s precedent).
   currency TEXT NOT NULL DEFAULT 'USD' CHECK (currency ~ '^[A-Z]{3}$'),
   -- NULL for a manual-only platform (nothing to authenticate).
   access_token_encrypted TEXT,
@@ -310,7 +317,7 @@ CREATE TABLE IF NOT EXISTS ad_accounts (
   status TEXT NOT NULL DEFAULT 'connected'
     CHECK (status IN ('connected', 'disconnected', 'error')),
   -- Human-readable detail on the last sync/connect failure, shown in
-  -- Settings. NULL when status = 'connected' and nothing has failed.
+  -- Settings. NULL when status = ’connected’ and nothing has failed.
   last_error TEXT,
   last_synced_at TIMESTAMPTZ,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -351,7 +358,7 @@ CREATE TABLE IF NOT EXISTS ad_campaigns (
   ad_account_id UUID NOT NULL REFERENCES ad_accounts(id) ON DELETE CASCADE,
   -- Meta campaign id for a synced row. For a manually-added campaign
   -- (Google, a bare tracked link — Phase 3) this is operator-chosen
-  -- text, namespaced by ad_account_id so it can't collide with a real
+  -- text, namespaced by ad_account_id so it can’t collide with a real
   -- Meta id.
   external_id TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -398,7 +405,7 @@ CREATE POLICY ad_campaigns_delete ON ad_campaigns FOR DELETE
 --
 -- One row per ad the sync has seen, whether or not it resolved. A
 -- failed resolution (deleted ad, permissions issue) still gets a row
--- with campaign_id = NULL and last_error set, so the sync doesn't
+-- with campaign_id = NULL and last_error set, so the sync doesn’t
 -- retry the same broken ad on every run.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ad_entities (
@@ -439,9 +446,9 @@ CREATE TABLE IF NOT EXISTS ad_metrics_daily (
   spend NUMERIC(12,2) NOT NULL DEFAULT 0,
   impressions BIGINT NOT NULL DEFAULT 0,
   clicks BIGINT NOT NULL DEFAULT 0,
-  -- Meta's own count of conversations started from this campaign
+  -- Meta’s own count of conversations started from this campaign
   -- (the `actions` insight, type onsite_conversion.messaging_conversation_started_7d).
-  -- Kept alongside the CRM's own contact count rather than merged with
+  -- Kept alongside the CRM’s own contact count rather than merged with
   -- it — the two use different attribution windows and will not
   -- always agree; showing both is more honest than picking one.
   messaging_started INTEGER,
@@ -464,7 +471,7 @@ DROP POLICY IF EXISTS ad_metrics_daily_select ON ad_metrics_daily;
 CREATE POLICY ad_metrics_daily_select ON ad_metrics_daily FOR SELECT
   USING (is_account_member(account_id));
 
--- Manual entry (a Google campaign's spend, typed in) is the one
+-- Manual entry (a Google campaign’s spend, typed in) is the one
 -- client-writable path; API-synced rows come from the service-role
 -- sync and bypass RLS entirely.
 DROP POLICY IF EXISTS ad_metrics_daily_insert ON ad_metrics_daily;
@@ -489,7 +496,7 @@ CREATE POLICY ad_metrics_daily_delete ON ad_metrics_daily FOR DELETE
 -- Add `deals.closed_at`, set exactly once when a deal is marked
 -- won/lost, and never touched again by ordinary edits.
 --
--- Why this can't reuse `updated_at`: `updated_at` moves every time a
+-- Why this can’t reuse `updated_at`: `updated_at` moves every time a
 -- deal is edited — renaming a won deal, fixing a typo in its notes,
 -- reassigning it to another rep, all bump it. `pipeline-analytics.tsx`
 -- already leans on it as a "closed this month" proxy, which is
@@ -499,16 +506,16 @@ CREATE POLICY ad_metrics_daily_delete ON ad_metrics_daily FOR DELETE
 -- The ROI work about to land (src/lib/ads/roi.ts) makes this exact:
 -- it sums the value of won deals attributed to a campaign, filtered
 -- to a date range. Using `updated_at` there would let an unrelated
--- edit shift a deal's revenue into a different month's ROI, or in/out
+-- edit shift a deal’s revenue into a different month’s ROI, or in/out
 -- of the requested range entirely. `closed_at` is the one column that
 -- only ever means "when this deal was decided".
 --
--- Backfill: for the existing 'won'/'lost' rows, `updated_at` is the
+-- Backfill: for the existing ’won’/’lost’ rows, `updated_at` is the
 -- best available approximation of when they closed (better than
 -- `created_at`, which is when the deal was opened, or NULL, which
--- would exclude every historical deal from every ROI query until it's
+-- would exclude every historical deal from every ROI query until it’s
 -- next touched). New closes get the accurate value going forward from
--- the write sites this migration's companion code change updates.
+-- the write sites this migration’s companion code change updates.
 -- ============================================================
 
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
@@ -528,15 +535,15 @@ CREATE INDEX IF NOT EXISTS idx_deals_account_closed_at
 -- ============================================================
 -- 040_tracked_links
 --
--- Attribution for channels that don't hand us a referral of their
+-- Attribution for channels that don’t hand us a referral of their
 -- own: Google Ads, a landing page, a printed flyer. Meta gives us an
 -- ad id on the first inbound message for free (migration 037); none
 -- of these do. A tracked link is how we get the same signal manually:
 -- `crm.agenciakibo.com/l/<slug>` redirects to a pre-filled
 -- `wa.me/<number>?text=...` whose text carries a short opaque code
 -- (`[#a1b2c3]`, see src/lib/attribution/ref-token.ts). The webhook
--- looks for that code on the first message when there's no Meta
--- referral, and attributes the lead the same way (migration 037's
+-- looks for that code on the first message when there’s no Meta
+-- referral, and attributes the lead the same way (migration 037’s
 -- `attribution_events` + `contacts.source*`, first-touch).
 --
 -- `slug` doubles as the code embedded in the message — one identifier,
@@ -545,12 +552,12 @@ CREATE INDEX IF NOT EXISTS idx_deals_account_closed_at
 -- to find the right account from the slug alone.
 --
 -- `campaign_id` is optional: a link can point at a specific manually
--- entered campaign (so its clicks/leads roll into that campaign's ROI)
+-- entered campaign (so its clicks/leads roll into that campaign’s ROI)
 -- or stand alone as a bare source label with no campaign underneath
 -- (e.g. a generic "organic" link for a print flyer).
 --
 -- No FK to whatsapp_config for the destination number: wacrm stores
--- no display_phone_number column (it's fetched live from Meta when
+-- no display_phone_number column (it’s fetched live from Meta when
 -- needed), and the redirect route must not depend on a live Meta call
 -- to stay fast and available. The operator enters the number once,
 -- same as they would when generating a wa.me link by hand.
@@ -600,7 +607,7 @@ CREATE POLICY tracked_links_delete ON tracked_links FOR DELETE
   USING (is_account_member(account_id, 'admin'));
 
 -- The public redirect route reads by slug with the service-role
--- client (no session — a customer clicking the link isn't signed in),
+-- client (no session — a customer clicking the link isn’t signed in),
 -- so it bypasses RLS entirely; the SELECT policy above is only what a
 -- signed-in dashboard user sees.
 
@@ -612,7 +619,7 @@ CREATE POLICY tracked_links_delete ON tracked_links FOR DELETE
 -- and a JS-side read-then-write would race two simultaneous clicks
 -- (a real possibility right when an ad goes live). A single UPDATE
 -- does the increment atomically; SECURITY DEFINER so the service-role
--- caller doesn't need a bespoke RLS carve-out just for this counter.
+-- caller doesn’t need a bespoke RLS carve-out just for this counter.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.increment_tracked_link_clicks(p_link_id UUID)
 RETURNS VOID
@@ -646,7 +653,7 @@ GRANT EXECUTE ON FUNCTION public.increment_tracked_link_clicks(UUID) TO service_
 --      directly, so that trigger uses NEW.assigned_agent_id as
 --      notifications.user_id as-is. `deals.assigned_to` instead
 --      references `profiles(id)` (migration 002), so this trigger
---      resolves it to the assignee's `profiles.user_id` first — that's
+--      resolves it to the assignee’s `profiles.user_id` first — that’s
 --      the id `notifications.user_id` (an auth.users FK) actually needs.
 --
 --   2. No `deal_id` column is added to `notifications`. The click
@@ -748,27 +755,27 @@ CREATE TRIGGER on_deal_assigned
 -- reviewing the code rather than by it failing — because each one only
 -- misbehaves once a day has passed, which same-day testing never sees.
 --
---   1. Retry bookkeeping for ad resolution. Migration 038's comment
---      claimed a failed resolution "doesn't retry the same broken ad on
+--   1. Retry bookkeeping for ad resolution. Migration 038’s comment
+--      claimed a failed resolution "doesn’t retry the same broken ad on
 --      every run" — true, but it never retries it *at all*, because the
 --      sync skipped any ad_id that had a row in ad_entities regardless
 --      of why. A transient Graph API error, a rate-limit, or the very
---      common "ad resolved but its campaign isn't synced yet" therefore
+--      common "ad resolved but its campaign isn’t synced yet" therefore
 --      stranded that ad permanently: its contacts kept
---      source_campaign_id = NULL and never appeared in the campaign's
+--      source_campaign_id = NULL and never appeared in the campaign’s
 --      leads or revenue. `attempts` + `last_attempt_at` let the sync
 --      back off and give up deliberately instead of by accident.
 --
---   2. The ad account's own timezone. Meta reports insight dates in the
---      ad account's timezone, the operator reads the /campaigns page in
---      the browser's, and the server writes in its own — three clocks
+--   2. The ad account’s own timezone. Meta reports insight dates in the
+--      ad account’s timezone, the operator reads the /campaigns page in
+--      the browser’s, and the server writes in its own — three clocks
 --      that will not always agree. Storing the one Meta uses lets
 --      Settings show the mismatch instead of quietly presenting numbers
 --      that look off by a day for no visible reason.
 --
 --   3. A missing WITH CHECK. `ad_metrics_daily_update` (038) restricts
 --      which rows an admin may update but not what they may write, so
---      an API-synced row could be flipped to origin = 'manual' and
+--      an API-synced row could be flipped to origin = ’manual’ and
 --      hand-edited. The INSERT policy already enforces manual-only;
 --      this makes UPDATE agree with it.
 -- ============================================================
@@ -786,7 +793,7 @@ ALTER TABLE ad_entities
   ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMPTZ;
 
--- The sync's per-run scan is "unresolved ads for this account". Partial
+-- The sync’s per-run scan is "unresolved ads for this account". Partial
 -- index because resolved rows are the vast majority over time and are
 -- never scanned by it.
 CREATE INDEX IF NOT EXISTS idx_ad_entities_unresolved
@@ -796,7 +803,7 @@ CREATE INDEX IF NOT EXISTS idx_ad_entities_unresolved
 -- ============================================================
 -- 2. AD ACCOUNT TIMEZONE
 --
--- From Meta's `timezone_name` on the ad account (e.g. 'America/Lima').
+-- From Meta’s `timezone_name` on the ad account (e.g. ’America/Lima’).
 -- Nullable: manual platforms (Google, other) have no such concept, and
 -- Meta accounts connected before this migration only fill it on their
 -- next reconnect.

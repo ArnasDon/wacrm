@@ -33,6 +33,7 @@ export async function generateJson<T>(args: GenerateJsonArgs): Promise<GenerateJ
     systemPrompt: `${systemPrompt}\n\nRespond with ONLY a single valid JSON object. No prose, no markdown code fences, no explanation before or after.`,
     messages: [{ role: 'user' as const, content: userPrompt }],
     timeoutMs: DEFAULT_TIMEOUT_MS,
+    maxTokens: 1024,
     responseFormat: 'json_object' as const,
   }
 

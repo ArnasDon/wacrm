@@ -166,6 +166,17 @@ vi.mock('@/lib/whatsapp/zapi-api', () => ({
   sendText,
 }))
 
+vi.mock('@/lib/rate-limit', () => ({
+  checkRateLimit: vi.fn().mockResolvedValue({
+    success: true,
+    remaining: 59,
+    reset: Date.now() + 60_000,
+    limit: 60,
+  }),
+  rateLimitResponse: vi.fn(),
+  RATE_LIMITS: { send: { limit: 60, windowMs: 60_000 } },
+}))
+
 import { POST } from './route'
 
 function postContactTemplate(overrides: Record<string, unknown> = {}) {

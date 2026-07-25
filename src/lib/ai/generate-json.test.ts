@@ -33,6 +33,9 @@ describe('generateJson', () => {
       userPrompt: 'user',
     })
     expect(data).toEqual({ a: 1 })
+    expect(h.generateOpenAi).toHaveBeenCalledWith(
+      expect.objectContaining({ maxTokens: 1024, responseFormat: 'json_object' }),
+    )
   })
 
   it('extracts JSON wrapped in prose/markdown fences', async () => {

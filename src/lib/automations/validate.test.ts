@@ -222,6 +222,31 @@ describe("validateStepsForActivation", () => {
       "steps[0].subject",
     ]);
   });
+
+  it("uses value rather than operand for message_content conditions", () => {
+    expect(
+      validateStepsForActivation([
+        {
+          step_type: "condition",
+          step_config: { subject: "message_content", value: "budget" },
+        },
+      ]),
+    ).toEqual([]);
+
+    expect(
+      validateStepsForActivation([
+        {
+          step_type: "condition",
+          step_config: { subject: "message_content", value: "" },
+        },
+      ]),
+    ).toEqual([
+      {
+        path: "steps[0].value",
+        message: "message content value is required",
+      },
+    ]);
+  });
 });
 
 describe("validateTriggerForActivation", () => {

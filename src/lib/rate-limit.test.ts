@@ -1,66 +1,84 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  __resetRateLimitForTests,
   checkRateLimit,
   rateLimitResponse,
 } from "./rate-limit";
 
 const OPTS = { limit: 3, windowMs: 60_000 };
 
+const h = vi.hoisted(() => ({
+  rpc: vi.fn(),
+}));
+
+vi.mock("@/lib/automations/admin-client", () => ({
+  supabaseAdmin: () => ({ rpc: h.rpc }),
+}));
+
 describe("checkRateLimit", () => {
   beforeEach(() => {
-    __resetRateLimitForTests();
+    vi.clearAllMocks();
+    h.rpc.mockResolvedValue({
+      data: [
+        {
+          success: true,
+          remaining: 2,
+          reset_at: "2026-07-25T17:00:00.000Z",
+          bucket_limit: 3,
+        },
+      ],
+      error: null,
+    });
   });
 
-  it("permits the first request and decrements remaining", () => {
-    const result = checkRateLimit("user:1", OPTS);
+  it("uses the shared Postgres bucket without storing the raw key", async () => {
+    const result = await checkRateLimit("user:1", OPTS);
+
     expect(result).toMatchObject({
       success: true,
       remaining: 2,
       limit: 3,
     });
-    expect(result.reset).toBeGreaterThan(Date.now());
+    expect(result.reset).toBe(Date.parse("2026-07-25T17:00:00.000Z"));
+    expect(h.rpc).toHaveBeenCalledWith("claim_rate_limit_slot", {
+      p_bucket_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      p_limit: 3,
+      p_window_ms: 60_000,
+    });
+    expect(JSON.stringify(h.rpc.mock.calls[0])).not.toContain("user:1");
   });
 
-  it("permits exactly `limit` requests then rejects the next", () => {
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    expect(checkRateLimit("user:1", OPTS).success).toBe(true);
-    const over = checkRateLimit("user:1", OPTS);
-    expect(over.success).toBe(false);
-    expect(over.remaining).toBe(0);
+  it("returns a denied decision from the shared store", async () => {
+    h.rpc.mockResolvedValue({
+      data: [
+        {
+          success: false,
+          remaining: 0,
+          reset_at: "2026-07-25T17:00:00.000Z",
+          bucket_limit: 3,
+        },
+      ],
+      error: null,
+    });
+
+    await expect(checkRateLimit("user:1", OPTS)).resolves.toMatchObject({
+      success: false,
+      remaining: 0,
+      limit: 3,
+    });
   });
 
-  it("keeps separate counters per key", () => {
-    checkRateLimit("user:1", OPTS);
-    checkRateLimit("user:1", OPTS);
-    checkRateLimit("user:1", OPTS);
-    // user:1 is at the cap, user:2 should still be unaffected.
-    const other = checkRateLimit("user:2", OPTS);
-    expect(other.success).toBe(true);
-    expect(other.remaining).toBe(2);
-  });
+  it("returns an unavailable decision when the shared store fails", async () => {
+    h.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "database unavailable" },
+    });
 
-  it("opens a fresh window after `windowMs` elapses", () => {
-    vi.useFakeTimers();
-    try {
-      const t0 = new Date("2026-05-01T00:00:00Z").getTime();
-      vi.setSystemTime(t0);
-      __resetRateLimitForTests();
-
-      checkRateLimit("user:1", OPTS);
-      checkRateLimit("user:1", OPTS);
-      checkRateLimit("user:1", OPTS);
-      expect(checkRateLimit("user:1", OPTS).success).toBe(false);
-
-      // Jump just past the window.
-      vi.setSystemTime(t0 + OPTS.windowMs + 1);
-      const refreshed = checkRateLimit("user:1", OPTS);
-      expect(refreshed.success).toBe(true);
-      expect(refreshed.remaining).toBe(2);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(checkRateLimit("user:1", OPTS)).resolves.toMatchObject({
+      success: false,
+      unavailable: true,
+      remaining: 0,
+      limit: 3,
+    });
   });
 });
 
@@ -91,19 +109,30 @@ describe("rateLimitResponse", () => {
     });
     expect(Number(res.headers.get("Retry-After"))).toBeGreaterThanOrEqual(1);
   });
+
+  it("returns 503 instead of disguising a store outage as client throttling", async () => {
+    const res = rateLimitResponse({
+      success: false,
+      unavailable: true,
+      remaining: 0,
+      reset: Date.now() + 1_000,
+      limit: 10,
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      error: "Rate limit service unavailable",
+      code: "rate_limit_unavailable",
+    });
+  });
 });
 
 describe("RATE_LIMITS presets", () => {
   it("send and broadcast budgets are independent", async () => {
-    __resetRateLimitForTests();
     // Importing here so the presets stay close to their assertions.
     const { RATE_LIMITS } = await import("./rate-limit");
     expect(RATE_LIMITS.send.limit).toBeGreaterThan(RATE_LIMITS.broadcast.limit);
     expect(RATE_LIMITS.send.windowMs).toBe(60_000);
     expect(RATE_LIMITS.broadcast.windowMs).toBe(60_000);
   });
-});
-
-afterEach(() => {
-  __resetRateLimitForTests();
 });

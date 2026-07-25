@@ -1,11 +1,10 @@
 import { AiError } from '../types'
 import type { ProviderArgs, ProviderResult } from './shared'
 
-const MAX_OUTPUT_TOKENS = 1024
 const ANTHROPIC_VERSION = '2023-06-01'
 
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs } = args
+  const { apiKey, model, systemPrompt, messages, timeoutMs, maxTokens, structuredOutput } = args
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -22,8 +21,23 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
       body: JSON.stringify({
         model,
         system: systemPrompt,
-        max_tokens: MAX_OUTPUT_TOKENS,
+        max_tokens: maxTokens,
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        ...(structuredOutput
+          ? {
+              tools: [
+                {
+                  name: structuredOutput.name,
+                  description:
+                    structuredOutput.description ??
+                    'Return exactly one structured response matching the provided schema.',
+                  strict: true,
+                  input_schema: structuredOutput.schema,
+                },
+              ],
+              tool_choice: { type: 'tool', name: structuredOutput.name },
+            }
+          : {}),
       }),
       signal: controller.signal,
     })
@@ -38,21 +52,58 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
+    if (structuredOutput && res.status === 400) {
+      throw modelIncompatible(`Anthropic rejected the structured-output contract: ${body.slice(0, 300)}`)
+    }
     throw new AiError(`Anthropic request failed (${res.status}): ${body.slice(0, 300)}`, {
       code: 'provider_error',
       status: 502,
     })
   }
 
-  const json = (await res.json()) as {
-    content: { type: string; text?: string }[]
+  let json: {
+    content?: { type: string; text?: string; name?: string; input?: unknown }[]
+    stop_reason?: string | null
     usage?: { input_tokens: number; output_tokens: number }
   }
-  const text = json.content.find((c) => c.type === 'text')?.text ?? ''
+  try {
+    json = (await res.json()) as typeof json
+  } catch {
+    if (structuredOutput) {
+      throw modelIncompatible('Anthropic returned an unreadable structured response.')
+    }
+    throw new AiError('Anthropic returned an unreadable response.', {
+      code: 'provider_error',
+      status: 502,
+    })
+  }
+  const text = json.content?.find((c) => c.type === 'text')?.text ?? ''
+  const usage = json.usage
+    ? { promptTokens: json.usage.input_tokens, completionTokens: json.usage.output_tokens }
+    : null
+
+  if (structuredOutput) {
+    if (json.stop_reason === 'max_tokens') {
+      throw modelIncompatible('Anthropic truncated the structured response before it was complete.')
+    }
+    const toolUse = json.content?.find(
+      (block) => block.type === 'tool_use' && block.name === structuredOutput.name,
+    )
+    if (!toolUse || !Object.prototype.hasOwnProperty.call(toolUse, 'input')) {
+      throw modelIncompatible(`Anthropic did not call the required ${structuredOutput.name} tool.`)
+    }
+    return { text, structuredData: toolUse.input, usage }
+  }
+
   return {
     text,
-    usage: json.usage
-      ? { promptTokens: json.usage.input_tokens, completionTokens: json.usage.output_tokens }
-      : null,
+    usage,
   }
+}
+
+function modelIncompatible(detail: string): AiError {
+  return new AiError(
+    `${detail} Choose a compatible model in Settings → AI agent (/settings?tab=ai-agent).`,
+    { code: 'model_incompatible', status: 422 },
+  )
 }

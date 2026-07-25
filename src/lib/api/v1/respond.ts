@@ -67,6 +67,15 @@ export function badRequest(message: string): ApiError {
 
 /** 429 — built from a `checkRateLimit` miss, with the standard headers. */
 export function rateLimited(result: RateLimitResult): ApiError {
+  if (result.unavailable) {
+    return new ApiError(
+      'internal',
+      'Rate limit service unavailable',
+      503,
+      { 'Retry-After': '1' }
+    );
+  }
+
   const retryAfter = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
   return new ApiError(
     'rate_limited',

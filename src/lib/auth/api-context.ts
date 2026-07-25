@@ -96,7 +96,10 @@ export async function requireApiKey(
 
   // Rate-limit per key, before the scope check, so an unauthorized-
   // scope caller still can't hammer the endpoint for free.
-  const limit = checkRateLimit(`apikey:${row.id}`, RATE_LIMITS.publicApi);
+  const limit = await checkRateLimit(
+    `apikey:${row.id}`,
+    RATE_LIMITS.publicApi,
+  );
   if (!limit.success) {
     throw rateLimited(limit);
   }

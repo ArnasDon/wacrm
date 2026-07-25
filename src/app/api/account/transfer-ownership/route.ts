@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     // every few months at most; a script run in a loop would
     // produce a noisy audit trail. 30/min is well above any human
     // pace and bounds the noise.
-    const limit = checkRateLimit(
+    const limit = await checkRateLimit(
       `admin:transferOwnership:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

@@ -37,33 +37,66 @@ export async function replaceSteps(
   automationId: string,
   input: BuilderStepInput[],
 ): Promise<string | null> {
+  const prepared = prepareSteps(automationId, input)
+  if ('error' in prepared) return prepared.error
+
   const admin = supabaseAdmin()
   const { error: delErr } = await admin
     .from('automation_steps')
     .delete()
     .eq('automation_id', automationId)
   if (delErr) return delErr.message
-  return insertSteps(automationId, input)
+
+  if (prepared.rows.length === 0) return null
+  const { error } = await admin.from('automation_steps').insert(prepared.rows)
+  return error?.message ?? null
 }
 
 export async function insertSteps(
   automationId: string,
   input: BuilderStepInput[],
 ): Promise<string | null> {
-  if (!input || input.length === 0) return null
+  const prepared = prepareSteps(automationId, input)
+  if ('error' in prepared) return prepared.error
+  if (prepared.rows.length === 0) return null
 
+  const { error } = await supabaseAdmin()
+    .from('automation_steps')
+    .insert(prepared.rows)
+  return error?.message ?? null
+}
+
+function prepareSteps(
+  automationId: string,
+  input: BuilderStepInput[],
+): { rows: InsertRow[] } | { error: string } {
+  if (!input || input.length === 0) return { rows: [] }
   const looksFlat = input.some(
     (s) => s.branch !== undefined || s.parent_index !== undefined,
   )
   const tree = looksFlat ? seedsToTree(input) : input
 
   const rows: InsertRow[] = []
+  let validationError: string | null = null
   function walk(
     steps: BuilderStepInput[],
     parentId: string | null,
     branch: 'yes' | 'no' | null,
+    path: string,
   ) {
     steps.forEach((s, idx) => {
+      if (validationError) return
+      const stepPath = `${path}[${idx}]`
+      const hasBranchSteps =
+        (s.branches?.yes?.length ?? 0) > 0 ||
+        (s.branches?.no?.length ?? 0) > 0
+      if (s.step_type !== 'condition' && hasBranchSteps) {
+        validationError =
+          `Step "${s.step_type}" at ${stepPath} cannot contain non-empty branches; ` +
+          'only condition steps can have branches.'
+        return
+      }
+
       const id = s.id ?? uid()
       rows.push({
         id,
@@ -75,16 +108,18 @@ export async function insertSteps(
         position: idx,
       })
       if (s.step_type === 'condition' && s.branches) {
-        if (s.branches.yes) walk(s.branches.yes, id, 'yes')
-        if (s.branches.no) walk(s.branches.no, id, 'no')
+        if (s.branches.yes) {
+          walk(s.branches.yes, id, 'yes', `${stepPath}.branches.yes`)
+        }
+        if (s.branches.no) {
+          walk(s.branches.no, id, 'no', `${stepPath}.branches.no`)
+        }
       }
     })
   }
-  walk(tree, null, null)
+  walk(tree, null, null, 'steps')
 
-  if (rows.length === 0) return null
-  const { error } = await supabaseAdmin().from('automation_steps').insert(rows)
-  return error?.message ?? null
+  return validationError ? { error: validationError } : { rows }
 }
 
 function seedsToTree(seeds: BuilderStepInput[]): BuilderStepInput[] {
@@ -95,10 +130,18 @@ function seedsToTree(seeds: BuilderStepInput[]): BuilderStepInput[] {
   const roots: BuilderStepInput[] = []
   nodes.forEach((n, i) => {
     const seed = seeds[i]
-    if (seed.parent_index == null) {
+    const parentIndex = seed.parent_index
+    const hasValidParent =
+      typeof parentIndex === 'number' &&
+      Number.isInteger(parentIndex) &&
+      parentIndex >= 0 &&
+      parentIndex < i &&
+      nodes[parentIndex]?.step_type === 'condition'
+
+    if (!hasValidParent) {
       roots.push(n)
     } else {
-      const parent = nodes[seed.parent_index]
+      const parent = nodes[parentIndex]
       parent.branches = parent.branches ?? { yes: [], no: [] }
       const bucket = (seed.branch ?? 'yes') as 'yes' | 'no'
       ;(parent.branches[bucket] ??= []).push(n)

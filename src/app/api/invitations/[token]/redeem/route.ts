@@ -58,7 +58,10 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const ip = getClientIp(request);
-  const limit = checkRateLimit(`redeem:${ip}`, RATE_LIMITS.invitationRedeem);
+  const limit = await checkRateLimit(
+    `redeem:${ip}`,
+    RATE_LIMITS.invitationRedeem,
+  );
   if (!limit.success) return rateLimitResponse(limit);
 
   const { token } = await params;

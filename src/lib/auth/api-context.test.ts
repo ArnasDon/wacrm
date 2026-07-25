@@ -1,9 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { generateApiKey } from "@/lib/api-keys/keys";
 import type { ApiKeyRow } from "@/lib/api-keys/store";
 import { ApiError } from "@/lib/api/v1/respond";
-import { __resetRateLimitForTests, RATE_LIMITS } from "@/lib/rate-limit";
+
+const rateLimit = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: rateLimit,
+  RATE_LIMITS: { publicApi: { limit: 120, windowMs: 60_000 } },
+}));
 
 // Mock the service-role client factory — requireApiKey only stashes
 // the returned client in the context; tests never call through it.
@@ -44,13 +49,15 @@ function row(overrides: Partial<ApiKeyRow> = {}): ApiKeyRow {
 }
 
 beforeEach(() => {
-  __resetRateLimitForTests();
+  rateLimit.mockReset();
+  rateLimit.mockResolvedValue({
+    success: true,
+    remaining: 119,
+    reset: Date.now() + 60_000,
+    limit: 120,
+  });
   findActiveKeyByHash.mockReset();
   touchLastUsed.mockReset();
-});
-
-afterEach(() => {
-  __resetRateLimitForTests();
 });
 
 async function expectApiError(p: Promise<unknown>, code: string, status: number) {
@@ -119,14 +126,33 @@ describe("requireApiKey", () => {
 
   it("429s once the per-key budget is exhausted", async () => {
     findActiveKeyByHash.mockResolvedValue(row());
-    // Burn the whole window.
-    for (let i = 0; i < RATE_LIMITS.publicApi.limit; i++) {
-      await requireApiKey(reqWith(`Bearer ${KEY}`));
-    }
+    rateLimit.mockResolvedValue({
+      success: false,
+      remaining: 0,
+      reset: Date.now() + 60_000,
+      limit: 120,
+    });
     await expectApiError(
       requireApiKey(reqWith(`Bearer ${KEY}`)),
       "rate_limited",
       429,
+    );
+  });
+
+  it("503s when the distributed rate-limit store is unavailable", async () => {
+    findActiveKeyByHash.mockResolvedValue(row());
+    rateLimit.mockResolvedValue({
+      success: false,
+      unavailable: true,
+      remaining: 0,
+      reset: Date.now() + 1_000,
+      limit: 120,
+    });
+
+    await expectApiError(
+      requireApiKey(reqWith(`Bearer ${KEY}`)),
+      "internal",
+      503,
     );
   });
 });

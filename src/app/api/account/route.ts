@@ -46,7 +46,7 @@ export async function PATCH(request: Request) {
     // abuse (script run in a loop) and a compromised admin session
     // spamming renames. Each admin endpoint keys its own bucket so
     // one route doesn't starve another.
-    const limit = checkRateLimit(
+    const limit = await checkRateLimit(
       `admin:rename:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

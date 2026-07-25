@@ -1,26 +1,14 @@
 /**
- * In-memory per-key rate limiter.
+ * Shared per-key rate limiter.
  *
- * Fixed-window counter (not token bucket): every identifier gets a
- * fresh N-request budget each window. Simple, allocation-light, and
- * fine for a single-instance VPS — which is how forkers of this
- * template will usually deploy.
- *
- * Trade-off: a single Node process holds the Map, so horizontal scale
- * (multiple regions, multiple Hostinger nodes, Vercel serverless fan-
- * out) silently defeats the limit. If you scale beyond one instance,
- * swap the `check` implementation for Redis / Upstash / Cloudflare
- * Durable Objects keeping the same return shape. The call sites won't
- * change.
- *
- * Memory: entries are ~50 bytes each. With LIGHT_SWEEP below, expired
- * keys get cleared opportunistically on every ~1 000th call, so a
- * healthy instance stays in the low-MB range even with thousands of
- * distinct users. No background timer — works in serverless edge
- * runtimes that don't keep timers alive across requests.
+ * The fixed-window counter lives in Postgres behind an atomic RPC, so
+ * every application instance and region consumes the same bucket.
+ * Raw identifiers are SHA-256 hashed before storage.
  */
 
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/automations/admin-client';
 
 export interface RateLimitOptions {
   /** Max requests allowed in `windowMs`. */
@@ -31,6 +19,8 @@ export interface RateLimitOptions {
 
 export interface RateLimitResult {
   success: boolean;
+  /** True when the shared limiter could not make a decision. */
+  unavailable?: boolean;
   /** Requests still allowed in the current window. */
   remaining: number;
   /** Unix ms when the bucket refills. */
@@ -38,54 +28,65 @@ export interface RateLimitResult {
   limit: number;
 }
 
-interface Entry {
-  count: number;
-  resetAt: number;
+interface RateLimitRpcRow {
+  success: boolean;
+  remaining: number;
+  reset_at: string;
+  bucket_limit: number;
 }
 
-const buckets = new Map<string, Entry>();
-
-// Opportunistic cleanup. Running a sweep on every call would be
-// quadratic; running it 1-in-N lets the Map self-drain without a
-// background timer.
-const LIGHT_SWEEP_EVERY = 1000;
-let callsSinceSweep = 0;
-
-function sweepExpired(now: number) {
-  for (const [k, v] of buckets) {
-    if (v.resetAt <= now) buckets.delete(k);
-  }
-}
-
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions,
-): RateLimitResult {
-  const now = Date.now();
-
-  callsSinceSweep += 1;
-  if (callsSinceSweep >= LIGHT_SWEEP_EVERY) {
-    callsSinceSweep = 0;
-    sweepExpired(now);
+): Promise<RateLimitResult> {
+  if (
+    key.length === 0 ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 1_000_000 ||
+    !Number.isInteger(windowMs) ||
+    windowMs < 1 ||
+    windowMs > 86_400_000
+  ) {
+    throw new Error('Invalid distributed rate limit configuration');
   }
 
-  const entry = buckets.get(key);
+  const bucketHash = createHash('sha256').update(key, 'utf8').digest('hex');
+  let data: unknown;
+  let error: unknown;
+  try {
+    const result = await supabaseAdmin().rpc('claim_rate_limit_slot', {
+      p_bucket_hash: bucketHash,
+      p_limit: limit,
+      p_window_ms: windowMs,
+    });
+    data = result.data;
+    error = result.error;
+  } catch {
+    return unavailableResult(limit);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | RateLimitRpcRow
+    | null;
+  const reset = row ? Date.parse(row.reset_at) : Number.NaN;
 
-  if (!entry || entry.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
+  if (
+    error ||
+    !row ||
+    typeof row.success !== 'boolean' ||
+    !Number.isInteger(row.remaining) ||
+    row.remaining < 0 ||
+    row.bucket_limit !== limit ||
+    !Number.isFinite(reset)
+  ) {
+    return unavailableResult(limit);
   }
 
-  if (entry.count >= limit) {
-    return { success: false, remaining: 0, reset: entry.resetAt, limit };
-  }
-
-  entry.count += 1;
   return {
-    success: true,
-    remaining: limit - entry.count,
-    reset: entry.resetAt,
-    limit,
+    success: row.success,
+    remaining: row.remaining,
+    reset,
+    limit: row.bucket_limit,
   };
 }
 
@@ -94,6 +95,16 @@ export function checkRateLimit(
  * draft-ietf-httpapi-ratelimit-headers). Callers just `return` this.
  */
 export function rateLimitResponse(result: RateLimitResult): NextResponse {
+  if (result.unavailable) {
+    return NextResponse.json(
+      {
+        error: 'Rate limit service unavailable',
+        code: 'rate_limit_unavailable',
+      },
+      { status: 503, headers: { 'Retry-After': '1' } },
+    );
+  }
+
   const retryAfterSec = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
   return NextResponse.json(
     {
@@ -144,9 +155,7 @@ export const RATE_LIMITS = {
   /** Public REST API (`/api/v1/*`), keyed per API key. 120/min ≈ 2
    *  req/s sustained — comfortable for a polling integration or an
    *  automation firing on inbound events, while bounding a runaway
-   *  script. Like every bucket here it's per-process; a multi-
-   *  instance deploy needs the Redis swap described at the top of
-   *  this file (the per-key call sites don't change). */
+   *  script. */
   publicApi: { limit: 120, windowMs: 60_000 },
   /** AI agent decision per inbound WhatsApp message. Keyed per account
    *  (not per user — the webhook has no authenticated user). 30/min
@@ -159,9 +168,12 @@ export const RATE_LIMITS = {
   aiCopilot: { limit: 20, windowMs: 60_000 },
 } as const;
 
-/** Test-only helper. Clears the in-memory state so unit tests don't
- *  leak buckets across files. Not wired up in production code. */
-export function __resetRateLimitForTests() {
-  buckets.clear();
-  callsSinceSweep = 0;
+function unavailableResult(limit: number): RateLimitResult {
+  return {
+    success: false,
+    unavailable: true,
+    remaining: 0,
+    reset: Date.now() + 1_000,
+    limit,
+  };
 }

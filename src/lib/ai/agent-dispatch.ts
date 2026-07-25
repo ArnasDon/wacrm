@@ -38,7 +38,10 @@ async function run(args: DispatchInboundToAgentArgs): Promise<void> {
 
   // Rate-limited before the AI call is ever made — a misbehaving
   // upstream retry storm must not translate into runaway BYOK spend.
-  const limit = checkRateLimit(`ai-agent:${accountId}`, RATE_LIMITS.aiAgentDecision)
+  const limit = await checkRateLimit(
+    `ai-agent:${accountId}`,
+    RATE_LIMITS.aiAgentDecision,
+  )
   if (!limit.success) return
 
   const { data: conversation } = await db

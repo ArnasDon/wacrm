@@ -172,7 +172,7 @@ export async function POST(request: Request) {
     // legitimate admin is far below this; the cap exists to keep
     // a script run in a loop or a compromised admin session from
     // flooding `account_invitations` with rows.
-    const limit = checkRateLimit(
+    const limit = await checkRateLimit(
       `admin:inviteCreate:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

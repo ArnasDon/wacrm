@@ -841,6 +841,7 @@
       "backAria": "Back"
     },
     "builder": {
+      "delete": "Delete",
       "steps": {
         "send_message": "Send Message",
         "send_buttons": "Send Buttons",
@@ -1008,13 +1009,29 @@
       "assistant": "Assistant",
       "tryAgain": "Try again",
       "createDraft": "Create draft",
-      "draftCreated": "Draft created — review it below",
+      "draftCreated": "Draft created — opening editor",
       "createError": "Couldn't create the draft automation",
       "genericError": "Couldn't generate a response",
       "networkError": "Network error — please try again",
       "triggerLabel": "Trigger",
       "branch": "branch",
-      "needsReview": "{count} {count, plural, =1 {field needs} other {fields need}} your input before this can be activated"
+      "needsReview": "{count} {count, plural, =1 {field needs} other {fields need}} your input before this can be activated",
+      "draftSummary": "Draft ready: {name}",
+      "previewTitle": "Resolved preview",
+      "verified": "Verified and ready to create as an inactive draft",
+      "verificationRequired": "Verification did not pass yet. Refine the request before creating this draft.",
+      "configureResources": "Open settings to configure resources",
+      "openAiSettings": "Open Settings → AI agent",
+      "progressLabel": "Generation progress",
+      "progressInterpret": "Interpret",
+      "progressResolve": "Resolve resources",
+      "progressValidate": "Validate",
+      "progressVerify": "Verify",
+      "historyLabel": "Conversation",
+      "choicesLabel": "Suggested answers",
+      "previewStepsLabel": "Automation steps",
+      "messageLabel": "Describe or refine the automation",
+      "send": "Send"
     }
   },
   "Flows": {

@@ -57,7 +57,7 @@ export async function GET(
   // Rate-limit by IP first. Returns 429 to a serial bruteforcer
   // before we ever touch the DB.
   const ip = getClientIp(request);
-  const limit = checkRateLimit(`peek:${ip}`, RATE_LIMITS.invitationPeek);
+  const limit = await checkRateLimit(`peek:${ip}`, RATE_LIMITS.invitationPeek);
   if (!limit.success) return rateLimitResponse(limit);
 
   const { token } = await params;

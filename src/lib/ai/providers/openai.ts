@@ -1,10 +1,8 @@
 import { AiError } from '../types'
 import type { ProviderArgs, ProviderResult } from './shared'
 
-const MAX_OUTPUT_TOKENS = 1024
-
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, responseFormat } = args
+  const { apiKey, model, systemPrompt, messages, timeoutMs, maxTokens, responseFormat, structuredOutput } = args
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -20,8 +18,21 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
       body: JSON.stringify({
         model,
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
-        max_completion_tokens: MAX_OUTPUT_TOKENS,
-        ...(responseFormat ? { response_format: { type: responseFormat } } : {}),
+        max_completion_tokens: maxTokens,
+        ...(structuredOutput
+          ? {
+              response_format: {
+                type: 'json_schema',
+                json_schema: {
+                  name: structuredOutput.name,
+                  strict: true,
+                  schema: structuredOutput.schema,
+                },
+              },
+            }
+          : responseFormat
+            ? { response_format: { type: responseFormat } }
+            : {}),
       }),
       signal: controller.signal,
     })
@@ -36,21 +47,69 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
+    if (structuredOutput && res.status === 400) {
+      throw modelIncompatible(`OpenAI rejected the structured-output contract: ${body.slice(0, 300)}`)
+    }
     throw new AiError(`OpenAI request failed (${res.status}): ${body.slice(0, 300)}`, {
       code: 'provider_error',
       status: 502,
     })
   }
 
-  const json = (await res.json()) as {
-    choices: { message: { content: string } }[]
+  let json: {
+    choices?: {
+      finish_reason?: string | null
+      message?: { content?: string | null; refusal?: string | null }
+    }[]
     usage?: { prompt_tokens: number; completion_tokens: number }
   }
-  const text = json.choices[0]?.message?.content ?? ''
+  try {
+    json = (await res.json()) as typeof json
+  } catch {
+    if (structuredOutput) {
+      throw modelIncompatible('OpenAI returned an unreadable structured response.')
+    }
+    throw new AiError('OpenAI returned an unreadable response.', {
+      code: 'provider_error',
+      status: 502,
+    })
+  }
+  const choice = json.choices?.[0]
+  const text = choice?.message?.content ?? ''
+  const usage = json.usage
+    ? { promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens }
+    : null
+
+  if (structuredOutput) {
+    if (choice?.message?.refusal) {
+      throw modelIncompatible(`OpenAI refused the structured request: ${choice.message.refusal}`)
+    }
+    if (choice?.finish_reason === 'length') {
+      throw modelIncompatible('OpenAI truncated the structured response before it was complete.')
+    }
+    if (!choice || typeof choice.message?.content !== 'string' || !choice.message.content) {
+      throw modelIncompatible('OpenAI did not return structured response content.')
+    }
+
+    let structuredData: unknown
+    try {
+      structuredData = JSON.parse(choice.message.content)
+    } catch {
+      throw modelIncompatible('OpenAI returned content that was not valid structured JSON.')
+    }
+
+    return { text, structuredData, usage }
+  }
+
   return {
     text,
-    usage: json.usage
-      ? { promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens }
-      : null,
+    usage,
   }
+}
+
+function modelIncompatible(detail: string): AiError {
+  return new AiError(
+    `${detail} Choose a compatible model in Settings → AI agent (/settings?tab=ai-agent).`,
+    { code: 'model_incompatible', status: 422 },
+  )
 }

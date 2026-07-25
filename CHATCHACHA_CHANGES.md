@@ -25,3 +25,4 @@ When pulling upstream updates, protect these files from being overwritten.
 | Date | What was merged | Notes |
 |------|----------------|-------|
 | — | — | No syncs yet |
+## Test branch merge - branching workflow verified

@@ -32,10 +32,11 @@ import { FlowCanvas } from "./flow-canvas";
 import { FlowEditorProvider } from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
-import { NODE_META, nodeColors, type NodeType } from "./shared";
+import { nodeColors, type NodeType } from "./shared";
 import { cn } from "@/lib/utils";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 import { useTranslations } from "next-intl";
+import { listBuilderNodeDescriptors } from "@/lib/flows/registry";
 
 /**
  * Below this viewport width we force list view and hide the toggle.
@@ -52,7 +53,9 @@ const STORAGE_KEY = "wacrm.flowEditor.view";
 // Legend covers every node type, derived from NODE_META so a new type
 // can't silently go undocumented. NODE_META's key order already reads
 // the way a flow flows: start → talk → capture → branch → mutate → end.
-const LEGEND_TYPES = Object.keys(NODE_META) as NodeType[];
+const LEGEND_TYPES = listBuilderNodeDescriptors().map(
+  ({ id }) => id,
+) as NodeType[];
 
 interface Props {
   initialFlow: FlowRow;

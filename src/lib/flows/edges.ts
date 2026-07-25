@@ -228,6 +228,7 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
 
     case "handoff":
     case "end":
+    default:
       return [];
   }
 }
@@ -312,6 +313,7 @@ export function applyEdgeConnection(
 
     case "handoff":
     case "end":
+    default:
       return null;
   }
 }
@@ -406,6 +408,7 @@ function patchedConfigWithoutKey(
 
     case "handoff":
     case "end":
+    default:
       return null;
   }
 }

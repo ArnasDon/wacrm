@@ -58,6 +58,7 @@ import {
   type BuilderNode,
   type NodeType,
 } from './shared';
+import { listBuilderNodeDescriptors } from '@/lib/flows/registry';
 import { NodeConfigForm } from './forms/node-config-form';
 import { NodeKeySelect } from './forms/fields';
 import { IssueLine } from './validation-panel';
@@ -580,18 +581,9 @@ function NodeConfigWithAdvanced({
 // ============================================================
 
 function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: ReturnType<typeof useTranslations> }) {
-  const types: NodeType[] = [
-    'start',
-    'send_buttons',
-    'send_list',
-    'send_message',
-    'send_media',
-    'collect_input',
-    'condition',
-    'set_tag',
-    'handoff',
-    'end',
-  ];
+  const types = listBuilderNodeDescriptors().map(
+    ({ id }) => id,
+  ) as NodeType[];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger

@@ -59,6 +59,7 @@ import {
   type StartNodeConfig,
   type KeywordTriggerConfig,
 } from "./types";
+import { getNodeDescriptor, type NodeDescriptor } from "./registry";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -147,27 +148,24 @@ export function matchesKeywordTrigger(
 
 /** Nodes that advance to a next_node_key without waiting for input. */
 export function isAutoAdvancing(node_type: string): boolean {
-  return (
-    node_type === "start" ||
-    node_type === "send_message" ||
-    node_type === "send_media" ||
-    node_type === "condition" ||
-    node_type === "set_tag"
-  );
+  return getRuntimeDescriptor(node_type)?.runtimeKind === "auto";
 }
 
 /** Nodes that send a prompt and suspend awaiting a customer reply. */
 export function isSuspending(node_type: string): boolean {
-  return (
-    node_type === "send_buttons" ||
-    node_type === "send_list" ||
-    node_type === "collect_input"
-  );
+  return getRuntimeDescriptor(node_type)?.runtimeKind === "suspend";
 }
 
 /** Nodes that end the run. */
 export function isTerminal(node_type: string): boolean {
-  return node_type === "handoff" || node_type === "end";
+  return getRuntimeDescriptor(node_type)?.runtimeKind === "terminal";
+}
+
+/** Registry-backed runtime recognition and dispatch metadata lookup. */
+export function getRuntimeDescriptor(
+  nodeType: string,
+): NodeDescriptor | undefined {
+  return getNodeDescriptor(nodeType);
 }
 
 /**
@@ -608,12 +606,21 @@ async function advanceFromNodeKey(
     await logEvent(db, run.id, "node_entered", node.node_key, {
       node_type: node.node_type,
     });
+    const runtimeDescriptor = getRuntimeDescriptor(node.node_type);
+    if (!runtimeDescriptor) {
+      await logEvent(db, run.id, "error", node.node_key, {
+        reason: `unknown_node_type:${node.node_type}`,
+      });
+      await endRun(db, run.id, "failed", "unknown_node_type");
+      return { outcome: "completed" };
+    }
+    const runtimeHook = runtimeDescriptor.runtimeHook;
 
-    if (node.node_type === "start") {
+    if (runtimeHook === "start") {
       currentKey = (node.config as unknown as StartNodeConfig).next_node_key;
       continue;
     }
-    if (node.node_type === "send_message") {
+    if (runtimeHook === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
       try {
         const { whatsapp_message_id } = await engineSendText({
@@ -638,7 +645,7 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
-    if (node.node_type === "send_media") {
+    if (runtimeHook === "send_media") {
       const cfg = node.config as unknown as SendMediaNodeConfig;
       try {
         const { whatsapp_message_id } = await engineSendMedia({
@@ -669,7 +676,7 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
-    if (node.node_type === "collect_input") {
+    if (runtimeHook === "collect_input") {
       // Send the prompt and suspend. Customer's next TEXT reply will
       // wake us up via handleReplyForActiveRun's collect_input branch.
       const cfg = node.config as unknown as CollectInputNodeConfig;
@@ -717,7 +724,7 @@ async function advanceFromNodeKey(
       }
       return { outcome: "advanced" };
     }
-    if (node.node_type === "condition") {
+    if (runtimeHook === "condition") {
       const cfg = node.config as unknown as ConditionNodeConfig;
       let branch: "true" | "false";
       try {
@@ -740,7 +747,7 @@ async function advanceFromNodeKey(
       });
       continue;
     }
-    if (node.node_type === "set_tag") {
+    if (runtimeHook === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;
       try {
         if (cfg.mode === "add") {
@@ -772,7 +779,7 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
-    if (node.node_type === "send_buttons") {
+    if (runtimeHook === "send_buttons") {
       await sendButtonsAndSuspend(db, run, node);
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
@@ -788,7 +795,7 @@ async function advanceFromNodeKey(
       }
       return { outcome: "advanced" };
     }
-    if (node.node_type === "send_list") {
+    if (runtimeHook === "send_list") {
       await sendListAndSuspend(db, run, node);
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -803,20 +810,20 @@ async function advanceFromNodeKey(
       }
       return { outcome: "advanced" };
     }
-    if (node.node_type === "handoff") {
+    if (runtimeHook === "handoff") {
       await executeHandoff(db, run, node);
       return { outcome: "handed_off" };
     }
-    if (node.node_type === "end") {
+    if (runtimeHook === "end") {
       await logEvent(db, run.id, "completed", node.node_key);
       await endRun(db, run.id, "completed", "end_node");
       return { outcome: "completed" };
     }
     // Unknown node type — shouldn't happen given the CHECK constraint.
     await logEvent(db, run.id, "error", node.node_key, {
-      reason: `unknown_node_type:${node.node_type}`,
+      reason: `unsupported_runtime_hook:${runtimeHook}`,
     });
-    await endRun(db, run.id, "failed", "unknown_node_type");
+    await endRun(db, run.id, "failed", "unsupported_runtime_hook");
     return { outcome: "completed" };
   }
   // Safety break — log + fail.

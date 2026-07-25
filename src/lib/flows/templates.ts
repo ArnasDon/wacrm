@@ -29,17 +29,9 @@ import type {
   SendMessageNodeConfig,
   StartNodeConfig,
 } from "./types";
+import type { RegisteredNodeType } from "./registry";
 
-export type FlowTemplateNodeType =
-  | "start"
-  | "send_message"
-  | "send_buttons"
-  | "send_list"
-  | "collect_input"
-  | "condition"
-  | "set_tag"
-  | "handoff"
-  | "end";
+export type FlowTemplateNodeType = RegisteredNodeType;
 
 export interface FlowTemplateNode {
   node_key: string;

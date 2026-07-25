@@ -7,6 +7,7 @@ import {
 import { interpolateTemplateText } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import { engineSendText as canonicalEngineSendText } from '@/lib/flows/zapi-send'
 import { supabaseAdmin } from './admin-client'
 
 interface SendTextArgs {
@@ -27,9 +28,11 @@ interface SendTemplateArgs {
   params?: string[]
 }
 
-export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
-  return sendViaZapi({ ...args, kind: 'text' })
-}
+/**
+ * Compatibility export: plain-text delivery is owned by the canonical flow
+ * transport. Existing automation imports and mocks keep their stable path.
+ */
+export const engineSendText = canonicalEngineSendText
 
 export async function engineSendTemplate(
   args: SendTemplateArgs,

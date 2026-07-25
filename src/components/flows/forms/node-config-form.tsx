@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { getNodeDescriptor, type NodeFormField } from "@/lib/flows/registry";
 import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
@@ -65,36 +66,22 @@ export function NodeConfigForm({
 }: NodeConfigFormProps) {
   const t = useTranslations("Flows.builder.form");
   const cfg = node.config;
-  switch (node.node_type) {
-    case "start":
-      return (
-        <NextNodeRow
-          value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
-          allNodes={allNodes}
-          currentKey={node.node_key}
-          onChange={(v) => onUpdateConfig({ next_node_key: v })}
-          label={t("advancesTo")}
-        />
-      );
+  const form = getNodeDescriptor(node.node_type)?.form;
+  if (!form) return null;
+  if (form.kind === "fields") {
+    return (
+      <DescriptorFieldsForm
+        fields={form.fields}
+        help={form.help}
+        cfg={cfg}
+        allNodes={allNodes}
+        currentKey={node.node_key}
+        onUpdateConfig={onUpdateConfig}
+      />
+    );
+  }
 
-    case "send_message":
-      return (
-        <>
-          <TextRow
-            label={t("textToCustomer")}
-            value={(cfg as { text?: string }).text ?? ""}
-            onChange={(v) => onUpdateConfig({ text: v })}
-          />
-          <NextNodeRow
-            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
-            allNodes={allNodes}
-            currentKey={node.node_key}
-            onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label={t("advancesTo")}
-          />
-        </>
-      );
-
+  switch (form.component) {
     case "send_buttons":
       return (
         <SendButtonsForm
@@ -130,49 +117,6 @@ export function NodeConfigForm({
         />
       );
 
-    case "collect_input":
-      return (
-        <>
-          <TextRow
-            label={t("promptToCustomer")}
-            value={(cfg as { prompt_text?: string }).prompt_text ?? ""}
-            onChange={(v) => onUpdateConfig({ prompt_text: v })}
-            rows={2}
-          />
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              {t("varKeyLabel")}
-            </label>
-            <Input
-              value={(cfg as { var_key?: string }).var_key ?? ""}
-              onChange={(e) =>
-                onUpdateConfig({
-                  var_key: e.target.value.replace(/[^a-zA-Z0-9_]/g, ""),
-                })
-              }
-              placeholder={t("varKeyPlaceholder")}
-              className="bg-muted font-mono text-xs"
-            />
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              {t("varKeyHelp")}{" "}
-              <code className="rounded bg-muted px-1">
-                {"{{vars."}
-                {(cfg as { var_key?: string }).var_key || "name"}
-                {"}}"}
-              </code>
-              .
-            </p>
-          </div>
-          <NextNodeRow
-            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
-            allNodes={allNodes}
-            currentKey={node.node_key}
-            onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label={t("advanceAfterCapture")}
-          />
-        </>
-      );
-
     case "condition":
       return (
         <ConditionForm
@@ -195,23 +139,100 @@ export function NodeConfigForm({
         />
       );
 
-    case "handoff":
-      return (
-        <TextRow
-          label={t("internalNote")}
-          value={(cfg as { note?: string }).note ?? ""}
-          onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
-        />
-      );
-
-    case "end":
-      return (
-        <p className="text-xs text-muted-foreground">
-          {t("endNodeHelp")}
-        </p>
-      );
   }
+}
+
+function DescriptorFieldsForm({
+  fields,
+  help,
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+}: {
+  fields: readonly NodeFormField[];
+  help?: string;
+  cfg: Record<string, unknown>;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  if (fields.length === 0) {
+    return help ? (
+      <p className="text-xs text-muted-foreground">{help}</p>
+    ) : null;
+  }
+  return (
+    <>
+      {fields.map((field) => {
+        const value = cfg[field.key];
+        if (field.kind === "next-node") {
+          return (
+            <NextNodeRow
+              key={field.key}
+              value={typeof value === "string" ? value : ""}
+              allNodes={allNodes}
+              currentKey={currentKey}
+              onChange={(next) => onUpdateConfig({ [field.key]: next })}
+              label={field.label}
+            />
+          );
+        }
+        if (field.kind === "text" || field.kind === "textarea") {
+          return (
+            <TextRow
+              key={field.key}
+              label={field.label}
+              value={typeof value === "string" ? value : ""}
+              onChange={(next) => onUpdateConfig({ [field.key]: next })}
+              rows={field.kind === "textarea" ? field.rows : undefined}
+            />
+          );
+        }
+        if (field.kind === "number") {
+          return (
+            <div key={field.key}>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                {field.label}
+              </label>
+              <Input
+                type="number"
+                min={field.min}
+                value={typeof value === "number" ? value : ""}
+                onChange={(event) =>
+                  onUpdateConfig({
+                    [field.key]: event.target.valueAsNumber,
+                  })
+                }
+              />
+            </div>
+          );
+        }
+        return (
+          <div key={field.key}>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {field.label}
+            </label>
+            <Select
+              value={typeof value === "string" ? value : ""}
+              onValueChange={(next) => onUpdateConfig({ [field.key]: next })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {field.options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 // ============================================================

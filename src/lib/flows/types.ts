@@ -18,6 +18,8 @@
  * references in JSONB.
  */
 
+import type { RegisteredNodeType } from "./registry";
+
 // ============================================================
 // Node configs (discriminated union by node_type)
 // ============================================================
@@ -184,19 +186,17 @@ export type EndNodeConfig = Record<string, never>;
  * v1.5+ additions (collect_input, condition, set_tag, http_fetch) will
  * extend this union — out-of-scope for the v1 engine PR.
  */
-export type FlowNodeConfig =
-  | { node_type: "start"; config: StartNodeConfig }
-  | { node_type: "send_message"; config: SendMessageNodeConfig }
-  | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
-  | { node_type: "send_list"; config: SendListNodeConfig }
-  | { node_type: "send_media"; config: SendMediaNodeConfig }
-  | { node_type: "collect_input"; config: CollectInputNodeConfig }
-  | { node_type: "condition"; config: ConditionNodeConfig }
-  | { node_type: "set_tag"; config: SetTagNodeConfig }
-  | { node_type: "handoff"; config: HandoffNodeConfig }
-  | { node_type: "end"; config: EndNodeConfig };
+/** Canonical identity is derived from the descriptor registry. */
+export type FlowNodeType = RegisteredNodeType;
 
-export type FlowNodeType = FlowNodeConfig["node_type"];
+/**
+ * Portable graph-node config envelope. Node-specific narrowing is owned by
+ * the descriptor's Zod schema rather than a second hand-maintained union.
+ */
+export interface FlowNodeConfig {
+  node_type: FlowNodeType;
+  config: Record<string, unknown>;
+}
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)

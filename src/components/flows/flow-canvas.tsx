@@ -86,6 +86,7 @@ import {
   type BuilderNode,
   type NodeType,
 } from './shared';
+import { listBuilderNodeDescriptors } from '@/lib/flows/registry';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -691,18 +692,9 @@ function NodeEditSheet({
 // center of the visible viewport rather than appending to a list.
 // ============================================================
 
-const ADD_NODE_TYPES: NodeType[] = [
-  'start',
-  'send_buttons',
-  'send_list',
-  'send_message',
-  'send_media',
-  'collect_input',
-  'condition',
-  'set_tag',
-  'handoff',
-  'end',
-];
+const ADD_NODE_TYPES = listBuilderNodeDescriptors().map(
+  ({ id }) => id,
+) as NodeType[];
 
 function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
   const reactFlow = useReactFlow();

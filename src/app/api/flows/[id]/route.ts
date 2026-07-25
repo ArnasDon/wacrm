@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { isRegisteredNodeType } from '@/lib/flows/registry'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -112,6 +113,15 @@ export async function PUT(
   if (body.name !== undefined && !body.name.trim()) {
     return NextResponse.json(
       { error: 'name cannot be empty' },
+      { status: 400 },
+    )
+  }
+  const unknownNode = body.nodes?.find(
+    (node) => !isRegisteredNodeType(node.node_type),
+  )
+  if (unknownNode) {
+    return NextResponse.json(
+      { error: `Unknown node type "${unknownNode.node_type}"` },
       { status: 400 },
     )
   }

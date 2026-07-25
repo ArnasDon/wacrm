@@ -17,20 +17,37 @@
  */
 
 import {
+  AlarmClock,
+  ArchiveX,
+  BadgePlus,
+  CircleUserRound,
+  Clock,
+  ContactRound,
   Flag,
   GitFork,
   Inbox,
   ListChecks,
   ListPlus,
   MessageCircle,
+  MessageSquareCode,
   Paperclip,
   PlayCircle,
+  Radio,
+  Send,
   Tag,
+  Tags,
   UserPlus,
+  Webhook,
   Workflow,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import {
+  FLOW_NODE_DESCRIPTORS,
+  type NodeCategory,
+  type NodeIconId,
+  type RegisteredNodeType,
+} from '@/lib/flows/registry';
 
 // ============================================================
 // Node-type union — single source of truth for every place the UI
@@ -40,17 +57,7 @@ import { cn } from '@/lib/utils';
 // two is always a bug.
 // ============================================================
 
-export type NodeType =
-  | 'start'
-  | 'send_message'
-  | 'send_buttons'
-  | 'send_list'
-  | 'send_media'
-  | 'collect_input'
-  | 'condition'
-  | 'set_tag'
-  | 'handoff'
-  | 'end';
+export type NodeType = RegisteredNodeType;
 
 export interface BuilderNode {
   node_key: string;
@@ -77,96 +84,63 @@ export interface BuilderNode {
 // the canvas, so `start` is just the entry point under Flow control.
 // ------------------------------------------------------------
 
-export type NodeCategory = 'messaging' | 'logic' | 'flow';
-
 /** Category labels + the order they render in the add-step menu. */
 export const NODE_CATEGORIES: { id: NodeCategory; label: string }[] = [
+  { id: 'trigger', label: 'Triggers' },
   { id: 'messaging', label: 'Messaging' },
   { id: 'logic', label: 'Logic & data' },
+  { id: 'data', label: 'Data & integrations' },
   { id: 'flow', label: 'Flow control' },
 ];
 
-export const NODE_META: Record<
+const ICONS: Record<NodeIconId, typeof Workflow> = {
+  'alarm-clock': AlarmClock,
+  'archive-x': ArchiveX,
+  'badge-plus': BadgePlus,
+  'circle-user-round': CircleUserRound,
+  clock: Clock,
+  'contact-round': ContactRound,
+  flag: Flag,
+  'git-fork': GitFork,
+  inbox: Inbox,
+  'list-checks': ListChecks,
+  'list-plus': ListPlus,
+  'message-circle': MessageCircle,
+  'message-square-code': MessageSquareCode,
+  paperclip: Paperclip,
+  'play-circle': PlayCircle,
+  radio: Radio,
+  send: Send,
+  tag: Tag,
+  tags: Tags,
+  'user-plus': UserPlus,
+  webhook: Webhook,
+  workflow: Workflow,
+};
+
+export const NODE_META = Object.fromEntries(
+  FLOW_NODE_DESCRIPTORS.map((descriptor) => [
+    descriptor.id,
+    {
+      label: descriptor.label,
+      iconId: descriptor.icon,
+      icon: ICONS[descriptor.icon],
+      color: descriptor.ui.color,
+      blurb: descriptor.ui.blurb,
+      category: descriptor.category,
+    },
+  ]),
+) as Record<
   NodeType,
   {
     label: string;
+    iconId: NodeIconId;
     icon: typeof Workflow;
     color: string;
     blurb: string;
     category: NodeCategory;
   }
-> = {
-  start: {
-    label: 'Start',
-    icon: PlayCircle,
-    color: 'text-emerald-400',
-    blurb: 'Entry point of the flow',
-    category: 'flow',
-  },
-  send_message: {
-    label: 'Send message',
-    icon: MessageCircle,
-    color: 'text-sky-400',
-    blurb: 'Sends a WhatsApp text message',
-    category: 'messaging',
-  },
-  send_buttons: {
-    label: 'Send buttons',
-    icon: ListChecks,
-    color: 'text-primary',
-    blurb: 'Sends quick-reply buttons',
-    category: 'messaging',
-  },
-  send_list: {
-    label: 'Send list',
-    icon: ListPlus,
-    color: 'text-indigo-400',
-    blurb: 'Sends a tappable list of options',
-    category: 'messaging',
-  },
-  send_media: {
-    label: 'Send media',
-    icon: Paperclip,
-    color: 'text-cyan-400',
-    blurb: 'Sends an image, video, or document',
-    category: 'messaging',
-  },
-  collect_input: {
-    label: 'Collect input',
-    icon: Inbox,
-    color: 'text-teal-400',
-    blurb: 'Asks a question, saves the reply',
-    category: 'logic',
-  },
-  condition: {
-    label: 'If / else',
-    icon: GitFork,
-    color: 'text-fuchsia-400',
-    blurb: 'Branches on a rule',
-    category: 'logic',
-  },
-  set_tag: {
-    label: 'Tag contact',
-    icon: Tag,
-    color: 'text-pink-400',
-    blurb: 'Adds or removes a contact tag',
-    category: 'logic',
-  },
-  handoff: {
-    label: 'Handoff to agent',
-    icon: UserPlus,
-    color: 'text-amber-400',
-    blurb: 'Hands the conversation to a human',
-    category: 'flow',
-  },
-  end: {
-    label: 'End',
-    icon: Flag,
-    color: 'text-muted-foreground',
-    blurb: 'Ends the flow',
-    category: 'flow',
-  },
-};
+>;
 
 /**
  * Bucket an ordered list of node types by category, preserving both
@@ -196,7 +170,9 @@ export function groupNodeTypesByCategory(
 // complement it. `nodeColors()` derives the soft/ring/text variants.
 // ============================================================
 
-const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
+const LEGACY_NODE_HUE: Partial<
+  Record<NodeType, { l: number; c: number; h: number }>
+> = {
   start: { l: 0.62, c: 0.13, h: 162 }, // emerald — the start, echoes WhatsApp green
   send_message: { l: 0.6, c: 0.18, h: 293 }, // violet — the workhorse
   send_buttons: { l: 0.62, c: 0.16, h: 254 }, // cobalt
@@ -221,7 +197,10 @@ export interface NodeColors {
 }
 
 export function nodeColors(type: NodeType): NodeColors {
-  const t = NODE_HUE[type];
+  const t =
+    FLOW_NODE_DESCRIPTORS.find((descriptor) => descriptor.id === type)?.ui.hue ??
+    LEGACY_NODE_HUE[type] ??
+    { l: 0.55, c: 0.01, h: 260 };
   const solid = `oklch(${t.l} ${t.c} ${t.h})`;
   return {
     solid,
@@ -423,6 +402,17 @@ export function summarizeNode(
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;
+    }
+    default: {
+      const text =
+        typeof cfg.text === 'string'
+          ? cfg.text
+          : typeof cfg.title === 'string'
+            ? cfg.title
+            : typeof cfg.url === 'string'
+              ? cfg.url
+              : '';
+      return text ? truncate(text) : null;
     }
   }
 }

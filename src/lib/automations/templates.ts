@@ -4,6 +4,10 @@ import type {
   AutomationTriggerConfig,
   AutomationTriggerType,
 } from '@/types'
+import {
+  automationToFlowGraph,
+  type CanonicalFlowGraph,
+} from './to-flow-graph'
 
 export type TemplateSlug =
   | 'welcome_message'
@@ -129,4 +133,17 @@ export const AUTOMATION_TEMPLATES: Record<TemplateSlug, AutomationTemplateDefini
 
 export function getTemplate(slug: string): AutomationTemplateDefinition | null {
   return AUTOMATION_TEMPLATES[slug as TemplateSlug] ?? null
+}
+
+/** Canonical graph view used by new template consumers. */
+export function getCanonicalAutomationTemplate(
+  slug: string,
+): CanonicalFlowGraph | null {
+  const template = getTemplate(slug)
+  if (!template) return null
+  return automationToFlowGraph({
+    trigger_type: template.trigger_type,
+    trigger_config: template.trigger_config,
+    steps: template.steps,
+  })
 }

@@ -51,6 +51,7 @@ import {
 } from "@/lib/flows/validate";
 import { useTranslations } from "next-intl";
 import { unlinkNodeReferences } from "@/lib/flows/edges";
+import { getNodeDescriptor } from "@/lib/flows/registry";
 import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 
@@ -135,59 +136,8 @@ export function uniqueNodeKey(base: string, existing: BuilderNode[]): string {
 }
 
 export function defaultConfigFor(type: NodeType): Record<string, unknown> {
-  switch (type) {
-    case "start":
-      return { next_node_key: "" };
-    case "send_message":
-      return { text: "", next_node_key: "" };
-    case "send_buttons":
-      return {
-        text: "",
-        buttons: [{ reply_id: "yes", title: "Yes", next_node_key: "" }],
-      };
-    case "send_list":
-      return {
-        text: "",
-        button_label: "View options",
-        sections: [
-          {
-            title: "",
-            rows: [
-              { reply_id: "row_1", title: "Option 1", next_node_key: "" },
-            ],
-          },
-        ],
-      };
-    case "send_media":
-      return {
-        media_type: "image",
-        media_url: "",
-        caption: "",
-        filename: "",
-        next_node_key: "",
-      };
-    case "collect_input":
-      return {
-        prompt_text: "",
-        var_key: "answer",
-        next_node_key: "",
-      };
-    case "condition":
-      return {
-        subject: "var",
-        subject_key: "",
-        operator: "equals",
-        value: "",
-        true_next: "",
-        false_next: "",
-      };
-    case "set_tag":
-      return { mode: "add", tag_id: "", next_node_key: "" };
-    case "handoff":
-      return { note: "" };
-    case "end":
-      return {};
-  }
+  const defaults = getNodeDescriptor(type)?.builder.defaultConfig ?? {};
+  return structuredClone(defaults);
 }
 
 export function applyNodePositions(

@@ -1,0 +1,175 @@
+import type { ZodType } from "zod";
+
+export type NodeCategory = "trigger" | "messaging" | "logic" | "data" | "flow";
+export type NodeRuntimeKind =
+  | "trigger"
+  | "auto"
+  | "suspend"
+  | "terminal"
+  | "legacy";
+
+export type NodeIconId =
+  | "alarm-clock"
+  | "archive-x"
+  | "badge-plus"
+  | "circle-user-round"
+  | "clock"
+  | "contact-round"
+  | "flag"
+  | "git-fork"
+  | "inbox"
+  | "list-checks"
+  | "list-plus"
+  | "message-circle"
+  | "message-square-code"
+  | "paperclip"
+  | "play-circle"
+  | "radio"
+  | "send"
+  | "tag"
+  | "tags"
+  | "user-plus"
+  | "webhook"
+  | "workflow";
+
+export interface NodePortDescriptor {
+  id: string;
+  label: string;
+  kind: "control" | "data";
+  cardinality: "one" | "many";
+  required?: boolean;
+}
+
+export interface NodeValidationIssue {
+  severity?: "error" | "warning";
+  field?: string;
+  message: string;
+}
+
+export interface NodeValidationContext {
+  knownNodeKeys: ReadonlySet<string>;
+}
+
+export interface NodeLike {
+  node_key: string;
+  node_type: string;
+  config: Record<string, unknown>;
+}
+
+export type NodeFormField =
+  | {
+      kind: "text";
+      key: string;
+      label: string;
+      placeholder?: string;
+    }
+  | {
+      kind: "textarea";
+      key: string;
+      label: string;
+      placeholder?: string;
+      rows?: number;
+    }
+  | {
+      kind: "number";
+      key: string;
+      label: string;
+      min?: number;
+    }
+  | {
+      kind: "select";
+      key: string;
+      label: string;
+      options: readonly { value: string; label: string }[];
+    }
+  | {
+      kind: "next-node";
+      key: string;
+      label: string;
+    };
+
+export type NodeFormDescriptor =
+  | { kind: "fields"; fields: readonly NodeFormField[]; help?: string }
+  | {
+      kind: "specialized";
+      component:
+        | "send_buttons"
+        | "send_list"
+        | "send_media"
+        | "condition"
+        | "set_tag";
+    };
+
+export interface NodeUiDescriptor {
+  color: string;
+  blurb: string;
+  hue: { l: number; c: number; h: number };
+}
+
+export interface NodeBuilderDescriptor {
+  visible: boolean;
+  defaultConfig: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The portable node contract. It deliberately contains no React components,
+ * database clients, environment access, or server-only imports, so the same
+ * registry can safely drive validation, runtime lookup, and client metadata.
+ */
+export interface NodeDescriptor<Id extends string = string> {
+  id: Id;
+  label: string;
+  category: NodeCategory;
+  icon: NodeIconId;
+  inputs: readonly NodePortDescriptor[];
+  outputs: readonly NodePortDescriptor[];
+  configSchema: ZodType<Record<string, unknown>>;
+  validate: (
+    node: NodeLike,
+    ctx: NodeValidationContext,
+  ) => readonly NodeValidationIssue[];
+  runtimeKind: NodeRuntimeKind;
+  runtimeHook: string;
+  form: NodeFormDescriptor;
+  builder: NodeBuilderDescriptor;
+  ui: NodeUiDescriptor;
+  outgoingEdges: (config: Record<string, unknown>) => readonly string[];
+}
+
+export function defineNodeDescriptor<const Id extends string>(
+  descriptor: NodeDescriptor<Id>,
+): NodeDescriptor<Id> {
+  return descriptor;
+}
+
+export const CONTROL_INPUT: readonly NodePortDescriptor[] = [
+  {
+    id: "in",
+    label: "In",
+    kind: "control",
+    cardinality: "many",
+  },
+];
+
+export const CONTROL_OUTPUT: readonly NodePortDescriptor[] = [
+  {
+    id: "next",
+    label: "Next",
+    kind: "control",
+    cardinality: "one",
+    required: true,
+  },
+];
+
+export const NO_PORTS: readonly NodePortDescriptor[] = [];
+export const noValidation = (): readonly NodeValidationIssue[] => [];
+
+export function nextNodeEdges(config: Record<string, unknown>): string[] {
+  return typeof config.next_node_key === "string" && config.next_node_key
+    ? [config.next_node_key]
+    : [];
+}
+
+export function terminalEdges(): readonly string[] {
+  return [];
+}

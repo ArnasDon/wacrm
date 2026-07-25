@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectTemplateValidationIssues,
   extractVariableIndices,
+  normalizeTemplateButtons,
+  sanitizeTemplateName,
   TEMPLATE_LIMITS,
   validateBody,
   validateButtons,
@@ -273,5 +276,47 @@ describe('validateTemplatePayload — integration', () => {
         body_text: 'Hi {{1}}',
       }),
     ).toThrow(/exactly 1 sample/);
+  });
+  it('rejects http media URLs', () => {
+    expect(() =>
+      validateTemplatePayload({
+        ...baseValid,
+        header_type: 'image',
+        header_media_url: 'http://example.com/a.jpg',
+      }),
+    ).toThrow(/HTTPS/);
+  });
+});
+
+describe('collectTemplateValidationIssues', () => {
+  it('returns empty for a valid payload', () => {
+    expect(collectTemplateValidationIssues(baseValid)).toEqual([]);
+  });
+  it('collects multiple issues without throwing', () => {
+    const issues = collectTemplateValidationIssues({
+      name: 'Bad Name',
+      category: 'Utility',
+      language: '',
+      body_text: '',
+    });
+    expect(issues.length).toBeGreaterThan(1);
+    expect(issues.some((m) => /lowercase/i.test(m))).toBe(true);
+  });
+});
+
+describe('normalizeTemplateButtons', () => {
+  it('moves QUICK_REPLY ahead of CTA buttons', () => {
+    const normalized = normalizeTemplateButtons([
+      { type: 'URL', text: 'Open', url: 'https://example.com' },
+      { type: 'QUICK_REPLY', text: 'Yes' },
+    ]);
+    expect(normalized.map((b) => b.type)).toEqual(['QUICK_REPLY', 'URL']);
+  });
+});
+
+describe('sanitizeTemplateName', () => {
+  it('lowercases and strips invalid characters', () => {
+    expect(sanitizeTemplateName('Order Confirm!')).toBe('order_confirm_');
+    expect(sanitizeTemplateName('Order__Confirm')).toBe('order_confirm');
   });
 });

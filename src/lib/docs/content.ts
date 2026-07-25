@@ -97,7 +97,7 @@ export const IMPLEMENTATION_STEPS: DocStep[] = [
       "From WhatsApp → API Setup copy Phone Number ID and WABA ID. Generate a permanent System User access token in Business Settings → System Users.",
     links: [
       { label: "WhatsApp Setup guide", href: "/docs/whatsapp-setup" },
-      { label: "WhatsApp Config", href: "/settings?tab=whatsapp" },
+      { label: "WhatsApp Config", href: "/whatsapp/config" },
     ],
   },
   {
@@ -106,7 +106,7 @@ export const IMPLEMENTATION_STEPS: DocStep[] = [
       "Open Settings → WhatsApp Config. Enter Phone Number ID, WABA ID, permanent access token, webhook verify token, and the 6-digit two-step verification PIN. Click Save — the app verifies with Meta, encrypts tokens, registers the number, and subscribes the WABA.",
     links: [
       { label: "WhatsApp Setup guide", href: "/docs/whatsapp-setup" },
-      { label: "WhatsApp Config", href: "/settings?tab=whatsapp" },
+      { label: "WhatsApp Config", href: "/whatsapp/config" },
     ],
   },
   {
@@ -115,26 +115,26 @@ export const IMPLEMENTATION_STEPS: DocStep[] = [
       "In Meta → WhatsApp → Configuration → Webhook, paste the callback URL from WhatsApp Config, use the same verify token as in the app, subscribe to the messages field, and set API version to v25.0.",
     links: [
       { label: "WhatsApp Setup guide", href: "/docs/whatsapp-setup" },
-      { label: "WhatsApp Config", href: "/settings?tab=whatsapp" },
+      { label: "WhatsApp Config", href: "/whatsapp/config" },
     ],
   },
   {
     title: "Add Meta App Secret",
     body:
       "Save your Meta App Secret in Settings → App Secret. Without this, inbound webhook POSTs fail HMAC verification.",
-    links: [{ label: "App Secret", href: "/settings?tab=app-secret" }],
+    links: [{ label: "App Secret", href: "/whatsapp/app-secret" }],
   },
   {
     title: "Verify the connection",
     body:
       "Use Test API Connection and Verify with Meta in WhatsApp Config. Confirm registered_at is set — without registration Meta silently drops inbound events.",
-    links: [{ label: "WhatsApp Config", href: "/settings?tab=whatsapp" }],
+    links: [{ label: "WhatsApp Config", href: "/whatsapp/config" }],
   },
   {
     title: "Create and sync message templates",
     body:
       "Create templates in Settings → Templates or sync approved templates from Meta. Templates must be approved before broadcasts and template automations can use them.",
-    links: [{ label: "Templates", href: "/settings?tab=templates" }],
+    links: [{ label: "Templates", href: "/whatsapp/templates" }],
   },
   {
     title: "Invite your team",
@@ -387,7 +387,7 @@ export const SETTINGS_TABS: {
   {
     tab: "whatsapp",
     label: "WhatsApp Config",
-    href: "/settings?tab=whatsapp",
+    href: "/whatsapp/config",
     description:
       "Phone Number ID, WABA ID, access token, verify token, PIN, test connection, verify registration.",
     who: "Admin+ edit, Agent/Viewer read-only",
@@ -395,14 +395,14 @@ export const SETTINGS_TABS: {
   {
     tab: "app-secret",
     label: "App Secret",
-    href: "/settings?tab=app-secret",
+    href: "/whatsapp/app-secret",
     description: "Meta App Secret for webhook HMAC signature verification.",
     who: "Admin+",
   },
   {
     tab: "templates",
     label: "Templates",
-    href: "/settings?tab=templates",
+    href: "/whatsapp/templates",
     description:
       "Create, submit, sync, edit, and delete WhatsApp message templates. Marketing and Utility supported.",
     who: "Admin+",

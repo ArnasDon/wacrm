@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, Phone, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { AuthDomainNotice } from "@/components/auth/auth-domain-notice";
 import { AuthFormCard } from "@/components/auth/auth-form-card";
@@ -30,6 +30,7 @@ function SignupPageInner() {
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [mobileNo, setMobileNo] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -52,6 +53,11 @@ function SignupPageInner() {
       return;
     }
 
+    if (!mobileNo.trim()) {
+      setError("Mobile number is required");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -61,6 +67,7 @@ function SignupPageInner() {
         options: {
           data: {
             full_name: fullName,
+            mobile_no: mobileNo.trim(),
             invite_token: inviteToken,
           },
         },
@@ -153,6 +160,18 @@ function SignupPageInner() {
             required
             icon={Mail}
             autoComplete="email"
+          />
+
+          <AuthIconField
+            id="mobileNo"
+            label="Mobile number"
+            type="tel"
+            placeholder="+91 98765 43210"
+            value={mobileNo}
+            onChange={(e) => setMobileNo(e.target.value)}
+            required
+            icon={Phone}
+            autoComplete="tel"
           />
 
           <AuthIconField

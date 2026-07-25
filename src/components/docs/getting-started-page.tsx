@@ -37,7 +37,7 @@ export function GettingStartedPage() {
       <div className="flex flex-wrap gap-2">
         <DocLinkButton href="/docs/whatsapp-setup" label="WhatsApp Setup" />
         <DocLinkButton href="/docs/email-marketing" label="Email Marketing" />
-        <DocLinkButton href="/settings?tab=whatsapp" label="WhatsApp Config" />
+        <DocLinkButton href="/whatsapp/config" label="WhatsApp Config" />
         <DocLinkButton href="/dashboard" label="Dashboard" />
       </div>
 

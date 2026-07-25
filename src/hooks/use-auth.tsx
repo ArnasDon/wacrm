@@ -23,6 +23,7 @@ interface Profile {
   id: string;
   full_name: string | null;
   email: string;
+  mobile_no: string | null;
   avatar_url: string | null;
   role: string | null;
   /**
@@ -123,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts(id, name)",
+          "id, full_name, email, mobile_no, avatar_url, role, beta_features, account_id, account_role, account:accounts(id, name)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -160,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: data.id,
           full_name: data.full_name,
           email: data.email,
+          mobile_no: data.mobile_no ?? null,
           avatar_url: data.avatar_url,
           role: data.role,
           // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but

@@ -35,6 +35,14 @@ const ALLOWED_MIME = new Set([
 // just want to stop obvious typos before making a network call.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function normalizeMobile(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/[^\d+]/g, '');
+  if (cleaned.replace(/\D/g, '').length < 7) return null;
+  return cleaned.slice(0, 32);
+}
+
 export function ProfileForm() {
   const { user, profile, refreshProfile } = useAuth();
   const supabase = createClient();
@@ -42,6 +50,7 @@ export function ProfileForm() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [mobileNo, setMobileNo] = useState('');
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -53,6 +62,7 @@ export function ProfileForm() {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
+    setMobileNo(profile.mobile_no ?? '');
   }, [profile]);
 
   // Cleanup object URLs to avoid leaks.
@@ -115,6 +125,13 @@ export function ProfileForm() {
       return;
     }
 
+    const trimmedMobile = mobileNo.trim();
+    const normalizedMobile = normalizeMobile(trimmedMobile);
+    if (trimmedMobile && !normalizedMobile) {
+      toast.error('Enter a valid mobile number');
+      return;
+    }
+
     setSaving(true);
     try {
       let nextAvatarUrl: string | null = profile.avatar_url ?? null;
@@ -141,11 +158,12 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
+      // Persist name + mobile + avatar to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           full_name: trimmedName,
+          mobile_no: normalizedMobile,
           avatar_url: nextAvatarUrl,
         })
         .eq('user_id', user.id);
@@ -197,6 +215,7 @@ export function ProfileForm() {
     !!profile &&
     (fullName.trim() !== (profile.full_name ?? '') ||
       email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+      mobileNo.trim() !== (profile.mobile_no ?? '') ||
       pendingAvatar !== null ||
       removeAvatar);
 
@@ -305,6 +324,23 @@ export function ProfileForm() {
                 </span>
               </p>
             )}
+          </div>
+
+          {/* Mobile */}
+          <div className="space-y-2">
+            <Label htmlFor="profile-mobile" className="text-foreground">
+              Mobile number
+            </Label>
+            <Input
+              id="profile-mobile"
+              type="tel"
+              value={mobileNo}
+              onChange={(e) => setMobileNo(e.target.value)}
+              placeholder="+91 98765 43210"
+              maxLength={32}
+              disabled={saving}
+              autoComplete="tel"
+            />
           </div>
 
           {/* Read-only block */}

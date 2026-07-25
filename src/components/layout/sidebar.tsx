@@ -3,8 +3,8 @@
 import { COPYRIGHT_NOTICE } from "@/lib/brand";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/hooks/use-auth";
@@ -24,6 +24,9 @@ import {
   Mail,
   Megaphone,
   MessageSquare,
+  KeyRound,
+  Link2,
+  Phone,
   Radio,
   Server,
   Settings,
@@ -112,8 +115,17 @@ interface NavItem {
     | "flows"
     | "team"
     | "compliance"
-    | "email_marketing";
+    | "email_marketing"
+    | "whatsapp"
+    | "templates";
 }
+
+const whatsappChildren: NavChild[] = [
+  { href: "/whatsapp", label: "Overview", icon: LayoutDashboard },
+  { href: "/whatsapp/config", label: "Connection", icon: Link2 },
+  { href: "/whatsapp/templates", label: "Templates", icon: FileText },
+  { href: "/whatsapp/app-secret", label: "App Secret", icon: KeyRound },
+];
 
 const emailChildren: NavChild[] = [
   { href: "/email", label: "Overview", icon: LayoutDashboard },
@@ -129,6 +141,13 @@ const navItems: NavItem[] = [
   { href: "/contacts", label: "Contacts", icon: Users, capability: "contacts" },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch, capability: "pipelines" },
   { href: "/broadcasts", label: "Broadcasts", icon: Radio, capability: "broadcasts" },
+  {
+    href: "/whatsapp",
+    label: "WhatsApp",
+    icon: Phone,
+    capability: "whatsapp",
+    children: whatsappChildren,
+  },
   {
     href: "/email",
     label: "Email",
@@ -146,9 +165,12 @@ const navItems: NavItem[] = [
   },
 ];
 
+/** Parent overview hrefs that should not match every nested child path. */
+const EXACT_PARENT_HREFS = new Set(["/dashboard", "/email", "/whatsapp"]);
+
 function pathMatches(pathname: string, href: string): boolean {
   if (pathname === href) return true;
-  if (href === "/dashboard" || href === "/email") return false;
+  if (EXACT_PARENT_HREFS.has(href)) return false;
   return pathname.startsWith(`${href}/`);
 }
 
@@ -172,7 +194,8 @@ const bottomNavItems: NavItem[] = [
     external: true,
   },
   { href: "/settings?tab=members", label: "Team", icon: UsersRound, capability: "team" },
-  { href: "/settings", label: "Settings", icon: Settings },
+  // Explicit profile tab — avoids stale ?tab=templates redirects from old links.
+  { href: "/settings?tab=profile", label: "Settings", icon: Settings },
 ];
 
 interface SidebarProps {
@@ -186,18 +209,44 @@ interface SidebarProps {
 const ACCOUNT_SHARING_FLAG = "account_sharing";
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
+  return (
+    <Suspense fallback={<aside className="hidden w-60 border-r border-sidebar-border bg-sidebar lg:block" />}>
+      <SidebarInner open={open} onClose={onClose} />
+    </Suspense>
+  );
+}
+
+function SidebarInner({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const { canUse, active, configured, loading: entitlementsLoading } =
     useEntitlements();
   const totalUnread = useTotalUnread();
-  const emailSectionActive =
-    pathname === "/email" || pathname.startsWith("/email/");
-  const [emailOpen, setEmailOpen] = useState(emailSectionActive);
+  const settingsTab = searchParams.get("tab") || "profile";
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const item of navItems) {
+      if (item.children?.length && parentActive(pathname, item)) {
+        initial[item.href] = true;
+      }
+    }
+    return initial;
+  });
 
   useEffect(() => {
-    if (emailSectionActive) setEmailOpen(true);
-  }, [emailSectionActive]);
+    setOpenMenus((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const item of navItems) {
+        if (item.children?.length && parentActive(pathname, item) && !next[item.href]) {
+          next[item.href] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [pathname]);
 
   const planLocked = (capability?: NavItem["capability"]) => {
     if (!capability || entitlementsLoading || !configured) return false;
@@ -298,6 +347,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               const hasChildren = Boolean(item.children?.length);
 
               if (hasChildren && item.children) {
+                const menuOpen = Boolean(openMenus[item.href]);
                 return (
                   <li key={item.href}>
                     <div
@@ -317,7 +367,12 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                             : undefined
                         }
                         className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-medium lg:py-2"
-                        onClick={() => setEmailOpen(true)}
+                        onClick={() =>
+                          setOpenMenus((prev) => ({
+                            ...prev,
+                            [item.href]: true,
+                          }))
+                        }
                       >
                         <item.icon className="h-4 w-4 shrink-0" />
                         <span className="flex-1 truncate">{item.label}</span>
@@ -331,21 +386,28 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                       <button
                         type="button"
                         aria-label={
-                          emailOpen ? "Collapse Email menu" : "Expand Email menu"
+                          menuOpen
+                            ? `Collapse ${item.label} menu`
+                            : `Expand ${item.label} menu`
                         }
-                        aria-expanded={emailOpen}
-                        onClick={() => setEmailOpen((v) => !v)}
+                        aria-expanded={menuOpen}
+                        onClick={() =>
+                          setOpenMenus((prev) => ({
+                            ...prev,
+                            [item.href]: !prev[item.href],
+                          }))
+                        }
                         className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
                       >
                         <ChevronDown
                           className={cn(
                             "h-4 w-4 transition-transform",
-                            emailOpen ? "rotate-0" : "-rotate-90",
+                            menuOpen ? "rotate-0" : "-rotate-90",
                           )}
                         />
                       </button>
                     </div>
-                    {emailOpen ? (
+                    {menuOpen ? (
                       <ul className="mt-0.5 ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
                         {item.children.map((child) => {
                           const childActive = pathMatches(
@@ -420,11 +482,22 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
           <ul className="flex flex-col gap-1">
             {bottomNavItems.map((item) => {
+              const hrefPath = item.href.split("?")[0] ?? item.href;
+              const hrefTab = item.href.includes("tab=")
+                ? new URL(item.href, "http://local").searchParams.get("tab")
+                : null;
+              // Team (?tab=members) and Settings (?tab=profile) share /settings —
+              // match the tab so each item highlights correctly.
               const isActive = item.external
                 ? false
                 : item.href.startsWith("/docs")
                   ? pathname.startsWith("/docs")
-                  : pathname.startsWith(item.href.split("?")[0] ?? item.href);
+                  : hrefPath === "/settings" && hrefTab
+                    ? pathname === "/settings" && settingsTab === hrefTab
+                    : pathname === hrefPath ||
+                      (hrefPath !== "/" &&
+                        hrefPath !== "/settings" &&
+                        pathname.startsWith(`${hrefPath}/`));
               const locked = planLocked(item.capability);
               const className = cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
@@ -441,7 +514,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               ) : null;
 
               return (
-                <li key={item.href}>
+                <li key={`${item.href}-${item.label}`}>
                   {item.external ? (
                     <a
                       href={item.href}
@@ -556,7 +629,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <DropdownMenuItem
                 render={
                   <Link
-                    href="/settings?tab=whatsapp"
+                    href="/whatsapp/config"
+                    onClick={onClose}
+                  />
+                }
+              >
+                <Phone className="size-4" />
+                WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                render={
+                  <Link
+                    href="/settings?tab=profile"
                     onClick={onClose}
                   />
                 }

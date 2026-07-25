@@ -97,6 +97,41 @@ export async function sendVerificationEmail(
   });
 }
 
+export async function sendLoginOtpEmail(
+  email: string,
+  code: string,
+): Promise<void> {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
+    throw new Error("SMTP is not configured (SMTP_HOST / SMTP_USER missing).");
+  }
+
+  const transporter = getSmtpTransporter();
+  const sentAt = formatEmailTimestamp();
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || "no-reply@vedmint.com",
+    to: email,
+    subject: "Your sign-in verification code",
+    html: buildTransactionalEmailHtml({
+      heading: "Your verification code",
+      intro:
+        "We received a sign-in attempt for your account. Enter this code to finish signing in. If this was not you, change your password and ignore this email.",
+      cardTitle: "Two-factor authentication",
+      details: [
+        { label: "When", value: sentAt },
+        { label: "Account", value: maskEmail(email) },
+        { label: "Code", value: code },
+        { label: "Expires", value: "10 minutes" },
+      ],
+      securityHeading: "Didn't try to sign in?",
+      securityText:
+        "Someone may have entered your email by mistake. Your account is still secure — do not share this code with anyone.",
+      footerNote:
+        "This is an automated security message. Never share your verification code.",
+    }),
+  });
+}
+
 export async function sendPasswordResetEmail(
   email: string,
   redirectTo: string,

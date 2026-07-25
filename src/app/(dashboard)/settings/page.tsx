@@ -3,35 +3,27 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Settings,
-  MessageSquare,
   Tag,
   User,
   Palette,
   UsersRound,
-  Shield,
   CreditCard,
   type LucideIcon,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TemplateManager } from '@/components/settings/template-manager';
 import { TagManager } from '@/components/settings/tag-manager';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { LeaveTeamCard } from '@/components/settings/leave-team-card';
 import { PasswordForm } from '@/components/settings/password-form';
+import { TwoFactorForm } from '@/components/settings/two-factor-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { MembersTab } from '@/components/settings/members-tab';
-import { MetaAppSecretPanel } from '@/components/settings/meta-app-secret-panel';
 import { BillingSettingsPanel } from '@/components/settings/billing-settings-panel';
 
 const TABS = [
   { value: 'profile', label: 'Profile', icon: User },
-  { value: 'whatsapp', label: 'WhatsApp Config', icon: Settings },
-  { value: 'app-secret', label: 'App Secret', icon: Shield },
-  { value: 'templates', label: 'Templates', icon: MessageSquare },
   { value: 'tags', label: 'Tags', icon: Tag },
   { value: 'appearance', label: 'Appearance', icon: Palette },
   { value: 'members', label: 'Team', icon: UsersRound },
@@ -79,13 +71,18 @@ function SettingsPageInner() {
 
   const queryTab = searchParams.get('tab');
 
-  // Old Settings → Compliance tab moved to its own page.
-  // Email SMTP lives under Email → SMTP (not Settings).
+  // Old Settings tabs moved to dedicated pages under WhatsApp / elsewhere.
   useEffect(() => {
     if (queryTab === 'compliance') {
       router.replace('/compliance');
     } else if (queryTab === 'smtp') {
       router.replace('/email/smtp');
+    } else if (queryTab === 'whatsapp') {
+      router.replace('/whatsapp/config');
+    } else if (queryTab === 'templates') {
+      router.replace('/whatsapp/templates');
+    } else if (queryTab === 'app-secret') {
+      router.replace('/whatsapp/app-secret');
     }
   }, [queryTab, router]);
 
@@ -113,8 +110,9 @@ function SettingsPageInner() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your profile, team, billing, WhatsApp® integration, message
-          templates, and tags.
+          Manage your profile, team, billing, appearance, and tags. WhatsApp
+          connection, templates, and App Secret live under WhatsApp in the
+          sidebar.
         </p>
       </div>
 
@@ -136,21 +134,12 @@ function SettingsPageInner() {
       {tab === 'profile' ? (
         <div className="space-y-6">
           <ProfileForm />
+          <TwoFactorForm />
           <LeaveTeamCard />
           <PasswordForm />
           <SessionsCard />
         </div>
       ) : null}
-
-      {tab === 'whatsapp' ? (
-        <div className="space-y-6">
-          <WhatsAppConfig />
-        </div>
-      ) : null}
-
-      {tab === 'app-secret' ? <MetaAppSecretPanel /> : null}
-
-      {tab === 'templates' ? <TemplateManager /> : null}
 
       {tab === 'tags' ? <TagManager /> : null}
 

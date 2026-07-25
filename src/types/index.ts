@@ -5,6 +5,8 @@ export interface Profile {
   user_id: string;
   full_name: string;
   email: string;
+  /** Optional account mobile number collected at signup / editable in Settings. */
+  mobile_no?: string | null;
   avatar_url?: string;
   /**
    * Legacy free-form role column from migration 001. Never read

@@ -81,6 +81,20 @@ function resolveMimeType(
   return HEADER_MIME[headerType]
 }
 
+function filenameForMime(
+  headerType: 'image' | 'video' | 'document',
+  mimeType: string,
+): string {
+  const mime = mimeType.toLowerCase()
+  if (mime.includes('png')) return 'header.png'
+  if (mime.includes('webp')) return 'header.webp'
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'header.jpg'
+  if (mime.includes('3gpp') || mime.includes('3gp')) return 'header.3gp'
+  if (mime.includes('mp4')) return 'header.mp4'
+  if (mime.includes('pdf')) return 'header.pdf'
+  return HEADER_FILENAME[headerType]
+}
+
 async function downloadMediaBytes(
   url: string,
   accessToken: string,
@@ -133,7 +147,7 @@ export async function uploadHeaderMediaForTemplateCreation(
   }
 
   const mimeType = resolveMimeType(headerType, contentType)
-  const fileName = HEADER_FILENAME[headerType]
+  const fileName = filenameForMime(headerType, mimeType)
 
   const sessionUrl = new URL(`${META_API_BASE}/${appId}/uploads`)
   sessionUrl.searchParams.set('file_name', fileName)

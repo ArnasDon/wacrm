@@ -27,9 +27,9 @@ export function WhatsAppSetupPage() {
       description="Connect Meta WhatsApp Business API — credentials, webhooks, app secret, and templates."
     >
       <div className="flex flex-wrap gap-2">
-        <DocLinkButton href="/settings?tab=whatsapp" label="WhatsApp Config" />
-        <DocLinkButton href="/settings?tab=app-secret" label="App Secret" />
-        <DocLinkButton href="/settings?tab=templates" label="Templates" />
+        <DocLinkButton href="/whatsapp/config" label="WhatsApp Config" />
+        <DocLinkButton href="/whatsapp/app-secret" label="App Secret" />
+        <DocLinkButton href="/whatsapp/templates" label="Templates" />
       </div>
 
       <section className="space-y-4">
@@ -91,7 +91,7 @@ export function WhatsAppSetupPage() {
               ))}
               <div className="pt-2">
                 <DocLinkButton
-                  href="/settings?tab=whatsapp"
+                  href="/whatsapp/config"
                   label="Open WhatsApp Config"
                 />
               </div>
@@ -139,7 +139,7 @@ export function WhatsAppSetupPage() {
               ))}
             </ul>
             <DocLinkButton
-              href="/settings?tab=app-secret"
+              href="/whatsapp/app-secret"
               label="Configure App Secret"
             />
           </CardContent>
@@ -171,7 +171,7 @@ export function WhatsAppSetupPage() {
               <li>Use Sync from Meta to pull existing approved templates.</li>
               <li>Edit and resubmit rejected or paused templates.</li>
             </ol>
-            <DocLinkButton href="/settings?tab=templates" label="Open Templates" />
+            <DocLinkButton href="/whatsapp/templates" label="Open Templates" />
           </CardContent>
         </Card>
       </section>
@@ -195,7 +195,7 @@ export function WhatsAppSetupPage() {
               </p>
             ))}
             <div className="flex flex-wrap gap-2 pt-2">
-              <DocLinkButton href="/settings?tab=whatsapp" label="WhatsApp Config" />
+              <DocLinkButton href="/whatsapp/config" label="WhatsApp Config" />
               <DocLinkButton href="/inbox" label="Open Inbox" />
               <DocLinkButton href="/docs/troubleshooting" label="Troubleshooting" />
             </div>

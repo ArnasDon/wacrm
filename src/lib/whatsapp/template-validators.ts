@@ -155,16 +155,44 @@ export function validateHeader(
     );
   }
   if (header_media_url) {
+    let u: URL;
     try {
-      const u = new URL(header_media_url);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-        throw new Error('header_media_url must use http(s) scheme.');
-      }
+      u = new URL(header_media_url);
     } catch {
       throw new Error('header_media_url must be a valid URL.');
     }
+    // Meta downloads the sample at submit + send time over HTTPS.
+    if (u.protocol !== 'https:') {
+      throw new Error('header_media_url must be a public HTTPS URL.');
+    }
   }
   return { variableCount: 0 };
+}
+
+/** Meta-safe template name: lowercase letters, digits, underscores. */
+export function sanitizeTemplateName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 512);
+}
+
+/**
+ * Meta rule: QUICK_REPLY buttons must be grouped before CTA buttons.
+ * Reorder without changing relative order within each group.
+ */
+export function normalizeTemplateButtons(
+  buttons: TemplateButton[] | undefined,
+): TemplateButton[] {
+  if (!buttons?.length) return [];
+  const quick: TemplateButton[] = [];
+  const cta: TemplateButton[] = [];
+  for (const b of buttons) {
+    if (b.type === 'QUICK_REPLY') quick.push(b);
+    else cta.push(b);
+  }
+  return [...quick, ...cta];
 }
 
 function countButtonsByType(
@@ -236,8 +264,13 @@ export function validateButtons(buttons: TemplateButton[] | undefined): void {
         if (!b.url?.trim()) {
           throw new Error(`URL button #${i + 1} is missing url.`);
         }
+        // Meta allows a single {{1}} suffix — substitute before URL parse.
+        const urlForParse = b.url.replace(/\{\{1\}\}/g, 'sample');
         try {
-          new URL(b.url);
+          const u = new URL(urlForParse);
+          if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+            throw new Error('bad scheme');
+          }
         } catch {
           throw new Error(`URL button #${i + 1} has an invalid url.`);
         }
@@ -314,6 +347,8 @@ export function validateSampleValues(
   }
 }
 
+const ALLOWED_CATEGORIES = new Set(['Marketing', 'Utility', 'Authentication']);
+
 /**
  * Run every validator. Throws on the first failure with a specific,
  * field-level message. Returns the variable counts so callers can
@@ -327,15 +362,68 @@ export function validateTemplatePayload(payload: TemplatePayload): {
   if (!payload.language?.trim()) {
     throw new Error('Language is required.');
   }
+  if (!ALLOWED_CATEGORIES.has(payload.category)) {
+    throw new Error(
+      'Category must be Marketing, Utility, or Authentication.',
+    );
+  }
   const bodyVars = validateBody(payload.body_text);
   validateFooter(payload.footer_text);
   const headerResult = validateHeader(payload);
-  validateButtons(payload.buttons);
+  validateButtons(normalizeTemplateButtons(payload.buttons));
   validateSampleValues(payload, bodyVars.length, headerResult.variableCount);
   return {
     bodyVarCount: bodyVars.length,
     headerVarCount: headerResult.variableCount,
   };
+}
+
+/**
+ * Collect every validation issue for UI checklists. Does not throw.
+ * Order matches the create-form fields so users can fix top-down.
+ */
+export function collectTemplateValidationIssues(
+  payload: TemplatePayload,
+): string[] {
+  const issues: string[] = [];
+  const push = (fn: () => void) => {
+    try {
+      fn();
+    } catch (e) {
+      issues.push(e instanceof Error ? e.message : 'Validation failed.');
+    }
+  };
+
+  push(() => validateTemplateName(payload.name));
+  push(() => {
+    if (!payload.language?.trim()) {
+      throw new Error('Language is required.');
+    }
+  });
+  push(() => {
+    if (!ALLOWED_CATEGORIES.has(payload.category)) {
+      throw new Error(
+        'Category must be Marketing, Utility, or Authentication.',
+      );
+    }
+  });
+
+  let bodyVarCount = 0;
+  push(() => {
+    bodyVarCount = validateBody(payload.body_text).length;
+  });
+  push(() => validateFooter(payload.footer_text));
+
+  let headerVarCount = 0;
+  push(() => {
+    headerVarCount = validateHeader(payload).variableCount;
+  });
+
+  const buttons = normalizeTemplateButtons(payload.buttons);
+  push(() => validateButtons(buttons));
+  push(() => validateSampleValues(payload, bodyVarCount, headerVarCount));
+
+  return issues;
 }
 
 const MEDIA_HEADER_TYPES = new Set(['image', 'video', 'document']);

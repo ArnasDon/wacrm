@@ -621,6 +621,69 @@ export async function deleteMessageTemplate(
 }
 
 // ============================================================
+// Meta Template Library (pre-approved UTILITY starters)
+// ============================================================
+
+export interface MetaLibraryButton {
+  type?: string
+  text?: string
+  url?: string
+  phone_number?: string
+  example?: string
+}
+
+export interface MetaLibraryTemplate {
+  id?: string
+  name: string
+  language?: string
+  category?: string
+  topic?: string
+  usecase?: string
+  industry?: string[]
+  header?: string
+  body?: string
+  footer?: string
+  body_params?: string[]
+  buttons?: MetaLibraryButton[]
+}
+
+export interface BrowseMessageTemplateLibraryArgs {
+  accessToken: string
+  /** Free-text search across name/content. */
+  search?: string
+  language?: string
+  limit?: number
+}
+
+/**
+ * Browse Meta's public Template Library (UTILITY templates).
+ * Requires a valid user/system access token; no WABA id needed.
+ */
+export async function browseMessageTemplateLibrary(
+  args: BrowseMessageTemplateLibraryArgs,
+): Promise<MetaLibraryTemplate[]> {
+  const { accessToken, search, language = 'en', limit = 40 } = args
+  const url = new URL(`${META_API_BASE}/message_template_library`)
+  url.searchParams.set('language', language)
+  url.searchParams.set('limit', String(limit))
+  if (search?.trim()) {
+    url.searchParams.set('name_or_content', search.trim())
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(
+      response,
+      `Failed to browse Meta template library: ${response.status}`,
+    )
+  }
+  const data = (await response.json()) as { data?: MetaLibraryTemplate[] }
+  return Array.isArray(data.data) ? data.data : []
+}
+
+// ============================================================
 // Reactions
 // ============================================================
 

@@ -250,7 +250,40 @@ export function createEmulatorClient() {
           },
         };
       }
+      if (payload.data?.needs2FA) {
+        return {
+          data: payload.data,
+          error: payload.error ?? {
+            message: 'Enter the verification code sent to your email.',
+            code: 'TWO_FACTOR_REQUIRED',
+          },
+        };
+      }
       return payload;
+    },
+
+    async verifyTwoFactor({ challengeToken, code }: { challengeToken: string; code: string }) {
+      const res = await fetch('/api/auth/verify-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challengeToken, code }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.data?.session) {
+        triggerAuthChange('SIGNED_IN', payload.data.session);
+      }
+      return payload;
+    },
+
+    async resendTwoFactor({ challengeToken }: { challengeToken: string }) {
+      const res = await fetch('/api/auth/verify-2fa', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challengeToken }),
+      });
+      return await res.json();
     },
 
     async signUp({ email, password, options }: any) {

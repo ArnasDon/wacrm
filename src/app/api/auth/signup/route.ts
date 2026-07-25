@@ -8,14 +8,27 @@ import {
   verificationEmailErrorMessage,
 } from '@/lib/auth-verification';
 
+function normalizeMobile(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Allow digits, spaces, +, -, and parentheses; keep a compact stored form.
+  const cleaned = trimmed.replace(/[^\d+]/g, '');
+  if (cleaned.replace(/\D/g, '').length < 7) return null;
+  return cleaned.slice(0, 32);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const email = (body.email || '').trim().toLowerCase();
     const password = body.password;
-    
+
     // Support both direct client form field and options structure from emulator client
     const fullName = (body.fullName || body.options?.data?.full_name || '').trim();
+    const mobileNo = normalizeMobile(
+      body.mobileNo ?? body.mobile_no ?? body.options?.data?.mobile_no,
+    );
     const inviteToken = body.options?.data?.invite_token as string | undefined;
     const verificationNext = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
@@ -27,6 +40,15 @@ export async function POST(request: Request) {
 
     if (password.length < 6) {
       return NextResponse.json({ error: { message: 'Password must be at least 6 characters' } }, { status: 400 });
+    }
+
+    const mobileRaw =
+      body.mobileNo ?? body.mobile_no ?? body.options?.data?.mobile_no;
+    if (typeof mobileRaw === 'string' && mobileRaw.trim() && !mobileNo) {
+      return NextResponse.json(
+        { error: { message: 'Enter a valid mobile number' } },
+        { status: 400 },
+      );
     }
 
     const existing = await query<{ id: string; email_verified?: number | boolean }>(
@@ -72,9 +94,10 @@ export async function POST(request: Request) {
         [userId, email, hash],
       );
       await conn.query('INSERT INTO accounts (id, name, owner_user_id) VALUES (?, ?, ?)', [accountId, fullName || email, userId]);
-      await conn.query('INSERT INTO profiles (id, user_id, full_name, email, account_id, account_role) VALUES (?, ?, ?, ?, ?, ?)', [
-        profileId, userId, fullName, email, accountId, 'owner'
-      ]);
+      await conn.query(
+        'INSERT INTO profiles (id, user_id, full_name, email, mobile_no, account_id, account_role) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [profileId, userId, fullName, email, mobileNo, accountId, 'owner'],
+      );
     });
 
     try {

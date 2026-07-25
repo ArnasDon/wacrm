@@ -10,8 +10,9 @@ export type TransactionalEmailOptions = {
   intro: string;
   cardTitle: string;
   details: EmailDetailRow[];
-  actionUrl: string;
-  actionLabel: string;
+  /** When omitted, the CTA button is hidden (e.g. OTP emails). */
+  actionUrl?: string;
+  actionLabel?: string;
   securityHeading?: string;
   securityText?: string;
   securityLinkUrl?: string;
@@ -130,13 +131,17 @@ export function buildTransactionalEmailHtml(
                     </table>
                   </td>
                 </tr>
-                <tr>
+                ${
+                  actionUrl && actionLabel
+                    ? `<tr>
                   <td style="padding:0 24px 24px;">
                     <a href="${escapeHtml(actionUrl)}" style="display:block;width:100%;box-sizing:border-box;background:${CTA_COLOR};color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;line-height:1.2;text-align:center;padding:16px 20px;border-radius:8px;">
                       ${escapeHtml(actionLabel)}
                     </a>
                   </td>
-                </tr>
+                </tr>`
+                    : ""
+                }
               </table>
             </td>
           </tr>

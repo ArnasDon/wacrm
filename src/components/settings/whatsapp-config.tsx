@@ -596,7 +596,7 @@ export function WhatsAppConfig() {
           <AlertTitle>App Secret missing</AlertTitle>
           <AlertDescription>
             Webhooks will fail until you add it in{' '}
-            <Link href="/settings?tab=app-secret" className="font-medium underline">
+            <Link href="/whatsapp/app-secret" className="font-medium underline">
               Settings → App Secret
             </Link>
             .
@@ -774,7 +774,7 @@ export function WhatsAppConfig() {
                   </li>
                   <li>
                     Add your{' '}
-                    <Link href="/settings?tab=app-secret" className="text-primary underline">
+                    <Link href="/whatsapp/app-secret" className="text-primary underline">
                       App Secret
                     </Link>
                     .

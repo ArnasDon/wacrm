@@ -195,7 +195,7 @@ export function MetaAppSecretPanel() {
                       <>
                         Save your{' '}
                         <Link
-                          href="/settings?tab=whatsapp"
+                          href="/whatsapp/config"
                           className="text-primary hover:underline"
                         >
                           WhatsApp API credentials

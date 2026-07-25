@@ -156,19 +156,19 @@ export const TROUBLESHOOTING_ITEMS = [
   {
     issue: "No inbound messages arriving",
     fix: "Verify registered_at is set, webhook URL is correct, messages field subscribed, and App Secret is configured.",
-    link: "/settings?tab=whatsapp",
+    link: "/whatsapp/config",
     linkLabel: "Open WhatsApp Config",
   },
   {
     issue: "Webhook returns 401",
     fix: "Add your Meta App Secret in Settings → App Secret.",
-    link: "/settings?tab=app-secret",
+    link: "/whatsapp/app-secret",
     linkLabel: "Open App Secret",
   },
   {
     issue: "Templates not sending",
     fix: "Template must be APPROVED in Meta. Sync from Meta in Settings → Templates.",
-    link: "/settings?tab=templates",
+    link: "/whatsapp/templates",
     linkLabel: "Open Templates",
   },
   {

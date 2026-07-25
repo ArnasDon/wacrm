@@ -54,7 +54,10 @@ async function ensureColumn(
     await connection.query(sql);
     console.log(`[MySQL] migration applied: ${label}`);
   } catch (err: any) {
-    if (err.code === "ER_DUP_FIELDNAME" || err.errno === 1060) return;
+    if (err.code === "ER_DUP_FIELDNAME" || err.errno === 1060) {
+      console.log(`[MySQL] migration exists: ${label}`);
+      return;
+    }
     console.warn(`[MySQL] migration ${label}:`, err.message);
   }
 }
@@ -74,6 +77,34 @@ async function ensureIndex(
 
 async function ensureSchemaMigrations(connection: mysql.PoolConnection) {
   await ensureEmailVerifiedColumn(connection);
+
+  await ensureColumn(
+    connection,
+    "ALTER TABLE users ADD COLUMN two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0",
+    "users.two_factor_enabled",
+  );
+  await ensureColumn(
+    connection,
+    "ALTER TABLE profiles ADD COLUMN mobile_no VARCHAR(32) NULL",
+    "profiles.mobile_no",
+  );
+  try {
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS auth_login_otps (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        code_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_auth_login_otps_user (user_id)
+      )
+    `);
+    console.log("[MySQL] migration ensured: auth_login_otps");
+  } catch (err: any) {
+    console.warn("[MySQL] auth_login_otps table:", err.message);
+  }
 
   await ensureColumn(
     connection,

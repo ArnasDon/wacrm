@@ -1004,6 +1004,13 @@
     "copilot": {
       "title": "Build an automation with AI",
       "description": "Describe what you want in plain language. The assistant may ask a follow-up before showing you a draft to review.",
+      "greeting": "Hi! Tell me what you want to automate, and I'll help you build a draft.",
+      "openLabel": "Open AI automation builder",
+      "closeLabel": "Close AI automation builder",
+      "conversationLabel": "Conversation with the AI automation builder",
+      "inputLabel": "Describe the automation you want to build",
+      "typing": "Assistant is thinking",
+      "sendLabel": "Send message",
       "placeholder": "e.g. When a customer messages the word \"refund\", tag them as VIP and assign the conversation to Maria.",
       "you": "You",
       "assistant": "Assistant",

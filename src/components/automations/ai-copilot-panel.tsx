@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,19 +10,21 @@ import {
   Loader2,
   Send,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { GatedButton } from '@/components/ui/gated-button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import type { GeneratedAutomation } from '@/lib/automations/dsl/schema';
 import type { ValidationIssue } from '@/lib/automations/validate';
@@ -70,16 +72,11 @@ const RESOURCE_REASON_CODES = new Set([
   'invalid_custom_field_value',
 ]);
 
-export function AiCopilotPanel({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (value: boolean) => void;
-}) {
+export function AiCopilotPanel({ canCreate }: { canCreate: boolean }) {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('Automations.copilot');
+  const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<ChatEntry[]>([]);
   const [question, setQuestion] = useState<CopilotQuestion | null>(null);
@@ -89,6 +86,8 @@ export function AiCopilotPanel({
   const [progressStage, setProgressStage] = useState(0);
   const [sending, setSending] = useState(false);
   const [creating, setCreating] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
   const progressSteps = [
     t('progressInterpret'),
@@ -96,11 +95,19 @@ export function AiCopilotPanel({
     t('progressValidate'),
     t('progressVerify'),
   ];
-  const canCreate = canCreateCopilotDraft({
+  const canCreateDraft = canCreateCopilotDraft({
     draft,
     hasPendingQuestion: question !== null,
     lastTurnKind,
   });
+
+  useEffect(() => {
+    if (!canCreate) setOpen(false);
+  }, [canCreate]);
+
+  useEffect(() => {
+    if (open) endRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [apiError, draft, history, open, progressStage, question, sending]);
 
   function reset() {
     setInput('');
@@ -114,7 +121,7 @@ export function AiCopilotPanel({
 
   async function handleSend(messageOverride?: string) {
     const message = (messageOverride ?? input).trim();
-    if (!message || sending || creating) return;
+    if (!message || sending || creating || !canCreate) return;
 
     const priorHistory = history;
     const userEntry: ChatEntry = { role: 'user', text: message };
@@ -206,7 +213,7 @@ export function AiCopilotPanel({
 
   async function handleCreateDraft() {
     const currentDraft = draft;
-    if (!currentDraft) {
+    if (!canCreate || !currentDraft) {
       return;
     }
     if (
@@ -241,7 +248,7 @@ export function AiCopilotPanel({
       }
 
       toast.success(t('draftCreated'));
-      onOpenChange(false);
+      setOpen(false);
       reset();
       router.push(`/automations/${data.automation.id}/edit`);
     } catch {
@@ -258,195 +265,308 @@ export function AiCopilotPanel({
     apiError?.code === 'ai_not_configured';
 
   return (
-    <Dialog
+    <Popover
       open={open}
-      onOpenChange={(value) => {
-        onOpenChange(value);
-        if (!value) reset();
+      onOpenChange={(nextOpen) => {
+        if (nextOpen && !canCreate) return;
+        setOpen(nextOpen);
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="text-primary h-4 w-4" />
-            {t('title')}
-          </DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        <ol
-          aria-label={t('progressLabel')}
-          aria-live="polite"
-          className="border-border bg-muted/40 grid grid-cols-2 gap-2 rounded-md border p-2 sm:grid-cols-4"
+      <div
+        className="fixed z-20"
+        style={{
+          right: 'calc(0.75rem + env(safe-area-inset-right))',
+          bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        }}
+      >
+        <PopoverTrigger
+          render={
+            <GatedButton
+              canAct={canCreate}
+              gateReason="create automations"
+              type="button"
+              size="icon-lg"
+              aria-label={t('openLabel')}
+              aria-controls="ai-automation-copilot"
+              className="size-14 rounded-full p-0 shadow-[0_18px_44px_rgb(21_159_153_/_0.34)] transition-transform duration-200 hover:-translate-y-1 motion-reduce:transform-none motion-reduce:transition-none"
+            />
+          }
         >
-          {progressSteps.map((label, index) => {
-            const step = index + 1;
-            const complete = progressStage > step;
-            const active = progressStage === step;
+          <Sparkles className="size-5" aria-hidden />
+        </PopoverTrigger>
+      </div>
 
-            return (
-              <li
-                key={label}
-                aria-current={active ? 'step' : undefined}
-                className={`flex items-center gap-1.5 text-xs ${
-                  complete || active
-                    ? 'text-foreground'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                {complete ? (
-                  <CheckCircle2 className="text-primary h-3.5 w-3.5" />
-                ) : active ? (
-                  <Loader2 className="text-primary h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Circle className="h-3.5 w-3.5" />
-                )}
-                <span>{label}</span>
-              </li>
-            );
-          })}
-        </ol>
+      <PopoverContent
+        id="ai-automation-copilot"
+        side="top"
+        align="end"
+        sideOffset={12}
+        positionMethod="fixed"
+        collisionPadding={12}
+        collisionAvoidance={{
+          side: 'shift',
+          align: 'shift',
+          fallbackAxisSide: 'none',
+        }}
+        positionerClassName="z-20"
+        initialFocus={(openType) =>
+          openType === 'touch' ? true : inputRef.current
+        }
+        className="decizyon-card border-border bg-card text-card-foreground z-20 w-[calc(100vw-1.5rem)] max-w-[400px] gap-0 overflow-hidden rounded-2xl border p-0 ring-0 duration-200 ease-out motion-reduce:animate-none motion-reduce:transition-none"
+        style={{
+          height:
+            'min(640px, calc(100dvh - 7rem - env(safe-area-inset-bottom)))',
+        }}
+      >
+        <header className="border-border bg-card/95 flex shrink-0 items-start gap-3 border-b px-4 py-3 backdrop-blur">
+          <span
+            className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-xl"
+            aria-hidden
+          >
+            <Sparkles className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <PopoverTitle className="text-foreground text-sm font-semibold">
+              {t('title')}
+            </PopoverTitle>
+            <PopoverDescription className="text-muted-foreground mt-0.5 text-xs leading-4">
+              {t('description')}
+            </PopoverDescription>
+          </div>
+          <PopoverClose
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('closeLabel')}
+                className="-mr-1 shrink-0"
+              />
+            }
+          >
+            <X className="size-4" aria-hidden />
+          </PopoverClose>
+        </header>
 
         <div
-          aria-label={t('historyLabel')}
-          className="max-h-52 space-y-2 overflow-y-auto"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+          aria-busy={sending}
+          aria-label={t('conversationLabel')}
+          className="bg-muted/20 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4"
         >
-          {history.map((entry, index) => (
-            <p
-              key={`${entry.role}-${index}`}
-              className={
-                entry.role === 'user'
-                  ? 'text-foreground break-words text-sm'
-                  : 'text-muted-foreground break-words text-sm'
-              }
+          <ChatBubble
+            role="assistant"
+            roleLabel={t('assistant')}
+            text={t('greeting')}
+          />
+
+          {progressStage > 0 && (
+            <ol
+              aria-label={t('progressLabel')}
+              className="border-border bg-card grid grid-cols-2 gap-2 rounded-xl border p-2"
             >
-              <span className="font-medium">
-                {entry.role === 'user' ? t('you') : t('assistant')}:{' '}
-              </span>
-              {entry.text}
-            </p>
-          ))}
-        </div>
+              {progressSteps.map((label, index) => {
+                const step = index + 1;
+                const complete = progressStage > step;
+                const active = progressStage === step;
 
-        {apiError && (
-          <div className="border-destructive/40 bg-destructive/10 text-destructive rounded-md border p-3 text-sm">
-            <p>{apiError.error ?? t('genericError')}</p>
-            {showAiSettings && (
-              <Link
-                href="/settings?tab=ai-agent"
-                className="mt-1 inline-block font-medium underline underline-offset-4"
-              >
-                {t('openAiSettings')}
-              </Link>
-            )}
-          </div>
-        )}
-
-        {question && (
-          <div className="border-border space-y-3 rounded-md border p-3">
-            <p className="text-foreground break-words text-sm">
-              {question.text}
-            </p>
-            {question.choices.length > 0 && (
-              <div
-                role="group"
-                aria-label={t('choicesLabel')}
-                className="flex flex-wrap gap-2"
-              >
-                {question.choices.map((choice) => (
-                  <Button
-                    key={choice}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="max-w-full whitespace-normal text-left"
-                    disabled={sending || creating}
-                    onClick={() => void handleSend(choice)}
+                return (
+                  <li
+                    key={label}
+                    aria-current={active ? 'step' : undefined}
+                    className={`flex items-center gap-1.5 text-[11px] ${
+                      complete || active
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
+                    }`}
                   >
-                    {choice}
-                  </Button>
-                ))}
-              </div>
-            )}
-            {showResourceSettings && (
-              <Link
-                href="/settings"
-                className="text-primary inline-block text-xs font-medium underline underline-offset-4"
-              >
-                {t('configureResources')}
-              </Link>
-            )}
-          </div>
-        )}
+                    {complete ? (
+                      <CheckCircle2 className="text-primary size-3.5 shrink-0" />
+                    ) : active ? (
+                      <Loader2 className="text-primary size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
+                    ) : (
+                      <Circle className="size-3.5 shrink-0" />
+                    )}
+                    <span>{label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
 
-        {draft && (
-          <div className="border-border space-y-3 rounded-md border p-3">
-            <div>
-              <p className="text-foreground text-sm font-semibold">
-                {draft.automation.name}
-              </p>
-              {draft.automation.description && (
-                <p className="text-muted-foreground text-xs">
-                  {draft.automation.description}
-                </p>
+          {history.map((entry, index) => (
+            <ChatBubble
+              key={`${entry.role}-${index}`}
+              role={entry.role}
+              roleLabel={entry.role === 'user' ? t('you') : t('assistant')}
+              text={entry.text}
+            />
+          ))}
+
+          {apiError && (
+            <div className="border-destructive/40 bg-destructive/10 text-destructive rounded-xl border p-3 text-sm">
+              <p>{apiError.error ?? t('genericError')}</p>
+              {showAiSettings && (
+                <Link
+                  href="/settings?tab=ai-agent"
+                  className="mt-1 inline-block font-medium underline underline-offset-4"
+                >
+                  {t('openAiSettings')}
+                </Link>
               )}
             </div>
+          )}
 
-            <div className="space-y-2">
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                {t('previewTitle')}
-              </p>
-              <p className="text-foreground text-sm">
-                <span className="font-medium">{t('triggerLabel')}:</span>{' '}
-                {draft.preview.trigger}
-              </p>
-              <ol
-                aria-label={t('previewStepsLabel')}
-                className="text-muted-foreground space-y-1 text-sm"
-              >
-                {draft.preview.steps.map((step, index) => (
-                  <li key={`${index}-${step}`} className="break-words">
-                    {index + 1}. {step}
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            {draft.verified && draft.issues.length === 0 ? (
-              <div className="bg-primary/10 text-primary flex items-center gap-2 rounded-md p-2 text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                <span>{t('verified')}</span>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <div className="space-y-1">
-                  <p>
-                    {draft.issues.length > 0
-                      ? t('needsReview', { count: draft.issues.length })
-                      : t('verificationRequired')}
-                  </p>
-                  {draft.issues.map((issue, index) => (
-                    <p key={`${issue.path}-${index}`} className="break-words">
-                      {issue.message}
-                    </p>
+          {question && (
+            <div className="border-border bg-card space-y-3 rounded-2xl rounded-bl-md border p-3">
+              {question.choices.length > 0 && (
+                <div
+                  role="group"
+                  aria-label={t('choicesLabel')}
+                  className="flex flex-wrap gap-2"
+                >
+                  {question.choices.map((choice) => (
+                    <Button
+                      key={choice}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-auto max-w-full text-left whitespace-normal"
+                      disabled={sending || creating}
+                      onClick={() => void handleSend(choice)}
+                    >
+                      {choice}
+                    </Button>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+              {showResourceSettings && (
+                <Link
+                  href="/settings"
+                  className="text-primary inline-block text-xs font-medium underline underline-offset-4"
+                >
+                  {t('configureResources')}
+                </Link>
+              )}
+            </div>
+          )}
 
-        <div className="flex gap-2">
+          {draft && (
+            <article className="border-primary/25 bg-card space-y-3 rounded-2xl rounded-bl-md border p-3 shadow-sm">
+              <div>
+                <p className="text-foreground text-sm font-semibold break-words">
+                  {draft.automation.name}
+                </p>
+                {draft.automation.description && (
+                  <p className="text-muted-foreground mt-1 text-xs leading-4 break-words">
+                    {draft.automation.description}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  {t('previewTitle')}
+                </p>
+                <p className="text-foreground text-sm">
+                  <span className="font-medium">{t('triggerLabel')}:</span>{' '}
+                  {draft.preview.trigger}
+                </p>
+                <ol
+                  aria-label={t('previewStepsLabel')}
+                  className="text-muted-foreground space-y-1 text-xs leading-4"
+                >
+                  {draft.preview.steps.map((step, index) => (
+                    <li key={`${index}-${step}`} className="break-words">
+                      {index + 1}. {step}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {draft.verified && draft.issues.length === 0 ? (
+                <div className="bg-primary/10 text-primary flex items-center gap-2 rounded-lg p-2 text-xs">
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                  <span>{t('verified')}</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p>
+                      {draft.issues.length > 0
+                        ? t('needsReview', { count: draft.issues.length })
+                        : t('verificationRequired')}
+                    </p>
+                    {draft.issues.map((issue, index) => (
+                      <p key={`${issue.path}-${index}`} className="break-words">
+                        {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-border flex flex-wrap justify-end gap-2 border-t pt-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDraft(null);
+                    setProgressStage(0);
+                    inputRef.current?.focus();
+                  }}
+                  disabled={creating || sending}
+                >
+                  {t('tryAgain')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleCreateDraft()}
+                  disabled={creating || sending || !canCreateDraft}
+                >
+                  {creating ? (
+                    <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+                  ) : null}
+                  {t('createDraft')}
+                </Button>
+              </div>
+            </article>
+          )}
+
+          {sending ? <TypingIndicator label={t('typing')} /> : null}
+          <div ref={endRef} aria-hidden />
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSend();
+          }}
+          className="border-border bg-card flex shrink-0 items-center gap-2 border-t px-3 py-3"
+        >
+          <label htmlFor="ai-automation-message" className="sr-only">
+            {t('inputLabel')}
+          </label>
           <Input
+            ref={inputRef}
+            id="ai-automation-message"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder={t('placeholder')}
             aria-label={t('messageLabel')}
-            autoFocus={open}
             maxLength={2000}
-            className="bg-muted text-foreground"
+            disabled={creating}
+            className="bg-muted/60 text-foreground h-10"
             onKeyDown={(event) => {
+              if (event.key === 'Enter' && event.nativeEvent.isComposing) {
+                event.preventDefault();
+                return;
+              }
               if (
                 shouldSendCopilotMessageFromKeydown({
                   key: event.key,
@@ -456,48 +576,74 @@ export function AiCopilotPanel({
                   value: input,
                 })
               ) {
+                event.preventDefault();
                 void handleSend();
               }
             }}
           />
           <Button
-            type="button"
-            aria-label={t('send')}
-            onClick={() => void handleSend()}
-            disabled={sending || creating || !input.trim()}
+            type="submit"
+            size="icon-lg"
+            aria-label={t('sendLabel')}
+            disabled={sending || creating || !input.trim() || !canCreate}
+            className="size-10 shrink-0"
           >
             {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : (
-              <Send className="h-4 w-4" />
+              <Send className="size-4" />
             )}
           </Button>
-        </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
-        {draft && (
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setDraft(null);
-                setProgressStage(0);
-              }}
-              disabled={creating || sending}
-            >
-              {t('tryAgain')}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleCreateDraft()}
-              disabled={creating || sending || !canCreate}
-            >
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {t('createDraft')}
-            </Button>
-          </DialogFooter>
-        )}
-      </DialogContent>
-    </Dialog>
+function ChatBubble({
+  role,
+  roleLabel,
+  text,
+}: {
+  role: ChatEntry['role'];
+  roleLabel: string;
+  text: string;
+}) {
+  return (
+    <div
+      className={role === 'user' ? 'flex justify-end' : 'flex justify-start'}
+    >
+      <p
+        className={
+          role === 'user'
+            ? 'bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-3 py-2 text-sm leading-5 break-words'
+            : 'border-border bg-card text-foreground max-w-[85%] rounded-2xl rounded-bl-md border px-3 py-2 text-sm leading-5 break-words'
+        }
+      >
+        <span className="sr-only">{roleLabel}: </span>
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function TypingIndicator({ label }: { label: string }) {
+  return (
+    <div className="flex justify-start">
+      <div
+        role="status"
+        className="border-border bg-card flex items-center gap-1 rounded-2xl rounded-bl-md border px-3 py-2.5"
+      >
+        <span className="sr-only">{label}</span>
+        {[0, 1, 2].map((dot) => (
+          <span
+            key={dot}
+            aria-hidden
+            className="bg-muted-foreground size-1.5 animate-bounce rounded-full motion-reduce:animate-none"
+            style={{ animationDelay: `${dot * 120}ms` }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

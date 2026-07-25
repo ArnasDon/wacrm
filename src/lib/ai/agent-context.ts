@@ -1,6 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const MESSAGE_HISTORY_LIMIT = 20
+const DEFAULT_MAX_CONTEXT_CHARS = 6_000
+
+function readMaxContextChars(): number {
+  const raw = process.env.AI_AGENT_MAX_CONTEXT_CHARS
+  if (!raw) return DEFAULT_MAX_CONTEXT_CHARS
+
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_MAX_CONTEXT_CHARS
+  return Math.min(value, 20_000)
+}
 
 export interface AgentContext {
   messages: { role: 'customer' | 'agent'; text: string }[]
@@ -36,6 +46,19 @@ export async function buildAgentContext(
       text: m.content_text as string,
     }))
 
+  const maxContextChars = readMaxContextChars()
+  let usedContextChars = 0
+  const boundedMessages = messages
+    .slice()
+    .reverse()
+    .filter((message) => {
+      const nextTotal = usedContextChars + message.text.length
+      if (nextTotal > maxContextChars) return false
+      usedContextChars = nextTotal
+      return true
+    })
+    .reverse()
+
   const { data: deal, error: dealError } = await supabase
     .from('deals')
     .select('id, stage_id, pipeline_id')
@@ -46,7 +69,7 @@ export async function buildAgentContext(
   if (dealError) throw new Error(`Failed to load deals: ${dealError.message}`)
 
   return {
-    messages,
+    messages: boundedMessages,
     dealId: (deal?.id as string) ?? null,
     currentStageId: (deal?.stage_id as string) ?? null,
     currentPipelineId: (deal?.pipeline_id as string) ?? null,

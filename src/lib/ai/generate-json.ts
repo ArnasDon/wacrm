@@ -2,7 +2,17 @@ import { AiError, type AiConfig, type AiUsage } from './types'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
-const DEFAULT_TIMEOUT_MS = 30_000
+const DEFAULT_TIMEOUT_MS = 45_000
+const DEFAULT_MAX_OUTPUT_TOKENS = 256
+
+function readPositiveIntEnv(name: string, fallback: number, max: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isFinite(value) || value <= 0) return fallback
+  return Math.min(value, max)
+}
 
 export interface GenerateJsonArgs {
   config: AiConfig
@@ -32,8 +42,8 @@ export async function generateJson<T>(args: GenerateJsonArgs): Promise<GenerateJ
     model: config.model,
     systemPrompt: `${systemPrompt}\n\nRespond with ONLY a single valid JSON object. No prose, no markdown code fences, no explanation before or after.`,
     messages: [{ role: 'user' as const, content: userPrompt }],
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-    maxTokens: 1024,
+    timeoutMs: readPositiveIntEnv('AI_AGENT_PROVIDER_TIMEOUT_MS', DEFAULT_TIMEOUT_MS, 55_000),
+    maxTokens: readPositiveIntEnv('AI_AGENT_MAX_OUTPUT_TOKENS', DEFAULT_MAX_OUTPUT_TOKENS, 1024),
     responseFormat: 'json_object' as const,
   }
 

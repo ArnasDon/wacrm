@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   generateOpenAi: vi.fn(),
@@ -25,6 +25,11 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 describe('generateJson', () => {
+  beforeEach(() => {
+    delete process.env.AI_AGENT_PROVIDER_TIMEOUT_MS
+    delete process.env.AI_AGENT_MAX_OUTPUT_TOKENS
+  })
+
   it('parses clean JSON from the provider', async () => {
     h.generateOpenAi.mockResolvedValue({ text: '{"a":1}', usage: null })
     const { data } = await generateJson<{ a: number }>({
@@ -34,7 +39,7 @@ describe('generateJson', () => {
     })
     expect(data).toEqual({ a: 1 })
     expect(h.generateOpenAi).toHaveBeenCalledWith(
-      expect.objectContaining({ maxTokens: 1024, responseFormat: 'json_object' }),
+      expect.objectContaining({ maxTokens: 256, responseFormat: 'json_object' }),
     )
   })
 
@@ -67,5 +72,24 @@ describe('generateJson', () => {
     })
     expect(data).toEqual({ ok: true })
     expect(h.generateAnthropic).toHaveBeenCalled()
+  })
+
+  it('passes bounded provider settings from env', async () => {
+    process.env.AI_AGENT_PROVIDER_TIMEOUT_MS = '120000'
+    process.env.AI_AGENT_MAX_OUTPUT_TOKENS = '64'
+    h.generateOpenAi.mockResolvedValue({ text: '{"ok":true}', usage: null })
+
+    await generateJson<{ ok: boolean }>({
+      config: config(),
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+    })
+
+    expect(h.generateOpenAi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeoutMs: 55_000,
+        maxTokens: 64,
+      }),
+    )
   })
 })

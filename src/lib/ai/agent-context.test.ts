@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildAgentContext } from './agent-context'
 
@@ -36,6 +36,10 @@ function fakeSupabase(data: {
 }
 
 describe('buildAgentContext', () => {
+  beforeEach(() => {
+    delete process.env.AI_AGENT_MAX_CONTEXT_CHARS
+  })
+
   it('loads messages and deal information', async () => {
     const supabase = fakeSupabase({
       messages: [
@@ -68,6 +72,22 @@ describe('buildAgentContext', () => {
     expect(result.dealId).toBeNull()
     expect(result.currentStageId).toBeNull()
     expect(result.currentPipelineId).toBeNull()
+  })
+
+  it('keeps the most recent messages within the configured context budget', async () => {
+    process.env.AI_AGENT_MAX_CONTEXT_CHARS = '10'
+    const supabase = fakeSupabase({
+      messages: [
+        { sender_type: 'customer', content_text: 'latest', content_type: 'text' },
+        { sender_type: 'agent', content_text: 'middle', content_type: 'text' },
+        { sender_type: 'customer', content_text: 'oldest', content_type: 'text' },
+      ],
+      deal: null,
+    })
+
+    const result = await buildAgentContext(supabase, { accountId: 'acct-1', conversationId: 'conv-1' })
+
+    expect(result.messages).toEqual([{ role: 'customer', text: 'latest' }])
   })
 
   it('throws when messages query returns an error', async () => {

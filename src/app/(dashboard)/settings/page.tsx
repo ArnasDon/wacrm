@@ -6,7 +6,6 @@ import {
   Tag,
   User,
   Palette,
-  UsersRound,
   CreditCard,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,14 +18,12 @@ import { PasswordForm } from '@/components/settings/password-form';
 import { TwoFactorForm } from '@/components/settings/two-factor-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
-import { MembersTab } from '@/components/settings/members-tab';
 import { BillingSettingsPanel } from '@/components/settings/billing-settings-panel';
 
 const TABS = [
   { value: 'profile', label: 'Profile', icon: User },
   { value: 'tags', label: 'Tags', icon: Tag },
   { value: 'appearance', label: 'Appearance', icon: Palette },
-  { value: 'members', label: 'Team', icon: UsersRound },
   { value: 'billing', label: 'Billing', icon: CreditCard },
 ] as const;
 
@@ -71,7 +68,7 @@ function SettingsPageInner() {
 
   const queryTab = searchParams.get('tab');
 
-  // Old Settings tabs moved to dedicated pages under WhatsApp / elsewhere.
+  // Old Settings tabs moved to dedicated pages under WhatsApp / Team / elsewhere.
   useEffect(() => {
     if (queryTab === 'compliance') {
       router.replace('/compliance');
@@ -83,6 +80,8 @@ function SettingsPageInner() {
       router.replace('/whatsapp/templates');
     } else if (queryTab === 'app-secret') {
       router.replace('/whatsapp/app-secret');
+    } else if (queryTab === 'members') {
+      router.replace('/team/members');
     }
   }, [queryTab, router]);
 
@@ -110,9 +109,8 @@ function SettingsPageInner() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your profile, team, billing, appearance, and tags. WhatsApp
-          connection, templates, and App Secret live under WhatsApp in the
-          sidebar.
+          Manage your profile, billing, appearance, and tags. Team, WhatsApp,
+          and Email each have their own menus in the sidebar.
         </p>
       </div>
 
@@ -144,8 +142,6 @@ function SettingsPageInner() {
       {tab === 'tags' ? <TagManager /> : null}
 
       {tab === 'appearance' ? <AppearancePanel /> : null}
-
-      {tab === 'members' ? <MembersTab /> : null}
 
       {tab === 'billing' ? <BillingSettingsPanel /> : null}
     </div>

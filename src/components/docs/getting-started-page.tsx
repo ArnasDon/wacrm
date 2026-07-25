@@ -142,7 +142,7 @@ export function GettingStartedPage() {
             <div className="flex flex-wrap gap-2 pt-1">
               <DocLinkButton href="/signup" label="Sign Up" />
               <DocLinkButton href="/login" label="Log In" />
-              <DocLinkButton href="/settings?tab=members" label="Team" />
+              <DocLinkButton href="/team" label="Team" />
             </div>
           </CardContent>
         </Card>

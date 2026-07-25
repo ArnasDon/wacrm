@@ -139,8 +139,8 @@ export const IMPLEMENTATION_STEPS: DocStep[] = [
   {
     title: "Invite your team",
     body:
-      "Go to Settings → Team to invite admins, agents, or viewers. Each member shares the account WhatsApp number and inbox.",
-    links: [{ label: "Team", href: "/settings?tab=members" }],
+      "Go to Team in the sidebar to invite admins, agents, or viewers. Each member shares the account WhatsApp number and inbox.",
+    links: [{ label: "Team", href: "/team" }],
   },
   {
     title: `Start using ${COMPANY_NAME}`,
@@ -353,7 +353,7 @@ export const DASHBOARD_FEATURES: DocFeature[] = [
   {
     id: "team",
     title: "Team",
-    href: "/settings?tab=members",
+    href: "/team",
     summary: "Invite teammates and manage roles across the shared account.",
     capabilities: [
       "Invite admin, agent, or viewer roles",
@@ -362,7 +362,7 @@ export const DASHBOARD_FEATURES: DocFeature[] = [
       "Shared WhatsApp number and inbox for all members",
     ],
     howToUse: [
-      "Open Team from the sidebar or Settings → Team tab.",
+      "Open Team in the sidebar (Overview, Members, or Invitations).",
       "Click Invite Member, enter email and role.",
       "Share the invite link — recipient signs up or logs in to accept.",
     ],
@@ -420,13 +420,6 @@ export const SETTINGS_TABS: {
     href: "/settings?tab=appearance",
     description: "Dark theme accent color stored in localStorage.",
     who: "All users",
-  },
-  {
-    tab: "members",
-    label: "Team",
-    href: "/settings?tab=members",
-    description: "Roster, invitations, role changes, pending invite management.",
-    who: "Admin+",
   },
 ];
 

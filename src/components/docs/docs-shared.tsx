@@ -192,7 +192,7 @@ export const TROUBLESHOOTING_ITEMS = [
   {
     issue: "Team invite link not working",
     fix: "Revoke the old invite and send a new one from Settings → Team. Team invites require Enterprise.",
-    link: "/settings?tab=members",
+    link: "/team",
     linkLabel: "Open Team",
   },
 ] as const;

@@ -129,44 +129,120 @@ const whatsappChildren: NavChild[] = [
 
 const emailChildren: NavChild[] = [
   { href: "/email", label: "Overview", icon: LayoutDashboard },
+  { href: "/email/smtp", label: "SMTP", icon: Server },
   { href: "/email/lists", label: "Lists", icon: List },
   { href: "/email/templates", label: "Templates", icon: FileText },
   { href: "/email/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/email/smtp", label: "SMTP", icon: Server },
 ];
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare, capability: "messaging" },
-  { href: "/contacts", label: "Contacts", icon: Users, capability: "contacts" },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch, capability: "pipelines" },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio, capability: "broadcasts" },
+const teamChildren: NavChild[] = [
+  { href: "/team", label: "Overview", icon: LayoutDashboard },
+  { href: "/team/members", label: "Members", icon: Users },
+  { href: "/team/invites", label: "Invitations", icon: Mail },
+];
+
+/** Grouped for scanability: work → channels → outreach → automate → workspace. */
+const navSections: { id: string; label: string; items: NavItem[] }[] = [
   {
-    href: "/whatsapp",
-    label: "WhatsApp",
-    icon: Phone,
-    capability: "whatsapp",
-    children: whatsappChildren,
+    id: "work",
+    label: "Work",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      {
+        href: "/inbox",
+        label: "Inbox",
+        icon: MessageSquare,
+        capability: "messaging",
+      },
+      {
+        href: "/contacts",
+        label: "Contacts",
+        icon: Users,
+        capability: "contacts",
+      },
+      {
+        href: "/pipelines",
+        label: "Pipelines",
+        icon: GitBranch,
+        capability: "pipelines",
+      },
+    ],
   },
   {
-    href: "/email",
-    label: "Email",
-    icon: Mail,
-    capability: "email_marketing",
-    children: emailChildren,
+    id: "channels",
+    label: "Channels",
+    items: [
+      {
+        href: "/whatsapp",
+        label: "WhatsApp",
+        icon: Phone,
+        capability: "whatsapp",
+        children: whatsappChildren,
+      },
+      {
+        href: "/email",
+        label: "Email",
+        icon: Mail,
+        capability: "email_marketing",
+        children: emailChildren,
+      },
+    ],
   },
-  { href: "/automations", label: "Automations", icon: Zap, capability: "automations" },
-  { href: "/flows", label: "Flows", icon: Workflow, capability: "flows" },
   {
-    href: "/compliance",
-    label: "Compliance",
-    icon: ShieldCheck,
-    capability: "compliance",
+    id: "outreach",
+    label: "Outreach",
+    items: [
+      {
+        href: "/broadcasts",
+        label: "Broadcasts",
+        icon: Radio,
+        capability: "broadcasts",
+      },
+    ],
+  },
+  {
+    id: "automate",
+    label: "Automate",
+    items: [
+      {
+        href: "/automations",
+        label: "Automations",
+        icon: Zap,
+        capability: "automations",
+      },
+      {
+        href: "/flows",
+        label: "Flows",
+        icon: Workflow,
+        capability: "flows",
+      },
+    ],
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    items: [
+      {
+        href: "/team",
+        label: "Team",
+        icon: UsersRound,
+        capability: "team",
+        children: teamChildren,
+      },
+      {
+        href: "/compliance",
+        label: "Compliance",
+        icon: ShieldCheck,
+        capability: "compliance",
+      },
+    ],
   },
 ];
+
+const navItems: NavItem[] = navSections.flatMap((section) => section.items);
 
 /** Parent overview hrefs that should not match every nested child path. */
-const EXACT_PARENT_HREFS = new Set(["/dashboard", "/email", "/whatsapp"]);
+const EXACT_PARENT_HREFS = new Set(["/dashboard", "/email", "/whatsapp", "/team"]);
 
 function pathMatches(pathname: string, href: string): boolean {
   if (pathname === href) return true;
@@ -185,6 +261,8 @@ function parentActive(pathname: string, item: NavItem): boolean {
 }
 
 const bottomNavItems: NavItem[] = [
+  // Explicit profile tab — avoids stale ?tab=templates redirects from old links.
+  { href: "/settings?tab=profile", label: "Settings", icon: Settings },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/docs/getting-started", label: "Docs", icon: BookOpen },
   {
@@ -193,9 +271,6 @@ const bottomNavItems: NavItem[] = [
     icon: Headset,
     external: true,
   },
-  { href: "/settings?tab=members", label: "Team", icon: UsersRound, capability: "team" },
-  // Explicit profile tab — avoids stale ?tab=templates redirects from old links.
-  { href: "/settings?tab=profile", label: "Settings", icon: Settings },
 ];
 
 interface SidebarProps {
@@ -336,157 +411,171 @@ function SidebarInner({ open = false, onClose }: SidebarProps) {
           </div>
         </div>
 
-        {/* Main navigation */}
+        {/* Main navigation — grouped so users can scan by job */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
-              const isActive = parentActive(pathname, item);
-              const showUnreadDot =
-                item.href === "/inbox" && totalUnread > 0 && !isActive;
-              const locked = planLocked(item.capability);
-              const hasChildren = Boolean(item.children?.length);
+          <div className="flex flex-col gap-4">
+            {navSections.map((section) => (
+              <div key={section.id}>
+                <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {section.label}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {section.items.map((item) => {
+                    const isActive = parentActive(pathname, item);
+                    const showUnreadDot =
+                      item.href === "/inbox" && totalUnread > 0 && !isActive;
+                    const locked = planLocked(item.capability);
+                    const hasChildren = Boolean(item.children?.length);
 
-              if (hasChildren && item.children) {
-                const menuOpen = Boolean(openMenus[item.href]);
-                return (
-                  <li key={item.href}>
-                    <div
-                      className={cn(
-                        "flex items-center rounded-lg transition-colors",
-                        isActive
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                        locked && "opacity-80",
-                      )}
-                    >
-                      <Link
-                        href={item.href}
-                        title={
-                          locked
-                            ? "Requires an active subscription plan — open Billing to upgrade"
-                            : undefined
-                        }
-                        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-medium lg:py-2"
-                        onClick={() =>
-                          setOpenMenus((prev) => ({
-                            ...prev,
-                            [item.href]: true,
-                          }))
-                        }
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        <span className="flex-1 truncate">{item.label}</span>
-                        {locked ? (
-                          <Lock
-                            className="h-3.5 w-3.5 text-amber-600"
-                            aria-label="Locked by plan"
-                          />
-                        ) : null}
-                      </Link>
-                      <button
-                        type="button"
-                        aria-label={
-                          menuOpen
-                            ? `Collapse ${item.label} menu`
-                            : `Expand ${item.label} menu`
-                        }
-                        aria-expanded={menuOpen}
-                        onClick={() =>
-                          setOpenMenus((prev) => ({
-                            ...prev,
-                            [item.href]: !prev[item.href],
-                          }))
-                        }
-                        className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
-                      >
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 transition-transform",
-                            menuOpen ? "rotate-0" : "-rotate-90",
-                          )}
-                        />
-                      </button>
-                    </div>
-                    {menuOpen ? (
-                      <ul className="mt-0.5 ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
-                        {item.children.map((child) => {
-                          const childActive = pathMatches(
-                            pathname,
-                            child.href,
-                          );
-                          return (
-                            <li key={`${child.href}-${child.label}`}>
-                              <Link
-                                href={child.href}
+                    if (hasChildren && item.children) {
+                      const menuOpen = Boolean(openMenus[item.href]);
+                      return (
+                        <li key={item.href}>
+                          <div
+                            className={cn(
+                              "flex items-center rounded-lg transition-colors",
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                              locked && "opacity-80",
+                            )}
+                          >
+                            <Link
+                              href={item.href}
+                              title={
+                                locked
+                                  ? "Requires an active subscription plan — open Billing to upgrade"
+                                  : undefined
+                              }
+                              className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-medium lg:py-2"
+                              onClick={() =>
+                                setOpenMenus((prev) => ({
+                                  ...prev,
+                                  [item.href]: true,
+                                }))
+                              }
+                            >
+                              <item.icon className="h-4 w-4 shrink-0" />
+                              <span className="flex-1 truncate">
+                                {item.label}
+                              </span>
+                              {locked ? (
+                                <Lock
+                                  className="h-3.5 w-3.5 text-amber-600"
+                                  aria-label="Locked by plan"
+                                />
+                              ) : null}
+                            </Link>
+                            <button
+                              type="button"
+                              aria-label={
+                                menuOpen
+                                  ? `Collapse ${item.label} menu`
+                                  : `Expand ${item.label} menu`
+                              }
+                              aria-expanded={menuOpen}
+                              onClick={() =>
+                                setOpenMenus((prev) => ({
+                                  ...prev,
+                                  [item.href]: !prev[item.href],
+                                }))
+                              }
+                              className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
+                            >
+                              <ChevronDown
                                 className={cn(
-                                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors lg:py-1.5",
-                                  childActive
-                                    ? "bg-primary/10 font-medium text-primary"
-                                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                                  "h-4 w-4 transition-transform",
+                                  menuOpen ? "rotate-0" : "-rotate-90",
                                 )}
-                              >
-                                <child.icon className="h-3.5 w-3.5 shrink-0" />
-                                <span>{child.label}</span>
-                              </Link>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : null}
-                  </li>
-                );
-              }
-
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    title={
-                      locked
-                        ? "Requires an active subscription plan — open Billing to upgrade"
-                        : undefined
+                              />
+                            </button>
+                          </div>
+                          {menuOpen ? (
+                            <ul className="mt-0.5 ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
+                              {item.children.map((child) => {
+                                const childActive = pathMatches(
+                                  pathname,
+                                  child.href,
+                                );
+                                return (
+                                  <li key={`${child.href}-${child.label}`}>
+                                    <Link
+                                      href={child.href}
+                                      className={cn(
+                                        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors lg:py-1.5",
+                                        childActive
+                                          ? "bg-primary/10 font-medium text-primary"
+                                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                                      )}
+                                    >
+                                      <child.icon className="h-3.5 w-3.5 shrink-0" />
+                                      <span>{child.label}</span>
+                                    </Link>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : null}
+                        </li>
+                      );
                     }
-                    className={cn(
-                      // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
-                      isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                      locked && "opacity-80",
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span className="flex-1">{item.label}</span>
-                    {locked && (
-                      <Lock
-                        className="h-3.5 w-3.5 text-amber-600"
-                        aria-label="Locked by plan"
-                      />
-                    )}
-                    {showUnreadDot && (
-                      <span
-                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
-                        className="relative flex h-2 w-2"
-                      >
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          title={
+                            locked
+                              ? "Requires an active subscription plan — open Billing to upgrade"
+                              : undefined
+                          }
+                          className={cn(
+                            // Taller on mobile so fingers can hit the row reliably (≥44px).
+                            "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                            isActive
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                            locked && "opacity-80",
+                          )}
+                        >
+                          <item.icon className="h-4 w-4" />
+                          <span className="flex-1">{item.label}</span>
+                          {locked && (
+                            <Lock
+                              className="h-3.5 w-3.5 text-amber-600"
+                              aria-label="Locked by plan"
+                            />
+                          )}
+                          {showUnreadDot && (
+                            <span
+                              aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
+                              className="relative flex h-2 w-2"
+                            >
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
 
           <div className="my-4 border-t border-sidebar-border" />
 
-          <ul className="flex flex-col gap-1">
+          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Account
+          </p>
+          <ul className="flex flex-col gap-0.5">
             {bottomNavItems.map((item) => {
               const hrefPath = item.href.split("?")[0] ?? item.href;
               const hrefTab = item.href.includes("tab=")
                 ? new URL(item.href, "http://local").searchParams.get("tab")
                 : null;
-              // Team (?tab=members) and Settings (?tab=profile) share /settings —
+              // Settings (?tab=profile) and other bottom links with query tabs —
               // match the tab so each item highlights correctly.
               const isActive = item.external
                 ? false

@@ -144,7 +144,14 @@ function fmtExpiresIn(iso: string): string {
   return `expires in ${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-export function MembersTab() {
+export type MembersTabSection = 'all' | 'members' | 'invites';
+
+export function MembersTab({
+  section = 'all',
+}: {
+  /** Which blocks to show — used by dedicated /team pages. */
+  section?: MembersTabSection;
+} = {}) {
   const { user, canManageMembers } = useAuth();
   const {
     canUse,
@@ -153,6 +160,8 @@ export function MembersTab() {
     upgradeMessage,
   } = useEntitlements();
   const teamAllowed = canUse('team');
+  const showMembers = section === 'all' || section === 'members';
+  const showInvites = section === 'all' || section === 'invites';
 
   const [members, setMembers] = useState<Member[]>([]);
   const [whatsappNumbers, setWhatsappNumbers] = useState<
@@ -419,15 +428,25 @@ export function MembersTab() {
         </div>
       ) : null}
 
-      {/* Header + invite button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Team members</h2>
-          <p className="text-sm text-muted-foreground">
-            Invite sub-users and manage roles. Assign leads from Contacts or
-            the Inbox. Available on the Enterprise plan.
-          </p>
-        </div>
+      {/* Header + invite button (full header only when embedded as Settings tab) */}
+      <div
+        className={
+          section === 'all'
+            ? 'flex items-center justify-between gap-3'
+            : 'flex items-center justify-end gap-3'
+        }
+      >
+        {section === 'all' ? (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Team members
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Invite sub-users and manage roles. Assign leads from Contacts or
+              the Inbox. Available on the Enterprise plan.
+            </p>
+          </div>
+        ) : null}
         <RequireRole min="admin">
           <PlanGatedButton
             capability="team"
@@ -442,6 +461,7 @@ export function MembersTab() {
       </div>
 
       {/* Roster */}
+      {showMembers ? (
       <Card className="bg-card border-border ring-0 ring-transparent">
         <CardContent className="p-0">
           <ul className="divide-y divide-border">
@@ -622,8 +642,10 @@ export function MembersTab() {
           </ul>
         </CardContent>
       </Card>
+      ) : null}
 
       {/* Pending invitations — admin+ only */}
+      {showInvites ? (
       <RequireRole min="admin">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -712,6 +734,7 @@ export function MembersTab() {
           )}
         </div>
       </RequireRole>
+      ) : null}
 
       <InviteMemberDialog
         open={inviteOpen}

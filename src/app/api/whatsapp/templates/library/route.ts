@@ -47,9 +47,6 @@ export async function GET(request: Request) {
     if (categoryFilter) {
       starters = starters.filter((s) => s.form.category === categoryFilter);
     }
-    if (topic !== "all" && topic in STARTER_TOPIC_LABELS) {
-      starters = starters.filter((s) => s.topic === (topic as StarterTopic));
-    }
     if (q) {
       starters = starters.filter(
         (s) =>
@@ -58,6 +55,16 @@ export async function GET(request: Request) {
           s.form.name.includes(q) ||
           s.form.body_text.toLowerCase().includes(q),
       );
+    }
+
+    // Counts per topic after category/search — before topic chip filter.
+    const topic_counts: Record<string, number> = { all: starters.length };
+    for (const s of starters) {
+      topic_counts[s.topic] = (topic_counts[s.topic] ?? 0) + 1;
+    }
+
+    if (topic !== "all" && topic in STARTER_TOPIC_LABELS) {
+      starters = starters.filter((s) => s.topic === (topic as StarterTopic));
     }
 
     // Try Meta Template Library when the account has a connected token.
@@ -156,6 +163,7 @@ export async function GET(request: Request) {
       data: {
         starters,
         starter_total: WHATSAPP_STARTER_TEMPLATE_COUNT,
+        topic_counts,
         meta_templates: metaTemplates,
         meta_available: metaAvailable,
         meta_error: metaError,

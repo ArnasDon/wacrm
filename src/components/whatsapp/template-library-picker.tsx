@@ -10,6 +10,7 @@ import {
   PencilLine,
   Search,
   Sparkles,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -49,10 +50,12 @@ export function TemplateLibraryPicker({
     [],
   );
   const [topics, setTopics] = useState<Record<string, string>>({ all: "All" });
+  const [topicCounts, setTopicCounts] = useState<Record<string, number>>({});
   const [metaAvailable, setMetaAvailable] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +89,7 @@ export function TemplateLibraryPicker({
           starters?: WhatsAppStarterTemplate[];
           meta_templates?: WhatsAppStarterTemplate[];
           topics?: Record<string, string>;
+          topic_counts?: Record<string, number>;
           meta_available?: boolean;
           meta_error?: string | null;
         };
@@ -93,6 +97,7 @@ export function TemplateLibraryPicker({
         setMetaTemplates(data.meta_templates ?? []);
         const nextTopics = data.topics ?? { all: "All" };
         setTopics(nextTopics);
+        setTopicCounts(data.topic_counts ?? {});
         setMetaAvailable(Boolean(data.meta_available));
         setMetaError(data.meta_error ?? null);
         setHoverId(null);
@@ -105,6 +110,7 @@ export function TemplateLibraryPicker({
           setLoadError(msg);
           setStarters([]);
           setMetaTemplates([]);
+          setTopicCounts({});
           toast.error(msg);
         }
       } finally {
@@ -187,32 +193,95 @@ export function TemplateLibraryPicker({
         </div>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative max-w-md flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by name or message…"
-            className="border-border bg-muted pl-9"
-          />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {topicKeys.map((key) => (
+      {/* Search + topic chips — one toolbar, chips scroll (no wrap) */}
+      <div className="rounded-xl border border-border bg-card p-2 shadow-sm">
+        <div className="flex items-center gap-2">
+          {searchOpen || q ? (
+            <div className="relative w-full max-w-[14rem] shrink-0 sm:max-w-[16rem]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search templates…"
+                autoFocus
+                className="h-9 border-border bg-muted/60 pl-8 pr-8 text-sm"
+              />
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQ("");
+                  setSearchOpen(false);
+                }}
+                className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : (
             <button
-              key={key}
               type="button"
-              onClick={() => setTopic(key)}
+              aria-label="Search templates"
+              title="Search templates"
+              onClick={() => setSearchOpen(true)}
               className={cn(
-                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                topic === key
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                "flex size-9 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                "border-primary/40 bg-muted/50 text-primary hover:bg-primary/10",
               )}
             >
-              {topics[key]}
+              <Search className="size-4" />
             </button>
-          ))}
+          )}
+
+          <div className="relative min-w-0 flex-1">
+            <div
+              className={cn(
+                "flex gap-1.5 overflow-x-auto scroll-smooth px-0.5 py-0.5",
+                "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+              )}
+              role="tablist"
+              aria-label="Template topics"
+            >
+              {topicKeys.map((key) => {
+                const count = topicCounts[key];
+                const active = topic === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setTopic(key)}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      active
+                        ? "border-primary bg-primary/10 text-primary shadow-sm"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/30 hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <span>{topics[key]}</span>
+                    {typeof count === "number" ? (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                          active
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {count}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Edge fades hint more topics to the right */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent"
+            />
+          </div>
         </div>
       </div>
 
@@ -236,14 +305,29 @@ export function TemplateLibraryPicker({
             <div className="flex flex-wrap items-center gap-2">
               <LayoutTemplate className="size-4 text-primary" />
               <h3 className="text-sm font-semibold text-foreground">
-                Ready to use
+                {topic === "all"
+                  ? "Ready to use"
+                  : (topics[topic] ?? "Ready to use")}
               </h3>
               <Badge variant="outline" className="text-[10px]">
                 {loading ? "…" : `${starters.length} shown`}
               </Badge>
-              <Badge className="bg-primary/10 text-[10px] text-primary border-primary/20">
+              <Badge className="border-primary/20 bg-primary/10 text-[10px] text-primary">
                 {WHATSAPP_STARTER_TEMPLATE_COUNT}+ library
               </Badge>
+              {(topic !== "all" || q) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTopic("all");
+                    setQ("");
+                    setSearchOpen(false);
+                  }}
+                  className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
 
             {loading && starters.length === 0 ? (

@@ -1,10 +1,52 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { getNodeDescriptor } from "@/lib/flows/registry";
 import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from "./validate";
 
 describe("validateStepsForActivation", () => {
+  it("delegates step config validation to the canonical descriptor", () => {
+    const schema = getNodeDescriptor("wait")!.configSchema;
+    const parse = vi.spyOn(schema, "safeParse");
+
+    const issues = validateStepsForActivation([
+      { step_type: "wait", step_config: { amount: 0, unit: "minutes" } },
+    ]);
+
+    expect(parse).toHaveBeenCalled();
+    expect(issues).toEqual([
+      {
+        path: "steps[0].amount",
+        message: "wait amount must be greater than 0",
+      },
+    ]);
+    parse.mockRestore();
+  });
+
+  it("uses descriptor edges when validating condition branch topology", () => {
+    const descriptor = getNodeDescriptor("condition")!;
+    const outgoingEdges = vi.spyOn(descriptor, "outgoingEdges");
+
+    const issues = validateStepsForActivation([
+      {
+        step_type: "condition",
+        step_config: { subject: "tag_presence", operand: "vip" },
+        branches: {
+          yes: [{ step_type: "send_message", step_config: { text: "" } }],
+          no: [{ step_type: "add_tag", step_config: { tag_id: "" } }],
+        },
+      },
+    ]);
+
+    expect(outgoingEdges).toHaveBeenCalled();
+    expect(issues.map(({ path }) => path)).toEqual([
+      "steps[0].yes.steps[0].text",
+      "steps[0].no.steps[0].tag_id",
+    ]);
+    outgoingEdges.mockRestore();
+  });
+
   it("rejects empty or missing step lists", () => {
     expect(validateStepsForActivation([])).toEqual([
       { path: "steps", message: "active automations need at least one step" },
@@ -250,6 +292,20 @@ describe("validateStepsForActivation", () => {
 });
 
 describe("validateTriggerForActivation", () => {
+  it("delegates invalid trigger config to the canonical trigger descriptor", () => {
+    const schema = getNodeDescriptor("trigger_keyword_match")!.configSchema;
+    const parse = vi.spyOn(schema, "safeParse");
+
+    const issues = validateTriggerForActivation("keyword_match", {
+      keywords: [],
+      match_type: "exact",
+    });
+
+    expect(parse).toHaveBeenCalled();
+    expect(issues.map(({ path }) => path)).toContain("trigger.keywords");
+    parse.mockRestore();
+  });
+
   it("accepts a valid keyword_match config", () => {
     expect(
       validateTriggerForActivation("keyword_match", {

@@ -248,7 +248,10 @@ export const assignConversationConfigSchema = z
 
 export const updateContactFieldConfigSchema = z.looseObject({
   field: requiredText("A contact field is required."),
-  value: z.union([z.string(), z.number(), z.boolean()]),
+  value: z.unknown().refine(
+    (value) => value !== undefined && value !== null && value !== "",
+    "A contact field value is required.",
+  ),
   next_node_key: nextNodeKeySchema,
 });
 
@@ -276,7 +279,13 @@ export const webhookConfigSchema = z.looseObject({
   url: z
     .url("A valid webhook URL is required.")
     .refine(
-      (value) => ["http:", "https:"].includes(new URL(value).protocol),
+      (value) => {
+        try {
+          return ["http:", "https:"].includes(new URL(value).protocol);
+        } catch {
+          return false;
+        }
+      },
       "Webhook URL must use HTTP or HTTPS.",
     ),
   headers: z.record(z.string(), z.string()).optional(),

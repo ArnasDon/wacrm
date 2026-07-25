@@ -17,7 +17,8 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
     const subject = config.subject;
     const isFlowCondition =
       subject === "var" ||
-      subject === "tag" ||
+      (subject === "tag" &&
+        typeof config.operand !== "string") ||
       (subject === "contact_field" &&
         typeof config.operand !== "string");
     if (isFlowCondition) {

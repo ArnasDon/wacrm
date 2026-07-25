@@ -52,6 +52,18 @@ const TRIGGER_NODE_TYPES = {
   deal_stage_changed: "trigger_deal_stage_changed",
 } as const satisfies Record<AutomationTriggerType, RegisteredNodeType>;
 
+export function automationStepNodeType(
+  stepType: string,
+): RegisteredNodeType | undefined {
+  return STEP_NODE_TYPES[stepType as AutomationStepType];
+}
+
+export function automationTriggerNodeType(
+  triggerType: string,
+): RegisteredNodeType | undefined {
+  return TRIGGER_NODE_TYPES[triggerType as AutomationTriggerType];
+}
+
 function stepKey(index: number, type: AutomationStepType): string {
   return `step_${index}_${type}`;
 }

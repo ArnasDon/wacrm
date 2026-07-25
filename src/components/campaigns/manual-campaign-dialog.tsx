@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { localDayKey } from '@/lib/dashboard/date-utils';
 
 interface ManualCampaignDialogProps {
   defaultCurrency: string;
@@ -32,10 +33,10 @@ interface ManualCampaignDialogProps {
 
 /**
  * "Add manual campaign" — the entry point for a platform with no API
- * (Google Ads today, or anything else). Creates the campaign and an
- * optional initial spend-to-date figure in one call
- * (POST /api/ads/campaigns/manual); see that route for why spend is
- * "cumulative so far" rather than a daily breakdown.
+ * (Google Ads today, or anything else). Creates the campaign plus an
+ * optional first dated spend entry in one call
+ * (POST /api/ads/campaigns/manual). More entries are added later from
+ * the row's spend dialog; that route documents the dated-entry model.
  */
 export function ManualCampaignDialog({ defaultCurrency, onCreated }: ManualCampaignDialogProps) {
   const t = useTranslations('Campaigns.manual');
@@ -45,6 +46,9 @@ export function ManualCampaignDialog({ defaultCurrency, onCreated }: ManualCampa
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
   const [spend, setSpend] = useState('');
+  // The operator's calendar day, not the server's — see
+  // src/lib/ads/day-key.ts.
+  const [date, setDate] = useState(() => localDayKey(new Date()));
   const [saving, setSaving] = useState(false);
 
   function reset() {
@@ -52,6 +56,7 @@ export function ManualCampaignDialog({ defaultCurrency, onCreated }: ManualCampa
     setName('');
     setCurrency(defaultCurrency);
     setSpend('');
+    setDate(localDayKey(new Date()));
   }
 
   async function handleSubmit() {
@@ -65,6 +70,7 @@ export function ManualCampaignDialog({ defaultCurrency, onCreated }: ManualCampa
         name: name.trim(),
         currency,
         spend: spend ? Number(spend) : 0,
+        date,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -140,6 +146,15 @@ export function ManualCampaignDialog({ defaultCurrency, onCreated }: ManualCampa
                 className="bg-muted border-border text-foreground"
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label className="text-muted-foreground">{t('dateLabel')}</Label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="bg-muted border-border text-foreground"
+            />
           </div>
           <p className="text-xs text-muted-foreground">{t('spendHint')}</p>
         </div>

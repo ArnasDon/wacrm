@@ -11,6 +11,15 @@
 const GRAPH_API_VERSION = 'v25.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
+// The sync walks ad accounts one after another, so a single hung request
+// stalls every remaining account in a cron run. Same reasoning as the
+// bounded fetch in the automations engine's send_webhook step.
+const REQUEST_TIMEOUT_MS = 20_000
+
+// Safety net on cursor following, in case a paging cursor ever loops.
+// 20 pages x 500 rows is far past any real ad account here.
+const MAX_PAGES = 20
+
 interface MetaErrorResponse {
   error?: { message?: string; code?: number; type?: string }
 }
@@ -27,11 +36,57 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
 }
 
 async function metaGet<T>(url: string, accessToken: string, fallback: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+  } catch (err) {
+    // A timeout arrives as a TimeoutError whose message says nothing
+    // about Meta. The operator reads this string in Settings as
+    // `ad_accounts.last_error`, so name the actual cause.
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error(`${fallback}: Meta did not respond within ${REQUEST_TIMEOUT_MS / 1000}s`)
+    }
+    throw err
+  }
   if (!response.ok) await throwMetaError(response, fallback)
   return (await response.json()) as T
+}
+
+interface MetaPage<T> {
+  data?: T[]
+  paging?: { next?: string }
+}
+
+/**
+ * Follow Meta's cursor pagination and return every row.
+ *
+ * `limit` is a page size, not a total — the first version of this client
+ * set it to 500 and read only the first page, which truncated silently.
+ * For insights that is worse than an outright error: they come per
+ * campaign *per day*, so a 4-day window overflows 500 rows at ~125
+ * campaigns, and the rows we drop read as **less spend** — which inflates
+ * ROI with nothing on screen to hint the numbers are partial.
+ */
+async function metaGetAllPages<T>(
+  firstUrl: string,
+  accessToken: string,
+  fallback: string,
+): Promise<T[]> {
+  const all: T[] = []
+  let url: string | undefined = firstUrl
+
+  for (let page = 0; page < MAX_PAGES && url; page += 1) {
+    const body: MetaPage<T> = await metaGet<MetaPage<T>>(url, accessToken, fallback)
+    all.push(...(body.data ?? []))
+    // `paging.next` is an absolute URL that already carries the cursor
+    // plus the original fields and params.
+    url = body.paging?.next
+  }
+
+  return all
 }
 
 export interface MetaCampaign {
@@ -59,12 +114,7 @@ export async function listCampaigns(args: {
   })
 
   const url = `${GRAPH_API_BASE}/${adAccountId}/campaigns?${params}`
-  const data = await metaGet<{ data: MetaCampaign[] }>(
-    url,
-    accessToken,
-    'Failed to list campaigns',
-  )
-  return data.data
+  return metaGetAllPages<MetaCampaign>(url, accessToken, 'Failed to list campaigns')
 }
 
 export interface MetaCampaignInsight {
@@ -100,12 +150,11 @@ export async function fetchCampaignInsights(args: {
   })
 
   const url = `${GRAPH_API_BASE}/${adAccountId}/insights?${params}`
-  const data = await metaGet<{ data: MetaCampaignInsight[] }>(
+  return metaGetAllPages<MetaCampaignInsight>(
     url,
     accessToken,
     'Failed to fetch campaign insights',
   )
-  return data.data
 }
 
 /** Pull the messaging-conversations-started count out of `actions`. */
@@ -161,21 +210,32 @@ export async function resolveAd(args: {
 
 /**
  * Verify a token/act_id pair actually works, for the Settings "Test
- * connection" button. Returns the ad account's own name + currency —
- * both useful to show back to the operator, and currency is what
- * `ad_accounts.currency` gets seeded from on connect.
+ * connection" button. Returns the ad account's own name, currency and
+ * timezone.
+ *
+ * Currency seeds `ad_accounts.currency` and gates whether ROI can be
+ * shown as a number at all (no FX in this app). Timezone seeds
+ * `ad_accounts.timezone`: Meta reports insight dates in *this* zone
+ * while the operator reads the page in the browser's, so when they
+ * differ a day's spend can look shifted for no visible reason. Storing
+ * it lets Settings say so instead of leaving it a mystery.
  */
 export async function verifyAdAccount(args: {
   adAccountId: string
   accessToken: string
-}): Promise<{ name: string; currency: string }> {
+}): Promise<{ name: string; currency: string; timezone: string | null }> {
   const { adAccountId, accessToken } = args
-  const params = new URLSearchParams({ fields: 'name,currency' })
+  const params = new URLSearchParams({ fields: 'name,currency,timezone_name' })
   const url = `${GRAPH_API_BASE}/${adAccountId}?${params}`
-  const data = await metaGet<{ name: string; currency: string }>(
-    url,
-    accessToken,
-    'Failed to verify ad account',
-  )
-  return data
+  const data = await metaGet<{
+    name: string
+    currency: string
+    timezone_name?: string
+  }>(url, accessToken, 'Failed to verify ad account')
+
+  return {
+    name: data.name,
+    currency: data.currency,
+    timezone: data.timezone_name ?? null,
+  }
 }

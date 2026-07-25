@@ -12,20 +12,23 @@
 // access token, rather than routing through the Meta-only connect
 // flow in /api/ads/accounts.
 //
-// Takes an initial spend figure so the campaign is useful immediately
-// instead of appearing with a cost-per-lead of "n/d" until a separate
-// step. It's recorded as one `ad_metrics_daily` row dated today
-// (`origin: 'manual'`) representing *cumulative spend to date* rather
-// than a daily breakdown — Google/other platforms have no per-day feed
-// here, so "how much have you spent so far" is the honest granularity
-// to ask an operator to track by hand. Editing it later
-// (PATCH /api/ads/campaigns/[id]/spend) overwrites that same row.
+// Takes an optional initial spend figure so the campaign is useful
+// immediately instead of showing a cost-per-lead of "n/d" until a
+// separate step. It lands as one dated `ad_metrics_daily` entry
+// (`origin: 'manual'`); further entries go through
+// /api/ads/campaigns/[id]/spend, where the dated-entry model and the
+// bug it replaced are explained.
+//
+// `date` comes from the client so the entry is filed under the
+// operator's calendar day rather than the server's — see
+// src/lib/ads/day-key.ts for why that distinction matters here.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { localDayKey } from '@/lib/dashboard/date-utils'
+import { parseDayKey, utcDayKey } from '@/lib/ads/day-key'
+import { ensureManualAdAccount, isManualPlatform } from '@/lib/ads/manual-account'
 
 const MANUAL_PLATFORMS = ['google', 'other'] as const
 
@@ -41,10 +44,11 @@ export async function POST(request: Request) {
       name?: unknown
       currency?: unknown
       spend?: unknown
+      date?: unknown
     } | null
 
     const platform = body?.platform
-    if (platform !== 'google' && platform !== 'other') {
+    if (!isManualPlatform(platform)) {
       return NextResponse.json(
         { error: `'platform' must be one of: ${MANUAL_PLATFORMS.join(', ')}` },
         { status: 400 },
@@ -66,28 +70,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "'spend' must be a non-negative number" }, { status: 400 })
     }
 
-    // One placeholder ad_accounts row per (account, platform) — reused
-    // across every manual campaign on that platform rather than one
-    // per campaign, since there's no real external account to key on.
-    const { data: adAccount, error: adAccountError } = await ctx.supabase
-      .from('ad_accounts')
-      .upsert(
-        {
-          account_id: ctx.accountId,
-          platform,
-          external_id: 'manual',
-          name: platform === 'google' ? 'Google Ads (manual)' : 'Other (manual)',
-          currency,
-          status: 'connected',
-          created_by: ctx.userId,
-        },
-        { onConflict: 'account_id,platform,external_id', ignoreDuplicates: false },
-      )
-      .select('id')
-      .single()
+    // The UI always sends this. The UTC fallback is for API callers that
+    // don't — better a defined clock than the server's incidental one.
+    const spendDate = body?.date === undefined ? utcDayKey(new Date()) : parseDayKey(body.date)
+    if (!spendDate) {
+      return NextResponse.json({ error: "'date' must be a valid YYYY-MM-DD day" }, { status: 400 })
+    }
 
-    if (adAccountError || !adAccount) {
-      console.error('[POST /api/ads/campaigns/manual] ad_accounts upsert error:', adAccountError)
+    // Shared with the Settings "Activate Google Ads" button so both
+    // paths converge on one placeholder row — see manual-account.ts.
+    const adAccount = await ensureManualAdAccount({
+      supabase: ctx.supabase,
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      platform,
+      currency,
+    })
+
+    if (adAccount.error) {
+      console.error('[POST /api/ads/campaigns/manual] ad_accounts upsert error:', adAccount.error)
       return NextResponse.json({ error: 'Failed to save campaign' }, { status: 500 })
     }
 
@@ -117,7 +118,7 @@ export async function POST(request: Request) {
       const { error: metricsError } = await ctx.supabase.from('ad_metrics_daily').insert({
         account_id: ctx.accountId,
         campaign_id: campaign.id,
-        date: localDayKey(new Date()),
+        date: spendDate,
         spend,
         currency,
         origin: 'manual',

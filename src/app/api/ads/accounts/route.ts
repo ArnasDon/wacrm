@@ -2,15 +2,24 @@
 // /api/ads/accounts
 //
 //   GET  — list this account's connected ad platforms.
-//   POST — connect one (currently: Meta).
+//   POST — connect one.
 //
 // Same shape as /api/account/api-keys: listing is open to any member
 // (viewer+, RLS-enforced), connecting is admin+ (it's an account-wide
 // credential, same bar as whatsapp_config).
 //
-// POST verifies the token against Meta *before* storing anything —
-// a bad act_id/token pair fails here with Meta's own error message
-// rather than surfacing later as a silent, unexplained sync failure.
+// Two kinds of platform, because only one of them has an API:
+//
+//   - **Meta** takes an act_id + token, and they are verified against
+//     Meta *before* anything is stored — a bad pair fails here with
+//     Meta's own error message rather than surfacing later as a silent,
+//     unexplained sync failure.
+//   - **Google / other** take no credential at all. Google's API needs a
+//     developer token Google approves over weeks, so its spend is typed
+//     in by hand; "connecting" it just creates the placeholder row that
+//     manual campaigns hang off (see manual-account.ts) so the platform
+//     is visible in Settings instead of only appearing once someone
+//     happens to add a campaign.
 // ============================================================
 
 import { NextResponse } from 'next/server'
@@ -22,9 +31,10 @@ import {
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { verifyAdAccount } from '@/lib/ads/meta'
+import { ensureManualAdAccount, isManualPlatform } from '@/lib/ads/manual-account'
 
 const SAFE_COLUMNS =
-  'id, platform, external_id, name, currency, status, last_error, last_synced_at, token_expires_at, created_at'
+  'id, platform, external_id, name, currency, timezone, status, last_error, last_synced_at, token_expires_at, created_at'
 
 export async function GET() {
   try {
@@ -61,12 +71,41 @@ export async function POST(request: Request) {
     } | null
 
     const platform = body?.platform
+
+    // Manual platforms: nothing to verify, nothing to encrypt. Currency
+    // comes from the account itself since there's no external account to
+    // ask — and it has to match, or ROI would be comparing two currencies.
+    if (isManualPlatform(platform)) {
+      const { data: acct } = await ctx.supabase
+        .from('accounts')
+        .select('default_currency')
+        .eq('id', ctx.accountId)
+        .maybeSingle()
+
+      const created = await ensureManualAdAccount({
+        supabase: ctx.supabase,
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        platform,
+        currency: acct?.default_currency ?? 'USD',
+      })
+      if (created.error) {
+        console.error('[POST /api/ads/accounts] manual upsert error:', created.error)
+        return NextResponse.json({ error: 'Failed to save ad account' }, { status: 500 })
+      }
+
+      const { data: manualRow } = await ctx.supabase
+        .from('ad_accounts')
+        .select(SAFE_COLUMNS)
+        .eq('id', created.id)
+        .single()
+
+      return NextResponse.json({ adAccount: manualRow }, { status: 201 })
+    }
+
     if (platform !== 'meta') {
-      // Google/other platforms are manual-only for now (Phase 3) — no
-      // token to verify, so they're created straight from the
-      // campaigns page instead of this connect flow.
       return NextResponse.json(
-        { error: "Only platform 'meta' can be connected here" },
+        { error: "'platform' must be one of: meta, google, other" },
         { status: 400 },
       )
     }
@@ -87,7 +126,7 @@ export async function POST(request: Request) {
       )
     }
 
-    let verified: { name: string; currency: string }
+    let verified: { name: string; currency: string; timezone: string | null }
     try {
       verified = await verifyAdAccount({ adAccountId: externalId, accessToken })
     } catch (err) {
@@ -104,6 +143,7 @@ export async function POST(request: Request) {
           external_id: externalId,
           name: verified.name,
           currency: verified.currency,
+          timezone: verified.timezone,
           access_token_encrypted: encrypt(accessToken),
           status: 'connected',
           last_error: null,

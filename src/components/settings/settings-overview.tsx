@@ -40,7 +40,10 @@ export function SettingsOverview({
     useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
-  const tRoles = useTranslations('roles');
+  // The role labels live under Settings.roles, not a top-level `roles`
+  // namespace — the wrong path made the badge render the raw key
+  // ("roles.owner") and log a MISSING_MESSAGE on every settings visit.
+  const tRoles = useTranslations('Settings.roles');
   const tSections = useTranslations('Settings.sections');
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);

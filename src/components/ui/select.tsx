@@ -6,7 +6,63 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * Collect `{ value, label }` from the `<SelectItem>`s in a subtree.
+ *
+ * Base UI's `Select.Value` renders the selected item's *raw value*
+ * unless `Select.Root` is given an `items` mapping — so a trigger would
+ * read "google_ads" or "agent" while the open menu showed the proper
+ * label. Every call site could pass `items` by hand, but there are ~20
+ * of them and each would then hold the same list twice, free to drift.
+ * Deriving it from the items already declared in `SelectContent` keeps
+ * one source of truth.
+ *
+ * Only plain-text labels are collected. An item whose children are JSX
+ * (an icon plus text, say) is left out, which just means that one falls
+ * back to Base UI's default rendering rather than showing something
+ * wrong.
+ */
+function collectItems(
+  children: React.ReactNode,
+  out: { value: string; label: string }[] = [],
+): { value: string; label: string }[] {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+
+    if (child.type === SelectItem) {
+      const props = child.props as { value?: unknown; children?: React.ReactNode }
+      if (typeof props.value === 'string' && typeof props.children === 'string') {
+        out.push({ value: props.value, label: props.children })
+      }
+      return
+    }
+
+    const nested = (child.props as { children?: React.ReactNode })?.children
+    if (nested) collectItems(nested, out)
+  })
+  return out
+}
+
+/**
+ * Select root. Derives `items` from its `SelectItem` children so the
+ * closed trigger shows labels, not raw values; pass `items` explicitly
+ * to override (needed when labels aren't plain strings).
+ */
+function Select({ items, children, ...props }: SelectPrimitive.Root.Props<string>) {
+  const derived = React.useMemo(
+    () => (items ? undefined : collectItems(children)),
+    [items, children],
+  )
+
+  return (
+    <SelectPrimitive.Root
+      items={items ?? (derived && derived.length > 0 ? derived : undefined)}
+      {...props}
+    >
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

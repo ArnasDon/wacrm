@@ -220,7 +220,7 @@ export default function CampaignsPage() {
                         <EditSpendDialog
                           campaignId={c.id}
                           campaignName={c.name}
-                          currentSpend={c.spend}
+                          currency={c.currency}
                           onSaved={fetchCampaigns}
                         />
                       )}

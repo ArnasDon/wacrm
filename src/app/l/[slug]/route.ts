@@ -23,22 +23,10 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 import { buildPrefilledMessage } from '@/lib/attribution/ref-token'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminClient: any = null
-function supabaseAdmin() {
-  if (!_adminClient) {
-    _adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-  }
-  return _adminClient
-}
+import { supabaseAdmin } from '@/lib/ads/admin-client'
 
 function getClientIp(request: Request): string {
   const xff = request.headers.get('x-forwarded-for')
@@ -84,11 +72,20 @@ export async function GET(
   // redirect the customer is waiting on. Atomic increment (see the
   // migration) rather than a JS read-then-write, which would race two
   // simultaneous clicks right when an ad goes live.
-  supabaseAdmin()
-    .rpc('increment_tracked_link_clicks', { p_link_id: link.id })
-    .then(({ error: rpcError }: { error: unknown }) => {
+  //
+  // Wrapped so nothing can escape: the builder's thenable has no
+  // `.catch`, and an unhandled rejection here would be a process-level
+  // error over a click counter.
+  void (async () => {
+    try {
+      const { error: rpcError } = await supabaseAdmin().rpc('increment_tracked_link_clicks', {
+        p_link_id: link.id,
+      })
       if (rpcError) console.error('[tracked-link redirect] click count failed:', rpcError)
-    })
+    } catch (err) {
+      console.error('[tracked-link redirect] click count threw:', err)
+    }
+  })()
 
   const phone = sanitizePhoneForMeta(link.whatsapp_number)
   const text = buildPrefilledMessage(link.message_template ?? '', slug)

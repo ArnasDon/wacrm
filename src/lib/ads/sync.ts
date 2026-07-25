@@ -12,21 +12,28 @@
  *      just "since last sync") because Meta revises a day's numbers
  *      for a short window after it ends; re-fetching is how those
  *      revisions reach us.
- *   3. Ad resolution — for every ad id seen in `contacts` /
- *      `attribution_events` that has no campaign yet, ask Meta what
- *      campaign it belongs to and backfill both tables. Capped per
- *      run: this is one Graph API call per ad, and a spike of new ads
- *      (a fresh campaign launch) should not turn one sync run into an
- *      unbounded loop against Meta's rate limits.
+ *   3. Ad resolution — for every ad id on a contact that has no
+ *      campaign yet, ask Meta what campaign it belongs to and backfill
+ *      `contacts` and `attribution_events`. Capped per run: this is one
+ *      Graph API call per ad, and a spike of new ads (a fresh campaign
+ *      launch) should not turn one sync run into an unbounded loop
+ *      against Meta's rate limits. Which ads are due — including how
+ *      failures are retried and eventually abandoned — is decided by
+ *      resolution-policy.ts.
  *
  * Idempotent throughout — `ad_campaigns` and `ad_metrics_daily` upsert
  * on their unique keys, so re-running for the same window overwrites
  * rather than duplicates.
+ *
+ * On clocks: no day is ever computed from the server's local time here.
+ * See src/lib/ads/day-key.ts for the three timezones involved and which
+ * one owns what.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { localDayKey } from '@/lib/dashboard/date-utils'
+import { utcDayKey, utcDayKeyDaysAgo } from './day-key'
+import { selectAdsToResolve } from './resolution-policy'
 import {
   extractMessagingStarted,
   fetchCampaignInsights,
@@ -39,8 +46,10 @@ import {
 const MAX_AD_RESOLUTIONS_PER_RUN = 25
 
 // How many trailing days of insights to re-fetch on every run, to catch
-// Meta's post-close-of-day revisions to recent spend.
-const INSIGHTS_WINDOW_DAYS = 3
+// Meta's post-close-of-day revisions to recent spend. Four rather than
+// three so the window still covers the edge day when the ad account's
+// timezone and UTC disagree about which day it is.
+const INSIGHTS_WINDOW_DAYS = 4
 
 export interface SyncResult {
   adAccountId: string
@@ -146,26 +155,29 @@ async function syncCampaigns(
   accessToken: string,
 ): Promise<number> {
   const campaigns = await listCampaigns({ adAccountId: row.external_id, accessToken })
+  if (campaigns.length === 0) return 0
 
-  for (const c of campaigns) {
-    const { error } = await db.from('ad_campaigns').upsert(
-      {
-        account_id: row.account_id,
-        ad_account_id: row.id,
-        external_id: c.id,
-        name: c.name,
-        objective: c.objective,
-        effective_status: c.effective_status,
-        daily_budget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
-        currency: row.currency,
-        is_manual: false,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'ad_account_id,external_id' },
-    )
-    if (error) {
-      throw new Error(`Failed to upsert campaign ${c.id}: ${error.message}`)
-    }
+  const now = new Date().toISOString()
+  // One batched upsert rather than one per campaign: this used to be a
+  // round trip per row, so an account with 50 campaigns paid 50
+  // sequential waits before the insights pass even started.
+  const { error } = await db.from('ad_campaigns').upsert(
+    campaigns.map((c) => ({
+      account_id: row.account_id,
+      ad_account_id: row.id,
+      external_id: c.id,
+      name: c.name,
+      objective: c.objective,
+      effective_status: c.effective_status,
+      daily_budget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
+      currency: row.currency,
+      is_manual: false,
+      updated_at: now,
+    })),
+    { onConflict: 'ad_account_id,external_id' },
+  )
+  if (error) {
+    throw new Error(`Failed to upsert campaigns: ${error.message}`)
   }
 
   return campaigns.length
@@ -176,10 +188,14 @@ async function syncInsights(
   row: AdAccountRow,
   accessToken: string,
 ): Promise<number> {
-  const until = localDayKey(new Date())
-  const since = localDayKey(
-    new Date(Date.now() - (INSIGHTS_WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000),
-  )
+  // UTC, not the server's local day: this runs on a UTC host in
+  // production and on a laptop in development, and an ambiguous window
+  // is how edge days go missing. The dates we *store* come from Meta's
+  // own `date_start` (the ad account's timezone) — this only bounds what
+  // we ask for, which is why a slightly generous window is the right
+  // call rather than a precise one.
+  const until = utcDayKey(new Date())
+  const since = utcDayKeyDaysAgo(INSIGHTS_WINDOW_DAYS - 1)
 
   const insights = await fetchCampaignInsights({
     adAccountId: row.external_id,
@@ -206,7 +222,8 @@ async function syncInsights(
     ]),
   )
 
-  let daysSynced = 0
+  const now = new Date().toISOString()
+  const rows = []
   for (const insight of insights) {
     const campaignId = campaignIdByExternal.get(insight.campaign_id)
     if (!campaignId) {
@@ -217,31 +234,36 @@ async function syncInsights(
       continue
     }
 
-    const { error } = await db.from('ad_metrics_daily').upsert(
-      {
-        account_id: row.account_id,
-        campaign_id: campaignId,
-        date: insight.date_start,
-        spend: Number(insight.spend) || 0,
-        impressions: Number(insight.impressions) || 0,
-        clicks: Number(insight.clicks) || 0,
-        messaging_started: extractMessagingStarted(insight.actions),
-        currency: row.currency,
-        origin: 'api',
-        raw: insight,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'campaign_id,date' },
-    )
-    if (error) {
-      throw new Error(
-        `Failed to upsert metrics for campaign ${insight.campaign_id} on ${insight.date_start}: ${error.message}`,
-      )
-    }
-    daysSynced += 1
+    rows.push({
+      account_id: row.account_id,
+      campaign_id: campaignId,
+      // Meta's own day, in the ad account's timezone. Never computed
+      // here — see the window comment above.
+      date: insight.date_start,
+      spend: Number(insight.spend) || 0,
+      impressions: Number(insight.impressions) || 0,
+      clicks: Number(insight.clicks) || 0,
+      messaging_started: extractMessagingStarted(insight.actions),
+      currency: row.currency,
+      origin: 'api',
+      raw: insight,
+      updated_at: now,
+    })
   }
 
-  return daysSynced
+  if (rows.length === 0) return 0
+
+  // Batched for the same reason as the campaigns pass: insights are per
+  // campaign *per day*, so a row-at-a-time loop was the single biggest
+  // source of round trips in the whole sync.
+  const { error } = await db
+    .from('ad_metrics_daily')
+    .upsert(rows, { onConflict: 'campaign_id,date' })
+  if (error) {
+    throw new Error(`Failed to upsert daily metrics: ${error.message}`)
+  }
+
+  return rows.length
 }
 
 async function resolveUnresolvedAds(
@@ -264,9 +286,6 @@ async function resolveUnresolvedAds(
     throw new Error(`Failed to list unresolved ads: ${contactsError.message}`)
   }
 
-  // Already-attempted ads (resolved or permanently failed) shouldn't be
-  // retried every run — ad_entities is the "have we looked at this ad
-  // id before" record.
   const adIds = Array.from(
     new Set(
       ((unresolvedContacts ?? []) as { source_ad_id: string }[]).map((c) => c.source_ad_id),
@@ -274,19 +293,52 @@ async function resolveUnresolvedAds(
   )
   if (adIds.length === 0) return { resolved: 0, failed: 0 }
 
+  // What we already know about these ads. Crucially this is *not* a
+  // "have we seen it before" check any more: a row exists after a
+  // failure too, and treating that as final made every transient error
+  // permanent. selectAdsToResolve decides using attempts + backoff.
   const { data: seenRows } = await db
     .from('ad_entities')
-    .select('ad_id')
+    .select('ad_id, campaign_id, attempts, last_attempt_at')
     .eq('account_id', row.account_id)
     .in('ad_id', adIds)
-  const alreadySeen = new Set(((seenRows ?? []) as { ad_id: string }[]).map((r) => r.ad_id))
 
-  const toResolve = adIds.filter((id) => !alreadySeen.has(id)).slice(0, MAX_AD_RESOLUTIONS_PER_RUN)
+  const seenByAdId = new Map(
+    (
+      (seenRows ?? []) as {
+        ad_id: string
+        campaign_id: string | null
+        attempts: number | null
+        last_attempt_at: string | null
+      }[]
+    ).map((r) => [r.ad_id, r]),
+  )
+
+  const now = new Date()
+  const toResolve = selectAdsToResolve({
+    candidates: adIds.map((adId) => {
+      const seen = seenByAdId.get(adId)
+      return {
+        adId,
+        campaignId: seen?.campaign_id ?? null,
+        attempts: seen?.attempts ?? 0,
+        lastAttemptAt: seen?.last_attempt_at ? new Date(seen.last_attempt_at) : null,
+      }
+    }),
+    now,
+    max: MAX_AD_RESOLUTIONS_PER_RUN,
+  })
 
   let resolved = 0
   let failed = 0
 
   for (const adId of toResolve) {
+    const attemptsSoFar = seenByAdId.get(adId)?.attempts ?? 0
+    // Counted before the call, so a thrown error still records the try —
+    // otherwise a consistently failing ad would retry forever.
+    const attempts = attemptsSoFar + 1
+    const attemptedAt = new Date().toISOString()
+
     try {
       const info = await resolveAd({ adId, accessToken })
 
@@ -311,17 +363,30 @@ async function resolveUnresolvedAds(
           adset_name: info.adsetName,
           campaign_id: campaignRowId,
           last_error: campaignRowId ? null : 'Ad resolved but its campaign is not synced yet',
-          resolved_at: new Date().toISOString(),
+          attempts,
+          last_attempt_at: attemptedAt,
+          // Only a real resolution stamps this; `last_attempt_at` is
+          // what "we tried" means now.
+          resolved_at: campaignRowId ? attemptedAt : null,
         },
         { onConflict: 'account_id,ad_id' },
       )
 
       if (campaignRowId) {
+        // Both tables: contacts is what the /campaigns reports read, and
+        // attribution_events is the append-only log that migration 037's
+        // idx_attribution_events_unresolved exists to scan.
         await db
           .from('contacts')
           .update({ source_campaign_id: info.campaignId })
           .eq('account_id', row.account_id)
           .eq('source_ad_id', adId)
+        await db
+          .from('attribution_events')
+          .update({ campaign_id: info.campaignId })
+          .eq('account_id', row.account_id)
+          .eq('ad_id', adId)
+          .is('campaign_id', null)
         resolved += 1
       } else {
         failed += 1
@@ -335,7 +400,8 @@ async function resolveUnresolvedAds(
           ad_account_id: row.id,
           ad_id: adId,
           last_error: message,
-          resolved_at: new Date().toISOString(),
+          attempts,
+          last_attempt_at: attemptedAt,
         },
         { onConflict: 'account_id,ad_id' },
       )

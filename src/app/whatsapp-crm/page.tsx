@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Globe2, Layers3 } from "lucide-react";
+import { ArrowRight, Globe2, Layers3, Mail, Phone } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { vm } from "@/components/marketing/marketing-theme";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,8 @@ import { cn } from "@/lib/utils";
 const total = getAllSeoPages().length;
 
 export const metadata: Metadata = {
-  title: `WhatsApp CRM Guides by Country & Industry — ${PRODUCT_NAME}`,
-  description: `Browse ${total}+ expert WhatsApp Business CRM guides for industries across ${COUNTRIES.length} countries. E-E-A-T reviewed playbooks by ${COMPANY_NAME} for shared inbox, pipelines, and automations.`,
+  title: `WhatsApp & Email CRM Guides by Country & Industry — ${PRODUCT_NAME}`,
+  description: `Browse ${total}+ expert WhatsApp Business + Email CRM guides for industries across ${COUNTRIES.length} countries. E-E-A-T reviewed playbooks by ${COMPANY_NAME} for shared inbox, SMTP email, pipelines, and automations.`,
   metadataBase: new URL(OFFICIAL_APP_URL),
   alternates: { canonical: `${OFFICIAL_APP_URL}/whatsapp-crm` },
   robots: { index: true, follow: true },
@@ -30,12 +31,14 @@ export const metadata: Metadata = {
     "whatsapp crm",
     "whatsapp business api crm",
     "whatsapp shared inbox",
+    "email marketing crm",
+    "smtp email campaigns",
     "vedmint crm",
     "whatsapp crm by country",
   ],
   openGraph: {
-    title: `WhatsApp CRM Guides — ${PRODUCT_NAME}`,
-    description: `Country and industry WhatsApp CRM guides with E-E-A-T signals — available worldwide.`,
+    title: `WhatsApp & Email CRM Guides — ${PRODUCT_NAME}`,
+    description: `Country and industry WhatsApp + Email CRM guides with E-E-A-T signals — available worldwide.`,
     url: `${OFFICIAL_APP_URL}/whatsapp-crm`,
     siteName: COMPANY_NAME,
     type: "website",
@@ -59,18 +62,34 @@ export default function WhatsappCrmIndexPage() {
             {total} E-E-A-T guides · {COUNTRIES.length} countries
           </div>
           <h1 className="mt-5 max-w-3xl text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl sm:leading-[1.1]">
-            WhatsApp CRM playbooks for every{" "}
+            WhatsApp & Email CRM playbooks for every{" "}
             <span className={vm.gradientText}>country & industry</span>
           </h1>
           <p className="mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">
             Expert, regularly reviewed guides from {COMPANY_NAME}. Learn how{" "}
-            {PRODUCT_NAME} helps teams worldwide run WhatsApp Business with a
-            shared inbox, CRM, pipelines, and automations.
+            {PRODUCT_NAME} helps teams worldwide run WhatsApp Business and email
+            marketing with a shared inbox, CRM, pipelines, and automations.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
             <Button className={cn("h-11 rounded-xl", vm.btnPrimary)} render={<Link href="/signup" />}>
               Get started
               <ArrowRight className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className={cn("h-11 rounded-xl", vm.btnOutline)}
+              render={<Link href="/docs/whatsapp-setup" />}
+            >
+              <Phone className="size-4" />
+              WhatsApp
+            </Button>
+            <Button
+              variant="outline"
+              className={cn("h-11 rounded-xl", vm.btnOutline)}
+              render={<Link href="/docs/email-marketing" />}
+            >
+              <Mail className="size-4" />
+              Email
             </Button>
             <Button
               variant="outline"
@@ -84,6 +103,10 @@ export default function WhatsappCrmIndexPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+        <section className="mb-14">
+          <ChannelPair />
+        </section>
+
         <section>
           <div className="flex items-center gap-2">
             <Layers3 className="size-5 text-teal-600" />

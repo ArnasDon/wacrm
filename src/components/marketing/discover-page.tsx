@@ -10,6 +10,7 @@ import {
   Shield,
   Wrench,
 } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { vm } from "@/components/marketing/marketing-theme";
 import { FeatureIcon } from "@/components/marketing/feature-icons";
@@ -63,6 +64,20 @@ export function DiscoverPageContent() {
             </Button>
             <Button
               variant="outline"
+              render={<Link href="/docs/whatsapp-setup" />}
+              className={vm.btnOutline}
+            >
+              WhatsApp
+            </Button>
+            <Button
+              variant="outline"
+              render={<Link href="/docs/email-marketing" />}
+              className={vm.btnOutline}
+            >
+              Email
+            </Button>
+            <Button
+              variant="outline"
               render={<Link href="/docs/getting-started" />}
               className={vm.btnOutline}
             >
@@ -70,6 +85,10 @@ export function DiscoverPageContent() {
               Documentation
             </Button>
           </div>
+        </div>
+
+        <div className="mt-10">
+          <ChannelPair />
         </div>
 
         {/* Quick nav */}

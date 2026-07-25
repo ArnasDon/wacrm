@@ -268,7 +268,7 @@ export const INDUSTRIES: readonly IndustryDef[] = [
 
 export const SEO_CONTENT_DATES = {
   published: "2026-01-15",
-  modified: "2026-07-22",
+  modified: "2026-07-25",
 } as const;
 
 export function toCountrySlug(country: string): string {
@@ -292,14 +292,14 @@ function buildPage(
   const path = seoPagePath(industry.slug, cSlug);
   const slug = `${industry.slug}/${cSlug}`;
 
-  const title = `WhatsApp CRM for ${industry.name} in ${country} | ${PRODUCT_NAME}`;
-  const description = `Best WhatsApp Business CRM for ${industry.name.toLowerCase()} teams in ${country}. Shared inbox, pipelines, Meta template broadcasts, email marketing & automations by ${COMPANY_NAME}. Official WhatsApp Business API — start today.`;
-  const headline = `WhatsApp CRM for ${industry.name} in ${country}`;
-  const intro = `${PRODUCT_NAME} by ${COMPANY_NAME} helps ${industry.name.toLowerCase()} organisations in ${country} run professional WhatsApp Business conversations — shared team inbox, CRM contacts, sales pipelines, template broadcasts, email marketing on Business+, and no-code automations purpose-built for ${industry.angle}.`;
+  const title = `WhatsApp & Email CRM for ${industry.name} in ${country} | ${PRODUCT_NAME}`;
+  const description = `Best WhatsApp Business + Email CRM for ${industry.name.toLowerCase()} teams in ${country}. Shared inbox, pipelines, Meta template broadcasts, BYO SMTP email marketing & automations by ${COMPANY_NAME}. Official WhatsApp Business API — start today.`;
+  const headline = `WhatsApp & Email CRM for ${industry.name} in ${country}`;
+  const intro = `${PRODUCT_NAME} by ${COMPANY_NAME} helps ${industry.name.toLowerCase()} organisations in ${country} run WhatsApp Business and email marketing side by side — shared team inbox, CRM contacts, sales pipelines, Meta template broadcasts, BYO SMTP campaigns on Business+, and no-code automations purpose-built for ${industry.angle}.`;
 
-  const challenge = `In ${country}, ${industry.name.toLowerCase()} teams often struggle because ${industry.pain} ${PRODUCT_NAME} replaces fragmented personal chats with an accountable workspace on the official WhatsApp Business API.`;
-  const solution = `With ${PRODUCT_NAME}, your ${country} team centralises every WhatsApp thread, tags leads, assigns owners, moves deals through pipelines, and automates ${industry.angle} — so customers get faster replies and managers get visibility.`;
-  const expertise = `${COMPANY_NAME} builds WhatsApp Business CRM workflows used by sales, support, and operations teams worldwide. ${PRODUCT_NAME} combines Meta-approved messaging, encrypted credential handling, role-based access, and practical automations so ${industry.name.toLowerCase()} companies in ${country} can adopt WhatsApp CRM without custom engineering.`;
+  const challenge = `In ${country}, ${industry.name.toLowerCase()} teams often struggle because ${industry.pain} ${PRODUCT_NAME} replaces fragmented personal chats and disconnected email tools with one accountable workspace on the official WhatsApp Business API plus BYO SMTP email.`;
+  const solution = `With ${PRODUCT_NAME}, your ${country} team centralises every WhatsApp thread and email campaign, tags leads, assigns owners, moves deals through pipelines, and automates ${industry.angle} — so customers get faster replies on both channels and managers get visibility.`;
+  const expertise = `${COMPANY_NAME} builds WhatsApp Business and email CRM workflows used by sales, support, and operations teams worldwide. ${PRODUCT_NAME} combines Meta-approved messaging, BYO SMTP email marketing, encrypted credential handling, role-based access, and practical automations so ${industry.name.toLowerCase()} companies in ${country} can adopt both channels without custom engineering.`;
 
   const benefits = [
     `Shared WhatsApp Business inbox for ${industry.name.toLowerCase()} teams in ${country}`,
@@ -342,25 +342,31 @@ function buildPage(
       body: "Add Phone Number ID, WABA ID, access token, and webhook settings — then verify with Meta.",
     },
     {
-      title: `Configure ${industry.name.toLowerCase()} workflows`,
-      body: `Import contacts, set pipeline stages for ${industry.angle}, and sync approved message templates.`,
+      title: "Connect Email (BYO SMTP)",
+      body: "Save and verify your SMTP settings, create lists, pick starter templates, and prepare campaigns on Business+.",
     },
     {
-      title: "Launch inbox, broadcasts & automations",
-      body: "Start answering in the shared inbox, schedule campaigns, and turn on flows for repeatable follow-ups.",
+      title: `Configure ${industry.name.toLowerCase()} workflows`,
+      body: `Import contacts, set pipeline stages for ${industry.angle}, and sync approved WhatsApp message templates.`,
+    },
+    {
+      title: "Launch inbox, broadcasts, email & automations",
+      body: "Answer in the shared WhatsApp inbox, send email campaigns, schedule template broadcasts, and turn on flows for repeatable follow-ups.",
     },
   ];
 
   const outcomes = [
     `Faster first response on WhatsApp for ${industry.name.toLowerCase()} leads in ${country}`,
+    "Email campaigns from your own SMTP with lists and unsubscribe-ready sends",
     "Fewer lost conversations across personal devices",
     "Clear ownership with role-based access",
-    "Measurable outreach via delivery and read tracking",
+    "Measurable outreach via WhatsApp delivery/read tracking and email sends",
     industry.outcome,
   ];
 
   const trustSignals = [
     "Built on the official Meta WhatsApp Business API",
+    "Email marketing with bring-your-own SMTP (Business+)",
     "Encrypted storage for sensitive WhatsApp credentials",
     `Support via ${SUPPORT_EMAIL}`,
     `Published by ${COMPANY_NAME}`,
@@ -371,7 +377,7 @@ function buildPage(
   const faqs: SeoFaq[] = [
     {
       q: `Is ${PRODUCT_NAME} available for ${industry.name} companies in ${country}?`,
-      a: `Yes. ${PRODUCT_NAME} is available worldwide, including ${country}. ${industry.name} teams use it for ${industry.angle} on WhatsApp with a shared inbox, CRM records, pipelines, and automations.`,
+      a: `Yes. ${PRODUCT_NAME} is available worldwide, including ${country}. ${industry.name} teams use it for ${industry.angle} on WhatsApp and email with a shared inbox, CRM records, pipelines, and automations.`,
     },
     {
       q: `What makes a WhatsApp CRM useful for ${industry.name}?`,
@@ -382,8 +388,12 @@ function buildPage(
       a: `Yes. ${PRODUCT_NAME} connects through Meta’s official WhatsApp Business API (WABA). You bring your credentials; we provide inbox, CRM, broadcasts, email marketing (Business+), flows, and team collaboration.`,
     },
     {
+      q: "Does VedMint support email marketing as well as WhatsApp?",
+      a: `Yes. WhatsApp and Email are both first-class channels. On Business and Enterprise plans you connect your own SMTP, manage lists and templates, and send campaigns alongside WhatsApp template broadcasts.`,
+    },
+    {
       q: `How long does setup take for a team in ${country}?`,
-      a: "Most teams create an account, connect WhatsApp credentials, invite members, and start using the shared inbox the same day. Template approval timelines depend on Meta.",
+      a: "Most teams create an account, connect WhatsApp credentials (and SMTP for email), invite members, and start using the shared inbox the same day. Template approval timelines depend on Meta.",
     },
     {
       q: "Can multiple agents use one WhatsApp Business number?",
@@ -391,7 +401,7 @@ function buildPage(
     },
     {
       q: "Is this guide written by a real product team?",
-      a: `Yes. This page is maintained by ${COMPANY_NAME}, the team behind ${PRODUCT_NAME}. Content is reviewed for accuracy against current product capabilities and Meta WhatsApp Business API practices.`,
+      a: `Yes. This page is maintained by ${COMPANY_NAME}, the team behind ${PRODUCT_NAME}. Content is reviewed for accuracy against current product capabilities, Meta WhatsApp Business API practices, and email marketing features.`,
     },
     {
       q: "Where can I see pricing?",
@@ -412,8 +422,11 @@ function buildPage(
       ...industry.keywords,
       `whatsapp crm ${country.toLowerCase()}`,
       `${industry.name.toLowerCase()} whatsapp business ${country.toLowerCase()}`,
+      `email marketing crm ${country.toLowerCase()}`,
       "vedmint crm",
       "whatsapp business api crm",
+      "whatsapp and email crm",
+      "smtp email marketing crm",
     ],
     headline,
     intro,

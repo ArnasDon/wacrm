@@ -9,13 +9,21 @@ import {
 } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: `${PRODUCT_NAME} — WhatsApp Business CRM`,
+  title: `${PRODUCT_NAME} — WhatsApp & Email CRM`,
   description: META_DESCRIPTION,
   metadataBase: new URL(OFFICIAL_APP_URL),
   alternates: { canonical: OFFICIAL_APP_URL },
   robots: { index: true, follow: true },
+  keywords: [
+    "whatsapp crm",
+    "email marketing crm",
+    "whatsapp business api",
+    "smtp email campaigns",
+    "vedmint crm",
+    "shared inbox",
+  ],
   openGraph: {
-    title: `${PRODUCT_NAME} — ${COMPANY_NAME}`,
+    title: `${PRODUCT_NAME} — WhatsApp & Email CRM`,
     description: META_DESCRIPTION,
     url: OFFICIAL_APP_URL,
     siteName: COMPANY_NAME,

@@ -7,12 +7,14 @@ import {
   ChevronRight,
   Clock3,
   Lock,
+  Mail,
   MapPin,
   MessageSquare,
-  ShieldCheck,
+  Phone,
   Sparkles,
   Users,
 } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { vm } from "@/components/marketing/marketing-theme";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { cn } from "@/lib/utils";
 
 const TOC = [
   { id: "overview", label: "Overview" },
+  { id: "channels", label: "WhatsApp & Email" },
   { id: "challenges", label: "Challenges" },
   { id: "solution", label: "Solution" },
   { id: "features", label: "Features" },
@@ -128,16 +131,25 @@ export function SeoLandingPageContent({
               <Button
                 variant="outline"
                 className={cn("h-11 rounded-xl", vm.btnOutline)}
-                render={<Link href="/pricing" />}
+                render={<Link href="/docs/whatsapp-setup" />}
               >
-                View pricing
+                <Phone className="size-4" />
+                WhatsApp setup
               </Button>
               <Button
                 variant="outline"
                 className={cn("h-11 rounded-xl", vm.btnOutline)}
-                render={<Link href="/docs/getting-started" />}
+                render={<Link href="/docs/email-marketing" />}
               >
-                Setup docs
+                <Mail className="size-4" />
+                Email marketing
+              </Button>
+              <Button
+                variant="outline"
+                className={cn("h-11 rounded-xl", vm.btnOutline)}
+                render={<Link href="/pricing" />}
+              >
+                View pricing
               </Button>
             </div>
           </div>
@@ -168,18 +180,23 @@ export function SeoLandingPageContent({
           <div className="min-w-0 space-y-14">
             <section id="overview">
               <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                Overview: WhatsApp CRM for {page.industry} teams in{" "}
+                Overview: WhatsApp + Email CRM for {page.industry} teams in{" "}
                 {page.country}
               </h2>
               <p className="mt-4 text-[15px] leading-relaxed text-slate-600">
                 {page.solution}
               </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   {
-                    icon: ShieldCheck,
-                    label: "Official Meta API",
-                    body: "WhatsApp Business API ready",
+                    icon: Phone,
+                    label: "WhatsApp",
+                    body: "Official Meta Business API",
+                  },
+                  {
+                    icon: Mail,
+                    label: "Email",
+                    body: "BYO SMTP campaigns (Business+)",
                   },
                   {
                     icon: Lock,
@@ -189,7 +206,7 @@ export function SeoLandingPageContent({
                   {
                     icon: Sparkles,
                     label: "Built for teams",
-                    body: "Roles, inbox, pipelines & email",
+                    body: "Roles, inbox & pipelines",
                   },
                 ].map((item) => (
                   <div
@@ -204,6 +221,10 @@ export function SeoLandingPageContent({
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section id="channels">
+              <ChannelPair />
             </section>
 
             <section id="challenges">
@@ -365,11 +386,12 @@ export function SeoLandingPageContent({
 
             <section className="rounded-3xl border border-teal-200 bg-teal-50/60 px-6 py-8 text-center sm:px-10">
               <h2 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-                Ready to run WhatsApp CRM in {page.country}?
+                Ready for WhatsApp and Email in {page.country}?
               </h2>
               <p className="mx-auto mt-3 max-w-xl text-sm text-slate-600">
                 Create your {PRODUCT_NAME} workspace, connect WhatsApp Business
-                API credentials, and launch a shared inbox for {page.industry}.
+                API and SMTP email, then launch a shared inbox for{" "}
+                {page.industry}.
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Button
@@ -382,9 +404,18 @@ export function SeoLandingPageContent({
                 <Button
                   variant="outline"
                   className={cn("h-11 rounded-xl", vm.btnOutline)}
-                  render={<Link href="/discover" />}
+                  render={<Link href="/docs/whatsapp-setup" />}
                 >
-                  Explore features
+                  <Phone className="size-4" />
+                  WhatsApp
+                </Button>
+                <Button
+                  variant="outline"
+                  className={cn("h-11 rounded-xl", vm.btnOutline)}
+                  render={<Link href="/docs/email-marketing" />}
+                >
+                  <Mail className="size-4" />
+                  Email
                 </Button>
               </div>
             </section>

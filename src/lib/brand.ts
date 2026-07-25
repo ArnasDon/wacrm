@@ -36,7 +36,7 @@ export const VEDMINT_MINT_DARK = "#0d9488";
 export const SUPPORT_EMAIL = "support@vedmint.com";
 
 export const META_DESCRIPTION =
-  "WhatsApp Business CRM by VedMint Consultancy Services — shared inbox, contacts, pipelines, WhatsApp broadcasts, email marketing, and automations.";
+  "WhatsApp & Email CRM by VedMint Consultancy Services — shared inbox, contacts, pipelines, WhatsApp broadcasts, BYO SMTP email marketing, and automations.";
 
 export const COPYRIGHT_NOTICE = `© ${new Date().getFullYear()} ${COMPANY_NAME}. All Rights Reserved.`;
 

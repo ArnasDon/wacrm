@@ -120,6 +120,10 @@ export function articleJsonLd(page: SeoPage) {
       },
       {
         "@type": "Thing",
+        name: "Email marketing CRM",
+      },
+      {
+        "@type": "Thing",
         name: `${page.industry} CRM`,
       },
     ],

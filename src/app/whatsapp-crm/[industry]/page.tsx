@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, ChevronRight, MapPin } from "lucide-react";
+import { ArrowRight, ChevronRight, Mail, MapPin, Phone } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { vm } from "@/components/marketing/marketing-theme";
 import { Button } from "@/components/ui/button";
@@ -37,8 +38,8 @@ export async function generateMetadata({
   const industry = INDUSTRIES.find((i) => i.slug === industrySlug);
   if (!industry) return { title: "Not found", robots: { index: false } };
 
-  const title = `WhatsApp CRM for ${industry.name} Worldwide | ${PRODUCT_NAME}`;
-  const description = `Country-by-country WhatsApp Business CRM guides for ${industry.name.toLowerCase()} teams. Shared inbox, pipelines, broadcasts, and automations by ${COMPANY_NAME}.`;
+  const title = `WhatsApp & Email CRM for ${industry.name} Worldwide | ${PRODUCT_NAME}`;
+  const description = `Country-by-country WhatsApp Business + Email CRM guides for ${industry.name.toLowerCase()} teams. Shared inbox, SMTP campaigns, pipelines, broadcasts, and automations by ${COMPANY_NAME}.`;
   const url = `${OFFICIAL_APP_URL}/whatsapp-crm/${industry.slug}`;
 
   return {
@@ -84,17 +85,33 @@ export default async function WhatsappCrmIndustryPage({ params }: PageProps) {
         </nav>
 
         <h1 className="mt-5 max-w-3xl text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-          WhatsApp CRM for {industry.name} — worldwide guides
+          WhatsApp & Email CRM for {industry.name} — worldwide guides
         </h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-slate-600">
           Explore {PRODUCT_NAME} playbooks for {industry.name.toLowerCase()}{" "}
           teams across {COUNTRIES.length} countries. Built for{" "}
-          {industry.angle}.
+          {industry.angle} on WhatsApp and email.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           <Button className={vm.btnPrimary} render={<Link href="/signup" />}>
             Get started
             <ArrowRight className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            className={cn("rounded-xl", vm.btnOutline)}
+            render={<Link href="/docs/whatsapp-setup" />}
+          >
+            <Phone className="size-4" />
+            WhatsApp
+          </Button>
+          <Button
+            variant="outline"
+            className={cn("rounded-xl", vm.btnOutline)}
+            render={<Link href="/docs/email-marketing" />}
+          >
+            <Mail className="size-4" />
+            Email
           </Button>
           <Button
             variant="outline"
@@ -104,6 +121,10 @@ export default async function WhatsappCrmIndustryPage({ params }: PageProps) {
             Pricing
           </Button>
         </div>
+
+        <section className="mt-12">
+          <ChannelPair />
+        </section>
 
         <section className="mt-12">
           <h2 className="text-lg font-semibold text-slate-900">

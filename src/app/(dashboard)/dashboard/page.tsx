@@ -26,6 +26,7 @@ import type {
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
+import { ChannelHighlights } from '@/components/dashboard/channel-highlights'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
@@ -205,6 +206,11 @@ export default function DashboardPage() {
             </>
           )}
         </div>
+      </DashboardWidgetBoundary>
+
+      {/* Channels — WhatsApp + Email both highlighted on home */}
+      <DashboardWidgetBoundary title="Channels">
+        <ChannelHighlights />
       </DashboardWidgetBoundary>
 
       {/* Quick actions */}

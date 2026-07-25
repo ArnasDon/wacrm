@@ -8,7 +8,9 @@ import {
   ExternalLink,
   Globe,
   Headphones,
+  Mail,
   MessageSquare,
+  Phone,
   Radio,
   Shield,
   Sparkles,
@@ -16,6 +18,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { FeatureIcon } from "@/components/marketing/feature-icons";
 import { vm } from "@/components/marketing/marketing-theme";
@@ -130,6 +133,32 @@ function HeroPreview() {
         className={`absolute -inset-4 rounded-3xl bg-gradient-to-br ${vm.gradientGlow} blur-2xl`}
       />
       <div className="relative space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:p-5">
+        {/* Equal channel spotlight in the hero visual */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5">
+            <div className="flex size-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Phone className="size-3.5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-emerald-900">WhatsApp</p>
+              <p className="truncate text-[11px] text-emerald-700/80">
+                Business API · Live
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+            <div className="flex size-8 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+              <Mail className="size-3.5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-sky-900">Email</p>
+              <p className="truncate text-[11px] text-sky-700/80">
+                BYO SMTP · Ready
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-full bg-teal-50 text-teal-600">
@@ -145,8 +174,8 @@ function HeroPreview() {
 
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: "New contacts", value: "24", sub: "+18% today" },
-            { label: "Messages sent", value: "1.2k", sub: "This week" },
+            { label: "WhatsApp sent", value: "1.2k", sub: "This week" },
+            { label: "Email sent", value: "480", sub: "Campaigns" },
             { label: "Open deals", value: "₹4.8L", sub: "Pipeline value" },
             { label: "Automations", value: "8", sub: "Active flows" },
           ].map((stat) => (
@@ -202,13 +231,14 @@ export function HomePageContent() {
               </Badge>
 
               <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-                The WhatsApp CRM your{" "}
+                The WhatsApp & Email CRM your{" "}
                 <span className={vm.gradientText}>whole team</span> can run on
               </h1>
 
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">
-                {META_DESCRIPTION} Connect Meta WhatsApp, run email campaigns on
-                your SMTP, and grow revenue — from one modern dashboard.
+                {META_DESCRIPTION} Connect Meta WhatsApp and your SMTP email —
+                both channels are first-class — and grow revenue from one modern
+                dashboard.
               </p>
 
               <ul className="mt-6 space-y-2.5">
@@ -223,7 +253,7 @@ export function HomePageContent() {
                 ))}
               </ul>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Button
                   size="lg"
                   render={<Link href="/signup" />}
@@ -235,11 +265,20 @@ export function HomePageContent() {
                 <Button
                   variant="outline"
                   size="lg"
-                  render={<Link href="/docs/getting-started" />}
-                  className={`h-12 px-8 text-base ${vm.btnOutline}`}
+                  render={<Link href="/docs/whatsapp-setup" />}
+                  className={`h-12 px-6 text-base ${vm.btnOutline}`}
                 >
-                  <BookOpen className="size-4" />
-                  Setup guide
+                  <Phone className="size-4" />
+                  WhatsApp
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  render={<Link href="/docs/email-marketing" />}
+                  className={`h-12 px-6 text-base ${vm.btnOutline}`}
+                >
+                  <Mail className="size-4" />
+                  Email
                 </Button>
               </div>
 
@@ -264,6 +303,17 @@ export function HomePageContent() {
               </div>
             ))}
           </div>
+
+        </div>
+      </section>
+
+      {/* Channels — equal highlight for WhatsApp + Email on public home */}
+      <section
+        id="channels"
+        className="scroll-mt-24 border-b border-slate-100 bg-white"
+      >
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+          <ChannelPair />
         </div>
       </section>
 
@@ -277,11 +327,11 @@ export function HomePageContent() {
                 Built by {COMPANY_NAME}
               </h2>
               <p className="mt-4 text-base leading-relaxed text-slate-600">
-                {PRODUCT_NAME} is a complete WhatsApp Business CRM powered by the
-                official Meta API, with email marketing on Business and Enterprise
-                plans. Your sales, support, and marketing teams share one inbox,
-                one contact database, and one automation engine — without juggling
-                spreadsheets or third-party tools.
+                {PRODUCT_NAME} is a WhatsApp & Email CRM powered by the official
+                Meta WhatsApp Business API and BYO SMTP email marketing (Business
+                and Enterprise). Your sales, support, and marketing teams share
+                one inbox, one contact database, and one automation engine —
+                without juggling spreadsheets or third-party tools.
               </p>
               <p className="mt-4 text-base leading-relaxed text-slate-600">
                 From the first inbound message to a closed deal, every step lives
@@ -473,17 +523,28 @@ export function HomePageContent() {
                 Go live in four steps
               </h2>
               <p className="mt-4 text-slate-600">
-                From account creation to your first conversation — our setup
-                guides walk you through Meta WhatsApp integration end to end.
+                From account creation to your first conversation — set up Meta
+                WhatsApp and SMTP email side by side with our guides.
               </p>
-              <Button
-                size="lg"
-                render={<Link href="/docs/whatsapp-setup" />}
-                className={`mt-6 ${vm.btnSolid}`}
-              >
-                WhatsApp setup guide
-                <ArrowRight className="size-4" />
-              </Button>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  size="lg"
+                  render={<Link href="/docs/whatsapp-setup" />}
+                  className={vm.btnSolid}
+                >
+                  <Phone className="size-4" />
+                  WhatsApp setup
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  render={<Link href="/docs/email-marketing" />}
+                  className={vm.btnOutline}
+                >
+                  <Mail className="size-4" />
+                  Email setup
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -660,14 +721,13 @@ export function HomePageContent() {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.25),transparent_55%)]" />
             <div className="relative mx-auto max-w-2xl">
               <h2 className="text-2xl font-bold text-white sm:text-3xl">
-                Ready to run WhatsApp like a pro?
+                Ready to run WhatsApp and Email like a pro?
               </h2>
               <p className={`mx-auto mt-3 ${vm.ctaSubtext}`}>
-                Create your free account, connect Meta WhatsApp, upgrade for
-                email marketing when ready, and manage every conversation from
-                one place.
+                Create your free account, connect Meta WhatsApp and SMTP email,
+                and manage every conversation and campaign from one place.
               </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
                 <Button
                   size="lg"
                   render={<Link href="/signup" />}
@@ -678,10 +738,20 @@ export function HomePageContent() {
                 <Button
                   variant="outline"
                   size="lg"
-                  render={<Link href="/login" />}
-                  className={`h-12 w-full px-8 text-base sm:w-auto ${vm.btnOutlineOnDark}`}
+                  render={<Link href="/docs/whatsapp-setup" />}
+                  className={`h-12 w-full px-6 text-base sm:w-auto ${vm.btnOutlineOnDark}`}
                 >
-                  Sign in
+                  <Phone className="size-4" />
+                  WhatsApp
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  render={<Link href="/docs/email-marketing" />}
+                  className={`h-12 w-full px-6 text-base sm:w-auto ${vm.btnOutlineOnDark}`}
+                >
+                  <Mail className="size-4" />
+                  Email
                 </Button>
               </div>
             </div>

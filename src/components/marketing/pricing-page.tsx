@@ -10,6 +10,7 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import { ChannelPair } from "@/components/marketing/channel-pair";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
 import { vm } from "@/components/marketing/marketing-theme";
 import { Button } from "@/components/ui/button";
@@ -168,13 +169,13 @@ export function PricingPageContent() {
           </div>
           <h1 className="mx-auto mt-5 max-w-3xl text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl sm:leading-[1.1]">
             Pricing that scales with your{" "}
-            <span className={vm.gradientText}>WhatsApp team</span>
+            <span className={vm.gradientText}>WhatsApp & Email team</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-600 sm:text-lg">
             Choose a {PRODUCT_NAME} plan for shared inbox, contacts, pipelines,
             WhatsApp broadcasts, and automations. Email marketing (BYO SMTP,
-            lists, templates, campaigns) is included on Business and Enterprise.
-            Sign up to unlock live checkout.
+            lists, templates, campaigns) is a first-class channel on Business
+            and Enterprise. Sign up to unlock live checkout.
           </p>
 
           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 p-1 shadow-sm backdrop-blur">
@@ -203,6 +204,9 @@ export function PricingPageContent() {
       </section>
 
       <section className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+        <div className="mb-10">
+          <ChannelPair />
+        </div>
         <div className="grid items-stretch gap-5 md:grid-cols-2 lg:grid-cols-3 lg:gap-6">
           {plans.map((plan) => (
             <PlanCard key={plan.id} plan={plan} cycle={cycle} />

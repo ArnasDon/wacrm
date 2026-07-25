@@ -179,8 +179,8 @@ export function TemplateManager() {
         <div>
           <h2 className="text-lg font-semibold text-foreground">Message Templates</h2>
           <p className="text-sm text-muted-foreground">
-            Create templates with a Meta-style wizard: category → library →
-            customize with live preview → submit. Sync from Meta for
+            Create templates with a Meta-style wizard: category → 50+ ready
+            library → customize with live preview → submit. Sync from Meta for
             Authentication templates.
           </p>
         </div>
@@ -213,7 +213,7 @@ export function TemplateManager() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <p className="text-muted-foreground text-sm">No templates yet.</p>
             <p className="text-muted-foreground text-xs mt-1">
-              Create your first message template to get started.
+              Pick from 50+ ready-to-use starters or start from scratch.
             </p>
             <Link
               href="/whatsapp/templates/new"

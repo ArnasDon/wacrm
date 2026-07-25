@@ -6,6 +6,7 @@ import { browseMessageTemplateLibrary } from "@/lib/whatsapp/meta-api";
 import { metaLibraryItemToForm } from "@/lib/whatsapp/library-to-form";
 import {
   STARTER_TOPIC_LABELS,
+  WHATSAPP_STARTER_TEMPLATE_COUNT,
   WHATSAPP_STARTER_TEMPLATES,
   topicsForCategory,
   type StarterTopic,
@@ -154,6 +155,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       data: {
         starters,
+        starter_total: WHATSAPP_STARTER_TEMPLATE_COUNT,
         meta_templates: metaTemplates,
         meta_available: metaAvailable,
         meta_error: metaError,

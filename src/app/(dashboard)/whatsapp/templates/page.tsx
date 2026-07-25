@@ -10,8 +10,8 @@ export default function WhatsAppTemplatesPage() {
           WhatsApp templates
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage Meta message templates. Create or edit on a dedicated page with
-          a live phone preview.
+          Manage Meta message templates. Create from 50+ ready-to-use starters,
+          or edit on a dedicated page with a live phone preview.
         </p>
       </div>
       <TemplateManager />

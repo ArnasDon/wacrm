@@ -17,7 +17,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TemplatePreview } from "@/components/whatsapp/template-preview";
 import { cn } from "@/lib/utils";
-import type { WhatsAppStarterTemplate } from "@/lib/whatsapp/starter-templates";
+import {
+  WHATSAPP_STARTER_TEMPLATE_COUNT,
+  type WhatsAppStarterTemplate,
+} from "@/lib/whatsapp/starter-templates";
 import {
   starterToForm,
   type LibraryFormData,
@@ -139,8 +142,8 @@ export function TemplateLibraryPicker({
               Choose a template
             </h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Pick a default, preview it, then customize — like Meta WhatsApp
-              Manager.
+              {WHATSAPP_STARTER_TEMPLATE_COUNT}+ ready-to-use starters — filter
+              by topic, preview, then customize like Meta WhatsApp Manager.
             </p>
           </div>
           <button
@@ -166,8 +169,8 @@ export function TemplateLibraryPicker({
                 : "Browse templates"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Select a ready-made template or start blank. Preview updates on
-              the right.
+              {WHATSAPP_STARTER_TEMPLATE_COUNT}+ ready-to-use options — pick one
+              or start blank. Preview updates on the right.
             </p>
           </div>
           <button
@@ -230,13 +233,16 @@ export function TemplateLibraryPicker({
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-6">
           <section className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <LayoutTemplate className="size-4 text-primary" />
               <h3 className="text-sm font-semibold text-foreground">
-                Recommended
+                Ready to use
               </h3>
               <Badge variant="outline" className="text-[10px]">
-                {starters.length}
+                {loading ? "…" : `${starters.length} shown`}
+              </Badge>
+              <Badge className="bg-primary/10 text-[10px] text-primary border-primary/20">
+                {WHATSAPP_STARTER_TEMPLATE_COUNT}+ library
               </Badge>
             </div>
 

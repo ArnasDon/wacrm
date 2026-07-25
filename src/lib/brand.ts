@@ -40,7 +40,44 @@ export const META_DESCRIPTION =
 
 export const COPYRIGHT_NOTICE = `© ${new Date().getFullYear()} ${COMPANY_NAME}. All Rights Reserved.`;
 
-/** VedMint product ecosystem — external properties linked from marketing pages. */
+/**
+ * VedMint Suite — products shown in the public navbar dropdown.
+ * Order matches the suite menu: WA CRM, Discover, Stay ERP, then main site.
+ */
+export const VEDMINT_SUITE = [
+  {
+    id: "wa-crm",
+    name: "WA CRM",
+    url: OFFICIAL_APP_URL,
+    description: "WhatsApp Business CRM & automation",
+    /** Current app — open in same tab */
+    external: false as const,
+  },
+  {
+    id: "discover",
+    name: "VedMint Discover",
+    url: "https://discover.vedmint.com",
+    description: "Listings, guides & local discovery",
+    external: true as const,
+  },
+  {
+    id: "stay",
+    name: "Stay ERP",
+    url: "https://stay.vedmint.com",
+    description:
+      "Property and stay management for hotels, homestays, Rental Properties partners.",
+    external: true as const,
+  },
+  {
+    id: "main",
+    name: "VedMint",
+    url: "https://www.vedmint.com",
+    description: "Consultancy & digital solutions",
+    external: true as const,
+  },
+] as const;
+
+/** VedMint product ecosystem — cards on marketing pages (excludes self). */
 export const VEDMINT_ECOSYSTEM = [
   {
     id: "main",
@@ -51,19 +88,19 @@ export const VEDMINT_ECOSYSTEM = [
       "Our main site — services, company profile, and how we help businesses grow with WhatsApp and CRM.",
   },
   {
+    id: "discover",
+    name: "VedMint Discover",
+    url: "https://discover.vedmint.com",
+    tagline: "Listings, guides & local discovery",
+    description:
+      "Browse listings, guides, and local discovery across the VedMint platform family.",
+  },
+  {
     id: "stay",
-    name: "Stay by VedMint",
+    name: "Stay ERP",
     url: "https://stay.vedmint.com",
     tagline: "Hospitality & stays",
     description:
-      "Property and stay management for hotels, homestays, and hospitality partners.",
-  },
-  {
-    id: "discover",
-    name: "Discover VedMint",
-    url: "https://discover.vedmint.com",
-    tagline: "Explore the ecosystem",
-    description:
-      "Browse VedMint products, guides, and resources across our platform family.",
+      "Property and stay management for hotels, homestays, and rental property partners.",
   },
 ] as const;

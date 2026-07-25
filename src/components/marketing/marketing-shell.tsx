@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
+import { VedMintSuiteMenu } from "@/components/marketing/vedmint-suite-menu";
 import { cn } from "@/lib/utils";
 import {
   COPYRIGHT_NOTICE,
   OFFICIAL_APP_URL,
   PRODUCT_NAME,
+  VEDMINT_SUITE,
 } from "@/lib/brand";
 import { vm } from "@/components/marketing/marketing-theme";
 
@@ -74,6 +76,7 @@ export function MarketingShell({
                 {link.label}
               </Link>
             ))}
+            <VedMintSuiteMenu isLight={isLight} />
           </nav>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -115,6 +118,7 @@ export function MarketingShell({
               {link.label}
             </Link>
           ))}
+          <VedMintSuiteMenu isLight={isLight} compact />
         </nav>
       </header>
 
@@ -140,8 +144,8 @@ export function MarketingShell({
                   isLight ? "text-slate-600" : "text-slate-500",
                 )}
               >
-                {PRODUCT_NAME} — WhatsApp Business CRM with email marketing by
-                VedMint Consultancy Services.
+                {PRODUCT_NAME} — WhatsApp & Email CRM by VedMint Consultancy
+                Services. Part of the VedMint Suite.
               </p>
             </div>
 
@@ -181,29 +185,34 @@ export function MarketingShell({
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                VedMint
+                VedMint Suite
               </p>
               <ul className="mt-4 space-y-2 text-sm">
-                {[
-                  { href: "https://www.vedmint.com", label: "www.vedmint.com" },
-                  { href: "https://stay.vedmint.com", label: "stay.vedmint.com" },
-                  {
-                    href: "https://discover.vedmint.com",
-                    label: "discover.vedmint.com",
-                  },
-                ].map((item) => (
-                  <li key={item.href}>
-                    <a
-                      href={item.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(
-                        "transition-colors hover:text-teal-600",
-                        isLight ? "text-slate-600" : "text-slate-400",
-                      )}
-                    >
-                      {item.label}
-                    </a>
+                {VEDMINT_SUITE.map((item) => (
+                  <li key={item.id}>
+                    {item.external ? (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "transition-colors hover:text-teal-600",
+                          isLight ? "text-slate-600" : "text-slate-400",
+                        )}
+                      >
+                        {item.name}
+                      </a>
+                    ) : (
+                      <Link
+                        href="/"
+                        className={cn(
+                          "transition-colors hover:text-teal-600",
+                          isLight ? "text-slate-600" : "text-slate-400",
+                        )}
+                      >
+                        {item.name}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

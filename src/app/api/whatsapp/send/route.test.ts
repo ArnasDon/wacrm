@@ -14,6 +14,10 @@ const messageInserts: Array<Record<string, unknown>> = []
 // Toggles for the per-test scenario.
 let existingConversation: Record<string, unknown> | null = null
 let contactRow: Record<string, unknown> | null = null
+// A conversation created during the request becomes retrievable by id —
+// the shared send core re-loads the conversation (with its contact) from
+// just the id, so the mock must model insert-then-select-by-id.
+let createdConversation: Record<string, unknown> | null = null
 
 const CONTACT = {
   id: 'contact-1',
@@ -35,7 +39,9 @@ function makeSupabaseMock() {
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':
-          return { data: existingConversation, error: null }
+          // Once created this request, a by-id reload returns it (with
+          // its contact); otherwise fall back to the canned existing row.
+          return { data: createdConversation ?? existingConversation, error: null }
         case 'whatsapp_config':
           return {
             data: {
@@ -82,7 +88,15 @@ function makeSupabaseMock() {
     }
     b.insert = vi.fn((payload: Record<string, unknown>) => {
       didInsert = true
-      if (table === 'conversations') conversationInserts.push(payload)
+      if (table === 'conversations') {
+        conversationInserts.push(payload)
+        createdConversation = {
+          id: 'conv-new',
+          account_id: 'acct-1',
+          contact_id: 'contact-1',
+          contact: CONTACT,
+        }
+      }
       if (table === 'messages') messageInserts.push(payload)
       return b
     })
@@ -163,6 +177,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     conversationInserts.length = 0
     messageInserts.length = 0
     existingConversation = null
+    createdConversation = null
     contactRow = CONTACT
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()

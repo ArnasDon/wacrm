@@ -12,16 +12,18 @@ import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { Check } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const steps = [
-  { label: 'Template', key: 'template' },
-  { label: 'Audience', key: 'audience' },
-  { label: 'Personalize', key: 'personalize' },
-  { label: 'Send', key: 'send' },
+  { label: 'template', key: 'template' },
+  { label: 'audience', key: 'audience' },
+  { label: 'personalize', key: 'personalize' },
+  { label: 'send', key: 'send' },
 ] as const;
 
 export default function NewBroadcastPage() {
   const router = useRouter();
+  const t = useTranslations('Broadcasts.new');
   const { accountId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
@@ -82,7 +84,7 @@ export default function NewBroadcastPage() {
    */
   async function handleSaveDraft() {
     if (!template || !name.trim()) {
-      toast.error('Give the broadcast a name before saving a draft.');
+      toast.error(t('toastGiveName'));
       return;
     }
     const supabase = createClient();
@@ -91,11 +93,11 @@ export default function NewBroadcastPage() {
     } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) {
-      toast.error('Not signed in.');
+      toast.error(t('toastNotSignedIn'));
       return;
     }
     if (!accountId) {
-      toast.error('Your profile is not linked to an account.');
+      toast.error(t('toastNotLinked'));
       return;
     }
 
@@ -120,10 +122,10 @@ export default function NewBroadcastPage() {
     });
 
     if (error) {
-      toast.error(`Failed to save draft: ${error.message}`);
+      toast.error(t('toastFailedDraft', { error: error.message }));
       return;
     }
-    toast.success('Draft saved');
+    toast.success(t('toastDraftSaved'));
     router.push('/broadcasts');
   }
 
@@ -131,9 +133,9 @@ export default function NewBroadcastPage() {
     <div className="mx-auto max-w-3xl space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">New Broadcast</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create and send a broadcast message to your contacts.
+          {t('subtitle')}
         </p>
       </div>
 
@@ -162,7 +164,7 @@ export default function NewBroadcastPage() {
                     isActive ? 'text-foreground' : isCompleted ? 'text-primary' : 'text-muted-foreground'
                   }`}
                 >
-                  {step.label}
+                  {t(`steps.${step.label}`)}
                 </span>
               </div>
               {index < steps.length - 1 && (

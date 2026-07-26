@@ -15,6 +15,7 @@ import type {
   ConversationStatus,
   MessageTemplate,
   Profile,
+  InteractiveMessagePayload,
 } from "@/types";
 import {
   MessageSquare,
@@ -28,6 +29,7 @@ import {
   PanelRightClose,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -46,6 +48,7 @@ import {
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
+import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -108,10 +111,10 @@ interface MessageThreadProps {
   onToggleContactPanel?: () => void;
 }
 
-function formatDateSeparator(dateStr: string): string {
+function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
   const date = new Date(dateStr);
-  if (isToday(date)) return "Today";
-  if (isYesterday(date)) return "Yesterday";
+  if (isToday(date)) return t("today");
+  if (isYesterday(date)) return t("yesterday");
   return format(date, "MMMM d, yyyy");
 }
 
@@ -165,6 +168,10 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
+  const t = useTranslations("Inbox.messageThread");
+  const tTimer = useTranslations("Inbox.sessionTimer");
+  const tQuote = useTranslations("Inbox.replyQuote");
+
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
@@ -234,17 +241,17 @@ export function MessageThread({
     const expired = hoursSince >= 24;
 
     if (expired) {
-      return { expired: true, remaining: "Expired" };
+      return { expired: true, remaining: tTimer("expired") };
     }
 
     const hoursLeft = 24 - hoursSince;
     const remaining =
       hoursLeft >= 1
-        ? `${Math.floor(hoursLeft)}h remaining`
-        : `${Math.floor(hoursLeft * 60)}m remaining`;
+        ? tTimer("xhRemaining", { hours: Math.floor(hoursLeft) })
+        : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages]);
+  }, [messages, tTimer]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -561,6 +568,59 @@ export function MessageThread({
     [conversation, onNewMessage, onUpdateMessage],
   );
 
+  const handleSendInteractive = useCallback(
+    async (payload: InteractiveMessagePayload, replyToId?: string) => {
+      if (!conversation) return;
+
+      const tempId = `temp-${Date.now()}`;
+      // Optimistic bubble — renders the buttons/list immediately via the
+      // interactive_payload, same as the persisted row will.
+      const optimisticMsg: Message = {
+        id: tempId,
+        conversation_id: conversation.id,
+        sender_type: "agent",
+        content_type: "interactive",
+        content_text: payload.body,
+        interactive_payload: payload,
+        status: "sending",
+        created_at: new Date().toISOString(),
+        reply_to_message_id: replyToId,
+      };
+      onNewMessage(optimisticMsg);
+
+      try {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversation.id,
+            message_type: "interactive",
+            interactive_payload: payload,
+            reply_to_message_id: replyToId,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const reason = data?.error || `HTTP ${res.status}`;
+          console.error("Failed to send interactive message:", reason);
+          toast.error(`Failed to send: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+          return;
+        }
+
+        onUpdateMessage(tempId, { status: "sent" });
+      } catch (err) {
+        console.error("Failed to send interactive message:", err);
+        const reason = err instanceof Error ? err.message : "network error";
+        toast.error(`Failed to send: ${reason}`);
+        onUpdateMessage(tempId, { status: "failed" });
+      }
+    },
+    [conversation, onNewMessage, onUpdateMessage],
+  );
+
   const handleStatusChange = useCallback(
     async (status: ConversationStatus) => {
       if (!conversation) return;
@@ -687,7 +747,7 @@ export function MessageThread({
       setReplyTo({
         id: msg.id,
         authorLabel: authorLabelFor(msg),
-        preview: buildReplyPreview(msg),
+        preview: buildReplyPreview(msg, tQuote),
       });
     },
     [authorLabelFor],
@@ -788,10 +848,10 @@ export function MessageThread({
           <MessageSquare className="h-8 w-8 text-muted-foreground" />
         </div>
         <h3 className="mt-4 text-sm font-medium text-muted-foreground">
-          Select a conversation
+          {t("selectConversation")}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Choose a conversation from the left to start messaging
+          {t("selectConversationHint")}
         </p>
       </div>
     );
@@ -805,8 +865,8 @@ export function MessageThread({
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
   const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? "Assigned")
-    : "Assign";
+    ? (currentAssignee?.full_name ?? t("assigned"))
+    : t("assign");
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -828,7 +888,7 @@ export function MessageThread({
             <button
               type="button"
               onClick={onBack}
-              aria-label="Back to conversations"
+              aria-label={t("backToConversations")}
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -866,10 +926,10 @@ export function MessageThread({
               type="button"
               onClick={onToggleContactPanel}
               aria-label={
-                contactPanelOpen ? "Hide contact panel" : "Show contact panel"
+                contactPanelOpen ? t("hideContactPanel") : t("showContactPanel")
               }
+              title={contactPanelOpen ? t("hideContact") : t("showContact")}
               aria-pressed={contactPanelOpen}
-              title={contactPanelOpen ? "Hide contact" : "Show contact"}
               className={cn(
                 "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
                 contactPanelOpen ? "text-primary" : "text-muted-foreground",
@@ -893,8 +953,8 @@ export function MessageThread({
               type="button"
               onClick={handleRefreshClick}
               disabled={isRefreshing}
-              aria-label="Refresh conversation"
-              title="Refresh"
+              aria-label={t("refreshConversation")}
+              title={t("refresh")}
               className={cn(
                 "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
               )}
@@ -911,7 +971,7 @@ export function MessageThread({
                   "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
                   currentStatus?.color ?? "text-muted-foreground"
                 )}>
-                {currentStatus?.label ?? "Status"}
+                {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -924,7 +984,7 @@ export function MessageThread({
                   onClick={() => handleStatusChange(opt.value)}
                   className={cn("text-sm", opt.color)}
                 >
-                  {opt.label}
+                  {t(`status${opt.label}`)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -948,7 +1008,7 @@ export function MessageThread({
             >
               {profiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  No teammates available
+                  {t("noTeammates")}
                 </DropdownMenuItem>
               ) : (
                 profiles.map((p) => {
@@ -974,7 +1034,7 @@ export function MessageThread({
                       />
                       <span className="flex-1">
                         {p.full_name}
-                        {p.user_id === user?.id ? " (me)" : ""}
+                        {p.user_id === user?.id ? t("me") : ""}
                       </span>
                       {isSelected && <Check className="ml-2 h-3 w-3" />}
                     </DropdownMenuItem>
@@ -988,7 +1048,7 @@ export function MessageThread({
                     onClick={() => handleAssignChange(null)}
                     className="text-sm text-muted-foreground"
                   >
-                    Unassign
+                    {t("unassign")}
                   </DropdownMenuItem>
                 </>
               )}
@@ -1005,9 +1065,9 @@ export function MessageThread({
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">No messages yet</p>
+            <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
             <p className="text-xs text-muted-foreground">
-              Send a template to start the conversation
+              {t("sendTemplateHint")}
             </p>
           </div>
         ) : (
@@ -1017,7 +1077,7 @@ export function MessageThread({
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
                   <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
-                    {formatDateSeparator(group.date)}
+                    {formatDateSeparator(group.date, t)}
                   </span>
                 </div>
                 {/* Messages */}
@@ -1028,8 +1088,11 @@ export function MessageThread({
                       : null;
                     const reply = parent
                       ? {
-                          authorLabel: authorLabelFor(parent),
-                          preview: buildReplyPreview(parent),
+                          authorLabel:
+                            parent.sender_type === "agent" || parent.sender_type === "bot"
+                              ? t("me") 
+                              : contact?.name || contact?.phone || "Unknown",
+                          preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
@@ -1070,12 +1133,29 @@ export function MessageThread({
         )}
       </div>
 
+      {/* AI auto-reply banner — take over an active bot, or resume it
+          after a handoff. Renders nothing unless the account has
+          auto-reply configured. */}
+      <AiThreadBanner
+        conversationId={conversation.id}
+        disabled={conversation.ai_autoreply_disabled ?? false}
+        handoffSummary={conversation.ai_handoff_summary}
+        assignedAgentId={assignedAgentId}
+        currentUserId={user?.id}
+        onChange={(patch) => {
+          if ("assigned_agent_id" in patch) {
+            onAssignChange(conversation.id, patch.assigned_agent_id ?? null);
+          }
+        }}
+      />
+
       {/* Composer */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
+        onSendInteractive={handleSendInteractive}
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}

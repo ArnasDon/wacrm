@@ -87,6 +87,33 @@ export function ok<T>(data: T, status = 200): NextResponse {
 }
 
 /**
+ * List envelope: `{ data: [...], meta: { next_cursor } }`. The `meta`
+ * block is the pagination contract shared by every v1 list endpoint —
+ * `next_cursor` is an opaque string to pass back as `?cursor=`, or
+ * `null` on the last page. See `src/lib/api/v1/pagination.ts`.
+ */
+export function okList<T>(items: T[], nextCursor: string | null): NextResponse {
+  return NextResponse.json({ data: items, meta: { next_cursor: nextCursor } });
+}
+
+/**
+ * Failure envelope from an explicit (code, message, status). Use for
+ * domain errors whose codes live outside `ApiErrorCode` (e.g. the
+ * send pipeline's `meta_error` / `whatsapp_not_configured`) — the
+ * wire `code` is a free string, so any machine-meaningful value is
+ * fine. `headers` is rarely needed; omit unless you have a
+ * `Retry-After`-style set.
+ */
+export function fail(
+  code: string,
+  message: string,
+  status: number,
+  headers?: Record<string, string>
+): NextResponse {
+  return NextResponse.json({ error: { code, message } }, { status, headers });
+}
+
+/**
  * Map any thrown value to the failure envelope. `ApiError` keeps its
  * code/status/headers; anything else collapses to a generic 500 so we
  * never leak internal error text onto the public wire.

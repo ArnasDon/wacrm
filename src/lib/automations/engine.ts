@@ -5,7 +5,11 @@ import type {
   AutomationTriggerType,
   ConditionStepConfig,
   KeywordMatchTriggerConfig,
+  InteractiveReplyTriggerConfig,
+  TagTriggerConfig,
   SendMessageStepConfig,
+  SendButtonsStepConfig,
+  SendListStepConfig,
   SendTemplateStepConfig,
   SendWebhookStepConfig,
   TagStepConfig,
@@ -15,7 +19,11 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
-import { engineSendText, engineSendTemplate } from './meta-send'
+import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
+import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
+import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 // ------------------------------------------------------------
 // Public API
@@ -32,6 +40,8 @@ export interface AutomationContext {
   tag_id?: string
   /** Agent the conversation was assigned to, for conversation_assigned. */
   agent_id?: string
+  /** Button / list-row id the customer tapped, for interactive_reply. */
+  interactive_reply_id?: string
 }
 
 export interface DispatchInput {
@@ -357,6 +367,26 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       return `sent via Meta (${whatsapp_message_id})`
     }
 
+    case 'send_buttons':
+    case 'send_list': {
+      const payload = step.step_config as SendButtonsStepConfig | SendListStepConfig
+      if (!args.contactId) throw new Error(`${step.step_type} needs a contact`)
+      // Validate against Meta's limits before the network call so a bad
+      // payload surfaces as a clear failed-step detail rather than a raw
+      // Meta 400 mid-conversation.
+      const check = validateInteractivePayload(payload)
+      if (!check.ok) throw new Error(check.error)
+      const conversationId = await resolveConversationId(args)
+      const { whatsapp_message_id } = await engineSendInteractive({
+        accountId: args.automation.account_id,
+        userId: args.automation.user_id,
+        conversationId,
+        contactId: args.contactId,
+        payload,
+      })
+      return `interactive sent via Meta (${whatsapp_message_id})`
+    }
+
     case 'send_template': {
       const cfg = step.step_config as SendTemplateStepConfig
       if (!args.contactId) throw new Error('send_template needs a contact')
@@ -393,18 +423,40 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     }
 
     case 'add_tag': {
-      // contact_tags has no account_id column; cross-tenant protection for
-      // the attacker-supplied contactId comes from the ownership guard in
-      // runAutomationsForTrigger.
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
-      await db
-        .from('contact_tags')
-        .upsert(
-          { contact_id: args.contactId, tag_id: cfg.tag_id },
-          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
-        )
-      return `tag ${cfg.tag_id} added`
+      const added = await addContactTagIfAbsent(db, {
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagId: cfg.tag_id,
+      })
+      if (!added) return `tag ${cfg.tag_id} already present`
+
+      const depth = getTagChainDepth(args.context)
+      if (depth >= MAX_TAG_CHAIN_DEPTH) {
+        console.warn('[automations] tag_added chain depth limit reached', {
+          automationId: args.automation.id,
+          contactId: args.contactId,
+          tagId: cfg.tag_id,
+          depth,
+        })
+        return `tag ${cfg.tag_id} added; tag_added dispatch skipped at depth ${depth}`
+      }
+
+      await runAutomationsForTrigger({
+        accountId: args.automation.account_id,
+        triggerType: 'tag_added',
+        contactId: args.contactId,
+        context: {
+          ...args.context,
+          tag_id: cfg.tag_id,
+          vars: {
+            ...(args.context.vars ?? {}),
+            _tag_chain_depth: depth + 1,
+          },
+        },
+      })
+      return `tag ${cfg.tag_id} added and tag_added dispatched`
     }
 
     case 'remove_tag': {
@@ -527,11 +579,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
+      // SSRF guard: the URL and headers are account-controlled and the
+      // server makes the request, so refuse any destination that resolves
+      // to a private / loopback / link-local / reserved address. Mirrors
+      // the webhook_endpoints delivery path (see lib/webhooks/deliver.ts).
+      if (!(await isDeliverableUrl(cfg.url))) {
+        throw new Error('send_webhook: destination not allowed')
+      }
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
         body,
+        // Do NOT follow redirects — a public URL could 3xx-bounce to an
+        // internal address, defeating the guard above. Bound the request
+        // so a hung/slow internal host can't tie up the runner.
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
       })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`
@@ -574,21 +638,47 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     .eq('contact_id', args.contactId)
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
-  if (!data?.id) throw new Error('no conversation for contact')
+  if (!data?.id) {
+    const prefix = args.triggerEvent === 'tag_added'
+      ? 'tag_added automation cannot send'
+      : 'cannot send'
+    throw new Error(`${prefix}: contact has no existing conversation`)
+  }
   return data.id as string
 }
 
-function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
-  if (automation.trigger_type !== 'keyword_match') return true
-  const cfg = automation.trigger_config as KeywordMatchTriggerConfig
-  if (!cfg?.keywords || cfg.keywords.length === 0) return false
-  const text = (ctx?.message_text ?? '').toString()
-  if (!text) return false
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase()
-  return cfg.keywords.some((raw) => {
-    const k = cfg.case_sensitive ? raw : raw.toLowerCase()
-    return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
-  })
+export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+  if (automation.trigger_type === 'keyword_match') {
+    const cfg = automation.trigger_config as KeywordMatchTriggerConfig
+    if (!cfg?.keywords || cfg.keywords.length === 0) return false
+    const text = (ctx?.message_text ?? '').toString()
+    if (!text) return false
+    const haystack = cfg.case_sensitive ? text : text.toLowerCase()
+    return cfg.keywords.some((raw) => {
+      const k = cfg.case_sensitive ? raw : raw.toLowerCase()
+      return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
+    })
+  }
+
+  // Match on the tapped button / list-row id (exact). Lets multi-step
+  // menus be chained: automation A sends buttons, automation B fires on
+  // the reply id and sends the next step.
+  if (automation.trigger_type === 'interactive_reply') {
+    const cfg = automation.trigger_config as InteractiveReplyTriggerConfig
+    const replyId = ctx?.interactive_reply_id
+    if (!replyId || !Array.isArray(cfg?.reply_ids) || cfg.reply_ids.length === 0) {
+      return false
+    }
+    return cfg.reply_ids.includes(replyId)
+  }
+
+  if (automation.trigger_type === 'tag_added') {
+    const cfg = automation.trigger_config as TagTriggerConfig
+    const tagId = ctx?.tag_id
+    return Boolean(tagId && cfg?.tag_id && cfg.tag_id === tagId)
+  }
+
+  return true
 }
 
 async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): Promise<boolean> {

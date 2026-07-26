@@ -35,6 +35,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 const STAGE_COLORS = [
   "#3b82f6",
@@ -68,6 +69,7 @@ export function PipelineSettings({
   onStagesChanged,
   onCreateNewPipeline,
 }: PipelineSettingsProps) {
+  const t = useTranslations("Pipelines.settings");
   const supabase = createClient();
 
   const [name, setName] = useState(pipeline.name);
@@ -127,14 +129,14 @@ export function PipelineSettings({
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
-      toast.error("Failed to save pipeline");
+      toast.error(t("toastFailedSave"));
       return;
     }
 
     onOpenChange(false);
     onPipelinesChanged();
     onStagesChanged();
-    toast.success("Pipeline saved");
+    toast.success(t("toastSaved"));
   }
 
   async function handleAddStage() {
@@ -151,7 +153,7 @@ export function PipelineSettings({
       .select()
       .single();
     if (error || !data) {
-      toast.error("Failed to add stage");
+      toast.error(t("toastFailedAddStage"));
       return;
     }
     setLocalStages([...localStages, data as PipelineStage]);
@@ -166,7 +168,7 @@ export function PipelineSettings({
       .select("id", { count: "exact", head: true })
       .eq("stage_id", stageId);
     if (count && count > 0) {
-      toast.error("Move or delete deals in this stage first");
+      toast.error(t("toastMoveOrDeleteDeals"));
       return;
     }
     const { error } = await supabase
@@ -174,7 +176,7 @@ export function PipelineSettings({
       .delete()
       .eq("id", stageId);
     if (error) {
-      toast.error("Failed to delete stage");
+      toast.error(t("toastFailedDeleteStage"));
       return;
     }
     setLocalStages(localStages.filter((s) => s.id !== stageId));
@@ -189,19 +191,19 @@ export function PipelineSettings({
       .eq("id", pipeline.id);
     setDeleting(false);
     if (error) {
-      toast.error("Failed to delete pipeline");
+      toast.error(t("toastFailedDeletePipeline"));
       return;
     }
     onOpenChange(false);
     onPipelinesChanged();
-    toast.success("Pipeline deleted");
+    toast.success(t("toastDeleted"));
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md bg-popover border-border max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">Manage Pipeline</DialogTitle>
+          <DialogTitle className="text-popover-foreground">{t("managePipeline")}</DialogTitle>
         </DialogHeader>
 
         {showDeleteConfirm ? (
@@ -210,11 +212,10 @@ export function PipelineSettings({
               <AlertTriangle className="h-5 w-5 shrink-0 text-red-400" />
               <div>
                 <p className="text-sm font-medium text-red-400">
-                  Delete Pipeline
+                  {t("deletePipeline")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  This will archive all deals in this pipeline. This cannot be
-                  undone.
+                  {t("deletePipelineDesc")}
                 </p>
               </div>
             </div>
@@ -224,14 +225,14 @@ export function PipelineSettings({
                 onClick={() => setShowDeleteConfirm(false)}
                 className="border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                Cancel
+                {t("cancel")}
               </Button>
               <Button
                 onClick={handleDeletePipeline}
                 disabled={deleting}
                 className="bg-red-600 text-white hover:bg-red-700"
               >
-                {deleting ? "Deleting..." : "Delete Pipeline"}
+                {deleting ? t("deleting") : t("deletePipelineBtn")}
               </Button>
             </div>
           </div>
@@ -239,7 +240,7 @@ export function PipelineSettings({
           <>
             <div className="grid gap-4 py-2">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">Pipeline Name</Label>
+                <Label className="text-muted-foreground">{t("pipelineName")}</Label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -248,7 +249,7 @@ export function PipelineSettings({
               </div>
 
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">Stages</Label>
+                <Label className="text-muted-foreground">{t("stages")}</Label>
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -275,6 +276,7 @@ export function PipelineSettings({
                           }}
                           onRemove={() => handleRemoveStage(stage.id)}
                           colors={STAGE_COLORS}
+                          t={t}
                         />
                       ))}
                     </div>
@@ -304,7 +306,7 @@ export function PipelineSettings({
                   <Input
                     value={newStageName}
                     onChange={(e) => setNewStageName(e.target.value)}
-                    placeholder="New stage name"
+                    placeholder={t("newStageNamePlaceholder")}
                     className="border-border bg-muted text-sm text-foreground"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleAddStage();
@@ -318,7 +320,7 @@ export function PipelineSettings({
                     className="shrink-0 border-border bg-transparent text-muted-foreground hover:bg-muted"
                   >
                     <Plus className="mr-1 h-3 w-3" />
-                    Add
+                    {t("add")}
                   </Button>
                 </div>
               </div>
@@ -329,7 +331,7 @@ export function PipelineSettings({
                 className="w-full border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
                 <Plus className="mr-1 h-3 w-3" />
-                Create a new pipeline
+                {t("createNewPipeline")}
               </Button>
             </div>
 
@@ -339,21 +341,21 @@ export function PipelineSettings({
                 onClick={() => setShowDeleteConfirm(true)}
                 className="mr-auto bg-red-600 hover:bg-red-700"
               >
-                Delete Pipeline
+                {t("deletePipeline")}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
                 className="border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                Cancel
+                {t("cancel")}
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={saving || !name.trim()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {saving ? "Saving..." : "Save Changes"}
+                {saving ? t("saving") : t("saveChanges")}
               </Button>
             </DialogFooter>
           </>
@@ -369,12 +371,15 @@ function SortableStageRow({
   onColorChange,
   onRemove,
   colors,
+  t,
 }: {
   stage: PipelineStage;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
   onRemove: () => void;
   colors: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: stage.id });
@@ -396,11 +401,11 @@ function SortableStageRow({
         {...attributes}
         {...listeners}
         className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
-        aria-label="Drag to reorder"
+        aria-label={t("dragToReorder")}
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} />
+      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} t={t} />
       <Input
         value={stage.name}
         onChange={(e) => onNameChange(e.target.value)}
@@ -422,10 +427,13 @@ function ColorSwatch({
   value,
   onChange,
   colors,
+  t,
 }: {
   value: string;
   onChange: (v: string) => void;
   colors: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -435,7 +443,7 @@ function ColorSwatch({
         onClick={() => setOpen((v) => !v)}
         className="h-4 w-4 rounded-full border border-border"
         style={{ backgroundColor: value }}
-        aria-label="Change color"
+        aria-label={t("changeColor")}
       />
       {open && (
         <>

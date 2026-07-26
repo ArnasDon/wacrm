@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   X,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -39,50 +40,51 @@ interface Step2Props {
   onBack: () => void;
 }
 
-const audienceOptions: {
-  type: AudienceType;
-  label: string;
-  description: string;
-  icon: typeof Users;
-}[] = [
-  {
-    type: 'all',
-    label: 'All Contacts',
-    description: 'Send to every contact in your database',
-    icon: Users,
-  },
-  {
-    type: 'tags',
-    label: 'Filter by Tags',
-    description: 'Target contacts with specific tags',
-    icon: Tags,
-  },
-  {
-    type: 'custom_field',
-    label: 'Custom Field',
-    description: 'Filter by a custom field value',
-    icon: Filter,
-  },
-  {
-    type: 'csv',
-    label: 'Upload CSV',
-    description: 'Upload a list of phone numbers',
-    icon: Upload,
-  },
-];
-
-const OPERATOR_OPTIONS: { value: CustomFieldOperator; label: string }[] = [
-  { value: 'is', label: 'is' },
-  { value: 'is_not', label: 'is not' },
-  { value: 'contains', label: 'contains' },
-];
-
 export function Step2SelectAudience({
   audience,
   onUpdate,
   onNext,
   onBack,
 }: Step2Props) {
+  const t = useTranslations('Broadcasts.wizard');
+
+  const OPERATOR_OPTIONS = useMemo<{ value: CustomFieldOperator; label: string }[]>(() => [
+    { value: 'is', label: t('selectAudience.operatorIs') },
+    { value: 'is_not', label: t('selectAudience.operatorIsNot') },
+    { value: 'contains', label: t('selectAudience.operatorContains') },
+  ], [t]);
+
+  const audienceOptions = useMemo<{
+    type: AudienceType;
+    label: string;
+    description: string;
+    icon: typeof Users;
+  }[]>(() => [
+    {
+      type: 'all',
+      label: t('selectAudience.method.all'),
+      description: t('selectAudience.allDescLoading'),
+      icon: Users,
+    },
+    {
+      type: 'tags',
+      label: t('selectAudience.method.tags'),
+      description: t('selectAudience.tagDesc'),
+      icon: Tags,
+    },
+    {
+      type: 'custom_field',
+      label: t('selectAudience.method.customField'),
+      description: t('selectAudience.customFieldDesc'),
+      icon: Filter,
+    },
+    {
+      type: 'csv',
+      label: t('selectAudience.method.csv'),
+      description: t('selectAudience.csvDesc'),
+      icon: Upload,
+    },
+  ], [t]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
@@ -249,14 +251,14 @@ export function Step2SelectAudience({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Select Audience</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t('selectAudience.title')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose who will receive this broadcast.
+          {t('selectAudience.subtitle')}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {audienceOptions.map((option) => {
+        {audienceOptions.map((option: { type: AudienceType; label: string; description: string; icon: typeof Users }) => {
           const isSelected = audience.type === option.type;
           const Icon = option.icon;
           return (
@@ -305,12 +307,12 @@ export function Step2SelectAudience({
 
       {audience.type === 'tags' && (
         <div className="rounded-xl border border-border bg-card/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">Select Tags</p>
+          <p className="mb-3 text-sm font-medium text-foreground">{t('selectAudience.selectTags')}</p>
           {loadingTags ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : tags.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No tags found. Create tags in Settings.
+              {t('selectAudience.noTagsFound')}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -341,12 +343,12 @@ export function Step2SelectAudience({
 
       {audience.type === 'custom_field' && (
         <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
-          <p className="text-sm font-medium text-foreground">Custom Field Filter</p>
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.customField')}</p>
           {loadingFields ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : customFields.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No custom fields defined. Create one in Settings → Custom Fields.
+              {t('selectAudience.errorLoadFields')}
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)]">
@@ -355,7 +357,7 @@ export function Step2SelectAudience({
                 onChange={(e) => updateCustomField({ fieldId: e.target.value })}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="">Select field…</option>
+                <option value="">{t('selectAudience.selectField')}</option>
                 {customFields.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.field_name}
@@ -371,7 +373,7 @@ export function Step2SelectAudience({
                 }
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {OPERATOR_OPTIONS.map((op) => (
+                {OPERATOR_OPTIONS.map((op: { value: CustomFieldOperator; label: string }) => (
                   <option key={op.value} value={op.value}>
                     {op.label}
                   </option>
@@ -381,7 +383,7 @@ export function Step2SelectAudience({
                 type="text"
                 value={audience.customField?.value ?? ''}
                 onChange={(e) => updateCustomField({ value: e.target.value })}
-                placeholder="Value"
+                placeholder={t('selectAudience.valuePlaceholder')}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
@@ -394,12 +396,11 @@ export function Step2SelectAudience({
         <div className="mb-3 flex items-center gap-2">
           <X className="h-4 w-4 text-red-400" />
           <p className="text-sm font-medium text-foreground">
-            Exclude contacts with these tags
+            {t('selectAudience.excludeTags')}
           </p>
-          <span className="text-xs text-muted-foreground">(optional)</span>
         </div>
         {tags.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No tags available.</p>
+          <p className="text-xs text-muted-foreground">{t('selectAudience.noTagsFound')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => {
@@ -456,14 +457,14 @@ export function Step2SelectAudience({
           className="border-border text-muted-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {t('back')}
         </Button>
         <Button
           onClick={onNext}
           disabled={!isValid}
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          Next
+          {t('next')}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

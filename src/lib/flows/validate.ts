@@ -17,6 +17,7 @@ import {
   getNodeDescriptor,
   type PartialNodeExecutionPolicy,
   type NodeValidationConsumer,
+  type NodePortDescriptor,
 } from "./registry";
 
 export interface ValidationIssue {
@@ -116,6 +117,8 @@ export function validateFlowForActivation(
     seen.add(node.node_key);
   }
   issues.push(...validateDataPortBindings(nodes));
+  const controlTopology = validateControlPortMetadata(nodes);
+  issues.push(...controlTopology.issues);
 
   for (const node of nodes) {
     issues.push(
@@ -129,7 +132,13 @@ export function validateFlowForActivation(
     issues.push(...validateEdgeTargets(node, keys));
     issues.push(...validateVariableReferences(node, flow.variable_schema ?? []));
   }
-  issues.push(...validateStructuredCycles(nodes));
+  issues.push(
+    ...validateStructuredCycles(
+      nodes,
+      controlTopology.edges,
+      controlTopology.validContinueEdgeIds,
+    ),
+  );
 
   if (flow.entry_node_id && keys.has(flow.entry_node_id)) {
     const reached = reachableFromEntry(flow.entry_node_id, nodes);
@@ -215,6 +224,186 @@ function validateDataPortBindings(nodes: NodeInput[]): ValidationIssue[] {
     }
   }
   return issues;
+}
+
+function resolveDescriptorPort(
+  handle: string | undefined,
+  ports: readonly NodePortDescriptor[],
+): NodePortDescriptor | undefined {
+  if (!handle) return undefined;
+  return ports.find(
+    (port) =>
+      port.id === handle ||
+      (port.handlePrefix !== undefined &&
+        handle.startsWith(port.handlePrefix) &&
+        handle.length > port.handlePrefix.length),
+  );
+}
+
+interface ValidatedControlTopology {
+  edges: CanvasEdge[];
+  issues: ValidationIssue[];
+  validContinueEdgeIds: ReadonlySet<string>;
+}
+
+/**
+ * Validates persisted canvas metadata independently of the loose node config
+ * schemas. All control edges remain in the topology graph even when their
+ * target handle is invalid, so malformed metadata cannot erase a cycle.
+ */
+export function validateControlPortMetadata(
+  nodes: NodeInput[],
+): ValidatedControlTopology {
+  const byKey = new Map(nodes.map((node) => [node.node_key, node]));
+  const dataEdgeIds = new Set<string>();
+  for (const target of nodes) {
+    const raw = target.config._data_inputs;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    for (const [targetHandle, binding] of Object.entries(raw)) {
+      if (!binding || typeof binding !== "object" || Array.isArray(binding)) {
+        continue;
+      }
+      const source = (binding as Record<string, unknown>).source_node_key;
+      const sourceHandle = (binding as Record<string, unknown>).source_handle;
+      if (typeof source === "string" && typeof sourceHandle === "string") {
+        dataEdgeIds.add(
+          `${source}--${sourceHandle}--${target.node_key}:${targetHandle}`,
+        );
+      }
+    }
+  }
+
+  const edges = deriveCanvasEdges(nodes as never[]).filter(
+    (edge) => !dataEdgeIds.has(edge.id),
+  );
+  const issues: ValidationIssue[] = [];
+  const validContinueEdgeIds = new Set<string>();
+  const issue = (
+    nodeKey: string,
+    field: string,
+    message: string,
+  ): void => {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: nodeKey,
+      field,
+      message,
+    });
+  };
+
+  for (const node of nodes) {
+    if (!Object.hasOwn(node.config, "_control_targets")) continue;
+    const raw = node.config._control_targets;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      issue(
+        node.node_key,
+        "_control_targets",
+        "Control handle metadata must be an object.",
+      );
+      continue;
+    }
+    for (const [sourceHandle, targetHandle] of Object.entries(raw)) {
+      const field = `_control_targets.${sourceHandle}`;
+      const declaredSourcePort = resolveDescriptorPort(
+        sourceHandle,
+        getNodeDescriptor(node.node_type)?.outputs ?? [],
+      );
+      if (!declaredSourcePort) {
+        issue(
+          node.node_key,
+          field,
+          `Control metadata references unknown source handle "${sourceHandle}".`,
+        );
+        continue;
+      }
+      if (declaredSourcePort.type !== "control") {
+        issue(
+          node.node_key,
+          field,
+          `Source handle "${sourceHandle}" is not a control output.`,
+        );
+        continue;
+      }
+      const matching = edges.filter(
+        (edge) =>
+          edge.source === node.node_key &&
+          edge.sourceHandle === sourceHandle,
+      );
+      if (matching.length === 0) {
+        issue(
+          node.node_key,
+          field,
+          `Control metadata source handle "${sourceHandle}" has no outgoing edge.`,
+        );
+        continue;
+      }
+      if (typeof targetHandle !== "string" || !targetHandle) {
+        issue(
+          node.node_key,
+          field,
+          "Control metadata requires a target handle.",
+        );
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    const source = byKey.get(edge.source);
+    const target = byKey.get(edge.target);
+    const sourcePort = source
+      ? resolveDescriptorPort(
+          edge.sourceHandle,
+          getNodeDescriptor(source.node_type)?.outputs ?? [],
+        )
+      : undefined;
+    const field = `_control_targets.${edge.sourceHandle}`;
+    if (!sourcePort) {
+      issue(
+        edge.source,
+        field,
+        `Control edge references unknown source handle "${edge.sourceHandle}".`,
+      );
+      continue;
+    }
+    if (sourcePort.type !== "control") {
+      issue(
+        edge.source,
+        field,
+        `Source handle "${edge.sourceHandle}" is not a control output.`,
+      );
+      continue;
+    }
+    const targetPort = target
+      ? resolveDescriptorPort(
+          edge.targetHandle,
+          getNodeDescriptor(target.node_type)?.inputs ?? [],
+        )
+      : undefined;
+    if (!targetPort) {
+      issue(
+        edge.source,
+        field,
+        `Control edge references unknown target handle "${edge.targetHandle ?? ""}".`,
+      );
+      continue;
+    }
+    if (!arePortTypesCompatible(sourcePort.type, targetPort.type)) {
+      issue(
+        edge.source,
+        field,
+        `Control output is incompatible with target port type ${targetPort.type}.`,
+      );
+      continue;
+    }
+    if (
+      targetPort.id === "continue" &&
+      (target?.node_type === "each" || target?.node_type === "loop")
+    ) {
+      validContinueEdgeIds.add(edge.id);
+    }
+  }
+  return { edges, issues, validContinueEdgeIds };
 }
 
 function validateVariableReferences(
@@ -430,11 +619,13 @@ function validateVariableReferences(
   return [];
 }
 
-function validateStructuredCycles(nodes: NodeInput[]): ValidationIssue[] {
+function validateStructuredCycles(
+  nodes: NodeInput[],
+  initialEdges: readonly CanvasEdge[],
+  validContinueEdgeIds: ReadonlySet<string>,
+): ValidationIssue[] {
   const byKey = new Map(nodes.map((node) => [node.node_key, node]));
-  let edges = deriveCanvasEdges(nodes as never[]).filter(
-    (edge) => edge.targetHandle === "in" || edge.targetHandle === "continue",
-  );
+  let edges = [...initialEdges];
   const issues: ValidationIssue[] = [];
 
   const stronglyConnectedComponents = (
@@ -557,7 +748,7 @@ function validateStructuredCycles(nodes: NodeInput[]): ValidationIssue[] {
       );
       if (
         backEdges.length === 0 ||
-        backEdges.some((edge) => edge.targetHandle !== "continue")
+        backEdges.some((edge) => !validContinueEdgeIds.has(edge.id))
       ) {
         issues.push({
           severity: "error",
@@ -568,7 +759,11 @@ function validateStructuredCycles(nodes: NodeInput[]): ValidationIssue[] {
         });
         return issues;
       }
-      const removed = new Set(backEdges.map((edge) => edge.id));
+      const removed = new Set(
+        backEdges
+          .filter((edge) => validContinueEdgeIds.has(edge.id))
+          .map((edge) => edge.id),
+      );
       edges = edges.filter((edge) => !removed.has(edge.id));
       reduced = true;
     }

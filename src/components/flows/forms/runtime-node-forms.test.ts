@@ -81,7 +81,16 @@ describe("runtime primitive node forms", () => {
         messages.en.Flows.builder.form[key],
       );
     }
-    for (const node of ["each", "loop", "sub_flow", "ai_reply"]) {
+    for (const node of [
+      "wait",
+      "http_request",
+      "switch",
+      "variable_set",
+      "each",
+      "loop",
+      "sub_flow",
+      "ai_reply",
+    ]) {
       expect(messages.ko.Flows.builder.nodes[node].label).not.toBe(
         messages.en.Flows.builder.nodes[node].label,
       );

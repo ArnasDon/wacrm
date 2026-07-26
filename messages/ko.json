@@ -1274,20 +1274,20 @@
           "blurb": "플로우를 종료합니다"
         },
         "wait": {
-          "label": "Wait",
-          "blurb": "Pauses durably until a scheduled time"
+          "label": "대기",
+          "blurb": "예약된 시각까지 실행 상태를 안전하게 유지하며 일시 중지합니다"
         },
         "http_request": {
-          "label": "HTTP request",
-          "blurb": "Calls a public HTTP API"
+          "label": "HTTP 요청",
+          "blurb": "공개 HTTP API를 호출합니다"
         },
         "switch": {
-          "label": "Switch",
-          "blurb": "Routes through the first matching case"
+          "label": "조건 분기",
+          "blurb": "처음 일치하는 조건의 경로로 진행합니다"
         },
         "variable_set": {
-          "label": "Set variables",
-          "blurb": "Writes typed flow variables"
+          "label": "변수 설정",
+          "blurb": "형식이 지정된 플로우 변수에 값을 저장합니다"
         },
         "each": {
           "label": "각 항목 반복",

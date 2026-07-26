@@ -1029,6 +1029,159 @@ describe("reachableFromEntry", () => {
 });
 
 describe("structured composite topology", () => {
+  it("rejects unknown control metadata on an acyclic graph", () => {
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "message" },
+      [
+        {
+          node_key: "message",
+          node_type: "send_message",
+          config: {
+            text: "hello",
+            next_node_key: "end",
+            _control_targets: { bogus: "in" },
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "message",
+          field: "_control_targets.bogus",
+          message: expect.stringMatching(/unknown.*source|source.*unknown/i),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a data output used as control metadata", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "http",
+        variable_schema: [{ key: "response", type: "json", default: {} }],
+      },
+      [
+        {
+          node_key: "http",
+          node_type: "http_request",
+          config: {
+            method: "GET",
+            url: "https://api.example.com",
+            headers: {},
+            response_var: "response",
+            next_node_key: "end",
+            _control_targets: { response: "in" },
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "http",
+          field: "_control_targets.response",
+          message: expect.stringMatching(/not a control output/i),
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    ["unknown target", "bogus", /unknown.*target|target.*unknown/i],
+    ["data target", "request", /incompatible|control/i],
+  ])("rejects a control edge with an %s handle", (_case, targetHandle, message) => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "message",
+        variable_schema: [{ key: "response", type: "json", default: {} }],
+      },
+      [
+        {
+          node_key: "message",
+          node_type: "send_message",
+          config: {
+            text: "hello",
+            next_node_key: "http",
+            _control_targets: { next: targetHandle },
+          },
+        },
+        {
+          node_key: "http",
+          node_type: "http_request",
+          config: {
+            method: "GET",
+            url: "https://api.example.com",
+            headers: {},
+            response_var: "response",
+            next_node_key: "end",
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "message",
+          field: "_control_targets.next",
+          message: expect.stringMatching(message),
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    ["bogus source", { bogus: "continue" }, /unknown.*source|source.*unknown/i],
+    ["bogus target", { next: "bogus" }, /unknown.*target|target.*unknown/i],
+  ])("does not hide a cycle with %s metadata", (_case, metadata, message) => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "loop",
+        variable_schema: [{ key: "done", type: "boolean", default: false }],
+      },
+      [
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "body",
+            done_next: "end",
+          },
+        },
+        {
+          node_key: "body",
+          node_type: "send_message",
+          config: {
+            text: "again",
+            next_node_key: "loop",
+            _control_targets: metadata,
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringMatching(message) }),
+        expect.objectContaining({
+          node_key: "loop",
+          message: expect.stringMatching(/continue/i),
+        }),
+      ]),
+    );
+  });
+
   it("rejects an arbitrary runtime cycle", () => {
     const issues = validateFlowForActivation(
       { ...validFlow, entry_node_id: "a" },

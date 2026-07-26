@@ -230,6 +230,54 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
     });
   });
 
+  it.each([
+    ["bogus source", { bogus: "continue" }],
+    ["bogus target", { next: "bogus" }],
+  ])("rejects a cycle with %s metadata before saving the draft", async (_case, metadata) => {
+    const response = await PUT(
+      new Request("http://localhost/api/flows/flow-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 4,
+          nodes: [
+            {
+              node_key: "loop",
+              node_type: "loop",
+              config: {
+                subject: "contact_field",
+                subject_key: "name",
+                operator: "equals",
+                value: "done",
+                max_iterations: 3,
+                body_next: "body",
+                done_next: "end",
+              },
+            },
+            {
+              node_key: "body",
+              node_type: "send_message",
+              config: {
+                text: "again",
+                next_node_key: "loop",
+                _control_targets: metadata,
+              },
+            },
+            { node_key: "end", node_type: "end", config: {} },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/control.*handle|target.*port/i),
+    });
+    expect(h.admin).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid variable declarations before mutating the draft", async () => {
     const response = await PUT(
       new Request("http://localhost/api/flows/flow-1", {

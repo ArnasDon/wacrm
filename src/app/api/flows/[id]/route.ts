@@ -8,6 +8,7 @@ import {
 } from '@/lib/flows/registry'
 import { parseFlowVariableSchema } from '@/lib/flows/versions'
 import type { FlowVariableDeclaration } from '@/lib/flows/runtime-primitives'
+import { validateControlPortMetadata } from '@/lib/flows/validate'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -171,6 +172,19 @@ export async function PUT(
       },
       { status: 400 },
     )
+  }
+  if (body.nodes) {
+    const controlIssues = validateControlPortMetadata(body.nodes)
+      .issues
+    if (controlIssues.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Invalid control handle metadata: ${controlIssues[0].message}`,
+          issues: controlIssues,
+        },
+        { status: 400 },
+      )
+    }
   }
   let variableSchema: FlowVariableDeclaration[] | undefined
   if (body.variable_schema !== undefined) {

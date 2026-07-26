@@ -2,16 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   sendText: vi.fn(),
+  sendButtons: vi.fn(),
+  sendList: vi.fn(),
 }));
 
 vi.mock("./zapi-send", () => ({
   engineSendText: h.sendText,
   engineSendMedia: vi.fn(),
-  engineSendInteractiveButtons: vi.fn(),
-  engineSendInteractiveList: vi.fn(),
+  engineSendInteractiveButtons: h.sendButtons,
+  engineSendInteractiveList: h.sendList,
 }));
 
-import { advanceFromNodeKey } from "./engine";
+import { advanceFromNodeKey, handleReplyForActiveRun } from "./engine";
 import type { FlowNodeRow, FlowRunRow } from "./types";
 
 interface CapturedWrite {
@@ -27,6 +29,16 @@ function fakeDb(options: { failExecutionLogging?: boolean } = {}) {
   const db = {
     from(table: string) {
       return {
+        select() {
+          return {
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: "message-1" },
+                error: null,
+              }),
+            }),
+          };
+        },
         insert(value: Record<string, unknown>) {
           writes.push({ table, kind: "insert", value });
           if (table === "flow_node_executions") {
@@ -109,6 +121,8 @@ function graph(messageConfig: Record<string, unknown>) {
 
 beforeEach(() => {
   h.sendText.mockReset();
+  h.sendButtons.mockReset();
+  h.sendList.mockReset();
 });
 
 describe("node execution policy in the flow engine", () => {
@@ -264,5 +278,193 @@ describe("node execution policy in the flow engine", () => {
           write.value.status === "failed",
       ),
     ).toBe(false);
+  });
+});
+
+describe("reprompt execution policy", () => {
+  const fallbackPolicy = {
+    on_unknown_reply: "reprompt" as const,
+    max_reprompts: 2,
+    on_timeout_hours: 24,
+    on_exhaust: "handoff" as const,
+  };
+
+  function repromptGraph(messageConfig: Record<string, unknown>) {
+    const entries = [
+      node("menu", "send_buttons", {
+        text: "Choose",
+        buttons: [{ reply_id: "yes", title: "Yes", next_node_key: "success" }],
+        ...messageConfig,
+      }),
+      node("success", "end", {}),
+      node("recover", "end", {}),
+    ];
+    return new Map(entries.map((entry) => [entry.node_key, entry]));
+  }
+
+  it("retries a failed reprompt and increments reprompt_count once after success", async () => {
+    h.sendButtons
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValueOnce({ whatsapp_message_id: "wamid-reprompt" });
+    const { db, writes } = fakeDb();
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      run({ current_node_key: "menu" }),
+      { kind: "text", text: "unknown", meta_message_id: "inbound-1" },
+      repromptGraph({
+        retry: { max_attempts: 2, interval_ms: 0, backoff: "fixed" },
+      }),
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("fallback_fired");
+    expect(h.sendButtons).toHaveBeenCalledTimes(2);
+    expect(
+      writes.filter(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          write.value.reprompt_count === 1,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("takes an exhausted reprompt error branch without failing or incrementing the reprompt count", async () => {
+    h.sendButtons.mockRejectedValue(new Error("Z-API unavailable"));
+    const { db, writes } = fakeDb();
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      run({ current_node_key: "menu" }),
+      { kind: "text", text: "unknown", meta_message_id: "inbound-2" },
+      repromptGraph({
+        on_error: "fail_branch",
+        error_next_node_key: "recover",
+      }),
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          write.value.status === "failed",
+      ),
+    ).toBe(false);
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "reprompt_count" in write.value,
+      ),
+    ).toBe(false);
+  });
+
+  it("persists a reprompt default and follows the normal success edge without suspending", async () => {
+    h.sendButtons.mockRejectedValue(new Error("Z-API unavailable"));
+    const activeRun = run({
+      current_node_key: "menu",
+      vars: { existing: true },
+    });
+    const { db, writes } = fakeDb();
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      activeRun,
+      { kind: "text", text: "unknown", meta_message_id: "inbound-default" },
+      repromptGraph({
+        on_error: "default_value",
+        default_value: {
+          key: "delivery",
+          type: "string",
+          value: "skipped",
+        },
+      }),
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(activeRun.vars).toEqual({ existing: true, delivery: "skipped" });
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "reprompt_count" in write.value,
+      ),
+    ).toBe(false);
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "last_prompt_message_id" in write.value,
+      ),
+    ).toBe(false);
+  });
+
+  it("aborts a timed-out reprompt and does not retry it", async () => {
+    const signals: AbortSignal[] = [];
+    h.sendButtons.mockImplementation(
+      (args: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          const signal = args.signal!;
+          signals.push(signal);
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    const { db } = fakeDb();
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      run({ current_node_key: "menu" }),
+      { kind: "text", text: "unknown", meta_message_id: "inbound-3" },
+      repromptGraph({
+        retry: { max_attempts: 3, interval_ms: 0, backoff: "fixed" },
+        timeout_ms: 100,
+        on_error: "fail_branch",
+        error_next_node_key: "recover",
+      }),
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(h.sendButtons).toHaveBeenCalledTimes(1);
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(true);
+  });
+
+  it("writes one reprompt execution record for each attempt", async () => {
+    h.sendButtons
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValueOnce({ whatsapp_message_id: "wamid-reprompt" });
+    const { db, writes } = fakeDb();
+
+    await handleReplyForActiveRun(
+      db as never,
+      run({ current_node_key: "menu" }),
+      { kind: "text", text: "unknown", meta_message_id: "inbound-4" },
+      repromptGraph({
+        retry: { max_attempts: 2, interval_ms: 0, backoff: "fixed" },
+      }),
+      fallbackPolicy,
+    );
+
+    expect(
+      writes
+        .filter(
+          (write) =>
+            write.table === "flow_node_executions" &&
+            write.kind === "insert" &&
+            write.value.node_key === "menu",
+        )
+        .map((write) => write.value.attempt),
+    ).toEqual([1, 2]);
   });
 });

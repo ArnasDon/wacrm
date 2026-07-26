@@ -1254,7 +1254,7 @@ export async function dispatchInboundToFlows(
   }
 }
 
-async function handleReplyForActiveRun(
+export async function handleReplyForActiveRun(
   db: AdminClient,
   run: FlowRunRow,
   message: ParsedInbound,
@@ -1373,46 +1373,87 @@ async function handleReplyForActiveRun(
   // No match → fallback. Apply the policy.
   const policy = fallbackPolicy;
   const newReprompts = run.reprompt_count + 1;
-  await db
-    .from("flow_runs")
-    .update({ reprompt_count: newReprompts })
-    .eq("id", run.id);
 
   const action = decideFallback({ policy, reprompt_count: newReprompts });
   await logEvent(db, run.id, "fallback_fired", run.current_node_key, {
     action: action.type,
     reprompt_count: newReprompts,
   });
-  if (action.type === "ignore") {
-    // Don't consume — let automations have a shot at it.
-    return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
-  }
   if (action.type === "reprompt") {
-    // Re-send the same prompt. Same node, no current_node_key change.
+    // A reprompt is another execution attempt for the current node. Keep the
+    // stored counter unchanged unless the prompt was actually sent; exhausted
+    // fail_branch/default_value policies advance instead of falsely suspending.
+    let executed: PolicyNodeResult<unknown> | null = null;
     if (currentNode.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, currentNode);
+      executed = await executePolicyNode(
+        db,
+        run,
+        currentNode,
+        fallbackPolicy.execution,
+        async (signal) => sendButtonsAndSuspend(db, run, currentNode, signal),
+      );
     } else if (currentNode.node_type === "send_list") {
-      await sendListAndSuspend(db, run, currentNode);
+      executed = await executePolicyNode(
+        db,
+        run,
+        currentNode,
+        fallbackPolicy.execution,
+        async (signal) => sendListAndSuspend(db, run, currentNode, signal),
+      );
     } else if (currentNode.node_type === "collect_input") {
       // Customer typed something we couldn't accept (empty after trim,
       // or var_key missing — rare). Re-send the prompt so they try again.
       const cfg = currentNode.config as unknown as CollectInputNodeConfig;
-      try {
-        await engineSendText({
-          accountId: run.account_id,
-          userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: interpolateVars(cfg.prompt_text, run.vars),
-        });
-      } catch (err) {
-        await logEvent(db, run.id, "error", currentNode.node_key, {
-          reason: "reprompt_send_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-      }
+      executed = await executePolicyNode(
+        db,
+        run,
+        currentNode,
+        fallbackPolicy.execution,
+        async (signal) =>
+          engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: interpolateVars(cfg.prompt_text, run.vars),
+            signal,
+          }),
+      );
     }
+    if (executed && !executed.ok) {
+      if (executed.nextNodeKey) {
+        const outcome = await advanceFromNodeKey(
+          db,
+          run,
+          executed.nextNodeKey,
+          nodes,
+          fallbackPolicy.execution,
+        );
+        return {
+          consumed: true,
+          flow_run_id: run.id,
+          outcome: outcome.outcome,
+        };
+      }
+      return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+    }
+    const { error } = await db
+      .from("flow_runs")
+      .update({ reprompt_count: newReprompts })
+      .eq("id", run.id);
+    if (!error) run.reprompt_count = newReprompts;
     return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
+  }
+
+  // Non-reprompt fallback actions count the rejected reply immediately. A
+  // reprompt defers this write until its send succeeds above.
+  await db
+    .from("flow_runs")
+    .update({ reprompt_count: newReprompts })
+    .eq("id", run.id);
+  if (action.type === "ignore") {
+    // Don't consume — let automations have a shot at it.
+    return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
   }
   if (action.type === "handoff") {
     if (run.conversation_id) {

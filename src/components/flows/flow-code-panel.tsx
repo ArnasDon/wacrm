@@ -301,47 +301,32 @@ export function FlowCodePanel() {
       }
       const document = controller.editedText;
       const previewDigest = validated.digest;
-      let bindingToken: string | undefined;
+      const commitForm = new FormData();
+      commitForm.set("document", document);
+      commitForm.set("preview_digest", previewDigest);
+      commitForm.set("expected_draft_revision", String(draftRevision));
+      commitForm.set("resource_bindings", JSON.stringify(resourceBindings));
       if ((pendingPreview?.secretRequirements.length ?? 0) > 0) {
         if (!secretsFormRef.current) throw new Error("SECRET_REQUIRED");
-        const formData = new FormData(secretsFormRef.current);
+        const secretForm = new FormData(secretsFormRef.current);
         if (
           pendingPreview!.secretRequirements.some(
-            ({ name }) => !String(formData.get(name) ?? ""),
+            ({ name }) => !String(secretForm.get(name) ?? ""),
           )
         ) {
           throw new Error("SECRET_REQUIRED");
         }
-        const sidecarResponse = await fetch("/api/flows/import/secrets", {
-          method: "POST",
-          headers: {
-            "x-flow-id": flow.id,
-            "x-flow-code-digest": previewDigest,
-          },
-          body: formData,
-        });
-        const sidecarPayload = (await sidecarResponse
-          .json()
-          .catch(() => ({}))) as { binding_token?: string; code?: string };
-        if (!sidecarResponse.ok || !sidecarPayload.binding_token) {
-          throw new Error(
-            sidecarPayload.code ?? "INVALID_SECRET_SIDECAR",
+        for (const requirement of pendingPreview!.secretRequirements) {
+          commitForm.set(
+            `secret:${requirement.name}`,
+            String(secretForm.get(requirement.name)),
           );
         }
-        bindingToken = sidecarPayload.binding_token;
+        secretsFormRef.current.reset();
       }
       const response = await fetch(`/api/flows/${flow.id}/import`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document,
-          preview_digest: previewDigest,
-          expected_draft_revision: draftRevision,
-          ...(bindingToken ? { binding_token: bindingToken } : {}),
-          ...(Object.keys(resourceBindings).length > 0
-            ? { resource_bindings: resourceBindings }
-            : {}),
-        }),
+        body: commitForm,
       });
       const payload = (await response.json().catch(() => ({}))) as {
         code?: string;

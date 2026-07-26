@@ -20,14 +20,17 @@ function query(data: unknown[]) {
 
 describe("flow code server catalog", () => {
   it("enumerates only account-scoped assets with opaque ids", async () => {
-    const list = vi.fn().mockResolvedValue({
-      data: [
-        { name: "welcome.png" },
-        { name: "../escape.png" },
-        { name: "nested/file.png" },
-      ],
+    const list = vi.fn(async (_prefix: string, options: { offset?: number }) => ({
+      data:
+        options.offset === 0
+          ? [
+              { name: "welcome.png" },
+              { name: "../escape.png" },
+              { name: "nested/file.png" },
+            ]
+          : [],
       error: null,
-    });
+    }));
     const getPublicUrl = vi.fn((path: string) => ({
       data: { publicUrl: `https://storage.example.test/${path}` },
     }));
@@ -66,5 +69,65 @@ describe("flow code server catalog", () => {
     expect(catalog.resources.filter((resource) => resource.kind === "asset")).toHaveLength(
       1,
     );
+  });
+
+  it("paginates account assets and includes only account-member legacy paths", async () => {
+    const firstPage = Array.from({ length: 500 }, (_, index) => ({
+      name: `${index}.png`,
+    }));
+    const list = vi.fn(
+      async (prefix: string, options: { offset?: number }) => {
+        if (prefix.startsWith("account-")) {
+          return {
+            data: options.offset === 0 ? firstPage : [{ name: "500.png" }],
+            error: null,
+          };
+        }
+        if (prefix === "member-1") {
+          return {
+            data: options.offset === 0 ? [{ name: "legacy.png" }] : [],
+            error: null,
+          };
+        }
+        throw new Error(`unexpected prefix ${prefix}`);
+      },
+    );
+    const bucket = {
+      list,
+      getPublicUrl: (path: string) => ({
+        data: { publicUrl: `https://storage.example.test/${path}` },
+      }),
+    };
+    const admin = {
+      from: vi.fn((table: string) =>
+        query(
+          table === "profiles"
+            ? [{ user_id: "member-1", full_name: "Member" }]
+            : [],
+        ),
+      ),
+      storage: { from: () => bucket },
+    } as unknown as SupabaseClient;
+
+    const catalog = await loadFlowCodeCatalog(admin, "account-1");
+    const assets = catalog.resources.filter(
+      (resource) => resource.kind === "asset",
+    );
+
+    expect(list).toHaveBeenCalledWith(
+      "account-account-1",
+      expect.objectContaining({ offset: 500 }),
+    );
+    expect(list).toHaveBeenCalledWith(
+      "member-1",
+      expect.objectContaining({ offset: 0 }),
+    );
+    expect(assets).toHaveLength(502);
+    expect(assets.map(({ runtimeValue }) => runtimeValue)).toContain(
+      "https://storage.example.test/member-1/legacy.png",
+    );
+    expect(
+      list.mock.calls.some(([prefix]) => prefix === "foreign-member"),
+    ).toBe(false);
   });
 });

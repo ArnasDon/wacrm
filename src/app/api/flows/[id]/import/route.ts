@@ -29,6 +29,6 @@ export async function POST(
     document: body.document,
     previewDigest: body.previewDigest!,
     resourceBindings: body.resourceBindings,
-    bindingToken: body.bindingToken,
+    secretBindings: body.secretBindings,
   });
 }

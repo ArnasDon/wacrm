@@ -12,29 +12,87 @@ export async function readFlowCodeRequest(
       previewDigest?: string;
       expectedDraftRevision?: number;
       resourceBindings: Record<string, string>;
-      bindingToken?: string;
+      secretBindings: Record<string, string>;
     }
   | { ok: false; status: number; code: string }
 > {
-  const declared = Number(request.headers.get("content-length"));
+  const contentType = request.headers.get("content-type") ?? "";
+  const isMultipart = contentType.toLowerCase().startsWith("multipart/form-data");
+  const contentLength = request.headers.get("content-length");
+  if (isMultipart && (!contentLength || !/^\d+$/.test(contentLength))) {
+    return { ok: false, status: 411, code: "CONTENT_LENGTH_REQUIRED" };
+  }
+  const declared = Number(contentLength);
   if (
     Number.isFinite(declared) &&
-    declared > FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES
+    declared >
+      (isMultipart
+        ? FLOW_CODE_LIMITS.maxBytes
+        : FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES)
   ) {
     return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
   }
-  const raw = await request.text();
-  if (
-    new TextEncoder().encode(raw).byteLength >
-    FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES
-  ) {
-    return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
-  }
+  const secretBindings: Record<string, string> = {};
   let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return { ok: false, status: 400, code: "INVALID_REQUEST_JSON" };
+  if (isMultipart) {
+    if (mode === "preview") {
+      return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
+    }
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
+    }
+    const body: Record<string, unknown> = {};
+    for (const [key, entry] of form.entries()) {
+      if (typeof entry !== "string") {
+        return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
+      }
+      if (key.startsWith("secret:")) {
+        const name = key.slice("secret:".length);
+        if (
+          name in secretBindings ||
+          !/^[a-zA-Z_][a-zA-Z0-9_.:-]{0,255}$/.test(name) ||
+          !entry ||
+          entry.length > 16_384 ||
+          Object.keys(secretBindings).length >=
+            FLOW_CODE_LIMITS.maxSecretRequirements
+        ) {
+          return { ok: false, status: 400, code: "INVALID_SECRET_BINDINGS" };
+        }
+        secretBindings[name] = entry;
+        continue;
+      }
+      if (key in body) {
+        return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
+      }
+      if (key === "resource_bindings") {
+        try {
+          body.resource_bindings = JSON.parse(entry);
+        } catch {
+          return { ok: false, status: 400, code: "INVALID_RESOURCE_BINDINGS" };
+        }
+      } else if (key === "expected_draft_revision") {
+        body.expected_draft_revision = Number(entry);
+      } else {
+        body[key] = entry;
+      }
+    }
+    value = body;
+  } else {
+    const raw = await request.text();
+    if (
+      new TextEncoder().encode(raw).byteLength >
+      FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES
+    ) {
+      return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
+    }
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return { ok: false, status: 400, code: "INVALID_REQUEST_JSON" };
+    }
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
@@ -44,18 +102,12 @@ export async function readFlowCodeRequest(
     mode === "preview"
       ? ["document", "resource_bindings"]
       : mode === "create"
-        ? [
-            "document",
-            "preview_digest",
-            "resource_bindings",
-            "binding_token",
-          ]
+        ? ["document", "preview_digest", "resource_bindings"]
         : [
             "document",
             "preview_digest",
             "expected_draft_revision",
             "resource_bindings",
-            "binding_token",
           ];
   if (
     Object.keys(body).some((key) => !allowed.includes(key)) ||
@@ -79,13 +131,6 @@ export async function readFlowCodeRequest(
     return { ok: false, status: 400, code: "INVALID_RESOURCE_BINDINGS" };
   }
   if (
-    body.binding_token !== undefined &&
-    (typeof body.binding_token !== "string" ||
-      !/^[0-9a-f-]{36}$/i.test(body.binding_token))
-  ) {
-    return { ok: false, status: 400, code: "INVALID_BINDING_TOKEN" };
-  }
-  if (
     mode !== "preview" &&
     (typeof body.preview_digest !== "string" ||
       !/^[a-f0-9]{64}$/.test(body.preview_digest))
@@ -103,9 +148,7 @@ export async function readFlowCodeRequest(
     ok: true,
     document: body.document,
     resourceBindings,
-    ...(typeof body.binding_token === "string"
-      ? { bindingToken: body.binding_token }
-      : {}),
+    secretBindings,
     ...(mode === "preview"
       ? {}
       : { previewDigest: body.preview_digest as string }),

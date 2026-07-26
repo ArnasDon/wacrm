@@ -9,7 +9,6 @@ import {
 } from "@/lib/flows/flow-code-server";
 import { FlowCodeError } from "@/lib/flows/flow-code";
 import { parseFlowCodeInput } from "@/lib/flows/flow-code";
-import { consumeSecretSidecar } from "@/lib/flows/flow-code-sidecars";
 
 export async function commitFlowCode(args: {
   admin: SupabaseClient;
@@ -20,7 +19,7 @@ export async function commitFlowCode(args: {
   flowId?: string;
   expectedDraftRevision?: number;
   resourceBindings?: Readonly<Record<string, string>>;
-  bindingToken?: string;
+  secretBindings?: Readonly<Record<string, string>>;
 }) {
   try {
     const catalog = await loadFlowCodeCatalog(args.admin, args.accountId);
@@ -31,29 +30,28 @@ export async function commitFlowCode(args: {
         { status: 409 },
       );
     }
-    // Commit never trusts preview output: parse, canonicalize, resolve and
-    // compile again against the current destination catalog.
-    const secretBindings = args.bindingToken
-      ? consumeSecretSidecar({
-          token: args.bindingToken,
-          actorId: args.actorId,
-          accountId: args.accountId,
-          flowId: args.flowId,
-          digest: args.previewDigest,
-        })
-      : {};
-    if (args.bindingToken && !secretBindings) {
+    const requiredSecrets = new Set(
+      parsedBeforeBinding.document.secret_requirements.map(({ name }) => name),
+    );
+    const suppliedSecrets = Object.keys(args.secretBindings ?? {});
+    if (
+      suppliedSecrets.some((name) => !requiredSecrets.has(name)) ||
+      [...requiredSecrets].some((name) => !(name in (args.secretBindings ?? {})))
+    ) {
       return NextResponse.json(
-        { code: "SECRET_SIDECAR_EXPIRED" },
-        { status: 409 },
+        { code: "INVALID_SECRET_BINDINGS" },
+        { status: 422 },
       );
     }
+    // Commit never trusts preview output: parse, canonicalize, resolve and
+    // compile again against the current destination catalog. Secret values
+    // exist only in this request scope and are never echoed.
     const { preview, graph } = previewFlowCode(
       args.document,
       catalog,
       args.flowId,
       args.resourceBindings,
-      secretBindings ?? {},
+      args.secretBindings ?? {},
     );
     if (preview.digest !== args.previewDigest) {
       return NextResponse.json(
@@ -101,6 +99,14 @@ export async function commitFlowCode(args: {
       p_variable_schema: graph.variable_schema,
       p_nodes: graph.nodes,
       p_allowed_resource_ids: [...allowedPersistenceIds],
+      p_allowed_secret_paths:
+        parsedBeforeBinding.document.secret_requirements.map(
+          ({ node_key, path }) => {
+            const match = /^config\.([^.]+)\.(.+)$/.exec(path);
+            if (!match) throw new FlowCodeError("INVALID_SECRET_PATH", path);
+            return { node_key, path: ["config", match[1], match[2]] };
+          },
+        ),
     });
     if (error) {
       const mapped = safeImportRpcError(error.message);

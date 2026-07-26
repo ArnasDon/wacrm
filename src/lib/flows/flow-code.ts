@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { generatedAutomationSchema } from "@/lib/automations/dsl/schema";
 import { automationToFlowGraph } from "@/lib/automations/to-flow-graph";
+import { assertAuthorableHttpUrl } from "@/lib/flows/http-authoring-url";
 import {
   canonicalNodeType,
   getNodeDescriptor,
@@ -369,6 +370,9 @@ function parseVariable(value: unknown, index: number): FlowCodeVariable {
   if (typeof value.sensitive !== "boolean") {
     fail("INVALID_DOCUMENT", `variables[${index}].sensitive`);
   }
+  if (typeof value.required !== "boolean") {
+    fail("INVALID_VARIABLE_REQUIRED", `variables[${index}].required`);
+  }
   if (value.sensitive && "default" in value) {
     fail("SENSITIVE_DEFAULT_FORBIDDEN", `variables[${index}].default`);
   }
@@ -376,6 +380,27 @@ function parseVariable(value: unknown, index: number): FlowCodeVariable {
     assertNoPortableMarkers(value.default, `variables[${index}].default`);
     assertNoSecret(value.default, `variables[${index}].default`);
     assertNoSourceIdentifier(value.default, `variables[${index}].default`);
+    const type = String(value.type);
+    const compatible =
+      (type === "string" && typeof value.default === "string") ||
+      (type === "number" &&
+        typeof value.default === "number" &&
+        Number.isFinite(value.default)) ||
+      (type === "boolean" && typeof value.default === "boolean") ||
+      (type === "json" && value.default !== undefined);
+    let encoded: string | undefined;
+    try {
+      encoded = JSON.stringify(value.default);
+    } catch {
+      fail("INVALID_VARIABLE_DEFAULT", `variables[${index}].default`);
+    }
+    if (
+      !compatible ||
+      encoded === undefined ||
+      new TextEncoder().encode(encoded).byteLength > 64 * 1024
+    ) {
+      fail("INVALID_VARIABLE_DEFAULT", `variables[${index}].default`);
+    }
   }
   return structuredClone(value) as unknown as FlowCodeVariable;
 }
@@ -459,6 +484,92 @@ function parseNode(value: unknown, index: number): FlowCodeNode {
     config: structuredClone(value.config),
     position: { x, y },
   };
+}
+
+function validateDocumentMarkers(document: FlowCodeDocument): void {
+  const requirements = new Map(
+    document.secret_requirements.map((requirement) => [
+      requirement.name,
+      requirement,
+    ]),
+  );
+  const resources = new Map(
+    document.resources.map((resource) => [resource.ref, resource]),
+  );
+  const usedRequirements = new Map<string, number>();
+
+  const visit = (
+    node: FlowCodeNode,
+    descriptor: NonNullable<ReturnType<typeof getNodeDescriptor>>,
+    value: unknown,
+    path: string,
+  ): void => {
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) =>
+        visit(node, descriptor, entry, `${path}[${index}]`),
+      );
+      return;
+    }
+    if (!isRecord(value)) return;
+    if (typeof value.$secret === "string") {
+      const allowed = (descriptor.portability.secretMaps ?? []).some(
+        (mapPath) => path.startsWith(`${mapPath}.`) && path.length > mapPath.length + 1,
+      );
+      if (!allowed) fail("SECRET_MARKER_PATH_INVALID", `${node.key}.${path}`);
+      const requirement = requirements.get(value.$secret);
+      if (
+        !requirement ||
+        requirement.node_key !== node.key ||
+        requirement.path !== `config.${path}`
+      ) {
+        fail("SECRET_REQUIREMENT_MISMATCH", `${node.key}.${path}`);
+      }
+      usedRequirements.set(
+        requirement.name,
+        (usedRequirements.get(requirement.name) ?? 0) + 1,
+      );
+      return;
+    }
+    if (typeof value.$resource === "string") {
+      const resourceRef = descriptor.portability.resourceRefs?.find(
+        (candidate) => candidate.field === path,
+      );
+      if (
+        !resourceRef ||
+        (descriptor.id === "condition" &&
+          path === "subject_key" &&
+          node.config.subject !== "tag")
+      ) {
+        fail("RESOURCE_MARKER_PATH_INVALID", `${node.key}.${path}`);
+      }
+      const resource = resources.get(value.$resource);
+      if (!resource) {
+        fail("RESOURCE_MARKER_MISMATCH", `${node.key}.${path}`);
+      }
+      if (resource.kind !== resourceRef.kind) {
+        fail("RESOURCE_KIND_MISMATCH", `${node.key}.${path}`);
+      }
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      visit(node, descriptor, entry, path ? `${path}.${key}` : key);
+    }
+  };
+
+  for (const node of document.nodes) {
+    const descriptor = getNodeDescriptor(node.type);
+    if (!descriptor) fail("UNKNOWN_NODE_TYPE", node.type);
+    visit(node, descriptor, node.config, "");
+  }
+  for (const requirement of document.secret_requirements) {
+    const count = usedRequirements.get(requirement.name) ?? 0;
+    if (count === 0) {
+      fail("ORPHAN_SECRET_REQUIREMENT", requirement.name);
+    }
+    if (count !== 1) {
+      fail("SECRET_REQUIREMENT_MISMATCH", requirement.name);
+    }
+  }
 }
 
 export function parseFlowCodeText(text: string): {
@@ -567,6 +678,7 @@ export function parseFlowCodeText(text: string): {
   assertUnique(document.resources, "ref", "DUPLICATE_RESOURCE_REF");
   assertUnique(document.secret_requirements, "name", "DUPLICATE_SECRET");
   assertUnique(document.nodes, "key", "DUPLICATE_NODE_KEY");
+  validateDocumentMarkers(document);
   const canonical = canonicalFlowCodeText(document);
   return { document, digest: digestFlowCode(canonical) };
 }
@@ -796,6 +908,7 @@ function migrateLegacyNode(
     variables.push({
       key: responseVar,
       type: "json",
+      required: false,
       sensitive: true,
     });
     return {
@@ -989,6 +1102,13 @@ export function exportFlowCode(input: {
           candidate.kind === resourceRef.kind,
       );
       if (!found) {
+        if (resourceRef.kind === "asset") {
+          assertCleanExternalAssetUrl(
+            sourceId,
+            `${node.node_key}.${resourceRef.field}`,
+          );
+          continue;
+        }
         fail(
           "SOURCE_RESOURCE_NOT_FOUND",
           `${node.node_key}.${resourceRef.field}`,
@@ -1027,9 +1147,7 @@ export function exportFlowCode(input: {
       const portable: FlowCodeVariable = {
         key: variable.key,
         type: variable.type,
-        ...(variable.required === undefined
-          ? {}
-          : { required: variable.required }),
+        required: variable.required === true,
         sensitive,
       };
       if (!sensitive && variable.default !== undefined) {
@@ -1084,6 +1202,28 @@ function assertSafeUrlFields(config: Record<string, unknown>, nodeKey: string) {
     if (url.username || url.password) {
       fail("URL_USERINFO_FORBIDDEN", `${nodeKey}.${key}`);
     }
+    if (key === "media_url") {
+      assertCleanExternalAssetUrl(config[key] as string, `${nodeKey}.${key}`);
+    }
+  }
+}
+
+function assertCleanExternalAssetUrl(rawUrl: string, path: string): void {
+  let url: URL;
+  try {
+    url = new URL(assertAuthorableHttpUrl(rawUrl));
+  } catch {
+    fail("UNSAFE_EXTERNAL_ASSET_URL", path);
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    /\/storage\/v1\/object\/|\/flow-media\/account-/i.test(url.pathname)
+  ) {
+    fail("UNSAFE_EXTERNAL_ASSET_URL", path);
   }
 }
 
@@ -1133,7 +1273,7 @@ function assertNoSourceIdentifier(value: unknown, path: string): void {
 }
 
 function normalizedName(value: string): string {
-  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function subflowReaches(
@@ -1407,9 +1547,12 @@ export function compileFlowCode(
     }
     const result = descriptor?.flowConfigSchema.safeParse(config);
     if (descriptor && !result?.success) {
+      const hasRuntimeTypeFailure = result?.error.issues.some(
+        (issue) => issue.code === "invalid_type",
+      );
       issues.push({
         code: "INVALID_NODE_CONFIG",
-        severity: "activation",
+        severity: hasRuntimeTypeFailure ? "fatal" : "activation",
         path: `nodes.${node.key}.config`,
         message:
           result?.error.issues[0]?.message ?? "Node config is invalid.",

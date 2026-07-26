@@ -62,4 +62,59 @@ describe("flow code API request reader", () => {
       code: "DOCUMENT_TOO_LARGE",
     });
   });
+
+  it("reads bounded secret bindings only from the same multipart commit", async () => {
+    const form = new FormData();
+    form.set("document", "{}");
+    form.set("preview_digest", "a".repeat(64));
+    form.set("resource_bindings", "{}");
+    form.set("secret:request.headers.Authorization", "Bearer sk-private-value");
+    const result = await readFlowCodeRequest(
+      new Request("http://localhost/api/flows/import", {
+        method: "POST",
+        headers: { "content-length": "1024" },
+        body: form,
+      }),
+      "create",
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      secretBindings: {
+        "request.headers.Authorization": "Bearer sk-private-value",
+      },
+    });
+  });
+
+  it("requires a bounded content length before parsing multipart secrets", async () => {
+    const form = new FormData();
+    form.set("document", "{}");
+    form.set("preview_digest", "a".repeat(64));
+    const missing = await readFlowCodeRequest(
+      new Request("http://localhost/api/flows/import", {
+        method: "POST",
+        body: form,
+      }),
+      "create",
+    );
+    const oversized = await readFlowCodeRequest(
+      new Request("http://localhost/api/flows/import", {
+        method: "POST",
+        headers: { "content-length": String(FLOW_CODE_LIMITS.maxBytes + 1) },
+        body: form,
+      }),
+      "create",
+    );
+
+    expect(missing).toMatchObject({
+      ok: false,
+      status: 411,
+      code: "CONTENT_LENGTH_REQUIRED",
+    });
+    expect(oversized).toMatchObject({
+      ok: false,
+      status: 413,
+      code: "DOCUMENT_TOO_LARGE",
+    });
+  });
 });

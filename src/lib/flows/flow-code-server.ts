@@ -79,11 +79,40 @@ export async function loadFlowCodeCatalog(
   if (versions.error) throw new Error("FLOW_CODE_CATALOG_UNAVAILABLE");
   const assetPrefix = `account-${accountId}`;
   const assetBucket = admin.storage.from("flow-media");
-  const assets = await assetBucket.list(assetPrefix, {
-    limit: 500,
-    sortBy: { column: "name", order: "asc" },
-  });
-  if (assets.error) throw new Error("FLOW_CODE_CATALOG_UNAVAILABLE");
+  const memberRows = (members.data ?? []) as Array<{
+    user_id: string;
+    full_name: string;
+  }>;
+  const assetPaths: string[] = [];
+  const pageSize = 500;
+  const maxAssets = 5_000;
+  for (const prefix of [assetPrefix, ...memberRows.map(({ user_id }) => user_id)]) {
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await assetBucket.list(prefix, {
+        limit: pageSize,
+        offset,
+        sortBy: { column: "name", order: "asc" },
+      });
+      if (page.error) throw new Error("FLOW_CODE_CATALOG_UNAVAILABLE");
+      const rows = (page.data ?? []) as Array<{ name: string }>;
+      for (const row of rows) {
+        if (
+          !row.name ||
+          row.name === "." ||
+          row.name === ".." ||
+          row.name.includes("/") ||
+          row.name.includes("\\")
+        ) {
+          continue;
+        }
+        if (assetPaths.length >= maxAssets) {
+          throw new Error("FLOW_CODE_CATALOG_LIMIT");
+        }
+        assetPaths.push(`${prefix}/${row.name}`);
+      }
+      if (rows.length < pageSize) break;
+    }
+  }
   const versionById = new Map(
     ((versions.data ?? []) as Array<{
       id: string;
@@ -120,34 +149,20 @@ export async function loadFlowCodeCatalog(
       name: row.name,
       parentId: row.pipeline_id,
     })),
-    ...((members.data ?? []) as Array<{
-      user_id: string;
-      full_name: string;
-    }>).map((row) => ({
+    ...memberRows.map((row) => ({
       id: row.user_id,
       kind: "member" as const,
       name: row.full_name || "Unnamed member",
     })),
-    ...((assets.data ?? []) as Array<{ name: string }>).flatMap((row) => {
-      if (
-        !row.name ||
-        row.name === "." ||
-        row.name === ".." ||
-        row.name.includes("/") ||
-        row.name.includes("\\")
-      ) {
-        return [];
-      }
-      const path = `${assetPrefix}/${row.name}`;
+    ...assetPaths.map((path) => {
+      const name = path.slice(path.indexOf("/") + 1);
       const { data } = assetBucket.getPublicUrl(path);
-      return [
-        {
-          id: `asset:${createHash("sha256").update(path).digest("hex")}`,
-          kind: "asset" as const,
-          name: row.name,
-          runtimeValue: data.publicUrl,
-        },
-      ];
+      return {
+        id: `asset:${createHash("sha256").update(path).digest("hex")}`,
+        kind: "asset" as const,
+        name,
+        runtimeValue: data.publicUrl,
+      };
     }),
   ];
   return {

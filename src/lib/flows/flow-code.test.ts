@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { FLOW_NODE_DESCRIPTORS } from "@/lib/flows/registry";
 import {
@@ -281,8 +281,19 @@ describe("flow code v1", () => {
       result.document.nodes.find((node) => node.key === "request")?.type,
     ).toBe("http_request");
     expect(result.document.variables).toEqual([
-      { key: "implicit_secret", type: "string", sensitive: true },
-      { key: "public", type: "string", sensitive: false, default: "ok" },
+      {
+        key: "implicit_secret",
+        type: "string",
+        required: false,
+        sensitive: true,
+      },
+      {
+        key: "public",
+        type: "string",
+        required: false,
+        sensitive: false,
+        default: "ok",
+      },
     ]);
     expect(result.document.secret_requirements.length).toBe(2);
     expect(text).not.toMatch(
@@ -394,6 +405,7 @@ describe("flow code v1", () => {
             {
               key: "public",
               type: "string",
+              required: false,
               sensitive: false,
               default: "11111111-1111-4111-8111-111111111111",
             },
@@ -409,6 +421,7 @@ describe("flow code v1", () => {
             {
               key: "private",
               type: "string",
+              required: false,
               sensitive: true,
               default: "hidden",
             },
@@ -437,6 +450,215 @@ describe("flow code v1", () => {
         }),
       ),
     ).toThrowError(/SUSPECTED_SECRET/);
+  });
+
+  it("allows portable markers only at descriptor-declared paths", () => {
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          nodes: [
+            {
+              key: "message",
+              type: "send_message",
+              config: {
+                text: { $secret: "message.text" },
+                next_node_key: "end",
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+          secret_requirements: [
+            { name: "message.text", node_key: "message", path: "config.text" },
+          ],
+        }),
+      ),
+    ).toThrowError(/SECRET_MARKER_PATH_INVALID/);
+
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          resources: [{ ref: "member:owner", kind: "member", name: "Owner" }],
+          nodes: [
+            {
+              key: "tag",
+              type: "set_tag",
+              config: {
+                mode: "add",
+                tag_id: { $resource: "member:owner" },
+                next_node_key: "end",
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/RESOURCE_KIND_MISMATCH/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          resources: [{ ref: "tag:vip", kind: "tag", name: "VIP" }],
+          nodes: [
+            {
+              key: "condition",
+              type: "condition",
+              config: {
+                subject: "var",
+                subject_key: { $resource: "tag:vip" },
+                operator: "present",
+                true_next: "end",
+                false_next: "end",
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/RESOURCE_MARKER_PATH_INVALID/);
+  });
+
+  it("requires a one-to-one match between secret markers and requirements", () => {
+    const secretDocument = {
+      ...draft,
+      variables: [
+        { key: "response", type: "json", required: false, sensitive: true },
+      ],
+      nodes: [
+        {
+          key: "request",
+          type: "http_request",
+          config: {
+            method: "GET",
+            url: "https://example.test",
+            headers: {
+              Authorization: { $secret: "request.headers.Authorization" },
+            },
+            response_var: "response",
+            next_node_key: "end",
+          },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      secret_requirements: [
+        {
+          name: "request.headers.Authorization",
+          node_key: "request",
+          path: "config.headers.Authorization",
+        },
+      ],
+    };
+    expect(parseFlowCodeText(JSON.stringify(secretDocument)).document).toEqual(
+      expect.objectContaining({
+        secret_requirements: secretDocument.secret_requirements,
+      }),
+    );
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...secretDocument,
+          secret_requirements: [
+            {
+              name: "request.headers.Other",
+              node_key: "request",
+              path: "config.headers.Authorization",
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/SECRET_REQUIREMENT_MISMATCH/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          secret_requirements: [
+            { name: "orphan", node_key: "missing", path: "config.headers.value" },
+          ],
+        }),
+      ),
+    ).toThrowError(/ORPHAN_SECRET_REQUIREMENT/);
+  });
+
+  it("requires strict variable flags and type-compatible bounded defaults", () => {
+    const variableDocument = (variable: Record<string, unknown>) =>
+      JSON.stringify({ ...draft, variables: [variable] });
+    expect(() =>
+      parseFlowCodeText(
+        variableDocument({
+          key: "missing_required",
+          type: "string",
+          sensitive: false,
+        }),
+      ),
+    ).toThrowError(/INVALID_VARIABLE_REQUIRED/);
+    expect(() =>
+      parseFlowCodeText(
+        variableDocument({
+          key: "wrong_type",
+          type: "number",
+          required: false,
+          sensitive: false,
+          default: "42",
+        }),
+      ),
+    ).toThrowError(/INVALID_VARIABLE_DEFAULT/);
+    expect(() =>
+      parseFlowCodeText(
+        variableDocument({
+          key: "runtime_only",
+          type: "contact",
+          required: false,
+          sensitive: false,
+          default: {},
+        }),
+      ),
+    ).toThrowError(/INVALID_VARIABLE_DEFAULT/);
+    expect(
+      parseFlowCodeText(
+        variableDocument({
+          key: "settings",
+          type: "json",
+          required: false,
+          sensitive: false,
+          default: { enabled: true, retries: 2 },
+        }),
+      ).document.variables[0],
+    ).toEqual(
+      expect.objectContaining({
+        required: false,
+        default: { enabled: true, retries: 2 },
+      }),
+    );
+  });
+
+  it("treats runtime config validation after hydration as fatal", () => {
+    const invalid = compileFlowCode(
+      {
+        ...draft,
+        nodes: [
+          {
+            key: "wait",
+            type: "wait",
+            config: {
+              amount: "1",
+              unit: "hours",
+              next_node_key: "end",
+            },
+            position: { x: 0, y: 0 },
+          },
+        ],
+      },
+      emptyCatalog,
+    );
+    expect(invalid.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_NODE_CONFIG",
+          severity: "fatal",
+        }),
+      ]),
+    );
   });
 
   it("round-trips registered runtime nodes through strict compile", () => {
@@ -583,6 +805,46 @@ describe("flow code v1", () => {
     expect(correctChild.graph.nodes[0].config.stage_id).toBe("stage-1");
   });
 
+  it("normalizes resource names independently of the process locale", () => {
+    const localeLower = vi
+      .spyOn(String.prototype, "toLocaleLowerCase")
+      .mockReturnValue("locale-dependent");
+    try {
+      const document = {
+        ...draft,
+        resources: [{ ref: "tag:i", kind: "tag" as const, name: "I" }],
+      };
+      const correct = compileFlowCode(document, {
+        flows: [],
+        resources: [{ id: "tag-i", kind: "tag", name: "i" }],
+      });
+      expect(correct.resolved["tag:i"]).toBe("tag-i");
+      const dotted = compileFlowCode(
+        {
+          ...draft,
+          resources: [{ ref: "tag:dotted", kind: "tag", name: "İ" }],
+        },
+        {
+          flows: [],
+          resources: [{ id: "tag-dotted", kind: "tag", name: "i\u0307" }],
+        },
+      );
+      expect(dotted.resolved["tag:dotted"]).toBe("tag-dotted");
+
+      const wrong = compileFlowCode(document, {
+        flows: [],
+        resources: [{ id: "tag-other", kind: "tag", name: "Other" }],
+      });
+      expect(wrong.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "RESOURCE_MISSING" }),
+        ]),
+      );
+    } finally {
+      localeLower.mockRestore();
+    }
+  });
+
   it("round-trips account-scoped assets without leaking their URL", () => {
     const sourceUrl =
       "https://storage.example.test/flow-media/account-source/private.png";
@@ -647,6 +909,54 @@ describe("flow code v1", () => {
     expect(compiled.resolved["asset:private_png"]).toBe(
       "asset:destination-hash",
     );
+  });
+
+  it("keeps clean external HTTPS media portable and rejects secret or foreign-storage URLs", () => {
+    const inputForUrl = (mediaUrl: string) => ({
+      flow: {
+        name: "External media",
+        description: null,
+        trigger_type: "manual" as const,
+        trigger_config: {},
+        entry_node_id: "media",
+        fallback_policy: draft.fallback,
+        variable_schema: [],
+      },
+      nodes: [
+        {
+          node_key: "media",
+          node_type: "send_media",
+          position_x: 0,
+          position_y: 0,
+          config: {
+            media_type: "image",
+            media_url: mediaUrl,
+            caption: "",
+            filename: "image.png",
+            next_node_key: "",
+          },
+        },
+      ],
+      resourceCatalog: emptyCatalog,
+    });
+    const cleanUrl = "https://cdn.example.test/public/image.png";
+    const exported = exportFlowCode(inputForUrl(cleanUrl));
+    expect(exported.document.nodes[0].config.media_url).toBe(cleanUrl);
+    expect(
+      compileFlowCode(exported.document, emptyCatalog).graph.nodes[0].config
+        .media_url,
+    ).toBe(cleanUrl);
+
+    for (const unsafe of [
+      "https://cdn.example.test/image.png?token=secret",
+      "https://cdn.example.test/image.png#secret",
+      "https://user:pass@cdn.example.test/image.png",
+      "https://project.supabase.co/storage/v1/object/public/flow-media/account-foreign/image.png",
+    ]) {
+      expect(() => exportFlowCode(inputForUrl(unsafe))).toThrowError(
+        /UNSAFE_EXTERNAL_ASSET_URL|SOURCE_RESOURCE_NOT_FOUND/,
+      );
+    }
   });
 
   it("repins subflows to the destination published version and rejects self references", () => {

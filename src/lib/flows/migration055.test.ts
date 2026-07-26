@@ -38,9 +38,22 @@ describe("migration 055 flow code import", () => {
   it("deep-rejects portable markers, raw tokens and non-destination UUIDs", () => {
     expect(sql).toContain("p_allowed_resource_ids");
     expect(sql).toMatch(/\\\$\(secret\|resource\)/i);
-    expect(sql).toMatch(/regexp_matches\(\s*p_nodes::TEXT/i);
+    expect(sql).toMatch(/regexp_matches\(\s*v_nodes_for_scan::TEXT/i);
     expect(sql).toContain("import_source_identifier_forbidden");
     expect(sql).toMatch(/bearer\[\[:space:\]\]/i);
+  });
+
+  it("allows suspicious values only at exact application-validated secret paths", () => {
+    expect(sql).toContain("p_allowed_secret_paths");
+    expect(sql).toMatch(/jsonb_set\(\s*v_nodes_for_scan/i);
+    expect(sql).toMatch(/node_key[\s\S]*path/i);
+    expect(sql).toMatch(/v_nodes_for_scan::TEXT[\s\S]*bearer/i);
+    expect(sql).toMatch(
+      /p_nodes::TEXT[\s\S]*"\\\$\(secret\|resource\)"/i,
+    );
+    expect(sql).toMatch(
+      /CASE[\s\S]*jsonb_typeof\(secret\.value\)[\s\S]*jsonb_object_length\(secret\.value\)/i,
+    );
   });
 
   it("preserves immutable published history while replacing only draft rows", () => {

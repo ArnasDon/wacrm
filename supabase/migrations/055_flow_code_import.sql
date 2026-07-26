@@ -15,7 +15,8 @@ CREATE OR REPLACE FUNCTION public.import_flow_draft(
   p_fallback_policy JSONB,
   p_variable_schema JSONB,
   p_nodes JSONB,
-  p_allowed_resource_ids JSONB
+  p_allowed_resource_ids JSONB,
+  p_allowed_secret_paths JSONB
 )
 RETURNS SETOF public.flows
 LANGUAGE plpgsql
@@ -24,6 +25,9 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   v_flow public.flows%ROWTYPE;
+  v_nodes_for_scan JSONB := p_nodes;
+  v_secret_path JSONB;
+  v_node_index INTEGER;
   v_runtime_node_types CONSTANT TEXT[] := ARRAY[
     'start',
     'send_message',
@@ -66,7 +70,9 @@ BEGIN
      OR pg_catalog.jsonb_typeof(p_variable_schema) <> 'array'
      OR pg_catalog.jsonb_typeof(p_nodes) <> 'array'
      OR pg_catalog.jsonb_typeof(p_allowed_resource_ids) <> 'array'
+     OR pg_catalog.jsonb_typeof(p_allowed_secret_paths) <> 'array'
      OR pg_catalog.jsonb_array_length(p_allowed_resource_ids) > 1000
+     OR pg_catalog.jsonb_array_length(p_allowed_secret_paths) > 100
      OR pg_catalog.jsonb_array_length(p_nodes) > 500 THEN
     RAISE EXCEPTION USING
       MESSAGE = 'import_payload_invalid',
@@ -109,6 +115,42 @@ BEGIN
       ERRCODE = '22023';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.jsonb_array_elements(p_allowed_secret_paths) AS secret(value)
+    WHERE CASE
+      WHEN pg_catalog.jsonb_typeof(secret.value) IS DISTINCT FROM 'object'
+        THEN TRUE
+      WHEN pg_catalog.jsonb_object_length(secret.value) <> 2
+        OR NULLIF(secret.value->>'node_key', '') IS NULL
+        OR secret.value->>'node_key' !~ '^[a-zA-Z_][a-zA-Z0-9_.:-]{0,127}$'
+        OR pg_catalog.jsonb_typeof(secret.value->'path') IS DISTINCT FROM 'array'
+        THEN TRUE
+      ELSE
+        pg_catalog.jsonb_array_length(secret.value->'path') <> 3
+        OR secret.value->'path'->>0 <> 'config'
+        OR EXISTS (
+          SELECT 1
+          FROM pg_catalog.jsonb_array_elements_text(secret.value->'path') AS segment(value)
+          WHERE segment.value !~ '^[a-zA-Z_][a-zA-Z0-9_.:-]{0,255}$'
+        )
+        OR NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.jsonb_array_elements(p_nodes) AS node(value)
+          WHERE node.value->>'node_key' = secret.value->>'node_key'
+            AND pg_catalog.jsonb_typeof(
+              node.value #> ARRAY(
+                SELECT pg_catalog.jsonb_array_elements_text(secret.value->'path')
+              )
+            ) = 'string'
+        )
+    END
+  ) THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'import_payload_invalid',
+      ERRCODE = '22023';
+  END IF;
+
   -- Portable markers may never cross the persistence boundary, regardless
   -- of which authorable JSON field contains them.
   IF pg_catalog.concat_ws(
@@ -123,6 +165,29 @@ BEGIN
       MESSAGE = 'import_secret_unbound',
       ERRCODE = '22023';
   END IF;
+
+  -- Remove only exact, application-validated secret leaves from defensive
+  -- token/UUID scans. Values remain in p_nodes for the atomic draft write.
+  FOR v_secret_path IN
+    SELECT secret.value
+    FROM pg_catalog.jsonb_array_elements(p_allowed_secret_paths) AS secret(value)
+  LOOP
+    SELECT (node.ordinality - 1)::INTEGER
+    INTO v_node_index
+    FROM pg_catalog.jsonb_array_elements(v_nodes_for_scan)
+      WITH ORDINALITY AS node(value, ordinality)
+    WHERE node.value->>'node_key' = v_secret_path->>'node_key';
+
+    v_nodes_for_scan := pg_catalog.jsonb_set(
+      v_nodes_for_scan,
+      ARRAY[v_node_index::TEXT]
+        || ARRAY(
+          SELECT pg_catalog.jsonb_array_elements_text(v_secret_path->'path')
+        ),
+      '""'::JSONB,
+      FALSE
+    );
+  END LOOP;
 
   -- Source identifiers are forbidden in non-resource fields.
   IF pg_catalog.concat_ws(
@@ -142,7 +207,7 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM pg_catalog.regexp_matches(
-      p_nodes::TEXT,
+      v_nodes_for_scan::TEXT,
       '([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})',
       'gi'
     ) AS match(value)
@@ -162,7 +227,7 @@ BEGIN
        p_trigger_config::TEXT,
        p_fallback_policy::TEXT,
        p_variable_schema::TEXT,
-       p_nodes::TEXT
+       v_nodes_for_scan::TEXT
      ) ~* '(bearer[[:space:]]+[a-z0-9._~+/=-]{8,}|sk-[a-z0-9_-]{16,}|[a-f0-9]{32,})'
   THEN
     RAISE EXCEPTION USING
@@ -274,11 +339,11 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB, JSONB
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB, JSONB
 ) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB, JSONB
 ) TO service_role;

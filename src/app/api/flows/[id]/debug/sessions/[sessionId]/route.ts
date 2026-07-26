@@ -63,14 +63,30 @@ export async function GET(
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) return debugRpcError(error);
-  return debugJson(
-    sanitizeDebugValue({
+  try {
+    return debugJson({
       session: sanitizeDebugSession(
         state.session as Record<string, unknown>,
       ),
-      executions: executions ?? [],
-    }),
-  );
+      executions: (executions ?? []).map((execution) =>
+        sanitizeDebugValue(execution),
+      ),
+    });
+  } catch (sanitizationError) {
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "debug_response_too_large"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_RESPONSE_TOO_LARGE",
+          error: "The debug session is too large to inspect.",
+        },
+        { status: 413 },
+      );
+    }
+    throw sanitizationError;
+  }
 }
 
 export async function PATCH(
@@ -140,11 +156,27 @@ export async function PATCH(
       flowId: state.params.id,
     });
   }
-  return debugJson({
-    session: sanitizeDebugSession(
-      (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,
-    ),
-  });
+  try {
+    return debugJson({
+      session: sanitizeDebugSession(
+        (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,
+      ),
+    });
+  } catch (sanitizationError) {
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "debug_response_too_large"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_RESPONSE_TOO_LARGE",
+          error: "The debug session is too large to inspect.",
+        },
+        { status: 413 },
+      );
+    }
+    throw sanitizationError;
+  }
 }
 
 export async function DELETE(
@@ -174,9 +206,25 @@ export async function DELETE(
       flowId: state.params.id,
     });
   }
-  return debugJson({
-    session: sanitizeDebugSession(
-      (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,
-    ),
-  });
+  try {
+    return debugJson({
+      session: sanitizeDebugSession(
+        (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,
+      ),
+    });
+  } catch (sanitizationError) {
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "debug_response_too_large"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_RESPONSE_TOO_LARGE",
+          error: "The debug session is too large to inspect.",
+        },
+        { status: 413 },
+      );
+    }
+    throw sanitizationError;
+  }
 }

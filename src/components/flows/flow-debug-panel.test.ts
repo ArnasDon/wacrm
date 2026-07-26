@@ -49,6 +49,26 @@ describe("flow debug inspector UI", () => {
     expect(source).not.toContain("state.nodes");
   });
 
+  it("keeps invalid typed overrides local and disables execution", () => {
+    expect(source).toContain("setOverrideErrors");
+    expect(source).toContain("hasOverrideErrors");
+    expect(source).toContain("raw.trim()");
+    expect(source).not.toContain("onChange(Number(raw))");
+    expect(source).toContain(
+      "disabled={!selectedManifestNode || busy || hasOverrideErrors}",
+    );
+  });
+
+  it("reconciles historical selection against the pinned session manifest", () => {
+    expect(source).toContain(
+      "session.manifest.nodes.some((node) => node.node_key === selectedNodeKey)",
+    );
+    expect(source).toContain(
+      "setSelectedNodeKey(session.manifest.nodes[0]?.node_key ?? null)",
+    );
+    expect(source).not.toContain("disabled={!selectedNodeKey || busy}");
+  });
+
   it("ships real English and Korean debug translations", () => {
     expect(en.Flows.debug.simulationNotice).toContain("never");
     expect(ko.Flows.debug.simulationNotice).toContain("실제");

@@ -267,8 +267,24 @@ export async function POST(
   );
   if (createError) return debugRpcError(createError);
   const session = Array.isArray(created) ? created[0] : created;
-  return debugJson(
-    { session: sanitizeDebugSession(session as Record<string, unknown>) },
-    { status: 201 },
-  );
+  try {
+    return debugJson(
+      { session: sanitizeDebugSession(session as Record<string, unknown>) },
+      { status: 201 },
+    );
+  } catch (sanitizationError) {
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "debug_response_too_large"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_RESPONSE_TOO_LARGE",
+          error: "The debug session is too large to inspect.",
+        },
+        { status: 413 },
+      );
+    }
+    throw sanitizationError;
+  }
 }

@@ -27,8 +27,6 @@ const bodySchema = z
   })
   .strict();
 
-const MAX_EXECUTIONS_PER_MINUTE = 30;
-
 export async function POST(
   request: Request,
   context: {
@@ -83,16 +81,34 @@ export async function POST(
     );
   }
 
-  const minuteAgo = new Date(Date.now() - 60_000).toISOString();
-  const { data: recent } = await admin
-    .from("flow_debug_node_executions")
-    .select("id")
-    .eq("session_id", sessionId)
-    .gte("created_at", minuteAgo)
-    .limit(MAX_EXECUTIONS_PER_MINUTE);
-  if ((recent?.length ?? 0) >= MAX_EXECUTIONS_PER_MINUTE) {
+  const { data: rateAllowed, error: rateError } = await admin.rpc(
+    "consume_flow_debug_rate_limit",
+    {
+      p_session_id: sessionId,
+      p_created_by: owner.user.id,
+      p_limit: 30,
+      p_window_seconds: 60,
+    },
+  );
+  if (rateError || typeof rateAllowed !== "boolean") {
+    console.error("[flow-debug] rate limit unavailable", {
+      flow_id: id,
+      database_code: rateError?.code ?? "invalid_response",
+    });
     return debugJson(
-      { error: "Too many debug executions. Retry in a minute." },
+      {
+        code: "DEBUG_RATE_LIMIT_UNAVAILABLE",
+        error: "Debug execution is temporarily unavailable.",
+      },
+      { status: 503 },
+    );
+  }
+  if (!rateAllowed) {
+    return debugJson(
+      {
+        code: "DEBUG_RATE_LIMITED",
+        error: "Too many debug executions. Retry in a minute.",
+      },
       { status: 429 },
     );
   }
@@ -130,6 +146,18 @@ export async function POST(
         { status: 413 },
       );
     }
+    if (
+      error instanceof Error &&
+      error.message.startsWith("debug_override_invalid:")
+    ) {
+      return debugJson(
+        {
+          error: "A debug override is invalid for the selected node.",
+          code: "DEBUG_OVERRIDE_INVALID",
+        },
+        { status: 422 },
+      );
+    }
     throw error;
   }
   const durationMs = Math.min(
@@ -164,8 +192,24 @@ export async function POST(
     session?: Record<string, unknown>;
     execution?: Record<string, unknown>;
   };
-  return debugJson({
-    session: row?.session ? sanitizeDebugSession(row.session) : null,
-    execution: sanitizeDebugValue(row?.execution ?? null),
-  });
+  try {
+    return debugJson({
+      session: row?.session ? sanitizeDebugSession(row.session) : null,
+      execution: sanitizeDebugValue(row?.execution ?? null),
+    });
+  } catch (sanitizationError) {
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "debug_response_too_large"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_RESPONSE_TOO_LARGE",
+          error: "The debug session is too large to inspect.",
+        },
+        { status: 413 },
+      );
+    }
+    throw sanitizationError;
+  }
 }

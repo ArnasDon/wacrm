@@ -1,5 +1,8 @@
 import { getNodeDescriptor } from "./registry";
-import type { NodeDescriptor } from "./registry/types";
+import type {
+  NodeDescriptor,
+  NodePortDescriptor,
+} from "./registry/types";
 import {
   coerceDeclaredValue,
   evaluateLoopExitPredicate,
@@ -95,6 +98,72 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function assertJsonSerializable(value: unknown): void {
+  let encoded: string | undefined;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error("debug_override_invalid:type");
+  }
+  if (
+    encoded === undefined ||
+    new TextEncoder().encode(encoded).byteLength > MAX_DEBUG_JSON_BYTES
+  ) {
+    throw new Error("debug_override_invalid:type");
+  }
+}
+
+function validateSingleOverride(
+  port: NodePortDescriptor,
+  value: unknown,
+): void {
+  if (port.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error("debug_override_invalid:type");
+    }
+  } else if (port.type === "boolean") {
+    if (typeof value !== "boolean") {
+      throw new Error("debug_override_invalid:type");
+    }
+  } else if (port.type === "string") {
+    if (typeof value !== "string") {
+      throw new Error("debug_override_invalid:type");
+    }
+  } else if (port.type === "contact" || port.type === "message") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("debug_override_invalid:type");
+    }
+  }
+  assertJsonSerializable(value);
+}
+
+function validateDebugOverrides(
+  descriptor: NodeDescriptor,
+  overrides: Record<string, unknown>,
+): void {
+  const ports = new Map(
+    descriptor.inputs
+      .filter((port) => port.type !== "control")
+      .map((port) => [port.id, port]),
+  );
+  for (const [portId, value] of Object.entries(overrides)) {
+    const port = ports.get(portId);
+    if (!port) {
+      throw new Error("debug_override_invalid:unknown_port");
+    }
+    if (port.cardinality === "many") {
+      if (!Array.isArray(value)) {
+        throw new Error("debug_override_invalid:cardinality");
+      }
+      value.forEach((entry) =>
+        validateSingleOverride({ ...port, cardinality: "one" }, entry),
+      );
+    } else {
+      validateSingleOverride(port, value);
+    }
+  }
 }
 
 function resolveInputs(
@@ -239,6 +308,7 @@ export async function runIsolatedDebugNode(
   }
   const parsed = descriptor.flowConfigSchema.safeParse(node.config);
   if (!parsed.success) throw new Error("debug_node_config_invalid");
+  validateDebugOverrides(descriptor, input.overrides);
   assertDebugVariablesBounded(input.variables);
 
   const { inputs, sources } = resolveInputs(
@@ -541,7 +611,24 @@ export function sanitizeDebugSession(
   delete publicSession.node_outputs;
   delete publicSession.source_node_outputs;
   delete publicSession.snapshot_hash;
-  return sanitizeDebugValue(publicSession) as Record<string, unknown>;
+  const sanitized = Object.fromEntries(
+    Object.entries(publicSession).map(([key, value]) => [
+      key,
+      sanitizeDebugValue(value),
+    ]),
+  );
+  for (const requiredField of ["variables", "manifest"]) {
+    const value = sanitized[requiredField];
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as Record<string, unknown>).truncated === true
+    ) {
+      throw new Error("debug_response_too_large");
+    }
+  }
+  return sanitized;
 }
 
 export function buildDebugManifest(graph: FlowVersionGraph): DebugManifest {

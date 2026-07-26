@@ -13,6 +13,9 @@ describe("migration 051 isolated flow debugging", () => {
     expect(sql).toContain(
       "CREATE TABLE IF NOT EXISTS flow_debug_node_executions",
     );
+    expect(sql).toContain(
+      "CREATE TABLE IF NOT EXISTS flow_debug_rate_limits",
+    );
     expect(sql).toContain("flow_version_id");
     expect(sql).toContain("draft_revision");
     expect(sql).toContain("snapshot_hash");
@@ -30,6 +33,7 @@ describe("migration 051 isolated flow debugging", () => {
       "edit_flow_debug_session_variables",
       "commit_flow_debug_node_execution",
       "close_flow_debug_session",
+      "consume_flow_debug_rate_limit",
     ]) {
       expect(sql).toMatch(
         new RegExp(
@@ -53,8 +57,10 @@ describe("migration 051 isolated flow debugging", () => {
     for (const table of [
       "flow_debug_sessions",
       "flow_debug_node_executions",
+      "flow_debug_rate_limits",
     ]) {
       expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+      expect(sql).toContain(`REVOKE ALL ON TABLE ${table} FROM PUBLIC`);
       expect(sql).toContain(`REVOKE ALL ON TABLE ${table} FROM authenticated`);
       expect(sql).toContain(`GRANT ALL ON TABLE ${table} TO service_role`);
     }
@@ -68,6 +74,14 @@ describe("migration 051 isolated flow debugging", () => {
     expect(sql).toContain("debug_session_quota");
     expect(sql).toContain("debug_session_rate_limited");
     expect(sql).toContain("debug_edit_rate_limited");
+    expect(sql).toContain("ON CONFLICT (session_id, scope)");
+    expect(sql).toContain("flow_debug_execution_rate");
+    expect(sql).toMatch(
+      /REVOKE ALL ON TABLE flow_debug_rate_limits FROM authenticated/i,
+    );
+    expect(sql).toMatch(
+      /pg_advisory_xact_lock[\s\S]+?debug_session_quota/i,
+    );
     expect(sql).toContain("flow_debug_executions_variables_size");
     expect(sql).toMatch(/r\.flow_version_id\s*=\s*p_flow_version_id/i);
     expect(sql).toMatch(

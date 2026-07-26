@@ -71,6 +71,10 @@ export function FlowDebugPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
+  const [overrideErrors, setOverrideErrors] = useState<
+    Record<string, string>
+  >({});
+  const hasOverrideErrors = Object.keys(overrideErrors).length > 0;
 
   const selectedExecution = useMemo(
     () =>
@@ -89,7 +93,15 @@ export function FlowDebugPanel() {
 
   useEffect(() => {
     setOverrides({});
+    setOverrideErrors({});
   }, [selectedNodeKey, session?.id]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (!session.manifest.nodes.some((node) => node.node_key === selectedNodeKey)) {
+      setSelectedNodeKey(session.manifest.nodes[0]?.node_key ?? null);
+    }
+  }, [selectedNodeKey, session, setSelectedNodeKey]);
 
   const loadFlightRecorder = useCallback(async () => {
     const response = await fetch(
@@ -202,7 +214,14 @@ export function FlowDebugPanel() {
   }
 
   async function runSelectedNode() {
-    if (!session || !selectedNodeKey) return;
+    if (
+      !session ||
+      !selectedNodeKey ||
+      !selectedManifestNode ||
+      hasOverrideErrors
+    ) {
+      return;
+    }
     if (!window.confirm(t("confirmSimulation"))) return;
     setBusy(true);
     setMessage(null);
@@ -354,10 +373,22 @@ export function FlowDebugPanel() {
                   key={`${session.id}:${selectedManifestNode.node_key}:${port.id}`}
                   port={port}
                   disabled={busy}
-                  onChange={(value) =>
+                  error={overrideErrors[port.id]}
+                  onChange={(value) => {
                     setOverrides((current) => ({
                       ...current,
                       [port.id]: value,
+                    }));
+                    setOverrideErrors((current) => {
+                      const next = { ...current };
+                      delete next[port.id];
+                      return next;
+                    });
+                  }}
+                  onError={(error) =>
+                    setOverrideErrors((current) => ({
+                      ...current,
+                      [port.id]: error,
                     }))
                   }
                 />
@@ -366,7 +397,7 @@ export function FlowDebugPanel() {
                 type="button"
                 size="sm"
                 onClick={runSelectedNode}
-                disabled={!selectedNodeKey || busy}
+                disabled={!selectedManifestNode || busy || hasOverrideErrors}
                 className="w-full"
               >
                 {busy ? (
@@ -413,11 +444,15 @@ export function FlowDebugPanel() {
 function DebugOverrideEditor({
   port,
   disabled,
+  error,
   onChange,
+  onError,
 }: {
   port: DebugManifestPort;
   disabled: boolean;
+  error?: string;
   onChange: (value: unknown) => void;
+  onError: (error: string) => void;
 }) {
   if (port.type === "boolean") {
     return (
@@ -443,14 +478,32 @@ function DebugOverrideEditor({
       <Input
         disabled={disabled}
         aria-label={port.label}
+        aria-invalid={!!error}
         className="bg-muted font-mono text-xs"
         onBlur={(event) => {
           const raw = event.target.value;
           if (port.type === "number") {
-            onChange(Number(raw));
+            if (!raw.trim()) {
+              onError("A number is required.");
+              return;
+            }
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+              onError("Enter a finite number.");
+              return;
+            }
+            onChange(parsed);
             return;
           }
-          if (port.type === "json" || port.type === "any") {
+          if (port.type === "json") {
+            try {
+              onChange(JSON.parse(raw));
+            } catch {
+              onError("Enter valid JSON.");
+            }
+            return;
+          }
+          if (port.type === "any") {
             try {
               onChange(JSON.parse(raw));
             } catch {
@@ -461,6 +514,9 @@ function DebugOverrideEditor({
           onChange(raw);
         }}
       />
+      {error ? (
+        <span className="text-destructive text-[10px]">{error}</span>
+      ) : null}
     </label>
   );
 }

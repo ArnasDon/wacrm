@@ -237,6 +237,88 @@ describe("isolated flow debugger", () => {
     expect(result.metadata.input_sources).toEqual({ subject: "session" });
   });
 
+  it("rejects overrides for unknown registry input ports", async () => {
+    await expect(
+      runIsolatedDebugNode({
+        graph,
+        nodeKey: "send",
+        variables: { name: "Ada" },
+        savedOutputs: {},
+        clonedOutputs: {},
+        overrides: { typo_port: "unsafe" },
+      }),
+    ).rejects.toThrow("debug_override_invalid:unknown_port");
+  });
+
+  it("rejects non-JSON override values for a JSON registry port", async () => {
+    const eachGraph = {
+      ...graph,
+      entry_node_key: "each",
+      nodes: [
+        {
+          node_key: "each",
+          node_type: "each",
+          config: {
+            array_variable: "items",
+            item_variable: "item",
+            max_iterations: 10,
+            body_next: "end",
+            done_next: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    await expect(
+      runIsolatedDebugNode({
+        graph: eachGraph,
+        nodeKey: "each",
+        variables: { items: [] },
+        savedOutputs: {},
+        clonedOutputs: {},
+        overrides: { items: { unsupported: BigInt(1) } },
+      }),
+    ).rejects.toThrow("debug_override_invalid:type");
+  });
+
+  it("accepts a valid bounded override for a JSON registry port", async () => {
+    const eachGraph = {
+      ...graph,
+      entry_node_key: "each",
+      nodes: [
+        {
+          node_key: "each",
+          node_type: "each",
+          config: {
+            array_variable: "items",
+            item_variable: "item",
+            max_iterations: 10,
+            body_next: "end",
+            done_next: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    const result = await runIsolatedDebugNode({
+      graph: eachGraph,
+      nodeKey: "each",
+      variables: { items: [] },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: { items: ["one"] },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.inputs).toEqual({ items: ["one"] });
+  });
+
   it("returns a planned transition for durable control nodes", async () => {
     const waitGraph: FlowVersionGraph = {
       ...graph,
@@ -459,5 +541,67 @@ describe("debug record sanitization", () => {
         overrides: {},
       }),
     ).rejects.toThrow("debug_variables_too_large");
+  });
+
+  it("preserves the required session envelope when variables and manifest are near their limits", () => {
+    const variable_schema = Array.from({ length: 15 }, (_, index) => ({
+      key: `field_${index}`,
+      type: "string" as const,
+      default: "",
+    }));
+    const variables = Object.fromEntries(
+      variable_schema.map(({ key }) => [key, "x".repeat(4_096)]),
+    );
+    const boundedGraph = {
+      ...graph,
+      variable_schema,
+      nodes: Array.from({ length: 100 }, (_, index) => ({
+        node_key: `end_${index}`,
+        node_type: "end" as const,
+        config: {},
+        position_x: index,
+        position_y: 0,
+      })),
+    };
+
+    const result = sanitizeDebugSession({
+      id: "session-near-limit",
+      revision: 7,
+      status: "active",
+      variables,
+      graph_snapshot: boundedGraph,
+    });
+
+    expect(result).toMatchObject({
+      id: "session-near-limit",
+      revision: 7,
+      status: "active",
+      variables: expect.any(Object),
+      manifest: {
+        variable_schema: expect.any(Array),
+        nodes: expect.any(Array),
+      },
+    });
+    expect(result).not.toHaveProperty("truncated");
+    expect((result.variables as Record<string, unknown>).field_0).toBe(
+      "x".repeat(4_096),
+    );
+  });
+
+  it("fails instead of replacing required session variables with a truncation envelope", () => {
+    expect(() =>
+      sanitizeDebugSession({
+        id: "session-too-large",
+        revision: 1,
+        status: "active",
+        variables: Object.fromEntries(
+          Array.from({ length: 20 }, (_, index) => [
+            `field_${index}`,
+            "x".repeat(4_096),
+          ]),
+        ),
+        graph_snapshot: graph,
+      }),
+    ).toThrow("debug_response_too_large");
   });
 });

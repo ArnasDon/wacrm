@@ -4,6 +4,8 @@ const h = vi.hoisted(() => ({
   rpcName: "",
   rpcArgs: {} as Record<string, unknown>,
   revision: 1,
+  sessionOverride: null as Record<string, unknown> | null,
+  rpcSessionOverride: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/flows/debug-api", async (importOriginal) => ({
@@ -26,7 +28,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
               eq: () => ({
                 eq: () => ({
                   maybeSingle: async () => ({
-                    data: {
+                    data: h.sessionOverride ?? {
                       id: "10000000-0000-4000-8000-000000000001",
                       revision: h.revision,
                       status: "active",
@@ -97,7 +99,9 @@ vi.mock("@/lib/flows/admin-client", () => ({
       h.rpcName = name;
       h.rpcArgs = args;
       return {
-        data: { id: args.p_session_id, revision: h.revision + 1 },
+        data:
+          h.rpcSessionOverride ??
+          { id: args.p_session_id, revision: h.revision + 1 },
         error: null,
       };
     },
@@ -117,6 +121,8 @@ beforeEach(() => {
   h.rpcName = "";
   h.rpcArgs = {};
   h.revision = 1;
+  h.sessionOverride = null;
+  h.rpcSessionOverride = null;
 });
 
 describe("flow debug session API", () => {
@@ -202,4 +208,85 @@ describe("flow debug session API", () => {
     expect(response.status).toBe(413);
     expect(h.rpcName).toBe("");
   });
+
+  it("preserves the GET session envelope near the response limits", async () => {
+    h.sessionOverride = nearLimitSession(1);
+    const response = await GET(new Request("http://localhost/debug"), context);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.session).toMatchObject({
+      id: "session-near-limit",
+      revision: 1,
+      status: "active",
+      variables: expect.any(Object),
+      manifest: {
+        variable_schema: expect.any(Array),
+        nodes: expect.any(Array),
+      },
+    });
+    expect(body.session).not.toHaveProperty("truncated");
+  });
+
+  it("preserves the PATCH session envelope near the response limits", async () => {
+    h.sessionOverride = nearLimitSession(1);
+    h.rpcSessionOverride = nearLimitSession(2);
+    const response = await PATCH(
+      new Request("http://localhost/debug", {
+        method: "PATCH",
+        body: JSON.stringify({
+          expected_revision: 1,
+          variables: { field_0: "updated" },
+        }),
+      }),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.session).toMatchObject({
+      id: "session-near-limit",
+      revision: 2,
+      status: "active",
+      variables: expect.any(Object),
+      manifest: expect.any(Object),
+    });
+    expect(body.session).not.toHaveProperty("truncated");
+  });
 });
+
+function nearLimitSession(revision: number) {
+  const variable_schema = Array.from({ length: 15 }, (_, index) => ({
+    key: `field_${index}`,
+    type: "string",
+    default: "",
+  }));
+  return {
+    id: "session-near-limit",
+    revision,
+    status: "active",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    variables: Object.fromEntries(
+      variable_schema.map(({ key }) => [key, "x".repeat(4_096)]),
+    ),
+    graph_snapshot: {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "end_0",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 24,
+        on_exhaust: "end",
+      },
+      variable_schema,
+      nodes: Array.from({ length: 100 }, (_, index) => ({
+        node_key: `end_${index}`,
+        node_type: "end",
+        config: {},
+        position_x: index,
+        position_y: 0,
+      })),
+    },
+  };
+}

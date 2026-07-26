@@ -71,6 +71,15 @@ CREATE TABLE IF NOT EXISTS flow_debug_node_executions (
   UNIQUE (session_id, node_key, attempt)
 );
 
+CREATE TABLE IF NOT EXISTS flow_debug_rate_limits (
+  session_id UUID NOT NULL REFERENCES flow_debug_sessions(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL CHECK (scope = 'flow_debug_execution_rate'),
+  window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  hit_count INTEGER NOT NULL DEFAULT 0 CHECK (hit_count >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (session_id, scope)
+);
+
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -96,6 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_flow_debug_executions_latest
 
 ALTER TABLE flow_debug_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flow_debug_node_executions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flow_debug_rate_limits ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS flow_debug_sessions_select ON flow_debug_sessions;
 CREATE POLICY flow_debug_sessions_select ON flow_debug_sessions FOR SELECT
@@ -118,10 +128,15 @@ CREATE POLICY flow_debug_node_executions_select
     )
   );
 
+REVOKE ALL ON TABLE flow_debug_sessions FROM PUBLIC;
 REVOKE ALL ON TABLE flow_debug_sessions FROM authenticated;
+REVOKE ALL ON TABLE flow_debug_node_executions FROM PUBLIC;
 REVOKE ALL ON TABLE flow_debug_node_executions FROM authenticated;
+REVOKE ALL ON TABLE flow_debug_rate_limits FROM PUBLIC;
+REVOKE ALL ON TABLE flow_debug_rate_limits FROM authenticated;
 GRANT ALL ON TABLE flow_debug_sessions TO service_role;
 GRANT ALL ON TABLE flow_debug_node_executions TO service_role;
+GRANT ALL ON TABLE flow_debug_rate_limits TO service_role;
 
 CREATE OR REPLACE FUNCTION purge_expired_flow_debug_sessions(
   p_limit INTEGER DEFAULT 100
@@ -170,6 +185,65 @@ $$;
 REVOKE ALL ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) FROM authenticated;
 GRANT EXECUTE ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) TO service_role;
+
+CREATE OR REPLACE FUNCTION consume_flow_debug_rate_limit(
+  p_session_id UUID,
+  p_created_by UUID,
+  p_limit INTEGER DEFAULT 30,
+  p_window_seconds INTEGER DEFAULT 60
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_allowed BOOLEAN;
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100
+     OR p_window_seconds IS NULL OR p_window_seconds < 1
+     OR p_window_seconds > 3600 THEN
+    RAISE EXCEPTION 'invalid debug rate limit';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM flow_debug_sessions s
+    WHERE s.id = p_session_id
+      AND s.created_by = p_created_by
+      AND s.status = 'active'
+      AND s.expires_at > NOW()
+  ) THEN
+    RAISE EXCEPTION 'debug session not found';
+  END IF;
+
+  INSERT INTO flow_debug_rate_limits AS current_limit (
+    session_id, scope, window_started_at, hit_count, updated_at
+  ) VALUES (
+    p_session_id, 'flow_debug_execution_rate', NOW(), 1, NOW()
+  )
+  ON CONFLICT (session_id, scope) DO UPDATE
+  SET hit_count = CASE
+        WHEN current_limit.window_started_at
+             <= NOW() - make_interval(secs => p_window_seconds)
+          THEN 1
+        ELSE current_limit.hit_count + 1
+      END,
+      window_started_at = CASE
+        WHEN current_limit.window_started_at
+             <= NOW() - make_interval(secs => p_window_seconds)
+          THEN NOW()
+        ELSE current_limit.window_started_at
+      END,
+      updated_at = NOW()
+  RETURNING hit_count <= p_limit INTO v_allowed;
+
+  RETURN v_allowed;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION consume_flow_debug_rate_limit(UUID, UUID, INTEGER, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION consume_flow_debug_rate_limit(UUID, UUID, INTEGER, INTEGER) FROM authenticated;
+GRANT EXECUTE ON FUNCTION consume_flow_debug_rate_limit(UUID, UUID, INTEGER, INTEGER) TO service_role;
 
 CREATE OR REPLACE FUNCTION create_flow_debug_session(
   p_flow_id UUID,

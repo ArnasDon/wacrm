@@ -57,6 +57,18 @@ export async function GET(request: Request) {
       waitError instanceof Error ? waitError.message : waitError,
     )
   }
+  try {
+    const { error: purgeError } = await admin.rpc(
+      'purge_expired_flow_debug_sessions',
+      { p_limit: 100 },
+    )
+    if (purgeError) throw new Error(purgeError.message)
+  } catch (purgeError) {
+    console.error(
+      '[flows-cron] debug purge failed:',
+      purgeError instanceof Error ? purgeError.message : 'unknown',
+    )
+  }
 
   // Pull all currently-active runs along with their parent flow's
   // fallback_policy. Joined in one query — the small set of active

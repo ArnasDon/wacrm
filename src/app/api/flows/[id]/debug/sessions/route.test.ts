@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   rpcCalls: [] as string[],
   rpcArgs: {} as Record<string, unknown>,
   rpcError: null as { message: string } | null,
+  createdSession: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -82,7 +83,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
       return {
         data: h.rpcError
           ? null
-          : {
+          : h.createdSession ?? {
               id: "session-1",
               flow_id: "flow-1",
               revision: 0,
@@ -170,6 +171,7 @@ beforeEach(() => {
   h.rpcCalls = [];
   h.rpcArgs = {};
   h.rpcError = null;
+  h.createdSession = null;
 });
 
 describe("flow debug session creation", () => {
@@ -405,4 +407,64 @@ describe("flow debug session creation", () => {
     );
     expect(response.status).toBe(409);
   });
+
+  it("preserves the POST session envelope near the response limits", async () => {
+    h.createdSession = nearLimitSession();
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: "{}",
+      }),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.session).toMatchObject({
+      id: "session-near-limit",
+      revision: 0,
+      status: "active",
+      variables: expect.any(Object),
+      manifest: {
+        variable_schema: expect.any(Array),
+        nodes: expect.any(Array),
+      },
+    });
+    expect(body.session).not.toHaveProperty("truncated");
+  });
 });
+
+function nearLimitSession() {
+  const variable_schema = Array.from({ length: 15 }, (_, index) => ({
+    key: `field_${index}`,
+    type: "string",
+    default: "",
+  }));
+  return {
+    id: "session-near-limit",
+    revision: 0,
+    status: "active",
+    variables: Object.fromEntries(
+      variable_schema.map(({ key }) => [key, "x".repeat(4_096)]),
+    ),
+    graph_snapshot: {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "end_0",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 24,
+        on_exhaust: "end",
+      },
+      variable_schema,
+      nodes: Array.from({ length: 100 }, (_, index) => ({
+        node_key: `end_${index}`,
+        node_type: "end",
+        config: {},
+        position_x: index,
+        position_y: 0,
+      })),
+    },
+  };
+}

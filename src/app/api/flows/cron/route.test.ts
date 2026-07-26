@@ -19,4 +19,10 @@ describe("flow timeout version pinning", () => {
     expect(source).toContain("resumeDueFlowWaits");
     expect(source).toContain("resumed");
   });
+
+  it("best-effort purges bounded expired debug sessions", () => {
+    expect(source).toContain("purge_expired_flow_debug_sessions");
+    expect(source).toContain("p_limit: 100");
+    expect(source).toContain("[flows-cron] debug purge failed");
+  });
 });

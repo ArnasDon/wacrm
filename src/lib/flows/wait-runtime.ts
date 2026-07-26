@@ -127,6 +127,29 @@ export async function resumeDueFlowWaits(
           pinned.graph.fallback_policy.execution,
         );
       }
+      const ackArgs = {
+        p_wait_id: claim.id,
+        p_claim_token: claim.claim_token,
+        p_flow_version_id: claim.flow_version_id,
+        p_node_key: claim.node_key,
+      };
+      // A wait -> wait edge atomically replaces this claim in schedule_flow_wait.
+      // The replacement is a durable acknowledgement even though the old
+      // continuation can no longer be marked completed.
+      let { data: superseded, error: supersedeError } = await db.rpc(
+        "ack_flow_wait_resume",
+        ackArgs,
+      );
+      if (supersedeError) {
+        ({ data: superseded, error: supersedeError } = await db.rpc(
+          "ack_flow_wait_resume",
+          ackArgs,
+        ));
+      }
+      if (!supersedeError && superseded === true) {
+        stats.resumed += 1;
+        continue;
+      }
       const completeArgs = {
         p_wait_id: claim.id,
         p_claim_token: claim.claim_token,
@@ -145,12 +168,6 @@ export async function resumeDueFlowWaits(
       if (completeError || completed !== true) {
         throw completeError ?? new Error("wait continuation was not completed");
       }
-      const ackArgs = {
-        p_wait_id: claim.id,
-        p_claim_token: claim.claim_token,
-        p_flow_version_id: claim.flow_version_id,
-        p_node_key: claim.node_key,
-      };
       let { data: acknowledged, error: ackError } = await db.rpc(
         "ack_flow_wait_resume",
         ackArgs,

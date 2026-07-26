@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resumeDueFlowWaits } from "./wait-runtime";
 
-function graph(next: "end" | "switch" = "end") {
+function graph(next: "end" | "switch" | "wait2" = "end") {
   return {
     schema_version: 1,
     trigger: { type: "manual", config: {} },
@@ -44,7 +44,21 @@ function graph(next: "end" | "switch" = "end") {
               position_y: 0,
             },
           ]
-        : []),
+        : next === "wait2"
+          ? [
+              {
+                node_key: "wait2",
+                node_type: "wait",
+                config: {
+                  amount: 1,
+                  unit: "minutes",
+                  next_node_key: "end",
+                },
+                position_x: 0,
+                position_y: 0,
+              },
+            ]
+          : []),
       {
         node_key: "end",
         node_type: "end",
@@ -57,7 +71,7 @@ function graph(next: "end" | "switch" = "end") {
 }
 
 function durableHarness(
-  next: "end" | "switch" = "end",
+  next: "end" | "switch" | "wait2" = "end",
   options: { failCompleteOnce?: boolean; claimedNextOverride?: string } = {},
 ) {
   const resumeId = "10000000-0000-4000-8000-000000000001";
@@ -88,7 +102,7 @@ function durableHarness(
   let claimSequence = 0;
   let failComplete = options.failCompleteOnce === true;
 
-  const rpc = vi.fn(async (name: string) => {
+  const rpc = vi.fn(async (name: string, value?: Record<string, unknown>) => {
     if (name === "claim_due_flow_waits") {
       if (waitStatus === "resumed") return { data: [], error: null };
       claimToken = `token-${++claimSequence}`;
@@ -128,6 +142,12 @@ function durableHarness(
       return { data: true, error: null };
     }
     if (name === "ack_flow_wait_resume") {
+      if (
+        value?.p_claim_token !== claimToken &&
+        run.current_node_key === "wait2"
+      ) {
+        return { data: true, error: null };
+      }
       if (run.continuation_phase !== "completed") {
         return { data: false, error: null };
       }
@@ -163,6 +183,14 @@ function durableHarness(
     get waitStatus() {
       return waitStatus;
     },
+    supersedeWait() {
+      waitStatus = "pending";
+      claimToken = "replacement-token";
+      run.status = "waiting";
+      run.current_node_key = "wait2";
+      run.continuation_id = null;
+      run.continuation_phase = "idle";
+    },
   };
 }
 
@@ -194,11 +222,35 @@ describe("durable flow wait resume", () => {
       expect(harness.rpc.mock.calls.map(([name]) => name)).toEqual([
         "claim_due_flow_waits",
         "prepare_flow_wait_resume",
+        "ack_flow_wait_resume",
         "complete_flow_wait_continuation",
         "ack_flow_wait_resume",
       ]);
     },
   );
+
+  it("treats wait to wait replacement as a successful supersession", async () => {
+    const harness = durableHarness("wait2");
+    const advance = vi.fn(async () => {
+      harness.supersedeWait();
+      return { outcome: "advanced" as const };
+    });
+
+    const result = await resumeDueFlowWaits(
+      harness.db as never,
+      new Date(),
+      { advance },
+    );
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(harness.waitStatus).toBe("pending");
+    expect(harness.run.current_node_key).toBe("wait2");
+    expect(
+      harness.rpc.mock.calls.filter(
+        ([name]) => name === "complete_flow_wait_continuation",
+      ),
+    ).toHaveLength(0);
+  });
 
   it("reclaims a crash before auto-node completion from the persisted cursor", async () => {
     const harness = durableHarness("switch");

@@ -655,7 +655,11 @@ async function executePolicyNode<T>(
 type DurableNodeEffect = Pick<
   FlowNodeEffectRow,
   "id" | "operation_id" | "status" | "result" | "external_reference"
-> & { is_owner: boolean };
+> & {
+  is_owner: boolean;
+  in_progress?: boolean;
+  invocation_token?: string;
+};
 
 async function readNodeEffect(
   db: AdminClient,
@@ -670,7 +674,11 @@ async function readNodeEffect(
     .maybeSingle();
   if (error) throw error;
   return data
-    ? { ...(data as Omit<DurableNodeEffect, "is_owner">), is_owner: false }
+    ? {
+        ...(data as Omit<DurableNodeEffect, "is_owner">),
+        is_owner: false,
+        in_progress: false,
+      }
     : null;
 }
 
@@ -712,7 +720,7 @@ async function reserveNodeEffect(
   const effect = Array.isArray(data)
     ? (data[0] as DurableNodeEffect | undefined)
     : undefined;
-  if (!error && effect) return effect;
+  if (!error && effect) return { ...effect, invocation_token: invocationToken };
 
   // The reservation may have committed while its response was lost. Retrying
   // with the same invocation token preserves ownership.
@@ -723,7 +731,7 @@ async function reserveNodeEffect(
   if (error || !retried) {
     throw error ?? new Error("node effect reservation was not returned");
   }
-  return retried;
+  return { ...retried, invocation_token: invocationToken };
 }
 
 async function markNodeEffectCommitted<T>(
@@ -858,6 +866,7 @@ async function failAmbiguousNodeEffect(
       {
         p_effect_id: effect.id,
         p_operation_id: effect.operation_id,
+        p_invocation_token: effect.invocation_token ?? null,
       },
     );
     ledgerError = error;
@@ -970,6 +979,9 @@ async function executeDurableNodeEffect<T>(
     };
   }
   if (!effect.is_owner) {
+    if (effect.in_progress) {
+      return { ok: false };
+    }
     const resolved = await failAmbiguousNodeEffect(
       db,
       run,

@@ -95,6 +95,7 @@ function fakeDb(
     result: options.initialHttpEffect?.response ?? null,
     external_reference: null as string | null,
     is_owner: options.effectIsOwner ?? true,
+    in_progress: false,
   };
   const effects = new Map<string, typeof httpEffect>();
 
@@ -129,6 +130,7 @@ function fakeDb(
                   result: null,
                   external_reference: null,
                   is_owner: options.effectIsOwner ?? true,
+                  in_progress: false,
                 };
           effects.set(key, effect);
         }

@@ -266,6 +266,9 @@ ALTER TABLE flow_waits
 CREATE INDEX IF NOT EXISTS idx_flow_waits_due
   ON flow_waits(wake_at, id)
   WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_flow_waits_claimed_at
+  ON flow_waits(claimed_at)
+  WHERE status = 'claimed';
 
 ALTER TABLE flow_waits ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_waits_select ON flow_waits;
@@ -807,6 +810,8 @@ CREATE TABLE IF NOT EXISTS flow_reply_transitions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (account_id, contact_id, meta_message_id)
 );
+CREATE INDEX IF NOT EXISTS idx_flow_reply_transitions_run_message
+  ON flow_reply_transitions(flow_run_id, meta_message_id);
 
 ALTER TABLE flow_reply_transitions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_reply_transitions_select ON flow_reply_transitions;
@@ -969,9 +974,14 @@ CREATE TABLE IF NOT EXISTS flow_node_effects (
   remote_committed_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   ambiguous_at TIMESTAMPTZ,
+  lease_expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (flow_run_id, visit_id, node_key, effect_kind)
 );
+
+ALTER TABLE flow_node_effects
+  ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NOT NULL
+  DEFAULT (NOW() + INTERVAL '15 minutes');
 
 ALTER TABLE flow_node_effects ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_node_effects_select ON flow_node_effects;
@@ -989,6 +999,8 @@ REVOKE INSERT, UPDATE, DELETE ON TABLE flow_node_effects FROM authenticated;
 GRANT SELECT ON TABLE flow_node_effects TO authenticated;
 GRANT ALL ON TABLE flow_node_effects TO service_role;
 
+DROP FUNCTION IF EXISTS reserve_flow_node_effect(UUID, UUID, TEXT, UUID, TEXT, UUID);
+
 CREATE OR REPLACE FUNCTION reserve_flow_node_effect(
   p_run_id UUID,
   p_flow_version_id UUID,
@@ -1003,7 +1015,8 @@ RETURNS TABLE (
   status TEXT,
   result JSONB,
   external_reference TEXT,
-  is_owner BOOLEAN
+  is_owner BOOLEAN,
+  in_progress BOOLEAN
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -1040,7 +1053,10 @@ BEGIN
     effect.status,
     effect.result,
     effect.external_reference,
-    effect.invocation_token = p_invocation_token
+    effect.invocation_token = p_invocation_token,
+    effect.status = 'reserved'
+      AND effect.invocation_token <> p_invocation_token
+      AND effect.lease_expires_at > NOW()
   FROM flow_node_effects effect
   WHERE effect.flow_run_id = p_run_id
     AND effect.visit_id = p_visit_id
@@ -1088,9 +1104,12 @@ REVOKE ALL ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) 
 REVOKE ALL ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) TO service_role;
 
+DROP FUNCTION IF EXISTS mark_flow_node_effect_ambiguous(UUID, UUID);
+
 CREATE OR REPLACE FUNCTION mark_flow_node_effect_ambiguous(
   p_effect_id UUID,
-  p_operation_id UUID
+  p_operation_id UUID,
+  p_invocation_token UUID
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -1104,14 +1123,19 @@ BEGIN
       updated_at = NOW()
   WHERE id = p_effect_id
     AND operation_id = p_operation_id
-    AND status IN ('reserved', 'ambiguous');
+    AND status IN ('reserved', 'ambiguous')
+    AND (
+      invocation_token = p_invocation_token
+      OR lease_expires_at <= NOW()
+      OR status = 'ambiguous'
+    );
   RETURN FOUND;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) FROM authenticated;
-GRANT EXECUTE ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) TO service_role;
+REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID, UUID) TO service_role;
 
 CREATE OR REPLACE FUNCTION complete_flow_node_effect(
   p_effect_id UUID,

@@ -461,6 +461,9 @@ class DispatchState {
             ...effect,
             is_owner:
               effect.invocation_token === value.p_invocation_token,
+            in_progress:
+              effect.status === "reserved" &&
+              effect.invocation_token !== value.p_invocation_token,
           },
         ],
         error: null,
@@ -1293,6 +1296,56 @@ beforeEach(() => {
 });
 
 describe("public flow dispatcher recovery protocol", () => {
+  it("treats a concurrent reserved effect as in progress without poisoning the owner", async () => {
+    const state = new DispatchState();
+    prepare(state, run());
+    let releaseProvider!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    h.sendText.mockImplementation(
+      async (args: {
+        onRemoteCommitted?: (
+          result: { whatsapp_message_id: string },
+        ) => Promise<void>;
+      }) => {
+        await barrier;
+        const result = { whatsapp_message_id: "wamid-concurrent" };
+        await args.onRemoteCommitted?.(result);
+        return result;
+      },
+    );
+
+    const first = dispatchInboundToFlows(
+      inbound("concurrent-effect", "stable"),
+    );
+    await vi.waitFor(() =>
+      expect(
+        state.rpcCalls.filter(
+          (call) => call.name === "reserve_flow_node_effect",
+        ),
+      ).toHaveLength(1),
+    );
+    const second = await dispatchInboundToFlows(
+      inbound("concurrent-effect", "ignored"),
+    );
+
+    expect(second.consumed).toBe(true);
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(state.effects.values().next().value?.status).toBe("reserved");
+    expect(
+      state.rpcCalls.some(
+        (call) => call.name === "mark_flow_node_effect_ambiguous",
+      ),
+    ).toBe(false);
+
+    releaseProvider();
+    const completed = await first;
+    expect(completed.outcome).toBe("completed");
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["zapi", "http", "tag"] as const)(
     "keeps %s recoverable when ledger RPC and read-back both fail",
     async (kind) => {
@@ -1769,7 +1822,7 @@ describe("public flow dispatcher recovery protocol", () => {
       calls.indexOf("complete_flow_wait_continuation"),
     );
     expect(calls.indexOf("complete_flow_wait_continuation")).toBeLessThan(
-      calls.indexOf("ack_flow_wait_resume"),
+      calls.lastIndexOf("ack_flow_wait_resume"),
     );
   });
 

@@ -104,6 +104,13 @@ describe("migration 049 durable waits", () => {
     expect(sql).toMatch(
       /FUNCTION\s+mark_flow_node_effect_ambiguous[\s\S]+?status\s*=\s*'ambiguous'/i,
     );
+    expect(sql).toMatch(/lease_expires_at[\s\S]+?INTERVAL '15 minutes'/i);
+    expect(sql).toMatch(
+      /FUNCTION\s+reserve_flow_node_effect[\s\S]+?in_progress\s+BOOLEAN[\s\S]+?lease_expires_at\s*>\s*NOW\(\)/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+mark_flow_node_effect_ambiguous[\s\S]+?invocation_token\s*=\s*p_invocation_token[\s\S]+?lease_expires_at\s*<=\s*NOW\(\)/i,
+    );
     expect(sql).toMatch(
       /FUNCTION\s+complete_flow_node_effect[\s\S]+?status\s*=\s*'completed'/i,
     );
@@ -112,6 +119,15 @@ describe("migration 049 durable waits", () => {
     );
     expect(sql).toContain(
       "GRANT ALL ON TABLE flow_node_effects TO service_role",
+    );
+  });
+
+  it("adds partial claim and receipt lookup indexes", () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_flow_waits_claimed_at[\s\S]+?ON flow_waits\(claimed_at\)[\s\S]+?WHERE status = 'claimed'/i,
+    );
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_flow_reply_transitions_run_message[\s\S]+?ON flow_reply_transitions\(flow_run_id, meta_message_id\)/i,
     );
   });
 

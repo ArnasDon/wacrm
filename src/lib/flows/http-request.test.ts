@@ -44,11 +44,67 @@ describe("HTTP request runtime guard", () => {
       "::1",
       "fc00::1",
       "fe80::1",
+      "::ffff:7f00:1",
+      "0:0:0:0:0:ffff:a9fe:a9fe",
+      "64:ff9b::7f00:1",
+      "2002:7f00:1::",
+      "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+      "2001:db8::1",
+      "3fff::1",
     ]) {
       expect(isPrivateOrReservedIp(ip), ip).toBe(true);
     }
     expect(isPrivateOrReservedIp("8.8.8.8")).toBe(false);
     expect(isPrivateOrReservedIp("2606:4700:4700::1111")).toBe(false);
+    expect(isPrivateOrReservedIp("2001:4860:4860::8888")).toBe(false);
+  });
+
+  it.each([
+    [303, "PUT", "GET"],
+    [301, "POST", "GET"],
+    [302, "POST", "GET"],
+    [307, "POST", "POST"],
+    [308, "POST", "POST"],
+  ])("applies redirect method semantics for %i", async (status, initial, next) => {
+    let cancelled = 0;
+    const redirectBody = new ReadableStream({
+      cancel() {
+        cancelled += 1;
+      },
+    });
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(redirectBody, {
+          status,
+          headers: { location: "https://public.example/next" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("ok", { headers: { "content-type": "text/plain" } }),
+      );
+    await executeHttpRequest(
+      {
+        method: initial as "POST" | "PUT",
+        url: "https://public.example/start",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": "2",
+          "X-Trace": "ok",
+        },
+        body: "{}",
+        response_var: "result",
+      },
+      { lookup: async () => ["93.184.216.34"], transport },
+    );
+    const redirected = transport.mock.calls[1][2]!;
+    expect(redirected.method).toBe(next);
+    expect(redirected.body).toBe(next === "GET" ? undefined : "{}");
+    if (next === "GET") {
+      expect(new Headers(redirected.headers).has("content-type")).toBe(false);
+      expect(new Headers(redirected.headers).has("content-length")).toBe(false);
+    }
+    expect(cancelled).toBe(1);
   });
 
   it("checks DNS before fetching and every redirect hop", async () => {

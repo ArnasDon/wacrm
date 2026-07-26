@@ -1,4 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const RUN_A = "10000000-0000-4000-8000-000000000001";
+const RUN_B = "10000000-0000-4000-8000-000000000002";
+const FLOW_ID = "20000000-0000-4000-8000-000000000001";
+
+const harness = vi.hoisted(() => ({
+  executionSelect: "",
+  executionLimit: 0,
+  executionRunIds: [] as string[],
+  executionCursor: null as string | null,
+  executionRows: [] as Array<{
+    id: string;
+    flow_run_id: string;
+    node_key: string;
+    node_type: string;
+    attempt: number;
+    status: string;
+    duration_ms: number;
+    started_at: string;
+    completed_at: string;
+  }>,
+}));
 
 vi.mock("@/lib/flows/debug-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/flows/debug-api")>()),
@@ -14,59 +36,68 @@ vi.mock("@/lib/flows/admin-client", () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
       if (table === "flow_runs") {
-        return {
-          select: () => ({
-            eq: () => ({
-              order: () => ({
-                limit: async () => ({
-                  data: [
-                    {
-                      id: "10000000-0000-4000-8000-000000000001",
-                      flow_id: "20000000-0000-4000-8000-000000000001",
-                      vars: { name: "Ada", access_token: "secret" },
-                      status: "completed",
-                    },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
+        const state = { requestedRun: null as string | null };
+        const query = {
+          eq: (column: string, value: string) => {
+            if (column === "id") state.requestedRun = value;
+            return query;
+          },
+          order: () => query,
+          limit: async () => ({
+            data: [
+              {
+                id: RUN_A,
+                flow_id: FLOW_ID,
+                status: "completed",
+                started_at: "2026-01-01T00:00:00.000Z",
+              },
+              {
+                id: RUN_B,
+                flow_id: FLOW_ID,
+                status: "error",
+                started_at: "2025-12-31T00:00:00.000Z",
+              },
+            ].filter(
+              (run) => !state.requestedRun || run.id === state.requestedRun,
+            ),
+            error: null,
           }),
         };
+        return { select: () => query };
       }
       if (table === "flow_node_executions") {
+        const query = {
+          in: (_column: string, values: string[]) => {
+            harness.executionRunIds = values;
+            return query;
+          },
+          lt: (_column: string, value: string) => {
+            harness.executionCursor = value;
+            return query;
+          },
+          order: () => query,
+          limit: async (value: number) => {
+            harness.executionLimit = value;
+            return {
+              data: harness.executionRows
+                .filter((row) =>
+                  harness.executionRunIds.includes(row.flow_run_id),
+                )
+                .filter(
+                  (row) =>
+                    !harness.executionCursor ||
+                    row.started_at < harness.executionCursor,
+                )
+                .slice(0, value),
+              error: null,
+            };
+          },
+        };
         return {
-          select: () => ({
-            in: () => ({
-              order: () => ({
-                limit: async () => ({
-                  data: [
-                  {
-                    id: "new",
-                    flow_run_id: "10000000-0000-4000-8000-000000000001",
-                    node_key: "send",
-                    attempt: 2,
-                    status: "completed",
-                    inputs: { headers: { Authorization: "Bearer secret" } },
-                    outputs: { ok: true },
-                    started_at: "2026-01-01T00:00:02.000Z",
-                  },
-                  {
-                    id: "old",
-                    flow_run_id: "10000000-0000-4000-8000-000000000001",
-                    node_key: "send",
-                    attempt: 1,
-                    status: "error",
-                    inputs: {},
-                    outputs: null,
-                    started_at: "2026-01-01T00:00:01.000Z",
-                  },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
-          }),
+          select: (columns: string) => {
+            harness.executionSelect = columns;
+            return query;
+          },
         };
       }
       throw new Error(`unexpected table ${table}`);
@@ -76,24 +107,138 @@ vi.mock("@/lib/flows/admin-client", () => ({
 
 import { GET } from "./route";
 
+function request(query = "") {
+  return GET(
+    new Request(
+      `http://localhost/api/flows/${FLOW_ID}/debug/flight-recorder${query}`,
+    ),
+    { params: Promise.resolve({ id: FLOW_ID }) },
+  );
+}
+
 describe("production flow flight recorder", () => {
-  it("returns attempts plus latest-per-node with secrets redacted", async () => {
-    const response = await GET(
-      new Request("http://localhost/api/flows/id/debug/flight-recorder"),
+  beforeEach(() => {
+    harness.executionSelect = "";
+    harness.executionLimit = 0;
+    harness.executionRunIds = [];
+    harness.executionCursor = null;
+    harness.executionRows = [
       {
-        params: Promise.resolve({
-          id: "20000000-0000-4000-8000-000000000001",
-        }),
+        id: "new-a",
+        flow_run_id: RUN_A,
+        node_key: "send",
+        node_type: "send_message",
+        attempt: 2,
+        status: "completed",
+        duration_ms: 4,
+        started_at: "2026-01-01T00:00:02.000Z",
+        completed_at: "2026-01-01T00:00:02.004Z",
       },
-    );
+      {
+        id: "old-a",
+        flow_run_id: RUN_A,
+        node_key: "send",
+        node_type: "send_message",
+        attempt: 1,
+        status: "error",
+        duration_ms: 3,
+        started_at: "2026-01-01T00:00:01.000Z",
+        completed_at: "2026-01-01T00:00:01.003Z",
+      },
+      {
+        id: "only-b",
+        flow_run_id: RUN_B,
+        node_key: "end",
+        node_type: "end",
+        attempt: 1,
+        status: "completed",
+        duration_ms: 1,
+        started_at: "2025-12-31T00:00:01.000Z",
+        completed_at: "2025-12-31T00:00:01.001Z",
+      },
+    ];
+  });
+
+  it("filters attempts by run_id and keeps a stable response envelope", async () => {
+    const response = await request(`?run_id=${RUN_A}&limit=1`);
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.executions).toHaveLength(2);
+
+    expect(body.runs.map((run: { id: string }) => run.id)).toEqual([RUN_A]);
     expect(
-      body.latest_by_run["10000000-0000-4000-8000-000000000001"].send.id,
-    ).toBe("new");
-    expect(body.executions[0].inputs.headers.Authorization).toBe("[REDACTED]");
-    expect(body.runs[0].vars.access_token).toBe("[REDACTED]");
+      body.executions.map((execution: { id: string }) => execution.id),
+    ).toEqual(["new-a"]);
+    expect(body.latest_by_run[RUN_A].send.id).toBe("new-a");
+    expect(body.page).toEqual({
+      limit: 1,
+      returned: 1,
+      truncated: true,
+      truncation_reason: "page",
+      next_cursor: "2026-01-01T00:00:02.000Z",
+      budget_bytes: 262_144,
+    });
+    expect(harness.executionRunIds).toEqual([RUN_A]);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("uses the cursor and a bounded limit plus one without selecting payloads", async () => {
+    const response = await request(
+      `?run_id=${RUN_A}&limit=1&cursor=${encodeURIComponent("2026-01-01T00:00:02.000Z")}`,
+    );
+    const body = await response.json();
+
+    expect(
+      body.executions.map((execution: { id: string }) => execution.id),
+    ).toEqual(["old-a"]);
+    expect(harness.executionCursor).toBe("2026-01-01T00:00:02.000Z");
+    expect(harness.executionLimit).toBe(2);
+    expect(harness.executionSelect).not.toMatch(
+      /\b(inputs|outputs|error|vars)\b/,
+    );
+  });
+
+  it("rejects invalid pagination input", async () => {
+    await expect(request("?limit=500")).resolves.toMatchObject({ status: 400 });
+    await expect(request("?cursor=not-a-date")).resolves.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("keeps the response envelope and reports aggregate-budget truncation", async () => {
+    harness.executionRows = Array.from({ length: 100 }, (_, index) => ({
+      id: `execution-${index}`,
+      flow_run_id: RUN_A,
+      node_key: `${index}-${"n".repeat(4_096)}`,
+      node_type: "send_message",
+      attempt: 1,
+      status: "completed",
+      duration_ms: 1,
+      started_at: new Date(
+        Date.UTC(2026, 0, 1, 0, 1, 40 - index),
+      ).toISOString(),
+      completed_at: new Date(
+        Date.UTC(2026, 0, 1, 0, 1, 40 - index, 1),
+      ).toISOString(),
+    }));
+
+    const response = await request(`?run_id=${RUN_A}&limit=100`);
+    const body = await response.json();
+
+    expect(body).toMatchObject({
+      runs: expect.any(Array),
+      executions: expect.any(Array),
+      latest_by_run: expect.any(Object),
+      page: {
+        limit: 100,
+        truncated: true,
+        truncation_reason: "budget",
+        budget_bytes: 262_144,
+      },
+    });
+    expect(body.executions.length).toBeGreaterThan(0);
+    expect(body.executions.length).toBeLessThan(100);
+    expect(
+      new TextEncoder().encode(JSON.stringify(body)).byteLength,
+    ).toBeLessThanOrEqual(262_144);
   });
 });

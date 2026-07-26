@@ -9,6 +9,39 @@ import {
 import { sanitizeDebugValue } from "@/lib/flows/debug-runtime";
 
 const flowIdSchema = z.string().uuid();
+const querySchema = z.object({
+  run_id: z.string().uuid().optional(),
+  cursor: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+const MAX_FLIGHT_RESPONSE_BYTES = 256 * 1024;
+const FLIGHT_ENVELOPE_RESERVE_BYTES = 4 * 1024;
+
+type FlightExecution = Record<string, unknown> & {
+  flow_run_id?: unknown;
+  node_key?: unknown;
+  started_at?: unknown;
+};
+
+function latestByRun(executions: FlightExecution[]) {
+  const latest: Record<string, Record<string, FlightExecution>> = {};
+  for (const execution of executions) {
+    const runId =
+      typeof execution.flow_run_id === "string" ? execution.flow_run_id : "";
+    const nodeKey =
+      typeof execution.node_key === "string" ? execution.node_key : "";
+    if (!runId || !nodeKey) continue;
+    latest[runId] ??= {};
+    if (!Object.hasOwn(latest[runId], nodeKey)) {
+      latest[runId][nodeKey] = execution;
+    }
+  }
+  return latest;
+}
+
+function responseBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
 
 export async function GET(
   request: Request,
@@ -22,70 +55,106 @@ export async function GET(
   if (!owner.ok) return owner.response;
 
   const url = new URL(request.url);
-  const requestedRun = url.searchParams.get("run_id");
-  if (requestedRun && !z.string().uuid().safeParse(requestedRun).success) {
-    return debugJson({ error: "Invalid run id" }, { status: 400 });
+  const parsedQuery = querySchema.safeParse({
+    run_id: url.searchParams.get("run_id") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
+    limit: url.searchParams.get("limit") ?? undefined,
+  });
+  if (!parsedQuery.success) {
+    return debugJson(
+      { error: "Invalid flight recorder query" },
+      { status: 400 },
+    );
   }
+  const { run_id: requestedRun, cursor, limit } = parsedQuery.data;
 
   const admin = supabaseAdmin();
   let runsQuery = admin
     .from("flow_runs")
     .select(
-      "id, flow_id, flow_version_id, status, current_node_key, vars, started_at, last_advanced_at, ended_at, end_reason",
+      "id, flow_id, flow_version_id, status, current_node_key, started_at, last_advanced_at, ended_at, end_reason",
     )
     .eq("flow_id", params.id);
   if (requestedRun) {
     runsQuery = runsQuery.eq("id", requestedRun);
   }
-  const { data: runs, error: runsError } = await runsQuery
+  const { data: rawRuns, error: runsError } = await runsQuery
     .order("started_at", { ascending: false })
     .limit(requestedRun ? 1 : 20);
   if (runsError) return debugRpcError(runsError);
 
-  const runIds = (runs ?? []).map((run) => run.id as string);
+  const runs = (rawRuns ?? []).map((run) => sanitizeDebugValue(run)) as Record<
+    string,
+    unknown
+  >[];
+  const runIds = runs
+    .map((run) => run.id)
+    .filter((id): id is string => typeof id === "string");
   if (requestedRun && runIds.length === 0) {
     return debugJson({ error: "Not found" }, { status: 404 });
   }
-  let executions: Record<string, unknown>[] = [];
+
+  let rawExecutions: FlightExecution[] = [];
   if (runIds.length > 0) {
-    const { data, error } = await admin
+    let executionsQuery = admin
       .from("flow_node_executions")
       .select(
-        "id, flow_run_id, flow_version_id, node_key, node_type, status, inputs, outputs, duration_ms, attempt, error, started_at, completed_at",
+        "id, flow_run_id, flow_version_id, node_key, node_type, status, duration_ms, attempt, started_at, completed_at",
       )
-      .in("flow_run_id", runIds)
+      .in("flow_run_id", runIds);
+    if (cursor) {
+      executionsQuery = executionsQuery.lt("started_at", cursor);
+    }
+    const { data, error } = await executionsQuery
       .order("started_at", { ascending: false })
-      .limit(500);
+      .limit(limit + 1);
     if (error) {
       return debugRpcError(error, {
         operation: "read_flight_executions",
         flowId: params.id,
       });
     }
-    executions = (data ?? []) as Record<string, unknown>[];
+    rawExecutions = (data ?? []) as FlightExecution[];
   }
 
-  const latestByRun: Record<
-    string,
-    Record<string, Record<string, unknown>>
-  > = {};
-  for (const execution of executions) {
-    const runId =
-      typeof execution.flow_run_id === "string" ? execution.flow_run_id : "";
-    const key =
-      typeof execution.node_key === "string" ? execution.node_key : "";
-    if (runId && key) {
-      latestByRun[runId] ??= {};
-      if (!Object.hasOwn(latestByRun[runId], key)) {
-        latestByRun[runId][key] = execution;
-      }
+  const executions: FlightExecution[] = [];
+  let truncationReason: "page" | "budget" | null =
+    rawExecutions.length > limit ? "page" : null;
+  for (const row of rawExecutions.slice(0, limit)) {
+    const sanitized = sanitizeDebugValue(row) as FlightExecution;
+    const candidateExecutions = [...executions, sanitized];
+    const candidateLatest = latestByRun(candidateExecutions);
+    if (
+      responseBytes({
+        runs,
+        executions: candidateExecutions,
+        latest_by_run: candidateLatest,
+      }) >
+      MAX_FLIGHT_RESPONSE_BYTES - FLIGHT_ENVELOPE_RESERVE_BYTES
+    ) {
+      truncationReason = "budget";
+      break;
     }
+    executions.push(sanitized);
   }
-  return debugJson(
-    sanitizeDebugValue({
-      runs: runs ?? [],
-      executions,
-      latest_by_run: latestByRun,
-    }),
-  );
+
+  const nextCursor =
+    truncationReason && executions.length > 0
+      ? typeof executions.at(-1)?.started_at === "string"
+        ? executions.at(-1)?.started_at
+        : null
+      : null;
+  return debugJson({
+    runs,
+    executions,
+    latest_by_run: latestByRun(executions),
+    page: {
+      limit,
+      returned: executions.length,
+      truncated: truncationReason !== null,
+      truncation_reason: truncationReason,
+      next_cursor: nextCursor,
+      budget_bytes: MAX_FLIGHT_RESPONSE_BYTES,
+    },
+  });
 }

@@ -48,7 +48,7 @@ export async function GET(
   const { data, error } = await supabaseAdmin()
     .from("flow_debug_sessions")
     .select(
-      "id, flow_id, flow_version_id, draft_revision, source_run_id, variables, status, revision, expires_at, created_at, updated_at",
+      "id, flow_id, flow_version_id, draft_revision, source_run_id, status, revision, expires_at, created_at, updated_at",
     )
     .eq("flow_id", id)
     .eq("created_by", owner.user.id)
@@ -76,12 +76,16 @@ export async function POST(
     return debugJson(
       {
         error:
-          error instanceof Error &&
-          error.message === "debug_request_too_large"
+          error instanceof Error && error.message === "debug_request_too_large"
             ? "Request too large"
             : "Invalid debug session request",
       },
-      { status: error instanceof Error && error.message === "debug_request_too_large" ? 413 : 400 },
+      {
+        status:
+          error instanceof Error && error.message === "debug_request_too_large"
+            ? 413
+            : 400,
+      },
     );
   }
 
@@ -179,9 +183,10 @@ export async function POST(
       "node_key" | "outputs"
     >[]) {
       if (!Object.hasOwn(clonedOutputs, execution.node_key)) {
-        const sanitizedOutput = sanitizeDebugValue(
-          execution.outputs,
-        ) as Record<string, unknown>;
+        const sanitizedOutput = sanitizeDebugValue(execution.outputs) as Record<
+          string,
+          unknown
+        >;
         const candidate = {
           ...clonedOutputs,
           [execution.node_key]: sanitizedOutput,
@@ -228,8 +233,7 @@ export async function POST(
     } catch (error) {
       return debugJson(
         {
-          error:
-            error instanceof Error ? error.message : "Invalid flow draft",
+          error: error instanceof Error ? error.message : "Invalid flow draft",
         },
         { status: 422 },
       );

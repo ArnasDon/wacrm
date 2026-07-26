@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS flow_debug_node_executions (
   CHECK (octet_length(COALESCE(outputs, 'null'::jsonb)::text) <= 65536),
   CHECK (octet_length(variables::text) <= 65536),
   CHECK (octet_length(simulated_effects::text) <= 65536),
+  CHECK (octet_length(metadata::text) <= 65536),
+  CHECK (octet_length(COALESCE(error, 'null'::jsonb)::text) <= 65536),
   UNIQUE (session_id, node_key, attempt)
 );
 
@@ -90,6 +92,29 @@ BEGIN
       ADD CONSTRAINT flow_debug_executions_variables_size CHECK (
         jsonb_typeof(variables) = 'object'
         AND octet_length(variables::text) <= 65536
+      );
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'flow_debug_executions_metadata_size'
+  ) THEN
+    ALTER TABLE flow_debug_node_executions
+      ADD CONSTRAINT flow_debug_executions_metadata_size CHECK (
+        jsonb_typeof(metadata) = 'object'
+        AND octet_length(metadata::text) <= 65536
+      );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'flow_debug_executions_error_size'
+  ) THEN
+    ALTER TABLE flow_debug_node_executions
+      ADD CONSTRAINT flow_debug_executions_error_size CHECK (
+        octet_length(COALESCE(error, 'null'::jsonb)::text) <= 65536
       );
   END IF;
 END $$;

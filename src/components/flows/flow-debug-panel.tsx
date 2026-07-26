@@ -7,81 +7,59 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
+import {
+  closeDebugSession,
+  fetchDebugSessions,
+  fetchFlightRecorder,
+  FlowDebugClientError,
+  resumeDebugSession,
+  type DebugExecution,
+  type DebugManifestPort,
+  type DebugSession,
+  type DebugSessionSummary,
+  type FlightRecorderPage,
+  type SourceRun,
+} from "./flow-debug-client";
 import { useFlowEditor } from "./flow-editor-state";
-
-interface DebugSession {
-  id: string;
-  revision: number;
-  variables: Record<string, unknown>;
-  source_run_id?: string | null;
-  status: string;
-  manifest: {
-    variable_schema: FlowVariableDeclaration[];
-    nodes: DebugManifestNode[];
-  };
-}
-
-interface DebugManifestPort {
-  id: string;
-  label: string;
-  type: string;
-  cardinality: "one" | "many";
-  required?: boolean;
-}
-
-interface DebugManifestNode {
-  node_key: string;
-  node_type: string;
-  label: string;
-  inputs: DebugManifestPort[];
-  outputs: DebugManifestPort[];
-}
-
-interface DebugExecution {
-  id: string;
-  node_key: string;
-  node_type?: string;
-  status: string;
-  inputs?: unknown;
-  outputs?: unknown;
-  error?: unknown;
-  simulated_effects?: unknown[];
-  duration_ms?: number;
-  attempt?: number;
-}
-
-interface SourceRun {
-  id: string;
-  status: string;
-  started_at?: string;
-}
 
 export function FlowDebugPanel() {
   const t = useTranslations("Flows.debug");
-  const {
-    flow,
-    selectedNodeKey,
-    setSelectedNodeKey,
-  } = useFlowEditor();
+  const { flow, selectedNodeKey, setSelectedNodeKey } = useFlowEditor();
   const [open, setOpen] = useState(false);
   const [sourceRuns, setSourceRuns] = useState<SourceRun[]>([]);
   const [sourceRunId, setSourceRunId] = useState("");
+  const [availableSessions, setAvailableSessions] = useState<
+    DebugSessionSummary[]
+  >([]);
   const [session, setSession] = useState<DebugSession | null>(null);
-  const [executions, setExecutions] = useState<DebugExecution[]>([]);
+  const [debugExecutions, setDebugExecutions] = useState<DebugExecution[]>([]);
+  const [flightExecutions, setFlightExecutions] = useState<DebugExecution[]>(
+    [],
+  );
+  const [flightPage, setFlightPage] = useState<FlightRecorderPage | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
-  const [overrideErrors, setOverrideErrors] = useState<
-    Record<string, string>
-  >({});
+  const [overrideErrors, setOverrideErrors] = useState<Record<string, string>>(
+    {},
+  );
   const hasOverrideErrors = Object.keys(overrideErrors).length > 0;
 
   const selectedExecution = useMemo(
     () =>
-      executions.find(
+      debugExecutions.find(
         (execution) => execution.node_key === selectedNodeKey,
       ) ?? null,
-    [executions, selectedNodeKey],
+    [debugExecutions, selectedNodeKey],
+  );
+  const selectedFlightExecution = useMemo(
+    () =>
+      flightExecutions.find(
+        (execution) => execution.node_key === selectedNodeKey,
+      ) ??
+      flightExecutions[0] ??
+      null,
+    [flightExecutions, selectedNodeKey],
   );
   const selectedManifestNode = useMemo(
     () =>
@@ -98,46 +76,75 @@ export function FlowDebugPanel() {
 
   useEffect(() => {
     if (!session) return;
-    if (!session.manifest.nodes.some((node) => node.node_key === selectedNodeKey)) {
+    if (
+      !session.manifest.nodes.some((node) => node.node_key === selectedNodeKey)
+    ) {
       setSelectedNodeKey(session.manifest.nodes[0]?.node_key ?? null);
     }
   }, [selectedNodeKey, session, setSelectedNodeKey]);
 
-  const loadFlightRecorder = useCallback(async () => {
-    const response = await fetch(
-      `/api/flows/${flow.id}/debug/flight-recorder`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) throw new Error(t("loadError"));
-    const body = (await response.json()) as {
-      runs?: SourceRun[];
-      executions?: DebugExecution[];
-    };
-    setSourceRuns(body.runs ?? []);
-    if (!session) setExecutions(body.executions ?? []);
-  }, [flow.id, session, t]);
+  const loadFlightRecorder = useCallback(
+    async (runId?: string, cursor?: string) => {
+      const body = await fetchFlightRecorder(fetch, flow.id, {
+        ...(runId ? { runId } : {}),
+        ...(cursor ? { cursor } : {}),
+        limit: 25,
+      });
+      if (!runId) setSourceRuns(body.runs);
+      setFlightExecutions((current) =>
+        cursor ? [...current, ...body.executions] : body.executions,
+      );
+      setFlightPage(body.page);
+    },
+    [flow.id],
+  );
+
+  const loadSessions = useCallback(async () => {
+    setAvailableSessions(await fetchDebugSessions(fetch, flow.id));
+  }, [flow.id]);
 
   const loadSession = useCallback(
     async (id: string) => {
-      const response = await fetch(
-        `/api/flows/${flow.id}/debug/sessions/${id}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) throw new Error(t("loadError"));
-      const body = (await response.json()) as {
-        session: DebugSession;
-        executions: DebugExecution[];
-      };
+      const body = await resumeDebugSession(fetch, flow.id, id);
       setSession(body.session);
-      setExecutions(body.executions ?? []);
+      setDebugExecutions(body.executions);
+      setAvailableSessions((current) =>
+        current.map((candidate) =>
+          candidate.id === body.session.id ? body.session : candidate,
+        ),
+      );
     },
-    [flow.id, t],
+    [flow.id],
+  );
+
+  const recoverSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        await loadSession(sessionId);
+        setMessage(t("conflictReloaded"));
+      } catch (error) {
+        if (
+          error instanceof FlowDebugClientError &&
+          (error.status === 404 || error.status === 410)
+        ) {
+          setSession(null);
+          setDebugExecutions([]);
+          await loadSessions();
+          setMessage(t("sessionUnavailable"));
+          return;
+        }
+        throw error;
+      }
+    },
+    [loadSession, loadSessions, t],
   );
 
   useEffect(() => {
     if (!open) return;
-    void loadFlightRecorder().catch(() => setMessage(t("loadError")));
-  }, [loadFlightRecorder, open, t]);
+    void Promise.all([loadFlightRecorder(), loadSessions()]).catch(() =>
+      setMessage(t("loadError")),
+    );
+  }, [loadFlightRecorder, loadSessions, open, t]);
 
   async function createSession() {
     setBusy(true);
@@ -158,10 +165,45 @@ export function FlowDebugPanel() {
         throw new Error(body.error ?? t("createError"));
       }
       setSession(body.session);
-      setExecutions([]);
+      setDebugExecutions([]);
+      await loadSessions();
       setMessage(t("sessionReady"));
     } catch (error) {
+      await loadSessions().catch(() => undefined);
       setMessage(error instanceof Error ? error.message : t("createError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endSession(candidate: DebugSessionSummary) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await closeDebugSession(fetch, flow.id, candidate.id, candidate.revision);
+      if (session?.id === candidate.id) {
+        setSession(null);
+        setDebugExecutions([]);
+      }
+      await loadSessions();
+      setMessage(t("sessionClosed"));
+    } catch (error) {
+      if (
+        error instanceof FlowDebugClientError &&
+        (error.status === 404 || error.status === 409 || error.status === 410)
+      ) {
+        if (session?.id === candidate.id) {
+          await recoverSession(candidate.id).catch(() => undefined);
+        }
+        await loadSessions().catch(() => undefined);
+        setMessage(
+          error.status === 409
+            ? t("conflictReloaded")
+            : t("sessionUnavailable"),
+        );
+      } else {
+        setMessage(error instanceof Error ? error.message : t("closeError"));
+      }
     } finally {
       setBusy(false);
     }
@@ -194,8 +236,11 @@ export function FlowDebugPanel() {
         },
       );
       if (response.status === 409) {
-        await loadSession(session.id);
-        setMessage(t("conflictReloaded"));
+        await recoverSession(session.id);
+        return;
+      }
+      if (response.status === 404 || response.status === 410) {
+        await recoverSession(session.id);
         return;
       }
       const body = (await response.json().catch(() => ({}))) as {
@@ -238,8 +283,11 @@ export function FlowDebugPanel() {
         },
       );
       if (response.status === 409) {
-        await loadSession(session.id);
-        setMessage(t("conflictReloaded"));
+        await recoverSession(session.id);
+        return;
+      }
+      if (response.status === 404 || response.status === 410) {
+        await recoverSession(session.id);
         return;
       }
       const body = (await response.json().catch(() => ({}))) as {
@@ -251,7 +299,8 @@ export function FlowDebugPanel() {
         throw new Error(body.error ?? t("runError"));
       }
       setSession(body.session);
-      setExecutions((current) => [body.execution!, ...current]);
+      setDebugExecutions((current) => [body.execution!, ...current]);
+      void loadSessions();
       setMessage(t("runComplete"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("runError"));
@@ -306,7 +355,13 @@ export function FlowDebugPanel() {
           <select
             id="debug-source-run"
             value={sourceRunId}
-            onChange={(event) => setSourceRunId(event.target.value)}
+            onChange={(event) => {
+              const nextRunId = event.target.value;
+              setSourceRunId(nextRunId);
+              void loadFlightRecorder(nextRunId || undefined).catch(() =>
+                setMessage(t("loadError")),
+              );
+            }}
             className="border-border bg-muted w-full rounded-md border px-2 py-2 text-xs"
           >
             <option value="">{t("newSession")}</option>
@@ -326,6 +381,112 @@ export function FlowDebugPanel() {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t("startSession")}
           </Button>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold">{t("existingSessions")}</h3>
+          {availableSessions.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {t("noExistingSessions")}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {availableSessions.map((candidate) => (
+                <li
+                  key={candidate.id}
+                  className="border-border flex items-center gap-2 rounded-md border p-2 text-xs"
+                >
+                  <span className="min-w-0 flex-1">
+                    <code>{candidate.id.slice(0, 8)}</code> · {candidate.status}
+                  </span>
+                  {candidate.status === "active" ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setBusy(true);
+                          void loadSession(candidate.id)
+                            .then(() => setMessage(t("sessionResumed")))
+                            .catch(async (error) => {
+                              if (
+                                error instanceof FlowDebugClientError &&
+                                (error.status === 404 || error.status === 410)
+                              ) {
+                                await loadSessions();
+                                setMessage(t("sessionUnavailable"));
+                                return;
+                              }
+                              setMessage(t("loadError"));
+                            })
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        {t("resumeSession")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void endSession(candidate)}
+                      >
+                        {t("endSession")}
+                      </Button>
+                    </>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="space-y-2" aria-label={t("flightRecorder")}>
+          <h3 className="text-xs font-semibold">{t("flightRecorder")}</h3>
+          {flightExecutions.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {t("noProductionExecutions")}
+            </p>
+          ) : (
+            <>
+              <ul className="space-y-1">
+                {flightExecutions.map((execution) => (
+                  <li key={execution.id}>
+                    <button
+                      type="button"
+                      className="border-border hover:bg-muted flex w-full items-center justify-between rounded border px-2 py-1 text-left text-xs"
+                      onClick={() => setSelectedNodeKey(execution.node_key)}
+                    >
+                      <code>{execution.node_key}</code>
+                      <span>
+                        {execution.status} · #{execution.attempt ?? 1}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {flightPage?.truncated && flightPage.next_cursor ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    void loadFlightRecorder(
+                      sourceRunId || undefined,
+                      flightPage.next_cursor ?? undefined,
+                    ).catch(() => setMessage(t("loadError")))
+                  }
+                  className="w-full"
+                >
+                  {t("loadMoreExecutions")}
+                </Button>
+              ) : null}
+              <ExecutionDetails execution={selectedFlightExecution} />
+            </>
+          )}
         </section>
 
         {session ? (
@@ -429,7 +590,7 @@ export function FlowDebugPanel() {
             onClick={() =>
               session
                 ? void loadSession(session.id)
-                : void loadFlightRecorder()
+                : void Promise.all([loadFlightRecorder(), loadSessions()])
             }
             aria-label={t("retry")}
           >
@@ -570,16 +731,10 @@ function VariableEditor({
   );
 }
 
-function ExecutionDetails({
-  execution,
-}: {
-  execution: DebugExecution | null;
-}) {
+function ExecutionDetails({ execution }: { execution: DebugExecution | null }) {
   const t = useTranslations("Flows.debug");
   if (!execution) {
-    return (
-      <p className="text-muted-foreground text-xs">{t("noExecution")}</p>
-    );
+    return <p className="text-muted-foreground text-xs">{t("noExecution")}</p>;
   }
   return (
     <section className="space-y-2">

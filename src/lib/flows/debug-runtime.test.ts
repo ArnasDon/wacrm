@@ -375,7 +375,7 @@ describe("isolated flow debugger", () => {
           config: {
             url: "https://example.com/hook",
             headers: { Authorization: "Bearer secret" },
-            body_template: "{\"name\":\"{{vars.name}}\"}",
+            body_template: '{"name":"{{vars.name}}"}',
             next_node_key: "end",
           },
           position_x: 0,
@@ -446,7 +446,9 @@ describe("isolated flow debugger", () => {
   it("builds a client-safe pinned manifest from registry metadata", () => {
     const manifest = buildDebugManifest(graph);
     expect(manifest.variable_schema).toEqual(graph.variable_schema);
-    expect(manifest.nodes.find((node) => node.node_key === "send")).toMatchObject({
+    expect(
+      manifest.nodes.find((node) => node.node_key === "send"),
+    ).toMatchObject({
       node_key: "send",
       node_type: "send_message",
       label: "Send message",
@@ -471,6 +473,27 @@ describe("debug record sanitization", () => {
       ok: "visible",
     });
     expect(JSON.stringify(sanitized).length).toBeLessThan(10_000);
+  });
+
+  it("removes query strings and fragments from URL values at any nesting level", () => {
+    const sanitized = sanitizeDebugValue({
+      callback: "https://example.com/hooks/receive?token=super-secret#step-2",
+      nested: [
+        {
+          location:
+            "http://internal.example.test/path?customer_email=ada%40example.com",
+        },
+      ],
+      ordinary: "not a URL?keep=this#too",
+    });
+
+    expect(sanitized).toEqual({
+      callback: "https://example.com/hooks/receive",
+      nested: [{ location: "http://internal.example.test/path" }],
+      ordinary: "not a URL?keep=this#too",
+    });
+    expect(JSON.stringify(sanitized)).not.toContain("super-secret");
+    expect(JSON.stringify(sanitized)).not.toContain("ada%40example.com");
   });
 
   it("never exposes the pinned graph or internal output cache to the client", () => {
@@ -603,5 +626,38 @@ describe("debug record sanitization", () => {
         graph_snapshot: graph,
       }),
     ).toThrow("debug_response_too_large");
+  });
+
+  it("omits defaults whose declared variable key is sensitive", () => {
+    const source = {
+      ...graph,
+      variable_schema: [
+        { key: "display_name", type: "string" as const, default: "Ada" },
+        {
+          key: "api_token",
+          type: "string" as const,
+          default: "production-token",
+        },
+        {
+          key: "webhook_secret",
+          type: "string" as const,
+          default: "production-secret",
+        },
+      ],
+    };
+
+    const manifest = buildDebugManifest(source);
+
+    expect(manifest.variable_schema).toEqual([
+      { key: "display_name", type: "string", default: "Ada" },
+      { key: "api_token", type: "string" },
+      { key: "webhook_secret", type: "string" },
+    ]);
+    expect(JSON.stringify(manifest)).not.toContain("production-token");
+    expect(JSON.stringify(manifest)).not.toContain("production-secret");
+    expect(source.variable_schema[1]).toHaveProperty(
+      "default",
+      "production-token",
+    );
   });
 });

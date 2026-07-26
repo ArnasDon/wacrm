@@ -1073,7 +1073,18 @@
       "inputs": "Inputs",
       "outputs": "Outputs",
       "error": "Error",
-      "simulatedEffects": "Simulated effects"
+      "simulatedEffects": "Simulated effects",
+      "existingSessions": "Existing debug sessions",
+      "noExistingSessions": "No debug sessions yet.",
+      "resumeSession": "Resume",
+      "endSession": "End",
+      "sessionResumed": "Debug session resumed.",
+      "sessionClosed": "Debug session ended.",
+      "sessionUnavailable": "That session expired or is no longer available.",
+      "closeError": "Couldn't end the debug session.",
+      "flightRecorder": "Production flight recorder",
+      "noProductionExecutions": "No production node attempts were recorded.",
+      "loadMoreExecutions": "Load more attempts"
     },
     "list": {
       "title": "Flows",

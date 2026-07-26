@@ -6,6 +6,10 @@ const source = readFileSync(
   join(process.cwd(), "src/components/flows/flow-debug-panel.tsx"),
   "utf8",
 );
+const client = readFileSync(
+  join(process.cwd(), "src/components/flows/flow-debug-client.ts"),
+  "utf8",
+);
 const editorState = readFileSync(
   join(process.cwd(), "src/components/flows/flow-editor-state.tsx"),
   "utf8",
@@ -29,14 +33,12 @@ describe("flow debug inspector UI", () => {
       "const [selectedNodeKey, setSelectedNodeKey] = useState",
     );
     expect(source).toContain("setSelectedNodeKey");
-    expect(source).toContain(
-      'key={`${declaration.key}:${session.revision}`}',
-    );
+    expect(source).toContain("key={`${declaration.key}:${session.revision}`}");
   });
 
   it("offers source runs, typed variables and explicit simulation-only execution", () => {
-    expect(source).toContain("/debug/flight-recorder");
-    expect(source).toContain("/debug/sessions");
+    expect(client).toContain("/debug/flight-recorder");
+    expect(client).toContain("/debug/sessions");
     expect(source).toContain("expected_revision");
     expect(source).toContain("window.confirm");
     expect(source).toContain("contact");
@@ -45,6 +47,10 @@ describe("flow debug inspector UI", () => {
     expect(source).toContain("session.manifest.variable_schema");
     expect(source).toContain("session.manifest.nodes");
     expect(source).toContain("overrides");
+    expect(source).toContain("flightExecutions");
+    expect(source).toContain("debugExecutions");
+    expect(source).toContain("availableSessions");
+    expect(source).toContain("closeDebugSession");
     expect(source).not.toContain("state.variable_schema");
     expect(source).not.toContain("state.nodes");
   });

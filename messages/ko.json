@@ -1073,7 +1073,18 @@
       "inputs": "입력",
       "outputs": "출력",
       "error": "오류",
-      "simulatedEffects": "시뮬레이션된 효과"
+      "simulatedEffects": "시뮬레이션된 효과",
+      "existingSessions": "기존 디버그 세션",
+      "noExistingSessions": "아직 디버그 세션이 없습니다.",
+      "resumeSession": "재개",
+      "endSession": "종료",
+      "sessionResumed": "디버그 세션을 재개했습니다.",
+      "sessionClosed": "디버그 세션을 종료했습니다.",
+      "sessionUnavailable": "세션이 만료되었거나 더 이상 사용할 수 없습니다.",
+      "closeError": "디버그 세션을 종료할 수 없습니다.",
+      "flightRecorder": "프로덕션 플라이트 레코더",
+      "noProductionExecutions": "기록된 프로덕션 노드 시도가 없습니다.",
+      "loadMoreExecutions": "시도 더 불러오기"
     },
     "list": {
       "title": "플로우",

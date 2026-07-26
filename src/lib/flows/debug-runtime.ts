@@ -1,8 +1,5 @@
 import { getNodeDescriptor } from "./registry";
-import type {
-  NodeDescriptor,
-  NodePortDescriptor,
-} from "./registry/types";
+import type { NodeDescriptor, NodePortDescriptor } from "./registry/types";
 import {
   coerceDeclaredValue,
   evaluateLoopExitPredicate,
@@ -175,10 +172,7 @@ function resolveInputs(
   overrides: Record<string, unknown>,
 ): {
   inputs: Record<string, unknown>;
-  sources: Record<
-    string,
-    "override" | "session" | "source_run" | "config"
-  >;
+  sources: Record<string, "override" | "session" | "source_run" | "config">;
 } {
   const bindings = asRecord(node.config._data_inputs);
   const inputs: Record<string, unknown> = {};
@@ -243,9 +237,7 @@ export function assertDebugVariablesBounded(
   }
 }
 
-function sanitizeDebugResult(
-  result: DebugNodeOutput,
-): DebugNodeOutput {
+function sanitizeDebugResult(result: DebugNodeOutput): DebugNodeOutput {
   return {
     status: result.status,
     inputs: sanitizeDebugValue(result.inputs) as Record<string, unknown>,
@@ -255,7 +247,9 @@ function sanitizeDebugResult(
       kind: effect.kind,
       payload: sanitizeDebugValue(effect.payload) as Record<string, unknown>,
     })),
-    metadata: sanitizeDebugValue(result.metadata) as DebugNodeOutput["metadata"],
+    metadata: sanitizeDebugValue(
+      result.metadata,
+    ) as DebugNodeOutput["metadata"],
     ...(result.error
       ? {
           error: sanitizeDebugValue(result.error) as DebugNodeOutput["error"],
@@ -268,7 +262,9 @@ function simulated(
   kind: string,
   payload: Record<string, unknown>,
 ): DebugNodeOutput["simulatedEffects"] {
-  return [{ kind, payload: sanitizeDebugValue(payload) as Record<string, unknown> }];
+  return [
+    { kind, payload: sanitizeDebugValue(payload) as Record<string, unknown> },
+  ];
 }
 
 function plannedTransition(
@@ -383,9 +379,7 @@ export async function runIsolatedDebugNode(
       outputs = { variables };
     } else if (hook === "each" || hook === "loop") {
       const isEach = hook === "each";
-      const subject = isEach
-        ? inputs.items
-        : inputs.subject;
+      const subject = isEach ? inputs.items : inputs.subject;
       const done = isEach
         ? !Array.isArray(subject) || subject.length === 0
         : evaluateLoopExitPredicate(
@@ -402,10 +396,7 @@ export async function runIsolatedDebugNode(
           schedules_production: false,
         },
       };
-    } else if (
-      hook === "wait" ||
-      hook === "approval"
-    ) {
+    } else if (hook === "wait" || hook === "approval") {
       outputs = plannedTransition(hook, config);
     } else if (hook === "sub_flow") {
       outputs = {
@@ -415,7 +406,9 @@ export async function runIsolatedDebugNode(
     } else if (hook === "send_message" || hook === "collect_input") {
       const text = interpolate(
         String(
-          hook === "collect_input" ? config.prompt_text ?? "" : config.text ?? "",
+          hook === "collect_input"
+            ? (config.prompt_text ?? "")
+            : (config.text ?? ""),
         ),
         variables,
       );
@@ -525,9 +518,7 @@ export function editDebugVariables(
   const declaredKeys = new Set(
     declarations.map((declaration) => declaration.key),
   );
-  const unknownKey = Object.keys(patch).find(
-    (key) => !declaredKeys.has(key),
-  );
+  const unknownKey = Object.keys(patch).find((key) => !declaredKeys.has(key));
   if (unknownKey) {
     throw new Error(`unknown debug variable "${unknownKey}"`);
   }
@@ -559,7 +550,20 @@ function sanitizeInner(value: unknown, depth: number): unknown {
     return value;
   }
   if (typeof value === "string") {
-    return value.length > 4_096 ? `${value.slice(0, 4_096)}…` : value;
+    let safeValue = value;
+    if (/^https?:\/\//i.test(value)) {
+      try {
+        const parsed = new URL(value);
+        parsed.search = "";
+        parsed.hash = "";
+        safeValue = parsed.toString();
+      } catch {
+        // Preserve malformed user text; it is not treated as a URL.
+      }
+    }
+    return safeValue.length > 4_096
+      ? `${safeValue.slice(0, 4_096)}…`
+      : safeValue;
   }
   if (Array.isArray(value)) {
     return value
@@ -572,9 +576,7 @@ function sanitizeInner(value: unknown, depth: number): unknown {
         .slice(0, MAX_DEBUG_COLLECTION)
         .map(([key, entry]) => [
           key,
-          SECRET_KEY.test(key)
-            ? "[REDACTED]"
-            : sanitizeInner(entry, depth + 1),
+          SECRET_KEY.test(key) ? "[REDACTED]" : sanitizeInner(entry, depth + 1),
         ]),
     );
   }
@@ -646,7 +648,15 @@ export function buildDebugManifest(graph: FlowVersionGraph): DebugManifest {
     ...(port.required ? { required: true } : {}),
   });
   return {
-    variable_schema: structuredClone(graph.variable_schema),
+    variable_schema: graph.variable_schema.map((declaration) => {
+      const safeDeclaration = structuredClone(declaration);
+      if (SECRET_KEY.test(declaration.key)) {
+        delete safeDeclaration.default;
+      } else if (Object.hasOwn(safeDeclaration, "default")) {
+        safeDeclaration.default = sanitizeDebugValue(safeDeclaration.default);
+      }
+      return safeDeclaration;
+    }),
     nodes: graph.nodes.map((node) => {
       const descriptor = getNodeDescriptor(node.node_type);
       return {

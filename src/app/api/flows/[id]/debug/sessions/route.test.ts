@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   rpcArgs: {} as Record<string, unknown>,
   rpcError: null as { message: string } | null,
   createdSession: null as Record<string, unknown> | null,
+  sessionListSelect: "",
+  sessionListLimit: 0,
+  listedSessions: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -83,12 +86,12 @@ vi.mock("@/lib/flows/admin-client", () => ({
       return {
         data: h.rpcError
           ? null
-          : h.createdSession ?? {
+          : (h.createdSession ?? {
               id: "session-1",
               flow_id: "flow-1",
               revision: 0,
               variables: { name: "Ada" },
-            },
+            }),
         error: h.rpcError,
       };
     },
@@ -137,15 +140,24 @@ vi.mock("@/lib/flows/admin-client", () => ({
       }
       if (table === "flow_debug_sessions") {
         return {
-          select: () => ({
-            eq: () => ({
+          select: (columns: string) => {
+            h.sessionListSelect = columns;
+            return {
               eq: () => ({
-                order: () => ({
-                  limit: async () => ({ data: [], error: null }),
+                eq: () => ({
+                  order: () => ({
+                    limit: async (limit: number) => {
+                      h.sessionListLimit = limit;
+                      return {
+                        data: h.listedSessions.slice(0, limit),
+                        error: null,
+                      };
+                    },
+                  }),
                 }),
               }),
-            }),
-          }),
+            };
+          },
         };
       }
       throw new Error(`unexpected admin table ${table}`);
@@ -153,7 +165,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
   }),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const context = {
   params: Promise.resolve({
@@ -172,6 +184,37 @@ beforeEach(() => {
   h.rpcArgs = {};
   h.rpcError = null;
   h.createdSession = null;
+  h.sessionListSelect = "";
+  h.sessionListLimit = 0;
+  h.listedSessions = [];
+});
+
+describe("flow debug session inventory", () => {
+  it("returns a bounded metadata-only list suitable for resuming or closing", async () => {
+    h.listedSessions = [
+      {
+        id: "session-1",
+        revision: 4,
+        status: "active",
+        variables: { secret: "must not be selected" },
+      },
+    ];
+
+    const response = await GET(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions"),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(h.sessionListLimit).toBe(20);
+    expect(h.sessionListSelect).not.toContain("variables");
+    expect(body.sessions[0]).toMatchObject({
+      id: "session-1",
+      revision: 4,
+      status: "active",
+    });
+  });
 });
 
 describe("flow debug session creation", () => {
@@ -217,7 +260,9 @@ describe("flow debug session creation", () => {
     const response = await POST(
       new Request("http://localhost/api/flows/flow-1/debug/sessions", {
         method: "POST",
-        body: JSON.stringify({ source_run_id: "00000000-0000-4000-8000-000000000001" }),
+        body: JSON.stringify({
+          source_run_id: "00000000-0000-4000-8000-000000000001",
+        }),
       }),
       context,
     );

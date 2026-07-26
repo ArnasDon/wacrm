@@ -109,6 +109,11 @@ import {
   type SubFlowFailurePolicy,
 } from "./composite-execution";
 import { generateFlowAiReply } from "./ai-reply-runtime";
+import {
+  resolveApprovalTimeout,
+  scheduleFlowApproval,
+  type ApprovalNodeRuntimeConfig,
+} from "./approval-runtime";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -2853,6 +2858,35 @@ export async function advanceFromNodeKey(
         return { outcome: "completed" };
       }
       return { outcome: "advanced" };
+    }
+    if (runtimeHook === "approval") {
+      const cfg = node.config as ApprovalNodeRuntimeConfig;
+      try {
+        // Scheduling is itself an idempotent durable transition. It deliberately
+        // does not use executePolicyNode: a suspended approval is not a
+        // completed node execution.
+        await scheduleFlowApproval(db, run, node, globalExecutionPolicy);
+        return { outcome: "advanced" };
+      } catch (error) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "approval_schedule_failed",
+          error: sanitizeExecutionError(error),
+        });
+        const resolution = resolveApprovalTimeout(
+          globalExecutionPolicy,
+          cfg,
+        );
+        if (resolution.action === "fail") {
+          await endRun(db, run.id, "failed", "approval_schedule_failed");
+          return { outcome: "completed" };
+        }
+        currentKey = await persistTransition(
+          db,
+          run,
+          resolution.nextNodeKey,
+        );
+        continue;
+      }
     }
     if (runtimeHook === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;

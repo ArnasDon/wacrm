@@ -25,6 +25,7 @@ import { eachNodeDescriptor } from "../nodes/each";
 import { loopNodeDescriptor } from "../nodes/loop";
 import { subFlowNodeDescriptor } from "../nodes/sub-flow";
 import { aiReplyNodeDescriptor } from "../nodes/ai-reply";
+import { approvalNodeDescriptor } from "../nodes/approval";
 import { conversationAssignedTriggerDescriptor } from "../triggers/conversation-assigned";
 import { dealStageChangedTriggerDescriptor } from "../triggers/deal-stage-changed";
 import { firstInboundMessageTriggerDescriptor } from "../triggers/first-inbound-message";
@@ -68,6 +69,7 @@ export const FLOW_NODE_DESCRIPTORS = [
   loopNodeDescriptor,
   subFlowNodeDescriptor,
   aiReplyNodeDescriptor,
+  approvalNodeDescriptor,
   sendWebhookNodeDescriptor,
   closeConversationNodeDescriptor,
   newMessageReceivedTriggerDescriptor,
@@ -163,6 +165,13 @@ export function getDeterministicSuccessEdgeTarget(
 ): string | undefined {
   const descriptor = getNodeDescriptor(nodeType);
   if (!descriptor?.supportsDefaultValue) return undefined;
+  // A timed-out human approval can never be synthesized as approved.
+  // Its deterministic safe default is always the explicit reject edge.
+  if (descriptor.id === "approval") {
+    return typeof config.rejected_next === "string" && config.rejected_next
+      ? config.rejected_next
+      : undefined;
+  }
   const successEdges = descriptor
     .outgoingEdgeTargets(config)
     .filter(({ field }) => field !== "error_next_node_key");

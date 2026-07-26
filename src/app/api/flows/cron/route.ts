@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { parseFlowVersionGraph } from '@/lib/flows/versions'
 import { resumeDueFlowWaits } from '@/lib/flows/wait-runtime'
+import { resumeFlowApprovalResolutions } from '@/lib/flows/approval-runtime'
 
 /**
  * Sweep abandoned active flow runs.
@@ -49,12 +50,23 @@ export async function GET(request: Request) {
   const admin = supabaseAdmin()
   const now = new Date()
   let resumed = 0
+  let approvalsResumed = 0
   try {
     resumed = (await resumeDueFlowWaits(admin, now)).resumed
   } catch (waitError) {
     console.error(
       '[flows-cron] durable wait resume failed:',
       waitError instanceof Error ? waitError.message : waitError,
+    )
+  }
+  try {
+    approvalsResumed = (
+      await resumeFlowApprovalResolutions(admin, { limit: 100 })
+    ).resumed
+  } catch (approvalError) {
+    console.error(
+      '[flows-cron] approval resume failed:',
+      approvalError instanceof Error ? approvalError.message : approvalError,
     )
   }
   try {
@@ -66,6 +78,18 @@ export async function GET(request: Request) {
   } catch (purgeError) {
     console.error(
       '[flows-cron] debug purge failed:',
+      purgeError instanceof Error ? purgeError.message : 'unknown',
+    )
+  }
+  try {
+    const { error: purgeError } = await admin.rpc(
+      'purge_expired_flow_approvals',
+      { p_limit: 100 },
+    )
+    if (purgeError) throw new Error(purgeError.message)
+  } catch (purgeError) {
+    console.error(
+      '[flows-cron] approval purge failed:',
       purgeError instanceof Error ? purgeError.message : 'unknown',
     )
   }
@@ -84,7 +108,9 @@ export async function GET(request: Request) {
     console.error('[flows-cron] active-run scan failed:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  if (!runs?.length) return NextResponse.json({ swept: 0, resumed })
+  if (!runs?.length) {
+    return NextResponse.json({ swept: 0, resumed, approvalsResumed })
+  }
 
   type Row = {
     id: string
@@ -155,5 +181,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ swept, resumed })
+  return NextResponse.json({ swept, resumed, approvalsResumed })
 }

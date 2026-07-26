@@ -1273,7 +1273,17 @@
         "aiAddInput": "Add input variable",
         "aiOutputVariable": "Output variable",
         "aiMaximumTokens": "Maximum output tokens",
-        "continueAfterAi": "Continue after AI"
+        "continueAfterAi": "Continue after AI",
+        "approvalTitle": "Approval title",
+        "approvalMessage": "Instructions for the reviewer",
+        "approvalAssignee": "Assigned reviewer",
+        "approvalMembersLoading": "Loading account members…",
+        "approvalPickMember": "Choose an account member…",
+        "approvalUnnamedMember": "Unnamed member",
+        "approvalTimeout": "Timeout (hours)",
+        "approvalApprovedNext": "When approved, continue to",
+        "approvalRejectedNext": "When rejected, continue to",
+        "approvalTimeoutHelp": "Timeouts follow the published node error policy. Default value safely follows the rejected branch."
       },
       "categories": {
         "messaging": "Messaging",
@@ -1352,6 +1362,10 @@
         "ai_reply": {
           "label": "AI reply",
           "blurb": "Generates a bounded AI response"
+        },
+        "approval": {
+          "label": "Approval",
+          "blurb": "Pauses until a teammate approves or rejects"
         }
       }
     },
@@ -1384,6 +1398,35 @@
       "modeRemove": "Remove",
       "tagPicked": "{mode} tag {tag}…",
       "tagNone": "{mode} tag (none picked)"
+    }
+  },
+  "Approvals": {
+    "listTitle": "Flow approvals",
+    "listDescription": "Requests assigned to you and account administrators.",
+    "loadError": "Couldn't load approvals.",
+    "empty": "No approval requests",
+    "notFound": "Approval not found.",
+    "nodeContext": "Flow node: {node}",
+    "requestContext": "Request context",
+    "flowVersion": "Pinned flow version",
+    "expires": "Decision deadline",
+    "decisionNote": "Decision note",
+    "pending": "Waiting for a decision.",
+    "terminal": "This request is terminal: {decision}.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "confirmApprove": "Approve this request?",
+    "confirmReject": "Reject this request?",
+    "confirmDescription": "This decision is recorded and resumes the pinned flow version. It cannot be changed.",
+    "note": "Optional note",
+    "cancel": "Cancel",
+    "confirm": "Confirm decision",
+    "decisionError": "The decision couldn't be recorded.",
+    "decision": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "timed_out": "Timed out"
     }
   },
   "Settings": {

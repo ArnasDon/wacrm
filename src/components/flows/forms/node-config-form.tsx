@@ -237,6 +237,16 @@ function NodeSpecificConfigForm({
           t={t}
         />
       );
+    case "approval":
+      return (
+        <ApprovalForm
+          cfg={cfg as ApprovalCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
   }
 }
 
@@ -291,66 +301,74 @@ function ErrorHandlingSection({
         Error handling
       </summary>
       <div className="mt-3 grid gap-3">
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-muted-foreground text-xs">
-            Attempts
-            <Input
-              className="bg-muted mt-1"
-              type="number"
-              min={1}
-              max={3}
-              value={retry.max_attempts}
-              onChange={(event) =>
-                setRetry({ max_attempts: event.target.valueAsNumber })
-              }
-            />
-          </label>
-          <label className="text-muted-foreground text-xs">
-            Interval (ms)
-            <Input
-              className="bg-muted mt-1"
-              type="number"
-              min={0}
-              max={5_000}
-              value={retry.interval_ms}
-              onChange={(event) =>
-                setRetry({ interval_ms: event.target.valueAsNumber })
-              }
-            />
-          </label>
-        </div>
+        {nodeType !== "approval" && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-muted-foreground text-xs">
+                Attempts
+                <Input
+                  className="bg-muted mt-1"
+                  type="number"
+                  min={1}
+                  max={3}
+                  value={retry.max_attempts}
+                  onChange={(event) =>
+                    setRetry({ max_attempts: event.target.valueAsNumber })
+                  }
+                />
+              </label>
+              <label className="text-muted-foreground text-xs">
+                Interval (ms)
+                <Input
+                  className="bg-muted mt-1"
+                  type="number"
+                  min={0}
+                  max={5_000}
+                  value={retry.interval_ms}
+                  onChange={(event) =>
+                    setRetry({ interval_ms: event.target.valueAsNumber })
+                  }
+                />
+              </label>
+            </div>
+            <label className="text-muted-foreground text-xs">
+              Backoff
+              <Select
+                value={retry.backoff}
+                onValueChange={(value) =>
+                  setRetry({ backoff: value as RetryConfig["backoff"] })
+                }
+              >
+                <SelectTrigger className="bg-muted mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed</SelectItem>
+                  <SelectItem value="exponential">Exponential</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="text-muted-foreground text-xs">
+              Timeout (ms)
+              <Input
+                className="bg-muted mt-1"
+                type="number"
+                min={100}
+                max={15_000}
+                value={
+                  typeof cfg.timeout_ms === "number" ? cfg.timeout_ms : 15_000
+                }
+                onChange={(event) =>
+                  onUpdateConfig({ timeout_ms: event.target.valueAsNumber })
+                }
+              />
+            </label>
+          </>
+        )}
         <label className="text-muted-foreground text-xs">
-          Backoff
-          <Select
-            value={retry.backoff}
-            onValueChange={(value) =>
-              setRetry({ backoff: value as RetryConfig["backoff"] })
-            }
-          >
-            <SelectTrigger className="bg-muted mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="fixed">Fixed</SelectItem>
-              <SelectItem value="exponential">Exponential</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <label className="text-muted-foreground text-xs">
-          Timeout (ms)
-          <Input
-            className="bg-muted mt-1"
-            type="number"
-            min={100}
-            max={15_000}
-            value={typeof cfg.timeout_ms === "number" ? cfg.timeout_ms : 15_000}
-            onChange={(event) =>
-              onUpdateConfig({ timeout_ms: event.target.valueAsNumber })
-            }
-          />
-        </label>
-        <label className="text-muted-foreground text-xs">
-          When all attempts fail
+          {nodeType === "approval"
+            ? "When the approval times out"
+            : "When all attempts fail"}
           <Select
             value={onError}
             onValueChange={(value) =>
@@ -399,7 +417,7 @@ function ErrorHandlingSection({
             />
           </div>
         )}
-        {onError === "default_value" && (
+        {onError === "default_value" && nodeType !== "approval" && (
           <DefaultValueFields
             value={defaultValue}
             onChange={(value) => onUpdateConfig({ default_value: value })}
@@ -507,6 +525,134 @@ function DefaultValueFields({
   );
 }
 
+interface ApprovalCfg {
+  title?: string;
+  message?: string;
+  assignee_user_id?: string;
+  timeout_hours?: number;
+  approved_next?: string;
+  rejected_next?: string;
+}
+
+interface ApprovalMember {
+  user_id: string;
+  full_name: string;
+  role: "owner" | "admin" | "agent" | "viewer";
+}
+
+function ApprovalForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: ApprovalCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [members, setMembers] = useState<ApprovalMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/account/members", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          members?: ApprovalMember[];
+        };
+        if (!cancelled) setMembers(payload.members ?? []);
+      } finally {
+        if (!cancelled) setMembersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <>
+      <TextRow
+        label={t("approvalTitle")}
+        value={cfg.title ?? ""}
+        onChange={(title) => onUpdateConfig({ title })}
+      />
+      <TextRow
+        label={t("approvalMessage")}
+        value={cfg.message ?? ""}
+        onChange={(message) => onUpdateConfig({ message })}
+        rows={4}
+      />
+      <div>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("approvalAssignee")}
+        </label>
+        <Select
+          value={cfg.assignee_user_id ?? ""}
+          onValueChange={(assignee_user_id) =>
+            onUpdateConfig({ assignee_user_id })
+          }
+          disabled={membersLoading}
+        >
+          <SelectTrigger aria-label={t("approvalAssignee")}>
+            <SelectValue
+              placeholder={
+                membersLoading
+                  ? t("approvalMembersLoading")
+                  : t("approvalPickMember")
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {members.map((member) => (
+              <SelectItem key={member.user_id} value={member.user_id}>
+                {member.full_name || t("approvalUnnamedMember")} · {member.role}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <label className="text-muted-foreground text-xs">
+        {t("approvalTimeout")}
+        <Input
+          className="bg-muted mt-1"
+          type="number"
+          min={1}
+          max={720}
+          value={cfg.timeout_hours ?? 24}
+          onChange={(event) =>
+            onUpdateConfig({ timeout_hours: event.target.valueAsNumber })
+          }
+        />
+      </label>
+      <NextNodeRow
+        value={cfg.approved_next ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(approved_next) => onUpdateConfig({ approved_next })}
+        label={t("approvalApprovedNext")}
+      />
+      <NextNodeRow
+        value={cfg.rejected_next ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(rejected_next) => onUpdateConfig({ rejected_next })}
+        label={t("approvalRejectedNext")}
+      />
+      <p className="text-muted-foreground text-xs">
+        {t("approvalTimeoutHelp")}
+      </p>
+    </>
+  );
+}
+
 function DescriptorFieldsForm({
   fields,
   help,
@@ -576,6 +722,7 @@ function DescriptorFieldsForm({
               <Input
                 type="number"
                 min={field.min}
+                max={field.max}
                 value={typeof value === "number" ? value : ""}
                 onChange={(event) =>
                   onUpdateConfig({

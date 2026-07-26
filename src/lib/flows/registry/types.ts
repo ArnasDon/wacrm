@@ -125,6 +125,7 @@ export type NodeFormField =
       key: string;
       label: string;
       min?: number;
+      max?: number;
     }
   | {
       kind: "select";
@@ -154,7 +155,8 @@ export type NodeFormDescriptor =
         | "each"
         | "loop"
         | "sub_flow"
-        | "ai_reply";
+        | "ai_reply"
+        | "approval";
     };
 
 export interface NodeUiDescriptor {

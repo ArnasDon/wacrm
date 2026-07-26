@@ -441,6 +441,7 @@ export const moveDealStageConfigSchema = z.looseObject({
 });
 
 export const MAX_WAIT_DURATION_MS = 365 * 24 * 60 * 60 * 1_000;
+export const MAX_APPROVAL_TIMEOUT_HOURS = 30 * 24;
 
 export const waitConfigSchema = z
   .looseObject({
@@ -466,6 +467,59 @@ export const waitConfigSchema = z
       });
     }
   });
+
+export const approvalConfigSchema = z.strictObject({
+  title: requiredText("An approval title is required.").max(120),
+  message: requiredText("An approval message is required.").max(2_000),
+  assignee_user_id: z.string().uuid("Choose an account member."),
+  timeout_hours: z
+    .number()
+    .int("Approval timeout must be a whole number of hours.")
+    .min(1)
+    .max(MAX_APPROVAL_TIMEOUT_HOURS),
+  approved_next: nextNodeKeySchema,
+  rejected_next: nextNodeKeySchema,
+  retry: z
+    .strictObject({
+      max_attempts: z.number().int().min(1).max(1),
+      interval_ms: z.number().int().min(0).max(0),
+      backoff: z.literal("fixed"),
+    })
+    .optional(),
+  on_error: z.enum(["fail_run", "default_value", "fail_branch"]).optional(),
+  error_next_node_key: z.string().trim().min(1).optional(),
+  timeout_ms: z
+    .number()
+    .int()
+    .min(NODE_EXECUTION_POLICY_LIMITS.minTimeoutMs)
+    .max(NODE_EXECUTION_POLICY_LIMITS.maxTimeoutMs)
+    .optional(),
+  default_value: z
+    .strictObject({
+      key: z.string().trim().min(1),
+      type: z.enum([
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "array",
+        "null",
+      ]),
+      value: z.unknown(),
+    })
+    .optional(),
+}).superRefine((config, ctx) => {
+  const policy = commonExecutionPolicySchema.safeParse(config);
+  if (!policy.success) {
+    for (const issue of policy.error.issues) {
+      ctx.addIssue({
+        code: "custom",
+        path: issue.path,
+        message: issue.message,
+      });
+    }
+  }
+});
 
 const variableKeySchema = requiredText("A variable key is required.").regex(
   /^[a-zA-Z_][a-zA-Z0-9_]*$/,

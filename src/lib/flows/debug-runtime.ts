@@ -396,7 +396,17 @@ export async function runIsolatedDebugNode(
           schedules_production: false,
         },
       };
-    } else if (hook === "wait" || hook === "approval") {
+    } else if (hook === "approval") {
+      outputs = {
+        preview: true,
+        planned_transition: {
+          kind: "approval",
+          approved_next: config.approved_next,
+          rejected_next: config.rejected_next,
+          schedules_production: false,
+        },
+      };
+    } else if (hook === "wait") {
       outputs = plannedTransition(hook, config);
     } else if (hook === "sub_flow") {
       outputs = {

@@ -1042,6 +1042,27 @@
     }
   },
   "Flows": {
+    "code": {
+      "title": "Code",
+      "schema": "wacrm.flow schema v1",
+      "loading": "Loading portable flow code…",
+      "loadFailed": "Couldn't load portable flow code.",
+      "upload": "Upload JSON",
+      "download": "Download JSON",
+      "tooLarge": "Flow code files must be 1 MiB or smaller.",
+      "save": "Save code",
+      "saving": "Saving…",
+      "saved": "Flow code saved to the draft.",
+      "saveFailed": "Couldn't save flow code.",
+      "conflict": "The canvas and code both changed. Choose which version to keep.",
+      "useCanvas": "Use canvas",
+      "useCode": "Use code",
+      "editorLabel": "Portable flow JSON editor",
+      "diagnostics": "Flow code diagnostics",
+      "secrets": "Import secret bindings",
+      "secretsNotice": "Values stay in an in-memory, one-time sidecar and are never added to the JSON document or response.",
+      "chooseResource": "Choose destination resource"
+    },
     "analytics": {
       "open": "Analytics",
       "title": "Flow analytics",

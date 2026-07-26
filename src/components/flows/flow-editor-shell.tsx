@@ -25,11 +25,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { GitFork, List } from "lucide-react";
+import { Braces, GitFork, List } from "lucide-react";
 
 import { FlowBuilder } from "./flow-builder";
 import { FlowCanvas } from "./flow-canvas";
 import { FlowDebugPanel } from "./flow-debug-panel";
+import { FlowCodePanel } from "./flow-code-panel";
 import { FlowEditorProvider } from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
@@ -47,7 +48,7 @@ import { listBuilderNodeDescriptors } from "@/lib/flows/registry";
  */
 const MOBILE_BREAKPOINT = "(max-width: 767px)";
 
-type View = "canvas" | "list";
+type View = "canvas" | "list" | "code";
 
 const STORAGE_KEY = "wacrm.flowEditor.view";
 
@@ -70,6 +71,7 @@ export function FlowEditorShell({
   canManageVersions,
 }: Props) {
   const t = useTranslations("Flows.builder");
+  const tCode = useTranslations("Flows.code");
 
   // Read the persisted choice in the useState initializer. Safe even
   // though this is a client component because the parent page only
@@ -79,7 +81,7 @@ export function FlowEditorShell({
   const [view, setView] = useState<View>(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved === "canvas" || saved === "list") return saved;
+      if (saved === "canvas" || saved === "list" || saved === "code") return saved;
     } catch {
       // Private browsing / disabled storage — fall through to default.
     }
@@ -91,7 +93,13 @@ export function FlowEditorShell({
   // intact so the user's preference comes back when they widen
   // again (e.g. rotating a tablet, resizing a window).
   const isMobile = useMatchMedia(MOBILE_BREAKPOINT);
-  const effectiveView: View = isMobile ? "list" : view;
+  const effectiveView: View = isMobile
+    ? view === "code"
+      ? "code"
+      : "list"
+    : view;
+  const visualView: "canvas" | "list" =
+    effectiveView === "list" ? "list" : "canvas";
 
   const choose = (next: View) => {
     setView(next);
@@ -115,24 +123,32 @@ export function FlowEditorShell({
             Omitted entirely on mobile (canvas is unavailable there and
             the legend is lg-only), so there's no empty band above the
             stage on small screens. */}
-        {!isMobile && (
+        {(
           <div className="flex items-center gap-4 px-6 py-3.5">
             <div
               role="group"
               aria-label="Editor view"
               className="inline-flex gap-0.5 rounded-lg border border-border bg-muted p-0.5"
             >
-              <SegButton
-                active={effectiveView === "canvas"}
-                onClick={() => choose("canvas")}
-                icon={<GitFork className="h-3.5 w-3.5" />}
-                label={t("canvasView")}
-              />
+              {!isMobile && (
+                <SegButton
+                  active={effectiveView === "canvas"}
+                  onClick={() => choose("canvas")}
+                  icon={<GitFork className="h-3.5 w-3.5" />}
+                  label={t("canvasView")}
+                />
+              )}
               <SegButton
                 active={effectiveView === "list"}
                 onClick={() => choose("list")}
                 icon={<List className="h-3.5 w-3.5" />}
                 label={t("listView")}
+              />
+              <SegButton
+                active={effectiveView === "code"}
+                onClick={() => choose("code")}
+                icon={<Braces className="h-3.5 w-3.5" />}
+                label={tCode("title")}
               />
             </div>
             <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
@@ -154,8 +170,9 @@ export function FlowEditorShell({
 
         {/* ---- stage: the active view, owning its own overflow ---- */}
         <div className="relative mx-6 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
+          {(!isMobile || effectiveView !== "code") && (
           <div className="relative min-w-0 flex-1">
-            {effectiveView === "canvas" ? (
+            {visualView === "canvas" ? (
               <FlowCanvas />
             ) : (
               <div className="absolute inset-0 overflow-y-auto">
@@ -163,6 +180,15 @@ export function FlowEditorShell({
               </div>
             )}
           </div>
+          )}
+          {effectiveView === "code" && (
+            <div className={cn(
+              "min-w-0",
+              isMobile ? "flex-1" : "w-1/2 border-l border-border",
+            )}>
+              <FlowCodePanel />
+            </div>
+          )}
           {canManageVersions && <FlowDebugPanel />}
         </div>
 

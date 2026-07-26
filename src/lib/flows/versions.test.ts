@@ -82,6 +82,32 @@ describe("flow version graph", () => {
     expect(parseFlowVersionGraph(legacyGraph).variable_schema).toEqual([]);
   });
 
+  it("preserves explicit variable sensitivity in immutable versions", () => {
+    const graph = buildFlowVersionGraph(
+      {
+        ...draft,
+        variable_schema: [
+          {
+            key: "api_result",
+            type: "string",
+            required: false,
+            sensitive: true,
+          },
+        ],
+      },
+      nodes,
+    );
+
+    expect(parseFlowVersionGraph(graph).variable_schema).toEqual([
+      {
+        key: "api_result",
+        type: "string",
+        required: false,
+        sensitive: true,
+      },
+    ]);
+  });
+
   it.each([
     [null],
     [[{ key: "bad", type: "number", required: false, default: "not-a-number" }]],

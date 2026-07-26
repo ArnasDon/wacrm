@@ -5,6 +5,8 @@ export interface FlowVariableDeclaration {
   key: string;
   type: FlowVariableType;
   required?: boolean;
+  /** Defaults are exportable only when the author explicitly opts out. */
+  sensitive?: boolean;
   default?: unknown;
 }
 

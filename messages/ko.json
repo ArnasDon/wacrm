@@ -1042,6 +1042,27 @@
     }
   },
   "Flows": {
+    "code": {
+      "title": "코드",
+      "schema": "wacrm.flow 스키마 v1",
+      "loading": "이식 가능한 플로우 코드를 불러오는 중…",
+      "loadFailed": "플로우 코드를 불러올 수 없습니다.",
+      "upload": "JSON 업로드",
+      "download": "JSON 다운로드",
+      "tooLarge": "플로우 코드 파일은 1 MiB 이하여야 합니다.",
+      "save": "코드 저장",
+      "saving": "저장 중…",
+      "saved": "플로우 코드가 초안에 저장되었습니다.",
+      "saveFailed": "플로우 코드를 저장할 수 없습니다.",
+      "conflict": "캔버스와 코드가 모두 변경되었습니다. 유지할 버전을 선택하세요.",
+      "useCanvas": "캔버스 사용",
+      "useCode": "코드 사용",
+      "editorLabel": "이식 가능한 플로우 JSON 편집기",
+      "diagnostics": "플로우 코드 진단",
+      "secrets": "가져오기 비밀 값 연결",
+      "secretsNotice": "값은 일회성 메모리 사이드카에만 유지되며 JSON 문서나 응답에 포함되지 않습니다.",
+      "chooseResource": "대상 리소스 선택"
+    },
     "analytics": {
       "open": "분석",
       "title": "플로우 분석",

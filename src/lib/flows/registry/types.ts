@@ -170,6 +170,30 @@ export interface NodeBuilderDescriptor {
   defaultConfig: Readonly<Record<string, unknown>>;
 }
 
+export type PortableResourceKind =
+  | "tag"
+  | "member"
+  | "pipeline"
+  | "stage"
+  | "custom_field"
+  | "subflow"
+  | "asset";
+
+export interface NodePortabilityDescriptor {
+  /** Top-level config keys which may cross an instance boundary. */
+  portableFields: readonly string[];
+  resourceRefs?: readonly {
+    field: string;
+    kind: PortableResourceKind;
+    /** Stage resolution is constrained by its portable pipeline ref. */
+    parentField?: string;
+  }[];
+  /** Map values are replaced by in-memory `$secret` requirements. */
+  secretMaps?: readonly string[];
+  /** Runtime pins or values recomputed by the destination compiler. */
+  derivedFields?: readonly string[];
+}
+
 export interface OutgoingEdgeTarget {
   target: string;
   field: string;
@@ -201,6 +225,7 @@ export interface NodeDescriptor<Id extends string = string> {
   runtimeHook: string;
   form: NodeFormDescriptor;
   builder: NodeBuilderDescriptor;
+  portability: NodePortabilityDescriptor;
   ui: NodeUiDescriptor;
   outgoingEdges: (config: Record<string, unknown>) => readonly string[];
   outgoingEdgeTargets: (
@@ -219,9 +244,224 @@ export interface NodeDescriptor<Id extends string = string> {
 }
 
 export function defineNodeDescriptor<const Id extends string>(
-  descriptor: NodeDescriptor<Id>,
+  descriptor: Omit<NodeDescriptor<Id>, "portability"> & {
+    portability?: NodePortabilityDescriptor;
+  },
 ): NodeDescriptor<Id> {
-  return descriptor;
+  return {
+    ...descriptor,
+    portability: descriptor.portability ?? portabilityForNode(descriptor.id),
+  };
+}
+
+const POLICY_FIELDS = [
+  "retry",
+  "on_error",
+  "error_next_node_key",
+  "timeout_ms",
+  "default_value",
+] as const;
+
+function portable(
+  fields: readonly string[],
+  options: Omit<NodePortabilityDescriptor, "portableFields"> = {},
+): NodePortabilityDescriptor {
+  return {
+    portableFields: [...new Set([...fields, ...POLICY_FIELDS])],
+    ...options,
+  };
+}
+
+/**
+ * Pure, explicit portability allowlist. It intentionally lives beside the
+ * descriptor contract rather than inferring keys from the permissive runtime
+ * Zod schemas: adding a runtime field never makes it exportable by accident.
+ */
+export function portabilityForNode(id: string): NodePortabilityDescriptor {
+  switch (id) {
+    case "start":
+    case "close_conversation":
+    case "trigger_conversation_assigned":
+    case "trigger_first_inbound_message":
+    case "trigger_manual":
+    case "trigger_new_contact_created":
+    case "trigger_new_message_received":
+      return portable(["next_node_key"]);
+    case "send_message":
+      return portable(["text", "next_node_key"]);
+    case "send_buttons":
+      return portable(["text", "header_text", "footer_text", "buttons"]);
+    case "send_list":
+      return portable([
+        "text",
+        "button_label",
+        "header_text",
+        "footer_text",
+        "sections",
+      ]);
+    case "send_media":
+      return portable(
+        ["media_type", "media_url", "caption", "filename", "next_node_key"],
+        { resourceRefs: [{ field: "media_url", kind: "asset" }] },
+      );
+    case "collect_input":
+      return portable([
+        "prompt_text",
+        "var_key",
+        "validation",
+        "regex",
+        "next_node_key",
+      ]);
+    case "condition":
+      return portable([
+        "subject",
+        "subject_key",
+        "operand",
+        "operator",
+        "value",
+        "true_next",
+        "false_next",
+      ], {
+        resourceRefs: [{ field: "subject_key", kind: "tag" }],
+      });
+    case "set_tag":
+      return portable(["mode", "tag_id", "next_node_key"], {
+        resourceRefs: [{ field: "tag_id", kind: "tag" }],
+      });
+    case "add_tag":
+    case "remove_tag":
+    case "trigger_tag_added":
+      return portable(["tag_id", "next_node_key"], {
+        resourceRefs: [{ field: "tag_id", kind: "tag" }],
+      });
+    case "handoff":
+      return portable(["note", "assign_to"], {
+        resourceRefs: [{ field: "assign_to", kind: "member" }],
+      });
+    case "end":
+      return portable([]);
+    case "send_template":
+      return portable([
+        "template_name",
+        "language",
+        "variables",
+        "next_node_key",
+      ]);
+    case "assign_conversation":
+      return portable(["mode", "agent_id", "next_node_key"], {
+        resourceRefs: [{ field: "agent_id", kind: "member" }],
+      });
+    case "update_contact_field":
+      return portable(["field", "value", "next_node_key"], {
+        resourceRefs: [{ field: "field", kind: "custom_field" }],
+      });
+    case "create_deal":
+    case "move_deal_stage":
+      return portable(
+        ["pipeline_id", "stage_id", "title", "value", "next_node_key"],
+        {
+          resourceRefs: [
+            { field: "pipeline_id", kind: "pipeline" },
+            { field: "stage_id", kind: "stage", parentField: "pipeline_id" },
+          ],
+        },
+      );
+    case "wait":
+      return portable(["amount", "unit", "next_node_key"]);
+    case "approval":
+      return portable([
+        "title",
+        "message",
+        "assignee_user_id",
+        "timeout_hours",
+        "approved_next",
+        "rejected_next",
+      ], {
+        resourceRefs: [{ field: "assignee_user_id", kind: "member" }],
+      });
+    case "variable_set":
+      return portable(["assignments", "next_node_key"]);
+    case "switch":
+      return portable(["subject", "subject_key", "cases", "default_next"]);
+    case "http_request":
+      return portable(
+        [
+          "method",
+          "url",
+          "headers",
+          "query",
+          "body",
+          "response_var",
+          "next_node_key",
+        ],
+        { secretMaps: ["headers", "query"] },
+      );
+    case "each":
+      return portable([
+        "array_variable",
+        "item_variable",
+        "index_variable",
+        "max_iterations",
+        "body_next",
+        "done_next",
+      ]);
+    case "loop":
+      return portable([
+        "subject",
+        "subject_key",
+        "operator",
+        "value",
+        "max_iterations",
+        "body_next",
+        "done_next",
+      ]);
+    case "sub_flow":
+      return portable(
+        [
+          "flow_id",
+          "input_mapping",
+          "output_mapping",
+          "max_depth",
+          "next_node_key",
+        ],
+        {
+          resourceRefs: [{ field: "flow_id", kind: "subflow" }],
+          derivedFields: ["flow_version_id", "child_entry_node_key"],
+        },
+      );
+    case "ai_reply":
+      return portable([
+        "system_prompt",
+        "prompt",
+        "input_variables",
+        "output_variable",
+        "max_tokens",
+        "next_node_key",
+      ]);
+    case "send_webhook":
+      return portable(
+        ["url", "headers", "body_template", "next_node_key"],
+        { secretMaps: ["headers"] },
+      );
+    case "trigger_keyword_match":
+      return portable([
+        "keywords",
+        "match_type",
+        "case_sensitive",
+        "next_node_key",
+      ]);
+    case "trigger_time_based":
+      return portable(["schedule", "timezone", "next_node_key"]);
+    case "trigger_interactive_reply":
+      return portable(["reply_ids", "next_node_key"]);
+    case "trigger_deal_stage_changed":
+      return portable(["pipeline_id", "next_node_key"], {
+        resourceRefs: [{ field: "pipeline_id", kind: "pipeline" }],
+      });
+    default:
+      // An empty allowlist is fail-closed for an unrecognized descriptor.
+      return portable([]);
+  }
 }
 
 export const CONTROL_INPUT: readonly NodePortDescriptor[] = [

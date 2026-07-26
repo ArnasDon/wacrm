@@ -200,4 +200,5 @@ export type {
   NodeValidationConsumer,
   NodeValidationIssue,
   OutgoingEdgeTarget,
+  PortableResourceKind,
 } from "./types";

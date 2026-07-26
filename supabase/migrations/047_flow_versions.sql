@@ -22,7 +22,12 @@ CREATE INDEX IF NOT EXISTS idx_flow_versions_account
 ALTER TABLE flow_versions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_versions_select ON flow_versions;
 CREATE POLICY flow_versions_select ON flow_versions FOR SELECT
-  USING (is_account_member(account_id));
+  USING (EXISTS (
+    SELECT 1
+    FROM flows f
+    WHERE f.id = flow_versions.flow_id
+      AND f.user_id = auth.uid()
+  ));
 -- Historical rows are immutable to authenticated clients. Publication and
 -- restore are exposed only through service-role RPCs below.
 

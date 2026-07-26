@@ -42,4 +42,10 @@ describe("migration 047 flow versions", () => {
       /REVOKE ALL ON FUNCTION restore_flow_version[\s\S]*FROM PUBLIC/i,
     );
   });
+
+  it("limits version history reads to the flow creator", () => {
+    expect(sql).toMatch(
+      /CREATE POLICY flow_versions_select[\s\S]*f\.user_id = auth\.uid\(\)/i,
+    );
+  });
 });

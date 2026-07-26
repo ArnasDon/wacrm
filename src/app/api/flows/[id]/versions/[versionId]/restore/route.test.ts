@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
   rpc: vi.fn(),
   version: null as Record<string, unknown> | null,
+  ownerUserId: "user-1",
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -24,7 +25,10 @@ vi.mock("@/lib/supabase/server", () => ({
           select: () => ({
             eq: () => ({
               maybeSingle: () =>
-                Promise.resolve({ data: { id: "flow-1" }, error: null }),
+                Promise.resolve({
+                  data: { id: "flow-1", user_id: h.ownerUserId },
+                  error: null,
+                }),
             }),
           }),
         };
@@ -59,6 +63,7 @@ const context = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.requireRole.mockResolvedValue(undefined);
+  h.ownerUserId = "user-1";
   h.version = {
     id: "version-1",
     flow_id: "flow-1",
@@ -118,6 +123,18 @@ describe("restore flow version API", () => {
     );
 
     expect(response.status).toBe(409);
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("denies restore to a same-account non-owner", async () => {
+    h.ownerUserId = "user-2";
+
+    const response = await POST(
+      new Request("http://localhost/restore", { method: "POST" }),
+      context,
+    );
+
+    expect(response.status).toBe(403);
     expect(h.rpc).not.toHaveBeenCalled();
   });
 });

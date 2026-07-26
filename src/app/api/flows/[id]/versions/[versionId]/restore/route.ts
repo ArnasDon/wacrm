@@ -25,11 +25,14 @@ export async function POST(
   }
   const { data: flow } = await supabase
     .from("flows")
-    .select("id")
+    .select("id, user_id")
     .eq("id", id)
     .maybeSingle();
   if (!flow) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (flow.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { data: version, error: versionError } = await supabase
     .from("flow_versions")

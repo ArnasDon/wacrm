@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   history: [] as Array<Record<string, unknown>>,
   draft: {} as Record<string, unknown>,
   nodes: [] as Array<Record<string, unknown>>,
+  ownerUserId: "user-1",
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -26,7 +27,10 @@ vi.mock("@/lib/supabase/server", () => ({
           select: () => ({
             eq: () => ({
               maybeSingle: () =>
-                Promise.resolve({ data: { id: "flow-1" }, error: null }),
+                Promise.resolve({
+                  data: { id: "flow-1", user_id: h.ownerUserId },
+                  error: null,
+                }),
             }),
           }),
         };
@@ -81,6 +85,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.requireRole.mockResolvedValue(undefined);
   h.history = [];
+  h.ownerUserId = "user-1";
   h.draft = {
     id: "flow-1",
     account_id: "account-1",
@@ -148,6 +153,18 @@ describe("flow versions API", () => {
     expect(await response.json()).toEqual({ versions: h.history });
   });
 
+  it("denies history to a same-account non-owner", async () => {
+    h.ownerUserId = "user-2";
+
+    const response = await GET(
+      new Request("http://localhost/api/flows/flow-1/versions"),
+      context,
+    );
+
+    expect(response.status).toBe(403);
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
   it("publishes a validated snapshot through the atomic RPC", async () => {
     const response = await POST(
       new Request("http://localhost/api/flows/flow-1/versions", {
@@ -175,6 +192,22 @@ describe("flow versions API", () => {
       version: { id: "version-1", version: 1 },
       flow: { id: "flow-1" },
     });
+  });
+
+  it("denies publish to a same-account non-owner", async () => {
+    h.ownerUserId = "user-2";
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/versions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(403);
+    expect(h.rpc).not.toHaveBeenCalled();
   });
 
   it("rejects invalid drafts without allocating a version", async () => {

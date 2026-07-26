@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   applyRestoredVersion,
   applyNodePositions,
+  builderStateToSavePayload,
   defaultConfigFor,
   uniqueNodeKey,
 } from "./flow-editor-state";
@@ -87,6 +88,12 @@ describe("applyRestoredVersion", () => {
       trigger_type: "keyword" as const,
       trigger_config: { keywords: ["draft"] },
       entry_node_id: "draft_start",
+      fallback_policy: {
+        on_unknown_reply: "handoff" as const,
+        max_reprompts: 5,
+        on_timeout_hours: 48,
+        on_exhaust: "handoff" as const,
+      },
       nodes: [
         { node_key: "draft_start", node_type: "end" as const, config: {} },
       ],
@@ -117,7 +124,30 @@ describe("applyRestoredVersion", () => {
       trigger_type: "manual",
       trigger_config: {},
       entry_node_id: "restored_end",
+      fallback_policy: restored.fallback_policy,
       nodes: restored.nodes,
+    });
+  });
+
+  it("includes the current fallback policy in every draft save", () => {
+    const state = {
+      name: "Support",
+      description: "",
+      status: "draft" as const,
+      trigger_type: "manual" as const,
+      trigger_config: {},
+      entry_node_id: "end",
+      fallback_policy: {
+        on_unknown_reply: "ignore" as const,
+        max_reprompts: 0,
+        on_timeout_hours: 8,
+        on_exhaust: "end" as const,
+      },
+      nodes: [{ node_key: "end", node_type: "end" as const, config: {} }],
+    };
+
+    expect(builderStateToSavePayload(state)).toMatchObject({
+      fallback_policy: state.fallback_policy,
     });
   });
 });

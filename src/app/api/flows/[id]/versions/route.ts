@@ -29,13 +29,19 @@ async function ownerContext(
   }
   const { data: flow } = await supabase
     .from("flows")
-    .select("id")
+    .select("id, user_id")
     .eq("id", flowId)
     .maybeSingle();
   if (!flow) {
     return {
       ok: false,
       error: NextResponse.json({ error: "Not found" }, { status: 404 }),
+    };
+  }
+  if (flow.user_id !== user.id) {
+    return {
+      ok: false,
+      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
   }
   return { ok: true, supabase, user };

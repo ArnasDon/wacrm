@@ -38,6 +38,15 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   useFlowEditor,
@@ -56,6 +65,7 @@ export function EditorHeader() {
     canActivate,
     save,
     setStatus,
+    publish,
     deleteFlow,
     versions,
     versionsLoading,
@@ -63,6 +73,8 @@ export function EditorHeader() {
     restoreVersion,
   } = useFlowEditor();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishLabel, setPublishLabel] = useState("");
   const publishedVersion = versions.find(
     (version) => version.id === publishedVersionId,
   );
@@ -158,7 +170,10 @@ export function EditorHeader() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void setStatus("active")}
+            onClick={() => {
+              setPublishLabel("");
+              setPublishOpen(true);
+            }}
             disabled={activating || !canActivate}
             title={
               !canActivate
@@ -242,6 +257,52 @@ export function EditorHeader() {
         aria-label="Flow description"
         className="w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
       />
+
+      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Publish flow</DialogTitle>
+            <DialogDescription>
+              Save the current draft and create a new immutable version for
+              future runs.
+            </DialogDescription>
+          </DialogHeader>
+          <label
+            htmlFor="flow-version-label"
+            className="space-y-1.5 text-sm font-medium"
+          >
+            <span>
+              Version label{" "}
+              <span className="font-normal text-muted-foreground">
+                Optional
+              </span>
+            </span>
+            <Input
+              id="flow-version-label"
+              aria-label="Version label"
+              value={publishLabel}
+              maxLength={120}
+              placeholder="e.g. Updated support routing"
+              onChange={(event) => setPublishLabel(event.target.value)}
+            />
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={activating}
+              onClick={() => {
+                setPublishOpen(false);
+                void publish(publishLabel);
+              }}
+            >
+              {activating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Publish
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

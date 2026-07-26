@@ -51,8 +51,13 @@ import {
 } from "@/lib/flows/validate";
 import { useTranslations } from "next-intl";
 import { unlinkNodeReferences } from "@/lib/flows/edges";
+import { resolveFallbackPolicy } from "@/lib/flows/fallback";
 import { getNodeDescriptor } from "@/lib/flows/registry";
-import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
+import type {
+  FlowFallbackPolicy,
+  FlowNodeRow,
+  FlowRow,
+} from "@/lib/flows/types";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 
@@ -66,6 +71,7 @@ export interface BuilderState {
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
+  fallback_policy: FlowFallbackPolicy;
   status: FlowRow["status"];
   nodes: BuilderNode[];
 }
@@ -110,7 +116,11 @@ export interface FlowEditorContextValue {
 
   // Actions
   save: () => Promise<boolean>;
-  setStatus: (status: BuilderState["status"]) => Promise<void>;
+  setStatus: (
+    status: BuilderState["status"],
+    label?: string | null,
+  ) => Promise<void>;
+  publish: (label?: string | null) => Promise<void>;
   reloadVersions: () => Promise<void>;
   restoreVersion: (versionId: string) => Promise<void>;
   deleteFlow: () => Promise<void>;
@@ -180,6 +190,7 @@ export function applyRestoredVersion(
     trigger_type: graph.trigger.type,
     trigger_config: graph.trigger.config,
     entry_node_id: graph.entry_node_key,
+    fallback_policy: graph.fallback_policy,
     nodes: graph.nodes.map((node) => ({
       node_key: node.node_key,
       node_type: node.node_type as NodeType,
@@ -187,6 +198,18 @@ export function applyRestoredVersion(
       position_x: node.position_x,
       position_y: node.position_y,
     })),
+  };
+}
+
+export function builderStateToSavePayload(state: BuilderState) {
+  return {
+    name: state.name,
+    description: state.description || null,
+    trigger_type: state.trigger_type,
+    trigger_config: state.trigger_config,
+    entry_node_id: state.entry_node_id,
+    fallback_policy: state.fallback_policy,
+    nodes: state.nodes,
   };
 }
 
@@ -230,6 +253,7 @@ export function FlowEditorProvider({
     trigger_type: initialFlow.trigger_type,
     trigger_config: initialFlow.trigger_config as Record<string, unknown>,
     entry_node_id: initialFlow.entry_node_id,
+    fallback_policy: resolveFallbackPolicy(initialFlow.fallback_policy),
     status: initialFlow.status,
     nodes: initialNodes.map((n) => ({
       node_key: n.node_key,
@@ -346,14 +370,7 @@ export function FlowEditorProvider({
       const res = await fetch(`/api/flows/${initialFlow.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: state.name,
-          description: state.description || null,
-          trigger_type: state.trigger_type,
-          trigger_config: state.trigger_config,
-          entry_node_id: state.entry_node_id,
-          nodes: state.nodes,
-        }),
+        body: JSON.stringify(builderStateToSavePayload(state)),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -373,7 +390,10 @@ export function FlowEditorProvider({
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
-    async (next: BuilderState["status"]) => {
+    async (
+      next: BuilderState["status"],
+      label: string | null = null,
+    ) => {
       if (next === "active" && !canActivate) {
         toast.error(t("fixIssues"));
         return;
@@ -390,7 +410,10 @@ export function FlowEditorProvider({
         const res = await fetch(`/api/flows/${initialFlow.id}/activate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: next }),
+          body: JSON.stringify({
+            status: next,
+            label: next === "active" ? label : null,
+          }),
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -422,6 +445,13 @@ export function FlowEditorProvider({
       }
     },
     [canActivate, save, initialFlow.id, t],
+  );
+
+  const publish = useCallback(
+    async (label: string | null = null) => {
+      await setStatus("active", label);
+    },
+    [setStatus],
   );
 
   const restoreVersion = useCallback(
@@ -598,6 +628,7 @@ export function FlowEditorProvider({
       removeNode,
       save,
       setStatus,
+      publish,
       reloadVersions,
       restoreVersion,
       deleteFlow,
@@ -624,6 +655,7 @@ export function FlowEditorProvider({
       removeNode,
       save,
       setStatus,
+      publish,
       reloadVersions,
       restoreVersion,
       deleteFlow,

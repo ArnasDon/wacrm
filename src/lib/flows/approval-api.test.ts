@@ -64,14 +64,20 @@ describe("approval API boundary", () => {
     });
   });
 
-  it("maps conflicts and authorization without leaking database messages", async () => {
+  it("maps conflicts, expiry, and authorization without leaking database messages", async () => {
     const conflict = approvalRpcError({
       message: "approval_revision_conflict details",
     });
+    const expired = approvalRpcError({ message: "approval_expired" });
     const forbidden = approvalRpcError({ message: "approval_not_found" });
     const unknown = approvalRpcError({ message: "postgres internals" });
 
     expect(conflict.status).toBe(409);
+    expect(expired.status).toBe(409);
+    expect(await expired.json()).toEqual({
+      code: "APPROVAL_EXPIRED",
+      error: "This approval has expired.",
+    });
     expect(forbidden.status).toBe(404);
     expect(unknown.status).toBe(500);
     expect(await unknown.json()).toEqual({

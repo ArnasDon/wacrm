@@ -66,7 +66,10 @@ DROP POLICY IF EXISTS flow_approval_requests_select ON flow_approval_requests;
 CREATE POLICY flow_approval_requests_select
   ON flow_approval_requests FOR SELECT
   USING (
-    auth.uid() = assignee_user_id
+    (
+      auth.uid() = assignee_user_id
+      AND public.is_account_member(account_id, 'agent')
+    )
     OR public.is_account_member(account_id, 'admin')
   );
 
@@ -94,6 +97,26 @@ ALTER TABLE notifications
 CREATE INDEX IF NOT EXISTS idx_notifications_approval_request
   ON notifications(approval_request_id)
   WHERE approval_request_id IS NOT NULL;
+
+-- A notification must stop being visible as soon as its recipient leaves (or
+-- is transferred out of) the tenant. Keep the recipient check as well so
+-- current teammates cannot read or acknowledge each other's notifications.
+DROP POLICY IF EXISTS notifications_select ON notifications;
+DROP POLICY IF EXISTS notifications_update ON notifications;
+CREATE POLICY notifications_select ON notifications FOR SELECT
+  USING (
+    auth.uid() = user_id
+    AND public.is_account_member(account_id, 'viewer')
+  );
+CREATE POLICY notifications_update ON notifications FOR UPDATE
+  USING (
+    auth.uid() = user_id
+    AND public.is_account_member(account_id, 'viewer')
+  )
+  WITH CHECK (
+    auth.uid() = user_id
+    AND public.is_account_member(account_id, 'viewer')
+  );
 
 CREATE OR REPLACE FUNCTION schedule_flow_approval(
   p_run_id UUID,
@@ -156,8 +179,9 @@ BEGIN
     SELECT 1 FROM public.profiles
     WHERE account_id = v_run.account_id
       AND user_id = p_assignee_user_id
+      AND account_role IN ('owner', 'admin', 'agent')
   ) THEN
-    RAISE EXCEPTION 'approval_assignee_not_account_member';
+    RAISE EXCEPTION 'approval_assignee_not_eligible';
   END IF;
 
   SELECT node INTO v_graph_node
@@ -277,11 +301,17 @@ BEGIN
   FOR UPDATE;
   IF NOT FOUND
      OR NOT (
-       v_actor = v_request.assignee_user_id
+       (
+         v_actor = v_request.assignee_user_id
+         AND public.is_account_member(v_request.account_id, 'agent')
+       )
        OR public.is_account_member(v_request.account_id, 'admin')
      )
   THEN
     RAISE EXCEPTION 'approval_not_found';
+  END IF;
+  IF v_request.expires_at <= clock_timestamp() THEN
+    RAISE EXCEPTION 'approval_expired';
   END IF;
 
   -- Same-decision replay is a successful no-op even if its old revision is
@@ -379,7 +409,8 @@ RETURNS TABLE (
   decision TEXT,
   resolution_token UUID,
   resume_id UUID,
-  run_row JSONB
+  run_row JSONB,
+  chained_approval_ready BOOLEAN
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -515,6 +546,32 @@ BEGIN
       v_token := uuid_generate_v4();
       SELECT * INTO v_run FROM public.flow_runs WHERE flow_runs.id = v_request.flow_run_id;
     END IF;
+
+    -- If a worker committed the next approval but lost this request's ACK,
+    -- durable evidence on the current run/visit proves that replaying the
+    -- cursor would duplicate execution. This value is computed while both the
+    -- request and run rows are locked and is returned with the claim.
+    chained_approval_ready := (
+      v_request.status = 'resuming'
+      AND v_run.status = 'paused_by_agent'
+      AND v_run.current_node_key IS NOT DISTINCT FROM CASE v_request.decision
+        WHEN 'approved' THEN v_request.approved_next
+        WHEN 'rejected' THEN v_request.rejected_next
+        ELSE v_request.timeout_next
+      END
+      AND v_run.current_visit_id IS NOT DISTINCT FROM v_request.resume_id
+      AND v_run.continuation_id IS NOT DISTINCT FROM v_request.resume_id
+      AND EXISTS (
+        SELECT 1
+        FROM public.flow_approval_requests chained
+        WHERE chained.id <> v_request.id
+          AND chained.flow_run_id = v_request.flow_run_id
+          AND chained.flow_version_id = v_request.flow_version_id
+          AND chained.node_key = v_run.current_node_key
+          AND chained.visit_id = v_run.current_visit_id
+          AND chained.status IN ('pending', 'resolved', 'resuming', 'completed')
+      )
+    );
 
     UPDATE public.flow_approval_requests
     SET status = 'resuming',

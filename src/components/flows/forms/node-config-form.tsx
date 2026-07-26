@@ -567,7 +567,13 @@ function ApprovalForm({
         const payload = (await response.json()) as {
           members?: ApprovalMember[];
         };
-        if (!cancelled) setMembers(payload.members ?? []);
+        if (!cancelled) {
+          setMembers(
+            (payload.members ?? []).filter(
+              (member) => member.role !== "viewer",
+            ),
+          );
+        }
       } finally {
         if (!cancelled) setMembersLoading(false);
       }

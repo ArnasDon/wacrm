@@ -31,8 +31,10 @@ describe("migration 053 durable flow approvals", () => {
 
   it("keeps raw rows immutable and account-scoped", () => {
     expect(sql).toContain("ALTER TABLE flow_approval_requests ENABLE ROW LEVEL SECURITY");
+    expect(sql).toMatch(
+      /auth\.uid\(\)\s*=\s*assignee_user_id[\s\S]+?is_account_member\s*\(\s*account_id,\s*'agent'\s*\)/i,
+    );
     expect(sql).toMatch(/is_account_member\s*\(\s*account_id,\s*'admin'\s*\)/i);
-    expect(sql).toMatch(/auth\.uid\(\)\s*=\s*assignee_user_id/i);
     expect(sql).toMatch(
       /REVOKE\s+(?:ALL|INSERT,\s*UPDATE,\s*DELETE)[\s\S]+?flow_approval_requests[\s\S]+?FROM authenticated/i,
     );
@@ -69,6 +71,44 @@ describe("migration 053 durable flow approvals", () => {
     expect(decision).toContain("RETURNS JSONB");
     expect(decision).not.toContain("'resolution_token'");
     expect(decision).not.toContain("'resume_id'");
+  });
+
+  it("rechecks current tenant membership and expiry under the decision row lock", () => {
+    const decision = sql.match(
+      /CREATE OR REPLACE FUNCTION decide_flow_approval[\s\S]+?\$\$;/i,
+    )?.[0];
+    expect(decision).toBeTruthy();
+    expect(decision).toMatch(
+      /SELECT \* INTO v_request[\s\S]+?FOR UPDATE;[\s\S]+?v_actor\s*=\s*v_request\.assignee_user_id[\s\S]+?is_account_member\s*\(\s*v_request\.account_id,\s*'agent'\s*\)/i,
+    );
+    expect(decision).toMatch(
+      /is_account_member\s*\(\s*v_request\.account_id,\s*'admin'\s*\)/i,
+    );
+    expect(decision).toMatch(
+      /v_request\.expires_at\s*<=\s*clock_timestamp\(\)[\s\S]+?approval_expired/i,
+    );
+    expect(decision?.indexOf("approval_expired")).toBeLessThan(
+      decision?.indexOf("UPDATE public.flow_approval_requests") ?? -1,
+    );
+  });
+
+  it("hardens notification reads and read receipts against removed or transferred users", () => {
+    expect(sql).toMatch(
+      /DROP POLICY IF EXISTS notifications_select[\s\S]+?CREATE POLICY notifications_select[\s\S]+?auth\.uid\(\)\s*=\s*user_id[\s\S]+?is_account_member\s*\(\s*account_id,\s*'viewer'\s*\)/i,
+    );
+    expect(sql).toMatch(
+      /DROP POLICY IF EXISTS notifications_update[\s\S]+?CREATE POLICY notifications_update[\s\S]+?USING\s*\([\s\S]+?auth\.uid\(\)\s*=\s*user_id[\s\S]+?is_account_member\s*\(\s*account_id,\s*'viewer'\s*\)[\s\S]+?WITH CHECK\s*\([\s\S]+?auth\.uid\(\)\s*=\s*user_id[\s\S]+?is_account_member\s*\(\s*account_id,\s*'viewer'\s*\)/i,
+    );
+  });
+
+  it("returns durable evidence when a reclaimed resolution already opened a second approval", () => {
+    const claim = sql.match(
+      /CREATE OR REPLACE FUNCTION claim_flow_approval_resolutions[\s\S]+?\$\$;/i,
+    )?.[0];
+    expect(claim).toContain("chained_approval_ready BOOLEAN");
+    expect(claim).toMatch(
+      /chained_approval_ready\s*:=\s*[\s\S]+?v_run\.status\s*=\s*'paused_by_agent'[\s\S]+?EXISTS\s*\([\s\S]+?flow_approval_requests[\s\S]+?id\s*<>\s*v_request\.id[\s\S]+?visit_id\s*=\s*v_run\.current_visit_id/i,
+    );
   });
 
   it("adds approval notifications without exposing contact channels", () => {

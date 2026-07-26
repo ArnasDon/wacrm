@@ -34,12 +34,6 @@ export async function POST(
     const row =
       data && typeof data === "object" && !Array.isArray(data) ? data : null;
     if (error || !row) return approvalRpcError(error);
-    if ((row as { account_id?: string }).account_id !== context.accountId) {
-      return NextResponse.json(
-        { code: "APPROVAL_NOT_FOUND", error: "Approval not found." },
-        { status: 404 },
-      );
-    }
 
     let resumed = false;
     try {

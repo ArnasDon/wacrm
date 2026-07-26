@@ -115,6 +115,7 @@ interface ClaimedApproval {
   resolution_token: string;
   resume_id: string;
   run_row?: unknown;
+  chained_approval_ready?: boolean;
 }
 
 interface ApprovalResumeStats {
@@ -260,6 +261,11 @@ export async function resumeFlowApprovalResolutions(
         ["waiting", "completed", "failed", "handed_off", "timed_out"].includes(
           run.status,
         ) ||
+        (claim.chained_approval_ready === true &&
+          run.status === "paused_by_agent" &&
+          run.current_node_key === expectedNext &&
+          run.current_visit_id === claim.resume_id &&
+          run.continuation_id === claim.resume_id) ||
         (run.current_node_key !== claim.node_key &&
           run.current_node_key !== expectedNext &&
           run.status !== "paused_by_agent");

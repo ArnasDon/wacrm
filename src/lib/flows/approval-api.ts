@@ -92,6 +92,15 @@ export function approvalRpcError(error: unknown): NextResponse {
       { status: 409 },
     );
   }
+  if (message.includes("approval_expired")) {
+    return NextResponse.json(
+      {
+        code: "APPROVAL_EXPIRED",
+        error: "This approval has expired.",
+      },
+      { status: 409 },
+    );
+  }
   if (
     message.includes("approval_not_found") ||
     message.includes("approval_unauthorized")

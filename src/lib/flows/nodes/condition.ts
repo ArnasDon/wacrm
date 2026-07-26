@@ -1,5 +1,8 @@
 import { CONTROL_INPUT, defineNodeDescriptor } from "../registry/types";
-import { conditionConfigSchema } from "../registry/schemas";
+import {
+  conditionConfigSchema,
+  flowConditionConfigSchema,
+} from "../registry/schemas";
 
 export const conditionNodeDescriptor = defineNodeDescriptor({
   id: "condition",
@@ -12,16 +15,12 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
     { id: "false", label: "False", kind: "control", cardinality: "one", required: true },
   ],
   configSchema: conditionConfigSchema,
-  validate: (node) => {
+  flowConfigSchema: flowConditionConfigSchema,
+  supportsFlowRuntime: true,
+  validate: (node, ctx) => {
     const config = node.config;
     const subject = config.subject;
-    const isFlowCondition =
-      subject === "var" ||
-      (subject === "tag" &&
-        typeof config.operand !== "string") ||
-      (subject === "contact_field" &&
-        typeof config.operand !== "string");
-    if (isFlowCondition) {
+    if (ctx.consumer === "flow") {
       const issues = [];
       if (typeof config.subject_key !== "string" || !config.subject_key.trim()) {
         issues.push({
@@ -97,5 +96,11 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
   outgoingEdges: (config) =>
     [config.true_next, config.false_next].filter(
       (value): value is string => typeof value === "string" && value.length > 0,
+    ),
+  outgoingEdgeTargets: (config) =>
+    (["true_next", "false_next"] as const).flatMap((field) =>
+      typeof config[field] === "string" && config[field]
+        ? [{ target: config[field], field }]
+        : [],
     ),
 });

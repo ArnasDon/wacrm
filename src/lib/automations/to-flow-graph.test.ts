@@ -79,7 +79,12 @@ describe("automationToFlowGraph", () => {
       expect(
         descriptor?.configSchema.safeParse(node.config).success,
       ).toBe(true);
-      expect(descriptor?.validate(node, { knownNodeKeys })).toEqual([]);
+      expect(
+        descriptor?.validate(node, {
+          knownNodeKeys,
+          consumer: "automation",
+        }),
+      ).toEqual([]);
     });
     steps.forEach((step, index) => {
       expect(graph.nodes[index + 1]).toEqual(

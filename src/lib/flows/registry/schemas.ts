@@ -23,7 +23,7 @@ const buttonSchema = z.looseObject({
   next_node_key: nextNodeKeySchema,
 });
 
-const flowSendButtonsConfigSchema = z
+export const flowSendButtonsConfigSchema = z
   .looseObject({
     text: requiredText("Message text is required."),
     header_text: z.string().optional(),
@@ -63,7 +63,7 @@ const listRowSchema = z.looseObject({
   next_node_key: nextNodeKeySchema,
 });
 
-const flowSendListConfigSchema = z
+export const flowSendListConfigSchema = z
   .looseObject({
     text: requiredText("Message text is required."),
     button_label: requiredText("Button label is required."),
@@ -201,6 +201,15 @@ export const conditionConfigSchema = z.looseObject({
   false_next: nextNodeKeySchema,
 });
 
+export const flowConditionConfigSchema = z.looseObject({
+  subject: z.enum(["var", "tag", "contact_field"]),
+  subject_key: z.string().optional(),
+  operator: z.enum(["equals", "contains", "present", "absent"]).optional(),
+  value: z.string().optional(),
+  true_next: nextNodeKeySchema,
+  false_next: nextNodeKeySchema,
+});
+
 export const setTagConfigSchema = z.looseObject({
   mode: z.enum(["add", "remove"]),
   tag_id: requiredText("A tag is required."),
@@ -298,7 +307,9 @@ export const triggerConfigSchema = z.looseObject({
 });
 
 export const keywordTriggerConfigSchema = z.looseObject({
-  keywords: z.array(requiredText("Keywords cannot be blank.")).min(1),
+  keywords: z
+    .array(requiredText("Keywords cannot be blank."))
+    .min(1, "Keyword triggers need at least one keyword."),
   match_type: z.enum(["exact", "contains"]).optional(),
   case_sensitive: z.boolean().optional(),
   next_node_key: nextNodeKeySchema,

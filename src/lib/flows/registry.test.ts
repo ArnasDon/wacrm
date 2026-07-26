@@ -53,9 +53,12 @@ describe("canonical flow node registry", () => {
       expect(Array.isArray(descriptor.inputs)).toBe(true);
       expect(Array.isArray(descriptor.outputs)).toBe(true);
       expect(descriptor.configSchema).toBeDefined();
+      expect(descriptor.flowConfigSchema).toBeDefined();
+      expect(typeof descriptor.supportsFlowRuntime).toBe("boolean");
       expect(typeof descriptor.validate).toBe("function");
       expect(descriptor.runtimeHook).not.toBe("");
       expect(descriptor.form).toBeDefined();
+      expect(typeof descriptor.outgoingEdgeTargets).toBe("function");
     }
   });
 
@@ -95,5 +98,14 @@ describe("canonical flow node registry", () => {
     expect(visibleIds).toContain("send_message");
     expect(visibleIds).not.toContain("send_webhook");
     expect(visibleIds).not.toContain("trigger_keyword_match");
+  });
+
+  it("marks only executable flow descriptors as flow-runtime capable", () => {
+    expect(getNodeDescriptor("send_message")?.supportsFlowRuntime).toBe(true);
+    expect(getNodeDescriptor("wait")?.supportsFlowRuntime).toBe(false);
+    expect(getNodeDescriptor("send_webhook")?.supportsFlowRuntime).toBe(false);
+    expect(
+      getNodeDescriptor("trigger_keyword_match")?.supportsFlowRuntime,
+    ).toBe(false);
   });
 });

@@ -6,8 +6,13 @@
  * entry, duplicate keys, edge targets, and reachability.
  */
 
-import { getNodeDescriptor } from "./registry";
 import type { ZodIssue } from "zod";
+
+import {
+  getCompatibilityFlowTriggerDescriptor,
+  getNodeDescriptor,
+  type NodeValidationConsumer,
+} from "./registry";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -30,11 +35,17 @@ interface NodeInput {
   config: Record<string, unknown>;
 }
 
+interface ValidationOptions {
+  consumer?: NodeValidationConsumer;
+}
+
 export function validateFlowForActivation(
   flow: FlowInput,
   nodes: NodeInput[],
+  options: ValidationOptions = {},
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+  const consumer = options.consumer ?? "flow";
 
   if (!flow.name?.trim()) {
     issues.push({
@@ -87,7 +98,7 @@ export function validateFlowForActivation(
   }
 
   for (const node of nodes) {
-    issues.push(...validateNodeConfig(node, keys));
+    issues.push(...validateNodeConfig(node, keys, consumer));
     issues.push(...validateEdgeTargets(node, keys));
   }
 
@@ -112,38 +123,50 @@ function validateTrigger(
   triggerType: FlowInput["trigger_type"],
   triggerConfig: Record<string, unknown>,
 ): ValidationIssue[] {
-  if (triggerType !== "keyword") return [];
-  const keywords = Array.isArray(triggerConfig.keywords)
-    ? triggerConfig.keywords
-    : null;
-  if (!keywords || keywords.length === 0) {
-    return [
-      {
-        severity: "error",
-        scope: "trigger",
-        field: "trigger_config.keywords",
-        message: "Keyword triggers need at least one keyword.",
-      },
-    ];
+  const descriptor = getCompatibilityFlowTriggerDescriptor(triggerType);
+  if (!descriptor) return [];
+
+  const parsed = descriptor.configSchema.safeParse({
+    ...triggerConfig,
+    next_node_key: "__entry__",
+  });
+  if (parsed.success) return [];
+
+  const blanks =
+    triggerType === "keyword" && Array.isArray(triggerConfig.keywords)
+      ? triggerConfig.keywords.filter(
+          (keyword) => typeof keyword !== "string" || !keyword.trim(),
+        ).length
+      : 0;
+  const issues = parsed.error.issues
+    .flatMap(flattenSchemaIssue)
+    .filter(
+      (issue) =>
+        !(blanks > 0 && issue.path[0] === "keywords") &&
+        issue.path[0] !== "next_node_key",
+    )
+    .map<ValidationIssue>((issue) => ({
+      severity: "error",
+      scope: "trigger",
+      field: `trigger_config.${issue.path.map(String).join(".")}`,
+      message: issue.message,
+    }));
+
+  if (blanks > 0) {
+    issues.push({
+      severity: "warning",
+      scope: "trigger",
+      field: "trigger_config.keywords",
+      message: `${blanks} keyword${blanks === 1 ? " is" : "s are"} blank — they won't match anything.`,
+    });
   }
-  const blanks = keywords.filter(
-    (keyword) => typeof keyword !== "string" || !keyword.trim(),
-  ).length;
-  return blanks > 0
-    ? [
-        {
-          severity: "warning",
-          scope: "trigger",
-          field: "trigger_config.keywords",
-          message: `${blanks} keyword${blanks === 1 ? " is" : "s are"} blank — they won't match anything.`,
-        },
-      ]
-    : [];
+  return issues;
 }
 
 function validateNodeConfig(
   node: NodeInput,
   knownNodeKeys: ReadonlySet<string>,
+  consumer: NodeValidationConsumer,
 ): ValidationIssue[] {
   const descriptor = getNodeDescriptor(node.node_type);
   if (!descriptor) {
@@ -157,26 +180,45 @@ function validateNodeConfig(
     ];
   }
 
-  const parsed = descriptor.configSchema.safeParse(node.config);
+  const issues: ValidationIssue[] = [];
+  if (consumer === "flow" && !descriptor.supportsFlowRuntime) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: node.node_key,
+      field: "node_type",
+      message: `Node type "${node.node_type}" is not supported by the flow runtime.`,
+    });
+  }
+
+  const schema =
+    consumer === "flow"
+      ? descriptor.flowConfigSchema
+      : descriptor.configSchema;
+  const parsed = schema.safeParse(node.config);
   const schemaIssues = parsed.success
     ? []
     : parsed.error.issues.flatMap(flattenSchemaIssue);
-  const issues: ValidationIssue[] = schemaIssues.map((issue) => ({
-        severity: "error",
-        scope: "node",
-        node_key: node.node_key,
-        field: issue.path.map(String).join(".") || undefined,
-        message: issue.message,
-      }));
-
   issues.push(
-    ...descriptor.validate(node, { knownNodeKeys }).map((issue) => ({
-      severity: issue.severity ?? "error",
+    ...schemaIssues.map((issue) => ({
+      severity: "error" as const,
       scope: "node" as const,
       node_key: node.node_key,
-      field: issue.field,
+      field: issue.path.map(String).join(".") || undefined,
       message: issue.message,
     })),
+  );
+
+  issues.push(
+    ...descriptor
+      .validate(node, { knownNodeKeys, consumer })
+      .map((issue) => ({
+        severity: issue.severity ?? "error",
+        scope: "node" as const,
+        node_key: node.node_key,
+        field: issue.field,
+        message: issue.message,
+      })),
   );
   return issues;
 }
@@ -194,7 +236,7 @@ function validateEdgeTargets(
   if (!descriptor) return [];
 
   const issues: ValidationIssue[] = [];
-  for (const edge of outgoingEdgesWithFields(node)) {
+  for (const edge of descriptor.outgoingEdgeTargets(node.config)) {
     if (!knownNodeKeys.has(edge.target)) {
       issues.push({
         severity: "error",
@@ -206,73 +248,6 @@ function validateEdgeTargets(
     }
   }
   return issues;
-}
-
-function outgoingEdgesWithFields(
-  node: NodeInput,
-): Array<{ target: string; field: string }> {
-  const config = node.config;
-  if (
-    (node.node_type === "send_buttons" || node.node_type === "send_list") &&
-    typeof config.next_node_key === "string" &&
-    config.next_node_key
-  ) {
-    return [{ target: config.next_node_key, field: "next_node_key" }];
-  }
-  if (node.node_type === "send_buttons" && Array.isArray(config.buttons)) {
-    return config.buttons.flatMap((button, index) =>
-      typeof button === "object" &&
-      button !== null &&
-      "next_node_key" in button &&
-      typeof button.next_node_key === "string" &&
-      button.next_node_key
-        ? [
-            {
-              target: button.next_node_key,
-              field: `buttons.${index}.next_node_key`,
-            },
-          ]
-        : [],
-    );
-  }
-  if (node.node_type === "send_list" && Array.isArray(config.sections)) {
-    const edges: Array<{ target: string; field: string }> = [];
-    config.sections.forEach((section, sectionIndex) => {
-      if (
-        typeof section !== "object" ||
-        section === null ||
-        !("rows" in section) ||
-        !Array.isArray(section.rows)
-      ) {
-        return;
-      }
-      (section.rows as unknown[]).forEach((row, rowIndex) => {
-        if (
-          typeof row === "object" &&
-          row !== null &&
-          "next_node_key" in row &&
-          typeof row.next_node_key === "string" &&
-          row.next_node_key
-        ) {
-          edges.push({
-            target: row.next_node_key,
-            field: `sections.${sectionIndex}.rows.${rowIndex}.next_node_key`,
-          });
-        }
-      });
-    });
-    return edges;
-  }
-  if (node.node_type === "condition") {
-    return (["true_next", "false_next"] as const).flatMap((field) =>
-      typeof config[field] === "string" && config[field]
-        ? [{ target: config[field], field }]
-        : [],
-    );
-  }
-  return typeof config.next_node_key === "string" && config.next_node_key
-    ? [{ target: config.next_node_key, field: "next_node_key" }]
-    : [];
 }
 
 export function reachableFromEntry(

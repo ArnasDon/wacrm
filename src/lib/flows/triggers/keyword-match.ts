@@ -7,6 +7,7 @@ export const keywordMatchTriggerDescriptor = createTriggerNodeDescriptor({
   category: "trigger",
   icon: "message-circle",
   configSchema: keywordTriggerConfigSchema,
+  compatibilityFlowTriggerType: "keyword",
   ui: {
     color: "text-sky-400",
     blurb: "Starts when inbound text matches configured keywords",

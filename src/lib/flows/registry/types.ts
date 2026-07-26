@@ -48,7 +48,10 @@ export interface NodeValidationIssue {
 
 export interface NodeValidationContext {
   knownNodeKeys: ReadonlySet<string>;
+  consumer: NodeValidationConsumer;
 }
+
+export type NodeValidationConsumer = "flow" | "automation";
 
 export interface NodeLike {
   node_key: string;
@@ -111,6 +114,11 @@ export interface NodeBuilderDescriptor {
   defaultConfig: Readonly<Record<string, unknown>>;
 }
 
+export interface OutgoingEdgeTarget {
+  target: string;
+  field: string;
+}
+
 /**
  * The portable node contract. It deliberately contains no React components,
  * database clients, environment access, or server-only imports, so the same
@@ -124,6 +132,12 @@ export interface NodeDescriptor<Id extends string = string> {
   inputs: readonly NodePortDescriptor[];
   outputs: readonly NodePortDescriptor[];
   configSchema: ZodType<Record<string, unknown>>;
+  flowConfigSchema: ZodType<Record<string, unknown>>;
+  supportsFlowRuntime: boolean;
+  compatibilityFlowTriggerType?:
+    | "keyword"
+    | "first_inbound_message"
+    | "manual";
   validate: (
     node: NodeLike,
     ctx: NodeValidationContext,
@@ -134,6 +148,9 @@ export interface NodeDescriptor<Id extends string = string> {
   builder: NodeBuilderDescriptor;
   ui: NodeUiDescriptor;
   outgoingEdges: (config: Record<string, unknown>) => readonly string[];
+  outgoingEdgeTargets: (
+    config: Record<string, unknown>,
+  ) => readonly OutgoingEdgeTarget[];
 }
 
 export function defineNodeDescriptor<const Id extends string>(
@@ -170,6 +187,19 @@ export function nextNodeEdges(config: Record<string, unknown>): string[] {
     : [];
 }
 
+export function nextNodeEdgeTargets(
+  config: Record<string, unknown>,
+): OutgoingEdgeTarget[] {
+  return nextNodeEdges(config).map((target) => ({
+    target,
+    field: "next_node_key",
+  }));
+}
+
 export function terminalEdges(): readonly string[] {
+  return [];
+}
+
+export function terminalEdgeTargets(): readonly OutgoingEdgeTarget[] {
   return [];
 }

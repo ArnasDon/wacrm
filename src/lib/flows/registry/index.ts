@@ -74,6 +74,14 @@ const descriptorById = new Map<string, NodeDescriptor>(
   FLOW_NODE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]),
 );
 
+const compatibilityFlowTriggerByType = new Map(
+  FLOW_NODE_DESCRIPTORS.flatMap((descriptor) =>
+    descriptor.compatibilityFlowTriggerType
+      ? [[descriptor.compatibilityFlowTriggerType, descriptor] as const]
+      : [],
+  ),
+);
+
 if (descriptorById.size !== FLOW_NODE_DESCRIPTORS.length) {
   throw new Error("Flow node registry contains duplicate descriptor ids.");
 }
@@ -88,6 +96,18 @@ export function isRegisteredNodeType(
   nodeType: string,
 ): nodeType is RegisteredNodeType {
   return descriptorById.has(nodeType);
+}
+
+export function isFlowRuntimeNodeType(
+  nodeType: string,
+): nodeType is RegisteredNodeType {
+  return getNodeDescriptor(nodeType)?.supportsFlowRuntime === true;
+}
+
+export function getCompatibilityFlowTriggerDescriptor(
+  triggerType: "keyword" | "first_inbound_message" | "manual",
+): NodeDescriptor | undefined {
+  return compatibilityFlowTriggerByType.get(triggerType);
 }
 
 export function listBuilderNodeDescriptors(): NodeDescriptor[] {
@@ -108,5 +128,7 @@ export type {
   NodeRuntimeKind,
   NodeUiDescriptor,
   NodeValidationContext,
+  NodeValidationConsumer,
   NodeValidationIssue,
+  OutgoingEdgeTarget,
 } from "./types";

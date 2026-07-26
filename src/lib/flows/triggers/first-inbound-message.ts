@@ -7,6 +7,7 @@ export const firstInboundMessageTriggerDescriptor = createTriggerNodeDescriptor(
   category: "trigger",
   icon: "inbox",
   configSchema: triggerConfigSchema,
+  compatibilityFlowTriggerType: "first_inbound_message",
   ui: {
     color: "text-teal-400",
     blurb: "Starts on a contact's first inbound message",

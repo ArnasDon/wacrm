@@ -7,6 +7,7 @@ export const manualTriggerDescriptor = createTriggerNodeDescriptor({
   category: "trigger",
   icon: "play-circle",
   configSchema: triggerConfigSchema,
+  compatibilityFlowTriggerType: "manual",
   ui: {
     color: "text-muted-foreground",
     blurb: "Starts only when explicitly dispatched",

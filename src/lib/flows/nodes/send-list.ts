@@ -1,5 +1,8 @@
 import { createLinearNodeDescriptor } from "../registry/factories";
-import { sendListConfigSchema } from "../registry/schemas";
+import {
+  flowSendListConfigSchema,
+  sendListConfigSchema,
+} from "../registry/schemas";
 
 export const sendListNodeDescriptor = createLinearNodeDescriptor({
   id: "send_list",
@@ -7,6 +10,7 @@ export const sendListNodeDescriptor = createLinearNodeDescriptor({
   category: "messaging",
   icon: "list-plus",
   configSchema: sendListConfigSchema,
+  flowConfigSchema: flowSendListConfigSchema,
   runtimeKind: "suspend",
   visible: true,
   form: { kind: "specialized", component: "send_list" },
@@ -26,22 +30,22 @@ export const sendListNodeDescriptor = createLinearNodeDescriptor({
       },
     ],
   },
-  outgoingEdges: (config) => {
+  outgoingEdgeTargets: (config) => {
     if (typeof config.next_node_key === "string" && config.next_node_key) {
-      return [config.next_node_key];
+      return [{ target: config.next_node_key, field: "next_node_key" }];
     }
     if (!Array.isArray(config.sections)) return [];
-    const edges: string[] = [];
-    for (const section of config.sections) {
+    const edges: Array<{ target: string; field: string }> = [];
+    config.sections.forEach((section, sectionIndex) => {
       if (
         typeof section !== "object" ||
         section === null ||
         !("rows" in section) ||
         !Array.isArray(section.rows)
       ) {
-        continue;
+        return;
       }
-      for (const row of section.rows) {
+      (section.rows as unknown[]).forEach((row, rowIndex) => {
         if (
           typeof row === "object" &&
           row !== null &&
@@ -49,10 +53,13 @@ export const sendListNodeDescriptor = createLinearNodeDescriptor({
           typeof row.next_node_key === "string" &&
           row.next_node_key
         ) {
-          edges.push(row.next_node_key);
+          edges.push({
+            target: row.next_node_key,
+            field: `sections.${sectionIndex}.rows.${rowIndex}.next_node_key`,
+          });
         }
-      }
-    }
+      });
+    });
     return edges;
   },
   ui: {

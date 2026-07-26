@@ -5,14 +5,15 @@ import {
   CONTROL_OUTPUT,
   NO_PORTS,
   defineNodeDescriptor,
-  nextNodeEdges,
+  nextNodeEdgeTargets,
   noValidation,
-  terminalEdges,
+  terminalEdgeTargets,
   type NodeCategory,
   type NodeFormDescriptor,
   type NodeIconId,
   type NodeRuntimeKind,
   type NodeUiDescriptor,
+  type OutgoingEdgeTarget,
 } from "./types";
 
 interface CommonOptions<Id extends string> {
@@ -21,6 +22,12 @@ interface CommonOptions<Id extends string> {
   category: NodeCategory;
   icon: NodeIconId;
   configSchema: ZodType<Record<string, unknown>>;
+  flowConfigSchema?: ZodType<Record<string, unknown>>;
+  supportsFlowRuntime?: boolean;
+  compatibilityFlowTriggerType?:
+    | "keyword"
+    | "first_inbound_message"
+    | "manual";
   runtimeHook?: string;
   runtimeKind?: NodeRuntimeKind;
   form?: NodeFormDescriptor;
@@ -30,51 +37,76 @@ interface CommonOptions<Id extends string> {
   outgoingEdges?: (
     config: Record<string, unknown>,
   ) => readonly string[];
+  outgoingEdgeTargets?: (
+    config: Record<string, unknown>,
+  ) => readonly OutgoingEdgeTarget[];
 }
 
 export function createLinearNodeDescriptor<const Id extends string>(
   options: CommonOptions<Id>,
 ) {
+  const outgoingEdgeTargets =
+    options.outgoingEdgeTargets ?? nextNodeEdgeTargets;
+  const runtimeKind = options.runtimeKind ?? "auto";
   return defineNodeDescriptor({
     ...options,
+    flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
+    supportsFlowRuntime:
+      options.supportsFlowRuntime ?? runtimeKind !== "legacy",
     inputs: CONTROL_INPUT,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,
-    runtimeKind: options.runtimeKind ?? "auto",
+    runtimeKind,
     runtimeHook: options.runtimeHook ?? options.id,
     form: options.form ?? { kind: "fields", fields: [] },
     builder: {
       visible: options.visible ?? false,
       defaultConfig: options.defaultConfig ?? { next_node_key: "" },
     },
-    outgoingEdges: options.outgoingEdges ?? nextNodeEdges,
+    outgoingEdges:
+      options.outgoingEdges ??
+      ((config) => outgoingEdgeTargets(config).map(({ target }) => target)),
+    outgoingEdgeTargets,
   });
 }
 
 export function createTerminalNodeDescriptor<const Id extends string>(
   options: CommonOptions<Id>,
 ) {
+  const outgoingEdgeTargets =
+    options.outgoingEdgeTargets ?? terminalEdgeTargets;
+  const runtimeKind = options.runtimeKind ?? "terminal";
   return defineNodeDescriptor({
     ...options,
+    flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
+    supportsFlowRuntime:
+      options.supportsFlowRuntime ?? runtimeKind !== "legacy",
     inputs: CONTROL_INPUT,
     outputs: NO_PORTS,
     validate: noValidation,
-    runtimeKind: options.runtimeKind ?? "terminal",
+    runtimeKind,
     runtimeHook: options.runtimeHook ?? options.id,
     form: options.form ?? { kind: "fields", fields: [] },
     builder: {
       visible: options.visible ?? false,
       defaultConfig: options.defaultConfig ?? {},
     },
-    outgoingEdges: options.outgoingEdges ?? terminalEdges,
+    outgoingEdges:
+      options.outgoingEdges ??
+      ((config) => outgoingEdgeTargets(config).map(({ target }) => target)),
+    outgoingEdgeTargets,
   });
 }
 
 export function createTriggerNodeDescriptor<const Id extends string>(
   options: CommonOptions<Id>,
 ) {
+  const outgoingEdgeTargets =
+    options.outgoingEdgeTargets ?? nextNodeEdgeTargets;
   return defineNodeDescriptor({
     ...options,
+    flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
+    supportsFlowRuntime: false,
     inputs: NO_PORTS,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,
@@ -85,6 +117,9 @@ export function createTriggerNodeDescriptor<const Id extends string>(
       visible: false,
       defaultConfig: options.defaultConfig ?? { next_node_key: "" },
     },
-    outgoingEdges: options.outgoingEdges ?? nextNodeEdges,
+    outgoingEdges:
+      options.outgoingEdges ??
+      ((config) => outgoingEdgeTargets(config).map(({ target }) => target)),
+    outgoingEdgeTargets,
   });
 }

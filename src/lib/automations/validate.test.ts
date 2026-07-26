@@ -189,6 +189,15 @@ describe("validateStepsForActivation", () => {
           buttons: [{ id: "yes", title: "Yes" }],
         },
       },
+      {
+        step_type: "send_list",
+        step_config: {
+          kind: "list",
+          body: "Pick one",
+          button_label: "Options",
+          sections: [{ rows: [{ id: "yes", title: "Yes" }] }],
+        },
+      },
     ]);
     expect(good).toEqual([]);
 
@@ -289,6 +298,20 @@ describe("validateStepsForActivation", () => {
       },
     ]);
   });
+
+  it.each(["tag_presence", "time_of_day", "deal_stage"])(
+    "accepts the automation-only %s condition subject",
+    (subject) => {
+      expect(
+        validateStepsForActivation([
+          {
+            step_type: "condition",
+            step_config: { subject, operand: "vip" },
+          },
+        ]),
+      ).toEqual([]);
+    },
+  );
 });
 
 describe("validateTriggerForActivation", () => {

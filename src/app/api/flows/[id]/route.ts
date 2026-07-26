@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { isRegisteredNodeType } from '@/lib/flows/registry'
+import {
+  isFlowRuntimeNodeType,
+  isRegisteredNodeType,
+} from '@/lib/flows/registry'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -122,6 +125,17 @@ export async function PUT(
   if (unknownNode) {
     return NextResponse.json(
       { error: `Unknown node type "${unknownNode.node_type}"` },
+      { status: 400 },
+    )
+  }
+  const unsupportedNode = body.nodes?.find(
+    (node) => !isFlowRuntimeNodeType(node.node_type),
+  )
+  if (unsupportedNode) {
+    return NextResponse.json(
+      {
+        error: `Node type "${unsupportedNode.node_type}" is not supported by the flow runtime`,
+      },
       { status: 400 },
     )
   }

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { getNodeDescriptor } from "./registry";
 import { validateFlowForActivation, reachableFromEntry } from "./validate";
 
 const validFlow = {
@@ -102,6 +103,20 @@ describe("validateFlowForActivation — flow-level", () => {
 });
 
 describe("validateFlowForActivation — trigger", () => {
+  it("delegates flow trigger config validation to its descriptor", () => {
+    const schema =
+      getNodeDescriptor("trigger_keyword_match")!.configSchema;
+    const parse = vi.spyOn(schema, "safeParse");
+
+    validateFlowForActivation(
+      { ...validFlow, trigger_config: { keywords: [] } },
+      validNodes,
+    );
+
+    expect(parse).toHaveBeenCalled();
+    parse.mockRestore();
+  });
+
   it("flags keyword trigger with no keywords", () => {
     const issues = validateFlowForActivation(
       {
@@ -159,6 +174,105 @@ describe("validateFlowForActivation — trigger", () => {
 });
 
 describe("validateFlowForActivation — nodes", () => {
+  it.each([
+    ["wait", { amount: 5, unit: "minutes", next_node_key: "h" }],
+    [
+      "send_webhook",
+      { url: "https://hooks.example.com/in", next_node_key: "h" },
+    ],
+    ["trigger_keyword_match", { keywords: ["hello"], next_node_key: "h" }],
+  ])("rejects registered %s nodes that the flow runtime cannot execute", (nodeType, config) => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
+      { node_key: "x", node_type: nodeType, config },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          scope: "node",
+          node_key: "x",
+          field: "node_type",
+          message: expect.stringContaining("flow runtime"),
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    [
+      "send_buttons",
+      {
+        kind: "buttons",
+        body: "Pick one",
+        buttons: [{ id: "yes", title: "Yes" }],
+        next_node_key: "h",
+      },
+    ],
+    [
+      "send_list",
+      {
+        kind: "list",
+        body: "Pick one",
+        button_label: "Options",
+        sections: [{ rows: [{ id: "yes", title: "Yes" }] }],
+        next_node_key: "h",
+      },
+    ],
+  ])("rejects automation-compatible legacy %s config in a flow", (nodeType, config) => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
+      { node_key: "x", node_type: nodeType, config },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+
+    expect(issues.some((issue) => issue.node_key === "x")).toBe(true);
+  });
+
+  it.each(["message_content", "tag_presence", "time_of_day", "deal_stage"])(
+    "rejects automation-only condition subject %s in a flow",
+    (subject) => {
+      const nodes = [
+        { node_key: "s", node_type: "start", config: { next_node_key: "c" } },
+        {
+          node_key: "c",
+          node_type: "condition",
+          config: {
+            subject,
+            operand: "vip",
+            value: "vip",
+            true_next: "h",
+            false_next: "h",
+          },
+        },
+        { node_key: "h", node_type: "handoff", config: {} },
+      ];
+
+      const issues = validateFlowForActivation(
+        { ...validFlow, entry_node_id: "s" },
+        nodes,
+      );
+
+      expect(
+        issues.some(
+          (issue) => issue.node_key === "c" && issue.field === "subject",
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("flags send_buttons without text", () => {
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
@@ -267,6 +381,8 @@ describe("validateFlowForActivation — nodes", () => {
   });
 
   it("flags button pointing at non-existent next node", () => {
+    const descriptor = getNodeDescriptor("send_buttons")!;
+    const edgeTargets = vi.spyOn(descriptor, "outgoingEdgeTargets");
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
       {
@@ -291,6 +407,8 @@ describe("validateFlowForActivation — nodes", () => {
           i.message.includes("ghost"),
       ),
     ).toBe(true);
+    expect(edgeTargets).toHaveBeenCalled();
+    edgeTargets.mockRestore();
   });
 
   it("flags duplicate button reply_ids", () => {

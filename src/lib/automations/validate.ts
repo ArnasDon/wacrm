@@ -117,6 +117,7 @@ export function validateStepsForActivation(
       entry_node_id: graph.entry_node_key,
     },
     graph.nodes,
+    { consumer: "automation" },
   );
   const recordByNodeKey = new Map(
     graph.nodes.flatMap((node) =>
@@ -159,6 +160,7 @@ export function validateTriggerForActivation(
       entry_node_id: graph.entry_node_key,
     },
     graph.nodes,
+    { consumer: "automation" },
   );
 
   return issues

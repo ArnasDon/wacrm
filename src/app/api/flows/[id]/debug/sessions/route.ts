@@ -13,6 +13,7 @@ import {
   sanitizeDebugSession,
   sanitizeDebugValue,
 } from "@/lib/flows/debug-runtime";
+import { boundDebugExecutionPayload } from "@/lib/flows/execution-payload";
 import type { FlowNodeRow, FlowRow, FlowRunRow } from "@/lib/flows/types";
 import {
   buildFlowVersionGraph,
@@ -191,6 +192,16 @@ export async function POST(
         { status: 413 },
       );
     }
+    if (sourceSnapshotRow.outputs_truncated === true) {
+      return debugJson(
+        {
+          error:
+            "Source outputs were truncated; reduce the source run payload or select another run",
+          code: "DEBUG_SOURCE_OUTPUTS_TRUNCATED",
+        },
+        { status: 422 },
+      );
+    }
     variables = sanitizeDebugValue(variables) as Record<string, unknown>;
     const rawClonedOutputs = sourceSnapshotRow.source_node_outputs;
     if (
@@ -208,10 +219,37 @@ export async function POST(
         { status: 502 },
       );
     }
-    Object.assign(
-      clonedOutputs,
-      sanitizeDebugValue(rawClonedOutputs) as Record<string, unknown>,
-    );
+    for (const [nodeKey, rawOutput] of Object.entries(rawClonedOutputs)) {
+      const safeOutput = sanitizeDebugValue(
+        boundDebugExecutionPayload(rawOutput),
+      );
+      if (
+        !safeOutput ||
+        typeof safeOutput !== "object" ||
+        Array.isArray(safeOutput)
+      ) {
+        return debugJson(
+          {
+            error: "Invalid bounded source snapshot",
+            code: "DEBUG_SOURCE_SNAPSHOT_INVALID",
+          },
+          { status: 502 },
+        );
+      }
+      clonedOutputs[nodeKey] = safeOutput as Record<string, unknown>;
+    }
+    if (
+      new TextEncoder().encode(JSON.stringify(clonedOutputs)).byteLength >
+      MAX_CLONED_OUTPUT_BYTES
+    ) {
+      return debugJson(
+        {
+          error: "Invalid bounded source snapshot",
+          code: "DEBUG_SOURCE_SNAPSHOT_INVALID",
+        },
+        { status: 502 },
+      );
+    }
   } else if (flowVersionId) {
     const { data: version } = await admin
       .from("flow_versions")

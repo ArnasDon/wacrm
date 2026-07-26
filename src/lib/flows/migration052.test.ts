@@ -72,6 +72,36 @@ describe("migration 052 bounded flow execution payloads", () => {
     );
   });
 
+  it("reads production detail through a service-only owner/flow/run/execution-bound RPC", () => {
+    expect(sql).toMatch(
+      /FUNCTION\s+read_flow_production_execution_detail[\s\S]+?p_flow_id UUID[\s\S]+?p_execution_id UUID[\s\S]+?p_created_by UUID[\s\S]+?SECURITY DEFINER/i,
+    );
+    expect(sql).toMatch(/e\.flow_run_id\s*=\s*r\.id/i);
+    expect(sql).toMatch(/r\.flow_id\s*=\s*p_flow_id/i);
+    expect(sql).toMatch(/f\.user_id\s*=\s*p_created_by/i);
+    expect(sql).toContain("legacy_payload_exceeded_limit");
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION read_flow_production_execution_detail[\s\S]+?FROM authenticated/i,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION read_flow_production_execution_detail[\s\S]+?TO service_role/i,
+    );
+    const definition = sql.match(
+      /CREATE OR REPLACE FUNCTION read_flow_production_execution_detail[\s\S]+?\$\$;/i,
+    )?.[0];
+    expect(definition).toContain(
+      "SET search_path = pg_catalog, public, pg_temp",
+    );
+    for (const field of ["inputs", "outputs", "error", "metadata"]) {
+      expect(definition).toMatch(
+        new RegExp(
+          `'${field}'[\\s\\S]+?octet_length\\([\\s\\S]+?${field}`,
+          "i",
+        ),
+      );
+    }
+  });
+
   it("hardens security-definer lookup paths and keeps RPCs service-only", () => {
     const definitions =
       sql.match(

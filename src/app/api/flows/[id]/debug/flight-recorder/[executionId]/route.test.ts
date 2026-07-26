@@ -8,6 +8,10 @@ const h = vi.hoisted(() => ({
   ownerAllowed: true,
   runBelongsToFlow: true,
   detailWasRead: false,
+  fromCalls: 0,
+  rpcName: "",
+  rpcArgs: {} as Record<string, unknown>,
+  rpcResult: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/flows/debug-api", async (importOriginal) => {
@@ -31,7 +35,13 @@ vi.mock("@/lib/flows/debug-api", async (importOriginal) => {
 
 vi.mock("@/lib/flows/admin-client", () => ({
   supabaseAdmin: () => ({
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      h.rpcName = name;
+      h.rpcArgs = args;
+      return { data: h.rpcResult, error: null };
+    },
     from: (table: string) => {
+      h.fromCalls += 1;
       if (table === "flow_runs") {
         const query = {
           eq: () => query,
@@ -98,6 +108,29 @@ describe("production execution lazy detail", () => {
     h.ownerAllowed = true;
     h.runBelongsToFlow = true;
     h.detailWasRead = false;
+    h.fromCalls = 0;
+    h.rpcName = "";
+    h.rpcArgs = {};
+    h.rpcResult = {
+      execution_json: {
+        id: EXECUTION_ID,
+        flow_run_id: RUN_ID,
+        node_key: "send",
+        node_type: "send_webhook",
+        status: "completed",
+        inputs: {
+          url: "https://user:pass@example.com/hook?token=secret#frag",
+          headers: { Authorization: "Bearer secret" },
+        },
+        outputs: { accepted: true },
+        error: null,
+        metadata: { request_id: "safe" },
+        duration_ms: 5,
+        attempt: 1,
+        started_at: "2026-01-01T00:00:00.000Z",
+        completed_at: "2026-01-01T00:00:00.005Z",
+      },
+    };
   });
 
   it("returns one capped sanitized execution after verifying flow ownership", async () => {
@@ -105,7 +138,14 @@ describe("production execution lazy detail", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(h.detailWasRead).toBe(true);
+    expect(h.fromCalls).toBe(0);
+    expect(h.rpcName).toBe("read_flow_production_execution_detail");
+    expect(h.rpcArgs).toEqual({
+      p_flow_id: FLOW_ID,
+      p_execution_id: EXECUTION_ID,
+      p_created_by: "owner-1",
+      p_max_field_bytes: 61_440,
+    });
     expect(body.execution).toMatchObject({
       id: EXECUTION_ID,
       inputs: {
@@ -123,11 +163,12 @@ describe("production execution lazy detail", () => {
 
   it("does not materialize payloads when the execution run is outside the flow", async () => {
     h.runBelongsToFlow = false;
+    h.rpcResult = null;
 
     const response = await GET(new Request("http://localhost/detail"), context);
 
     expect(response.status).toBe(404);
-    expect(h.detailWasRead).toBe(false);
+    expect(h.fromCalls).toBe(0);
   });
 
   it("does not query storage when the caller is not the flow owner", async () => {
@@ -136,6 +177,20 @@ describe("production execution lazy detail", () => {
     const response = await GET(new Request("http://localhost/detail"), context);
 
     expect(response.status).toBe(404);
-    expect(h.detailWasRead).toBe(false);
+    expect(h.fromCalls).toBe(0);
+    expect(h.rpcName).toBe("");
+  });
+
+  it("fails closed when the bounded RPC returns a malformed envelope", async () => {
+    h.rpcResult = {
+      execution_json: {
+        node_key: "send",
+        status: "completed",
+      },
+    };
+
+    const response = await GET(new Request("http://localhost/detail"), context);
+
+    expect(response.status).toBe(502);
   });
 });

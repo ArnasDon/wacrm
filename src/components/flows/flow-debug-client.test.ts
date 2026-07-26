@@ -101,7 +101,9 @@ describe("flow debug inspector client", () => {
           limit: 25,
           returned: 0,
           truncated: false,
+          truncation_reason: null,
           next_cursor: null,
+          budget_bytes: 262_144,
         },
       }),
     );
@@ -125,6 +127,79 @@ describe("flow debug inspector client", () => {
 
     await expect(fetchDebugSessions(fetcher, "flow-a")).rejects.toThrow(
       "debug_session_quota",
+    );
+  });
+
+  it("rejects malformed session inventory responses", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        sessions: [{ id: 7, revision: "bad", status: "active" }],
+      }),
+    );
+
+    await expect(fetchDebugSessions(fetcher, "flow-a")).rejects.toThrow(
+      "Invalid flow debug response",
+    );
+  });
+
+  it.each([
+    {
+      name: "runs",
+      response: {
+        runs: [{ id: 7, status: "completed" }],
+        executions: [],
+        latest_by_run: {},
+        page: {
+          limit: 25,
+          returned: 0,
+          truncated: false,
+          truncation_reason: null,
+          next_cursor: null,
+          budget_bytes: 262_144,
+        },
+      },
+    },
+    {
+      name: "latest executions",
+      response: {
+        runs: [],
+        executions: [],
+        latest_by_run: {
+          "run-a": { send: { id: 9, node_key: "send", status: "completed" } },
+        },
+        page: {
+          limit: 25,
+          returned: 0,
+          truncated: false,
+          truncation_reason: null,
+          next_cursor: null,
+          budget_bytes: 262_144,
+        },
+      },
+    },
+    {
+      name: "pagination",
+      response: {
+        runs: [],
+        executions: [],
+        latest_by_run: {},
+        page: {
+          limit: 25,
+          returned: 0,
+          truncated: true,
+          truncation_reason: "page",
+          next_cursor: 42,
+          budget_bytes: 262_144,
+        },
+      },
+    },
+  ])("rejects malformed flight recorder $name", async ({ response }) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(response));
+
+    await expect(fetchFlightRecorder(fetcher, "flow-a")).rejects.toThrow(
+      "Invalid flow debug response",
     );
   });
 
@@ -316,7 +391,14 @@ describe("flow debug inspector client", () => {
           manifest: { variable_schema: [], nodes: [] },
         },
         executions: [],
-        page: { next_cursor: null, truncated: false },
+        page: {
+          limit: 10,
+          returned: 0,
+          truncated: false,
+          truncation_reason: null,
+          next_cursor: null,
+          budget_bytes: 262_144,
+        },
       }),
     );
 

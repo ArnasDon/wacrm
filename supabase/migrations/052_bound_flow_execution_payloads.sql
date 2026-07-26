@@ -401,3 +401,91 @@ REVOKE ALL ON FUNCTION read_flow_debug_execution_detail(
 GRANT EXECUTE ON FUNCTION read_flow_debug_execution_detail(
   UUID, UUID, UUID, UUID, INTEGER
 ) TO service_role;
+
+CREATE OR REPLACE FUNCTION read_flow_production_execution_detail(
+  p_flow_id UUID,
+  p_execution_id UUID,
+  p_created_by UUID,
+  p_max_field_bytes INTEGER DEFAULT 61440
+)
+RETURNS TABLE(execution_json JSONB)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+  SELECT pg_catalog.jsonb_build_object(
+    'id', e.id,
+    'flow_run_id', e.flow_run_id,
+    'flow_version_id', e.flow_version_id,
+    'node_key', e.node_key,
+    'node_type', e.node_type,
+    'status', e.status,
+    'duration_ms', e.duration_ms,
+    'attempt', e.attempt,
+    'started_at', e.started_at,
+    'completed_at', e.completed_at,
+    'inputs', CASE
+      WHEN pg_catalog.octet_length(e.inputs::text) > p_max_field_bytes
+      THEN pg_catalog.jsonb_build_object(
+        'truncated', true,
+        'reason', 'legacy_payload_exceeded_limit',
+        'original_bytes', pg_catalog.octet_length(e.inputs::text)
+      )
+      ELSE e.inputs
+    END,
+    'outputs', CASE
+      WHEN pg_catalog.octet_length(
+        COALESCE(e.outputs, 'null'::jsonb)::text
+      ) > p_max_field_bytes
+      THEN pg_catalog.jsonb_build_object(
+        'truncated', true,
+        'reason', 'legacy_payload_exceeded_limit',
+        'original_bytes', pg_catalog.octet_length(
+          COALESCE(e.outputs, 'null'::jsonb)::text
+        )
+      )
+      ELSE e.outputs
+    END,
+    'error', CASE
+      WHEN pg_catalog.octet_length(
+        COALESCE(e.error, 'null'::jsonb)::text
+      ) > p_max_field_bytes
+      THEN pg_catalog.jsonb_build_object(
+        'truncated', true,
+        'reason', 'legacy_payload_exceeded_limit',
+        'original_bytes', pg_catalog.octet_length(
+          COALESCE(e.error, 'null'::jsonb)::text
+        )
+      )
+      ELSE e.error
+    END,
+    'metadata', CASE
+      WHEN pg_catalog.octet_length(e.metadata::text) > p_max_field_bytes
+      THEN pg_catalog.jsonb_build_object(
+        'truncated', true,
+        'reason', 'legacy_payload_exceeded_limit',
+        'original_bytes', pg_catalog.octet_length(e.metadata::text)
+      )
+      ELSE e.metadata
+    END
+  )
+  FROM public.flow_node_executions e
+  JOIN public.flow_runs r ON e.flow_run_id = r.id
+  JOIN public.flows f ON f.id = r.flow_id
+  WHERE e.id = p_execution_id
+    AND r.flow_id = p_flow_id
+    AND f.id = p_flow_id
+    AND f.user_id = p_created_by
+    AND r.account_id = f.account_id
+    AND p_max_field_bytes BETWEEN 1024 AND 61440;
+$$;
+
+REVOKE ALL ON FUNCTION read_flow_production_execution_detail(
+  UUID, UUID, UUID, INTEGER
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION read_flow_production_execution_detail(
+  UUID, UUID, UUID, INTEGER
+) FROM authenticated;
+GRANT EXECUTE ON FUNCTION read_flow_production_execution_detail(
+  UUID, UUID, UUID, INTEGER
+) TO service_role;

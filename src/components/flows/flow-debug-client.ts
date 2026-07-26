@@ -110,6 +110,44 @@ const debugSessionSchema = z
   })
   .passthrough();
 
+const debugSessionSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    source_run_id: z.string().min(1).nullable().optional(),
+    status: z.string().min(1),
+    updated_at: z.string().min(1).optional(),
+    expires_at: z.string().min(1).optional(),
+  })
+  .passthrough();
+
+const sourceRunSchema = z
+  .object({
+    id: z.string().min(1),
+    status: z.string().min(1),
+    started_at: z.string().min(1).optional(),
+  })
+  .passthrough();
+
+const flightRecorderPageSchema = z.object({
+  limit: z.number().int().positive(),
+  returned: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  truncation_reason: z.enum(["page", "budget"]).nullable(),
+  next_cursor: z.string().min(1).nullable(),
+  budget_bytes: z.number().int().positive(),
+});
+
+const flightRecorderResponseSchema = z.object({
+  runs: z.array(sourceRunSchema),
+  executions: z.array(debugExecutionSchema),
+  latest_by_run: z.record(
+    z.string(),
+    z.record(z.string(), debugExecutionSchema),
+  ),
+  page: flightRecorderPageSchema,
+});
+
 export class FlowDebugClientError extends Error {
   constructor(
     message: string,
@@ -162,10 +200,12 @@ export async function fetchDebugSessions(
   const response = await fetcher(`/api/flows/${flowId}/debug/sessions`, {
     cache: "no-store",
   });
-  const body = await readResponse<{ sessions?: DebugSessionSummary[] }>(
-    response,
-  );
-  return body.sessions ?? [];
+  const body = await readResponse<unknown>(response);
+  const parsed = z
+    .object({ sessions: z.array(debugSessionSummarySchema) })
+    .safeParse(body);
+  if (!parsed.success) throw invalidResponse();
+  return parsed.data.sessions as DebugSessionSummary[];
 }
 
 export async function resumeDebugSession(
@@ -189,15 +229,22 @@ export async function resumeDebugSession(
   const body = await readResponse<{
     session?: unknown;
     executions?: unknown[];
-    page?: FlightRecorderPage;
+    page?: unknown;
   }>(response);
   if (!body.session || !Array.isArray(body.executions)) {
     throw invalidResponse();
   }
+  const parsedPage =
+    body.page === undefined
+      ? null
+      : flightRecorderPageSchema.safeParse(body.page);
+  if (parsedPage && !parsedPage.success) throw invalidResponse();
   return {
     session: parseDebugSession(body.session),
     executions: body.executions.map(parseDebugExecution),
-    ...(body.page ? { page: body.page } : {}),
+    ...(parsedPage?.success
+      ? { page: parsedPage.data as FlightRecorderPage }
+      : {}),
   };
 }
 
@@ -290,11 +337,10 @@ export async function fetchFlightRecorder(
     `/api/flows/${flowId}/debug/flight-recorder${query}`,
     { cache: "no-store" },
   );
-  const body = await readResponse<FlightRecorderResponse>(response);
-  return {
-    ...body,
-    executions: body.executions.map(parseDebugExecution),
-  };
+  const body = await readResponse<unknown>(response);
+  const parsed = flightRecorderResponseSchema.safeParse(body);
+  if (!parsed.success) throw invalidResponse();
+  return parsed.data as FlightRecorderResponse;
 }
 
 export async function fetchFlightExecutionDetail(

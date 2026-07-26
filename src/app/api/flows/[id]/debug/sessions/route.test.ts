@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   sourceVersion: null as Record<string, unknown> | null,
   sourceExecutions: [] as Record<string, unknown>[],
   sourceExecutionLimit: 0,
+  sourceOutputsTruncated: false,
   sourceRunSelect: "",
   rpcName: "",
   rpcCalls: [] as string[],
@@ -97,7 +98,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
                 : variables,
             variables_truncated: originalBytes > 65_536,
             source_node_outputs: latestOutputs,
-            outputs_truncated: false,
+            outputs_truncated: h.sourceOutputsTruncated,
           },
           error: null,
         };
@@ -251,6 +252,7 @@ beforeEach(() => {
   h.sourceVersion = null;
   h.sourceExecutions = [];
   h.sourceExecutionLimit = 0;
+  h.sourceOutputsTruncated = false;
   h.sourceRunSelect = "";
   h.rpcName = "";
   h.rpcCalls = [];
@@ -466,6 +468,68 @@ describe("flow debug session creation", () => {
     ).toBeLessThanOrEqual(262_144);
   });
 
+  it("preserves every node envelope when the bounded source aggregate is between 64 and 256 KiB", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000011";
+    const sourceVersionId = "00000000-0000-4000-8000-000000000012";
+    configureSource(h, sourceRunId, sourceVersionId);
+    h.sourceExecutions = [
+      ...Array.from({ length: 20 }, (_, index) => ({
+        node_key: `node-${index}`,
+        outputs: { payload: "x".repeat(10_000), index },
+        started_at: new Date(
+          Date.UTC(2026, 6, 26, 12, 0, index),
+        ).toISOString(),
+      })),
+      {
+        node_key: "legacy-large",
+        outputs: { payload: "y".repeat(40_000) },
+        started_at: "2026-07-26T12:01:00.000Z",
+      },
+    ];
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId }),
+      }),
+      context,
+    );
+    const outputs = h.rpcArgs.p_source_node_outputs as Record<string, unknown>;
+
+    expect(response.status).toBe(201);
+    expect(Object.keys(outputs)).toEqual([
+      ...Array.from({ length: 20 }, (_, index) => `node-${index}`),
+      "legacy-large",
+    ]);
+    expect(outputs["node-0"]).toMatchObject({ index: 0 });
+    expect(outputs["legacy-large"]).toMatchObject({
+      truncated: true,
+      reason: "legacy_payload_exceeded_limit",
+    });
+    expect(outputs).not.toHaveProperty("preview");
+  });
+
+  it("fails clearly when the source snapshot reports aggregate truncation", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000021";
+    const sourceVersionId = "00000000-0000-4000-8000-000000000022";
+    configureSource(h, sourceRunId, sourceVersionId);
+    h.sourceOutputsTruncated = true;
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "DEBUG_SOURCE_OUTPUTS_TRUNCATED",
+    });
+    expect(h.rpcCalls).not.toContain("create_flow_debug_session");
+  });
+
   it("rejects a version that conflicts with the source run", async () => {
     const sourceRunId = "00000000-0000-4000-8000-000000000001";
     h.sourceRun = {
@@ -631,6 +695,47 @@ function nearLimitSession() {
         position_x: index,
         position_y: 0,
       })),
+    },
+  };
+}
+
+function configureSource(
+  state: typeof h,
+  sourceRunId: string,
+  sourceVersionId: string,
+) {
+  state.sourceRun = {
+    id: sourceRunId,
+    flow_id: "20000000-0000-4000-8000-000000000001",
+    account_id: "account-1",
+    flow_version_id: sourceVersionId,
+    vars: { name: "Grace" },
+  };
+  state.sourceVersion = {
+    id: sourceVersionId,
+    flow_id: "20000000-0000-4000-8000-000000000001",
+    graph: {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "source-end",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 24,
+        on_exhaust: "end",
+      },
+      variable_schema: [
+        { key: "name", type: "string", default: "Source default" },
+      ],
+      nodes: [
+        {
+          node_key: "source-end",
+          node_type: "end",
+          config: {},
+          position_x: 0,
+          position_y: 0,
+        },
+      ],
     },
   };
 }

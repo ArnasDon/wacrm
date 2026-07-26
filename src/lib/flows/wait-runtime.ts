@@ -84,14 +84,22 @@ export async function resumeDueFlowWaits(
       continue;
     }
 
-    const { data: preparedRows, error: prepareError } = await db.rpc(
+    const prepareArgs = {
+      p_wait_id: claim.id,
+      p_claim_token: claim.claim_token,
+      p_flow_version_id: claim.flow_version_id,
+    };
+    let { data: preparedRows, error: prepareError } = await db.rpc(
       "prepare_flow_wait_resume",
-      {
-        p_wait_id: claim.id,
-        p_claim_token: claim.claim_token,
-        p_flow_version_id: claim.flow_version_id,
-      },
+      prepareArgs,
     );
+    if (prepareError || !Array.isArray(preparedRows) || !preparedRows[0]) {
+      // The first call may have committed and only lost its response.
+      ({ data: preparedRows, error: prepareError } = await db.rpc(
+        "prepare_flow_wait_resume",
+        prepareArgs,
+      ));
+    }
     const run = Array.isArray(preparedRows)
       ? (preparedRows[0] as FlowRunRow | undefined)
       : undefined;
@@ -100,7 +108,7 @@ export async function resumeDueFlowWaits(
       continue;
     }
     const needsAdvance =
-      run.status === "resuming" &&
+      run.continuation_id === claim.resume_id &&
       run.continuation_phase === "running" &&
       typeof run.current_node_key === "string";
     try {
@@ -119,24 +127,40 @@ export async function resumeDueFlowWaits(
           pinned.graph.fallback_policy.execution,
         );
       }
-      const { error: completeError } = await db.rpc(
+      const completeArgs = {
+        p_wait_id: claim.id,
+        p_claim_token: claim.claim_token,
+        p_flow_version_id: claim.flow_version_id,
+      };
+      let { data: completed, error: completeError } = await db.rpc(
         "complete_flow_wait_continuation",
-        {
-          p_wait_id: claim.id,
-          p_claim_token: claim.claim_token,
-          p_flow_version_id: claim.flow_version_id,
-        },
+        completeArgs,
       );
-      if (completeError) throw completeError;
-      const { data: acknowledged, error: ackError } = await db.rpc(
+      if (completeError || completed !== true) {
+        ({ data: completed, error: completeError } = await db.rpc(
+          "complete_flow_wait_continuation",
+          completeArgs,
+        ));
+      }
+      if (completeError || completed !== true) {
+        throw completeError ?? new Error("wait continuation was not completed");
+      }
+      const ackArgs = {
+        p_wait_id: claim.id,
+        p_claim_token: claim.claim_token,
+        p_flow_version_id: claim.flow_version_id,
+        p_node_key: claim.node_key,
+      };
+      let { data: acknowledged, error: ackError } = await db.rpc(
         "ack_flow_wait_resume",
-        {
-          p_wait_id: claim.id,
-          p_claim_token: claim.claim_token,
-          p_flow_version_id: claim.flow_version_id,
-          p_node_key: claim.node_key,
-        },
+        ackArgs,
       );
+      if (ackError || acknowledged !== true) {
+        ({ data: acknowledged, error: ackError } = await db.rpc(
+          "ack_flow_wait_resume",
+          ackArgs,
+        ));
+      }
       if (ackError || acknowledged !== true) {
         stats.failed += 1;
         continue;

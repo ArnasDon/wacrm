@@ -602,6 +602,7 @@ BEGIN
   RETURN QUERY
   UPDATE flow_runs
   SET status = CASE
+        WHEN continuation_id IS NOT NULL THEN 'resuming'
         WHEN status = 'needs_recovery' THEN 'active'
         ELSE status
       END,
@@ -685,14 +686,18 @@ BEGIN
   END IF;
 
   UPDATE flow_runs
-  SET status = 'active',
+  SET status = CASE
+        WHEN status IN ('resuming', 'needs_recovery') THEN 'active'
+        ELSE status
+      END,
       wake_at = NULL,
       continuation_id = NULL,
       continuation_phase = 'idle',
       continuation_step = 0,
       last_advanced_at = NOW()
   WHERE id = v_wait.flow_run_id
-    AND status = 'resuming';
+    AND continuation_id = v_wait.resume_id
+    AND continuation_phase = 'completed';
 
   RETURN TRUE;
 END;
@@ -842,6 +847,7 @@ BEGIN
 
   UPDATE flow_runs
   SET status = CASE
+        WHEN continuation_id IS NOT NULL THEN 'resuming'
         WHEN status = 'needs_recovery' THEN 'active'
         ELSE status
       END,
@@ -905,6 +911,11 @@ CREATE POLICY flow_node_effects_select ON flow_node_effects FOR SELECT
         AND is_account_member(run.account_id, 'viewer')
     )
   );
+
+REVOKE ALL ON TABLE flow_node_effects FROM PUBLIC, anon;
+REVOKE INSERT, UPDATE, DELETE ON TABLE flow_node_effects FROM authenticated;
+GRANT SELECT ON TABLE flow_node_effects TO authenticated;
+GRANT ALL ON TABLE flow_node_effects TO service_role;
 
 CREATE OR REPLACE FUNCTION reserve_flow_node_effect(
   p_run_id UUID,
@@ -1055,6 +1066,121 @@ REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION complete_flow_node_effect(UUID, UUID) TO service_role;
 
+-- Reconcile an ambiguous post-remote failure under row locks. Only the exact
+-- operation, cursor visit and wait continuation may move a run to recovery.
+-- A completed ledger is treated as success and stale/terminal state is never
+-- overwritten.
+CREATE OR REPLACE FUNCTION reconcile_flow_node_effect_recovery(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_expected_continuation_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  outcome TEXT,
+  run_row JSONB,
+  effect_status TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_effect flow_node_effects%ROWTYPE;
+BEGIN
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+    AND flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_effect
+  FROM flow_node_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.flow_run_id = p_run_id
+    AND effect.flow_version_id = p_flow_version_id
+    AND effect.node_key = p_expected_node_key
+    AND effect.visit_id = p_expected_visit_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'stale', to_jsonb(v_run), NULL::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_effect.status = 'completed' THEN
+    RETURN QUERY
+    SELECT 'completed', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+
+  IF v_effect.status = 'remote_committed'
+     AND v_run.status IN ('active', 'resuming', 'needs_recovery')
+     AND v_run.current_node_key IS NOT DISTINCT FROM p_expected_node_key
+     AND v_run.current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
+     AND v_run.continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+  THEN
+    UPDATE flow_runs
+    SET status = 'needs_recovery',
+        ended_at = NULL,
+        end_reason = 'side_effect_committed_local_persistence_failed',
+        last_advanced_at = NOW()
+    WHERE id = p_run_id
+    RETURNING * INTO v_run;
+    RETURN QUERY
+    SELECT 'recovery_required', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT 'stale', to_jsonb(v_run), v_effect.status;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION mark_flow_run_cursor_recovery(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_expected_continuation_id UUID,
+  p_reason TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  UPDATE flow_runs
+  SET status = 'needs_recovery',
+      ended_at = NULL,
+      end_reason = LEFT(p_reason, 200),
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+    AND flow_version_id = p_flow_version_id
+    AND status IN ('active', 'resuming', 'needs_recovery')
+    AND current_node_key IS NOT DISTINCT FROM p_expected_node_key
+    AND current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
+    AND continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+  RETURNING flow_runs.*;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) TO service_role;
+
 -- A reprompt's cursor visit, counter and effect completion are one state
 -- transition. Recovery therefore sees either the old remote_committed visit or
 -- the fully advanced completed visit, never a completed ledger with a stale
@@ -1153,6 +1279,7 @@ BEGIN
 
   UPDATE flow_runs
   SET status = CASE
+        WHEN continuation_id IS NOT NULL THEN 'resuming'
         WHEN status = 'needs_recovery' THEN 'active'
         ELSE status
       END,
@@ -1295,6 +1422,7 @@ BEGIN
     UPDATE flow_runs
     SET reprompt_count = p_reprompt_count,
         status = CASE
+          WHEN continuation_id IS NOT NULL THEN 'resuming'
           WHEN status = 'needs_recovery' THEN 'active'
           ELSE status
         END,

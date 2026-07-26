@@ -121,6 +121,7 @@ function durableHarness(
     if (name === "complete_flow_wait_continuation") {
       if (failComplete) {
         failComplete = false;
+        run.continuation_phase = "completed";
         return { data: false, error: { message: "worker lost DB" } };
       }
       run.continuation_phase = "completed";
@@ -131,7 +132,15 @@ function durableHarness(
         return { data: false, error: null };
       }
       waitStatus = "resumed";
-      if (run.status === "resuming") run.status = "active";
+      if (
+        run.status === "resuming" ||
+        run.status === "needs_recovery"
+      ) {
+        run.status = "active";
+      }
+      run.continuation_id = null;
+      run.continuation_phase = "idle";
+      run.continuation_step = 0;
       return { data: true, error: null };
     }
     throw new Error(`unexpected RPC ${name}`);
@@ -180,7 +189,8 @@ describe("durable flow wait resume", () => {
 
       expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
       expect(harness.waitStatus).toBe("resumed");
-      expect(harness.run.continuation_phase).toBe("completed");
+      expect(harness.run.continuation_phase).toBe("idle");
+      expect(harness.run.continuation_id).toBeNull();
       expect(harness.rpc.mock.calls.map(([name]) => name)).toEqual([
         "claim_due_flow_waits",
         "prepare_flow_wait_resume",
@@ -214,9 +224,21 @@ describe("durable flow wait resume", () => {
     expect(advance).toHaveBeenCalledTimes(2);
   });
 
-  it("reclaims a crash after terminal advancement without replaying it", async () => {
-    const harness = durableHarness("end", { failCompleteOnce: true });
+  it("reclaims a needs-recovery effect continuation without repeating the remote effect", async () => {
+    const harness = durableHarness("switch");
+    let remoteCommitted = false;
+    let remoteCalls = 0;
     const advance = vi.fn(async () => {
+      if (!remoteCommitted) {
+        remoteCalls += 1;
+        remoteCommitted = true;
+        harness.run.status = "needs_recovery";
+        throw new Error("effect cursor response lost");
+      }
+      expect(harness.run.status).toBe("needs_recovery");
+      expect(harness.run.continuation_id).toBe(
+        "10000000-0000-4000-8000-000000000001",
+      );
       harness.run.status = "completed";
       return { outcome: "completed" as const };
     });
@@ -227,7 +249,27 @@ describe("durable flow wait resume", () => {
     expect(
       await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
     ).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(remoteCalls).toBe(1);
+    expect(advance).toHaveBeenCalledTimes(2);
+    expect(harness.run.status).toBe("completed");
+    expect(harness.run.continuation_id).toBeNull();
+    expect(harness.run.continuation_phase).toBe("idle");
+  });
+
+  it("reclaims a crash after terminal advancement without replaying it", async () => {
+    const harness = durableHarness("end", { failCompleteOnce: true });
+    const advance = vi.fn(async () => {
+      harness.run.status = "completed";
+      return { outcome: "completed" as const };
+    });
+
+    expect(
+      await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
+    ).toEqual({ claimed: 1, resumed: 1, failed: 0 });
     expect(advance).toHaveBeenCalledTimes(1);
+    expect(harness.run.status).toBe("completed");
+    expect(harness.run.continuation_id).toBeNull();
+    expect(harness.run.continuation_phase).toBe("idle");
   });
 
   it("rejects an edge that differs from the immutable version", async () => {

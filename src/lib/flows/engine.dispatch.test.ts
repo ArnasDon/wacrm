@@ -193,7 +193,12 @@ class DispatchState {
   writes: Array<{ table: string; kind: string; value: Row }> = [];
   rpcCalls: Array<{ name: string; value: Row }> = [];
   failCursorOnce = false;
+  terminalizeOnCursorFailure = false;
+  loseCursorResponseOnce = false;
+  loseEffectCommitResponseOnce = false;
+  loseReplyCommitResponseOnce = false;
   failRepromptFinalizeOnce = false;
+  loseRepromptFinalizeResponseOnce = false;
   fallbackFailure: "none" | "before_commit_once" | "after_commit_once" =
     "none";
   private sequence = 10;
@@ -203,6 +208,9 @@ class DispatchState {
   rows(table: string): Row[] {
     if (table === "flow_runs") return this.runs as unknown as Row[];
     if (table === "flow_reply_transitions") return this.receipts;
+    if (table === "flow_node_effects") {
+      return [...this.effects.values()];
+    }
     if (table === "flow_versions") return this.versions;
     if (table === "flows") return this.flows;
     if (table === "conversations") return this.conversations;
@@ -292,6 +300,13 @@ class DispatchState {
       run.current_node_key = receipt.next_node_key;
       run.current_visit_id = receipt.next_visit_id;
       run.continuation_step = (run.continuation_step ?? 0) + 1;
+      if (this.loseReplyCommitResponseOnce) {
+        this.loseReplyCommitResponseOnce = false;
+        return {
+          data: null,
+          error: { message: "reply commit response lost" },
+        };
+      }
       return {
         data: [
           {
@@ -339,6 +354,13 @@ class DispatchState {
       effect.result = value.p_result as Row;
       effect.external_reference =
         (value.p_external_reference as string | null) ?? null;
+      if (this.loseEffectCommitResponseOnce) {
+        this.loseEffectCommitResponseOnce = false;
+        return {
+          data: null,
+          error: { message: "effect commit response lost" },
+        };
+      }
       return { data: [{ ...effect }], error: null };
     }
     if (name === "complete_flow_node_effect") {
@@ -351,9 +373,59 @@ class DispatchState {
       effect.status = "ambiguous";
       return { data: true, error: null };
     }
+    if (name === "reconcile_flow_node_effect_recovery") {
+      const run = this.runById(value.p_run_id)!;
+      const effect = this.effectById(value.p_effect_id)!;
+      if (effect.status === "completed") {
+        return {
+          data: [{ outcome: "completed", run_row: { ...run } }],
+          error: null,
+        };
+      }
+      if (
+        effect.status === "remote_committed" &&
+        run.current_node_key === value.p_expected_node_key &&
+        run.current_visit_id === value.p_expected_visit_id &&
+        (run.continuation_id ?? null) ===
+          (value.p_expected_continuation_id ?? null) &&
+        ["active", "resuming", "needs_recovery"].includes(run.status)
+      ) {
+        run.status = "needs_recovery";
+        run.end_reason =
+          "side_effect_committed_local_persistence_failed";
+        return {
+          data: [
+            { outcome: "recovery_required", run_row: { ...run } },
+          ],
+          error: null,
+        };
+      }
+      return {
+        data: [{ outcome: "stale", run_row: { ...run } }],
+        error: null,
+      };
+    }
+    if (name === "mark_flow_run_cursor_recovery") {
+      const run = this.runById(value.p_run_id)!;
+      if (
+        run.current_node_key === value.p_expected_node_key &&
+        run.current_visit_id === value.p_expected_visit_id &&
+        (run.continuation_id ?? null) ===
+          (value.p_expected_continuation_id ?? null) &&
+        ["active", "resuming", "needs_recovery"].includes(run.status)
+      ) {
+        run.status = "needs_recovery";
+        run.end_reason = value.p_reason as string;
+        return { data: [{ ...run }], error: null };
+      }
+      return { data: [], error: null };
+    }
     if (name === "advance_flow_run_cursor") {
       if (this.failCursorOnce) {
         this.failCursorOnce = false;
+        if (this.terminalizeOnCursorFailure) {
+          this.runById(value.p_run_id)!.status = "completed";
+        }
         return { data: null, error: { message: "cursor unavailable" } };
       }
       const run = this.runById(value.p_run_id)!;
@@ -367,6 +439,13 @@ class DispatchState {
       run.current_visit_id = this.nextUuid("cursor");
       run.continuation_step = (run.continuation_step ?? 0) + 1;
       if (run.status === "needs_recovery") run.status = "active";
+      if (this.loseCursorResponseOnce) {
+        this.loseCursorResponseOnce = false;
+        return {
+          data: null,
+          error: { message: "cursor response lost" },
+        };
+      }
       return { data: [{ ...run }], error: null };
     }
     if (name === "finalize_flow_reprompt_effect") {
@@ -399,6 +478,13 @@ class DispatchState {
       run.current_visit_id = nextVisit;
       run.status = "active";
       effect.status = "completed";
+      if (this.loseRepromptFinalizeResponseOnce) {
+        this.loseRepromptFinalizeResponseOnce = false;
+        return {
+          data: null,
+          error: { message: "reprompt finalize response lost" },
+        };
+      }
       return { data: [{ ...run }], error: null };
     }
     if (name === "finalize_flow_fallback_decision") {
@@ -594,6 +680,59 @@ beforeEach(() => {
 });
 
 describe("public flow dispatcher recovery protocol", () => {
+  it.each([
+    "effect_commit",
+    "cursor_advance",
+    "reply_commit",
+  ] as const)(
+    "continues after a committed %s response is lost",
+    async (lostPhase) => {
+      const state = new DispatchState();
+      state.loseEffectCommitResponseOnce = lostPhase === "effect_commit";
+      state.loseCursorResponseOnce = lostPhase === "cursor_advance";
+      state.loseReplyCommitResponseOnce = lostPhase === "reply_commit";
+      prepare(state, run());
+
+      const result = await dispatchInboundToFlows(
+        inbound(`lost-${lostPhase}`, "stable"),
+      );
+
+      expect(result.outcome).toBe("completed");
+      expect(state.runs[0].status).toBe("completed");
+      expect(state.runs[0].vars).toEqual({ code: "stable" });
+      expect(h.sendText).toHaveBeenCalledTimes(1);
+      expect(
+        state.writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.value.status === "failed",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("continues after a committed reprompt finalize response is lost", async () => {
+    const state = new DispatchState();
+    state.loseRepromptFinalizeResponseOnce = true;
+    prepare(state, run());
+
+    const result = await dispatchInboundToFlows(
+      inbound("lost-reprompt-finalize", ""),
+    );
+
+    expect(result.outcome).toBe("fallback_fired");
+    expect(state.runs[0].status).toBe("active");
+    expect(state.runs[0].reprompt_count).toBe(1);
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+
+    const duplicate = await dispatchInboundToFlows(
+      inbound("lost-reprompt-finalize", ""),
+    );
+    expect(duplicate.outcome).toBe("duplicate_inbound_ignored");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers the first downstream effect from the receipt cursor", async () => {
     const state = new DispatchState();
     state.failCursorOnce = true;
@@ -615,6 +754,25 @@ describe("public flow dispatcher recovery protocol", () => {
     expect(h.sendText).toHaveBeenCalledTimes(1);
     expect(state.runs[0].vars).toEqual({ code: "ABC" });
     expect(state.runs[0].status).toBe("completed");
+  });
+
+  it("does not overwrite terminal state while reconciling a stale effect phase", async () => {
+    const state = new DispatchState();
+    state.failCursorOnce = true;
+    state.terminalizeOnCursorFailure = true;
+    prepare(state, run());
+
+    const result = await dispatchInboundToFlows(
+      inbound("terminal-race", "stable"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.runs[0].status).toBe("completed");
+    expect(
+      state.rpcCalls.filter(
+        (call) => call.name === "reconcile_flow_node_effect_recovery",
+      ),
+    ).toHaveLength(1);
   });
 
   it("recovers a remote-committed reprompt on a reachable public status", async () => {

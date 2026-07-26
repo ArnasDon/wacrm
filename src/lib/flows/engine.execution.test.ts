@@ -144,6 +144,54 @@ function fakeDb(
         effect.status = "completed";
         return Promise.resolve({ data: true, error: null });
       }
+      if (name === "reconcile_flow_node_effect_recovery") {
+        const effect = effectForRpc(value) ?? httpEffect;
+        if (effect.status === "completed") {
+          return Promise.resolve({
+            data: [
+              {
+                outcome: "completed",
+                run_row: {
+                  status: "active",
+                  current_node_key: value.p_expected_node_key,
+                  current_visit_id: value.p_expected_visit_id,
+                  continuation_id: value.p_expected_continuation_id,
+                },
+              },
+            ],
+            error: null,
+          });
+        }
+        if (effect.status === "remote_committed") {
+          writes.push({
+            table: "flow_runs",
+            kind: "update",
+            value: {
+              status: "needs_recovery",
+              end_reason:
+                "side_effect_committed_local_persistence_failed",
+            },
+          });
+          return Promise.resolve({
+            data: [
+              {
+                outcome: "recovery_required",
+                run_row: {
+                  status: "needs_recovery",
+                  current_node_key: value.p_expected_node_key,
+                  current_visit_id: value.p_expected_visit_id,
+                  continuation_id: value.p_expected_continuation_id,
+                },
+              },
+            ],
+            error: null,
+          });
+        }
+        return Promise.resolve({
+          data: [{ outcome: "stale", run_row: {} }],
+          error: null,
+        });
+      }
       if (name === "commit_flow_reply_transition") {
         const messageId = value.p_meta_message_id as string;
         const existing = replyTransitions.get(messageId);
@@ -267,6 +315,27 @@ function fakeDb(
                           recovery_state: transition.recovery_state,
                         }
                       : null,
+                  error: null,
+                };
+              },
+            };
+            return builder;
+          }
+          if (table === "flow_node_effects") {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq(column: string, filterValue: unknown) {
+                filters[column] = filterValue;
+                return builder;
+              },
+              async maybeSingle() {
+                const effect = [...effects.values()].find(
+                  (candidate) =>
+                    candidate.id === filters.id &&
+                    candidate.operation_id === filters.operation_id,
+                );
+                return {
+                  data: effect ? { ...effect } : null,
                   error: null,
                 };
               },
@@ -1219,7 +1288,7 @@ describe("node execution policy in the flow engine", () => {
       },
     },
   ])(
-    "forces fail_run after a committed send despite $label handling",
+    "recovers a committed send without applying $label handling",
     async ({ config }) => {
       h.sendText.mockRejectedValue(
         new CommittedSideEffectError(
@@ -1244,15 +1313,13 @@ describe("node execution policy in the flow engine", () => {
       expect(h.sendText).toHaveBeenCalledTimes(1);
       expect(activeRun.vars).toEqual({ existing: true });
       expect(
-        writes.filter(
+        writes.some(
           (write) =>
             write.table === "flow_runs" &&
             write.kind === "update" &&
-            write.value.status === "failed" &&
-            write.value.end_reason ===
-              "side_effect_committed_local_persistence_failed",
+            write.value.status === "failed",
         ),
-      ).toHaveLength(1);
+      ).toBe(false);
       expect(
         writes.some(
           (write) =>
@@ -1282,7 +1349,7 @@ describe("node execution policy in the flow engine", () => {
             write.kind === "update" &&
             write.value.status === "completed",
         ),
-      ).toBe(false);
+      ).toBe(true);
     },
   );
 
@@ -1419,17 +1486,6 @@ describe("reprompt execution policy", () => {
         node("end", "end", {}),
       ].map((entry) => [entry.node_key, entry]),
     );
-
-    await expect(
-      handleReplyForActiveRun(
-        db as never,
-        resumedRun,
-        { kind: "text", text: "", meta_message_id: "invalid-1" },
-        nodes,
-        fallbackPolicy,
-      ),
-    ).rejects.toBeInstanceOf(CommittedSideEffectError);
-    expect(httpEffect.status).toBe("remote_committed");
 
     const recovered = await handleReplyForActiveRun(
       db as never,

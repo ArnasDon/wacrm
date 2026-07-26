@@ -27,6 +27,8 @@ describe("migration 049 durable waits", () => {
       "mark_flow_node_effect_committed",
       "mark_flow_node_effect_ambiguous",
       "complete_flow_node_effect",
+      "reconcile_flow_node_effect_recovery",
+      "mark_flow_run_cursor_recovery",
       "commit_flow_reply_transition",
       "finalize_flow_reprompt_effect",
       "finalize_flow_fallback_decision",
@@ -104,6 +106,12 @@ describe("migration 049 durable waits", () => {
     expect(sql).toMatch(
       /FUNCTION\s+complete_flow_node_effect[\s\S]+?status\s*=\s*'completed'/i,
     );
+    expect(sql).toMatch(
+      /FUNCTION\s+reconcile_flow_node_effect_recovery[\s\S]+?FOR UPDATE[\s\S]+?v_effect\.status\s*=\s*'remote_committed'[\s\S]+?status\s*=\s*'needs_recovery'/i,
+    );
+    expect(sql).toContain(
+      "GRANT ALL ON TABLE flow_node_effects TO service_role",
+    );
   });
 
   it("commits replies and reprompt completion at their state boundaries", () => {
@@ -151,6 +159,15 @@ describe("migration 049 durable waits", () => {
     expect(sql).toContain("'needs_recovery'");
     expect(sql).toMatch(
       /WHERE\s+status\s+IN\s*\(\s*'active'\s*,\s*'waiting'\s*,\s*'resuming'\s*,\s*'needs_recovery'\s*\)/i,
+    );
+  });
+
+  it("preserves and clears wait continuation identity independently of status", () => {
+    expect(sql).toMatch(
+      /FUNCTION\s+advance_flow_run_cursor[\s\S]+?WHEN continuation_id IS NOT NULL THEN 'resuming'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+ack_flow_wait_resume[\s\S]+?continuation_id = v_wait\.resume_id[\s\S]+?continuation_phase = 'completed'/i,
     );
   });
 });

@@ -595,16 +595,9 @@ async function executePolicyNode<T>(
     return { ok: true, value: result.value };
   } catch (error) {
     if (isCommittedSideEffectError(error)) {
-      if (run.status === "resuming") {
-        throw committedSideEffectCause(error) ?? error;
-      }
-      await endRun(
-        db,
-        run.id,
-        "failed",
-        "side_effect_committed_local_persistence_failed",
-      );
-      return { ok: false };
+      // Only the durable-effect executor has the operation id, source visit,
+      // expected continuation and ledger row needed to reconcile this safely.
+      throw committedSideEffectCause(error) ?? error;
     }
     if (options.suppressErrorPolicy) {
       return { ok: false };
@@ -667,6 +660,27 @@ type DurableNodeEffect = Pick<
   "id" | "operation_id" | "status" | "result" | "external_reference"
 > & { is_owner: boolean };
 
+async function readNodeEffect(
+  db: AdminClient,
+  effectId: string,
+  operationId: string,
+): Promise<DurableNodeEffect | null> {
+  const { data, error } = await db
+    .from("flow_node_effects")
+    .select("id, operation_id, status, result, external_reference")
+    .eq("id", effectId)
+    .eq("operation_id", operationId)
+    .maybeSingle();
+  if (error) throw error;
+  return data
+    ? { ...(data as Omit<DurableNodeEffect, "is_owner">), is_owner: false }
+    : null;
+}
+
+function syncRun(target: FlowRunRow, source: FlowRunRow): void {
+  Object.assign(target, source);
+}
+
 function sanitizeExternalReference(value: string | undefined): string | null {
   if (!value) return null;
   return value.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 500);
@@ -681,21 +695,31 @@ async function reserveNodeEffect(
   if (!run.current_visit_id) {
     throw new Error("flow run is missing a durable visit identity");
   }
-  const { data, error } = await db.rpc("reserve_flow_node_effect", {
+  const invocationToken = crypto.randomUUID();
+  const reserve = () => db.rpc("reserve_flow_node_effect", {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
     p_node_key: node.node_key,
     p_visit_id: run.current_visit_id,
     p_effect_kind: effectKind,
-    p_invocation_token: crypto.randomUUID(),
+    p_invocation_token: invocationToken,
   });
+  let { data, error } = await reserve();
   const effect = Array.isArray(data)
     ? (data[0] as DurableNodeEffect | undefined)
     : undefined;
-  if (error || !effect) {
+  if (!error && effect) return effect;
+
+  // The reservation may have committed while its response was lost. Retrying
+  // with the same invocation token preserves ownership.
+  ({ data, error } = await reserve());
+  const retried = Array.isArray(data)
+    ? (data[0] as DurableNodeEffect | undefined)
+    : undefined;
+  if (error || !retried) {
     throw error ?? new Error("node effect reservation was not returned");
   }
-  return effect;
+  return retried;
 }
 
 async function markNodeEffectCommitted<T>(
@@ -704,26 +728,43 @@ async function markNodeEffectCommitted<T>(
   result: T,
   externalReference?: string,
 ): Promise<DurableNodeEffect> {
-  const { data, error } = await db.rpc("mark_flow_node_effect_committed", {
-    p_effect_id: effect.id,
-    p_operation_id: effect.operation_id,
-    p_result: result,
-    p_external_reference: sanitizeExternalReference(externalReference),
-  });
-  const committed = Array.isArray(data)
-    ? (data[0] as DurableNodeEffect | undefined)
-    : undefined;
-  if (error || !committed) {
-    throw new CommittedSideEffectError(
-      "External effect completed but its durable ledger could not be committed",
-      {
-        externalReference: externalReference ?? effect.operation_id,
-        persistenceStage: "node_effect_ledger_commit",
-        cause: error,
-      },
+  const commit = () =>
+    db.rpc("mark_flow_node_effect_committed", {
+      p_effect_id: effect.id,
+      p_operation_id: effect.operation_id,
+      p_result: result,
+      p_external_reference: sanitizeExternalReference(externalReference),
+    });
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error } = await commit();
+    const committed = Array.isArray(data)
+      ? (data[0] as DurableNodeEffect | undefined)
+      : undefined;
+    if (!error && committed) {
+      return { ...committed, is_owner: effect.is_owner };
+    }
+    lastError = error;
+    const readBack = await readNodeEffect(
+      db,
+      effect.id,
+      effect.operation_id,
     );
+    if (
+      readBack?.status === "remote_committed" ||
+      readBack?.status === "completed"
+    ) {
+      return { ...readBack, is_owner: effect.is_owner };
+    }
   }
-  return { ...committed, is_owner: effect.is_owner };
+  throw new CommittedSideEffectError(
+    "External effect completed but its durable ledger could not be committed",
+    {
+      externalReference: externalReference ?? effect.operation_id,
+      persistenceStage: "node_effect_ledger_commit",
+      cause: lastError,
+    },
+  );
 }
 
 async function completeNodeEffect(
@@ -734,7 +775,9 @@ async function completeNodeEffect(
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
   });
-  if (error || data !== true) {
+  if (!error && data === true) return;
+  const readBack = await readNodeEffect(db, effect.id, effect.operation_id);
+  if (readBack?.status !== "completed") {
     throw new CommittedSideEffectError(
       "External effect completed remotely but its ledger was not finalized",
       {
@@ -756,10 +799,16 @@ async function failAmbiguousNodeEffect(
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
   });
+  const readBack = error
+    ? await readNodeEffect(db, effect.id, effect.operation_id)
+    : null;
+  const ledgerUpdateFailed = error && readBack?.status !== "ambiguous";
   await logEvent(db, run.id, "error", node.node_key, {
     reason: "external_effect_needs_reconciliation",
     operation_id: effect.operation_id,
-    ledger_update_failed: error ? sanitizeExecutionError(error) : undefined,
+    ledger_update_failed: ledgerUpdateFailed
+      ? sanitizeExecutionError(error)
+      : undefined,
   });
   await endRun(db, run.id, "failed", "external_effect_needs_reconciliation");
 }
@@ -808,27 +857,66 @@ async function executeDurableNodeEffect<T>(
   }
 
   let committedEffect: DurableNodeEffect | null = null;
-  const executed = await executePolicyNode<T>(
-    db,
-    run,
-    node,
-    globalPolicy,
-    (signal, operationId) =>
-      operation(signal, operationId, async (result, reference) => {
-        committedEffect = await markNodeEffectCommitted(
-          db,
-          effect,
-          result,
-          reference,
-        );
-      }),
-    {
-      operationId: effect.operation_id,
-      forceSingleAttempt: true,
-      persistErrorTransition: false,
-      suppressErrorPolicy: true,
-    },
-  );
+  let remoteResult: T | undefined;
+  let executed: PolicyNodeResult<T>;
+  try {
+    executed = await executePolicyNode<T>(
+      db,
+      run,
+      node,
+      globalPolicy,
+      (signal, operationId) =>
+        operation(signal, operationId, async (result, reference) => {
+          remoteResult = result;
+          committedEffect = await markNodeEffectCommitted(
+            db,
+            effect,
+            result,
+            reference,
+          );
+        }),
+      {
+        operationId: effect.operation_id,
+        forceSingleAttempt: true,
+        persistErrorTransition: false,
+        suppressErrorPolicy: true,
+      },
+    );
+  } catch (error) {
+    const committedError = committedSideEffectCause(error);
+    if (!committedError) throw error;
+    let readBack =
+      committedEffect ??
+      (await readNodeEffect(db, effect.id, effect.operation_id));
+    if (
+      readBack?.status === "reserved" &&
+      (effectKind === "outbound" || effectKind.startsWith("prompt:"))
+    ) {
+      const recoveredResult = {
+        whatsapp_message_id: committedError.externalReference,
+      } as T;
+      remoteResult = recoveredResult;
+      readBack = await markNodeEffectCommitted(
+        db,
+        effect,
+        recoveredResult,
+        committedError.externalReference,
+      );
+    }
+    if (
+      readBack &&
+      (readBack.status === "remote_committed" ||
+        readBack.status === "completed") &&
+      (remoteResult !== undefined || readBack.result !== null)
+    ) {
+      return {
+        ok: true,
+        value: (remoteResult ?? readBack.result) as T,
+        effect: { ...readBack, is_owner: effect.is_owner },
+      };
+    }
+    throw error;
+  }
   if (!executed.ok) {
     if (!committedEffect) {
       await failAmbiguousNodeEffect(db, run, node, effect);
@@ -853,18 +941,29 @@ async function persistDurableCursor(
   ) {
     return;
   }
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
   const { data, error } = await db.rpc("advance_flow_run_cursor", {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
-    p_expected_node_key: run.current_node_key,
-    p_expected_visit_id: run.current_visit_id,
+    p_expected_node_key: expectedNodeKey,
+    p_expected_visit_id: expectedVisitId,
     p_next_node_key: nextNodeKey,
   });
-  const advanced = Array.isArray(data)
+  let advanced = Array.isArray(data)
     ? (data[0] as FlowRunRow | undefined)
     : undefined;
   if (error || !advanced) {
-    throw error ?? new Error("durable flow cursor was not advanced");
+    const readBack = await loadRunById(db, run.id);
+    if (
+      readBack?.flow_version_id === run.flow_version_id &&
+      readBack.current_node_key === nextNodeKey &&
+      readBack.current_visit_id !== expectedVisitId
+    ) {
+      advanced = readBack;
+    } else {
+      throw error ?? new Error("durable flow cursor was not advanced");
+    }
   }
   if (advanced.current_node_key !== nextNodeKey) {
     throw new Error("durable flow cursor lost an advancement race");
@@ -935,11 +1034,13 @@ async function commitReplyTransition(
   if (!run.current_node_key || !run.current_visit_id) {
     throw new Error("flow reply is missing its durable source visit");
   }
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
   const { data, error } = await db.rpc("commit_flow_reply_transition", {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
-    p_expected_node_key: run.current_node_key,
-    p_expected_visit_id: run.current_visit_id,
+    p_expected_node_key: expectedNodeKey,
+    p_expected_visit_id: expectedVisitId,
     p_next_node_key: nextNodeKey,
     p_meta_message_id: metaMessageId,
     p_vars: vars,
@@ -947,48 +1048,97 @@ async function commitReplyTransition(
   const committed = Array.isArray(data)
     ? (data[0] as CommittedReplyTransition | undefined)
     : undefined;
-  if (error || !committed) {
-    throw error ?? new Error("flow reply transition was not committed");
+  if (!error && committed) return committed;
+
+  const receipt = await findCommittedReplyTransition(
+    db,
+    run.id,
+    metaMessageId,
+  );
+  const readBack = await loadRunById(db, run.id);
+  if (
+    receipt?.transition_kind === "reply_branch" &&
+    receipt.from_node_key === expectedNodeKey &&
+    receipt.from_visit_id === expectedVisitId &&
+    receipt.next_node_key === nextNodeKey &&
+    readBack?.current_node_key === receipt.next_node_key &&
+    readBack.current_visit_id === receipt.next_visit_id
+  ) {
+    syncRun(run, readBack);
+    return {
+      current_node_key: readBack.current_node_key!,
+      current_visit_id: readBack.current_visit_id!,
+      next_node_key: receipt.next_node_key,
+      run_vars: readBack.vars,
+      reprompt_count: readBack.reprompt_count,
+      continuation_step: readBack.continuation_step ?? 0,
+      duplicate: false,
+    };
   }
-  return committed;
+  throw error ?? new Error("flow reply transition was not committed");
 }
 
 async function stopAfterCommittedEffectPersistenceFailure(
   db: AdminClient,
   run: FlowRunRow,
+  effect: DurableNodeEffect,
+  expectedNodeKey: string,
+  expectedVisitId: string,
+  expectedContinuationId: string | null,
   error: unknown,
-): Promise<never | void> {
-  const continuationMustRetry =
-    run.status === "resuming" && run.continuation_id !== null;
-  await markRunNeedsRecovery(
-    db,
-    run,
-    "side_effect_committed_local_persistence_failed",
+): Promise<boolean> {
+  const { data, error: reconcileError } = await db.rpc(
+    "reconcile_flow_node_effect_recovery",
+    {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_effect_id: effect.id,
+      p_operation_id: effect.operation_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_expected_continuation_id: expectedContinuationId,
+    },
   );
-  if (continuationMustRetry) {
+  const resolution = Array.isArray(data)
+    ? (data[0] as
+        | {
+            outcome: "completed" | "recovery_required" | "stale";
+            run_row: FlowRunRow;
+          }
+        | undefined)
+    : undefined;
+  if (!reconcileError && resolution) {
+    syncRun(run, resolution.run_row);
+    if (resolution.outcome === "completed") return true;
+    if (
+      resolution.outcome === "recovery_required" &&
+      expectedContinuationId
+    ) {
+      throw error;
+    }
+    return false;
+  }
+
+  // The reconciliation CAS itself may have committed without returning.
+  const [runReadBack, effectReadBack] = await Promise.all([
+    loadRunById(db, run.id),
+    readNodeEffect(db, effect.id, effect.operation_id),
+  ]);
+  if (runReadBack) syncRun(run, runReadBack);
+  if (effectReadBack?.status === "completed") return true;
+  if (
+    runReadBack?.status === "needs_recovery" &&
+    runReadBack.current_node_key === expectedNodeKey &&
+    runReadBack.current_visit_id === expectedVisitId &&
+    runReadBack.continuation_id === expectedContinuationId
+  ) {
+    if (expectedContinuationId) throw error;
+    return false;
+  }
+  if (expectedContinuationId) {
     throw error;
   }
-}
-
-async function markRunNeedsRecovery(
-  db: AdminClient,
-  run: FlowRunRow,
-  reason: string,
-): Promise<void> {
-  const { error: recoveryError } = await db
-    .from("flow_runs")
-    .update({
-      status: "needs_recovery",
-      ended_at: null,
-      end_reason: reason,
-    })
-    .eq("id", run.id);
-  if (recoveryError) {
-    throw recoveryError;
-  }
-  run.status = "needs_recovery";
-  run.ended_at = null;
-  run.end_reason = reason;
+  return false;
 }
 
 async function finalizeDurableNodeEffect(
@@ -998,6 +1148,10 @@ async function finalizeDurableNodeEffect(
   localPersistence: () => Promise<void>,
   nextNodeKey?: string,
 ): Promise<boolean> {
+  if (!run.current_node_key || !run.current_visit_id) return false;
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
+  const expectedContinuationId = run.continuation_id ?? null;
   try {
     await localPersistence();
     if (nextNodeKey) {
@@ -1006,8 +1160,15 @@ async function finalizeDurableNodeEffect(
     await completeNodeEffect(db, effect);
     return true;
   } catch (error) {
-    await stopAfterCommittedEffectPersistenceFailure(db, run, error);
-    return false;
+    return stopAfterCommittedEffectPersistenceFailure(
+      db,
+      run,
+      effect,
+      expectedNodeKey,
+      expectedVisitId,
+      expectedContinuationId,
+      error,
+    );
   }
 }
 
@@ -1019,12 +1180,13 @@ async function finalizeRepromptEffect(
   metaMessageId: string,
   localPersistence: () => Promise<void>,
 ): Promise<boolean> {
+  if (!run.current_node_key || !run.current_visit_id) {
+    throw new Error("reprompt is missing its durable source visit");
+  }
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
+  const expectedContinuationId = run.continuation_id ?? null;
   try {
-    if (!run.current_node_key || !run.current_visit_id) {
-      throw new Error("reprompt is missing its durable source visit");
-    }
-    const expectedNodeKey = run.current_node_key;
-    const expectedVisitId = run.current_visit_id;
     await localPersistence();
     const { data, error } = await db.rpc("finalize_flow_reprompt_effect", {
       p_run_id: run.id,
@@ -1040,6 +1202,28 @@ async function finalizeRepromptEffect(
       ? (data[0] as FlowRunRow | undefined)
       : undefined;
     if (error || !finalized) {
+      const receipt = await findCommittedReplyTransition(
+        db,
+        run.id,
+        metaMessageId,
+      );
+      const [readBack, effectReadBack] = await Promise.all([
+        loadRunById(db, run.id),
+        readNodeEffect(db, effect.id, effect.operation_id),
+      ]);
+      if (
+        receipt?.transition_kind === "reprompt" &&
+        receipt.recovery_state === "completed" &&
+        receipt.from_node_key === expectedNodeKey &&
+        receipt.from_visit_id === expectedVisitId &&
+        readBack?.current_node_key === receipt.next_node_key &&
+        readBack.current_visit_id === receipt.next_visit_id &&
+        readBack.reprompt_count >= repromptCount &&
+        effectReadBack?.status === "completed"
+      ) {
+        syncRun(run, readBack);
+        return true;
+      }
       throw new CommittedSideEffectError(
         "Reprompt was sent but its durable state was not finalized",
         {
@@ -1054,10 +1238,18 @@ async function finalizeRepromptEffect(
     run.current_visit_id = finalized.current_visit_id;
     run.continuation_step = finalized.continuation_step;
     run.reprompt_count = finalized.reprompt_count;
+    run.status = finalized.status;
     return true;
   } catch (error) {
-    await stopAfterCommittedEffectPersistenceFailure(db, run, error);
-    return false;
+    return stopAfterCommittedEffectPersistenceFailure(
+      db,
+      run,
+      effect,
+      expectedNodeKey,
+      expectedVisitId,
+      expectedContinuationId,
+      error,
+    );
   }
 }
 
@@ -1106,16 +1298,32 @@ async function finalizeFallbackDecision(
     receipt?.recovery_state === "completed" &&
     receipt.transition_kind === `fallback_${decision}`
   ) {
+    const readBack = await loadRunById(db, run.id);
+    if (readBack) syncRun(run, readBack);
     return true;
   }
 
-  const continuationMustRetry =
-    run.status === "resuming" && run.continuation_id !== null;
-  await markRunNeedsRecovery(
-    db,
-    run,
-    "fallback_decision_persistence_failed",
+  const { data: recoveryRows, error: recoveryError } = await db.rpc(
+    "mark_flow_run_cursor_recovery",
+    {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_expected_continuation_id: run.continuation_id ?? null,
+      p_reason: "fallback_decision_persistence_failed",
+    },
   );
+  const recoveryRun = Array.isArray(recoveryRows)
+    ? (recoveryRows[0] as FlowRunRow | undefined)
+    : undefined;
+  if (!recoveryError && recoveryRun) {
+    syncRun(run, recoveryRun);
+  } else {
+    const readBack = await loadRunById(db, run.id);
+    if (readBack) syncRun(run, readBack);
+  }
+  const continuationMustRetry = run.continuation_id !== null;
   if (continuationMustRetry) {
     throw error ?? new Error("fallback decision was not committed");
   }
@@ -1920,13 +2128,19 @@ export async function advanceFromNodeKey(
         const wakeAt = new Date(
           Date.now() + cfg.amount * multiplier,
         ).toISOString();
-        const { error } = await db.rpc("schedule_flow_wait", {
+        const scheduleArgs = {
           p_run_id: run.id,
           p_flow_version_id: run.flow_version_id,
           p_node_key: node.node_key,
           p_next_node_key: cfg.next_node_key,
           p_wake_at: wakeAt,
-        });
+        };
+        let { error } = await db.rpc("schedule_flow_wait", scheduleArgs);
+        if (error) {
+          // The RPC returns the existing wait for the same run, so retrying
+          // these exact arguments is a read-after-ambiguous operation.
+          ({ error } = await db.rpc("schedule_flow_wait", scheduleArgs));
+        }
         if (error) throw error;
         return { wake_at: wakeAt, next_node_key: cfg.next_node_key };
       });

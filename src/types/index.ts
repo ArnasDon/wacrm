@@ -20,7 +20,7 @@ export interface Profile {
    * Legacy free-form role column from migration 001. Never read
    * by the app since 017_account_sharing.sql introduced the typed
    * `account_role` enum. Flagged for removal in a later cleanup
-   * migration — kept on the type so existing destructures don't
+   * migration ??? kept on the type so existing destructures don't
    * break.
    */
   role: string;
@@ -41,7 +41,7 @@ export interface Profile {
   account_id?: string;
   /**
    * Caller's role within their account. Source of truth for every
-   * role-gated UI / API check — call `hasMinRole` from
+   * role-gated UI / API check ??? call `hasMinRole` from
    * `@/lib/auth/roles` rather than comparing this string directly.
    */
   account_role?: AccountRole;
@@ -62,10 +62,10 @@ export interface Account {
 }
 
 /**
- * Hydrated member row for the Settings → Members tab. Combines
+ * Hydrated member row for the Settings ??? Members tab. Combines
  * the profile and its account_role for a single member of the
  * caller's account. Sensitive fields (email) are populated only
- * when the caller has admin+ — agents and viewers see name +
+ * when the caller has admin+ ??? agents and viewers see name +
  * avatar + role only.
  */
 export interface AccountMember {
@@ -79,14 +79,14 @@ export interface AccountMember {
 
 /**
  * Outstanding invite link row. `token_hash` is intentionally
- * absent — it lives only in the DB and on the server. The
+ * absent ??? it lives only in the DB and on the server. The
  * plaintext token is returned once at creation time and surfaced
  * via the invite URL; never re-emitted.
  */
 export interface AccountInvitation {
   id: string;
   account_id: string;
-  /** Roles offered via invite — owner is never offered. */
+  /** Roles offered via invite ??? owner is never offered. */
   role: Exclude<AccountRole, "owner">;
   created_by_user_id: string | null;
   label: string | null;
@@ -132,7 +132,7 @@ export interface ContactTag {
 export interface CustomField {
   id: string;
   user_id: string;
-  /** Tenancy key — NOT NULL since migration 017. */
+  /** Tenancy key ??? NOT NULL since migration 017. */
   account_id: string;
   field_name: string;
   field_type: string;
@@ -171,11 +171,11 @@ export interface Conversation {
   contact?: Contact;
   /**
    * AI auto-reply state for this thread (migration 029 + 033):
-   *  - `ai_autoreply_disabled` — the bot is paused here (a human took
+   *  - `ai_autoreply_disabled` ??? the bot is paused here (a human took
    *    over, or the model handed off). Sticky until re-enabled.
-   *  - `ai_reply_count` — how many times the bot has auto-replied,
+   *  - `ai_reply_count` ??? how many times the bot has auto-replied,
    *    checked against the account's per-conversation cap.
-   *  - `ai_handoff_summary` — short internal note the bot wrote when it
+   *  - `ai_handoff_summary` ??? short internal note the bot wrote when it
    *    handed off, shown to whoever takes the thread over.
    */
   ai_autoreply_disabled?: boolean;
@@ -192,7 +192,7 @@ export type NotificationType = 'conversation_assigned';
 export interface Notification {
   id: string;
   account_id: string;
-  /** Recipient — the agent this notification is for. */
+  /** Recipient ??? the agent this notification is for. */
   user_id: string;
   type: NotificationType;
   conversation_id?: string;
@@ -232,10 +232,10 @@ export interface Message {
   created_at: string;
   reply_to_message_id?: string;
   /**
-   * Only set when `content_type === 'interactive'` — the stable id of
+   * Only set when `content_type === 'interactive'` ??? the stable id of
    * the button or list row the customer tapped. The Flows engine uses
    * this to route the next node; the inbox bubble uses it as a styling
-   * cue (renders with a "↩ button reply" affordance).
+   * cue (renders with a "??? button reply" affordance).
    */
   interactive_reply_id?: string;
   /**
@@ -278,7 +278,7 @@ export interface WhatsAppConfig {
   /**
    * Set when POST /{phone_number_id}/register last succeeded. NULL
    * means the number was saved but never actually subscribed for
-   * webhooks on Meta's side — inbound events will be silently lost.
+   * webhooks on Meta's side ??? inbound events will be silently lost.
    */
   registered_at?: string;
   /** Set when POST /{waba_id}/subscribed_apps last succeeded. */
@@ -288,7 +288,7 @@ export interface WhatsAppConfig {
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
-// rather than collapsing to a local TitleCase set — distinctions like
+// rather than collapsing to a local TitleCase set ??? distinctions like
 // PAUSED vs DISABLED vs IN_APPEAL drive the edit/resubmit/delete flows.
 // DRAFT is the local-only state before the row is submitted to Meta.
 export type MessageTemplateStatus =
@@ -359,7 +359,7 @@ export interface Deal {
   pipeline_id: string;
   stage_id: string;
   /**
-   * Nullable after migration 004 — becomes NULL when the referenced
+   * Nullable after migration 004 ??? becomes NULL when the referenced
    * contact is deleted (ON DELETE SET NULL). History preserved.
    */
   contact_id: string | null;
@@ -378,6 +378,26 @@ export interface Deal {
   assignee?: Profile;
 }
 
+
+export type ProductType = 'digital_file' | 'link' | 'service';
+export type ProductStatus = 'draft' | 'active' | 'archived';
+
+export interface Product {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  price: number;
+  currency: string;
+  product_type: ProductType;
+  delivery_url?: string;
+  image_url?: string;
+  trigger_keyword: string;
+  status: ProductStatus;
+  created_at: string;
+  updated_at: string;
+}
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
@@ -404,7 +424,7 @@ export interface BroadcastRecipient {
   id: string;
   broadcast_id: string;
   /**
-   * Nullable after migration 004 — becomes NULL when the referenced
+   * Nullable after migration 004 ??? becomes NULL when the referenced
    * contact is deleted (ON DELETE SET NULL). History preserved; the
    * UI renders "Unknown" for orphaned rows.
    */
@@ -549,7 +569,7 @@ export interface ConditionStepConfig {
   subject: ConditionSubject;
   /** e.g. field name, tag id, substring, or "HH:mm-HH:mm" depending on subject */
   operand?: string;
-  /** For contact_field equals / message_content contains — comparison value */
+  /** For contact_field equals / message_content contains ??? comparison value */
   value?: string;
 }
 
@@ -576,7 +596,7 @@ export type AutomationStepConfig =
 
 export interface Automation {
   id: string;
-  /** Account tenancy key — every automation belongs to one account
+  /** Account tenancy key ??? every automation belongs to one account
    *  (migration 017 made the column NOT NULL). The engine looks up
    *  active automations by this field on inbound webhook events. */
   account_id: string;
@@ -626,14 +646,14 @@ export interface AutomationLog {
 }
 
 // ============================================================
-// Quick replies — reusable snippets (migration 035)
+// Quick replies ??? reusable snippets (migration 035)
 // ============================================================
 
 export type QuickReplyKind = 'text' | 'interactive';
 
 export interface QuickReply {
   id: string;
-  /** Account tenancy key — shared across all members of the account. */
+  /** Account tenancy key ??? shared across all members of the account. */
   account_id: string;
   /** Author / audit only. */
   user_id: string;

@@ -265,11 +265,13 @@ export default function ProductsPage() {
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
-                      <DropdownMenuTrigger>
-                        <Button variant="ghost" size="icon" disabled={!canManageProducts}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
+                      <DropdownMenuTrigger
+  render={
+    <Button variant="ghost" size="icon" disabled={!canManageProducts} />
+  }
+>
+  <MoreHorizontal className="h-4 w-4" />
+</DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => toggleStatus(p)}>
                           {p.status === "active" ? "Set to draft" : "Activate"}

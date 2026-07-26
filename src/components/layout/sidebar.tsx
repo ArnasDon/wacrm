@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  Package,
   Radio,
   Settings,
   Shield,
@@ -30,7 +31,7 @@ import type { AccountRole } from "@/lib/auth/roles";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
-// place avoids drift between the two surfaces — when a designer
+// place avoids drift between the two surfaces ??? when a designer
 // wants to recolour "agent" rows, this is the one diff.
 const ROLE_CHIP: Record<
   AccountRole,
@@ -39,7 +40,7 @@ const ROLE_CHIP: Record<
   owner: {
     icon: Crown,
     labelKey: "roleOwner",
-    // Amber: scarce, immutable, "the boss" — gets visual emphasis.
+    // Amber: scarce, immutable, "the boss" ??? gets visual emphasis.
     className:
       "border-amber-500/40 bg-amber-500/10 text-amber-300",
   },
@@ -84,7 +85,7 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   /**
    * When true, the nav row renders a small "Beta" chip after the label.
-   * Purely informational — doesn't affect routing or access.
+   * Purely informational ??? doesn't affect routing or access.
    */
   beta?: boolean;
 }
@@ -95,6 +96,7 @@ const navItems: NavItem[] = [
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
+  { href: "/products", labelKey: "products", icon: Package },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
@@ -124,7 +126,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   // (the 017 signup trigger seeds it from `full_name`), so showing it
   // here would just duplicate the user name in the footer below. Once
   // the account is renamed or the user joins a shared account, the
-  // name diverges and the strip becomes meaningful — that's the signal
+  // name diverges and the strip becomes meaningful ??? that's the signal
   // we gate on. Wait for the profile fetch to settle first, otherwise
   // the strip flashes in once the row resolves (a layout jump).
   const showAccountStrip =
@@ -132,11 +134,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     !!account?.name &&
     account.name !== profile?.full_name;
 
-  // Close the drawer when route changes — users opened it to navigate,
+  // Close the drawer when route changes ??? users opened it to navigate,
   // so once they pick a destination the drawer should get out of the way.
   useEffect(() => {
     onClose?.();
-    // Only pathname drives this — onClose identity doesn't need to re-run it.
+    // Only pathname drives this ??? onClose identity doesn't need to re-run it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
@@ -158,7 +160,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Backdrop — only exists on mobile and only when open. Clicking
+      {/* Backdrop ??? only exists on mobile and only when open. Clicking
           it closes the drawer. Hidden from lg+ since the sidebar is
           part of the main flex row there. */}
       <button
@@ -179,7 +181,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border bg-card",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: static, always visible — reset all the mobile framing.
+          // Desktop: static, always visible ??? reset all the mobile framing.
           "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
         )}
         aria-label="Primary"
@@ -217,7 +219,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
 
               // Unlike the inbox dot, the notifications count stays visible
-              // even while the page is active — it reflects unread state
+              // even while the page is active ??? it reflects unread state
               // (cleared by marking notifications read), not "currently
               // viewing this section".
               const showNotificationBadge =
@@ -228,7 +230,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   <Link
                     href={item.href}
                     className={cn(
-                      // Taller on mobile so fingers can hit the row reliably (≥44px).
+                      // Taller on mobile so fingers can hit the row reliably (???44px).
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
                       isActive
                         ? "bg-primary/10 text-primary"
@@ -295,7 +297,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
         {/* User section */}
         <div className="shrink-0 border-t border-border p-3">
-          {/* Account name display — surfaced only when the account
+          {/* Account name display ??? surfaced only when the account
               name differs from the user's own name (see
               `showAccountStrip`). For a default solo account the two
               match, so we hide it to avoid duplicating the user name
@@ -311,7 +313,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 {account.name}
               </span>
               {accountRole ? (
-                // Always render the chip — owners used to be
+                // Always render the chip ??? owners used to be
                 // invisible here, which made them indistinguishable
                 // from admins at a glance. Now everyone sees their
                 // role (with a colour cue) regardless of tier.

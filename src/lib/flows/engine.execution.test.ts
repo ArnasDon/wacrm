@@ -637,6 +637,54 @@ describe("node execution policy in the flow engine", () => {
     ).toBe(true);
   });
 
+  it("keys child effects and execution records by the active flow version", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { ok: true },
+      content_type: "application/json",
+    });
+    const activeRun = run({
+      active_flow_id: "child-flow",
+      active_flow_version_id: "child-version",
+      current_node_key: "http",
+    });
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "GET",
+          url: "https://api.example.com/child",
+          headers: {},
+          response_var: "response",
+          next_node_key: "wait",
+        }),
+        node("wait", "wait", {
+          amount: 1,
+          unit: "minutes",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(
+      writes.find(
+        (write) =>
+          write.table === "rpc:reserve_flow_node_effect",
+      )?.value.p_flow_version_id,
+    ).toBe("child-version");
+    expect(
+      writes.find(
+        (write) =>
+          write.table === "flow_node_executions" &&
+          write.kind === "insert" &&
+          write.value.node_key === "http",
+      )?.value.flow_version_id,
+    ).toBe("child-version");
+  });
+
   it("never repeats an HTTP effect after the remote response is confirmed", async () => {
     h.httpRequest.mockResolvedValue({
       status: 200,

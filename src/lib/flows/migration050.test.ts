@@ -53,10 +53,29 @@ describe("migration 050 composite flow state", () => {
   });
 
   it("keeps tenant data read-only for account members", () => {
-    for (const table of ["flow_loop_states", "flow_call_frames"]) {
+    for (const table of [
+      "flow_loop_states",
+      "flow_call_frames",
+      "flow_ai_reply_credit_receipts",
+    ]) {
       expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
       expect(sql).toContain(`GRANT SELECT ON TABLE ${table} TO authenticated`);
       expect(sql).toContain(`GRANT ALL ON TABLE ${table} TO service_role`);
     }
+  });
+
+  it("claims AI reply credit idempotently through the effect ledger", () => {
+    expect(sql).toContain(
+      "CREATE TABLE IF NOT EXISTS flow_ai_reply_credit_receipts",
+    );
+    expect(sql).toMatch(
+      /CREATE OR REPLACE FUNCTION claim_flow_ai_reply_credit[\s\S]*p_effect_id[\s\S]*p_operation_id[\s\S]*p_claim_token[\s\S]*FOR UPDATE[\s\S]*ai_reply_count = ai_reply_count \+ 1/i,
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION claim_flow_ai_reply_credit[\s\S]*FROM PUBLIC/i,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION claim_flow_ai_reply_credit[\s\S]*TO service_role/i,
+    );
   });
 });

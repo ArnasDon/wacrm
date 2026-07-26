@@ -826,3 +826,364 @@ $$;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO service_role;
+
+-- AI credits are receipts of a durable effect operation. Persisting the
+-- outcome in the same transaction as the counter increment makes an exact
+-- retry safe even when the first RPC response is lost.
+CREATE TABLE IF NOT EXISTS flow_ai_reply_credit_receipts (
+  effect_id UUID PRIMARY KEY
+    REFERENCES flow_node_effects(id) ON DELETE CASCADE,
+  operation_id UUID NOT NULL,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  conversation_id UUID NOT NULL
+    REFERENCES conversations(id) ON DELETE CASCADE,
+  claim_token UUID NOT NULL,
+  allowed BOOLEAN NOT NULL,
+  max_replies INTEGER NOT NULL CHECK (max_replies BETWEEN 1 AND 20),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (effect_id, operation_id)
+);
+
+ALTER TABLE flow_ai_reply_credit_receipts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS flow_ai_reply_credit_receipts_select
+  ON flow_ai_reply_credit_receipts;
+CREATE POLICY flow_ai_reply_credit_receipts_select
+  ON flow_ai_reply_credit_receipts FOR SELECT
+  USING (is_account_member(account_id, 'viewer'));
+REVOKE ALL ON TABLE flow_ai_reply_credit_receipts FROM PUBLIC, anon;
+REVOKE INSERT, UPDATE, DELETE ON TABLE flow_ai_reply_credit_receipts
+  FROM authenticated;
+GRANT SELECT ON TABLE flow_ai_reply_credit_receipts TO authenticated;
+GRANT ALL ON TABLE flow_ai_reply_credit_receipts TO service_role;
+
+CREATE OR REPLACE FUNCTION claim_flow_ai_reply_credit(
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_claim_token UUID,
+  p_conversation_id UUID,
+  p_max_replies INTEGER
+)
+RETURNS TABLE (allowed BOOLEAN, is_owner BOOLEAN)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_effect flow_node_effects%ROWTYPE;
+  v_run flow_runs%ROWTYPE;
+  v_receipt flow_ai_reply_credit_receipts%ROWTYPE;
+  v_allowed BOOLEAN;
+BEGIN
+  IF p_max_replies < 1 OR p_max_replies > 20 THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_receipt
+  FROM flow_ai_reply_credit_receipts receipt
+  WHERE receipt.effect_id = p_effect_id
+    AND receipt.operation_id = p_operation_id;
+  IF FOUND THEN
+    RETURN QUERY SELECT
+      v_receipt.allowed,
+      v_receipt.claim_token = p_claim_token;
+    RETURN;
+  END IF;
+
+  SELECT effect.* INTO v_effect
+  FROM flow_node_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.effect_kind = 'ai_reply'
+  FOR UPDATE;
+  IF NOT FOUND
+     OR v_effect.status <> 'reserved'
+     OR v_effect.invocation_token IS DISTINCT FROM p_claim_token THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = v_effect.flow_run_id
+    AND conversation_id = p_conversation_id
+    AND COALESCE(active_flow_version_id, flow_version_id)
+        = v_effect.flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  -- The effect lock serializes first claims. Re-read for clarity and for
+  -- compatibility with receipts inserted by an earlier migration revision.
+  SELECT * INTO v_receipt
+  FROM flow_ai_reply_credit_receipts receipt
+  WHERE receipt.effect_id = p_effect_id
+    AND receipt.operation_id = p_operation_id;
+  IF FOUND THEN
+    RETURN QUERY SELECT
+      v_receipt.allowed,
+      v_receipt.claim_token = p_claim_token;
+    RETURN;
+  END IF;
+
+  UPDATE conversations
+  SET ai_reply_count = ai_reply_count + 1
+  WHERE id = p_conversation_id
+    AND account_id = v_run.account_id
+    AND ai_reply_count < p_max_replies;
+  v_allowed := FOUND;
+
+  INSERT INTO flow_ai_reply_credit_receipts (
+    effect_id, operation_id, account_id, conversation_id, claim_token,
+    allowed, max_replies
+  )
+  VALUES (
+    p_effect_id, p_operation_id, v_run.account_id, p_conversation_id,
+    p_claim_token, v_allowed, p_max_replies
+  );
+
+  RETURN QUERY SELECT v_allowed, TRUE;
+END;
+$$;
+REVOKE ALL ON FUNCTION claim_flow_ai_reply_credit(
+  UUID, UUID, UUID, UUID, INTEGER
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION claim_flow_ai_reply_credit(
+  UUID, UUID, UUID, UUID, INTEGER
+) FROM authenticated;
+GRANT EXECUTE ON FUNCTION claim_flow_ai_reply_credit(
+  UUID, UUID, UUID, UUID, INTEGER
+) TO service_role;
+
+-- Composite runs reserve effects against their currently active immutable
+-- child version, while the root version remains pinned on flow_runs.
+CREATE OR REPLACE FUNCTION reserve_flow_node_effect(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_node_key TEXT,
+  p_visit_id UUID,
+  p_effect_kind TEXT,
+  p_invocation_token UUID
+)
+RETURNS TABLE (
+  id UUID,
+  operation_id UUID,
+  status TEXT,
+  result JSONB,
+  external_reference TEXT,
+  is_owner BOOLEAN,
+  in_progress BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NULLIF(BTRIM(p_effect_kind), '') IS NULL THEN RETURN; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM flow_runs
+    WHERE id = p_run_id
+      AND COALESCE(active_flow_version_id, flow_version_id)
+          = p_flow_version_id
+      AND current_visit_id = p_visit_id
+      AND status IN ('active', 'resuming', 'needs_recovery')
+  ) THEN RETURN; END IF;
+
+  INSERT INTO flow_node_effects (
+    flow_run_id, flow_version_id, visit_id, node_key, effect_kind,
+    invocation_token
+  )
+  VALUES (
+    p_run_id, p_flow_version_id, p_visit_id, p_node_key, p_effect_kind,
+    p_invocation_token
+  )
+  ON CONFLICT (flow_run_id, visit_id, node_key, effect_kind) DO NOTHING;
+
+  RETURN QUERY
+  SELECT effect.id, effect.operation_id, effect.status, effect.result,
+    effect.external_reference,
+    effect.invocation_token = p_invocation_token,
+    effect.status = 'reserved'
+      AND effect.invocation_token <> p_invocation_token
+      AND effect.lease_expires_at > NOW()
+  FROM flow_node_effects effect
+  WHERE effect.flow_run_id = p_run_id
+    AND effect.visit_id = p_visit_id
+    AND effect.node_key = p_node_key
+    AND effect.effect_kind = p_effect_kind;
+END;
+$$;
+REVOKE ALL ON FUNCTION reserve_flow_node_effect(
+  UUID, UUID, TEXT, UUID, TEXT, UUID
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION reserve_flow_node_effect(
+  UUID, UUID, TEXT, UUID, TEXT, UUID
+) FROM authenticated;
+GRANT EXECUTE ON FUNCTION reserve_flow_node_effect(
+  UUID, UUID, TEXT, UUID, TEXT, UUID
+) TO service_role;
+
+CREATE OR REPLACE FUNCTION reconcile_flow_node_effect_recovery(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_expected_continuation_id UUID DEFAULT NULL,
+  p_intended_next_node_key TEXT DEFAULT NULL,
+  p_intended_next_visit_id UUID DEFAULT NULL,
+  p_remote_result JSONB DEFAULT NULL,
+  p_external_reference TEXT DEFAULT NULL
+)
+RETURNS TABLE (outcome TEXT, run_row JSONB, effect_status TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_effect flow_node_effects%ROWTYPE;
+BEGIN
+  SELECT * INTO v_run FROM flow_runs
+  WHERE id = p_run_id
+    AND COALESCE(active_flow_version_id, flow_version_id)
+        = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  SELECT * INTO v_effect FROM flow_node_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.flow_run_id = p_run_id
+    AND effect.flow_version_id = p_flow_version_id
+    AND effect.node_key = p_expected_node_key
+    AND effect.visit_id = p_expected_visit_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'stale', to_jsonb(v_run), NULL::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_effect.status = 'reserved' AND p_remote_result IS NOT NULL THEN
+    UPDATE flow_node_effects
+    SET status = 'remote_committed', result = p_remote_result,
+        external_reference = LEFT(p_external_reference, 500),
+        remote_committed_at = COALESCE(remote_committed_at, NOW()),
+        updated_at = NOW()
+    WHERE id = v_effect.id AND operation_id = p_operation_id
+      AND status = 'reserved'
+    RETURNING * INTO v_effect;
+  END IF;
+  IF v_effect.status = 'completed' THEN
+    RETURN QUERY SELECT 'completed', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+  IF v_effect.status = 'remote_committed'
+     AND p_intended_next_node_key IS NOT NULL
+     AND p_intended_next_visit_id IS NOT NULL
+     AND v_run.current_node_key IS NOT DISTINCT FROM p_intended_next_node_key
+     AND v_run.current_visit_id IS NOT DISTINCT FROM p_intended_next_visit_id
+     AND v_run.continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+  THEN
+    UPDATE flow_node_effects SET status = 'completed',
+      completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+    WHERE id = v_effect.id AND operation_id = p_operation_id
+      AND status = 'remote_committed'
+    RETURNING * INTO v_effect;
+    RETURN QUERY
+      SELECT 'already_committed', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+  IF v_effect.status = 'remote_committed'
+     AND v_run.status IN ('active', 'resuming', 'needs_recovery')
+     AND v_run.current_node_key IS NOT DISTINCT FROM p_expected_node_key
+     AND v_run.current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
+     AND v_run.continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+  THEN
+    UPDATE flow_runs SET status = 'needs_recovery', ended_at = NULL,
+      end_reason = 'side_effect_committed_local_persistence_failed',
+      last_advanced_at = NOW()
+    WHERE id = p_run_id RETURNING * INTO v_run;
+    RETURN QUERY
+      SELECT 'recovery_required', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+  RETURN QUERY SELECT 'stale', to_jsonb(v_run), v_effect.status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION finalize_flow_reprompt_effect(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_reprompt_count INTEGER,
+  p_meta_message_id TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_effect flow_node_effects%ROWTYPE;
+  v_next_visit_id UUID;
+BEGIN
+  IF p_reprompt_count < 1
+     OR NULLIF(BTRIM(p_meta_message_id), '') IS NULL THEN RETURN; END IF;
+  SELECT * INTO v_run FROM flow_runs WHERE id = p_run_id FOR UPDATE;
+  IF NOT FOUND
+     OR COALESCE(v_run.active_flow_version_id, v_run.flow_version_id)
+        IS DISTINCT FROM p_flow_version_id THEN RETURN; END IF;
+  SELECT * INTO v_effect FROM flow_node_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.flow_run_id = p_run_id
+    AND effect.flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN; END IF;
+  IF v_effect.status = 'completed' THEN
+    IF v_run.reprompt_count >= p_reprompt_count THEN RETURN NEXT v_run; END IF;
+    RETURN;
+  END IF;
+  IF v_effect.status <> 'remote_committed'
+     OR v_effect.node_key IS DISTINCT FROM p_expected_node_key
+     OR v_effect.visit_id IS DISTINCT FROM p_expected_visit_id
+     OR v_run.contact_id IS NULL
+     OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
+     OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id
+     OR p_reprompt_count <> v_run.reprompt_count + 1 THEN RETURN; END IF;
+
+  v_next_visit_id := uuid_generate_v4();
+  INSERT INTO flow_reply_transitions (
+    account_id, contact_id, flow_run_id, flow_version_id, meta_message_id,
+    from_node_key, from_visit_id, next_node_key, next_visit_id,
+    transition_kind, recovery_state, vars_after
+  ) VALUES (
+    v_run.account_id, v_run.contact_id, p_run_id, p_flow_version_id,
+    p_meta_message_id, p_expected_node_key, p_expected_visit_id,
+    p_expected_node_key, v_next_visit_id, 'reprompt', 'completed', v_run.vars
+  );
+  UPDATE flow_runs SET
+    status = CASE
+      WHEN continuation_id IS NOT NULL THEN 'resuming'
+      WHEN status = 'needs_recovery' THEN 'active'
+      ELSE status END,
+    reprompt_count = p_reprompt_count,
+    current_node_key = p_expected_node_key,
+    current_visit_id = v_next_visit_id,
+    continuation_step = continuation_step + 1,
+    last_advanced_at = NOW()
+  WHERE id = p_run_id RETURNING * INTO v_run;
+  UPDATE flow_node_effects SET status = 'completed',
+    completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+  WHERE id = p_effect_id AND operation_id = p_operation_id
+    AND status = 'remote_committed';
+  IF NOT FOUND THEN RAISE EXCEPTION 'reprompt effect completion race'; END IF;
+  RETURN NEXT v_run;
+END;
+$$;

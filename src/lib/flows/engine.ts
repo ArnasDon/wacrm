@@ -730,7 +730,8 @@ async function reserveNodeEffect(
   const invocationToken = crypto.randomUUID();
   const reserve = () => db.rpc("reserve_flow_node_effect", {
     p_run_id: run.id,
-    p_flow_version_id: run.flow_version_id,
+    p_flow_version_id:
+      run.active_flow_version_id ?? run.flow_version_id,
     p_node_key: node.node_key,
     p_visit_id: run.current_visit_id,
     p_effect_kind: effectKind,
@@ -960,6 +961,7 @@ async function executeDurableNodeEffect<T>(
     signal: AbortSignal,
     operationId: string,
     remoteCommitted: (result: T, externalReference?: string) => Promise<void>,
+    context: { effectId: string; claimToken: string },
   ) => Promise<T>,
 ): Promise<DurableEffectResult<T>> {
   let effect: DurableNodeEffect;
@@ -1029,18 +1031,26 @@ async function executeDurableNodeEffect<T>(
       node,
       globalPolicy,
       (signal, operationId) =>
-        operation(signal, operationId, async (result, reference) => {
-          remoteResult = result;
-          committedEffect = await markNodeEffectCommitted(
-            db,
-            run,
-            node,
-            effect,
-            effectKind,
-            result,
-            reference,
-          );
-        }),
+        operation(
+          signal,
+          operationId,
+          async (result, reference) => {
+            remoteResult = result;
+            committedEffect = await markNodeEffectCommitted(
+              db,
+              run,
+              node,
+              effect,
+              effectKind,
+              result,
+              reference,
+            );
+          },
+          {
+            effectId: effect.id,
+            claimToken: effect.invocation_token ?? "",
+          },
+        ),
       {
         operationId: effect.operation_id,
         forceSingleAttempt: true,
@@ -1567,7 +1577,8 @@ async function stopAfterCommittedEffectPersistenceFailure(
     );
   const reconcileArgs = {
     p_run_id: run.id,
-    p_flow_version_id: run.flow_version_id,
+    p_flow_version_id:
+      run.active_flow_version_id ?? run.flow_version_id,
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
     p_expected_node_key: expectedNodeKey,
@@ -1706,7 +1717,8 @@ async function finalizeRepromptEffect(
     await localPersistence();
     const { data, error } = await db.rpc("finalize_flow_reprompt_effect", {
       p_run_id: run.id,
-      p_flow_version_id: run.flow_version_id,
+      p_flow_version_id:
+        run.active_flow_version_id ?? run.flow_version_id,
       p_effect_id: effect.id,
       p_operation_id: effect.operation_id,
       p_expected_node_key: expectedNodeKey,
@@ -2721,10 +2733,13 @@ export async function advanceFromNodeKey(
         node,
         globalExecutionPolicy,
         "ai_reply",
-        async (signal, _operationId, remoteCommitted) => {
+        async (signal, operationId, remoteCommitted, context) => {
           const generated = await generateFlowAiReply(db, {
             accountId: run.account_id,
             conversationId: run.conversation_id,
+            effectId: context.effectId,
+            operationId,
+            claimToken: context.claimToken,
             systemPrompt: cfg.system_prompt ?? "",
             prompt: cfg.prompt,
             inputVariables: cfg.input_variables,

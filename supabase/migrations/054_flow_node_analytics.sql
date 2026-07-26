@@ -101,6 +101,113 @@ REVOKE ALL ON FUNCTION public.flow_version_node_type(UUID, TEXT)
 GRANT EXECUTE ON FUNCTION public.flow_version_node_type(UUID, TEXT)
   TO service_role;
 
+-- Scheduling a durable wait suspends the current visit. The visit only
+-- advances when prepare_flow_wait_resume commits the next cursor.
+CREATE OR REPLACE FUNCTION public.schedule_flow_wait(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_node_key TEXT,
+  p_next_node_key TEXT,
+  p_wake_at TIMESTAMPTZ
+)
+RETURNS SETOF public.flow_waits
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+DECLARE
+  v_run public.flow_runs%ROWTYPE;
+  v_updated INTEGER;
+BEGIN
+  SELECT *
+  INTO v_run
+  FROM public.flow_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR COALESCE(v_run.active_flow_version_id, v_run.flow_version_id)
+        IS DISTINCT FROM p_flow_version_id
+  THEN
+    RAISE EXCEPTION 'flow run is not eligible for wait';
+  END IF;
+
+  IF v_run.status = 'waiting' THEN
+    RETURN QUERY
+    SELECT wait.*
+    FROM public.flow_waits wait
+    WHERE wait.flow_run_id = p_run_id
+      AND wait.flow_version_id = p_flow_version_id
+      AND wait.node_key = p_node_key
+      AND wait.next_node_key = p_next_node_key
+      AND wait.status IN ('pending', 'claimed');
+    IF FOUND THEN
+      RETURN;
+    END IF;
+  END IF;
+
+  IF v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
+     OR v_run.current_node_key IS DISTINCT FROM p_node_key
+     OR v_run.current_visit_id IS NULL
+     OR p_wake_at <= NOW()
+     OR NULLIF(BTRIM(p_next_node_key), '') IS NULL
+  THEN
+    RAISE EXCEPTION 'invalid flow wait';
+  END IF;
+
+  INSERT INTO public.flow_waits (
+    flow_run_id, flow_version_id, node_key, next_node_key, wake_at,
+    status, claim_token, claimed_at, resumed_at, resume_id, updated_at
+  ) VALUES (
+    p_run_id, p_flow_version_id, p_node_key, p_next_node_key, p_wake_at,
+    'pending', NULL, NULL, NULL, public.uuid_generate_v4(), NOW()
+  )
+  ON CONFLICT (flow_run_id) DO UPDATE
+  SET flow_version_id = EXCLUDED.flow_version_id,
+      node_key = EXCLUDED.node_key,
+      next_node_key = EXCLUDED.next_node_key,
+      wake_at = EXCLUDED.wake_at,
+      status = 'pending',
+      claim_token = NULL,
+      claimed_at = NULL,
+      resumed_at = NULL,
+      resume_id = public.uuid_generate_v4(),
+      updated_at = NOW();
+
+  UPDATE public.flow_runs
+  SET status = 'waiting',
+      current_node_key = p_node_key,
+      continuation_id = NULL,
+      continuation_phase = 'idle',
+      continuation_step = 0,
+      wake_at = p_wake_at,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+    AND COALESCE(active_flow_version_id, flow_version_id)
+        = p_flow_version_id
+    AND current_node_key = p_node_key
+    AND current_visit_id = v_run.current_visit_id
+    AND status IN ('active', 'resuming', 'needs_recovery');
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  IF v_updated <> 1 THEN
+    RAISE EXCEPTION 'flow wait cursor changed while scheduling';
+  END IF;
+
+  RETURN QUERY
+  SELECT wait.*
+  FROM public.flow_waits wait
+  WHERE wait.flow_run_id = p_run_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.schedule_flow_wait(
+  UUID, UUID, TEXT, TEXT, TIMESTAMPTZ
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.schedule_flow_wait(
+  UUID, UUID, TEXT, TEXT, TIMESTAMPTZ
+) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.record_flow_node_visit_transition()
 RETURNS TRIGGER
 LANGUAGE plpgsql

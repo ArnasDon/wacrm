@@ -40,6 +40,14 @@ describe('flow analytics UI', () => {
     expect(pageSource).toContain('biggest_dropoff');
   });
 
+  it('never labels stale analytics as the newly requested filters and can retry', () => {
+    expect(pageSource).toContain('setData(null)');
+    expect(pageSource).toContain('data-testid="analytics-retry"');
+    expect(pageSource).toMatch(/setRetryNonce\(\(value\) => value \+ 1\)/);
+    expect(pageSource).toMatch(/\[params\.id, period, retryNonce, versionId\]/);
+    expect(pageSource).not.toContain("t('refreshError')");
+  });
+
   it('links the editor header to the analytics page', () => {
     expect(headerSource).toContain('BarChart3');
     expect(headerSource).toContain('`/flows/${flow.id}/analytics`');

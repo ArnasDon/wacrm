@@ -33,6 +33,7 @@ export default function FlowAnalyticsPage() {
   const [data, setData] = useState<FlowAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!params.id) return;
@@ -63,7 +64,14 @@ export default function FlowAnalyticsPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [params.id, period, versionId]);
+  }, [params.id, period, retryNonce, versionId]);
+
+  function retry() {
+    setData(null);
+    setLoading(true);
+    setError(false);
+    setRetryNonce((value) => value + 1);
+  }
 
   const totals = useMemo(() => {
     const nodes = data?.nodes ?? [];
@@ -98,6 +106,14 @@ export default function FlowAnalyticsPage() {
       >
         <AlertTriangle className="h-6 w-6 text-red-400" />
         <p className="text-muted-foreground text-sm">{t('loadError')}</p>
+        <button
+          data-testid="analytics-retry"
+          type="button"
+          className="bg-primary text-primary-foreground rounded-md px-3 py-2 text-sm font-medium hover:opacity-90"
+          onClick={retry}
+        >
+          {t('retry')}
+        </button>
         <button
           type="button"
           className="text-primary text-sm font-medium hover:opacity-80"
@@ -139,6 +155,7 @@ export default function FlowAnalyticsPage() {
             aria-label={t('versionLabel')}
             value={selectedVersion}
             onChange={(event) => {
+              setData(null);
               setLoading(true);
               setError(false);
               setVersionId(event.target.value);
@@ -159,6 +176,7 @@ export default function FlowAnalyticsPage() {
             aria-label={t('periodLabel')}
             value={period}
             onChange={(event) => {
+              setData(null);
               setLoading(true);
               setError(false);
               setPeriod(Number(event.target.value));
@@ -183,15 +201,6 @@ export default function FlowAnalyticsPage() {
           count: data.legacy_attempts_excluded,
         })}
       </div>
-
-      {error && (
-        <div
-          role="alert"
-          className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300"
-        >
-          {t('refreshError')}
-        </div>
-      )}
 
       <section
         aria-label={t('summary')}

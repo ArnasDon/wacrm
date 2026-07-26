@@ -208,8 +208,22 @@ describe('migration 054 exact flow node analytics', () => {
 
   it('keeps wait and approval visits open through suspension and times them to resume', () => {
     const sql = migration();
+    const schedule =
+      sql.match(
+        /CREATE OR REPLACE FUNCTION public\.schedule_flow_wait[\s\S]+?\$\$;/i
+      )?.[0] ?? '';
 
     expect(sql).toMatch(/NEW\.status\s*=\s*'waiting'[\s\S]+?RETURN NEW/i);
+    expect(schedule).toBeTruthy();
+    expect(schedule).toMatch(
+      /v_run\.current_node_key IS DISTINCT FROM p_node_key[\s\S]+?v_run\.current_visit_id IS NULL/i
+    );
+    expect(schedule).toMatch(
+      /UPDATE public\.flow_runs[\s\S]+?status = 'waiting'[\s\S]+?current_node_key = p_node_key/i
+    );
+    expect(schedule).not.toMatch(
+      /current_visit_id\s*=\s*(?:public\.)?uuid_generate_v4\(\)/i
+    );
     expect(sql).toMatch(
       /NEW\.status\s*=\s*'paused_by_agent'[\s\S]+?flow_approval_requests[\s\S]+?RETURN NEW/i
     );
@@ -220,6 +234,23 @@ describe('migration 054 exact flow node analytics', () => {
       /claim_flow_approval_resolutions[\s\S]+?current_visit_id\s*=\s*v_request\.resume_id/i
     );
     expect(sql).toContain('visit.resolved_at - visit.entered_at');
+  });
+
+  it('keeps wait scheduling idempotent while correlating attempts to the open visit', () => {
+    const sql = migration();
+    const schedule =
+      sql.match(
+        /CREATE OR REPLACE FUNCTION public\.schedule_flow_wait[\s\S]+?\$\$;/i
+      )?.[0] ?? '';
+
+    expect(schedule).toMatch(
+      /IF v_run\.status = 'waiting'[\s\S]+?RETURN QUERY[\s\S]+?IF FOUND THEN[\s\S]+?RETURN/i
+    );
+    expect(schedule).toContain('ON CONFLICT (flow_run_id) DO UPDATE');
+    expect(schedule).toMatch(
+      /current_visit_id = v_run\.current_visit_id[\s\S]+?status IN \('active', 'resuming', 'needs_recovery'\)/i
+    );
+    expect(engineSource).toContain('visit_id: run.current_visit_id ?? null');
   });
 
   it('attributes child visits separately and resolves the parent only on return or failure', () => {

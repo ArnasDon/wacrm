@@ -1049,7 +1049,7 @@
       "loading": "분석을 불러오는 중…",
       "refreshing": "분석을 새로 고치는 중…",
       "loadError": "플로우 분석을 불러올 수 없습니다.",
-      "refreshError": "최신 분석을 불러오지 못했습니다. 이전 결과를 계속 표시합니다.",
+      "retry": "다시 시도",
       "backToFlow": "플로우로 돌아가기",
       "versionLabel": "플로우 버전",
       "versionOption": "버전 {version}",

@@ -1049,7 +1049,7 @@
       "loading": "Loading analytics…",
       "refreshing": "Refreshing analytics…",
       "loadError": "Couldn't load flow analytics.",
-      "refreshError": "The latest analytics could not be loaded. The previous result is still shown.",
+      "retry": "Retry",
       "backToFlow": "Back to flow",
       "versionLabel": "Flow version",
       "versionOption": "Version {version}",

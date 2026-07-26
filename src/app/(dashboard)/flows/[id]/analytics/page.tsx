@@ -194,6 +194,7 @@ export default function FlowAnalyticsPage() {
 
       <div
         role="status"
+        data-coverage-cohort={data.coverage_cohort}
         className="text-muted-foreground rounded-lg border border-sky-500/25 bg-sky-500/5 px-4 py-3 text-xs"
       >
         {t('coverage', {

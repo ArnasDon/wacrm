@@ -49,6 +49,7 @@ export const flowAnalyticsResponseSchema = z.strictObject({
     to: utcTimestampSchema,
   }),
   coverage_started_at: utcTimestampSchema,
+  coverage_cohort: z.literal('runs_started_after_tracking_enabled'),
   legacy_attempts_excluded: nonNegativeInteger,
   biggest_dropoff: flowAnalyticsNodeSchema.nullable(),
   nodes: z.array(flowAnalyticsNodeSchema).max(500),

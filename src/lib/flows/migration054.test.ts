@@ -168,6 +168,84 @@ describe('migration 054 exact flow node analytics', () => {
     );
   });
 
+  it('excludes pre-deploy and in-flight runs as one explicit rollout cohort', () => {
+    const sql = migration();
+    const recorder =
+      sql.match(
+        /CREATE OR REPLACE FUNCTION public\.record_flow_node_visit_transition[\s\S]+?\$\$;/i
+      )?.[0] ?? '';
+    const rpc =
+      sql.match(
+        /CREATE OR REPLACE FUNCTION public\.get_flow_node_analytics[\s\S]+?\$\$;/i
+      )?.[0] ?? '';
+    const selectedVisits =
+      rpc.match(
+        /selected_visits AS \([\s\S]+?\n  \),\n  attempt_totals AS/i
+      )?.[0] ?? '';
+    const addColumn = sql.search(
+      /ADD COLUMN IF NOT EXISTS analytics_eligible BOOLEAN NOT NULL DEFAULT FALSE/i
+    );
+    const newRunDefault = sql.search(
+      /ALTER COLUMN analytics_eligible SET DEFAULT TRUE/i
+    );
+
+    expect(addColumn).toBeGreaterThanOrEqual(0);
+    expect(newRunDefault).toBeGreaterThan(addColumn);
+    expect(sql).not.toMatch(
+      /UPDATE\s+public\.flow_runs\s+SET\s+analytics_eligible/i
+    );
+    expect(recorder).toMatch(
+      /IF NOT NEW\.analytics_eligible THEN[\s\S]+?RETURN NEW/i
+    );
+    expect(rpc).toMatch(
+      /JOIN public\.flow_runs run[\s\S]+?NOT run\.analytics_eligible/i
+    );
+    expect(rpc).toMatch(
+      /LEFT JOIN public\.flow_node_visits visit[\s\S]+?visit\.id IS NULL/i
+    );
+    expect(selectedVisits).toMatch(
+      /JOIN public\.flow_runs run[\s\S]+?run\.analytics_eligible/i
+    );
+    expect(rpc).toContain(
+      "'coverage_cohort', 'runs_started_after_tracking_enabled'"
+    );
+  });
+
+  it('keeps processing unknown until at least one duration is observed', () => {
+    const sql = migration();
+    const attemptTotals =
+      sql.match(/attempt_totals AS \([\s\S]+?\n  \),\n  processing AS/i)?.[0] ??
+      '';
+
+    expect(attemptTotals).toContain('SUM(execution.duration_ms)::NUMERIC');
+    expect(attemptTotals).not.toMatch(
+      /COALESCE\s*\(\s*SUM\(execution\.duration_ms\),\s*0\s*\)/i
+    );
+    expect(sql).toMatch(
+      /processing AS \([\s\S]+?AVG\(processing_ms\) AS avg_processing_ms/i
+    );
+  });
+
+  it('aligns coverage predicates with partial indexes for a static explain contract', () => {
+    const sql = migration();
+
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_flow_node_executions_analytics_orphan_null[\s\S]+?ON public\.flow_node_executions\s*\(\s*flow_version_id,\s*started_at\s*\)[\s\S]+?WHERE visit_id IS NULL/i
+    );
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_flow_node_executions_analytics_orphan_linked[\s\S]+?ON public\.flow_node_executions\s*\(\s*flow_version_id,\s*started_at,\s*flow_run_id,\s*visit_id\s*\)[\s\S]+?WHERE visit_id IS NOT NULL/i
+    );
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_flow_runs_analytics_ineligible[\s\S]+?ON public\.flow_runs\s*\(\s*id\s*\)[\s\S]+?WHERE analytics_eligible = FALSE/i
+    );
+    expect(sql).toMatch(
+      /execution\.flow_version_id = v_version\.id[\s\S]+?execution\.started_at >= v_from[\s\S]+?execution\.started_at < v_to[\s\S]+?execution\.visit_id IS NULL/i
+    );
+    expect(sql).toMatch(
+      /execution\.flow_version_id = v_version\.id[\s\S]+?execution\.started_at >= v_from[\s\S]+?execution\.started_at < v_to[\s\S]+?execution\.visit_id IS NOT NULL/i
+    );
+  });
+
   it('keeps error-then-success retries on one visit while storing every attempt', () => {
     const sql = migration();
     const executionInsert =

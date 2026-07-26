@@ -4,9 +4,30 @@
 
 ALTER TABLE public.flow_node_executions ADD COLUMN IF NOT EXISTS visit_id UUID;
 
+-- PostgreSQL stores a constant ADD COLUMN default as metadata, so existing
+-- and in-flight runs become one ineligible cohort without a table rewrite.
+-- Changing only the default then makes every subsequently inserted run
+-- eligible for exact analytics.
+ALTER TABLE public.flow_runs
+  ADD COLUMN IF NOT EXISTS analytics_eligible BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.flow_runs
+  ALTER COLUMN analytics_eligible SET DEFAULT TRUE;
+
 CREATE INDEX IF NOT EXISTS idx_flow_node_executions_visit
   ON public.flow_node_executions(flow_run_id, flow_version_id, visit_id)
   WHERE visit_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_flow_node_executions_analytics_orphan_null
+  ON public.flow_node_executions(flow_version_id, started_at)
+  WHERE visit_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_flow_node_executions_analytics_orphan_linked
+  ON public.flow_node_executions(
+    flow_version_id, started_at, flow_run_id, visit_id
+  )
+  INCLUDE (node_key)
+  WHERE visit_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_flow_runs_analytics_ineligible
+  ON public.flow_runs(id)
+  WHERE analytics_eligible = FALSE;
 
 CREATE TABLE IF NOT EXISTS public.flow_node_visits (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -225,6 +246,10 @@ DECLARE
   v_frame public.flow_call_frames%ROWTYPE;
   v_outcome TEXT;
 BEGIN
+  IF NOT NEW.analytics_eligible THEN
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'INSERT' THEN
     IF NEW.current_node_key IS NULL OR NEW.current_visit_id IS NULL THEN
       RETURN NEW;
@@ -486,11 +511,49 @@ BEGIN
   WHERE coverage.singleton = TRUE;
 
   SELECT COUNT(*) INTO v_legacy_attempts_excluded
-  FROM public.flow_node_executions execution
-  WHERE execution.flow_version_id = v_version.id
-    AND execution.visit_id IS NULL
-    AND execution.started_at >= v_from
-    AND execution.started_at < v_to;
+  FROM (
+    -- Attempts without a visit identity are always outside exact analytics.
+    SELECT 1
+    FROM public.flow_node_executions execution
+    WHERE execution.flow_version_id = v_version.id
+      AND execution.started_at >= v_from
+      AND execution.started_at < v_to
+      AND execution.visit_id IS NULL
+
+    UNION ALL
+
+    -- Pre-deploy runs remain excluded even when later attempts carry the
+    -- runtime cursor's visit_id.
+    SELECT 1
+    FROM public.flow_node_executions execution
+    JOIN public.flow_runs run
+      ON run.id = execution.flow_run_id
+    WHERE execution.flow_version_id = v_version.id
+      AND execution.started_at >= v_from
+      AND execution.started_at < v_to
+      AND execution.visit_id IS NOT NULL
+      AND NOT run.analytics_eligible
+
+    UNION ALL
+
+    -- An eligible run can still miss its best-effort visit fact. Surface
+    -- those attempts as excluded rather than silently reporting zero.
+    SELECT 1
+    FROM public.flow_node_executions execution
+    JOIN public.flow_runs run
+      ON run.id = execution.flow_run_id
+     AND run.analytics_eligible
+    LEFT JOIN public.flow_node_visits visit
+      ON visit.flow_run_id = execution.flow_run_id
+     AND visit.flow_version_id = execution.flow_version_id
+     AND visit.visit_id = execution.visit_id
+     AND visit.node_key = execution.node_key
+    WHERE execution.flow_version_id = v_version.id
+      AND execution.started_at >= v_from
+      AND execution.started_at < v_to
+      AND execution.visit_id IS NOT NULL
+      AND visit.id IS NULL
+  ) excluded_attempt;
 
   SELECT COALESCE(
     pg_catalog.jsonb_agg(
@@ -525,6 +588,9 @@ BEGIN
   selected_visits AS (
     SELECT visit.*
     FROM public.flow_node_visits visit
+    JOIN public.flow_runs run
+      ON run.id = visit.flow_run_id
+     AND run.analytics_eligible
     WHERE visit.flow_version_id = v_version.id
       AND visit.entered_at >= v_from
       AND visit.entered_at < v_to
@@ -533,7 +599,7 @@ BEGIN
     SELECT
       visit.node_key,
       visit.visit_id,
-      COALESCE(SUM(execution.duration_ms), 0)::NUMERIC AS processing_ms
+      SUM(execution.duration_ms)::NUMERIC AS processing_ms
     FROM selected_visits visit
     LEFT JOIN public.flow_node_executions execution
       ON execution.flow_run_id = visit.flow_run_id
@@ -683,6 +749,7 @@ BEGIN
       'to', v_to
     ),
     'coverage_started_at', v_coverage_started_at,
+    'coverage_cohort', 'runs_started_after_tracking_enabled',
     'legacy_attempts_excluded', v_legacy_attempts_excluded,
     'biggest_dropoff', v_biggest,
     'nodes', v_nodes

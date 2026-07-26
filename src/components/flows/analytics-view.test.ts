@@ -37,6 +37,7 @@ describe('flow analytics UI', () => {
     expect(pageSource).toContain('role="img"');
     expect(pageSource).toContain('data-testid="analytics-empty"');
     expect(pageSource).toContain('coverage_started_at');
+    expect(pageSource).toContain('coverage_cohort');
     expect(pageSource).toContain('biggest_dropoff');
   });
 

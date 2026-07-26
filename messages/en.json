@@ -1055,7 +1055,7 @@
       "versionOption": "Version {version}",
       "periodLabel": "Period",
       "periodDays": "Last {days} days",
-      "coverage": "Exact visit tracking starts on {date}. {count, plural, =0 {No legacy attempts fall in this window.} =1 {One legacy attempt is excluded.} other {# legacy attempts are excluded.}}",
+      "coverage": "Only runs started after exact visit tracking was enabled on {date} are included. {count, plural, =0 {No attempts from earlier runs or without a correlated visit fall in this window.} =1 {One attempt from an earlier run or without a correlated visit is excluded.} other {# attempts from earlier runs or without a correlated visit are excluded.}}",
       "summary": "Analytics summary",
       "entries": "Entries",
       "uniqueRuns": "Unique runs",

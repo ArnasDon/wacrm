@@ -30,6 +30,7 @@ const result = {
     to: '2026-02-01T00:00:00+00:00',
   },
   coverage_started_at: '2026-01-15T00:00:00+00:00',
+  coverage_cohort: 'runs_started_after_tracking_enabled',
   legacy_attempts_excluded: 0,
   biggest_dropoff: null,
   nodes: [],

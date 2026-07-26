@@ -1055,7 +1055,7 @@
       "versionOption": "버전 {version}",
       "periodLabel": "기간",
       "periodDays": "최근 {days}일",
-      "coverage": "정확한 방문 추적은 {date}부터 시작됩니다. {count, plural, =0 {이 기간에 제외된 이전 시도는 없습니다.} other {이전 시도 #건이 제외되었습니다.}}",
+      "coverage": "{date}에 정확한 방문 추적이 활성화된 후 시작된 실행만 포함됩니다. {count, plural, =0 {이 기간에는 이전 실행 또는 연결된 방문이 없는 시도가 없습니다.} other {이전 실행 또는 연결된 방문이 없는 시도 #건이 제외되었습니다.}}",
       "summary": "분석 요약",
       "entries": "진입 수",
       "uniqueRuns": "고유 실행",

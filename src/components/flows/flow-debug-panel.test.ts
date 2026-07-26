@@ -1,0 +1,51 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const source = readFileSync(
+  join(process.cwd(), "src/components/flows/flow-debug-panel.tsx"),
+  "utf8",
+);
+const editorState = readFileSync(
+  join(process.cwd(), "src/components/flows/flow-editor-state.tsx"),
+  "utf8",
+);
+const canvas = readFileSync(
+  join(process.cwd(), "src/components/flows/flow-canvas.tsx"),
+  "utf8",
+);
+const en = JSON.parse(
+  readFileSync(join(process.cwd(), "messages/en.json"), "utf8"),
+);
+const ko = JSON.parse(
+  readFileSync(join(process.cwd(), "messages/ko.json"), "utf8"),
+);
+
+describe("flow debug inspector UI", () => {
+  it("shares selected node state between the inspector and canvas", () => {
+    expect(editorState).toContain("selectedNodeKey");
+    expect(editorState).toContain("setSelectedNodeKey");
+    expect(canvas).not.toContain(
+      "const [selectedNodeKey, setSelectedNodeKey] = useState",
+    );
+    expect(source).toContain("setSelectedNodeKey");
+  });
+
+  it("offers source runs, typed variables and explicit simulation-only execution", () => {
+    expect(source).toContain("/debug/flight-recorder");
+    expect(source).toContain("/debug/sessions");
+    expect(source).toContain("expected_revision");
+    expect(source).toContain("window.confirm");
+    expect(source).toContain("contact");
+    expect(source).toContain("message");
+    expect(source).toContain("aria-live");
+  });
+
+  it("ships real English and Korean debug translations", () => {
+    expect(en.Flows.debug.simulationNotice).toContain("never");
+    expect(ko.Flows.debug.simulationNotice).toContain("실제");
+    expect(Object.keys(ko.Flows.debug).sort()).toEqual(
+      Object.keys(en.Flows.debug).sort(),
+    );
+  });
+});

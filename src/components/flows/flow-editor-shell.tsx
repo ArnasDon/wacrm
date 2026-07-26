@@ -29,6 +29,7 @@ import { GitFork, List } from "lucide-react";
 
 import { FlowBuilder } from "./flow-builder";
 import { FlowCanvas } from "./flow-canvas";
+import { FlowDebugPanel } from "./flow-debug-panel";
 import { FlowEditorProvider } from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
@@ -152,14 +153,17 @@ export function FlowEditorShell({
         )}
 
         {/* ---- stage: the active view, owning its own overflow ---- */}
-        <div className="relative mx-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
-          {effectiveView === "canvas" ? (
-            <FlowCanvas />
-          ) : (
-            <div className="absolute inset-0 overflow-y-auto">
-              <FlowBuilder />
-            </div>
-          )}
+        <div className="relative mx-6 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
+          <div className="relative min-w-0 flex-1">
+            {effectiveView === "canvas" ? (
+              <FlowCanvas />
+            ) : (
+              <div className="absolute inset-0 overflow-y-auto">
+                <FlowBuilder />
+              </div>
+            )}
+          </div>
+          <FlowDebugPanel />
         </div>
 
         {/* ---- validation / activate-readiness bar ---- */}

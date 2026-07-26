@@ -345,6 +345,8 @@ function FlowCanvasInner() {
     updateNodePositions,
     removeNode,
     flashKey,
+    selectedNodeKey,
+    setSelectedNodeKey,
   } = useFlowEditor();
   const reactFlow = useReactFlow();
   const builderNodes = state.nodes;
@@ -353,7 +355,6 @@ function FlowCanvasInner() {
   // Side-panel state — which node's form is open. Canvas-only UI; the
   // list view's analogue is the per-card expanded set in
   // flow-builder.tsx.
-  const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
   const [connectionFeedback, setConnectionFeedback] = useState<string | null>(
     null
   );
@@ -487,7 +488,7 @@ function FlowCanvasInner() {
     (_event: React.MouseEvent, node: RfNode<NodeData>) => {
       setSelectedNodeKey(node.id);
     },
-    []
+    [setSelectedNodeKey]
   );
 
   // Drag-to-connect: React-Flow fires onConnect when the user drops a
@@ -574,7 +575,7 @@ function FlowCanvasInner() {
         if (selectedNodeKey === n.id) setSelectedNodeKey(null);
       }
     },
-    [removeNode, selectedNodeKey]
+    [removeNode, selectedNodeKey, setSelectedNodeKey]
   );
 
   // Edge delete: clear the source node's slot rather than removing
@@ -617,7 +618,7 @@ function FlowCanvasInner() {
     if (!selectedNodeKey) return;
     removeNode(selectedNodeKey);
     setSelectedNodeKey(null);
-  }, [selectedNodeKey, removeNode]);
+  }, [selectedNodeKey, removeNode, setSelectedNodeKey]);
 
   const handleSetEntry = useCallback(() => {
     if (!selectedNodeKey) return;

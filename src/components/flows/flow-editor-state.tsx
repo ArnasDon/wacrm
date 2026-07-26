@@ -109,6 +109,9 @@ export interface FlowEditorContextValue {
   canManageVersions: boolean;
   publishedVersionId: string | null;
   draftRevision: number;
+  /** Shared by canvas, list and the debug inspector. */
+  selectedNodeKey: string | null;
+  setSelectedNodeKey: (key: string | null) => void;
 
   // Node mutations. addNode returns the generated key so the caller
   // (a NodeCard "Add" button or canvas "+" button) can scroll to /
@@ -361,6 +364,7 @@ export function FlowEditorProvider({
   const [draftRevision, setDraftRevision] = useState(
     initialFlow.draft_revision ?? 0,
   );
+  const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
   // dirty flips on user edits; status-only updates (after the activate
   // API succeeds) use setStateRaw so they don't falsely re-flag the
   // form as dirty.
@@ -760,6 +764,8 @@ export function FlowEditorProvider({
       canManageVersions: versionControls.showControls,
       publishedVersionId,
       draftRevision,
+      selectedNodeKey,
+      setSelectedNodeKey,
       addNode,
       updateNode,
       updateNodeConfig,
@@ -789,6 +795,7 @@ export function FlowEditorProvider({
       versionControls.showControls,
       publishedVersionId,
       draftRevision,
+      selectedNodeKey,
       addNode,
       updateNode,
       updateNodeConfig,

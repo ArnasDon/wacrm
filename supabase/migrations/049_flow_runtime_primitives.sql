@@ -216,6 +216,7 @@ ALTER TABLE flow_runs
     'active',
     'waiting',
     'resuming',
+    'needs_recovery',
     'completed',
     'handed_off',
     'timed_out',
@@ -238,7 +239,7 @@ ALTER TABLE flow_runs
 DROP INDEX IF EXISTS idx_one_active_run_per_contact;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_contact
   ON flow_runs(account_id, contact_id)
-  WHERE status IN ('active', 'waiting', 'resuming');
+  WHERE status IN ('active', 'waiting', 'resuming', 'needs_recovery');
 
 CREATE TABLE IF NOT EXISTS flow_waits (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -321,7 +322,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF v_run.status NOT IN ('active', 'resuming') THEN
+  IF v_run.status NOT IN ('active', 'resuming', 'needs_recovery') THEN
     RAISE EXCEPTION 'flow run is not eligible for wait';
   END IF;
 
@@ -585,7 +586,8 @@ BEGIN
   WHERE id = p_run_id
     AND flow_version_id = p_flow_version_id
   FOR UPDATE;
-  IF NOT FOUND OR v_run.status NOT IN ('active', 'resuming') THEN
+  IF NOT FOUND
+     OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery') THEN
     RETURN;
   END IF;
 
@@ -599,7 +601,11 @@ BEGIN
 
   RETURN QUERY
   UPDATE flow_runs
-  SET current_node_key = p_next_node_key,
+  SET status = CASE
+        WHEN status = 'needs_recovery' THEN 'active'
+        ELSE status
+      END,
+      current_node_key = p_next_node_key,
       current_visit_id = uuid_generate_v4(),
       continuation_step = continuation_step + 1,
       last_advanced_at = NOW()
@@ -701,28 +707,39 @@ GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO servic
 -- of re-evaluating mutable in-memory state.
 CREATE TABLE IF NOT EXISTS flow_reply_transitions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
+  account_id UUID NOT NULL,
+  contact_id UUID NOT NULL,
+  flow_run_id UUID REFERENCES flow_runs(id) ON DELETE SET NULL,
   flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
   meta_message_id TEXT NOT NULL,
   from_node_key TEXT NOT NULL,
   from_visit_id UUID NOT NULL,
   next_node_key TEXT NOT NULL,
   next_visit_id UUID NOT NULL,
+  transition_kind TEXT NOT NULL
+    CHECK (transition_kind IN (
+      'reply_branch',
+      'reprompt',
+      'fallback_ignore',
+      'fallback_handoff',
+      'fallback_end'
+    )),
+  recovery_state TEXT NOT NULL
+    CHECK (recovery_state IN ('pending', 'completed')),
   vars_after JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (flow_run_id, meta_message_id)
+  UNIQUE (account_id, contact_id, meta_message_id)
 );
 
 ALTER TABLE flow_reply_transitions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_reply_transitions_select ON flow_reply_transitions;
 CREATE POLICY flow_reply_transitions_select ON flow_reply_transitions FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM flow_runs run
-      WHERE run.id = flow_reply_transitions.flow_run_id
-        AND is_account_member(run.account_id, 'viewer')
-    )
-  );
+  USING (is_account_member(account_id, 'viewer'));
+
+REVOKE ALL ON TABLE flow_reply_transitions FROM PUBLIC, anon;
+REVOKE INSERT, UPDATE, DELETE ON TABLE flow_reply_transitions FROM authenticated;
+GRANT SELECT ON TABLE flow_reply_transitions TO authenticated;
+GRANT ALL ON TABLE flow_reply_transitions TO service_role;
 
 CREATE OR REPLACE FUNCTION commit_flow_reply_transition(
   p_run_id UUID,
@@ -769,7 +786,8 @@ BEGIN
 
   SELECT * INTO v_transition
   FROM flow_reply_transitions transition
-  WHERE transition.flow_run_id = p_run_id
+  WHERE transition.account_id = v_run.account_id
+    AND transition.contact_id = v_run.contact_id
     AND transition.meta_message_id = p_meta_message_id;
   IF FOUND THEN
     RETURN QUERY SELECT
@@ -784,7 +802,8 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_run.status NOT IN ('active', 'resuming')
+  IF v_run.contact_id IS NULL
+     OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
      OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
      OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id THEN
     RETURN;
@@ -792,6 +811,8 @@ BEGIN
 
   v_next_visit_id := uuid_generate_v4();
   INSERT INTO flow_reply_transitions (
+    account_id,
+    contact_id,
     flow_run_id,
     flow_version_id,
     meta_message_id,
@@ -799,9 +820,13 @@ BEGIN
     from_visit_id,
     next_node_key,
     next_visit_id,
+    transition_kind,
+    recovery_state,
     vars_after
   )
   VALUES (
+    v_run.account_id,
+    v_run.contact_id,
     p_run_id,
     p_flow_version_id,
     p_meta_message_id,
@@ -809,12 +834,18 @@ BEGIN
     p_expected_visit_id,
     p_next_node_key,
     v_next_visit_id,
+    'reply_branch',
+    'pending',
     COALESCE(p_vars, v_run.vars)
   )
   RETURNING * INTO v_transition;
 
   UPDATE flow_runs
-  SET vars = COALESCE(p_vars, flow_runs.vars),
+  SET status = CASE
+        WHEN status = 'needs_recovery' THEN 'active'
+        ELSE status
+      END,
+      vars = COALESCE(p_vars, flow_runs.vars),
       reprompt_count = 0,
       current_node_key = p_next_node_key,
       current_visit_id = v_next_visit_id,
@@ -904,7 +935,7 @@ BEGIN
     WHERE id = p_run_id
       AND flow_version_id = p_flow_version_id
       AND current_visit_id = p_visit_id
-      AND status IN ('active', 'resuming')
+      AND status IN ('active', 'resuming', 'needs_recovery')
   ) THEN
     RETURN;
   END IF;
@@ -1082,7 +1113,8 @@ BEGIN
   IF v_effect.status <> 'remote_committed'
      OR v_effect.node_key IS DISTINCT FROM p_expected_node_key
      OR v_effect.visit_id IS DISTINCT FROM p_expected_visit_id
-     OR v_run.status NOT IN ('active', 'resuming')
+     OR v_run.contact_id IS NULL
+     OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
      OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
      OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id
      OR p_reprompt_count <> v_run.reprompt_count + 1 THEN
@@ -1091,6 +1123,8 @@ BEGIN
 
   v_next_visit_id := uuid_generate_v4();
   INSERT INTO flow_reply_transitions (
+    account_id,
+    contact_id,
     flow_run_id,
     flow_version_id,
     meta_message_id,
@@ -1098,9 +1132,13 @@ BEGIN
     from_visit_id,
     next_node_key,
     next_visit_id,
+    transition_kind,
+    recovery_state,
     vars_after
   )
   VALUES (
+    v_run.account_id,
+    v_run.contact_id,
     p_run_id,
     p_flow_version_id,
     p_meta_message_id,
@@ -1108,11 +1146,17 @@ BEGIN
     p_expected_visit_id,
     p_expected_node_key,
     v_next_visit_id,
+    'reprompt',
+    'completed',
     v_run.vars
   );
 
   UPDATE flow_runs
-  SET reprompt_count = p_reprompt_count,
+  SET status = CASE
+        WHEN status = 'needs_recovery' THEN 'active'
+        ELSE status
+      END,
+      reprompt_count = p_reprompt_count,
       current_node_key = p_expected_node_key,
       current_visit_id = v_next_visit_id,
       continuation_step = continuation_step + 1,
@@ -1138,3 +1182,131 @@ $$;
 REVOKE ALL ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) TO service_role;
+
+-- Exhaustion and non-reprompt decisions consume an inbound exactly once.
+-- The receipt, counter and terminal/handoff state share one transaction.
+CREATE OR REPLACE FUNCTION finalize_flow_fallback_decision(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_meta_message_id TEXT,
+  p_reprompt_count INTEGER,
+  p_decision TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_transition flow_reply_transitions%ROWTYPE;
+BEGIN
+  IF p_reprompt_count < 1
+     OR p_decision IS NULL
+     OR p_decision NOT IN ('ignore', 'handoff', 'end')
+     OR NULLIF(BTRIM(p_meta_message_id), '') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+  IF NOT FOUND
+     OR v_run.flow_version_id IS DISTINCT FROM p_flow_version_id
+     OR v_run.contact_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_transition
+  FROM flow_reply_transitions transition
+  WHERE transition.account_id = v_run.account_id
+    AND transition.contact_id = v_run.contact_id
+    AND transition.meta_message_id = p_meta_message_id;
+  IF FOUND THEN
+    IF v_transition.flow_run_id = v_run.id
+       AND v_transition.transition_kind = 'fallback_' || p_decision
+       AND v_transition.recovery_state = 'completed' THEN
+      RETURN NEXT v_run;
+    END IF;
+    RETURN;
+  END IF;
+
+  IF v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
+     OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id
+     OR p_reprompt_count <> v_run.reprompt_count + 1 THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO flow_reply_transitions (
+    account_id,
+    contact_id,
+    flow_run_id,
+    flow_version_id,
+    meta_message_id,
+    from_node_key,
+    from_visit_id,
+    next_node_key,
+    next_visit_id,
+    transition_kind,
+    recovery_state,
+    vars_after
+  )
+  VALUES (
+    v_run.account_id,
+    v_run.contact_id,
+    v_run.id,
+    v_run.flow_version_id,
+    p_meta_message_id,
+    p_expected_node_key,
+    p_expected_visit_id,
+    p_expected_node_key,
+    p_expected_visit_id,
+    'fallback_' || p_decision,
+    'completed',
+    v_run.vars
+  );
+
+  IF p_decision = 'handoff' THEN
+    UPDATE conversations
+    SET status = 'pending',
+        updated_at = NOW()
+    WHERE id = v_run.conversation_id;
+
+    UPDATE flow_runs
+    SET reprompt_count = p_reprompt_count,
+        status = 'handed_off',
+        ended_at = NOW(),
+        end_reason = 'fallback_exhausted'
+    WHERE id = p_run_id
+    RETURNING * INTO v_run;
+  ELSIF p_decision = 'end' THEN
+    UPDATE flow_runs
+    SET reprompt_count = p_reprompt_count,
+        status = 'completed',
+        ended_at = NOW(),
+        end_reason = 'fallback_exhausted_end'
+    WHERE id = p_run_id
+    RETURNING * INTO v_run;
+  ELSE
+    UPDATE flow_runs
+    SET reprompt_count = p_reprompt_count,
+        status = CASE
+          WHEN status = 'needs_recovery' THEN 'active'
+          ELSE status
+        END,
+        last_advanced_at = NOW()
+    WHERE id = p_run_id
+    RETURNING * INTO v_run;
+  END IF;
+
+  RETURN NEXT v_run;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION finalize_flow_fallback_decision(UUID, UUID, TEXT, UUID, TEXT, INTEGER, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION finalize_flow_fallback_decision(UUID, UUID, TEXT, UUID, TEXT, INTEGER, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION finalize_flow_fallback_decision(UUID, UUID, TEXT, UUID, TEXT, INTEGER, TEXT) TO service_role;

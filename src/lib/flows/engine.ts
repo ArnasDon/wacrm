@@ -263,7 +263,7 @@ async function loadActiveRunForContact(
     .select("*")
     .eq("account_id", accountId)
     .eq("contact_id", contactId)
-    .eq("status", "active")
+    .in("status", ["active", "resuming", "needs_recovery"])
     .order("started_at", { ascending: false })
     .limit(1);
   if (error) {
@@ -344,29 +344,58 @@ async function logEvent(
  * Audit events are excluded because a process can crash after logging the
  * inbound but before finalizing a remote-committed reprompt.
  */
-async function isDuplicateInbound(
+interface FlowInboundReceipt {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  flow_run_id: string | null;
+  flow_version_id: string;
+  meta_message_id: string;
+  from_node_key: string;
+  from_visit_id: string;
+  next_node_key: string;
+  next_visit_id: string;
+  transition_kind:
+    | "reply_branch"
+    | "reprompt"
+    | "fallback_ignore"
+    | "fallback_handoff"
+    | "fallback_end";
+  recovery_state: "pending" | "completed";
+}
+
+async function loadInboundReceipt(
   db: AdminClient,
   accountId: string,
   contactId: string,
   metaMessageId: string,
-): Promise<boolean> {
-  // Fetch ALL run ids for this contact in this account (active +
-  // historical). Bounded by how many flows the customer has been
-  // through — small.
-  const { data: runs } = await db
-    .from("flow_runs")
-    .select("id")
-    .eq("account_id", accountId)
-    .eq("contact_id", contactId);
-  if (!runs?.length) return false;
-  const runIds = runs.map((r) => (r as { id: string }).id);
-
-  const { count } = await db
+): Promise<FlowInboundReceipt | null> {
+  // The account/contact/message key survives run deletion, so a received
+  // inbound can never become eligible to start a fresh run later.
+  const { data, error } = await db
     .from("flow_reply_transitions")
-    .select("id", { count: "exact", head: true })
-    .in("flow_run_id", runIds)
-    .eq("meta_message_id", metaMessageId);
-  return (count ?? 0) > 0;
+    .select(
+      "id, account_id, contact_id, flow_run_id, flow_version_id, meta_message_id, from_node_key, from_visit_id, next_node_key, next_visit_id, transition_kind, recovery_state",
+    )
+    .eq("account_id", accountId)
+    .eq("contact_id", contactId)
+    .eq("meta_message_id", metaMessageId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as FlowInboundReceipt | null;
+}
+
+async function loadRunById(
+  db: AdminClient,
+  runId: string,
+): Promise<FlowRunRow | null> {
+  const { data, error } = await db
+    .from("flow_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as FlowRunRow | null;
 }
 
 async function findEntryFlow(
@@ -820,7 +849,7 @@ async function persistDurableCursor(
   if (
     !run.current_node_key ||
     !run.current_visit_id ||
-    !["active", "resuming"].includes(run.status)
+    !["active", "resuming", "needs_recovery"].includes(run.status)
   ) {
     return;
   }
@@ -843,6 +872,7 @@ async function persistDurableCursor(
   run.current_node_key = advanced.current_node_key;
   run.current_visit_id = advanced.current_visit_id;
   run.continuation_step = advanced.continuation_step;
+  if (advanced.status) run.status = advanced.status;
 }
 
 async function persistTransition(
@@ -873,11 +903,13 @@ async function findCommittedReplyTransition(
   from_visit_id: string;
   next_node_key: string;
   next_visit_id: string;
+  transition_kind: FlowInboundReceipt["transition_kind"];
+  recovery_state: FlowInboundReceipt["recovery_state"];
 } | null> {
   const { data, error } = await db
     .from("flow_reply_transitions")
     .select(
-      "from_node_key, from_visit_id, next_node_key, next_visit_id",
+      "from_node_key, from_visit_id, next_node_key, next_visit_id, transition_kind, recovery_state",
     )
     .eq("flow_run_id", runId)
     .eq("meta_message_id", metaMessageId)
@@ -888,6 +920,8 @@ async function findCommittedReplyTransition(
     from_visit_id: string;
     next_node_key: string;
     next_visit_id: string;
+    transition_kind: FlowInboundReceipt["transition_kind"];
+    recovery_state: FlowInboundReceipt["recovery_state"];
   } | null;
 }
 
@@ -924,15 +958,37 @@ async function stopAfterCommittedEffectPersistenceFailure(
   run: FlowRunRow,
   error: unknown,
 ): Promise<never | void> {
-  if (run.status === "resuming") {
-    throw error;
-  }
-  await endRun(
+  const continuationMustRetry =
+    run.status === "resuming" && run.continuation_id !== null;
+  await markRunNeedsRecovery(
     db,
-    run.id,
-    "failed",
+    run,
     "side_effect_committed_local_persistence_failed",
   );
+  if (continuationMustRetry) {
+    throw error;
+  }
+}
+
+async function markRunNeedsRecovery(
+  db: AdminClient,
+  run: FlowRunRow,
+  reason: string,
+): Promise<void> {
+  const { error: recoveryError } = await db
+    .from("flow_runs")
+    .update({
+      status: "needs_recovery",
+      ended_at: null,
+      end_reason: reason,
+    })
+    .eq("id", run.id);
+  if (recoveryError) {
+    throw recoveryError;
+  }
+  run.status = "needs_recovery";
+  run.ended_at = null;
+  run.end_reason = reason;
 }
 
 async function finalizeDurableNodeEffect(
@@ -1003,6 +1059,67 @@ async function finalizeRepromptEffect(
     await stopAfterCommittedEffectPersistenceFailure(db, run, error);
     return false;
   }
+}
+
+async function finalizeFallbackDecision(
+  db: AdminClient,
+  run: FlowRunRow,
+  metaMessageId: string,
+  repromptCount: number,
+  decision: "ignore" | "handoff" | "end",
+): Promise<boolean> {
+  if (!run.current_node_key || !run.current_visit_id) {
+    throw new Error("fallback decision is missing its durable source visit");
+  }
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
+  const { data, error } = await db.rpc(
+    "finalize_flow_fallback_decision",
+    {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_meta_message_id: metaMessageId,
+      p_reprompt_count: repromptCount,
+      p_decision: decision,
+    },
+  );
+  const finalized = Array.isArray(data)
+    ? (data[0] as FlowRunRow | undefined)
+    : undefined;
+  if (!error && finalized) {
+    run.status = finalized.status;
+    run.reprompt_count = finalized.reprompt_count;
+    run.ended_at = finalized.ended_at;
+    run.end_reason = finalized.end_reason;
+    return true;
+  }
+
+  // The transaction may have committed while its response was lost.
+  const receipt = await findCommittedReplyTransition(
+    db,
+    run.id,
+    metaMessageId,
+  );
+  if (
+    receipt?.recovery_state === "completed" &&
+    receipt.transition_kind === `fallback_${decision}`
+  ) {
+    return true;
+  }
+
+  const continuationMustRetry =
+    run.status === "resuming" && run.continuation_id !== null;
+  await markRunNeedsRecovery(
+    db,
+    run,
+    "fallback_decision_persistence_failed",
+  );
+  if (continuationMustRetry) {
+    throw error ?? new Error("fallback decision was not committed");
+  }
+  return false;
 }
 
 // ============================================================
@@ -2026,29 +2143,66 @@ export async function dispatchInboundToFlows(
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
+    // Receipts are checked before active-run lookup and before flow starts.
+    const receipt = await loadInboundReceipt(
+      db,
+      input.accountId,
+      input.contactId,
+      input.message.meta_message_id,
+    );
+    if (receipt) {
+      const receiptRun = receipt.flow_run_id
+        ? await loadRunById(db, receipt.flow_run_id)
+        : null;
+      const recoverable =
+        receiptRun &&
+        receiptRun.account_id === input.accountId &&
+        receiptRun.contact_id === input.contactId &&
+        receipt.recovery_state === "pending" &&
+        ["active", "resuming", "needs_recovery"].includes(
+          receiptRun.status,
+        ) &&
+        receiptRun.current_node_key === receipt.next_node_key &&
+        receiptRun.current_visit_id === receipt.next_visit_id;
+      if (recoverable) {
+        const version = await loadFlowVersion(
+          db,
+          receiptRun.flow_version_id,
+          receiptRun.flow_id,
+        );
+        if (version) {
+          const recovered = await advanceFromNodeKey(
+            db,
+            receiptRun,
+            receipt.next_node_key,
+            snapshotNodes(receiptRun.flow_id, version.graph),
+            version.graph.fallback_policy.execution,
+          );
+          return {
+            consumed: true,
+            flow_run_id: receiptRun.id,
+            outcome: recovered.outcome,
+          };
+        }
+      }
+      return {
+        consumed: true,
+        ...(receipt.flow_run_id
+          ? { flow_run_id: receipt.flow_run_id }
+          : {}),
+        outcome: "duplicate_inbound_ignored",
+      };
+    }
+
     const activeRun = await loadActiveRunForContact(
       db,
       input.accountId,
       input.contactId,
     );
 
-    // Idempotency — only matters if there's already a run for this
-    // contact. For new runs, the partial unique index catches duplicate
-    // starts at INSERT time.
+    // A run may already be active even when this inbound has no receipt.
+    // In that case, only its pinned graph is allowed to consume the message.
     if (activeRun) {
-      const dupe = await isDuplicateInbound(
-        db,
-        input.accountId,
-        input.contactId,
-        input.message.meta_message_id,
-      );
-      if (dupe) {
-        return {
-          consumed: true,
-          flow_run_id: activeRun.id,
-          outcome: "duplicate_inbound_ignored",
-        };
-      }
       // Never consult the mutable draft: the pinned version owns nodes,
       // trigger semantics, and fallback behavior for the run's lifetime.
       const version = activeRun.flow_version_id
@@ -2127,8 +2281,10 @@ export async function handleReplyForActiveRun(
     if (
       run.current_node_key &&
       run.current_visit_id &&
-      run.current_visit_id !== priorTransition.from_visit_id &&
-      ["active", "resuming"].includes(run.status)
+      priorTransition.recovery_state === "pending" &&
+      run.current_node_key === priorTransition.next_node_key &&
+      run.current_visit_id === priorTransition.next_visit_id &&
+      ["active", "resuming", "needs_recovery"].includes(run.status)
     ) {
       const recovered = await advanceFromNodeKey(
         db,
@@ -2365,39 +2521,27 @@ export async function handleReplyForActiveRun(
     return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
   }
 
-  // Non-reprompt fallback actions count the rejected reply immediately. A
-  // reprompt defers this write until its send succeeds above.
-  const { error: countError } = await db
-    .from("flow_runs")
-    .update({ reprompt_count: newReprompts })
-    .eq("id", run.id);
-  if (countError) {
-    await logEvent(db, run.id, "error", run.current_node_key, {
-      reason: "fallback_count_persist_failed",
-    });
-    await endRun(db, run.id, "failed", "fallback_count_persist_failed");
+  if (
+    !(await finalizeFallbackDecision(
+      db,
+      run,
+      message.meta_message_id,
+      newReprompts,
+      action.type,
+    ))
+  ) {
     return { consumed: true, flow_run_id: run.id, outcome: "completed" };
   }
-  run.reprompt_count = newReprompts;
   if (action.type === "ignore") {
     // Don't consume — let automations have a shot at it.
     return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
   }
   if (action.type === "handoff") {
-    if (run.conversation_id) {
-      await db
-        .from("conversations")
-        .update({ status: "pending", updated_at: new Date().toISOString() })
-        .eq("id", run.conversation_id);
-    }
     await logEvent(db, run.id, "handoff", run.current_node_key, {
       reason: "fallback_exhausted",
     });
-    await endRun(db, run.id, "handed_off", "fallback_exhausted");
     return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
   }
-  // action.type === 'end'
-  await endRun(db, run.id, "completed", "fallback_exhausted_end");
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
 }
 

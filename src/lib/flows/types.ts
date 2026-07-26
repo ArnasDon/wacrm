@@ -275,6 +275,7 @@ export interface FlowRunRow {
     | "active"
     | "waiting"
     | "resuming"
+    | "needs_recovery"
     | "completed"
     | "handed_off"
     | "timed_out"

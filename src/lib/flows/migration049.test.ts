@@ -11,7 +11,7 @@ describe("migration 049 durable waits", () => {
   it("adds a waiting run state and blocks competing active or waiting runs", () => {
     expect(sql).toContain("'waiting'");
     expect(sql).toMatch(
-      /WHERE\s+status\s+IN\s*\(\s*'active'\s*,\s*'waiting'\s*,\s*'resuming'\s*\)/i,
+      /WHERE\s+status\s+IN\s*\(\s*'active'\s*,\s*'waiting'\s*,\s*'resuming'\s*,\s*'needs_recovery'\s*\)/i,
     );
   });
 
@@ -29,6 +29,7 @@ describe("migration 049 durable waits", () => {
       "complete_flow_node_effect",
       "commit_flow_reply_transition",
       "finalize_flow_reprompt_effect",
+      "finalize_flow_fallback_decision",
     ]) {
       expect(sql).toContain(`FUNCTION ${name}`);
       expect(sql).toMatch(
@@ -107,8 +108,10 @@ describe("migration 049 durable waits", () => {
 
   it("commits replies and reprompt completion at their state boundaries", () => {
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS flow_reply_transitions");
-    expect(sql).toContain("UNIQUE (flow_run_id, meta_message_id)");
     expect(sql).toContain("next_visit_id UUID NOT NULL");
+    expect(sql).toContain("transition_kind TEXT NOT NULL");
+    expect(sql).toContain("recovery_state TEXT NOT NULL");
+    expect(sql).toContain("UNIQUE (account_id, contact_id, meta_message_id)");
     expect(sql).toMatch(
       /FUNCTION\s+commit_flow_reply_transition[\s\S]+?FOR UPDATE[\s\S]+?INSERT INTO flow_reply_transitions/i,
     );
@@ -117,6 +120,37 @@ describe("migration 049 durable waits", () => {
     );
     expect(sql).toMatch(
       /FUNCTION\s+finalize_flow_reprompt_effect[\s\S]+?FOR UPDATE[\s\S]+?reprompt_count\s*=\s*p_reprompt_count[\s\S]+?UPDATE flow_node_effects[\s\S]+?status\s*=\s*'completed'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+finalize_flow_fallback_decision[\s\S]+?FOR UPDATE[\s\S]+?INSERT INTO flow_reply_transitions[\s\S]+?reprompt_count\s*=\s*p_reprompt_count[\s\S]+?status\s*=\s*'handed_off'/i,
+    );
+  });
+
+  it("exposes reply receipts read-only to account members", () => {
+    expect(sql).toContain(
+      "ALTER TABLE flow_reply_transitions ENABLE ROW LEVEL SECURITY",
+    );
+    expect(sql).toContain(
+      "USING (is_account_member(account_id, 'viewer'))",
+    );
+    expect(sql).toContain(
+      "REVOKE ALL ON TABLE flow_reply_transitions FROM PUBLIC, anon",
+    );
+    expect(sql).toContain(
+      "REVOKE INSERT, UPDATE, DELETE ON TABLE flow_reply_transitions FROM authenticated",
+    );
+    expect(sql).toContain(
+      "GRANT SELECT ON TABLE flow_reply_transitions TO authenticated",
+    );
+    expect(sql).toContain(
+      "GRANT ALL ON TABLE flow_reply_transitions TO service_role",
+    );
+  });
+
+  it("keeps remote-committed runs publicly recoverable", () => {
+    expect(sql).toContain("'needs_recovery'");
+    expect(sql).toMatch(
+      /WHERE\s+status\s+IN\s*\(\s*'active'\s*,\s*'waiting'\s*,\s*'resuming'\s*,\s*'needs_recovery'\s*\)/i,
     );
   });
 });

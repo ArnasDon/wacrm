@@ -71,6 +71,8 @@ function fakeDb(
       from_visit_id: string;
       next_node_key: string;
       next_visit_id: string;
+      transition_kind: "reply_branch" | "reprompt";
+      recovery_state: "pending" | "completed";
       current_node_key: string;
       run_vars: Record<string, unknown>;
       reprompt_count: number;
@@ -160,6 +162,8 @@ function fakeDb(
           from_visit_id: value.p_expected_visit_id as string,
           next_node_key: value.p_next_node_key as string,
           next_visit_id: committedVisit,
+          transition_kind: "reply_branch" as const,
+          recovery_state: "pending" as const,
           current_node_key: value.p_next_node_key as string,
           current_visit_id: committedVisit,
           run_vars:
@@ -192,6 +196,8 @@ function fakeDb(
           from_visit_id: value.p_expected_visit_id as string,
           next_node_key: value.p_expected_node_key as string,
           next_visit_id: finalizedVisit,
+          transition_kind: "reprompt",
+          recovery_state: "completed",
           current_node_key: value.p_expected_node_key as string,
           current_visit_id: finalizedVisit,
           run_vars: {},
@@ -257,6 +263,8 @@ function fakeDb(
                           from_visit_id: transition.from_visit_id,
                           next_node_key: transition.next_node_key,
                           next_visit_id: transition.next_visit_id,
+                          transition_kind: transition.transition_kind,
+                          recovery_state: transition.recovery_state,
                         }
                       : null,
                   error: null,
@@ -481,7 +489,7 @@ describe("node execution policy in the flow engine", () => {
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          write.value.status === "failed" &&
+          write.value.status === "needs_recovery" &&
           write.value.end_reason ===
             "side_effect_committed_local_persistence_failed",
       ),
@@ -1361,7 +1369,7 @@ describe("node execution policy in the flow engine", () => {
           (write) =>
             write.table === "flow_runs" &&
             write.kind === "update" &&
-            write.value.status === "failed" &&
+            write.value.status === "needs_recovery" &&
             write.value.end_reason ===
               "side_effect_committed_local_persistence_failed",
         ),

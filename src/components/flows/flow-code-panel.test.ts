@@ -16,9 +16,10 @@ describe("flow code panel replacement preview", () => {
   });
 
   it("lets users replace or clear stale invalid resource bindings", () => {
-    expect(source).toContain(
-      '["RESOURCE_AMBIGUOUS", "RESOURCE_BINDING_INVALID"].includes(',
-    );
+    expect(source).toContain('issue.code === "RESOURCE_BINDING_INVALID"');
+    expect(source).toContain('issue.code === "RESOURCE_AMBIGUOUS" &&');
+    expect(source).toContain("(issue.candidates?.length ?? 0) > 0");
+    expect(source).toContain("(issue.candidates ?? []).map");
     expect(source).toContain("delete next[ref]");
     expect(source).toContain("[ref]: selectedResourceId");
   });

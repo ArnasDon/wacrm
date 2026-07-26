@@ -487,12 +487,10 @@ export function FlowCodePanel() {
                 {issue.code}
                 {issue.message ? ` — ${issue.message}` : ""}
               </span>
-              {["RESOURCE_AMBIGUOUS", "RESOURCE_BINDING_INVALID"].includes(
-                issue.code,
-              ) &&
-                issue.path?.startsWith("resources.") &&
-                issue.candidates &&
-                issue.candidates.length > 0 && (
+              {(issue.code === "RESOURCE_BINDING_INVALID" ||
+                (issue.code === "RESOURCE_AMBIGUOUS" &&
+                  (issue.candidates?.length ?? 0) > 0)) &&
+                issue.path?.startsWith("resources.") && (
                   <select
                     aria-label={t("chooseResource")}
                     value={
@@ -524,7 +522,7 @@ export function FlowCodePanel() {
                     className="ml-2 h-7 rounded border border-border bg-background px-2 text-foreground"
                   >
                     <option value="">{t("chooseResource")}</option>
-                    {issue.candidates.map((candidate) => (
+                    {(issue.candidates ?? []).map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
                         {candidate.name}
                       </option>

@@ -22,6 +22,7 @@ import type {
   PartialNodeExecutionPolicy,
   RegisteredNodeType,
 } from "./registry";
+import type { FlowVariableDeclaration } from "./runtime-primitives";
 
 // ============================================================
 // Node configs (discriminated union by node_type)
@@ -240,6 +241,8 @@ export interface FlowRow {
     KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
+  /** Typed variables authored for this draft and copied into each version. */
+  variable_schema: FlowVariableDeclaration[];
   execution_count: number;
   last_executed_at: string | null;
   created_at: string;

@@ -5,6 +5,7 @@ import {
   matchesFlowVersionTrigger,
   parseFlowVersionGraph,
 } from "./versions";
+import type { FlowVariableDeclaration } from "./runtime-primitives";
 
 const draft = {
   trigger_type: "keyword" as const,
@@ -19,6 +20,20 @@ const draft = {
     on_timeout_hours: 24,
     on_exhaust: "handoff" as const,
   },
+  variable_schema: [
+    {
+      key: "customer_name",
+      type: "string" as const,
+      required: true,
+      default: "Customer",
+    },
+    {
+      key: "retry_count",
+      type: "number" as const,
+      required: false,
+      default: 0,
+    },
+  ],
 };
 
 const nodes = [
@@ -53,8 +68,42 @@ describe("flow version graph", () => {
       },
       entry_node_key: "start",
       fallback_policy: draft.fallback_policy,
+      variable_schema: draft.variable_schema,
       nodes,
     });
+  });
+
+  it("normalizes legacy snapshots without variable declarations to an empty schema", () => {
+    const graph = buildFlowVersionGraph(draft, nodes);
+    const legacyGraph = JSON.parse(
+      JSON.stringify({ ...graph, variable_schema: undefined }),
+    );
+
+    expect(parseFlowVersionGraph(legacyGraph).variable_schema).toEqual([]);
+  });
+
+  it.each([
+    [null],
+    [[{ key: "bad", type: "number", required: false, default: "not-a-number" }]],
+    [[{ key: "not a valid key", type: "string", required: false }]],
+    [[{ key: "bad", type: "unsupported", required: false }]],
+    [
+      [
+        { key: "duplicate", type: "string", required: false },
+        { key: "duplicate", type: "number", required: false },
+      ],
+    ],
+  ])("rejects an invalid variable schema %#", (variable_schema) => {
+    expect(() =>
+      buildFlowVersionGraph(
+        {
+          ...draft,
+          variable_schema:
+            variable_schema as unknown as FlowVariableDeclaration[],
+        },
+        nodes,
+      ),
+    ).toThrow(/variable schema/i);
   });
 
   it.each([

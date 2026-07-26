@@ -210,6 +210,9 @@ describe("applyRestoredVersion", () => {
         on_timeout_hours: 48,
         on_exhaust: "handoff" as const,
       },
+      variable_schema: [
+        { key: "stale", type: "string" as const, required: false },
+      ],
       nodes: [
         { node_key: "draft_start", node_type: "end" as const, config: {} },
       ],
@@ -224,6 +227,14 @@ describe("applyRestoredVersion", () => {
         on_timeout_hours: 12,
         on_exhaust: "end",
       },
+      variable_schema: [
+        {
+          key: "restored_count",
+          type: "number",
+          required: false,
+          default: 0,
+        },
+      ],
       nodes: [
         {
           node_key: "restored_end",
@@ -241,6 +252,7 @@ describe("applyRestoredVersion", () => {
       trigger_config: {},
       entry_node_id: "restored_end",
       fallback_policy: restored.fallback_policy,
+      variable_schema: restored.variable_schema,
       nodes: restored.nodes,
     });
   });
@@ -259,15 +271,24 @@ describe("applyRestoredVersion", () => {
         on_timeout_hours: 8,
         on_exhaust: "end" as const,
       },
+      variable_schema: [
+        {
+          key: "customer_name",
+          type: "string" as const,
+          required: true,
+        },
+      ],
       nodes: [{ node_key: "end", node_type: "end" as const, config: {} }],
     };
 
     expect(builderStateToSavePayload(state)).toMatchObject({
       fallback_policy: state.fallback_policy,
+      variable_schema: state.variable_schema,
     });
     expect(buildDraftSaveRequest(state, 12)).toMatchObject({
       expected_draft_revision: 12,
       fallback_policy: state.fallback_policy,
+      variable_schema: state.variable_schema,
     });
   });
 });

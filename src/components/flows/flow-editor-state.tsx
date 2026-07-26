@@ -58,6 +58,7 @@ import type {
   FlowNodeRow,
   FlowRow,
 } from "@/lib/flows/types";
+import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 import { normalizeNodeErrorHandlingConfig } from "./forms/error-handling-options";
@@ -73,6 +74,7 @@ export interface BuilderState {
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
+  variable_schema: FlowVariableDeclaration[];
   status: FlowRow["status"];
   nodes: BuilderNode[];
 }
@@ -228,6 +230,7 @@ export function applyRestoredVersion(
     trigger_config: graph.trigger.config,
     entry_node_id: graph.entry_node_key,
     fallback_policy: graph.fallback_policy,
+    variable_schema: graph.variable_schema,
     nodes: graph.nodes.map((node) => ({
       node_key: node.node_key,
       node_type: node.node_type as NodeType,
@@ -246,6 +249,7 @@ export function builderStateToSavePayload(state: BuilderState) {
     trigger_config: state.trigger_config,
     entry_node_id: state.entry_node_id,
     fallback_policy: state.fallback_policy,
+    variable_schema: state.variable_schema,
     nodes: state.nodes,
   };
 }
@@ -285,6 +289,7 @@ function builderStateFromRows(
     trigger_config: flow.trigger_config as Record<string, unknown>,
     entry_node_id: flow.entry_node_id,
     fallback_policy: resolveFallbackPolicy(flow.fallback_policy),
+    variable_schema: flow.variable_schema ?? [],
     status: flow.status,
     nodes: nodes.map((node) => ({
       node_key: node.node_key,

@@ -6,6 +6,8 @@ import {
   isFlowRuntimeNodeType,
   isRegisteredNodeType,
 } from '@/lib/flows/registry'
+import { parseFlowVariableSchema } from '@/lib/flows/versions'
+import type { FlowVariableDeclaration } from '@/lib/flows/runtime-primitives'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -99,6 +101,7 @@ interface PutBody {
   trigger_config?: Record<string, unknown>
   entry_node_id?: string | null
   fallback_policy?: Record<string, unknown>
+  variable_schema?: FlowVariableDeclaration[]
   nodes?: Array<{
     node_key: string
     node_type: string
@@ -169,6 +172,22 @@ export async function PUT(
       { status: 400 },
     )
   }
+  let variableSchema: FlowVariableDeclaration[] | undefined
+  if (body.variable_schema !== undefined) {
+    try {
+      variableSchema = parseFlowVariableSchema(body.variable_schema)
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Invalid flow variable schema',
+        },
+        { status: 400 },
+      )
+    }
+  }
 
   const admin = supabaseAdmin()
 
@@ -185,6 +204,8 @@ export async function PUT(
     flowPatch.entry_node_id = body.entry_node_id
   if (body.fallback_policy !== undefined)
     flowPatch.fallback_policy = body.fallback_policy
+  if (variableSchema !== undefined)
+    flowPatch.variable_schema = variableSchema
 
   const { data: saved, error: saveError } = await admin.rpc(
     'save_flow_draft',

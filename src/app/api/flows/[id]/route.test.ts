@@ -177,6 +177,14 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
         body: JSON.stringify({
           expected_draft_revision: 4,
           name: " Updated ",
+          variable_schema: [
+            {
+              key: "customer_name",
+              type: "string",
+              required: true,
+              default: "Customer",
+            },
+          ],
           nodes: [
             {
               node_key: "end",
@@ -196,7 +204,17 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
     expect(h.rpc).toHaveBeenCalledWith("save_flow_draft", {
       p_flow_id: "flow-1",
       p_expected_revision: 4,
-      p_patch: { name: "Updated" },
+      p_patch: {
+        name: "Updated",
+        variable_schema: [
+          {
+            key: "customer_name",
+            type: "string",
+            required: true,
+            default: "Customer",
+          },
+        ],
+      },
       p_nodes: [
         {
           node_key: "end",
@@ -211,6 +229,34 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
     expect(await response.json()).toMatchObject({
       flow: { id: "flow-1", draft_revision: 5 },
     });
+  });
+
+  it("rejects invalid variable declarations before mutating the draft", async () => {
+    const response = await PUT(
+      new Request("http://localhost/api/flows/flow-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 4,
+          variable_schema: [
+            {
+              key: "attempts",
+              type: "number",
+              required: false,
+              default: "three",
+            },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/variable schema/i),
+    });
+    expect(h.admin).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalled();
   });
 
   it("returns 409 without partial draft mutation on revision conflict", async () => {

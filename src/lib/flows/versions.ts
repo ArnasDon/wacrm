@@ -9,6 +9,7 @@ import {
   type RegisteredNodeType,
 } from "./registry";
 import { commonExecutionPolicySchema } from "./registry/schemas";
+import type { FlowVariableDeclaration } from "./runtime-primitives";
 import type {
   FlowFallbackPolicy,
   FlowNodeRow,
@@ -30,6 +31,73 @@ const storedNodeSchema = z.strictObject({
   position_y: z.number().finite(),
 });
 
+const variableKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
+
+const objectValueSchema = z
+  .record(z.string(), z.unknown())
+  .or(z.array(z.unknown()));
+
+const variableDeclarationSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("string"),
+    required: z.boolean().default(false),
+    default: z.string().optional(),
+  }),
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("number"),
+    required: z.boolean().default(false),
+    default: z.number().finite().optional(),
+  }),
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("boolean"),
+    required: z.boolean().default(false),
+    default: z.boolean().optional(),
+  }),
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("json"),
+    required: z.boolean().default(false),
+    default: z.unknown().optional(),
+  }),
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("contact"),
+    required: z.boolean().default(false),
+    default: objectValueSchema.optional(),
+  }),
+  z.strictObject({
+    key: variableKeySchema,
+    type: z.literal("message"),
+    required: z.boolean().default(false),
+    default: objectValueSchema.optional(),
+  }),
+]);
+
+const variableSchemaSchema = z
+  .array(variableDeclarationSchema)
+  .max(100)
+  .superRefine((declarations, context) => {
+    const keys = new Set<string>();
+    declarations.forEach((declaration, index) => {
+      if (keys.has(declaration.key)) {
+        context.addIssue({
+          code: "custom",
+          message: `duplicate variable key "${declaration.key}"`,
+          path: [index, "key"],
+        });
+      }
+      keys.add(declaration.key);
+    });
+  });
+
 const graphEnvelopeSchema = z.strictObject({
   schema_version: z.literal(1),
   trigger: z.strictObject({
@@ -44,6 +112,7 @@ const graphEnvelopeSchema = z.strictObject({
     on_exhaust: z.enum(["handoff", "end"]),
     execution: commonExecutionPolicySchema.optional(),
   }),
+  variable_schema: variableSchemaSchema.optional().default([]),
   nodes: z.array(storedNodeSchema).min(1),
 });
 
@@ -63,12 +132,17 @@ export interface FlowVersionGraph {
   };
   entry_node_key: string;
   fallback_policy: FlowFallbackPolicy;
+  variable_schema: FlowVariableDeclaration[];
   nodes: FlowVersionGraphNode[];
 }
 
 type DraftEnvelope = Pick<
   FlowRow,
-  "trigger_type" | "trigger_config" | "entry_node_id" | "fallback_policy"
+  | "trigger_type"
+  | "trigger_config"
+  | "entry_node_id"
+  | "fallback_policy"
+  | "variable_schema"
 >;
 
 type DraftNode = Pick<
@@ -78,6 +152,20 @@ type DraftNode = Pick<
 
 function invalid(message: string): never {
   throw new Error(`Invalid flow version graph: ${message}`);
+}
+
+export function parseFlowVariableSchema(
+  value: unknown,
+): FlowVariableDeclaration[] {
+  const parsed = variableSchemaSchema.safeParse(
+    value === undefined ? [] : value,
+  );
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid flow variable schema: ${parsed.error.issues[0]?.message ?? "invalid declaration"}`,
+    );
+  }
+  return parsed.data;
 }
 
 export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
@@ -174,6 +262,12 @@ export function buildFlowVersionGraph(
   ) {
     invalid("global node execution policy is invalid");
   }
+  let variableSchema: FlowVariableDeclaration[];
+  try {
+    variableSchema = parseFlowVariableSchema(flow.variable_schema);
+  } catch {
+    invalid("variable schema is invalid");
+  }
   return parseFlowVersionGraph({
     schema_version: 1,
     trigger: {
@@ -182,6 +276,7 @@ export function buildFlowVersionGraph(
     },
     entry_node_key: flow.entry_node_id,
     fallback_policy: resolveFallbackPolicy(flow.fallback_policy),
+    variable_schema: variableSchema,
     nodes: nodes.map((node) => ({
       node_key: node.node_key,
       node_type: node.node_type,

@@ -69,6 +69,7 @@ export function EditorHeader() {
     deleteFlow,
     versions,
     versionsLoading,
+    canManageVersions,
     publishedVersionId,
     restoreVersion,
   } = useFlowEditor();
@@ -124,14 +125,16 @@ export function EditorHeader() {
 
         {/* ---- right: runs · delete · activate · save ---- */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setHistoryOpen((open) => !open)}
-          >
-            <History className="h-3.5 w-3.5" />
-            Versions
-          </Button>
+          {canManageVersions && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <History className="h-3.5 w-3.5" />
+              Versions
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -167,27 +170,29 @@ export function EditorHeader() {
               Pause
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setPublishLabel("");
-              setPublishOpen(true);
-            }}
-            disabled={activating || !canActivate}
-            title={
-              !canActivate
-                ? "Fix the issues below before publishing"
-                : "Save the draft and publish a new immutable version"
-            }
-          >
-            {activating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <PlayCircle className="h-3.5 w-3.5" />
-            )}
-            Publish
-          </Button>
+          {canManageVersions && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPublishLabel("");
+                setPublishOpen(true);
+              }}
+              disabled={activating || !canActivate}
+              title={
+                !canActivate
+                  ? "Fix the issues below before publishing"
+                  : "Save the draft and publish a new immutable version"
+              }
+            >
+              {activating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PlayCircle className="h-3.5 w-3.5" />
+              )}
+              Publish
+            </Button>
+          )}
           <Button onClick={() => void save()} disabled={saving} size="sm">
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -199,7 +204,7 @@ export function EditorHeader() {
         </div>
       </div>
 
-      {historyOpen && (
+      {canManageVersions && historyOpen && (
         <div className="mt-2 rounded-lg border border-border bg-card p-3">
           <div className="mb-2 text-xs font-semibold text-foreground">
             Published version history
@@ -258,7 +263,10 @@ export function EditorHeader() {
         className="w-full max-w-[78ch] rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] text-muted-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/50 focus:border-primary focus:bg-transparent focus:text-foreground"
       />
 
-      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
+      <Dialog
+        open={canManageVersions && publishOpen}
+        onOpenChange={setPublishOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Publish flow</DialogTitle>

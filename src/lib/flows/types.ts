@@ -235,6 +235,7 @@ export interface FlowRow {
   description: string | null;
   status: "draft" | "active" | "archived";
   published_version_id: string | null;
+  draft_revision: number;
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;

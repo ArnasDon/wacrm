@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   draft: {} as Record<string, unknown>,
   nodes: [] as Array<Record<string, unknown>>,
   ownerUserId: "user-1",
+  publishError: null as { message: string } | null,
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -86,6 +87,7 @@ beforeEach(() => {
   h.requireRole.mockResolvedValue(undefined);
   h.history = [];
   h.ownerUserId = "user-1";
+  h.publishError = null;
   h.draft = {
     id: "flow-1",
     account_id: "account-1",
@@ -107,6 +109,7 @@ beforeEach(() => {
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     published_version_id: null,
+    draft_revision: 7,
   };
   h.nodes = [
     {
@@ -124,16 +127,26 @@ beforeEach(() => {
       position_y: 0,
     },
   ];
-  h.rpc.mockResolvedValue({
-    data: [
-      {
-        id: "version-1",
-        flow_id: "flow-1",
-        version: 1,
-        label: "Initial",
-      },
-    ],
-    error: null,
+  h.rpc.mockImplementation((name: string) => {
+    if (name === "read_flow_draft_for_publish") {
+      return Promise.resolve({
+        data: [{ flow: h.draft, nodes: h.nodes }],
+        error: null,
+      });
+    }
+    return Promise.resolve({
+      data: h.publishError
+        ? null
+        : [
+            {
+              id: "version-1",
+              flow_id: "flow-1",
+              version: 1,
+              label: "Initial",
+            },
+          ],
+      error: h.publishError,
+    });
   });
 });
 
@@ -176,12 +189,18 @@ describe("flow versions API", () => {
     );
 
     expect(response.status).toBe(201);
+    expect(h.rpc).toHaveBeenNthCalledWith(
+      1,
+      "read_flow_draft_for_publish",
+      { p_flow_id: "flow-1" },
+    );
     expect(h.rpc).toHaveBeenCalledWith(
       "publish_flow_version",
       expect.objectContaining({
         p_flow_id: "flow-1",
         p_published_by: "user-1",
         p_label: "Initial",
+        p_expected_draft_revision: 7,
         p_graph: expect.objectContaining({
           schema_version: 1,
           entry_node_key: "start",
@@ -191,6 +210,24 @@ describe("flow versions API", () => {
     expect(await response.json()).toMatchObject({
       version: { id: "version-1", version: 1 },
       flow: { id: "flow-1" },
+    });
+  });
+
+  it("returns 409 when a concurrent save advances the draft revision", async () => {
+    h.publishError = { message: "draft_revision_conflict" };
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/versions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/refresh|retry/i),
     });
   });
 
@@ -223,7 +260,10 @@ describe("flow versions API", () => {
     );
 
     expect(response.status).toBe(422);
-    expect(h.rpc).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalledWith(
+      "publish_flow_version",
+      expect.anything(),
+    );
   });
 
   it("keeps legacy status=active clients compatible by publishing", async () => {

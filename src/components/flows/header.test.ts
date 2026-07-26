@@ -13,5 +13,6 @@ describe("flow publish label UI", () => {
     expect(source).toContain('aria-label="Version label"');
     expect(source).toContain("publish(publishLabel)");
     expect(source).toContain("Optional");
+    expect(source).toContain("canManageVersions");
   });
 });

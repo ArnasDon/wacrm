@@ -18,10 +18,38 @@ describe("migration 047 flow versions", () => {
     expect(sql).toMatch(/CREATE OR REPLACE FUNCTION publish_flow_version/i);
     expect(sql).toMatch(/FOR UPDATE/i);
     expect(sql).toMatch(
+      /ALTER TABLE flows[\s\S]*ADD COLUMN IF NOT EXISTS draft_revision BIGINT/i,
+    );
+    expect(sql).toMatch(
       /FOREIGN KEY \(id, published_version_id\)[\s\S]*REFERENCES flow_versions\(flow_id, id\)/i,
     );
     expect(sql).toMatch(
       /FOREIGN KEY \(flow_id, flow_version_id\)[\s\S]*REFERENCES flow_versions\(flow_id, id\)/i,
+    );
+  });
+
+  it("serializes draft saves and compare-and-swaps publication", () => {
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION save_flow_draft/i);
+    expect(sql).toMatch(
+      /save_flow_draft[\s\S]*FOR UPDATE[\s\S]*draft_revision_conflict/i,
+    );
+    expect(sql).toMatch(
+      /save_flow_draft[\s\S]*DELETE FROM flow_nodes[\s\S]*INSERT INTO flow_nodes/i,
+    );
+    expect(sql).toMatch(
+      /publish_flow_version[\s\S]*p_expected_draft_revision[\s\S]*draft_revision_conflict[\s\S]*INSERT INTO flow_versions/i,
+    );
+  });
+
+  it("guards restore by draft revision and published pointer", () => {
+    expect(sql).toMatch(
+      /restore_flow_version[\s\S]*p_expected_draft_revision[\s\S]*p_expected_published_version_id/i,
+    );
+    expect(sql).toMatch(
+      /restore_flow_version[\s\S]*draft_revision_conflict[\s\S]*published_version_conflict/i,
+    );
+    expect(sql).toMatch(
+      /restore_flow_version[\s\S]*draft_revision = v_flow\.draft_revision \+ 1/i,
     );
   });
 
@@ -32,6 +60,12 @@ describe("migration 047 flow versions", () => {
   });
 
   it("keeps mutation RPCs service-role only", () => {
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION save_flow_draft[\s\S]*FROM PUBLIC/i,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION save_flow_draft[\s\S]*TO service_role/i,
+    );
     expect(sql).toMatch(
       /REVOKE ALL ON FUNCTION publish_flow_version[\s\S]*FROM PUBLIC/i,
     );

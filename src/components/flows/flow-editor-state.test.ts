@@ -3,8 +3,10 @@ import {
   applyRestoredVersion,
   applyNodePositions,
   builderStateToSavePayload,
+  buildDraftSaveRequest,
   defaultConfigFor,
   uniqueNodeKey,
+  versionHistoryAccess,
 } from "./flow-editor-state";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import type { BuilderNode, NodeType } from "./shared";
@@ -149,6 +151,18 @@ describe("applyRestoredVersion", () => {
     expect(builderStateToSavePayload(state)).toMatchObject({
       fallback_policy: state.fallback_policy,
     });
+    expect(buildDraftSaveRequest(state, 12)).toMatchObject({
+      expected_draft_revision: 12,
+      fallback_policy: state.fallback_policy,
+    });
+  });
+});
+
+describe("version history capability", () => {
+  it("treats an expected 403 as non-owner without surfacing an error", () => {
+    expect(versionHistoryAccess(403)).toBe("forbidden");
+    expect(versionHistoryAccess(200)).toBe("allowed");
+    expect(versionHistoryAccess(500)).toBe("error");
   });
 });
 

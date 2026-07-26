@@ -104,23 +104,25 @@ export async function POST(
   }
 
   const admin = supabaseAdmin();
-  const [{ data: flow, error: flowError }, { data: nodes, error: nodesError }] =
-    await Promise.all([
-      admin.from("flows").select("*").eq("id", id).maybeSingle(),
-      admin.from("flow_nodes").select("*").eq("flow_id", id),
-    ]);
-  if (flowError || nodesError) {
+  const { data: draftRead, error: draftReadError } = await admin.rpc(
+    "read_flow_draft_for_publish",
+    { p_flow_id: id },
+  );
+  if (draftReadError) {
     return NextResponse.json(
-      { error: flowError?.message ?? nodesError?.message },
-      { status: 500 },
+      { error: draftReadError.message },
+      { status: draftReadError.message.includes("flow not found") ? 404 : 500 },
     );
   }
-  if (!flow) {
+  const consistentDraft = Array.isArray(draftRead)
+    ? draftRead[0]
+    : draftRead;
+  if (!consistentDraft?.flow) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const draft = flow as FlowRow;
-  const draftNodes = (nodes ?? []) as FlowNodeRow[];
+  const draft = consistentDraft.flow as FlowRow;
+  const draftNodes = (consistentDraft.nodes ?? []) as FlowNodeRow[];
   const issues = validateFlowForActivation(
     {
       name: draft.name,
@@ -157,10 +159,17 @@ export async function POST(
       p_flow_id: id,
       p_graph: graph,
       p_published_by: owner.user.id,
+      p_expected_draft_revision: draft.draft_revision,
       p_label: label,
     },
   );
   if (publishError) {
+    if (publishError.message.includes("draft_revision_conflict")) {
+      return NextResponse.json(
+        { error: "Draft changed during publication. Refresh and retry." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: publishError.message }, { status: 500 });
   }
   const version = Array.isArray(published) ? published[0] : published;

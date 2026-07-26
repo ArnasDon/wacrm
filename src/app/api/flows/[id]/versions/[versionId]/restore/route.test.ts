@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   rpc: vi.fn(),
   version: null as Record<string, unknown> | null,
   ownerUserId: "user-1",
+  restoreError: null as { message: string } | null,
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -26,7 +27,12 @@ vi.mock("@/lib/supabase/server", () => ({
             eq: () => ({
               maybeSingle: () =>
                 Promise.resolve({
-                  data: { id: "flow-1", user_id: h.ownerUserId },
+                  data: {
+                    id: "flow-1",
+                    user_id: h.ownerUserId,
+                    draft_revision: 8,
+                    published_version_id: "version-2",
+                  },
                   error: null,
                 }),
             }),
@@ -64,6 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.requireRole.mockResolvedValue(undefined);
   h.ownerUserId = "user-1";
+  h.restoreError = null;
   h.version = {
     id: "version-1",
     flow_id: "flow-1",
@@ -88,10 +95,20 @@ beforeEach(() => {
       ],
     },
   };
-  h.rpc.mockResolvedValue({
-    data: [{ id: "flow-1", published_version_id: "version-2" }],
-    error: null,
-  });
+  h.rpc.mockImplementation(() =>
+    Promise.resolve({
+      data: h.restoreError
+        ? null
+        : [
+            {
+              id: "flow-1",
+              published_version_id: "version-2",
+              draft_revision: 9,
+            },
+          ],
+      error: h.restoreError,
+    }),
+  );
 });
 
 describe("restore flow version API", () => {
@@ -99,6 +116,11 @@ describe("restore flow version API", () => {
     const response = await POST(
       new Request("http://localhost/api/flows/flow-1/versions/version-1/restore", {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 8,
+          expected_published_version_id: "version-2",
+        }),
       }),
       context,
     );
@@ -107,6 +129,8 @@ describe("restore flow version API", () => {
     expect(h.rpc).toHaveBeenCalledWith("restore_flow_version", {
       p_flow_id: "flow-1",
       p_flow_version_id: "version-1",
+      p_expected_draft_revision: 8,
+      p_expected_published_version_id: "version-2",
     });
     expect(await response.json()).toMatchObject({
       restored_version_id: "version-1",
@@ -114,11 +138,41 @@ describe("restore flow version API", () => {
     });
   });
 
+  it.each(["draft_revision_conflict", "published_version_conflict"])(
+    "maps %s to a non-clobbering 409",
+    async (message) => {
+      h.restoreError = { message };
+      const response = await POST(
+        new Request("http://localhost/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expected_draft_revision: 8,
+            expected_published_version_id: "version-2",
+          }),
+        }),
+        context,
+      );
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: expect.stringMatching(/refresh|retry/i),
+      });
+    },
+  );
+
   it("fails closed before restore when the stored graph is corrupt", async () => {
     h.version = { id: "version-1", flow_id: "flow-1", graph: {} };
 
     const response = await POST(
-      new Request("http://localhost/restore", { method: "POST" }),
+      new Request("http://localhost/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 8,
+          expected_published_version_id: "version-2",
+        }),
+      }),
       context,
     );
 

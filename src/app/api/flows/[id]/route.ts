@@ -75,6 +75,7 @@ export async function GET(
 }
 
 interface PutBody {
+  expected_draft_revision?: number
   name?: string
   description?: string | null
   trigger_type?: 'keyword' | 'first_inbound_message' | 'manual'
@@ -118,6 +119,16 @@ export async function PUT(
       { status: 400 },
     )
   }
+  if (
+    body.expected_draft_revision !== undefined &&
+    (!Number.isSafeInteger(body.expected_draft_revision) ||
+      body.expected_draft_revision < 0)
+  ) {
+    return NextResponse.json(
+      { error: 'expected_draft_revision must be a non-negative integer' },
+      { status: 400 },
+    )
+  }
   const unknownNode = body.nodes?.find(
     (node) => !isRegisteredNodeType(node.node_type),
   )
@@ -141,12 +152,9 @@ export async function PUT(
 
   const admin = supabaseAdmin()
 
-  // Update the flow row first — the body may not include `nodes` (a
-  // header-only save for editing the trigger config without touching
-  // the graph). Skip node replacement in that case.
-  const flowPatch: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  }
+  // The RPC applies only these whitelisted envelope fields. Omitting
+  // `nodes` preserves the graph; passing an array replaces it atomically.
+  const flowPatch: Record<string, unknown> = {}
   if (body.name !== undefined) flowPatch.name = body.name.trim()
   if (body.description !== undefined)
     flowPatch.description = body.description
@@ -158,51 +166,42 @@ export async function PUT(
   if (body.fallback_policy !== undefined)
     flowPatch.fallback_policy = body.fallback_policy
 
-  const { error: updErr } = await admin
-    .from('flows')
-    .update(flowPatch)
-    .eq('id', id)
-  if (updErr) {
-    return NextResponse.json({ error: updErr.message }, { status: 500 })
-  }
-
-  if (body.nodes !== undefined) {
-    // Delete-then-insert affects only the editable draft. A failed save
-    // cannot change the published pointer or any pinned in-flight run.
-    const { error: delErr } = await admin
-      .from('flow_nodes')
-      .delete()
-      .eq('flow_id', id)
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 })
-    }
-    if (body.nodes.length > 0) {
-      const { error: insErr } = await admin.from('flow_nodes').insert(
-        body.nodes.map((n) => ({
-          flow_id: id,
-          node_key: n.node_key,
-          node_type: n.node_type,
-          config: n.config,
-          position_x: n.position_x ?? 0,
-          position_y: n.position_y ?? 0,
-        })),
+  const { data: saved, error: saveError } = await admin.rpc(
+    'save_flow_draft',
+    {
+      p_flow_id: id,
+      p_expected_revision: body.expected_draft_revision ?? null,
+      p_patch: flowPatch,
+      p_nodes:
+        body.nodes === undefined
+          ? null
+          : body.nodes.map((node) => ({
+              node_key: node.node_key,
+              node_type: node.node_type,
+              config: node.config,
+              position_x: node.position_x ?? 0,
+              position_y: node.position_y ?? 0,
+            })),
+    },
+  )
+  if (saveError) {
+    if (saveError.message.includes('draft_revision_conflict')) {
+      return NextResponse.json(
+        { error: 'Draft changed since it was loaded. Refresh and retry.' },
+        { status: 409 },
       )
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 500 })
-      }
     }
+    return NextResponse.json({ error: saveError.message }, { status: 500 })
   }
 
-  // Re-fetch and return the new state — the editor uses the response
-  // to reconcile its local form state.
-  const [{ data: flow }, { data: nodes }] = await Promise.all([
-    admin.from('flows').select('*').eq('id', id).maybeSingle(),
-    admin
-      .from('flow_nodes')
-      .select('*')
-      .eq('flow_id', id)
-      .order('created_at', { ascending: true }),
-  ])
+  // The RPC returns the revisioned envelope; fetch the committed node list
+  // so the editor can reconcile its local state.
+  const flow = Array.isArray(saved) ? saved[0] : saved
+  const { data: nodes } = await admin
+    .from('flow_nodes')
+    .select('*')
+    .eq('flow_id', id)
+    .order('created_at', { ascending: true })
   return NextResponse.json({ flow, nodes: nodes ?? [] })
 }
 

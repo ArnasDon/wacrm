@@ -100,7 +100,9 @@ export interface FlowEditorContextValue {
   canActivate: boolean;
   versions: FlowVersionSummary[];
   versionsLoading: boolean;
+  canManageVersions: boolean;
   publishedVersionId: string | null;
+  draftRevision: number;
 
   // Node mutations. addNode returns the generated key so the caller
   // (a NodeCard "Add" button or canvas "+" button) can scroll to /
@@ -213,6 +215,45 @@ export function builderStateToSavePayload(state: BuilderState) {
   };
 }
 
+export function buildDraftSaveRequest(
+  state: BuilderState,
+  expectedDraftRevision: number,
+) {
+  return {
+    ...builderStateToSavePayload(state),
+    expected_draft_revision: expectedDraftRevision,
+  };
+}
+
+export function versionHistoryAccess(
+  status: number,
+): "allowed" | "forbidden" | "error" {
+  if (status === 403) return "forbidden";
+  return status >= 200 && status < 300 ? "allowed" : "error";
+}
+
+function builderStateFromRows(
+  flow: FlowRow,
+  nodes: FlowNodeRow[],
+): BuilderState {
+  return {
+    name: flow.name,
+    description: flow.description ?? "",
+    trigger_type: flow.trigger_type,
+    trigger_config: flow.trigger_config as Record<string, unknown>,
+    entry_node_id: flow.entry_node_id,
+    fallback_policy: resolveFallbackPolicy(flow.fallback_policy),
+    status: flow.status,
+    nodes: nodes.map((node) => ({
+      node_key: node.node_key,
+      node_type: node.node_type as NodeType,
+      config: node.config as Record<string, unknown>,
+      position_x: node.position_x,
+      position_y: node.position_y,
+    })),
+  };
+}
+
 // ============================================================
 // Context
 // ============================================================
@@ -247,29 +288,20 @@ export function FlowEditorProvider({
   const router = useRouter();
   const t = useTranslations("Flows.editorState");
 
-  const [state, setStateRaw] = useState<BuilderState>(() => ({
-    name: initialFlow.name,
-    description: initialFlow.description ?? "",
-    trigger_type: initialFlow.trigger_type,
-    trigger_config: initialFlow.trigger_config as Record<string, unknown>,
-    entry_node_id: initialFlow.entry_node_id,
-    fallback_policy: resolveFallbackPolicy(initialFlow.fallback_policy),
-    status: initialFlow.status,
-    nodes: initialNodes.map((n) => ({
-      node_key: n.node_key,
-      node_type: n.node_type as NodeType,
-      config: n.config as Record<string, unknown>,
-      position_x: n.position_x,
-      position_y: n.position_y,
-    })),
-  }));
+  const [state, setStateRaw] = useState<BuilderState>(() =>
+    builderStateFromRows(initialFlow, initialNodes),
+  );
 
   const [saving, setSaving] = useState(false);
   const [activating, setActivating] = useState(false);
   const [versions, setVersions] = useState<FlowVersionSummary[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [canManageVersions, setCanManageVersions] = useState(false);
   const [publishedVersionId, setPublishedVersionId] = useState(
     initialFlow.published_version_id,
+  );
+  const [draftRevision, setDraftRevision] = useState(
+    initialFlow.draft_revision ?? 0,
   );
   // dirty flips on user edits; status-only updates (after the activate
   // API succeeds) use setStateRaw so they don't falsely re-flag the
@@ -345,10 +377,19 @@ export function FlowEditorProvider({
     setVersionsLoading(true);
     try {
       const response = await fetch(`/api/flows/${initialFlow.id}/versions`);
-      if (!response.ok) throw new Error(`History failed: ${response.status}`);
+      const access = versionHistoryAccess(response.status);
+      if (access === "forbidden") {
+        setCanManageVersions(false);
+        setVersions([]);
+        return;
+      }
+      if (access === "error") {
+        throw new Error(`History failed: ${response.status}`);
+      }
       const payload = (await response.json()) as {
         versions?: FlowVersionSummary[];
       };
+      setCanManageVersions(true);
       setVersions(payload.versions ?? []);
     } catch (error) {
       toast.error(
@@ -363,6 +404,21 @@ export function FlowEditorProvider({
     void reloadVersions();
   }, [reloadVersions]);
 
+  const reloadDraft = useCallback(async () => {
+    const response = await fetch(`/api/flows/${initialFlow.id}`);
+    if (!response.ok) {
+      throw new Error(`Draft refresh failed: ${response.status}`);
+    }
+    const payload = (await response.json()) as {
+      flow: FlowRow;
+      nodes?: FlowNodeRow[];
+    };
+    setStateRaw(builderStateFromRows(payload.flow, payload.nodes ?? []));
+    setDraftRevision(payload.flow.draft_revision ?? 0);
+    setPublishedVersionId(payload.flow.published_version_id);
+    setDirty(false);
+  }, [initialFlow.id]);
+
   // ---- Save (PUT) ----
   const save = useCallback(async () => {
     setSaving(true);
@@ -370,11 +426,16 @@ export function FlowEditorProvider({
       const res = await fetch(`/api/flows/${initialFlow.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(builderStateToSavePayload(state)),
+        body: JSON.stringify(buildDraftSaveRequest(state, draftRevision)),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? `Save failed: ${res.status}`);
+      }
+      const payload = (await res.json()) as { flow?: FlowRow };
+      if (payload.flow) {
+        setDraftRevision(payload.flow.draft_revision);
+        setPublishedVersionId(payload.flow.published_version_id);
       }
       setDirty(false);
       toast.success(t("saved"));
@@ -386,7 +447,7 @@ export function FlowEditorProvider({
     } finally {
       setSaving(false);
     }
-  }, [initialFlow.id, state, t]);
+  }, [draftRevision, initialFlow.id, state, t]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
@@ -460,12 +521,27 @@ export function FlowEditorProvider({
       try {
         const response = await fetch(
           `/api/flows/${initialFlow.id}/versions/${versionId}/restore`,
-          { method: "POST" },
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expected_draft_revision: draftRevision,
+              expected_published_version_id: publishedVersionId,
+            }),
+          },
         );
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string;
           graph?: FlowVersionGraph;
+          flow?: FlowRow;
         };
+        if (response.status === 409) {
+          await reloadDraft();
+          throw new Error(
+            payload.error ??
+              "The draft changed before restore. Review the refreshed draft and retry.",
+          );
+        }
         if (!response.ok || !payload.graph) {
           throw new Error(
             payload.error ?? `Restore failed: ${response.status}`,
@@ -474,6 +550,10 @@ export function FlowEditorProvider({
         setStateRaw((current) =>
           applyRestoredVersion(current, payload.graph!),
         );
+        if (payload.flow) {
+          setDraftRevision(payload.flow.draft_revision);
+          setPublishedVersionId(payload.flow.published_version_id);
+        }
         setDirty(false);
         toast.success(
           "Version restored to the draft. Publish when you are ready to make it live.",
@@ -486,7 +566,7 @@ export function FlowEditorProvider({
         setActivating(false);
       }
     },
-    [initialFlow.id],
+    [draftRevision, initialFlow.id, publishedVersionId, reloadDraft],
   );
 
   // ---- Delete ----
@@ -619,7 +699,9 @@ export function FlowEditorProvider({
       canActivate,
       versions,
       versionsLoading,
+      canManageVersions,
       publishedVersionId,
+      draftRevision,
       addNode,
       updateNode,
       updateNodeConfig,
@@ -646,7 +728,9 @@ export function FlowEditorProvider({
       canActivate,
       versions,
       versionsLoading,
+      canManageVersions,
       publishedVersionId,
+      draftRevision,
       addNode,
       updateNode,
       updateNodeConfig,

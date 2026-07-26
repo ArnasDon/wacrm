@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
   admin: vi.fn(),
+  rpc: vi.fn(),
   state: {
     flowUpdateCalls: [] as Record<string, unknown>[],
   },
@@ -55,6 +56,7 @@ beforeEach(() => {
   h.state.flowUpdateCalls = [];
   h.requireRole.mockResolvedValue(undefined);
   h.admin.mockReturnValue({
+    rpc: h.rpc,
     from: (table: string) => {
       if (table === "flows") {
         return {
@@ -88,6 +90,10 @@ beforeEach(() => {
       throw new Error(`unexpected table ${table}`);
     },
   });
+  h.rpc.mockResolvedValue({
+    data: [{ id: "flow-1", draft_revision: 5 }],
+    error: null,
+  });
 });
 
 describe("PUT /api/flows/[id] flow runtime boundary", () => {
@@ -111,6 +117,76 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
       error: `Node type "${nodeType}" is not supported by the flow runtime`,
     });
     expect(h.admin).not.toHaveBeenCalled();
+    expect(h.state.flowUpdateCalls).toEqual([]);
+  });
+
+  it("saves the envelope and full graph through one revisioned RPC", async () => {
+    const response = await PUT(
+      new Request("http://localhost/api/flows/flow-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 4,
+          name: " Updated ",
+          nodes: [
+            {
+              node_key: "end",
+              node_type: "end",
+              config: {},
+              position_x: 10,
+              position_y: 20,
+            },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(h.rpc).toHaveBeenCalledTimes(1);
+    expect(h.rpc).toHaveBeenCalledWith("save_flow_draft", {
+      p_flow_id: "flow-1",
+      p_expected_revision: 4,
+      p_patch: { name: "Updated" },
+      p_nodes: [
+        {
+          node_key: "end",
+          node_type: "end",
+          config: {},
+          position_x: 10,
+          position_y: 20,
+        },
+      ],
+    });
+    expect(h.state.flowUpdateCalls).toEqual([]);
+    expect(await response.json()).toMatchObject({
+      flow: { id: "flow-1", draft_revision: 5 },
+    });
+  });
+
+  it("returns 409 without partial draft mutation on revision conflict", async () => {
+    h.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "draft_revision_conflict" },
+    });
+
+    const response = await PUT(
+      new Request("http://localhost/api/flows/flow-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_draft_revision: 4,
+          name: "Concurrent edit",
+        }),
+      }),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(h.rpc).toHaveBeenCalledWith(
+      "save_flow_draft",
+      expect.objectContaining({ p_expected_revision: 4 }),
+    );
     expect(h.state.flowUpdateCalls).toEqual([]);
   });
 });

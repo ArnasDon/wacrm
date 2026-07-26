@@ -12,6 +12,7 @@ import {
   type NodeCategory,
   type NodeFormDescriptor,
   type NodeIconId,
+  type NodePortDescriptor,
   type NodeRuntimeKind,
   type NodeUiDescriptor,
   type OutgoingEdgeTarget,
@@ -31,6 +32,8 @@ interface CommonOptions<Id extends string> {
   runtimeKind?: NodeRuntimeKind;
   supportsExecutionPolicy?: boolean;
   supportsDefaultValue?: boolean;
+  inputs?: readonly NodePortDescriptor[];
+  outputs?: readonly NodePortDescriptor[];
   form?: NodeFormDescriptor;
   visible?: boolean;
   defaultConfig?: Record<string, unknown>;
@@ -70,8 +73,8 @@ export function createLinearNodeDescriptor<const Id extends string>(
     supportsExecutionPolicy,
     supportsDefaultValue:
       supportsExecutionPolicy && (options.supportsDefaultValue ?? true),
-    inputs: CONTROL_INPUT,
-    outputs: CONTROL_OUTPUT,
+    inputs: options.inputs ?? CONTROL_INPUT,
+    outputs: options.outputs ?? CONTROL_OUTPUT,
     validate: noValidation,
     runtimeKind,
     runtimeHook: options.runtimeHook ?? options.id,
@@ -115,8 +118,8 @@ export function createTerminalNodeDescriptor<const Id extends string>(
     supportsFlowRuntime,
     supportsExecutionPolicy,
     supportsDefaultValue: false,
-    inputs: CONTROL_INPUT,
-    outputs: NO_PORTS,
+    inputs: options.inputs ?? CONTROL_INPUT,
+    outputs: options.outputs ?? NO_PORTS,
     validate: noValidation,
     runtimeKind,
     runtimeHook: options.runtimeHook ?? options.id,
@@ -143,8 +146,8 @@ export function createTriggerNodeDescriptor<const Id extends string>(
     supportsFlowRuntime: false,
     supportsExecutionPolicy: false,
     supportsDefaultValue: false,
-    inputs: NO_PORTS,
-    outputs: CONTROL_OUTPUT,
+    inputs: options.inputs ?? NO_PORTS,
+    outputs: options.outputs ?? CONTROL_OUTPUT,
     validate: noValidation,
     runtimeKind: "trigger",
     runtimeHook: options.runtimeHook ?? options.id,

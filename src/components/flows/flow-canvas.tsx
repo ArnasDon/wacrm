@@ -50,6 +50,8 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type Connection,
+  type Edge,
+  type IsValidConnection,
   type Node as RfNode,
   type Edge as RfEdge,
   type NodeChange,
@@ -76,6 +78,7 @@ import {
   deriveCanvasEdges,
   outgoingSlots,
 } from '@/lib/flows/edges';
+import { validateCanvasConnection } from '@/lib/flows/connection-validation';
 import { autoLayout, shouldAutoLayout } from '@/lib/flows/layout';
 import {
   NODE_META,
@@ -86,7 +89,10 @@ import {
   type BuilderNode,
   type NodeType,
 } from './shared';
-import { listBuilderNodeDescriptors } from '@/lib/flows/registry';
+import {
+  getNodeDescriptor,
+  listBuilderNodeDescriptors,
+} from '@/lib/flows/registry';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -142,6 +148,15 @@ function FlowNodeCard({ data, selected }: NodeProps) {
   const tSummary = useTranslations('Flows.summary');
   const summary = summarizeNode(node, tSummary);
   const slots = outgoingSlots(node);
+  const descriptor = getNodeDescriptor(node.node_type);
+  const inputPort = descriptor?.inputs[0];
+  const outputPortFor = (slotId: string) =>
+    descriptor?.outputs.find(
+      (port) =>
+        port.id === slotId ||
+        (port.handlePrefix !== undefined &&
+          slotId.startsWith(port.handlePrefix))
+    );
   // Start nodes are entry-only; nothing ever targets them, so they
   // don't need an incoming Handle. Every other node type accepts
   // incoming edges (including terminal handoff / end — they're the
@@ -180,7 +195,10 @@ function FlowNodeCard({ data, selected }: NodeProps) {
       {hasTarget && (
         <Handle
           type="target"
+          id={inputPort?.id ?? 'in'}
           position={Position.Left}
+          aria-label={`${inputPort?.label ?? 'Input'} (${inputPort?.type ?? 'control'})`}
+          data-port-type={inputPort?.type ?? 'control'}
           className="!bg-card !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
         />
       )}
@@ -227,6 +245,8 @@ function FlowNodeCard({ data, selected }: NodeProps) {
                 type="source"
                 id={slot.id}
                 position={Position.Right}
+                aria-label={`${slot.label} (${outputPortFor(slot.id)?.type ?? 'control'})`}
+                data-port-type={outputPortFor(slot.id)?.type ?? 'control'}
                 style={{
                   borderColor: slotColor(node.node_type, slot.id, c.solid),
                 }}
@@ -246,6 +266,8 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           type="source"
           id={slots[0].id}
           position={Position.Right}
+          aria-label={`${slots[0].label} (${outputPortFor(slots[0].id)?.type ?? 'control'})`}
+          data-port-type={outputPortFor(slots[0].id)?.type ?? 'control'}
           style={{ borderColor: c.solid }}
           className="!bg-card !h-2.5 !w-2.5 !border-2"
         />
@@ -293,6 +315,9 @@ function FlowCanvasInner() {
   // list view's analogue is the per-card expanded set in
   // flow-builder.tsx.
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
+  const [connectionFeedback, setConnectionFeedback] = useState<string | null>(
+    null
+  );
   const selectedNode = useMemo(
     () =>
       selectedNodeKey
@@ -433,21 +458,21 @@ function FlowCanvasInner() {
   // the next render — no need to maintain a separate edge list.
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (
-        !connection.source ||
-        !connection.target ||
-        !connection.sourceHandle
-      ) {
+      const validation = validateCanvasConnection(
+        connection,
+        builderNodes,
+        rfEdges
+      );
+      if (!validation.valid) {
+        setConnectionFeedback(validation.message);
         return;
       }
+      setConnectionFeedback(null);
       const sourceNode = builderNodes.find(
         (n) => n.node_key === connection.source
       );
       if (!sourceNode) return;
-      // Self-loops are a footgun (a button whose target is its own
-      // node = infinite reprompt). Reject silently — the user can
-      // still wire one via the per-node dropdown if they really want.
-      if (connection.source === connection.target) return;
+      if (!connection.sourceHandle) return;
       const patch = applyEdgeConnection(
         sourceNode,
         connection.sourceHandle,
@@ -455,7 +480,23 @@ function FlowCanvasInner() {
       );
       if (patch) updateNodeConfig(connection.source, patch);
     },
-    [builderNodes, updateNodeConfig]
+    [builderNodes, rfEdges, updateNodeConfig]
+  );
+
+  const isValidConnection = useCallback<IsValidConnection>(
+    (connection: Connection | Edge) => {
+      const validation = validateCanvasConnection(
+        connection,
+        builderNodes,
+        rfEdges
+      );
+      setConnectionFeedback((current) => {
+        const next = validation.valid ? null : validation.message;
+        return current === next ? current : next;
+      });
+      return validation.valid;
+    },
+    [builderNodes, rfEdges]
   );
 
   // Keyboard delete (Backspace / Delete) + drag-to-trash. React-Flow
@@ -534,6 +575,7 @@ function FlowCanvasInner() {
           onNodeDragStop={handleNodeDragStop}
           onNodeClick={handleNodeClick}
           onConnect={handleConnect}
+          isValidConnection={isValidConnection}
           onNodesDelete={handleNodesDelete}
           onEdgesDelete={handleEdgesDelete}
           // Default is "Backspace" only — accept both so Mac users
@@ -573,6 +615,17 @@ function FlowCanvasInner() {
           <Panel position="top-left" className="!top-4 !left-4">
             <CanvasAddNodeButton t={t} />
           </Panel>
+          {connectionFeedback && (
+            <Panel position="bottom-center" className="!bottom-4">
+              <div
+                role="status"
+                aria-live="polite"
+                className="border-destructive/60 bg-destructive/10 text-destructive rounded-lg border px-3 py-2 text-xs font-medium shadow-lg"
+              >
+                {connectionFeedback}
+              </div>
+            </Panel>
+          )}
         </ReactFlow>
       </div>
 

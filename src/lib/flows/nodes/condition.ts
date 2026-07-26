@@ -19,14 +19,14 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
     {
       id: "true",
       label: "True",
-      kind: "control",
+      type: "control",
       cardinality: "one",
       required: true,
     },
     {
       id: "false",
       label: "False",
-      kind: "control",
+      type: "control",
       cardinality: "one",
       required: true,
     },

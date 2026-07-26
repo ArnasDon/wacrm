@@ -13,6 +13,16 @@ export const sendListNodeDescriptor = createLinearNodeDescriptor({
   flowConfigSchema: flowSendListConfigSchema,
   runtimeKind: "suspend",
   supportsDefaultValue: false,
+  outputs: [
+    {
+      id: "row",
+      label: "Row",
+      type: "control",
+      cardinality: "one",
+      required: true,
+      handlePrefix: "row:",
+    },
+  ],
   visible: true,
   form: { kind: "specialized", component: "send_list" },
   defaultConfig: {

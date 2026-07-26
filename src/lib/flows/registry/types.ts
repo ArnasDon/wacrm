@@ -63,12 +63,28 @@ export type NodeIconId =
   | "webhook"
   | "workflow";
 
+export type NodePortType =
+  | "control"
+  | "string"
+  | "number"
+  | "boolean"
+  | "json"
+  | "contact"
+  | "message"
+  | "any";
+
 export interface NodePortDescriptor {
   id: string;
   label: string;
-  kind: "control" | "data";
+  type: NodePortType;
   cardinality: "one" | "many";
   required?: boolean;
+  /**
+   * Marks config-driven handles such as `button:<reply_id>`. The port
+   * contract remains registry-owned while each rendered handle keeps a
+   * stable instance id.
+   */
+  handlePrefix?: string;
 }
 
 export interface NodeValidationIssue {
@@ -189,7 +205,7 @@ export const CONTROL_INPUT: readonly NodePortDescriptor[] = [
   {
     id: "in",
     label: "In",
-    kind: "control",
+    type: "control",
     cardinality: "many",
   },
 ];
@@ -198,7 +214,7 @@ export const CONTROL_OUTPUT: readonly NodePortDescriptor[] = [
   {
     id: "next",
     label: "Next",
-    kind: "control",
+    type: "control",
     cardinality: "one",
     required: true,
   },

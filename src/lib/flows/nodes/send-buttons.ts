@@ -13,6 +13,16 @@ export const sendButtonsNodeDescriptor = createLinearNodeDescriptor({
   flowConfigSchema: flowSendButtonsConfigSchema,
   runtimeKind: "suspend",
   supportsDefaultValue: false,
+  outputs: [
+    {
+      id: "button",
+      label: "Button",
+      type: "control",
+      cardinality: "one",
+      required: true,
+      handlePrefix: "button:",
+    },
+  ],
   visible: true,
   form: { kind: "specialized", component: "send_buttons" },
   defaultConfig: {

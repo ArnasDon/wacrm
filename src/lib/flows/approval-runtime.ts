@@ -257,9 +257,12 @@ export async function resumeFlowApprovalResolutions(
         run.current_node_key === expectedNext &&
         run.status === "resuming";
       const alreadyAdvanced =
-        run.current_node_key !== claim.node_key &&
-        run.current_node_key !== expectedNext &&
-        run.status !== "paused_by_agent";
+        ["waiting", "completed", "failed", "handed_off", "timed_out"].includes(
+          run.status,
+        ) ||
+        (run.current_node_key !== claim.node_key &&
+          run.current_node_key !== expectedNext &&
+          run.status !== "paused_by_agent");
       if (!needsAdvance && !alreadyAdvanced) {
         stats.failed += 1;
         continue;

@@ -166,4 +166,108 @@ describe("approval resolution worker", () => {
       "complete_flow_approval_resolution",
     ]);
   });
+
+  it("acknowledges an already-completed cursor without executing it twice", async () => {
+    const graph = {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "approval",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 24,
+        on_exhaust: "end",
+        execution: {},
+      },
+      variable_schema: [],
+      nodes: [
+        {
+          node_key: "approval",
+          node_type: "approval",
+          config: {
+            title: "Review",
+            message: "Review",
+            assignee_user_id: "00000000-0000-4000-8000-000000000001",
+            timeout_hours: 1,
+            approved_next: "end",
+            rejected_next: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "end",
+          node_type: "end",
+          config: {},
+          position_x: 0,
+          position_y: 100,
+        },
+      ],
+    };
+    const rpc = vi.fn(async (name: string) =>
+      name === "claim_flow_approval_resolutions"
+        ? {
+            data: [
+              {
+                id: "approval-1",
+                flow_run_id: "run-1",
+                flow_version_id: "version-1",
+                node_key: "approval",
+                decision: "approved",
+                resolution_token: "token-2",
+                resume_id: "resume-1",
+                run_row: {
+                  id: "run-1",
+                  flow_id: "flow-1",
+                  flow_version_id: "version-1",
+                  account_id: "account-1",
+                  user_id: "user-1",
+                  contact_id: null,
+                  conversation_id: null,
+                  status: "completed",
+                  current_node_key: "end",
+                  current_visit_id: "resume-1",
+                  continuation_id: "resume-1",
+                  continuation_phase: "running",
+                  continuation_step: 1,
+                  last_prompt_message_id: null,
+                  vars: {},
+                  reprompt_count: 0,
+                  started_at: "",
+                  last_advanced_at: "",
+                  ended_at: "",
+                  end_reason: "end_node",
+                },
+              },
+            ],
+            error: null,
+          }
+        : { data: true, error: null },
+    );
+    const db = {
+      rpc,
+      from: vi.fn(() => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { id: "version-1", flow_id: "flow-1", graph },
+              error: null,
+            }),
+          }),
+        }),
+      })),
+    };
+    const advance = vi.fn();
+
+    const result = await resumeFlowApprovalResolutions(db as never, {
+      advance,
+    });
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(advance).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenLastCalledWith(
+      "complete_flow_approval_resolution",
+      expect.objectContaining({ p_resolution_token: "token-2" }),
+    );
+  });
 });

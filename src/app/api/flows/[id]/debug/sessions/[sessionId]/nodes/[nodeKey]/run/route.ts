@@ -13,17 +13,25 @@ import {
   sanitizeDebugValue,
   type DebugNodeOutputs,
 } from "@/lib/flows/debug-runtime";
+import { boundDebugExecutionPayload } from "@/lib/flows/execution-payload";
 import { parseFlowVersionGraph } from "@/lib/flows/versions";
 
 const paramsSchema = z.object({
   id: z.string().uuid(),
   sessionId: z.string().uuid(),
-  nodeKey: z.string().min(1).max(120).regex(/^[a-zA-Z0-9_.:-]+$/),
+  nodeKey: z
+    .string()
+    .min(1)
+    .max(120)
+    .regex(/^[a-zA-Z0-9_.:-]+$/),
 });
 const bodySchema = z
   .object({
     expected_revision: z.number().int().nonnegative(),
-    overrides: z.record(z.string().max(120), z.unknown()).optional().default({}),
+    overrides: z
+      .record(z.string().max(120), z.unknown())
+      .optional()
+      .default({}),
   })
   .strict();
 
@@ -173,13 +181,16 @@ export async function POST(
       p_node_key: nodeKey,
       p_node_type: node.node_type,
       p_status: result.status,
-      p_inputs: result.inputs,
-      p_outputs: result.outputs,
+      p_inputs: boundDebugExecutionPayload(result.inputs),
+      p_outputs: boundDebugExecutionPayload(result.outputs),
       p_variables: result.variables,
-      p_simulated_effects: result.simulatedEffects,
-      p_metadata: result.metadata,
+      p_simulated_effects: boundDebugExecutionPayload(
+        result.simulatedEffects,
+        "array",
+      ),
+      p_metadata: boundDebugExecutionPayload(result.metadata),
       p_duration_ms: durationMs,
-      p_error: result.error ?? null,
+      p_error: result.error ? boundDebugExecutionPayload(result.error) : null,
     },
   );
   if (commitError) {

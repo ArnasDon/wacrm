@@ -7,11 +7,16 @@ import {
   requireFlowDebugOwner,
 } from "@/lib/flows/debug-api";
 import { sanitizeDebugValue } from "@/lib/flows/debug-runtime";
+import {
+  decodeDebugCursor,
+  descendingCursorFilter,
+  encodeDebugCursor,
+} from "@/lib/flows/debug-pagination";
 
 const flowIdSchema = z.string().uuid();
 const querySchema = z.object({
   run_id: z.string().uuid().optional(),
-  cursor: z.string().datetime({ offset: true }).optional(),
+  cursor: z.string().max(512).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 const MAX_FLIGHT_RESPONSE_BYTES = 256 * 1024;
@@ -67,6 +72,13 @@ export async function GET(
     );
   }
   const { run_id: requestedRun, cursor, limit } = parsedQuery.data;
+  const decodedCursor = cursor ? decodeDebugCursor(cursor) : null;
+  if (cursor && !decodedCursor) {
+    return debugJson(
+      { error: "Invalid flight recorder cursor" },
+      { status: 400 },
+    );
+  }
 
   const admin = supabaseAdmin();
   let runsQuery = admin
@@ -102,11 +114,14 @@ export async function GET(
         "id, flow_run_id, flow_version_id, node_key, node_type, status, duration_ms, attempt, started_at, completed_at",
       )
       .in("flow_run_id", runIds);
-    if (cursor) {
-      executionsQuery = executionsQuery.lt("started_at", cursor);
+    if (decodedCursor) {
+      executionsQuery = executionsQuery.or(
+        descendingCursorFilter("started_at", decodedCursor),
+      );
     }
     const { data, error } = await executionsQuery
       .order("started_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(limit + 1);
     if (error) {
       return debugRpcError(error, {
@@ -138,11 +153,15 @@ export async function GET(
     executions.push(sanitized);
   }
 
+  const lastExecution = executions.at(-1);
   const nextCursor =
-    truncationReason && executions.length > 0
-      ? typeof executions.at(-1)?.started_at === "string"
-        ? executions.at(-1)?.started_at
-        : null
+    truncationReason &&
+    typeof lastExecution?.started_at === "string" &&
+    typeof lastExecution.id === "string"
+      ? encodeDebugCursor({
+          timestamp: lastExecution.started_at,
+          id: lastExecution.id,
+        })
       : null;
   return debugJson({
     runs,

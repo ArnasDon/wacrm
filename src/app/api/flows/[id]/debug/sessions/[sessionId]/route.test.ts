@@ -6,6 +6,11 @@ const h = vi.hoisted(() => ({
   revision: 1,
   sessionOverride: null as Record<string, unknown> | null,
   rpcSessionOverride: null as Record<string, unknown> | null,
+  executionsRead: false,
+  executionLimit: 0,
+  executionCursorFilter: null as string | null,
+  executionOrders: [] as string[],
+  executionRows: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/flows/debug-api", async (importOriginal) => ({
@@ -75,21 +80,31 @@ vi.mock("@/lib/flows/admin-client", () => ({
       if (table === "flow_debug_node_executions") {
         return {
           select: () => ({
-            eq: () => ({
-              order: () => ({
-                limit: async () => ({
-                  data: [
-                    {
-                      node_key: "end",
-                      attempt: 2,
-                      inputs: { token: "secret" },
-                      outputs: { completed: true },
-                    },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
+            eq: () => {
+              const query = {
+                or: (filter: string) => {
+                  h.executionCursorFilter = filter;
+                  return query;
+                },
+                order: (column: string) => {
+                  h.executionOrders.push(column);
+                  return query;
+                },
+                limit: async (limit: number) => {
+                  h.executionsRead = true;
+                  h.executionLimit = limit;
+                  return {
+                    data: h.executionRows
+                      .filter((_row, index) =>
+                        h.executionCursorFilter ? index > 0 : true,
+                      )
+                      .slice(0, limit),
+                    error: null,
+                  };
+                },
+              };
+              return query;
+            },
           }),
         };
       }
@@ -99,9 +114,10 @@ vi.mock("@/lib/flows/admin-client", () => ({
       h.rpcName = name;
       h.rpcArgs = args;
       return {
-        data:
-          h.rpcSessionOverride ??
-          { id: args.p_session_id, revision: h.revision + 1 },
+        data: h.rpcSessionOverride ?? {
+          id: args.p_session_id,
+          revision: h.revision + 1,
+        },
         error: null,
       };
     },
@@ -123,6 +139,32 @@ beforeEach(() => {
   h.revision = 1;
   h.sessionOverride = null;
   h.rpcSessionOverride = null;
+  h.executionsRead = false;
+  h.executionLimit = 0;
+  h.executionCursorFilter = null;
+  h.executionOrders = [];
+  h.executionRows = [
+    {
+      id: "30000000-0000-4000-8000-000000000002",
+      node_key: "end",
+      node_type: "end",
+      status: "completed",
+      attempt: 2,
+      inputs: { token: "secret" },
+      outputs: { completed: true },
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "30000000-0000-4000-8000-000000000001",
+      node_key: "end",
+      node_type: "end",
+      status: "completed",
+      attempt: 1,
+      inputs: {},
+      outputs: { completed: true },
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+  ];
 });
 
 describe("flow debug session API", () => {
@@ -154,16 +196,116 @@ describe("flow debug session API", () => {
       node_key: "end",
       attempt: 2,
     });
+    expect(body.page).toMatchObject({
+      limit: 25,
+      returned: 2,
+      truncated: false,
+      next_cursor: null,
+      budget_bytes: 262_144,
+    });
     expect(body.session.manifest).toMatchObject({
       variable_schema: [
         { key: "count", type: "number", default: 1 },
         { key: "note", type: "string", default: "" },
         { key: "contact", type: "contact" },
       ],
-      nodes: [
-        expect.objectContaining({ node_key: "end", node_type: "end" }),
-      ],
+      nodes: [expect.objectContaining({ node_key: "end", node_type: "end" })],
     });
+  });
+
+  it.each([
+    ["closed", "2099-01-01T00:00:00.000Z"],
+    ["active", "2000-01-01T00:00:00.000Z"],
+  ])(
+    "returns 410 without reading executions for unavailable session (%s)",
+    async (status, expiresAt) => {
+      h.sessionOverride = {
+        ...nearLimitSession(1),
+        status,
+        expires_at: expiresAt,
+      };
+
+      const response = await GET(
+        new Request("http://localhost/debug"),
+        context,
+      );
+
+      expect(response.status).toBe(410);
+      expect(await response.json()).toMatchObject({
+        code: "DEBUG_SESSION_UNAVAILABLE",
+      });
+      expect(h.executionsRead).toBe(false);
+    },
+  );
+
+  it("pages attempts with a compound created_at/id cursor", async () => {
+    const firstResponse = await GET(
+      new Request("http://localhost/debug?limit=1"),
+      context,
+    );
+    const first = await firstResponse.json();
+    expect(first.executions[0].id).toBe("30000000-0000-4000-8000-000000000002");
+    expect(first.page.next_cursor).toEqual(expect.any(String));
+    expect(first.page.next_cursor).not.toBe("2026-01-01T00:00:00.000Z");
+
+    h.executionCursorFilter = null;
+    h.executionOrders = [];
+    const secondResponse = await GET(
+      new Request(
+        `http://localhost/debug?limit=1&cursor=${encodeURIComponent(first.page.next_cursor)}`,
+      ),
+      context,
+    );
+    const second = await secondResponse.json();
+
+    expect(second.executions[0].id).toBe(
+      "30000000-0000-4000-8000-000000000001",
+    );
+    expect(h.executionCursorFilter).toContain(
+      "created_at.eq.2026-01-01T00:00:00.000Z",
+    );
+    expect(h.executionCursorFilter).toContain(
+      "id.lt.30000000-0000-4000-8000-000000000002",
+    );
+    expect(h.executionOrders).toEqual(["created_at", "id"]);
+    expect(h.executionLimit).toBe(2);
+  });
+
+  it("preserves the session envelope while enforcing an aggregate execution budget", async () => {
+    h.executionRows = Array.from({ length: 10 }, (_, index) => ({
+      id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      node_key: `node_${index}`,
+      node_type: "send_message",
+      status: "completed",
+      attempt: 1,
+      inputs: {
+        payload: Array.from({ length: 200 }, () => "x".repeat(1_000)),
+      },
+      outputs: {
+        payload: Array.from({ length: 200 }, () => "y".repeat(1_000)),
+      },
+      created_at: new Date(
+        Date.UTC(2026, 0, 1, 0, 0, 10 - index),
+      ).toISOString(),
+    }));
+
+    const response = await GET(
+      new Request("http://localhost/debug?limit=10"),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.session).toMatchObject({ id: expect.any(String) });
+    expect(body.page).toMatchObject({
+      truncated: true,
+      truncation_reason: "budget",
+      budget_bytes: 262_144,
+    });
+    expect(body.executions.length).toBeLessThan(10);
+    expect(
+      new TextEncoder().encode(JSON.stringify(body)).byteLength,
+    ).toBeLessThanOrEqual(262_144);
   });
 
   it("closes through the CAS RPC", async () => {

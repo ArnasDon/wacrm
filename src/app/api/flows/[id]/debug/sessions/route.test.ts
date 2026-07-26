@@ -6,6 +6,8 @@ const h = vi.hoisted(() => ({
   sourceRun: null as Record<string, unknown> | null,
   sourceVersion: null as Record<string, unknown> | null,
   sourceExecutions: [] as Record<string, unknown>[],
+  sourceExecutionLimit: 0,
+  sourceRunSelect: "",
   rpcName: "",
   rpcCalls: [] as string[],
   rpcArgs: {} as Record<string, unknown>,
@@ -49,6 +51,27 @@ vi.mock("@/lib/flows/admin-client", () => ({
       h.rpcName = name;
       h.rpcCalls.push(name);
       h.rpcArgs = args;
+      if (name === "read_flow_debug_source_variables") {
+        const variables =
+          (h.sourceRun?.vars as Record<string, unknown> | undefined) ?? {};
+        const originalBytes = new TextEncoder().encode(
+          JSON.stringify(variables),
+        ).byteLength;
+        return {
+          data: {
+            result_json:
+              originalBytes > 65_536
+                ? {
+                    truncated: true,
+                    reason: "source_variables_exceeded_limit",
+                  }
+                : variables,
+            truncated: originalBytes > 65_536,
+            original_bytes: originalBytes,
+          },
+          error: null,
+        };
+      }
       if (name === "read_flow_draft_for_publish") {
         return {
           data: {
@@ -98,16 +121,19 @@ vi.mock("@/lib/flows/admin-client", () => ({
     from: (table: string) => {
       if (table === "flow_runs") {
         return {
-          select: () => ({
-            eq: () => ({
+          select: (columns: string) => {
+            h.sourceRunSelect = columns;
+            return {
               eq: () => ({
-                maybeSingle: async () => ({
-                  data: h.sourceRun,
-                  error: null,
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: h.sourceRun,
+                    error: null,
+                  }),
                 }),
               }),
-            }),
-          }),
+            };
+          },
         };
       }
       if (table === "flow_versions") {
@@ -129,10 +155,13 @@ vi.mock("@/lib/flows/admin-client", () => ({
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: async () => ({
-                  data: h.sourceExecutions,
-                  error: null,
-                }),
+                limit: async (limit: number) => {
+                  h.sourceExecutionLimit = limit;
+                  return {
+                    data: h.sourceExecutions.slice(0, limit),
+                    error: null,
+                  };
+                },
               }),
             }),
           }),
@@ -179,6 +208,8 @@ beforeEach(() => {
   h.sourceRun = null;
   h.sourceVersion = null;
   h.sourceExecutions = [];
+  h.sourceExecutionLimit = 0;
+  h.sourceRunSelect = "";
   h.rpcName = "";
   h.rpcCalls = [];
   h.rpcArgs = {};
@@ -331,6 +362,8 @@ describe("flow debug session creation", () => {
 
     expect(response.status).toBe(201);
     expect(h.rpcCalls).not.toContain("read_flow_draft_for_publish");
+    expect(h.rpcCalls).toContain("read_flow_debug_source_variables");
+    expect(h.sourceRunSelect).not.toContain("vars");
     expect(h.rpcArgs).toMatchObject({
       p_flow_version_id: sourceVersionId,
       p_draft_revision: null,
@@ -343,6 +376,11 @@ describe("flow debug session creation", () => {
     expect(h.rpcArgs.p_graph_snapshot).toMatchObject({
       entry_node_key: "source-end",
     });
+    expect(h.sourceExecutionLimit).toBe(32);
+    expect(
+      new TextEncoder().encode(JSON.stringify(h.rpcArgs.p_source_node_outputs))
+        .byteLength,
+    ).toBeLessThanOrEqual(262_144);
   });
 
   it("rejects a version that conflicts with the source run", async () => {

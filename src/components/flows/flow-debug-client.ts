@@ -112,12 +112,50 @@ export async function resumeDebugSession(
   fetcher: Fetcher,
   flowId: string,
   sessionId: string,
-): Promise<{ session: DebugSession; executions: DebugExecution[] }> {
+  options: { cursor?: string; limit?: number } = {},
+): Promise<{
+  session: DebugSession;
+  executions: DebugExecution[];
+  page?: FlightRecorderPage;
+}> {
+  const params = new URLSearchParams();
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   const response = await fetcher(
-    `/api/flows/${flowId}/debug/sessions/${sessionId}`,
+    `/api/flows/${flowId}/debug/sessions/${sessionId}${query}`,
     { cache: "no-store" },
   );
   return readResponse(response);
+}
+
+export async function recoverDebugSession(
+  fetcher: Fetcher,
+  flowId: string,
+  sessionId: string,
+): Promise<
+  | {
+      outcome: "resumed";
+      session: DebugSession;
+      executions: DebugExecution[];
+    }
+  | { outcome: "unavailable"; sessions: DebugSessionSummary[] }
+> {
+  try {
+    const resumed = await resumeDebugSession(fetcher, flowId, sessionId);
+    return { outcome: "resumed", ...resumed };
+  } catch (error) {
+    if (
+      error instanceof FlowDebugClientError &&
+      (error.status === 404 || error.status === 410)
+    ) {
+      return {
+        outcome: "unavailable",
+        sessions: await fetchDebugSessions(fetcher, flowId),
+      };
+    }
+    throw error;
+  }
 }
 
 export async function closeDebugSession(
@@ -138,6 +176,34 @@ export async function closeDebugSession(
   return body.session;
 }
 
+export async function closeDebugSessionAndRefresh(
+  fetcher: Fetcher,
+  flowId: string,
+  sessionId: string,
+  expectedRevision: number,
+): Promise<{
+  outcome: "closed" | "conflict" | "unavailable";
+  sessions: DebugSessionSummary[];
+}> {
+  let outcome: "closed" | "conflict" | "unavailable" = "closed";
+  try {
+    await closeDebugSession(fetcher, flowId, sessionId, expectedRevision);
+  } catch (error) {
+    if (!(error instanceof FlowDebugClientError)) throw error;
+    if (error.status === 409) {
+      outcome = "conflict";
+    } else if (error.status === 404 || error.status === 410) {
+      outcome = "unavailable";
+    } else {
+      throw error;
+    }
+  }
+  return {
+    outcome,
+    sessions: await fetchDebugSessions(fetcher, flowId),
+  };
+}
+
 export async function fetchFlightRecorder(
   fetcher: Fetcher,
   flowId: string,
@@ -153,4 +219,17 @@ export async function fetchFlightRecorder(
     { cache: "no-store" },
   );
   return readResponse(response);
+}
+
+export async function fetchFlightExecutionDetail(
+  fetcher: Fetcher,
+  flowId: string,
+  executionId: string,
+): Promise<DebugExecution> {
+  const response = await fetcher(
+    `/api/flows/${flowId}/debug/flight-recorder/${executionId}`,
+    { cache: "no-store" },
+  );
+  const body = await readResponse<{ execution: DebugExecution }>(response);
+  return body.execution;
 }

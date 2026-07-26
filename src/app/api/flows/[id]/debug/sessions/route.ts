@@ -34,6 +34,7 @@ const bodySchema = z
   .strict();
 const flowIdSchema = z.string().uuid();
 const MAX_CLONED_OUTPUT_BYTES = 256 * 1024;
+const MAX_SOURCE_EXECUTION_ROWS = 32;
 
 export async function GET(
   _request: Request,
@@ -99,7 +100,7 @@ export async function POST(
   if (body.source_run_id) {
     const { data: sourceRun, error: sourceRunError } = await admin
       .from("flow_runs")
-      .select("id, flow_id, account_id, flow_version_id, vars")
+      .select("id, flow_id, account_id, flow_version_id")
       .eq("id", body.source_run_id)
       .eq("flow_id", id)
       .maybeSingle();
@@ -111,7 +112,7 @@ export async function POST(
     }
     const run = sourceRun as Pick<
       FlowRunRow,
-      "id" | "flow_id" | "account_id" | "flow_version_id" | "vars"
+      "id" | "flow_id" | "account_id" | "flow_version_id"
     > | null;
     if (!run || run.account_id !== owner.accountId) {
       return debugJson({ error: "Not found" }, { status: 404 });
@@ -153,7 +154,31 @@ export async function POST(
     } catch {
       return debugJson({ error: "Invalid flow snapshot" }, { status: 422 });
     }
-    variables = run.vars as Record<string, unknown>;
+    const { data: sourceVariables, error: sourceVariablesError } =
+      await admin.rpc("read_flow_debug_source_variables", {
+        p_flow_id: id,
+        p_run_id: run.id,
+        p_max_bytes: 65_536,
+      });
+    if (sourceVariablesError) {
+      return debugRpcError(sourceVariablesError, {
+        operation: "read_source_variables",
+        flowId: id,
+      });
+    }
+    const sourceVariablesRow = Array.isArray(sourceVariables)
+      ? sourceVariables[0]
+      : sourceVariables;
+    if (!sourceVariablesRow || sourceVariablesRow.truncated === true) {
+      return debugJson(
+        {
+          error: "Source variables exceed the debug size limit",
+          code: "DEBUG_VARIABLES_TOO_LARGE",
+        },
+        { status: 413 },
+      );
+    }
+    variables = sourceVariablesRow.result_json as Record<string, unknown>;
     try {
       assertDebugVariablesBounded(variables);
     } catch {
@@ -171,7 +196,7 @@ export async function POST(
       .select("node_key, outputs, started_at")
       .eq("flow_run_id", run.id)
       .order("started_at", { ascending: false })
-      .limit(500);
+      .limit(MAX_SOURCE_EXECUTION_ROWS);
     if (executionsError) {
       return debugRpcError(executionsError, {
         operation: "read_source_executions",
@@ -195,6 +220,10 @@ export async function POST(
           new TextEncoder().encode(JSON.stringify(candidate)).byteLength >
           MAX_CLONED_OUTPUT_BYTES
         ) {
+          clonedOutputs[execution.node_key] = {
+            truncated: true,
+            reason: "source_clone_budget_exceeded",
+          };
           continue;
         }
         clonedOutputs[execution.node_key] = sanitizedOutput;

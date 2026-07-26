@@ -1084,7 +1084,9 @@
       "closeError": "Couldn't end the debug session.",
       "flightRecorder": "Production flight recorder",
       "noProductionExecutions": "No production node attempts were recorded.",
-      "loadMoreExecutions": "Load more attempts"
+      "loadMoreExecutions": "Load more attempts",
+      "selectExecutionDetail": "Select an attempt to load its sanitized inputs, outputs and error.",
+      "detailLoadError": "Couldn't load the execution detail."
     },
     "list": {
       "title": "Flows",

@@ -51,6 +51,9 @@ describe("flow debug inspector UI", () => {
     expect(source).toContain("debugExecutions");
     expect(source).toContain("availableSessions");
     expect(source).toContain("closeDebugSession");
+    expect(source).toContain("fetchFlightExecutionDetail");
+    expect(source).toContain("selectedFlightDetail");
+    expect(source).not.toContain("selectedFlightExecution");
     expect(source).not.toContain("state.variable_schema");
     expect(source).not.toContain("state.nodes");
   });

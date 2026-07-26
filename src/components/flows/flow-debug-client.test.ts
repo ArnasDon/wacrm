@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  closeDebugSessionAndRefresh,
   closeDebugSession,
   fetchDebugSessions,
+  fetchFlightExecutionDetail,
   fetchFlightRecorder,
+  recoverDebugSession,
   resumeDebugSession,
 } from "./flow-debug-client";
 
@@ -120,6 +123,111 @@ describe("flow debug inspector client", () => {
 
     await expect(fetchDebugSessions(fetcher, "flow-a")).rejects.toThrow(
       "debug_session_quota",
+    );
+  });
+
+  it("loads production IO lazily by execution id", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        execution: {
+          id: "execution-a",
+          node_key: "send",
+          status: "completed",
+          inputs: { text: "hello" },
+          outputs: { sent: true },
+          error: null,
+        },
+      }),
+    );
+
+    const execution = await fetchFlightExecutionDetail(
+      fetcher,
+      "flow-a",
+      "execution-a",
+    );
+
+    expect(execution.outputs).toEqual({ sent: true });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/flows/flow-a/debug/flight-recorder/execution-a",
+      { cache: "no-store" },
+    );
+  });
+
+  it("clears an expired session and refreshes inventory after a 410", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: "DEBUG_SESSION_UNAVAILABLE", error: "Expired" },
+          410,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          sessions: [{ id: "session-b", revision: 2, status: "active" }],
+        }),
+      );
+
+    const result = await recoverDebugSession(fetcher, "flow-a", "session-a");
+
+    expect(result).toEqual({
+      outcome: "unavailable",
+      sessions: [{ id: "session-b", revision: 2, status: "active" }],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes the multi-tab inventory after a close revision conflict", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({ code: "DEBUG_REVISION_CONFLICT", error: "Reload" }, 409),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          sessions: [{ id: "session-a", revision: 8, status: "active" }],
+        }),
+      );
+
+    const result = await closeDebugSessionAndRefresh(
+      fetcher,
+      "flow-a",
+      "session-a",
+      7,
+    );
+
+    expect(result).toEqual({
+      outcome: "conflict",
+      sessions: [{ id: "session-a", revision: 8, status: "active" }],
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      expected_revision: 7,
+    });
+  });
+
+  it("forwards the debug execution cursor when resuming more attempts", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        session: {
+          id: "session-a",
+          revision: 1,
+          status: "active",
+          variables: {},
+          manifest: { variable_schema: [], nodes: [] },
+        },
+        executions: [],
+        page: { next_cursor: null, truncated: false },
+      }),
+    );
+
+    await resumeDebugSession(fetcher, "flow-a", "session-a", {
+      cursor: "opaque cursor",
+      limit: 10,
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/flows/flow-a/debug/sessions/session-a?cursor=opaque+cursor&limit=10",
+      { cache: "no-store" },
     );
   });
 });

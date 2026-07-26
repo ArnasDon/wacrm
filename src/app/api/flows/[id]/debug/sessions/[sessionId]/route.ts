@@ -14,6 +14,12 @@ import {
   sanitizeDebugValue,
 } from "@/lib/flows/debug-runtime";
 import { parseFlowVersionGraph } from "@/lib/flows/versions";
+import {
+  decodeDebugCursor,
+  descendingCursorFilter,
+  encodeDebugCursor,
+} from "@/lib/flows/debug-pagination";
+import { MAX_DEBUG_EXECUTION_RESPONSE_BYTES } from "@/lib/flows/execution-payload";
 
 const paramsSchema = z.object({
   id: z.string().uuid(),
@@ -28,10 +34,27 @@ const patchSchema = z
     variables: z.record(z.string().max(120), z.unknown()),
   })
   .strict();
+const getQuerySchema = z.object({
+  cursor: z.string().max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
+});
+const RESPONSE_RESERVE_BYTES = 4 * 1024;
 
-async function contextFor(
-  context: { params: Promise<{ id: string; sessionId: string }> },
-) {
+function responseBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function isUnavailableSession(session: Record<string, unknown>): boolean {
+  if (session.status !== "active" || typeof session.expires_at !== "string") {
+    return true;
+  }
+  const expiresAt = Date.parse(session.expires_at);
+  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+}
+
+async function contextFor(context: {
+  params: Promise<{ id: string; sessionId: string }>;
+}) {
   const params = paramsSchema.safeParse(await context.params);
   if (!params.success) return null;
   const owner = await requireFlowDebugOwner(params.data.id);
@@ -48,29 +71,106 @@ async function contextFor(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string; sessionId: string }> },
 ) {
   const state = await contextFor(context);
   if (!state) return debugJson({ error: "Not found" }, { status: 404 });
   if ("response" in state) return state.response!;
-  const { data: executions, error } = await supabaseAdmin()
+  if (isUnavailableSession(state.session as Record<string, unknown>)) {
+    return debugJson(
+      {
+        code: "DEBUG_SESSION_UNAVAILABLE",
+        error: "The debug session is closed or expired.",
+      },
+      { status: 410 },
+    );
+  }
+
+  const url = new URL(request.url);
+  const parsedQuery = getQuerySchema.safeParse({
+    cursor: url.searchParams.get("cursor") ?? undefined,
+    limit: url.searchParams.get("limit") ?? undefined,
+  });
+  if (!parsedQuery.success) {
+    return debugJson({ error: "Invalid debug session query" }, { status: 400 });
+  }
+  const decodedCursor = parsedQuery.data.cursor
+    ? decodeDebugCursor(parsedQuery.data.cursor)
+    : null;
+  if (parsedQuery.data.cursor && !decodedCursor) {
+    return debugJson(
+      { error: "Invalid debug session cursor" },
+      { status: 400 },
+    );
+  }
+
+  let executionsQuery = supabaseAdmin()
     .from("flow_debug_node_executions")
     .select(
-      "id, node_key, node_type, status, inputs, outputs, variables, simulated_effects, metadata, duration_ms, error, attempt, created_at",
+      "id, node_key, node_type, status, inputs, outputs, simulated_effects, metadata, duration_ms, error, attempt, created_at",
     )
-    .eq("session_id", state.params.sessionId)
+    .eq("session_id", state.params.sessionId);
+  if (decodedCursor) {
+    executionsQuery = executionsQuery.or(
+      descendingCursorFilter("created_at", decodedCursor),
+    );
+  }
+  const { data: rawExecutions, error } = await executionsQuery
     .order("created_at", { ascending: false })
-    .limit(200);
+    .order("id", { ascending: false })
+    .limit(parsedQuery.data.limit + 1);
   if (error) return debugRpcError(error);
   try {
+    const session = sanitizeDebugSession(
+      state.session as Record<string, unknown>,
+    );
+    const executions: Record<string, unknown>[] = [];
+    let truncationReason: "page" | "budget" | null =
+      (rawExecutions ?? []).length > parsedQuery.data.limit ? "page" : null;
+    for (const execution of (rawExecutions ?? []).slice(
+      0,
+      parsedQuery.data.limit,
+    )) {
+      const sanitized = Object.fromEntries(
+        Object.entries(execution).map(([key, value]) => [
+          key,
+          sanitizeDebugValue(value),
+        ]),
+      );
+      if (
+        responseBytes({
+          session,
+          executions: [...executions, sanitized],
+        }) >
+        MAX_DEBUG_EXECUTION_RESPONSE_BYTES - RESPONSE_RESERVE_BYTES
+      ) {
+        truncationReason = "budget";
+        break;
+      }
+      executions.push(sanitized);
+    }
+    const lastExecution = executions.at(-1);
+    const nextCursor =
+      truncationReason &&
+      typeof lastExecution?.created_at === "string" &&
+      typeof lastExecution.id === "string"
+        ? encodeDebugCursor({
+            timestamp: lastExecution.created_at,
+            id: lastExecution.id,
+          })
+        : null;
     return debugJson({
-      session: sanitizeDebugSession(
-        state.session as Record<string, unknown>,
-      ),
-      executions: (executions ?? []).map((execution) =>
-        sanitizeDebugValue(execution),
-      ),
+      session,
+      executions,
+      page: {
+        limit: parsedQuery.data.limit,
+        returned: executions.length,
+        truncated: truncationReason !== null,
+        truncation_reason: truncationReason,
+        next_cursor: nextCursor,
+        budget_bytes: MAX_DEBUG_EXECUTION_RESPONSE_BYTES,
+      },
     });
   } catch (sanitizationError) {
     if (

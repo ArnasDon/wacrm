@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
 import {
-  closeDebugSession,
+  closeDebugSessionAndRefresh,
   fetchDebugSessions,
+  fetchFlightExecutionDetail,
   fetchFlightRecorder,
   FlowDebugClientError,
+  recoverDebugSession,
   resumeDebugSession,
   type DebugExecution,
   type DebugManifestPort,
@@ -36,7 +38,10 @@ export function FlowDebugPanel() {
   const [flightExecutions, setFlightExecutions] = useState<DebugExecution[]>(
     [],
   );
+  const [selectedFlightDetail, setSelectedFlightDetail] =
+    useState<DebugExecution | null>(null);
   const [flightPage, setFlightPage] = useState<FlightRecorderPage | null>(null);
+  const [debugPage, setDebugPage] = useState<FlightRecorderPage | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
@@ -51,15 +56,6 @@ export function FlowDebugPanel() {
         (execution) => execution.node_key === selectedNodeKey,
       ) ?? null,
     [debugExecutions, selectedNodeKey],
-  );
-  const selectedFlightExecution = useMemo(
-    () =>
-      flightExecutions.find(
-        (execution) => execution.node_key === selectedNodeKey,
-      ) ??
-      flightExecutions[0] ??
-      null,
-    [flightExecutions, selectedNodeKey],
   );
   const selectedManifestNode = useMemo(
     () =>
@@ -94,6 +90,7 @@ export function FlowDebugPanel() {
       setFlightExecutions((current) =>
         cursor ? [...current, ...body.executions] : body.executions,
       );
+      if (!cursor) setSelectedFlightDetail(null);
       setFlightPage(body.page);
     },
     [flow.id],
@@ -104,10 +101,16 @@ export function FlowDebugPanel() {
   }, [flow.id]);
 
   const loadSession = useCallback(
-    async (id: string) => {
-      const body = await resumeDebugSession(fetch, flow.id, id);
+    async (id: string, cursor?: string) => {
+      const body = await resumeDebugSession(fetch, flow.id, id, {
+        ...(cursor ? { cursor } : {}),
+        limit: 25,
+      });
       setSession(body.session);
-      setDebugExecutions(body.executions);
+      setDebugExecutions((current) =>
+        cursor ? [...current, ...body.executions] : body.executions,
+      );
+      setDebugPage(body.page ?? null);
       setAvailableSessions((current) =>
         current.map((candidate) =>
           candidate.id === body.session.id ? body.session : candidate,
@@ -119,24 +122,21 @@ export function FlowDebugPanel() {
 
   const recoverSession = useCallback(
     async (sessionId: string) => {
-      try {
-        await loadSession(sessionId);
+      const result = await recoverDebugSession(fetch, flow.id, sessionId);
+      if (result.outcome === "resumed") {
+        setSession(result.session);
+        setDebugExecutions(result.executions);
+        setDebugPage(null);
         setMessage(t("conflictReloaded"));
-      } catch (error) {
-        if (
-          error instanceof FlowDebugClientError &&
-          (error.status === 404 || error.status === 410)
-        ) {
-          setSession(null);
-          setDebugExecutions([]);
-          await loadSessions();
-          setMessage(t("sessionUnavailable"));
-          return;
-        }
-        throw error;
+      } else {
+        setSession(null);
+        setDebugExecutions([]);
+        setDebugPage(null);
+        setAvailableSessions(result.sessions);
+        setMessage(t("sessionUnavailable"));
       }
     },
-    [loadSession, loadSessions, t],
+    [flow.id, t],
   );
 
   useEffect(() => {
@@ -166,6 +166,7 @@ export function FlowDebugPanel() {
       }
       setSession(body.session);
       setDebugExecutions([]);
+      setDebugPage(null);
       await loadSessions();
       setMessage(t("sessionReady"));
     } catch (error) {
@@ -180,30 +181,48 @@ export function FlowDebugPanel() {
     setBusy(true);
     setMessage(null);
     try {
-      await closeDebugSession(fetch, flow.id, candidate.id, candidate.revision);
-      if (session?.id === candidate.id) {
+      const result = await closeDebugSessionAndRefresh(
+        fetch,
+        flow.id,
+        candidate.id,
+        candidate.revision,
+      );
+      setAvailableSessions(result.sessions);
+      if (session?.id === candidate.id && result.outcome !== "conflict") {
         setSession(null);
         setDebugExecutions([]);
+        setDebugPage(null);
       }
-      await loadSessions();
-      setMessage(t("sessionClosed"));
-    } catch (error) {
-      if (
-        error instanceof FlowDebugClientError &&
-        (error.status === 404 || error.status === 409 || error.status === 410)
-      ) {
+      if (result.outcome === "conflict") {
         if (session?.id === candidate.id) {
-          await recoverSession(candidate.id).catch(() => undefined);
+          await recoverSession(candidate.id);
         }
-        await loadSessions().catch(() => undefined);
+        setMessage(t("conflictReloaded"));
+      } else {
         setMessage(
-          error.status === 409
-            ? t("conflictReloaded")
+          result.outcome === "closed"
+            ? t("sessionClosed")
             : t("sessionUnavailable"),
         );
-      } else {
-        setMessage(error instanceof Error ? error.message : t("closeError"));
       }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("closeError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadFlightDetail(execution: DebugExecution) {
+    setBusy(true);
+    setMessage(null);
+    setSelectedNodeKey(execution.node_key);
+    try {
+      setSelectedFlightDetail(
+        await fetchFlightExecutionDetail(fetch, flow.id, execution.id),
+      );
+    } catch {
+      setSelectedFlightDetail(null);
+      setMessage(t("detailLoadError"));
     } finally {
       setBusy(false);
     }
@@ -415,6 +434,9 @@ export function FlowDebugPanel() {
                                 error instanceof FlowDebugClientError &&
                                 (error.status === 404 || error.status === 410)
                               ) {
+                                setSession(null);
+                                setDebugExecutions([]);
+                                setDebugPage(null);
                                 await loadSessions();
                                 setMessage(t("sessionUnavailable"));
                                 return;
@@ -457,7 +479,7 @@ export function FlowDebugPanel() {
                     <button
                       type="button"
                       className="border-border hover:bg-muted flex w-full items-center justify-between rounded border px-2 py-1 text-left text-xs"
-                      onClick={() => setSelectedNodeKey(execution.node_key)}
+                      onClick={() => void loadFlightDetail(execution)}
                     >
                       <code>{execution.node_key}</code>
                       <span>
@@ -484,7 +506,13 @@ export function FlowDebugPanel() {
                   {t("loadMoreExecutions")}
                 </Button>
               ) : null}
-              <ExecutionDetails execution={selectedFlightExecution} />
+              {selectedFlightDetail ? (
+                <ExecutionDetails execution={selectedFlightDetail} />
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  {t("selectExecutionDetail")}
+                </p>
+              )}
             </>
           )}
         </section>
@@ -571,6 +599,23 @@ export function FlowDebugPanel() {
             </section>
 
             <ExecutionDetails execution={selectedExecution} />
+            {debugPage?.truncated && debugPage.next_cursor ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void loadSession(
+                    session.id,
+                    debugPage.next_cursor ?? undefined,
+                  ).catch(() => setMessage(t("loadError")))
+                }
+                className="w-full"
+              >
+                {t("loadMoreExecutions")}
+              </Button>
+            ) : null}
           </>
         ) : (
           <p className="text-muted-foreground text-xs">{t("emptySession")}</p>

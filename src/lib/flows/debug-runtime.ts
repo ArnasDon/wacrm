@@ -554,6 +554,8 @@ function sanitizeInner(value: unknown, depth: number): unknown {
     if (/^https?:\/\//i.test(value)) {
       try {
         const parsed = new URL(value);
+        parsed.username = "";
+        parsed.password = "";
         parsed.search = "";
         parsed.hash = "";
         safeValue = parsed.toString();

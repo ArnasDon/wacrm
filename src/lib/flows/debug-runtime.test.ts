@@ -477,7 +477,8 @@ describe("debug record sanitization", () => {
 
   it("removes query strings and fragments from URL values at any nesting level", () => {
     const sanitized = sanitizeDebugValue({
-      callback: "https://example.com/hooks/receive?token=super-secret#step-2",
+      callback:
+        "https://api-user:api-password@example.com/hooks/receive?token=super-secret#step-2",
       nested: [
         {
           location:
@@ -494,6 +495,8 @@ describe("debug record sanitization", () => {
     });
     expect(JSON.stringify(sanitized)).not.toContain("super-secret");
     expect(JSON.stringify(sanitized)).not.toContain("ada%40example.com");
+    expect(JSON.stringify(sanitized)).not.toContain("api-user");
+    expect(JSON.stringify(sanitized)).not.toContain("api-password");
   });
 
   it("never exposes the pinned graph or internal output cache to the client", () => {

@@ -85,6 +85,7 @@ import {
   versionGraphNodes,
   type FlowVersionGraph,
 } from "./versions";
+import { boundFlowExecutionPayload } from "./execution-payload";
 import {
   executeHttpRequest,
   type HttpRequestConfig,
@@ -472,12 +473,11 @@ async function startNodeExecutionRecord(
       .from("flow_node_executions")
       .insert({
         flow_run_id: run.id,
-        flow_version_id:
-          run.active_flow_version_id ?? run.flow_version_id,
+        flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
         node_key: node.node_key,
         node_type: node.node_type,
         status: "executing",
-        inputs: sanitizeExecutionData(node.config),
+        inputs: boundFlowExecutionPayload(sanitizeExecutionData(node.config)),
         attempt,
         started_at: new Date().toISOString(),
       })
@@ -516,8 +516,11 @@ async function finishNodeExecutionRecord(
         outputs:
           update.outputs === undefined
             ? null
-            : sanitizeExecutionData(update.outputs),
-        error: update.error ?? null,
+            : boundFlowExecutionPayload(sanitizeExecutionData(update.outputs)),
+        error:
+          update.error === undefined
+            ? null
+            : boundFlowExecutionPayload(update.error),
         completed_at: new Date().toISOString(),
       })
       .eq("id", executionId);
@@ -729,15 +732,15 @@ async function reserveNodeEffect(
     throw new Error("flow run is missing a durable visit identity");
   }
   const invocationToken = crypto.randomUUID();
-  const reserve = () => db.rpc("reserve_flow_node_effect", {
-    p_run_id: run.id,
-    p_flow_version_id:
-      run.active_flow_version_id ?? run.flow_version_id,
-    p_node_key: node.node_key,
-    p_visit_id: run.current_visit_id,
-    p_effect_kind: effectKind,
-    p_invocation_token: invocationToken,
-  });
+  const reserve = () =>
+    db.rpc("reserve_flow_node_effect", {
+      p_run_id: run.id,
+      p_flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
+      p_node_key: node.node_key,
+      p_visit_id: run.current_visit_id,
+      p_effect_kind: effectKind,
+      p_invocation_token: invocationToken,
+    });
   let { data, error } = await reserve();
   const effect = Array.isArray(data)
     ? (data[0] as DurableNodeEffect | undefined)
@@ -784,11 +787,7 @@ async function markNodeEffectCommitted<T>(
     lastError = error;
     let readBack: DurableNodeEffect | null = null;
     try {
-      readBack = await readNodeEffect(
-        db,
-        effect.id,
-        effect.operation_id,
-      );
+      readBack = await readNodeEffect(db, effect.id, effect.operation_id);
     } catch (readError) {
       lastError = new AggregateError(
         [error, readError].filter(Boolean),
@@ -840,11 +839,7 @@ async function completeNodeEffect(
     }
     lastError = error ?? new Error("effect ledger was not completed");
     try {
-      const readBack = await readNodeEffect(
-        db,
-        effect.id,
-        effect.operation_id,
-      );
+      const readBack = await readNodeEffect(db, effect.id, effect.operation_id);
       if (readBack?.status === "completed") {
         effect.status = "completed";
         effect.result = readBack.result;
@@ -866,7 +861,7 @@ async function completeNodeEffect(
               [lastError, readError],
               "ledger completion and read-back both failed",
             )
-          : readError ?? lastError,
+          : (readError ?? lastError),
       effectId: effect.id,
       operationId: effect.operation_id,
       remoteResult: sanitizeExecutionData(effect.result),
@@ -883,21 +878,14 @@ async function failAmbiguousNodeEffect(
   let readBack: DurableNodeEffect | null = null;
   let ledgerError: unknown = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const { data, error } = await db.rpc(
-      "mark_flow_node_effect_ambiguous",
-      {
-        p_effect_id: effect.id,
-        p_operation_id: effect.operation_id,
-        p_invocation_token: effect.invocation_token ?? null,
-      },
-    );
+    const { data, error } = await db.rpc("mark_flow_node_effect_ambiguous", {
+      p_effect_id: effect.id,
+      p_operation_id: effect.operation_id,
+      p_invocation_token: effect.invocation_token ?? null,
+    });
     ledgerError = error;
     try {
-      readBack = await readNodeEffect(
-        db,
-        effect.id,
-        effect.operation_id,
-      );
+      readBack = await readNodeEffect(db, effect.id, effect.operation_id);
     } catch (readError) {
       ledgerError = new AggregateError(
         [error, readError].filter(Boolean),
@@ -978,12 +966,7 @@ async function executeDurableNodeEffect<T>(
   }
 
   if (effect.status === "ambiguous") {
-    const resolved = await failAmbiguousNodeEffect(
-      db,
-      run,
-      node,
-      effect,
-    );
+    const resolved = await failAmbiguousNodeEffect(db, run, node, effect);
     if (
       resolved &&
       (resolved.status === "remote_committed" ||
@@ -1005,12 +988,7 @@ async function executeDurableNodeEffect<T>(
     if (effect.in_progress) {
       return { ok: false };
     }
-    const resolved = await failAmbiguousNodeEffect(
-      db,
-      run,
-      node,
-      effect,
-    );
+    const resolved = await failAmbiguousNodeEffect(db, run, node, effect);
     if (
       resolved &&
       (resolved.status === "remote_committed" ||
@@ -1066,39 +1044,29 @@ async function executeDurableNodeEffect<T>(
       committedEffect as DurableNodeEffect | null;
     if (!readBack) {
       try {
-        readBack = await readNodeEffect(
-          db,
-          effect.id,
-          effect.operation_id,
-        );
+        readBack = await readNodeEffect(db, effect.id, effect.operation_id);
       } catch (readError) {
-        committedError = new CommittedSideEffectError(
-          committedError.message,
-          {
-            ...committedError.metadata,
-            cause: new AggregateError(
-              [committedError, readError],
-              "committed effect read-back failed",
-            ),
-            effectId: effect.id,
-            operationId: effect.operation_id,
-            effectKind,
-            remoteResult: sanitizeExecutionData(
-              remoteResult ?? committedError.metadata.remoteResult,
-            ),
-            expectedNodeKey: node.node_key,
-            expectedVisitId: run.current_visit_id ?? undefined,
-            expectedContinuationId: run.continuation_id ?? null,
-          },
-        );
+        committedError = new CommittedSideEffectError(committedError.message, {
+          ...committedError.metadata,
+          cause: new AggregateError(
+            [committedError, readError],
+            "committed effect read-back failed",
+          ),
+          effectId: effect.id,
+          operationId: effect.operation_id,
+          effectKind,
+          remoteResult: sanitizeExecutionData(
+            remoteResult ?? committedError.metadata.remoteResult,
+          ),
+          expectedNodeKey: node.node_key,
+          expectedVisitId: run.current_visit_id ?? undefined,
+          expectedContinuationId: run.continuation_id ?? null,
+        });
       }
     }
     const recoverableResult =
       remoteResult ?? (committedError.metadata.remoteResult as T | undefined);
-    if (
-      readBack?.status === "reserved" &&
-      recoverableResult !== undefined
-    ) {
+    if (readBack?.status === "reserved" && recoverableResult !== undefined) {
       try {
         readBack = await markNodeEffectCommitted(
           db,
@@ -1110,8 +1078,7 @@ async function executeDurableNodeEffect<T>(
           committedError.externalReference,
         );
       } catch (markError) {
-        committedError =
-          committedSideEffectCause(markError) ?? committedError;
+        committedError = committedSideEffectCause(markError) ?? committedError;
       }
     } else if (
       readBack?.status === "reserved" &&
@@ -1132,8 +1099,7 @@ async function executeDurableNodeEffect<T>(
           committedError.externalReference,
         );
       } catch (markError) {
-        committedError =
-          committedSideEffectCause(markError) ?? committedError;
+        committedError = committedSideEffectCause(markError) ?? committedError;
       }
     }
     if (
@@ -1170,12 +1136,7 @@ async function executeDurableNodeEffect<T>(
   }
   if (!executed.ok) {
     if (!committedEffect) {
-      const resolved = await failAmbiguousNodeEffect(
-        db,
-        run,
-        node,
-        effect,
-      );
+      const resolved = await failAmbiguousNodeEffect(db, run, node, effect);
       if (
         resolved &&
         (resolved.status === "remote_committed" ||
@@ -1251,8 +1212,7 @@ async function persistDurableCursor(
       advanced = candidate;
       break;
     }
-    lastError =
-      error ?? new Error("durable flow cursor was not advanced");
+    lastError = error ?? new Error("durable flow cursor was not advanced");
     let readBack: FlowRunRow | null = null;
     try {
       readBack = await loadRunById(db, run.id);
@@ -1303,7 +1263,7 @@ async function persistDurableCursor(
                 [lastError, readError],
                 "cursor advance and read-back both failed",
               )
-            : readError ?? lastError,
+            : (readError ?? lastError),
         expectedNodeKey,
         expectedVisitId,
         expectedContinuationId,
@@ -1428,7 +1388,7 @@ async function persistDurableVariableTransition(
                 [lastError, readError],
                 "variable transition and read-back both failed",
               )
-            : readError ?? lastError,
+            : (readError ?? lastError),
         expectedNodeKey,
         expectedVisitId,
         expectedContinuationId,
@@ -1523,11 +1483,7 @@ async function commitReplyTransition(
     : undefined;
   if (!error && committed) return committed;
 
-  const receipt = await findCommittedReplyTransition(
-    db,
-    run.id,
-    metaMessageId,
-  );
+  const receipt = await findCommittedReplyTransition(db, run.id, metaMessageId);
   const readBack = await loadRunById(db, run.id);
   if (
     receipt?.transition_kind === "reply_branch" &&
@@ -1578,8 +1534,7 @@ async function stopAfterCommittedEffectPersistenceFailure(
     );
   const reconcileArgs = {
     p_run_id: run.id,
-    p_flow_version_id:
-      run.active_flow_version_id ?? run.flow_version_id,
+    p_flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
     p_expected_node_key: expectedNodeKey,
@@ -1682,8 +1637,7 @@ async function finalizeDurableNodeEffect(
             ...committedError.metadata,
             expectedNodeKey: committedCursor.expectedNodeKey,
             expectedVisitId: committedCursor.expectedVisitId,
-            expectedContinuationId:
-              committedCursor.expectedContinuationId,
+            expectedContinuationId: committedCursor.expectedContinuationId,
             intendedNextNodeKey: committedCursor.intendedNextNodeKey,
             intendedNextVisitId: committedCursor.intendedNextVisitId,
           })
@@ -1718,8 +1672,7 @@ async function finalizeRepromptEffect(
     await localPersistence();
     const { data, error } = await db.rpc("finalize_flow_reprompt_effect", {
       p_run_id: run.id,
-      p_flow_version_id:
-        run.active_flow_version_id ?? run.flow_version_id,
+      p_flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
       p_effect_id: effect.id,
       p_operation_id: effect.operation_id,
       p_expected_node_key: expectedNodeKey,
@@ -1756,8 +1709,7 @@ async function finalizeRepromptEffect(
       throw new CommittedSideEffectError(
         "Reprompt was sent but its durable state was not finalized",
         {
-          externalReference:
-            effect.external_reference ?? effect.operation_id,
+          externalReference: effect.external_reference ?? effect.operation_id,
           persistenceStage: "reprompt_state_finalize",
           cause: error,
         },
@@ -1794,18 +1746,15 @@ async function finalizeFallbackDecision(
   }
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
-  const { data, error } = await db.rpc(
-    "finalize_flow_fallback_decision",
-    {
-      p_run_id: run.id,
-      p_flow_version_id: run.flow_version_id,
-      p_expected_node_key: expectedNodeKey,
-      p_expected_visit_id: expectedVisitId,
-      p_meta_message_id: metaMessageId,
-      p_reprompt_count: repromptCount,
-      p_decision: decision,
-    },
-  );
+  const { data, error } = await db.rpc("finalize_flow_fallback_decision", {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_expected_node_key: expectedNodeKey,
+    p_expected_visit_id: expectedVisitId,
+    p_meta_message_id: metaMessageId,
+    p_reprompt_count: repromptCount,
+    p_decision: decision,
+  });
   const finalized = Array.isArray(data)
     ? (data[0] as FlowRunRow | undefined)
     : undefined;
@@ -1818,11 +1767,7 @@ async function finalizeFallbackDecision(
   }
 
   // The transaction may have committed while its response was lost.
-  const receipt = await findCommittedReplyTransition(
-    db,
-    run.id,
-    metaMessageId,
-  );
+  const receipt = await findCommittedReplyTransition(db, run.id, metaMessageId);
   if (
     receipt?.recovery_state === "completed" &&
     receipt.transition_kind === `fallback_${decision}`
@@ -2660,8 +2605,7 @@ export async function advanceFromNodeKey(
             on_error: resolvedPolicy.on_error,
             ...(resolvedPolicy.error_next_node_key
               ? {
-                  error_next_node_key:
-                    resolvedPolicy.error_next_node_key,
+                  error_next_node_key: resolvedPolicy.error_next_node_key,
                 }
               : {}),
             ...(resolvedPolicy.default_value
@@ -2753,12 +2697,7 @@ export async function advanceFromNodeKey(
             prompt: cfg.prompt,
             inputVariables: cfg.input_variables,
             vars: run.vars,
-            context: resolveBoundDataInput(
-              node,
-              "context",
-              nodes,
-              run.vars,
-            ),
+            context: resolveBoundDataInput(node, "context", nodes, run.vars),
             maxTokens: cfg.max_tokens,
             signal,
           });
@@ -2773,17 +2712,13 @@ export async function advanceFromNodeKey(
         [cfg.output_variable]: executed.value.reply,
       };
       if (
-        !(await finalizeDurableNodeEffect(
-          db,
-          run,
-          executed.effect,
-          async () =>
-            persistDurableVariableTransition(
-              db,
-              run,
-              cfg.next_node_key,
-              nextVars,
-            ),
+        !(await finalizeDurableNodeEffect(db, run, executed.effect, async () =>
+          persistDurableVariableTransition(
+            db,
+            run,
+            cfg.next_node_key,
+            nextVars,
+          ),
         ))
       ) {
         return { outcome: "completed" };
@@ -2896,8 +2831,7 @@ export async function advanceFromNodeKey(
         ).toISOString();
         const scheduleArgs = {
           p_run_id: run.id,
-          p_flow_version_id:
-            run.active_flow_version_id ?? run.flow_version_id,
+          p_flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
           p_node_key: node.node_key,
           p_next_node_key: cfg.next_node_key,
           p_wake_at: wakeAt,
@@ -3090,11 +3024,7 @@ export async function advanceFromNodeKey(
         const parentFlowId = returned.active_flow_id ?? returned.flow_id;
         const parentVersionId =
           returned.active_flow_version_id ?? returned.flow_version_id;
-        const parent = await loadFlowVersion(
-          db,
-          parentVersionId,
-          parentFlowId,
-        );
+        const parent = await loadFlowVersion(db, parentVersionId, parentFlowId);
         if (!parent || !returned.current_node_key) {
           await endRun(
             db,
@@ -3152,45 +3082,27 @@ export async function recoverFailedSubFlowRun(
   db: AdminClient,
   run: FlowRunRow,
   failureReason = "child_flow_execution_failed",
-): Promise<
-  { outcome: "advanced" | "completed" | "handed_off" } | null
-> {
+): Promise<{ outcome: "advanced" | "completed" | "handed_off" } | null> {
   const readBack = await loadRunById(db, run.id);
   if (!readBack || readBack.status !== "failed") return null;
-  const durableFailureReason =
-    readBack.end_reason ?? failureReason;
+  const durableFailureReason = readBack.end_reason ?? failureReason;
   syncRun(run, readBack);
-  const activeVersion =
-    run.active_flow_version_id ?? run.flow_version_id;
+  const activeVersion = run.active_flow_version_id ?? run.flow_version_id;
   if (activeVersion === run.flow_version_id) {
     return { outcome: "completed" };
   }
 
-  const restored = await failFromSubFlow(
-    db,
-    run,
-    durableFailureReason,
-  );
+  const restored = await failFromSubFlow(db, run, durableFailureReason);
   syncRun(run, restored as FlowRunRow);
   if (run.status === "failed") {
-    return recoverFailedSubFlowRun(
-      db,
-      run,
-      "nested_sub_flow_child_failed",
-    );
+    return recoverFailedSubFlowRun(db, run, "nested_sub_flow_child_failed");
   }
 
   const parentFlowId = run.active_flow_id ?? run.flow_id;
-  const parentVersionId =
-    run.active_flow_version_id ?? run.flow_version_id;
+  const parentVersionId = run.active_flow_version_id ?? run.flow_version_id;
   const parent = await loadFlowVersion(db, parentVersionId, parentFlowId);
   if (!parent || !run.current_node_key) {
-    await endRun(
-      db,
-      run.id,
-      "failed",
-      "sub_flow_parent_snapshot_unavailable",
-    );
+    await endRun(db, run.id, "failed", "sub_flow_parent_snapshot_unavailable");
     return recoverFailedSubFlowRun(
       db,
       run,
@@ -3204,10 +3116,7 @@ export async function recoverFailedSubFlowRun(
     snapshotNodes(parentFlowId, parent.graph),
     parent.graph.fallback_policy.execution,
   );
-  return (
-    (await recoverFailedSubFlowRun(db, run, failureReason)) ??
-    outcome
-  );
+  return (await recoverFailedSubFlowRun(db, run, failureReason)) ?? outcome;
 }
 
 export async function dispatchInboundToFlows(
@@ -3231,9 +3140,7 @@ export async function dispatchInboundToFlows(
         receiptRun.account_id === input.accountId &&
         receiptRun.contact_id === input.contactId &&
         receipt.recovery_state === "pending" &&
-        ["active", "resuming", "needs_recovery"].includes(
-          receiptRun.status,
-        ) &&
+        ["active", "resuming", "needs_recovery"].includes(receiptRun.status) &&
         receiptRun.current_node_key === receipt.next_node_key &&
         receiptRun.current_visit_id === receipt.next_visit_id;
       if (recoverable) {
@@ -3246,10 +3153,7 @@ export async function dispatchInboundToFlows(
             snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
-          const unwound = await recoverFailedSubFlowRun(
-            db,
-            receiptRun,
-          );
+          const unwound = await recoverFailedSubFlowRun(db, receiptRun);
           return {
             consumed: true,
             flow_run_id: receiptRun.id,
@@ -3274,10 +3178,7 @@ export async function dispatchInboundToFlows(
             snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
-          const unwound = await recoverFailedSubFlowRun(
-            db,
-            receiptRun,
-          );
+          const unwound = await recoverFailedSubFlowRun(db, receiptRun);
           return {
             consumed: true,
             flow_run_id: receiptRun.id,
@@ -3287,9 +3188,7 @@ export async function dispatchInboundToFlows(
       }
       return {
         consumed: true,
-        ...(receipt.flow_run_id
-          ? { flow_run_id: receipt.flow_run_id }
-          : {}),
+        ...(receipt.flow_run_id ? { flow_run_id: receipt.flow_run_id } : {}),
         outcome: "duplicate_inbound_ignored",
       };
     }

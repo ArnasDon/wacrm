@@ -8,7 +8,8 @@ const harness = vi.hoisted(() => ({
   executionSelect: "",
   executionLimit: 0,
   executionRunIds: [] as string[],
-  executionCursor: null as string | null,
+  executionCursorFilter: null as string | null,
+  executionOrders: [] as string[],
   executionRows: [] as Array<{
     id: string;
     flow_run_id: string;
@@ -72,10 +73,17 @@ vi.mock("@/lib/flows/admin-client", () => ({
             return query;
           },
           lt: (_column: string, value: string) => {
-            harness.executionCursor = value;
+            harness.executionCursorFilter = `legacy:${value}`;
             return query;
           },
-          order: () => query,
+          or: (filter: string) => {
+            harness.executionCursorFilter = filter;
+            return query;
+          },
+          order: (column: string) => {
+            harness.executionOrders.push(column);
+            return query;
+          },
           limit: async (value: number) => {
             harness.executionLimit = value;
             return {
@@ -83,10 +91,8 @@ vi.mock("@/lib/flows/admin-client", () => ({
                 .filter((row) =>
                   harness.executionRunIds.includes(row.flow_run_id),
                 )
-                .filter(
-                  (row) =>
-                    !harness.executionCursor ||
-                    row.started_at < harness.executionCursor,
+                .filter((_row, index) =>
+                  harness.executionCursorFilter ? index > 0 : true,
                 )
                 .slice(0, value),
               error: null,
@@ -121,10 +127,11 @@ describe("production flow flight recorder", () => {
     harness.executionSelect = "";
     harness.executionLimit = 0;
     harness.executionRunIds = [];
-    harness.executionCursor = null;
+    harness.executionCursorFilter = null;
+    harness.executionOrders = [];
     harness.executionRows = [
       {
-        id: "new-a",
+        id: "30000000-0000-4000-8000-000000000002",
         flow_run_id: RUN_A,
         node_key: "send",
         node_type: "send_message",
@@ -135,18 +142,18 @@ describe("production flow flight recorder", () => {
         completed_at: "2026-01-01T00:00:02.004Z",
       },
       {
-        id: "old-a",
+        id: "30000000-0000-4000-8000-000000000001",
         flow_run_id: RUN_A,
         node_key: "send",
         node_type: "send_message",
         attempt: 1,
         status: "error",
         duration_ms: 3,
-        started_at: "2026-01-01T00:00:01.000Z",
-        completed_at: "2026-01-01T00:00:01.003Z",
+        started_at: "2026-01-01T00:00:02.000Z",
+        completed_at: "2026-01-01T00:00:02.003Z",
       },
       {
-        id: "only-b",
+        id: "30000000-0000-4000-8000-000000000003",
         flow_run_id: RUN_B,
         node_key: "end",
         node_type: "end",
@@ -167,30 +174,44 @@ describe("production flow flight recorder", () => {
     expect(body.runs.map((run: { id: string }) => run.id)).toEqual([RUN_A]);
     expect(
       body.executions.map((execution: { id: string }) => execution.id),
-    ).toEqual(["new-a"]);
-    expect(body.latest_by_run[RUN_A].send.id).toBe("new-a");
-    expect(body.page).toEqual({
+    ).toEqual(["30000000-0000-4000-8000-000000000002"]);
+    expect(body.latest_by_run[RUN_A].send.id).toBe(
+      "30000000-0000-4000-8000-000000000002",
+    );
+    expect(body.page).toMatchObject({
       limit: 1,
       returned: 1,
       truncated: true,
       truncation_reason: "page",
-      next_cursor: "2026-01-01T00:00:02.000Z",
       budget_bytes: 262_144,
     });
+    expect(body.page.next_cursor).toEqual(expect.any(String));
+    expect(body.page.next_cursor).not.toBe("2026-01-01T00:00:02.000Z");
     expect(harness.executionRunIds).toEqual([RUN_A]);
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("uses the cursor and a bounded limit plus one without selecting payloads", async () => {
+  it("uses a deterministic compound cursor without skipping equal timestamps", async () => {
+    const firstResponse = await request(`?run_id=${RUN_A}&limit=1`);
+    const first = await firstResponse.json();
+    harness.executionCursorFilter = null;
+    harness.executionOrders = [];
+
     const response = await request(
-      `?run_id=${RUN_A}&limit=1&cursor=${encodeURIComponent("2026-01-01T00:00:02.000Z")}`,
+      `?run_id=${RUN_A}&limit=1&cursor=${encodeURIComponent(first.page.next_cursor)}`,
     );
     const body = await response.json();
 
     expect(
       body.executions.map((execution: { id: string }) => execution.id),
-    ).toEqual(["old-a"]);
-    expect(harness.executionCursor).toBe("2026-01-01T00:00:02.000Z");
+    ).toEqual(["30000000-0000-4000-8000-000000000001"]);
+    expect(harness.executionCursorFilter).toContain(
+      "started_at.eq.2026-01-01T00:00:02.000Z",
+    );
+    expect(harness.executionCursorFilter).toContain(
+      "id.lt.30000000-0000-4000-8000-000000000002",
+    );
+    expect(harness.executionOrders).toEqual(["started_at", "id"]);
     expect(harness.executionLimit).toBe(2);
     expect(harness.executionSelect).not.toMatch(
       /\b(inputs|outputs|error|vars)\b/,
@@ -206,7 +227,7 @@ describe("production flow flight recorder", () => {
 
   it("keeps the response envelope and reports aggregate-budget truncation", async () => {
     harness.executionRows = Array.from({ length: 100 }, (_, index) => ({
-      id: `execution-${index}`,
+      id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       flow_run_id: RUN_A,
       node_key: `${index}-${"n".repeat(4_096)}`,
       node_type: "send_message",

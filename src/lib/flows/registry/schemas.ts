@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { assertAuthorableHttpUrl } from "@/lib/flows/http-request";
+import { assertAuthorableHttpUrl } from "@/lib/flows/http-authoring-url";
 import { isSafeCollectInputRegex } from "@/lib/flows/runtime-primitives";
 import {
   MAX_COMPOSITE_ITERATIONS,

@@ -121,6 +121,31 @@ describe("canonical flow node registry", () => {
     );
   });
 
+  it("keeps HTTP authoring validation client-safe and rejects local targets", () => {
+    const http = getNodeDescriptor("http_request")!;
+    const config = {
+      method: "GET",
+      headers: {},
+      response_var: "response",
+      next_node_key: "done",
+    };
+    expect(
+      http.configSchema.safeParse({
+        ...config,
+        url: "https://api.example.com/v1",
+      }).success,
+    ).toBe(true);
+    for (const url of [
+      "http://localhost/admin",
+      "http://127.0.0.1/admin",
+      "http://[::1]/admin",
+    ]) {
+      expect(http.configSchema.safeParse({ ...config, url }).success).toBe(
+        false,
+      );
+    }
+  });
+
   it("drives engine lookup and UI metadata from the same descriptor", () => {
     const descriptor = getRuntimeDescriptor("send_message");
     expect(descriptor?.runtimeHook).toBe("send_message");

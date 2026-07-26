@@ -537,7 +537,8 @@ function FlowCanvasInner() {
       const patch = applyEdgeConnection(
         sourceNode,
         connection.sourceHandle,
-        connection.target
+        connection.target,
+        connection.targetHandle
       );
       if (patch) updateNodeConfig(connection.source, patch);
     },

@@ -9,6 +9,7 @@
 import type { ZodIssue } from "zod";
 import type { FlowVariableDeclaration } from "./runtime-primitives";
 import { arePortTypesCompatible } from "./connection-validation";
+import { deriveCanvasEdges, type CanvasEdge } from "./edges";
 
 import {
   getCompatibilityFlowTriggerDescriptor,
@@ -366,53 +367,148 @@ function validateVariableReferences(
 
 function validateStructuredCycles(nodes: NodeInput[]): ValidationIssue[] {
   const byKey = new Map(nodes.map((node) => [node.node_key, node]));
-  const state = new Map<string, "visiting" | "visited">();
-  const stack: string[] = [];
-  const reported = new Set<string>();
+  let edges = deriveCanvasEdges(nodes as never[]).filter(
+    (edge) => edge.targetHandle === "in" || edge.targetHandle === "continue",
+  );
   const issues: ValidationIssue[] = [];
 
-  const visit = (key: string): void => {
-    if (state.get(key) === "visited") return;
-    if (state.get(key) === "visiting") return;
-    const node = byKey.get(key);
-    if (!node) return;
-    state.set(key, "visiting");
-    stack.push(key);
-    const descriptor = getNodeDescriptor(node.node_type);
-    for (const target of descriptor?.outgoingEdges(node.config) ?? []) {
-      if (state.get(target) === "visiting") {
-        const start = stack.lastIndexOf(target);
-        const cycle = stack.slice(start);
-        const structured = cycle.some((cycleKey) => {
-          const type = byKey.get(cycleKey)?.node_type;
-          return type === "each" || type === "loop";
-        });
-        if (!structured) {
-          const signature = [...cycle].sort().join(":");
-          if (!reported.has(signature)) {
-            reported.add(signature);
-            issues.push({
-              severity: "error",
-              scope: "node",
-              node_key: key,
-              field: descriptor
-                ?.outgoingEdgeTargets(node.config)
-                .find((edge) => edge.target === target)?.field,
-              message:
-                "Cycles must return through a structured each or loop node.",
-            });
-          }
-        }
-      } else {
-        visit(target);
-      }
+  const stronglyConnectedComponents = (
+    activeEdges: readonly CanvasEdge[],
+  ): string[][] => {
+    const adjacency = new Map<string, string[]>(
+      nodes.map((node) => [node.node_key, []]),
+    );
+    for (const edge of activeEdges) {
+      adjacency.get(edge.source)?.push(edge.target);
     }
-    stack.pop();
-    state.set(key, "visited");
+    let nextIndex = 0;
+    const indexes = new Map<string, number>();
+    const lowLinks = new Map<string, number>();
+    const stack: string[] = [];
+    const onStack = new Set<string>();
+    const result: string[][] = [];
+    const connect = (key: string) => {
+      indexes.set(key, nextIndex);
+      lowLinks.set(key, nextIndex);
+      nextIndex += 1;
+      stack.push(key);
+      onStack.add(key);
+      for (const target of adjacency.get(key) ?? []) {
+        if (!indexes.has(target)) {
+          connect(target);
+          lowLinks.set(
+            key,
+            Math.min(lowLinks.get(key)!, lowLinks.get(target)!),
+          );
+        } else if (onStack.has(target)) {
+          lowLinks.set(
+            key,
+            Math.min(lowLinks.get(key)!, indexes.get(target)!),
+          );
+        }
+      }
+      if (lowLinks.get(key) !== indexes.get(key)) return;
+      const component: string[] = [];
+      let member: string;
+      do {
+        member = stack.pop()!;
+        onStack.delete(member);
+        component.push(member);
+      } while (member !== key);
+      result.push(component);
+    };
+    for (const node of nodes) {
+      if (!indexes.has(node.node_key)) connect(node.node_key);
+    }
+    return result;
   };
 
-  for (const node of nodes) visit(node.node_key);
-  return issues;
+  const cyclicComponents = (): string[][] =>
+    stronglyConnectedComponents(edges).filter(
+      (component) =>
+        component.length > 1 ||
+        edges.some(
+          (edge) =>
+            edge.source === component[0] && edge.target === component[0],
+        ),
+    );
+
+  while (true) {
+    const cyclic = cyclicComponents();
+    if (cyclic.length === 0) return issues;
+    let reduced = false;
+    for (const component of cyclic) {
+      const members = new Set(component);
+      const controllers = component.flatMap((key) => {
+        const node = byKey.get(key);
+        if (node?.node_type !== "each" && node?.node_type !== "loop") return [];
+        const body = node.config.body_next;
+        const done = node.config.done_next;
+        return typeof body === "string" &&
+          typeof done === "string" &&
+          members.has(body) &&
+          !members.has(done)
+          ? [node]
+          : [];
+      });
+      if (controllers.length > 1) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: controllers[0].node_key,
+          message:
+            "Structured cycle is ambiguous because multiple each/loop controllers own the same cycle.",
+        });
+        return issues;
+      }
+      if (controllers.length === 0) {
+        const controllerWithDoneInside = component
+          .map((key) => byKey.get(key))
+          .find(
+            (node) =>
+              (node?.node_type === "each" || node?.node_type === "loop") &&
+              typeof node.config.body_next === "string" &&
+              members.has(node.config.body_next) &&
+              typeof node.config.done_next === "string" &&
+              members.has(node.config.done_next),
+          );
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: controllerWithDoneInside?.node_key ?? component[0],
+          field: controllerWithDoneInside ? "done_next" : undefined,
+          message: controllerWithDoneInside
+            ? "A structured loop done branch must stay outside its controlled cycle."
+            : "Cycles must be owned by one structured each or loop controller.",
+        });
+        return issues;
+      }
+
+      const controller = controllers[0];
+      const backEdges = edges.filter(
+        (edge) =>
+          members.has(edge.source) &&
+          edge.target === controller.node_key,
+      );
+      if (
+        backEdges.length === 0 ||
+        backEdges.some((edge) => edge.targetHandle !== "continue")
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: controller.node_key,
+          message:
+            "Every structured loop back-edge must return through the controller continue input.",
+        });
+        return issues;
+      }
+      const removed = new Set(backEdges.map((edge) => edge.id));
+      edges = edges.filter((edge) => !removed.has(edge.id));
+      reduced = true;
+    }
+    if (!reduced) return issues;
+  }
 }
 
 function validateTrigger(

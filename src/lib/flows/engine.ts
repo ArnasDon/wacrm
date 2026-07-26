@@ -2202,9 +2202,11 @@ export async function advanceFromNodeKey(
   globalExecutionPolicy?: PartialNodeExecutionPolicy,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
-  // Defensive cap — if a flow has a cycle (which the validator
-  // SHOULD catch but doesn't yet in v1), we bail rather than loop.
-  for (let safety = 0; safety < 1_024; safety += 1) {
+  // A structured controller durably advances bounded state. Between
+  // controller advances the graph must be acyclic, so a repeated key catches
+  // corrupt snapshots without rejecting large but finite graphs.
+  const visitedSinceCompositeAdvance = new Set<string>();
+  while (true) {
     if (!currentKey) {
       await logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
@@ -2220,6 +2222,14 @@ export async function advanceFromNodeKey(
       await endRun(db, run.id, "failed", "node_not_found");
       return { outcome: "completed" };
     }
+    if (visitedSinceCompositeAdvance.has(currentKey)) {
+      await logEvent(db, run.id, "error", currentKey, {
+        reason: "unstructured_runtime_cycle",
+      });
+      await endRun(db, run.id, "failed", "unstructured_runtime_cycle");
+      return { outcome: "completed" };
+    }
+    visitedSinceCompositeAdvance.add(currentKey);
     await logEvent(db, run.id, "node_entered", node.node_key, {
       node_type: node.node_type,
     });
@@ -2558,6 +2568,7 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
+      visitedSinceCompositeAdvance.clear();
       currentKey = executed.value.nextNodeKey;
       continue;
     }
@@ -2602,6 +2613,7 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
+      visitedSinceCompositeAdvance.clear();
       currentKey = executed.value.nextNodeKey;
       continue;
     }
@@ -3071,12 +3083,6 @@ export async function advanceFromNodeKey(
     await endRun(db, run.id, "failed", "unsupported_runtime_hook");
     return { outcome: "completed" };
   }
-  // Safety break — log + fail.
-  await logEvent(db, run.id, "error", currentKey, {
-    reason: "advance_loop_safety_break",
-  });
-  await endRun(db, run.id, "failed", "advance_loop_overflow");
-  return { outcome: "completed" };
 }
 
 // ============================================================

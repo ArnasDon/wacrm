@@ -40,6 +40,21 @@ export interface CanvasEdge {
   label?: string;
 }
 
+function controlTargetHandle(
+  config: Record<string, unknown>,
+  sourceHandle: string,
+): string {
+  const targets =
+    config._control_targets &&
+    typeof config._control_targets === "object" &&
+    !Array.isArray(config._control_targets)
+      ? (config._control_targets as Record<string, unknown>)
+      : {};
+  return typeof targets[sourceHandle] === "string"
+    ? (targets[sourceHandle] as string)
+    : "in";
+}
+
 export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
   const knownKeys = new Set(nodes.map((n) => n.node_key));
   const edges: CanvasEdge[] = [];
@@ -100,6 +115,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: next,
             sourceHandle: "next",
+            targetHandle: controlTargetHandle(cfg, "next"),
           });
         }
         break;
@@ -114,6 +130,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: trueNext,
             sourceHandle: "true",
+            targetHandle: controlTargetHandle(cfg, "true"),
             label: "true",
           });
         }
@@ -123,6 +140,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: falseNext,
             sourceHandle: "false",
+            targetHandle: controlTargetHandle(cfg, "false"),
             label: "false",
           });
         }
@@ -147,6 +165,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: next,
             sourceHandle: `button:${replyId}`,
+            targetHandle: controlTargetHandle(cfg, `button:${replyId}`),
             label: title ?? replyId,
           });
         }
@@ -175,6 +194,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
               source: node.node_key,
               target: next,
               sourceHandle: `row:${replyId}`,
+              targetHandle: controlTargetHandle(cfg, `row:${replyId}`),
               label: title ?? replyId,
             });
           }
@@ -201,7 +221,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: value,
             sourceHandle: slot.id,
-            targetHandle: "in",
+            targetHandle: controlTargetHandle(cfg, slot.id),
             label:
               slot.id === "next"
                 ? undefined
@@ -271,7 +291,9 @@ function registryControlSlots(
         ? "next_node_key"
         : port.id === "default"
           ? "default_next"
-          : null;
+          : typeof node.config[`${port.id}_next`] === "string"
+            ? `${port.id}_next`
+            : null;
     return field ? [{ id: port.id, label: port.label, field }] : [];
   });
 }
@@ -413,19 +435,47 @@ export function applyEdgeConnection(
   node: BuilderNode,
   sourceHandle: string,
   targetKey: string,
+  targetHandle?: string,
 ): Record<string, unknown> | null {
+  const withTarget = (
+    patch: Record<string, unknown> | null,
+  ): Record<string, unknown> | null => {
+    if (!patch) return null;
+    const current =
+      node.config._control_targets &&
+      typeof node.config._control_targets === "object" &&
+      !Array.isArray(node.config._control_targets)
+        ? (node.config._control_targets as Record<string, unknown>)
+        : {};
+    if (!targetKey) {
+      if (!(sourceHandle in current)) return patch;
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([key]) => key !== sourceHandle),
+      );
+      return { ...patch, _control_targets: next };
+    }
+    if (!targetHandle) return patch;
+    return {
+      ...patch,
+      _control_targets: { ...current, [sourceHandle]: targetHandle },
+    };
+  };
   switch (node.node_type) {
     case "start":
     case "send_message":
     case "send_media":
     case "collect_input":
     case "set_tag":
-      if (sourceHandle === "next") return { next_node_key: targetKey };
+      if (sourceHandle === "next") {
+        return withTarget({ next_node_key: targetKey });
+      }
       return null;
 
     case "condition":
-      if (sourceHandle === "true") return { true_next: targetKey };
-      if (sourceHandle === "false") return { false_next: targetKey };
+      if (sourceHandle === "true") return withTarget({ true_next: targetKey });
+      if (sourceHandle === "false") {
+        return withTarget({ false_next: targetKey });
+      }
       return null;
 
     case "send_buttons": {
@@ -441,11 +491,11 @@ export function applyEdgeConnection(
       // No matching button → no-op (caller should have surfaced a
       // missing slot before letting the user drag).
       if (!buttons.some((b) => b.reply_id === replyId)) return null;
-      return {
+      return withTarget({
         buttons: buttons.map((b) =>
           b.reply_id === replyId ? { ...b, next_node_key: targetKey } : b,
         ),
-      };
+      });
     }
 
     case "send_list": {
@@ -474,7 +524,7 @@ export function applyEdgeConnection(
           }),
         };
       });
-      return matched ? { sections: next } : null;
+      return matched ? withTarget({ sections: next }) : null;
     }
 
     case "handoff":
@@ -487,15 +537,15 @@ export function applyEdgeConnection(
       );
       if (!slot) return null;
       if (slot.field === "next_node_key") {
-        return { next_node_key: targetKey };
+        return withTarget({ next_node_key: targetKey });
       }
       if (slot.field === "default_next") {
-        return { default_next: targetKey };
+        return withTarget({ default_next: targetKey });
       }
       const next = setConfigPath(node.config, slot.field, targetKey);
-      return slot.field.startsWith("cases.")
-        ? { cases: next.cases }
-        : next;
+      return withTarget(
+        slot.field.startsWith("cases.") ? { cases: next.cases } : next,
+      );
     }
   }
 }

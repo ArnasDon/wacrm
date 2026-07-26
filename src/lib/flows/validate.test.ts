@@ -1000,11 +1000,240 @@ describe("structured composite topology", () => {
           config: {
             assignments: [{ key: "item", type: "string", value: "next" }],
             next_node_key: "each",
+            _control_targets: { next: "continue" },
           },
         },
         { node_key: "end", node_type: "end", config: {} },
       ],
     );
     expect(issues.filter(({ severity }) => severity === "error")).toEqual([]);
+  });
+
+  it("rejects a back-edge that does not enter the controller continue handle", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "loop",
+        variable_schema: [{ key: "done", type: "boolean", default: false }],
+      },
+      [
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "body",
+            done_next: "end",
+          },
+        },
+        {
+          node_key: "body",
+          node_type: "send_message",
+          config: { text: "again", next_node_key: "loop" },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringMatching(/continue/i),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a done branch that can return to the controller", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "each",
+        variable_schema: [
+          { key: "items", type: "json", default: [] },
+          { key: "item", type: "string", default: "" },
+        ],
+      },
+      [
+        {
+          node_key: "each",
+          node_type: "each",
+          config: {
+            array_variable: "items",
+            item_variable: "item",
+            max_iterations: 3,
+            body_next: "body",
+            done_next: "done_path",
+          },
+        },
+        {
+          node_key: "body",
+          node_type: "send_message",
+          config: {
+            text: "body",
+            next_node_key: "each",
+            _control_targets: { next: "continue" },
+          },
+        },
+        {
+          node_key: "done_path",
+          node_type: "send_message",
+          config: {
+            text: "bad",
+            next_node_key: "each",
+            _control_targets: { next: "continue" },
+          },
+        },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringMatching(/done.*outside/i),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects cycles that merely contain a controller or have ambiguous controllers", () => {
+    const baseSchema = [
+      { key: "done", type: "boolean" as const, default: false },
+    ];
+    const merelyContains = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "a", variable_schema: baseSchema },
+      [
+        {
+          node_key: "a",
+          node_type: "send_message",
+          config: { text: "a", next_node_key: "loop" },
+        },
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "end",
+            done_next: "a",
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(merelyContains.some((issue) => /structured/i.test(issue.message))).toBe(
+      true,
+    );
+
+    const ambiguous = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "outer", variable_schema: baseSchema },
+      [
+        {
+          node_key: "outer",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "inner",
+            done_next: "outer_end",
+            _control_targets: { body: "continue" },
+          },
+        },
+        {
+          node_key: "inner",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "outer",
+            done_next: "inner_end",
+            _control_targets: { body: "continue" },
+          },
+        },
+        { node_key: "outer_end", node_type: "end", config: {} },
+        { node_key: "inner_end", node_type: "end", config: {} },
+      ],
+    );
+    expect(ambiguous).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/ambiguous/i),
+        }),
+      ]),
+    );
+  });
+
+  it("allows hierarchically nested structured loops", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "outer",
+        variable_schema: [
+          { key: "outer_done", type: "boolean", default: false },
+          { key: "inner_done", type: "boolean", default: false },
+        ],
+      },
+      [
+        {
+          node_key: "outer",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "outer_done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "inner",
+            done_next: "end",
+          },
+        },
+        {
+          node_key: "inner",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "inner_done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "inner_body",
+            done_next: "outer_back",
+          },
+        },
+        {
+          node_key: "inner_body",
+          node_type: "send_message",
+          config: {
+            text: "inner",
+            next_node_key: "inner",
+            _control_targets: { next: "continue" },
+          },
+        },
+        {
+          node_key: "outer_back",
+          node_type: "send_message",
+          config: {
+            text: "outer",
+            next_node_key: "outer",
+            _control_targets: { next: "continue" },
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues.filter((issue) => issue.severity === "error")).toEqual([]);
   });
 });

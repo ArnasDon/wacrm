@@ -516,6 +516,45 @@ describe("outgoingSlots", () => {
 });
 
 describe("applyEdgeConnection", () => {
+  it("persists the control target handle used by a structured loop back-edge", () => {
+    const node: BuilderNode = {
+      node_key: "body",
+      node_type: "send_message",
+      config: { text: "again", next_node_key: "" },
+    };
+
+    const patch = applyEdgeConnection(
+      node,
+      "next",
+      "loop",
+      "continue",
+    );
+
+    expect(patch).toEqual({
+      next_node_key: "loop",
+      _control_targets: { next: "continue" },
+    });
+    expect(
+      deriveCanvasEdges([
+        { ...node, config: { ...node.config, ...patch } },
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 3,
+            body_next: "body",
+            done_next: "end",
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ]).find((edge) => edge.source === "body"),
+    ).toMatchObject({ target: "loop", targetHandle: "continue" });
+  });
+
   it("patches next_node_key for single-outgoing nodes", () => {
     const node: BuilderNode = {
       node_key: "a",

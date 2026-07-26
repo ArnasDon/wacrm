@@ -547,6 +547,53 @@ beforeEach(() => {
 });
 
 describe("node execution policy in the flow engine", () => {
+  it("does not use a fixed step ceiling for a finite validated graph", async () => {
+    const nodeCount = 1_050;
+    const nodes = new Map<string, FlowNodeRow>();
+    for (let index = 0; index < nodeCount; index += 1) {
+      nodes.set(`n${index}`, {
+        id: `id-${index}`,
+        flow_id: "flow-1",
+        node_key: `n${index}`,
+        node_type: "start",
+        config: {
+          next_node_key:
+            index === nodeCount - 1 ? "end" : `n${index + 1}`,
+        },
+        position_x: index,
+        position_y: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      });
+    }
+    nodes.set("end", {
+      id: "id-end",
+      flow_id: "flow-1",
+      node_key: "end",
+      node_type: "end",
+      config: {},
+      position_x: nodeCount,
+      position_y: 0,
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    const { db, writes } = fakeDb();
+
+    const result = await advanceFromNodeKey(
+      db as never,
+      run({ current_node_key: "n0" }),
+      "n0",
+      nodes,
+    );
+
+    expect(result).toEqual({ outcome: "completed" });
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.value.end_reason === "advance_loop_overflow",
+      ),
+    ).toBe(false);
+  });
+
   it("persists a typed HTTP response and continues through the success edge", async () => {
     h.httpRequest.mockResolvedValue({
       status: 200,

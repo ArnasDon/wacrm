@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   coerceDeclaredValue,
+  evaluateLoopExitPredicate,
   evaluateSwitch,
   initializeFlowVariables,
   validateCollectedInput,
@@ -37,6 +38,22 @@ describe("coerceDeclaredValue", () => {
       ok: true,
       value: { id: "contact-1" },
     });
+  });
+});
+
+describe("evaluateLoopExitPredicate", () => {
+  it("compares numeric loop values without string coercion", () => {
+    expect(evaluateLoopExitPredicate(12, "greater_than", 10)).toBe(true);
+    expect(evaluateLoopExitPredicate(8, "greater_or_equal", 10)).toBe(false);
+  });
+
+  it("rejects numeric operators with non-numeric operands", () => {
+    expect(() =>
+      evaluateLoopExitPredicate("12", "greater_than", 10),
+    ).toThrow(/numeric/i);
+    expect(() =>
+      evaluateLoopExitPredicate(12, "greater_than", "10"),
+    ).toThrow(/numeric/i);
   });
 });
 

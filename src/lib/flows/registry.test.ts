@@ -103,6 +103,24 @@ describe("canonical flow node registry", () => {
     ).toBe(false);
   });
 
+  it("requires numeric loop comparison values for numeric operators", () => {
+    const loop = getNodeDescriptor("loop")!;
+    const base = {
+      subject: "var",
+      subject_key: "count",
+      operator: "greater_than",
+      max_iterations: 10,
+      body_next: "body",
+      done_next: "done",
+    };
+    expect(loop.configSchema.safeParse({ ...base, value: 5 }).success).toBe(
+      true,
+    );
+    expect(loop.configSchema.safeParse({ ...base, value: "5" }).success).toBe(
+      false,
+    );
+  });
+
   it("drives engine lookup and UI metadata from the same descriptor", () => {
     const descriptor = getRuntimeDescriptor("send_message");
     expect(descriptor?.runtimeHook).toBe("send_message");

@@ -610,6 +610,21 @@ export const loopConfigSchema = z
   })
   .superRefine((config, ctx) => {
     if (
+      [
+        "greater_than",
+        "greater_or_equal",
+        "less_than",
+        "less_or_equal",
+      ].includes(config.operator) &&
+      (typeof config.value !== "number" || !Number.isFinite(config.value))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "Numeric loop operators require a finite number.",
+      });
+    }
+    if (
       !["present", "absent"].includes(config.operator) &&
       config.value === undefined
     ) {

@@ -1182,7 +1182,50 @@
         "filenamePlaceholder": "invoice.pdf",
         "advanceAfterSending": "전송 후 다음 진행",
         "pickNextNode": "다음 노드를 선택하세요…",
-        "none": "— 없음 —"
+        "none": "— 없음 —",
+        "pickDeclaredVariable": "선언된 변수를 선택하세요",
+        "variable": "변수",
+        "eachArrayVariable": "배열 변수",
+        "eachItemVariable": "항목 변수",
+        "eachIndexVariable": "인덱스 변수",
+        "maximumIterations": "최대 반복 횟수",
+        "bodyBranch": "본문 분기",
+        "doneBranch": "완료 분기",
+        "loopExitSubject": "종료 조건 대상",
+        "loopComparisonValue": "종료 조건 비교값",
+        "continueBody": "본문 계속",
+        "exitLoop": "반복 종료",
+        "contactField_name": "이름",
+        "contactField_email": "이메일",
+        "contactField_phone": "전화번호",
+        "contactField_company": "회사",
+        "loopOperator_equals": "같음",
+        "loopOperator_not_equals": "같지 않음",
+        "loopOperator_contains": "포함함",
+        "loopOperator_present": "값이 있음",
+        "loopOperator_absent": "값이 없음",
+        "loopOperator_greater_than": "보다 큼",
+        "loopOperator_greater_or_equal": "보다 크거나 같음",
+        "loopOperator_less_than": "보다 작음",
+        "loopOperator_less_or_equal": "보다 작거나 같음",
+        "subFlowPublished": "게시된 하위 플로우",
+        "subFlowPickPublished": "게시된 플로우를 선택하세요",
+        "inputMapping": "입력 매핑",
+        "outputMapping": "출력 매핑",
+        "parentVariable": "상위 플로우 변수",
+        "childVariable": "하위 플로우 변수",
+        "removeMapping": "{label} 제거",
+        "addMapping": "매핑 추가",
+        "continueAfterChild": "하위 플로우 완료 후 계속",
+        "aiSystemPrompt": "시스템 프롬프트",
+        "aiPrompt": "프롬프트",
+        "aiInputVariables": "입력 변수",
+        "aiInput": "입력 {number}",
+        "aiRemoveInput": "AI 입력 변수 제거",
+        "aiAddInput": "입력 변수 추가",
+        "aiOutputVariable": "출력 변수",
+        "aiMaximumTokens": "최대 출력 토큰",
+        "continueAfterAi": "AI 응답 후 계속"
       },
       "categories": {
         "messaging": "메시징",
@@ -1247,20 +1290,20 @@
           "blurb": "Writes typed flow variables"
         },
         "each": {
-          "label": "For each",
-          "blurb": "Iterates a bounded array durably"
+          "label": "각 항목 반복",
+          "blurb": "배열 항목을 제한된 횟수만큼 안전하게 반복합니다"
         },
         "loop": {
-          "label": "Loop until",
-          "blurb": "Repeats a branch with a hard stop"
+          "label": "조건까지 반복",
+          "blurb": "종료 조건과 최대 횟수를 적용해 분기를 반복합니다"
         },
         "sub_flow": {
-          "label": "Sub-flow",
-          "blurb": "Runs a pinned published flow"
+          "label": "하위 플로우",
+          "blurb": "고정된 게시 버전의 플로우를 실행합니다"
         },
         "ai_reply": {
-          "label": "AI reply",
-          "blurb": "Generates a bounded AI response"
+          "label": "AI 응답",
+          "blurb": "제한된 길이의 AI 응답을 생성합니다"
         }
       }
     },

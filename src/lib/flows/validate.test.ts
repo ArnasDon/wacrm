@@ -276,6 +276,91 @@ describe("validateFlowForActivation — nodes", () => {
       ]),
     );
   });
+
+  it("requires declarations for authoring nodes that reference variables", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "loop",
+        variable_schema: [],
+      },
+      [
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "count",
+            operator: "greater_than",
+            value: 5,
+            max_iterations: 10,
+            body_next: "body",
+            done_next: "done",
+          },
+        },
+        {
+          node_key: "body",
+          node_type: "variable_set",
+          config: {
+            assignments: [{ key: "count", type: "number", value: 1 }],
+            next_node_key: "loop",
+            _control_targets: { next_node_key: "continue" },
+          },
+        },
+        { node_key: "done", node_type: "end", config: {} },
+      ],
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "loop",
+          field: "subject_key",
+          message: expect.stringContaining("not declared"),
+        }),
+        expect.objectContaining({
+          node_key: "body",
+          field: "assignments.0.key",
+          message: expect.stringContaining("not declared"),
+        }),
+      ]),
+    );
+  });
+
+  it("requires numeric loop subjects to be declared as numbers", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "loop",
+        variable_schema: [{ key: "count", type: "string", default: "0" }],
+      },
+      [
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "count",
+            operator: "less_than",
+            value: 5,
+            max_iterations: 10,
+            body_next: "done",
+            done_next: "done",
+          },
+        },
+        { node_key: "done", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "loop",
+          field: "subject_key",
+          message: expect.stringContaining("number"),
+        }),
+      ]),
+    );
+  });
   it("validates common execution-policy bounds", () => {
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "m" } },

@@ -221,8 +221,6 @@ function validateVariableReferences(
   node: NodeInput,
   schema: readonly FlowVariableDeclaration[],
 ): ValidationIssue[] {
-  // Empty schemas are legacy-compatible: old snapshots used ad-hoc vars.
-  if (schema.length === 0) return [];
   const declarations = new Map(schema.map((entry) => [entry.key, entry]));
   const issue = (field: string, message: string): ValidationIssue => ({
     severity: "error",
@@ -326,6 +324,73 @@ function validateVariableReferences(
       }
       return [];
     });
+  }
+  if (node.node_type === "sub_flow") {
+    const inputMappings = Array.isArray(node.config.input_mapping)
+      ? node.config.input_mapping
+      : [];
+    const outputMappings = Array.isArray(node.config.output_mapping)
+      ? node.config.output_mapping
+      : [];
+    return [...inputMappings, ...outputMappings].flatMap((mapping, index) => {
+      if (!mapping || typeof mapping !== "object") return [];
+      const key = (mapping as Record<string, unknown>).parent_key;
+      if (typeof key !== "string") return [];
+      if (declarations.has(key)) return [];
+      return [
+        issue(
+          `${index < inputMappings.length ? "input" : "output"}_mapping.${
+            index < inputMappings.length ? index : index - inputMappings.length
+          }.parent_key`,
+          `Variable "${key}" is not declared by this flow.`,
+        ),
+      ];
+    });
+  }
+  if (node.node_type === "loop") {
+    if (node.config.subject !== "var") {
+      if (
+        [
+          "greater_than",
+          "greater_or_equal",
+          "less_than",
+          "less_or_equal",
+        ].includes(String(node.config.operator))
+      ) {
+        return [
+          issue(
+            "operator",
+            "Numeric loop operators require a declared number variable.",
+          ),
+        ];
+      }
+      return [];
+    }
+    const key = node.config.subject_key;
+    if (typeof key !== "string") return [];
+    const declaration = declarations.get(key);
+    if (!declaration) {
+      return [
+        issue("subject_key", `Variable "${key}" is not declared by this flow.`),
+      ];
+    }
+    if (
+      [
+        "greater_than",
+        "greater_or_equal",
+        "less_than",
+        "less_or_equal",
+      ].includes(String(node.config.operator)) &&
+      declaration.type !== "number"
+    ) {
+      return [
+        issue(
+          "subject_key",
+          `Variable "${key}" must be declared as number for this operator.`,
+        ),
+      ];
+    }
+    return [];
   }
   const reference =
     node.node_type === "collect_input"

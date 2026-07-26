@@ -7,6 +7,21 @@ const source = [
   "src/components/flows/flow-builder.tsx",
   "src/lib/flows/nodes/collect-input.ts",
 ].map((path) => readFileSync(join(process.cwd(), path), "utf8")).join("\n");
+const messages = Object.fromEntries(
+  ["en", "ko"].map((locale) => [
+    locale,
+    JSON.parse(
+      readFileSync(join(process.cwd(), `messages/${locale}.json`), "utf8"),
+    ) as {
+      Flows: {
+        builder: {
+          form: Record<string, string>;
+          nodes: Record<string, { label: string; blurb: string }>;
+        };
+      };
+    },
+  ]),
+);
 
 describe("runtime primitive node forms", () => {
   it("renders dedicated switch and variable assignment editors", () => {
@@ -41,5 +56,35 @@ describe("runtime primitive node forms", () => {
     expect(source).toContain("output_mapping");
     expect(source).toContain("input_variables");
     expect(source).toContain("max_tokens");
+  });
+
+  it("stores numeric loop comparisons as numbers and localizes composite forms", () => {
+    expect(source).toContain('type={numericComparison ? "number" : "text"}');
+    expect(source).toContain("event.target.valueAsNumber");
+    for (const key of [
+      "eachArrayVariable",
+      "loopExitSubject",
+      "subFlowPublished",
+      "aiSystemPrompt",
+    ]) {
+      expect(source).toContain(`t("${key}")`);
+    }
+    for (const key of [
+      "eachArrayVariable",
+      "loopExitSubject",
+      "subFlowPublished",
+      "aiSystemPrompt",
+    ]) {
+      expect(messages.en.Flows.builder.form[key]).toBeTruthy();
+      expect(messages.ko.Flows.builder.form[key]).toBeTruthy();
+      expect(messages.ko.Flows.builder.form[key]).not.toBe(
+        messages.en.Flows.builder.form[key],
+      );
+    }
+    for (const node of ["each", "loop", "sub_flow", "ai_reply"]) {
+      expect(messages.ko.Flows.builder.nodes[node].label).not.toBe(
+        messages.en.Flows.builder.nodes[node].label,
+      );
+    }
   });
 });

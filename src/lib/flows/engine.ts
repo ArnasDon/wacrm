@@ -92,6 +92,7 @@ import {
 } from "./http-request";
 import {
   coerceDeclaredValue,
+  evaluateLoopExitPredicate,
   evaluateSwitch,
   initializeFlowVariables,
   validateCollectedInput,
@@ -2608,15 +2609,11 @@ export async function advanceFromNodeKey(
         globalExecutionPolicy,
         async () => {
           const subject = await resolveSwitchSubject(db, run, cfg);
-          const exitPredicate =
-            evaluateSwitch(subject, [
-              {
-                id: "exit",
-                operator: cfg.operator,
-                value: cfg.value,
-                next: cfg.done_next,
-              },
-            ]) !== null;
+          const exitPredicate = evaluateLoopExitPredicate(
+            subject,
+            cfg.operator,
+            cfg.value,
+          );
           return executeLoopIteration(db, run, cfg, exitPredicate);
         },
       );

@@ -204,6 +204,7 @@ function NodeSpecificConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
     case "loop":
@@ -213,6 +214,7 @@ function NodeSpecificConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
     case "sub_flow":
@@ -222,6 +224,7 @@ function NodeSpecificConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
     case "ai_reply":
@@ -231,6 +234,7 @@ function NodeSpecificConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
   }
@@ -619,6 +623,7 @@ function VariableKeyField({
   onChange: (value: string) => void;
 }) {
   const { state } = useFlowEditor();
+  const t = useTranslations("Flows.builder.form");
   if (state.variable_schema.length === 0) {
     return (
       <TextRow label={label} value={value} onChange={onChange} />
@@ -636,7 +641,7 @@ function VariableKeyField({
         }}
       >
         <SelectTrigger className="bg-muted font-mono text-xs">
-          <SelectValue placeholder="Pick a declared variable" />
+          <SelectValue placeholder={t("pickDeclaredVariable")} />
         </SelectTrigger>
         <SelectContent>
           {state.variable_schema.map((variable) => (
@@ -1408,6 +1413,7 @@ interface CompositeFormProps<Config> {
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
 }
 
 interface EachCfg {
@@ -1424,28 +1430,29 @@ function EachForm({
   allNodes,
   currentKey,
   onUpdateConfig,
+  t,
 }: CompositeFormProps<EachCfg>) {
   return (
     <>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <VariableKeyField
-          label="Array variable"
+          label={t("eachArrayVariable")}
           value={cfg.array_variable ?? ""}
           onChange={(array_variable) => onUpdateConfig({ array_variable })}
         />
         <VariableKeyField
-          label="Item variable"
+          label={t("eachItemVariable")}
           value={cfg.item_variable ?? ""}
           onChange={(item_variable) => onUpdateConfig({ item_variable })}
         />
         <VariableKeyField
-          label="Index variable"
+          label={t("eachIndexVariable")}
           value={cfg.index_variable ?? ""}
           onChange={(index_variable) => onUpdateConfig({ index_variable })}
         />
       </div>
       <label className="text-muted-foreground text-xs">
-        Maximum iterations
+        {t("maximumIterations")}
         <Input
           className="bg-muted mt-1"
           type="number"
@@ -1463,14 +1470,14 @@ function EachForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(body_next) => onUpdateConfig({ body_next })}
-          label="Body branch"
+          label={t("bodyBranch")}
         />
         <NextNodeRow
           value={cfg.done_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(done_next) => onUpdateConfig({ done_next })}
-          label="Done branch"
+          label={t("doneBranch")}
         />
       </div>
     </>
@@ -1504,9 +1511,25 @@ function LoopForm({
   allNodes,
   currentKey,
   onUpdateConfig,
+  t,
 }: CompositeFormProps<LoopCfg>) {
+  const { state } = useFlowEditor();
   const subject = cfg.subject ?? "var";
   const operator = cfg.operator ?? "equals";
+  const subjectType =
+    subject === "var"
+      ? state.variable_schema.find(
+          (variable) => variable.key === cfg.subject_key,
+        )?.type
+      : "string";
+  const numericComparison =
+    subjectType === "number" ||
+    [
+      "greater_than",
+      "greater_or_equal",
+      "less_than",
+      "less_or_equal",
+    ].includes(operator);
   return (
     <>
       <div className="grid grid-cols-2 gap-2">
@@ -1518,13 +1541,13 @@ function LoopForm({
         >
           <SelectTrigger className="bg-muted"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="var">Variable</SelectItem>
-            <SelectItem value="contact_field">Contact field</SelectItem>
+            <SelectItem value="var">{t("variable")}</SelectItem>
+            <SelectItem value="contact_field">{t("contactField")}</SelectItem>
           </SelectContent>
         </Select>
         {subject === "var" ? (
           <VariableKeyField
-            label="Exit subject"
+            label={t("loopExitSubject")}
             value={cfg.subject_key ?? ""}
             onChange={(subject_key) => onUpdateConfig({ subject_key })}
           />
@@ -1534,11 +1557,13 @@ function LoopForm({
             onValueChange={(subject_key) => onUpdateConfig({ subject_key })}
           >
             <SelectTrigger className="bg-muted">
-              <SelectValue placeholder="Contact field" />
+              <SelectValue placeholder={t("contactField")} />
             </SelectTrigger>
             <SelectContent>
               {["name", "email", "phone", "company"].map((field) => (
-                <SelectItem key={field} value={field}>{field}</SelectItem>
+                <SelectItem key={field} value={field}>
+                  {t(`contactField_${field}`)}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1555,7 +1580,7 @@ function LoopForm({
           <SelectContent>
             {LOOP_OPERATORS.map((entry) => (
               <SelectItem key={entry} value={entry}>
-                {entry.replaceAll("_", " ")}
+                {t(`loopOperator_${entry}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1563,18 +1588,25 @@ function LoopForm({
         {!["present", "absent"].includes(operator) && (
           <Input
             className="bg-muted"
+            type={numericComparison ? "number" : "text"}
             value={
               typeof cfg.value === "string" || typeof cfg.value === "number"
                 ? cfg.value
                 : ""
             }
-            onChange={(event) => onUpdateConfig({ value: event.target.value })}
-            placeholder="Exit comparison value"
+            onChange={(event) =>
+              onUpdateConfig({
+                value: numericComparison
+                  ? event.target.valueAsNumber
+                  : event.target.value,
+              })
+            }
+            placeholder={t("loopComparisonValue")}
           />
         )}
       </div>
       <label className="text-muted-foreground text-xs">
-        Maximum iterations
+        {t("maximumIterations")}
         <Input
           className="bg-muted mt-1"
           type="number"
@@ -1592,14 +1624,14 @@ function LoopForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(body_next) => onUpdateConfig({ body_next })}
-          label="Continue body"
+          label={t("continueBody")}
         />
         <NextNodeRow
           value={cfg.done_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(done_next) => onUpdateConfig({ done_next })}
-          label="Exit loop"
+          label={t("exitLoop")}
         />
       </div>
     </>
@@ -1662,11 +1694,13 @@ function MappingEditor({
   mappings,
   output,
   onChange,
+  t,
 }: {
   label: string;
   mappings: VariableMapping[];
   output?: boolean;
   onChange: (mappings: VariableMapping[]) => void;
+  t: ReturnType<typeof useTranslations>;
 }) {
   return (
     <div className="grid gap-2">
@@ -1688,11 +1722,11 @@ function MappingEditor({
                   ),
                 )
               }
-              placeholder="Child variable"
+              placeholder={t("childVariable")}
             />
           ) : (
             <VariableKeyField
-              label="Parent variable"
+              label={t("parentVariable")}
               value={mapping.parent_key}
               onChange={(parent_key) =>
                 onChange(
@@ -1705,7 +1739,7 @@ function MappingEditor({
           )}
           {output ? (
             <VariableKeyField
-              label="Parent variable"
+              label={t("parentVariable")}
               value={mapping.parent_key}
               onChange={(parent_key) =>
                 onChange(
@@ -1727,14 +1761,14 @@ function MappingEditor({
                   ),
                 )
               }
-              placeholder="Child variable"
+              placeholder={t("childVariable")}
             />
           )}
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            aria-label={`Remove ${label}`}
+            aria-label={t("removeMapping", { label })}
             onClick={() => onChange(mappings.filter((_, i) => i !== index))}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -1749,7 +1783,7 @@ function MappingEditor({
           onChange([...mappings, { parent_key: "", child_key: "" }])
         }
       >
-        <Plus className="h-3.5 w-3.5" /> Add mapping
+        <Plus className="h-3.5 w-3.5" /> {t("addMapping")}
       </Button>
     </div>
   );
@@ -1760,18 +1794,19 @@ function SubFlowForm({
   allNodes,
   currentKey,
   onUpdateConfig,
+  t,
 }: CompositeFormProps<SubFlowCfg>) {
   const flows = usePublishedFlows();
   return (
     <>
       <label className="text-muted-foreground text-xs">
-        Published child flow
+        {t("subFlowPublished")}
         <Select
           value={cfg.flow_id ?? ""}
           onValueChange={(flow_id) => onUpdateConfig({ flow_id })}
         >
           <SelectTrigger className="bg-muted mt-1">
-            <SelectValue placeholder="Pick a published flow" />
+            <SelectValue placeholder={t("subFlowPickPublished")} />
           </SelectTrigger>
           <SelectContent>
             {flows.map((flow) => (
@@ -1783,12 +1818,14 @@ function SubFlowForm({
         </Select>
       </label>
       <MappingEditor
-        label="Input mapping"
+        label={t("inputMapping")}
+        t={t}
         mappings={cfg.input_mapping ?? []}
         onChange={(input_mapping) => onUpdateConfig({ input_mapping })}
       />
       <MappingEditor
-        label="Output mapping"
+        label={t("outputMapping")}
+        t={t}
         mappings={cfg.output_mapping ?? []}
         output
         onChange={(output_mapping) => onUpdateConfig({ output_mapping })}
@@ -1798,7 +1835,7 @@ function SubFlowForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(next_node_key) => onUpdateConfig({ next_node_key })}
-        label="Continue after child"
+        label={t("continueAfterChild")}
       />
     </>
   );
@@ -1818,29 +1855,32 @@ function AiReplyForm({
   allNodes,
   currentKey,
   onUpdateConfig,
+  t,
 }: CompositeFormProps<AiReplyCfg>) {
   const inputs = cfg.input_variables ?? [];
   return (
     <>
       <TextRow
-        label="System prompt"
+        label={t("aiSystemPrompt")}
         value={cfg.system_prompt ?? ""}
         onChange={(system_prompt) => onUpdateConfig({ system_prompt })}
         rows={3}
       />
       <TextRow
-        label="Prompt"
+        label={t("aiPrompt")}
         value={cfg.prompt ?? ""}
         onChange={(prompt) => onUpdateConfig({ prompt })}
         rows={4}
       />
       <div className="grid gap-2">
-        <span className="text-muted-foreground text-xs">Input variables</span>
+        <span className="text-muted-foreground text-xs">
+          {t("aiInputVariables")}
+        </span>
         {inputs.map((variable, index) => (
           <div key={`${variable}:${index}`} className="flex gap-2">
             <div className="flex-1">
               <VariableKeyField
-                label={`Input ${index + 1}`}
+                label={t("aiInput", { number: index + 1 })}
                 value={variable}
                 onChange={(next) =>
                   onUpdateConfig({
@@ -1855,7 +1895,7 @@ function AiReplyForm({
               type="button"
               variant="ghost"
               size="sm"
-              aria-label="Remove AI input variable"
+              aria-label={t("aiRemoveInput")}
               onClick={() =>
                 onUpdateConfig({
                   input_variables: inputs.filter((_, i) => i !== index),
@@ -1874,17 +1914,17 @@ function AiReplyForm({
             onUpdateConfig({ input_variables: [...inputs, ""] })
           }
         >
-          <Plus className="h-3.5 w-3.5" /> Add input variable
+          <Plus className="h-3.5 w-3.5" /> {t("aiAddInput")}
         </Button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <VariableKeyField
-          label="Output variable"
+          label={t("aiOutputVariable")}
           value={cfg.output_variable ?? ""}
           onChange={(output_variable) => onUpdateConfig({ output_variable })}
         />
         <label className="text-muted-foreground text-xs">
-          Maximum output tokens
+          {t("aiMaximumTokens")}
           <Input
             className="bg-muted mt-1"
             type="number"
@@ -1902,7 +1942,7 @@ function AiReplyForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(next_node_key) => onUpdateConfig({ next_node_key })}
-        label="Continue after AI"
+        label={t("continueAfterAi")}
       />
     </>
   );

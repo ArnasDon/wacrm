@@ -100,6 +100,35 @@ export interface SwitchCase {
   next: string;
 }
 
+export const NUMERIC_SWITCH_OPERATORS = [
+  "greater_than",
+  "greater_or_equal",
+  "less_than",
+  "less_or_equal",
+] as const satisfies readonly SwitchOperator[];
+
+export function evaluateLoopExitPredicate(
+  subject: unknown,
+  operator: SwitchOperator,
+  value?: unknown,
+): boolean {
+  if (
+    (NUMERIC_SWITCH_OPERATORS as readonly SwitchOperator[]).includes(operator)
+  ) {
+    if (
+      typeof subject !== "number" ||
+      !Number.isFinite(subject) ||
+      typeof value !== "number" ||
+      !Number.isFinite(value)
+    ) {
+      throw new Error("Numeric loop operators require finite numeric operands.");
+    }
+  }
+  return evaluateSwitch(subject, [
+    { id: "loop_exit", operator, value, next: "done" },
+  ]) !== null;
+}
+
 export function evaluateSwitch(
   subject: unknown,
   cases: readonly SwitchCase[],

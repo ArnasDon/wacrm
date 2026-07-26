@@ -316,6 +316,8 @@ const EVENT_COLOR: Record<string, string> = {
   fallback_fired: "text-amber-300",
   handoff: "text-amber-300",
   timeout: "text-muted-foreground",
+  approval_decision: "text-primary",
+  approval_timeout: "text-amber-300",
   error: "text-red-300",
   completed: "text-emerald-300",
 };

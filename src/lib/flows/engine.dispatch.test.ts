@@ -338,6 +338,30 @@ class DispatchState {
 
   rpc = async (name: string, value: Row) => {
     this.rpcCalls.push({ name, value });
+    if (name === "end_flow_run_if_owned") {
+      const run = this.runById(value.p_run_id);
+      const activeVersionId =
+        run?.active_flow_version_id ?? run?.flow_version_id;
+      const matchesOwnedCursor =
+        run !== undefined &&
+        activeVersionId === value.p_active_flow_version_id &&
+        run.status === value.p_expected_status &&
+        (run.current_node_key ?? null) ===
+          (value.p_expected_node_key ?? null) &&
+        (run.current_visit_id ?? null) ===
+          (value.p_expected_visit_id ?? null) &&
+        (run.continuation_id ?? null) ===
+          (value.p_expected_continuation_id ?? null);
+
+      if (!run || !matchesOwnedCursor) {
+        return { data: false, error: null };
+      }
+
+      run.status = value.p_target_status as FlowRunRow["status"];
+      run.ended_at = "2026-01-01T00:00:00.000Z";
+      run.end_reason = value.p_reason as string;
+      return { data: true, error: null };
+    }
     if (name === "claim_due_flow_waits") {
       if (!this.waitEnabled || this.waitStatus === "resumed") {
         return { data: [], error: null };

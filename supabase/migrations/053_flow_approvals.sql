@@ -61,6 +61,24 @@ CREATE INDEX IF NOT EXISTS idx_flow_approval_resolution
 CREATE INDEX IF NOT EXISTS idx_flow_approval_account_created
   ON flow_approval_requests(account_id, created_at DESC);
 
+ALTER TABLE flow_run_events
+  DROP CONSTRAINT IF EXISTS flow_run_events_event_type_check;
+ALTER TABLE flow_run_events
+  ADD CONSTRAINT flow_run_events_event_type_check
+  CHECK (event_type IN (
+    'started',
+    'node_entered',
+    'message_sent',
+    'reply_received',
+    'fallback_fired',
+    'handoff',
+    'timeout',
+    'error',
+    'completed',
+    'approval_decision',
+    'approval_timeout'
+  ));
+
 ALTER TABLE flow_approval_requests ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS flow_approval_requests_select ON flow_approval_requests;
 CREATE POLICY flow_approval_requests_select
@@ -118,6 +136,52 @@ CREATE POLICY notifications_update ON notifications FOR UPDATE
     AND public.is_account_member(account_id, 'viewer')
   );
 
+CREATE OR REPLACE FUNCTION end_flow_run_if_owned(
+  p_run_id UUID,
+  p_active_flow_version_id UUID,
+  p_expected_status TEXT,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_expected_continuation_id UUID,
+  p_target_status TEXT,
+  p_reason TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+BEGIN
+  IF p_target_status NOT IN ('completed', 'handed_off', 'timed_out', 'failed')
+     OR NULLIF(BTRIM(p_reason), '') IS NULL
+  THEN
+    RAISE EXCEPTION 'invalid_flow_run_terminal_transition';
+  END IF;
+
+  UPDATE public.flow_runs run
+  SET status = p_target_status,
+      ended_at = NOW(),
+      end_reason = LEFT(p_reason, 200),
+      wake_at = NULL,
+      last_advanced_at = NOW()
+  WHERE run.id = p_run_id
+    AND COALESCE(run.active_flow_version_id, run.flow_version_id)
+        IS NOT DISTINCT FROM p_active_flow_version_id
+    AND run.status IS NOT DISTINCT FROM p_expected_status
+    AND run.current_node_key IS NOT DISTINCT FROM p_expected_node_key
+    AND run.current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
+    AND run.continuation_id IS NOT DISTINCT FROM p_expected_continuation_id;
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION end_flow_run_if_owned(
+  UUID, UUID, TEXT, TEXT, UUID, UUID, TEXT, TEXT
+) FROM PUBLIC, authenticated;
+GRANT EXECUTE ON FUNCTION end_flow_run_if_owned(
+  UUID, UUID, TEXT, TEXT, UUID, UUID, TEXT, TEXT
+) TO service_role;
+
 CREATE OR REPLACE FUNCTION schedule_flow_approval(
   p_run_id UUID,
   p_flow_id UUID,
@@ -142,6 +206,7 @@ AS $$
 DECLARE
   v_run public.flow_runs%ROWTYPE;
   v_request public.flow_approval_requests%ROWTYPE;
+  v_assignee_profile public.profiles%ROWTYPE;
   v_graph_node JSONB;
   v_inserted BOOLEAN := FALSE;
 BEGIN
@@ -161,10 +226,46 @@ BEGIN
 
   SELECT * INTO v_run
   FROM public.flow_runs
+  WHERE id = p_run_id;
+  IF NOT FOUND OR v_run.account_id IS NULL THEN
+    RAISE EXCEPTION 'stale_flow_approval_cursor';
+  END IF;
+
+  -- The insert/unique key establishes one request identity without taking a
+  -- run row lock. All approval lifecycle RPCs then use request -> run order.
+  INSERT INTO public.flow_approval_requests (
+    account_id, flow_id, flow_version_id, flow_run_id, node_key, visit_id,
+    attempt, assignee_user_id, title, message, expires_at, approved_next,
+    rejected_next, timeout_action, timeout_next
+  )
+  VALUES (
+    v_run.account_id, p_flow_id, p_flow_version_id, p_run_id, p_node_key,
+    p_visit_id, p_attempt, p_assignee_user_id, BTRIM(p_title), BTRIM(p_message),
+    p_expires_at, p_approved_next, p_rejected_next, p_timeout_action,
+    p_timeout_next
+  )
+  ON CONFLICT (flow_run_id, visit_id, node_key, attempt) DO NOTHING
+  RETURNING * INTO v_request;
+  v_inserted := FOUND;
+
+  SELECT * INTO v_request
+  FROM public.flow_approval_requests
+  WHERE flow_run_id = p_run_id
+    AND visit_id = p_visit_id
+    AND node_key = p_node_key
+    AND attempt = p_attempt
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'stale_flow_approval_cursor';
+  END IF;
+
+  SELECT * INTO v_run
+  FROM public.flow_runs
   WHERE id = p_run_id
   FOR UPDATE;
   IF NOT FOUND
      OR v_run.account_id IS NULL
+     OR v_request.account_id IS DISTINCT FROM v_run.account_id
      OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery', 'paused_by_agent')
      OR v_run.current_node_key IS DISTINCT FROM p_node_key
      OR v_run.current_visit_id IS DISTINCT FROM p_visit_id
@@ -175,12 +276,31 @@ BEGIN
     RAISE EXCEPTION 'stale_flow_approval_cursor';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE account_id = v_run.account_id
-      AND user_id = p_assignee_user_id
-      AND account_role IN ('owner', 'admin', 'agent')
-  ) THEN
+  IF v_request.flow_version_id IS DISTINCT FROM p_flow_version_id
+     OR v_request.flow_id IS DISTINCT FROM p_flow_id
+     OR v_request.node_key IS DISTINCT FROM p_node_key
+     OR v_request.visit_id IS DISTINCT FROM p_visit_id
+     OR v_request.attempt IS DISTINCT FROM p_attempt
+     OR v_request.assignee_user_id IS DISTINCT FROM p_assignee_user_id
+     OR v_request.title IS DISTINCT FROM BTRIM(p_title)
+     OR v_request.message IS DISTINCT FROM BTRIM(p_message)
+     OR v_request.expires_at IS DISTINCT FROM p_expires_at
+     OR v_request.approved_next IS DISTINCT FROM p_approved_next
+     OR v_request.rejected_next IS DISTINCT FROM p_rejected_next
+     OR v_request.timeout_action IS DISTINCT FROM p_timeout_action
+     OR v_request.timeout_next IS DISTINCT FROM p_timeout_next
+  THEN
+    RAISE EXCEPTION 'flow_approval_idempotency_conflict';
+  END IF;
+
+  SELECT * INTO v_assignee_profile
+  FROM public.profiles
+  WHERE user_id = p_assignee_user_id
+  FOR SHARE;
+  IF NOT FOUND
+     OR v_assignee_profile.account_id IS DISTINCT FROM v_run.account_id
+     OR v_assignee_profile.account_role NOT IN ('owner', 'admin', 'agent')
+  THEN
     RAISE EXCEPTION 'approval_assignee_not_eligible';
   END IF;
 
@@ -203,35 +323,6 @@ BEGIN
     RAISE EXCEPTION 'approval_pinned_config_mismatch';
   END IF;
 
-  INSERT INTO public.flow_approval_requests (
-    account_id, flow_id, flow_version_id, flow_run_id, node_key, visit_id,
-    attempt, assignee_user_id, title, message, expires_at, approved_next,
-    rejected_next, timeout_action, timeout_next
-  )
-  VALUES (
-    v_run.account_id, p_flow_id, p_flow_version_id, p_run_id, p_node_key,
-    p_visit_id, p_attempt, p_assignee_user_id, BTRIM(p_title), BTRIM(p_message),
-    p_expires_at, p_approved_next, p_rejected_next, p_timeout_action,
-    p_timeout_next
-  )
-  ON CONFLICT (flow_run_id, visit_id, node_key, attempt) DO NOTHING
-  RETURNING * INTO v_request;
-  v_inserted := FOUND;
-
-  IF NOT v_inserted THEN
-    SELECT * INTO v_request
-    FROM public.flow_approval_requests
-    WHERE flow_run_id = p_run_id
-      AND visit_id = p_visit_id
-      AND node_key = p_node_key
-      AND attempt = p_attempt;
-    IF v_request.flow_version_id IS DISTINCT FROM p_flow_version_id
-       OR v_request.assignee_user_id IS DISTINCT FROM p_assignee_user_id
-    THEN
-      RAISE EXCEPTION 'flow_approval_idempotency_conflict';
-    END IF;
-  END IF;
-
   UPDATE public.flow_runs
   SET status = 'paused_by_agent',
       wake_at = p_expires_at,
@@ -239,9 +330,12 @@ BEGIN
       end_reason = NULL,
       last_advanced_at = NOW()
   WHERE id = p_run_id
+    AND account_id = v_request.account_id
     AND current_node_key = p_node_key
     AND current_visit_id = p_visit_id
-    AND status IN ('active', 'resuming', 'needs_recovery', 'paused_by_agent');
+    AND status IN ('active', 'resuming', 'needs_recovery', 'paused_by_agent')
+    AND COALESCE(active_flow_id, flow_id) = p_flow_id
+    AND COALESCE(active_flow_version_id, flow_version_id) = p_flow_version_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'stale_flow_approval_cursor';
   END IF;
@@ -380,7 +474,7 @@ BEGIN
     flow_run_id, event_type, node_key, payload
   ) VALUES (
     v_request.flow_run_id,
-    'node_entered',
+    'approval_decision',
     v_request.node_key,
     jsonb_build_object(
       'reason', 'approval_decision',
@@ -496,7 +590,7 @@ BEGIN
         flow_run_id, event_type, node_key, payload
       ) VALUES (
         v_request.flow_run_id,
-        'timeout',
+        'approval_timeout',
         v_request.node_key,
         jsonb_build_object(
           'reason', 'approval_timeout',
@@ -627,6 +721,7 @@ SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_request public.flow_approval_requests%ROWTYPE;
+  v_run public.flow_runs%ROWTYPE;
 BEGIN
   SELECT * INTO v_request
   FROM public.flow_approval_requests
@@ -635,6 +730,15 @@ BEGIN
   IF NOT FOUND OR v_request.flow_version_id IS DISTINCT FROM p_flow_version_id THEN
     RETURN FALSE;
   END IF;
+
+  SELECT * INTO v_run
+  FROM public.flow_runs
+  WHERE id = v_request.flow_run_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
   IF v_request.status = 'completed' THEN
     RETURN TRUE;
   END IF;
@@ -651,10 +755,21 @@ BEGIN
   WHERE id = p_request_id;
 
   UPDATE public.flow_runs
-  SET continuation_phase = 'completed'
+  SET status = CASE
+        WHEN status = 'resuming' THEN 'active'
+        ELSE status
+      END,
+      wake_at = CASE
+        WHEN status = 'resuming' THEN NULL
+        ELSE wake_at
+      END,
+      continuation_id = NULL,
+      continuation_phase = 'idle',
+      continuation_step = 0,
+      last_advanced_at = NOW()
   WHERE id = v_request.flow_run_id
     AND continuation_id = v_request.resume_id
-    AND continuation_phase = 'running';
+    AND continuation_phase IN ('running', 'completed');
 
   INSERT INTO public.notifications (
     account_id, user_id, type, approval_request_id, title, body

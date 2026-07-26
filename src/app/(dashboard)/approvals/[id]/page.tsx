@@ -21,6 +21,18 @@ import type { ApprovalRequestDto } from "@/lib/flows/approval-api";
 
 type HumanDecision = "approved" | "rejected";
 
+async function fetchApprovalDetail(id: string): Promise<ApprovalRequestDto> {
+  const response = await fetch(
+    `/api/flow-approvals/${encodeURIComponent(id)}`,
+    { cache: "no-store" },
+  );
+  if (!response.ok) throw new Error("not_found");
+  const payload = (await response.json()) as {
+    approval: ApprovalRequestDto;
+  };
+  return payload.approval;
+}
+
 export default function ApprovalDetailPage() {
   const t = useTranslations("Approvals");
   const { id } = useParams<{ id: string }>();
@@ -31,17 +43,12 @@ export default function ApprovalDetailPage() {
     useState<HumanDecision | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(`/api/flow-approvals/${encodeURIComponent(id)}`, {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("not_found");
-        return (await response.json()) as { approval: ApprovalRequestDto };
-      })
-      .then(({ approval: next }) => {
+    void fetchApprovalDetail(id)
+      .then((next) => {
         if (!cancelled) setApproval(next);
       })
       .catch(() => {
@@ -59,6 +66,7 @@ export default function ApprovalDetailPage() {
     if (!approval || !pendingDecision) return;
     setSubmitting(true);
     setError(null);
+    setDialogError(null);
     try {
       const response = await fetch(
         `/api/flow-approvals/${encodeURIComponent(id)}/decision`,
@@ -74,16 +82,32 @@ export default function ApprovalDetailPage() {
       );
       const payload = (await response.json().catch(() => ({}))) as {
         approval?: ApprovalRequestDto;
+        code?: string;
         error?: string;
       };
+      if (response.status === 409) {
+        setPendingDecision(null);
+        try {
+          const freshApproval = await fetchApprovalDetail(id);
+          setApproval(freshApproval);
+          setError(payload.error ?? t("decisionError"));
+        } catch {
+          setApproval(null);
+          setError(t("notFound"));
+        }
+        return;
+      }
       if (!response.ok || !payload.approval) {
-        throw new Error(payload.error ?? t("decisionError"));
+        setDialogError(payload.error ?? t("decisionError"));
+        return;
       }
       setApproval(payload.approval);
       setPendingDecision(null);
       setNote("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("decisionError"));
+      setDialogError(
+        caught instanceof Error ? caught.message : t("decisionError"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -164,13 +188,23 @@ export default function ApprovalDetailPage() {
       )}
       {!terminal && (
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setPendingDecision("approved")}>
+          <Button
+            onClick={() => {
+              setError(null);
+              setDialogError(null);
+              setPendingDecision("approved");
+            }}
+          >
             <Check className="h-4 w-4" />
             {t("approve")}
           </Button>
           <Button
             variant="destructive"
-            onClick={() => setPendingDecision("rejected")}
+            onClick={() => {
+              setError(null);
+              setDialogError(null);
+              setPendingDecision("rejected");
+            }}
           >
             <X className="h-4 w-4" />
             {t("reject")}
@@ -202,6 +236,15 @@ export default function ApprovalDetailPage() {
               onChange={(event) => setNote(event.target.value)}
             />
           </label>
+          {dialogError && (
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="text-destructive text-sm"
+            >
+              {dialogError}
+            </p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"

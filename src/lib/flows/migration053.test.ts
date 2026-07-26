@@ -14,6 +14,17 @@ const invitationRpcsSql = readFileSync(
   join(process.cwd(), "supabase/migrations/019_invitation_rpcs.sql"),
   "utf8",
 );
+const engineSource = readFileSync(
+  join(process.cwd(), "src/lib/flows/engine.ts"),
+  "utf8",
+);
+const runHistorySource = readFileSync(
+  join(
+    process.cwd(),
+    "src/app/(dashboard)/flows/[id]/runs/page.tsx",
+  ),
+  "utf8",
+);
 
 describe("migration 053 durable flow approvals", () => {
   it("stores account/version/run/visit-bound requests with bounded payloads and retention", () => {
@@ -51,6 +62,7 @@ describe("migration 053 durable flow approvals", () => {
 
   it("provides hardened schedule, CAS decision, SKIP LOCKED claim, ack, and purge RPCs", () => {
     for (const name of [
+      "end_flow_run_if_owned",
       "schedule_flow_approval",
       "decide_flow_approval",
       "claim_flow_approval_resolutions",
@@ -167,6 +179,123 @@ describe("migration 053 durable flow approvals", () => {
     );
   });
 
+  it("normalizes only the owned approval continuation after prompt, wait, chained, or terminal outcomes", () => {
+    const ack = sql.match(
+      /CREATE OR REPLACE FUNCTION complete_flow_approval_resolution[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    expect(ack).toMatch(
+      /SELECT \* INTO v_request[\s\S]+?flow_approval_requests[\s\S]+?FOR UPDATE;[\s\S]+?SELECT \* INTO v_run[\s\S]+?flow_runs[\s\S]+?FOR UPDATE;/i,
+    );
+    expect(ack).toMatch(
+      /SET status\s*=\s*CASE[\s\S]+?WHEN status\s*=\s*'resuming' THEN 'active'[\s\S]+?ELSE status[\s\S]+?continuation_id\s*=\s*NULL[\s\S]+?continuation_phase\s*=\s*'idle'/i,
+    );
+    expect(ack).toMatch(
+      /WHERE id\s*=\s*v_request\.flow_run_id[\s\S]+?continuation_id\s*=\s*v_request\.resume_id[\s\S]+?continuation_phase IN\s*\(\s*'running',\s*'completed'\s*\)/i,
+    );
+    for (const preserved of [
+      "waiting",
+      "paused_by_agent",
+      "completed",
+      "handed_off",
+      "timed_out",
+      "failed",
+    ]) {
+      expect(ack).not.toMatch(
+        new RegExp(`WHEN status\\s*=\\s*'${preserved}'\\s+THEN`, "i"),
+      );
+    }
+  });
+
+  it("locks approval requests before runs in schedule, claim, and ack", () => {
+    const schedule = sql.match(
+      /CREATE OR REPLACE FUNCTION schedule_flow_approval[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    const claim = sql.match(
+      /CREATE OR REPLACE FUNCTION claim_flow_approval_resolutions[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    const ack = sql.match(
+      /CREATE OR REPLACE FUNCTION complete_flow_approval_resolution[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    const scheduleInsertAt = schedule.indexOf(
+      "INSERT INTO public.flow_approval_requests",
+    );
+    const scheduleRequestLockAt = schedule.indexOf(
+      "FROM public.flow_approval_requests",
+      scheduleInsertAt,
+    );
+    const scheduleRunLockAt = schedule.indexOf(
+      "FROM public.flow_runs",
+      scheduleRequestLockAt,
+    );
+
+    expect(sql).toContain(
+      "UNIQUE (flow_run_id, visit_id, node_key, attempt)",
+    );
+    expect(schedule).toContain(
+      "ON CONFLICT (flow_run_id, visit_id, node_key, attempt) DO NOTHING",
+    );
+    expect(scheduleRequestLockAt).toBeGreaterThan(scheduleInsertAt);
+    expect(scheduleRunLockAt).toBeGreaterThan(scheduleRequestLockAt);
+    expect(
+      schedule.slice(scheduleRequestLockAt, scheduleRunLockAt),
+    ).toContain("FOR UPDATE");
+    expect(schedule.slice(scheduleRunLockAt)).toContain("FOR UPDATE");
+    expect(claim).toMatch(
+      /flow_approval_requests[\s\S]+?FOR UPDATE SKIP LOCKED[\s\S]+?FROM public\.flow_runs[\s\S]+?FOR UPDATE/i,
+    );
+    expect(ack).toMatch(
+      /FROM public\.flow_approval_requests[\s\S]+?FOR UPDATE;[\s\S]+?FROM public\.flow_runs[\s\S]+?FOR UPDATE;/i,
+    );
+  });
+
+  it("validates every idempotent schedule argument and the locked run cursor", () => {
+    const schedule = sql.match(
+      /CREATE OR REPLACE FUNCTION schedule_flow_approval[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    for (const pair of [
+      ["flow_version_id", "p_flow_version_id"],
+      ["flow_id", "p_flow_id"],
+      ["node_key", "p_node_key"],
+      ["visit_id", "p_visit_id"],
+      ["attempt", "p_attempt"],
+      ["assignee_user_id", "p_assignee_user_id"],
+      ["title", "BTRIM(p_title)"],
+      ["message", "BTRIM(p_message)"],
+      ["expires_at", "p_expires_at"],
+      ["approved_next", "p_approved_next"],
+      ["rejected_next", "p_rejected_next"],
+      ["timeout_action", "p_timeout_action"],
+      ["timeout_next", "p_timeout_next"],
+    ]) {
+      expect(schedule).toContain(
+        `v_request.${pair[0]} IS DISTINCT FROM ${pair[1]}`,
+      );
+    }
+    expect(schedule).toMatch(
+      /SELECT \* INTO v_run[\s\S]+?FROM public\.flow_runs[\s\S]+?FOR UPDATE;[\s\S]+?current_node_key IS DISTINCT FROM p_node_key[\s\S]+?current_visit_id IS DISTINCT FROM p_visit_id[\s\S]+?active_flow_version_id[\s\S]+?p_flow_version_id/i,
+    );
+  });
+
+  it("ends a run only through cursor and continuation CAS ownership", () => {
+    const endRun = sql.match(
+      /CREATE OR REPLACE FUNCTION end_flow_run_if_owned[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    for (const precondition of [
+      "p_expected_status",
+      "p_expected_node_key",
+      "p_expected_visit_id",
+      "p_expected_continuation_id",
+      "p_active_flow_version_id",
+    ]) {
+      expect(endRun).toContain(precondition);
+    }
+    expect(endRun).toContain("IS NOT DISTINCT FROM");
+    expect(engineSource).toContain('db.rpc("end_flow_run_if_owned"');
+    expect(engineSource).not.toMatch(
+      /async function endRun[\s\S]+?from\("flow_runs"\)[\s\S]+?\.update\(/i,
+    );
+  });
+
   it("adds approval notifications without exposing contact channels", () => {
     expect(sql).toContain("'flow_approval'");
     expect(sql).toContain("approval_request_id");
@@ -174,8 +303,27 @@ describe("migration 053 durable flow approvals", () => {
   });
 
   it("appends bounded run audit events for human decisions and timeouts", () => {
-    expect(sql).toContain("'approval_decision'");
-    expect(sql).toContain("'approval_timeout'");
+    expect(sql).toMatch(
+      /event_type IN\s*\([\s\S]+?'approval_decision'[\s\S]+?'approval_timeout'[\s\S]+?\)/i,
+    );
+    const decision = sql.match(
+      /CREATE OR REPLACE FUNCTION decide_flow_approval[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    const claim = sql.match(
+      /CREATE OR REPLACE FUNCTION claim_flow_approval_resolutions[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    expect(decision).toMatch(
+      /INSERT INTO public\.flow_run_events[\s\S]+?'approval_decision'/i,
+    );
+    expect(decision).not.toMatch(
+      /INSERT INTO public\.flow_run_events[\s\S]+?'node_entered'/i,
+    );
+    expect(claim).toMatch(
+      /INSERT INTO public\.flow_run_events[\s\S]+?'approval_timeout'/i,
+    );
     expect(sql).not.toMatch(/flow_run_events[\s\S]{0,500}decision_note/i);
+    expect(runHistorySource).toMatch(
+      /approval_decision:\s*"[^"]+"[\s\S]+?approval_timeout:\s*"[^"]+"/i,
+    );
   });
 });

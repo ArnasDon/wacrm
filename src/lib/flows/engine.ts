@@ -641,7 +641,7 @@ async function executePolicyNode<T>(
       normalSuccessNextNodeKey,
     );
     if (resolution.action === "fail_run") {
-      await endRun(db, run.id, "failed", "node_execution_failed");
+      await endRun(db, run, "failed", "node_execution_failed");
       return { ok: false };
     }
     await logEvent(db, run.id, "node_entered", node.node_key, {
@@ -670,7 +670,7 @@ async function executePolicyNode<T>(
         });
         await endRun(
           db,
-          run.id,
+          run,
           "failed",
           "error_transition_cursor_persist_failed",
         );
@@ -966,7 +966,7 @@ async function executeDurableNodeEffect<T>(
       reason: "node_effect_reservation_failed",
       error: sanitizeExecutionError(error),
     });
-    await endRun(db, run.id, "failed", "node_effect_reservation_failed");
+    await endRun(db, run, "failed", "node_effect_reservation_failed");
     return { ok: false };
   }
 
@@ -2019,7 +2019,7 @@ async function executeHandoff(
     note: cfg.note ?? null,
     assigned_to: cfg.assign_to ?? null,
   });
-  await endRun(db, run.id, "handed_off", "handoff_node");
+  await endRun(db, run, "handed_off", "handoff_node");
 }
 
 /**
@@ -2136,20 +2136,41 @@ function resolveBoundDataInput(
   return resolveNodeOutput(source.node_type, source.config, sourceHandle, vars);
 }
 
+type EndRunCursor = Pick<
+  FlowRunRow,
+  "id" | "flow_version_id" | "current_node_key"
+> &
+  Partial<
+    Pick<
+      FlowRunRow,
+      | "active_flow_version_id"
+      | "status"
+      | "current_visit_id"
+      | "continuation_id"
+    >
+  >;
+
 async function endRun(
   db: AdminClient,
-  runId: string,
+  run: EndRunCursor,
   status: "completed" | "handed_off" | "timed_out" | "failed",
   reason: string,
 ): Promise<void> {
-  await db
-    .from("flow_runs")
-    .update({
-      status,
-      ended_at: new Date().toISOString(),
-      end_reason: reason,
-    })
-    .eq("id", runId);
+  if (!run.status) {
+    throw new Error("Cannot end a run without its durable status cursor.");
+  }
+  const { error } = await db.rpc("end_flow_run_if_owned", {
+    p_run_id: run.id,
+    p_active_flow_version_id:
+      run.active_flow_version_id ?? run.flow_version_id,
+    p_expected_status: run.status,
+    p_expected_node_key: run.current_node_key,
+    p_expected_visit_id: run.current_visit_id ?? null,
+    p_expected_continuation_id: run.continuation_id ?? null,
+    p_target_status: status,
+    p_reason: reason,
+  });
+  if (error) throw error;
 }
 
 // ============================================================
@@ -2176,7 +2197,7 @@ export async function advanceFromNodeKey(
       await logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
       });
-      await endRun(db, run.id, "failed", "missing_next_node");
+      await endRun(db, run, "failed", "missing_next_node");
       return { outcome: "completed" };
     }
     const node: FlowNodeRow | null = nodes.get(currentKey) ?? null;
@@ -2184,14 +2205,14 @@ export async function advanceFromNodeKey(
       await logEvent(db, run.id, "error", currentKey, {
         reason: "node_not_found",
       });
-      await endRun(db, run.id, "failed", "node_not_found");
+      await endRun(db, run, "failed", "node_not_found");
       return { outcome: "completed" };
     }
     if (visitedSinceCompositeAdvance.has(currentKey)) {
       await logEvent(db, run.id, "error", currentKey, {
         reason: "unstructured_runtime_cycle",
       });
-      await endRun(db, run.id, "failed", "unstructured_runtime_cycle");
+      await endRun(db, run, "failed", "unstructured_runtime_cycle");
       return { outcome: "completed" };
     }
     visitedSinceCompositeAdvance.add(currentKey);
@@ -2203,7 +2224,7 @@ export async function advanceFromNodeKey(
       await logEvent(db, run.id, "error", node.node_key, {
         reason: `unknown_node_type:${node.node_type}`,
       });
-      await endRun(db, run.id, "failed", "unknown_node_type");
+      await endRun(db, run, "failed", "unknown_node_type");
       return { outcome: "completed" };
     }
     const runtimeHook = runtimeDescriptor.runtimeHook;
@@ -2788,7 +2809,7 @@ export async function advanceFromNodeKey(
       }
       const output = executed.value;
       if (!output) {
-        await endRun(db, run.id, "failed", "http_effect_response_missing");
+        await endRun(db, run, "failed", "http_effect_response_missing");
         return { outcome: "completed" };
       }
       const nextVars = { ...run.vars, [cfg.response_var]: output };
@@ -2877,7 +2898,7 @@ export async function advanceFromNodeKey(
           cfg,
         );
         if (resolution.action === "fail") {
-          await endRun(db, run.id, "failed", "approval_schedule_failed");
+          await endRun(db, run, "failed", "approval_schedule_failed");
           return { outcome: "completed" };
         }
         currentKey = await persistTransition(
@@ -3062,7 +3083,7 @@ export async function advanceFromNodeKey(
         if (!parent || !returned.current_node_key) {
           await endRun(
             db,
-            run.id,
+            returned,
             "failed",
             "sub_flow_parent_snapshot_unavailable",
           );
@@ -3084,7 +3105,7 @@ export async function advanceFromNodeKey(
           globalExecutionPolicy,
           async () => {
             await logEvent(db, run.id, "completed", node.node_key);
-            await endRun(db, run.id, "completed", "end_node");
+            await endRun(db, run, "completed", "end_node");
             return { status: "completed" };
           },
         );
@@ -3098,7 +3119,7 @@ export async function advanceFromNodeKey(
     await logEvent(db, run.id, "error", node.node_key, {
       reason: `unsupported_runtime_hook:${runtimeHook}`,
     });
-    await endRun(db, run.id, "failed", "unsupported_runtime_hook");
+    await endRun(db, run, "failed", "unsupported_runtime_hook");
     return { outcome: "completed" };
   }
 }
@@ -3136,7 +3157,7 @@ export async function recoverFailedSubFlowRun(
   const parentVersionId = run.active_flow_version_id ?? run.flow_version_id;
   const parent = await loadFlowVersion(db, parentVersionId, parentFlowId);
   if (!parent || !run.current_node_key) {
-    await endRun(db, run.id, "failed", "sub_flow_parent_snapshot_unavailable");
+    await endRun(db, run, "failed", "sub_flow_parent_snapshot_unavailable");
     return recoverFailedSubFlowRun(
       db,
       run,
@@ -3248,7 +3269,7 @@ export async function dispatchInboundToFlows(
         });
         await endRun(
           db,
-          activeRun.id,
+          activeRun,
           "failed",
           "published_snapshot_unavailable",
         );
@@ -3380,7 +3401,7 @@ export async function handleReplyForActiveRun(
   if (!run.current_node_key) {
     // Defensive — a run with status='active' but no current node is
     // malformed. Fail the run rather than spin.
-    await endRun(db, run.id, "failed", "active_run_missing_current_node");
+    await endRun(db, run, "failed", "active_run_missing_current_node");
     return {
       consumed: true,
       flow_run_id: run.id,
@@ -3390,7 +3411,7 @@ export async function handleReplyForActiveRun(
 
   const currentNode = nodes.get(run.current_node_key) ?? null;
   if (!currentNode) {
-    await endRun(db, run.id, "failed", "current_node_not_found");
+    await endRun(db, run, "failed", "current_node_not_found");
     return { consumed: true, flow_run_id: run.id, outcome: "no_match" };
   }
 

@@ -8,6 +8,7 @@ import {
   type SubFlowVariableDeclaration,
   type SubFlowVariableMapping,
 } from "./composite-runtime";
+import type { FlowRunRow } from "./types";
 
 interface RpcClient {
   rpc(
@@ -22,8 +23,10 @@ interface CompositeRun {
   flow_version_id: string;
   active_flow_id?: string | null;
   active_flow_version_id?: string | null;
+  status?: FlowRunRow["status"];
   current_node_key: string | null;
   current_visit_id?: string | null;
+  continuation_id?: string | null;
   vars: Record<string, unknown>;
 }
 

@@ -64,6 +64,7 @@ function fakeDb(
     failCursorOnce?: boolean;
     failCursorAttempts?: number;
     failRepromptFinalizeOnce?: boolean;
+    failApprovalSchedule?: boolean;
   } = {},
 ) {
   const writes: CapturedWrite[] = [];
@@ -113,6 +114,15 @@ function fakeDb(
   const db = {
     rpc(name: string, value: Record<string, unknown>) {
       writes.push({ table: `rpc:${name}`, kind: "insert", value });
+      if (
+        name === "schedule_flow_approval" &&
+        options.failApprovalSchedule
+      ) {
+        return Promise.resolve({
+          data: null,
+          error: { message: "stale_flow_approval_cursor" },
+        });
+      }
       if (name === "reserve_flow_node_effect") {
         const key = [
           value.p_visit_id,
@@ -553,6 +563,64 @@ beforeEach(() => {
 });
 
 describe("node execution policy in the flow engine", () => {
+  it("uses the stale approval cursor as a CAS precondition for fail-safe termination", async () => {
+    const activeRun = run({
+      status: "resuming",
+      current_node_key: "approval",
+      current_visit_id: "00000000-0000-4000-8000-000000000099",
+      continuation_id: "00000000-0000-4000-8000-000000000098",
+      continuation_phase: "running",
+    });
+    const { db, writes } = fakeDb({ failApprovalSchedule: true });
+    const nodes = new Map(
+      [
+        node("approval", "approval", {
+          title: "Review",
+          message: "Review",
+          assignee_user_id: "00000000-0000-4000-8000-000000000001",
+          timeout_hours: 1,
+          approved_next: "end",
+          rejected_next: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const result = await advanceFromNodeKey(
+      db as never,
+      activeRun,
+      "approval",
+      nodes,
+    );
+
+    expect(result).toEqual({ outcome: "completed" });
+    expect(
+      writes.filter(
+        (write) => write.table === "rpc:schedule_flow_approval",
+      ),
+    ).toHaveLength(2);
+    expect(
+      writes.find(
+        (write) => write.table === "rpc:end_flow_run_if_owned",
+      )?.value,
+    ).toMatchObject({
+      p_expected_status: "resuming",
+      p_expected_node_key: "approval",
+      p_expected_visit_id: "00000000-0000-4000-8000-000000000099",
+      p_expected_continuation_id:
+        "00000000-0000-4000-8000-000000000098",
+      p_target_status: "failed",
+    });
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          write.value.status === "failed",
+      ),
+    ).toBe(false);
+  });
+
   it("does not use a fixed step ceiling for a finite validated graph", async () => {
     const nodeCount = 1_050;
     const nodes = new Map<string, FlowNodeRow>();
@@ -1711,9 +1779,12 @@ describe("node execution policy in the flow engine", () => {
       expect(
         writes.some(
           (write) =>
-            write.table === "flow_runs" &&
-            write.kind === "update" &&
-            write.value.status === "completed",
+            write.table === "rpc:end_flow_run_if_owned" &&
+            write.kind === "insert" &&
+            write.value.p_target_status === "completed" &&
+            write.value.p_expected_node_key === "success" &&
+            write.value.p_expected_visit_id ===
+              activeRun.current_visit_id,
         ),
       ).toBe(true);
     },

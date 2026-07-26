@@ -2,16 +2,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   sendText: vi.fn(),
+  sendMedia: vi.fn(),
   sendButtons: vi.fn(),
   sendList: vi.fn(),
   httpRequest: vi.fn(),
+  addTag: vi.fn(),
+  removeTag: vi.fn(),
 }));
 
 vi.mock("./zapi-send", () => ({
   engineSendText: h.sendText,
-  engineSendMedia: vi.fn(),
+  engineSendMedia: h.sendMedia,
   engineSendInteractiveButtons: h.sendButtons,
   engineSendInteractiveList: h.sendList,
+  persistCommittedOutbound: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/lib/contacts/tag-events", () => ({
+  addContactTagAndDispatch: h.addTag,
+}));
+
+vi.mock("@/lib/contacts/tag-write", () => ({
+  removeContactTag: h.removeTag,
 }));
 
 vi.mock("./http-request", async (importOriginal) => {
@@ -37,38 +49,56 @@ function fakeDb(
     failFlowVarsPersistenceOnce?: boolean;
     flowVarsPersistence?: Promise<{ data: unknown; error: unknown }>;
     initialHttpEffect?: {
-      status: "reserved" | "remote_committed" | "completed";
+      status: "reserved" | "remote_committed" | "completed" | "ambiguous";
       response: Record<string, unknown> | null;
     };
+    effectIsOwner?: boolean;
+    failCursorOnce?: boolean;
   } = {},
 ) {
   const writes: CapturedWrite[] = [];
   let executionSequence = 0;
   let cursorSequence = 0;
   let failVarsOnce = options.failFlowVarsPersistenceOnce === true;
+  let failCursorOnce = options.failCursorOnce === true;
   const httpEffect = {
     id: "10000000-0000-4000-8000-000000000001",
     operation_id: "20000000-0000-4000-8000-000000000001",
     status: options.initialHttpEffect?.status ?? "reserved",
-    response: options.initialHttpEffect?.response ?? null,
+    result: options.initialHttpEffect?.response ?? null,
+    external_reference: null as string | null,
+    is_owner: options.effectIsOwner ?? true,
   };
 
   const db = {
     rpc(name: string, value: Record<string, unknown>) {
       writes.push({ table: `rpc:${name}`, kind: "insert", value });
-      if (name === "reserve_flow_http_effect") {
+      if (name === "reserve_flow_node_effect") {
         return Promise.resolve({ data: [{ ...httpEffect }], error: null });
       }
-      if (name === "mark_flow_http_effect_committed") {
+      if (name === "mark_flow_node_effect_committed") {
         httpEffect.status = "remote_committed";
-        httpEffect.response = value.p_response as Record<string, unknown>;
+        httpEffect.result = value.p_result as Record<string, unknown>;
+        httpEffect.external_reference =
+          (value.p_external_reference as string | null) ?? null;
         return Promise.resolve({ data: [{ ...httpEffect }], error: null });
       }
-      if (name === "complete_flow_http_effect") {
+      if (name === "mark_flow_node_effect_ambiguous") {
+        httpEffect.status = "ambiguous";
+        return Promise.resolve({ data: true, error: null });
+      }
+      if (name === "complete_flow_node_effect") {
         httpEffect.status = "completed";
         return Promise.resolve({ data: true, error: null });
       }
       if (name === "advance_flow_run_cursor") {
+        if (failCursorOnce) {
+          failCursorOnce = false;
+          return Promise.resolve({
+            data: null,
+            error: { message: "cursor unavailable" },
+          });
+        }
         cursorSequence += 1;
         return Promise.resolve({
           data: [
@@ -205,9 +235,12 @@ function graph(messageConfig: Record<string, unknown>) {
 
 beforeEach(() => {
   h.sendText.mockReset();
+  h.sendMedia.mockReset();
   h.sendButtons.mockReset();
   h.sendList.mockReset();
   h.httpRequest.mockReset();
+  h.addTag.mockReset();
+  h.removeTag.mockReset();
 });
 
 describe("node execution policy in the flow engine", () => {
@@ -341,7 +374,7 @@ describe("node execution policy in the flow engine", () => {
     expect(activeRun.vars.response).toEqual(committed);
   });
 
-  it("keeps one stable operation id when a reserved HTTP visit is retried", async () => {
+  it("does not retry an HTTP visit whose outcome is ambiguous", async () => {
     h.httpRequest
       .mockRejectedValueOnce(new Error("connection reset during request"))
       .mockResolvedValueOnce({
@@ -372,12 +405,11 @@ describe("node execution policy in the flow engine", () => {
 
     await advanceFromNodeKey(db as never, activeRun, "http", nodes);
 
-    expect(h.httpRequest).toHaveBeenCalledTimes(2);
-    expect(
-      h.httpRequest.mock.calls.map(
-        ([request]) => request.headers["Idempotency-Key"],
-      ),
-    ).toEqual([httpEffect.operation_id, httpEffect.operation_id]);
+    expect(h.httpRequest).toHaveBeenCalledTimes(1);
+    expect(httpEffect.status).toBe("ambiguous");
+    expect(h.httpRequest.mock.calls[0][0].headers["Idempotency-Key"]).toBe(
+      httpEffect.operation_id,
+    );
   });
 
   it("reclaims committed HTTP persistence failure with the same operation id", async () => {
@@ -606,7 +638,257 @@ describe("node execution policy in the flow engine", () => {
         .map((write) => write.value.p_next_node_key),
     ).toEqual(["switch", "first"]);
   });
-  it("takes an error branch after a simulated Z-API failure without failing the run", async () => {
+
+  it.each([
+    {
+      label: "send_message",
+      nodeType: "send_message" as const,
+      config: { text: "hello", next_node_key: "end" },
+      send: h.sendText,
+      expectedOutcome: "completed",
+    },
+    {
+      label: "send_media",
+      nodeType: "send_media" as const,
+      config: {
+        media_type: "image",
+        media_url: "https://cdn.example.com/image.png",
+        next_node_key: "end",
+      },
+      send: h.sendMedia,
+      expectedOutcome: "completed",
+    },
+    {
+      label: "collect_input",
+      nodeType: "collect_input" as const,
+      config: {
+        prompt_text: "Name?",
+        var_key: "name",
+        next_node_key: "end",
+      },
+      send: h.sendText,
+      expectedOutcome: "advanced",
+    },
+  ])(
+    "recovers $label after remote commit and before cursor without resending",
+    async ({ nodeType, config, send, expectedOutcome }) => {
+      send.mockResolvedValue({ whatsapp_message_id: "wamid-once" });
+      const resumedRun = run({
+        status: "resuming",
+        current_node_key: "effect",
+        continuation_id: "40000000-0000-4000-8000-000000000001",
+        continuation_phase: "running",
+      });
+      const { db, httpEffect } = fakeDb({ failCursorOnce: true });
+      const nodes = new Map(
+        [node("effect", nodeType, config), node("end", "end", {})].map(
+          (entry) => [entry.node_key, entry],
+        ),
+      );
+
+      await expect(
+        advanceFromNodeKey(db as never, resumedRun, "effect", nodes),
+      ).rejects.toBeTruthy();
+      expect(httpEffect.status).toBe("remote_committed");
+
+      const recovered = await advanceFromNodeKey(
+        db as never,
+        resumedRun,
+        "effect",
+        nodes,
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(recovered.outcome).toBe(expectedOutcome);
+      expect(httpEffect.status).toBe("completed");
+    },
+  );
+
+  it("marks an inherited reserved effect ambiguous without invoking the provider", async () => {
+    const { db, writes, httpEffect } = fakeDb({
+      effectIsOwner: false,
+    });
+    const nodes = new Map(
+      [
+        node("send", "send_message", {
+          text: "hello",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(
+      db as never,
+      run({ current_node_key: "send" }),
+      "send",
+      nodes,
+    );
+
+    expect(h.sendText).not.toHaveBeenCalled();
+    expect(httpEffect.status).toBe("ambiguous");
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.value.end_reason === "external_effect_needs_reconciliation",
+      ),
+    ).toBe(true);
+  });
+
+  it("sanitizes the external reference stored in the effect ledger", async () => {
+    h.sendText.mockImplementation(
+      async (args: {
+        onRemoteCommitted?: (result: {
+          whatsapp_message_id: string;
+        }) => Promise<void>;
+      }) => {
+        const result = {
+          whatsapp_message_id: "wamid-line\r\nbreak",
+        };
+        await args.onRemoteCommitted?.(result);
+        return result;
+      },
+    );
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("send", "send_message", {
+          text: "hello",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(
+      db as never,
+      run({ current_node_key: "send" }),
+      "send",
+      nodes,
+    );
+
+    expect(
+      writes.find(
+        (write) => write.table === "rpc:mark_flow_node_effect_committed",
+      )?.value.p_external_reference,
+    ).toBe("wamid-linebreak");
+  });
+
+  it("recovers set_tag after commit without dispatching the event twice", async () => {
+    h.addTag.mockResolvedValue(undefined);
+    const resumedRun = run({
+      status: "resuming",
+      current_node_key: "tag",
+      continuation_id: "40000000-0000-4000-8000-000000000001",
+      continuation_phase: "running",
+    });
+    const { db, httpEffect } = fakeDb({ failCursorOnce: true });
+    const nodes = new Map(
+      [
+        node("tag", "set_tag", {
+          mode: "add",
+          tag_id: "50000000-0000-4000-8000-000000000001",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await expect(
+      advanceFromNodeKey(db as never, resumedRun, "tag", nodes),
+    ).rejects.toBeTruthy();
+    await advanceFromNodeKey(db as never, resumedRun, "tag", nodes);
+
+    expect(h.addTag).toHaveBeenCalledTimes(1);
+    expect(httpEffect.status).toBe("completed");
+  });
+
+  it.each([
+    {
+      label: "fail_branch",
+      policy: {
+        on_error: "fail_branch",
+        error_next_node_key: "recover",
+      },
+      expectedNext: "recover",
+      expectedVars: {},
+    },
+    {
+      label: "default_value",
+      policy: {
+        on_error: "default_value",
+        default_value: {
+          key: "fallback",
+          type: "string",
+          value: "used",
+        },
+      },
+      expectedNext: "end",
+      expectedVars: { fallback: "used" },
+    },
+  ])(
+    "persists the $label decision before continuing a pure node",
+    async ({ policy, expectedNext, expectedVars }) => {
+      const activeRun = run({ current_node_key: "set" });
+      const { db, writes } = fakeDb({
+        failFlowVarsPersistenceOnce: true,
+      });
+      const nodes = new Map(
+        [
+          node("set", "variable_set", {
+            assignments: [{ key: "value", type: "string", value: "x" }],
+            next_node_key: "end",
+            ...policy,
+          }),
+          node("recover", "end", {}),
+          node("end", "end", {}),
+        ].map((entry) => [entry.node_key, entry]),
+      );
+
+      await advanceFromNodeKey(db as never, activeRun, "set", nodes);
+
+      expect(
+        writes.find((write) => write.table === "rpc:advance_flow_run_cursor")
+          ?.value.p_next_node_key,
+      ).toBe(expectedNext);
+      expect(activeRun.vars).toEqual(expectedVars);
+    },
+  );
+
+  it("resumes a pure node chain from its persisted cursor", async () => {
+    const activeRun = run({ current_node_key: "set" });
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("set", "variable_set", {
+          assignments: [{ key: "value", type: "string", value: "once" }],
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "set", nodes);
+    expect(activeRun.current_node_key).toBe("end");
+    await advanceFromNodeKey(
+      db as never,
+      activeRun,
+      activeRun.current_node_key!,
+      nodes,
+    );
+
+    expect(
+      writes.filter(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "vars" in write.value,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("requires reconciliation instead of taking a branch after an ambiguous Z-API failure", async () => {
     h.sendText.mockRejectedValue(new Error("Z-API unavailable"));
     const { db, writes } = fakeDb();
 
@@ -626,7 +908,15 @@ describe("node execution policy in the flow engine", () => {
           write.kind === "update" &&
           write.value.status === "failed",
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          write.value.end_reason === "external_effect_needs_reconciliation",
+      ),
+    ).toBe(true);
     expect(
       writes.some(
         (write) =>
@@ -638,7 +928,7 @@ describe("node execution policy in the flow engine", () => {
     ).toBe(true);
   });
 
-  it("persists a typed default and follows the normal success edge", async () => {
+  it("does not apply a default over an ambiguous external effect", async () => {
     h.sendText.mockRejectedValue(new Error("Z-API unavailable"));
     const activeRun = run({ vars: { existing: true } });
     const { db, writes } = fakeDb();
@@ -653,14 +943,13 @@ describe("node execution policy in the flow engine", () => {
       }),
     );
 
-    expect(activeRun.vars).toEqual({ existing: true, delivery: "skipped" });
+    expect(activeRun.vars).toEqual({ existing: true });
     expect(
       writes.some(
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          JSON.stringify(write.value.vars) ===
-            JSON.stringify({ existing: true, delivery: "skipped" }),
+          write.value.end_reason === "external_effect_needs_reconciliation",
       ),
     ).toBe(true);
   });
@@ -681,7 +970,7 @@ describe("node execution policy in the flow engine", () => {
     ).toBe(true);
   });
 
-  it("records each attempt with version, status, output/error, and duration", async () => {
+  it("records one attempt for an at-most-once external effect", async () => {
     h.sendText
       .mockRejectedValueOnce(new Error("temporary"))
       .mockResolvedValueOnce({ whatsapp_message_id: "wamid-1" });
@@ -702,11 +991,11 @@ describe("node execution policy in the flow engine", () => {
         write.kind === "insert" &&
         write.value.node_key === "send",
     );
-    expect(sendInserts).toHaveLength(2);
+    expect(sendInserts).toHaveLength(1);
     expect(h.sendText).toHaveBeenLastCalledWith(
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(sendInserts.map((write) => write.value.attempt)).toEqual([1, 2]);
+    expect(sendInserts.map((write) => write.value.attempt)).toEqual([1]);
     expect(sendInserts[0].value).toMatchObject({
       flow_run_id: "run-1",
       flow_version_id: "version-7",
@@ -724,13 +1013,6 @@ describe("node execution policy in the flow engine", () => {
             status: "error",
             duration_ms: expect.any(Number),
             error: expect.objectContaining({ message: "temporary" }),
-          }),
-        }),
-        expect.objectContaining({
-          value: expect.objectContaining({
-            status: "completed",
-            duration_ms: expect.any(Number),
-            outputs: { whatsapp_message_id: "wamid-1" },
           }),
         }),
       ]),
@@ -950,6 +1232,63 @@ describe("node execution policy in the flow engine", () => {
 });
 
 describe("reprompt execution policy", () => {
+  it("recovers a committed collect reprompt without sending it twice", async () => {
+    h.sendText.mockImplementation(
+      async (args: {
+        onRemoteCommitted?: (result: {
+          whatsapp_message_id: string;
+        }) => Promise<void>;
+      }) => {
+        const result = { whatsapp_message_id: "wamid-reprompt-once" };
+        await args.onRemoteCommitted?.(result);
+        throw new CommittedSideEffectError("crash after remote commit", {
+          externalReference: result.whatsapp_message_id,
+          persistenceStage: "simulated_post_commit_crash",
+        });
+      },
+    );
+    const resumedRun = run({
+      status: "resuming",
+      current_node_key: "input",
+      continuation_id: "40000000-0000-4000-8000-000000000001",
+      continuation_phase: "running",
+    });
+    const { db, httpEffect } = fakeDb();
+    const nodes = new Map(
+      [
+        node("input", "collect_input", {
+          prompt_text: "Code?",
+          var_key: "code",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await expect(
+      handleReplyForActiveRun(
+        db as never,
+        resumedRun,
+        { kind: "text", text: "", meta_message_id: "invalid-1" },
+        nodes,
+        fallbackPolicy,
+      ),
+    ).rejects.toBeInstanceOf(CommittedSideEffectError);
+    expect(httpEffect.status).toBe("remote_committed");
+
+    const recovered = await handleReplyForActiveRun(
+      db as never,
+      resumedRun,
+      { kind: "text", text: "", meta_message_id: "invalid-1" },
+      nodes,
+      fallbackPolicy,
+    );
+
+    expect(recovered.outcome).toBe("fallback_fired");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(httpEffect.status).toBe("completed");
+  });
+
   const fallbackPolicy = {
     on_unknown_reply: "reprompt" as const,
     max_reprompts: 2,
@@ -1033,7 +1372,7 @@ describe("reprompt execution policy", () => {
     expect(activeRun.vars).toEqual({ code: "ABC-12" });
   });
 
-  it("retries a failed reprompt and increments reprompt_count once after success", async () => {
+  it("does not retry an ambiguous reprompt", async () => {
     h.sendButtons
       .mockRejectedValueOnce(new Error("temporary"))
       .mockResolvedValueOnce({ whatsapp_message_id: "wamid-reprompt" });
@@ -1049,8 +1388,8 @@ describe("reprompt execution policy", () => {
       fallbackPolicy,
     );
 
-    expect(result.outcome).toBe("fallback_fired");
-    expect(h.sendButtons).toHaveBeenCalledTimes(2);
+    expect(result.outcome).toBe("completed");
+    expect(h.sendButtons).toHaveBeenCalledTimes(1);
     expect(
       writes.filter(
         (write) =>
@@ -1058,10 +1397,10 @@ describe("reprompt execution policy", () => {
           write.kind === "update" &&
           write.value.reprompt_count === 1,
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
-  it("takes an exhausted reprompt error branch without failing or incrementing the reprompt count", async () => {
+  it("requires reconciliation instead of branching an ambiguous reprompt", async () => {
     h.sendButtons.mockRejectedValue(new Error("Z-API unavailable"));
     const { db, writes } = fakeDb();
 
@@ -1084,7 +1423,7 @@ describe("reprompt execution policy", () => {
           write.kind === "update" &&
           write.value.status === "failed",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       writes.some(
         (write) =>
@@ -1171,7 +1510,7 @@ describe("reprompt execution policy", () => {
     expect(signals[0].aborted).toBe(true);
   });
 
-  it("writes one reprompt execution record for each attempt", async () => {
+  it("writes only one execution record for an external reprompt", async () => {
     h.sendButtons
       .mockRejectedValueOnce(new Error("temporary"))
       .mockResolvedValueOnce({ whatsapp_message_id: "wamid-reprompt" });
@@ -1196,6 +1535,6 @@ describe("reprompt execution policy", () => {
             write.value.node_key === "menu",
         )
         .map((write) => write.value.attempt),
-    ).toEqual([1, 2]);
+    ).toEqual([1]);
   });
 });

@@ -324,6 +324,23 @@ export interface FlowNodeExecutionRow {
   created_at: string;
 }
 
+export type FlowNodeEffectStatus =
+  "reserved" | "remote_committed" | "completed" | "ambiguous";
+
+export interface FlowNodeEffectRow {
+  id: string;
+  flow_run_id: string;
+  flow_version_id: string;
+  visit_id: string;
+  node_key: string;
+  effect_kind: string;
+  operation_id: string;
+  invocation_token: string;
+  status: FlowNodeEffectStatus;
+  result: unknown;
+  external_reference: string | null;
+}
+
 // ============================================================
 // Fallback policy (matches flows.fallback_policy JSONB)
 // ============================================================

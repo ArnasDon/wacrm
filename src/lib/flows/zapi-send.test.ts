@@ -33,7 +33,10 @@ import {
   engineSendText,
 } from './zapi-send';
 
-function fakeDb(failAt: 'message_insert' | 'conversation_update') {
+function fakeDb(
+  failAt?: 'message_insert' | 'conversation_update',
+  events: string[] = []
+) {
   return {
     from(table: string) {
       if (table === 'contacts') {
@@ -61,12 +64,15 @@ function fakeDb(failAt: 'message_insert' | 'conversation_update') {
       }
       if (table === 'messages') {
         return {
-          insert: async () => ({
-            error:
-              failAt === 'message_insert'
-                ? { message: 'messages unavailable' }
-                : null,
-          }),
+          insert: async () => {
+            events.push('message_insert')
+            return {
+              error:
+                failAt === 'message_insert'
+                  ? { message: 'messages unavailable' }
+                  : null,
+            }
+          },
         };
       }
       if (table === 'conversations') {
@@ -100,6 +106,22 @@ beforeEach(() => {
 });
 
 describe('committed Z-API side effects', () => {
+  it('reports the remote boundary before local persistence', async () => {
+    const events: string[] = []
+    h.supabaseAdmin.mockReturnValue(fakeDb(undefined, events))
+
+    await engineSendText({
+      ...commonArgs,
+      text: 'Hello',
+      onRemoteCommitted: async (result) => {
+        expect(result.whatsapp_message_id).toBe('wamid-committed')
+        events.push('remote_committed')
+      },
+    })
+
+    expect(events).toEqual(['remote_committed', 'message_insert'])
+  })
+
   it.each([
     {
       label: 'text',

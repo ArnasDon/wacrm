@@ -696,48 +696,66 @@ REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO service_role;
 
--- An HTTP visit reserves one stable operation id. Once a response is recorded
--- as remote_committed, recovery reuses it and never invokes the remote visit.
-CREATE TABLE IF NOT EXISTS flow_http_effects (
+-- Every external effect reserves one stable operation id before invocation.
+-- A different worker finding a reserved visit must mark it ambiguous and stop:
+-- providers are not assumed to support idempotency. Once remote_committed,
+-- recovery reuses the recorded result and never invokes the provider again.
+CREATE TABLE IF NOT EXISTS flow_node_effects (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
   flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
   visit_id UUID NOT NULL,
   node_key TEXT NOT NULL,
+  effect_kind TEXT NOT NULL,
   operation_id UUID NOT NULL DEFAULT uuid_generate_v4(),
+  invocation_token UUID NOT NULL,
   status TEXT NOT NULL DEFAULT 'reserved'
-    CHECK (status IN ('reserved', 'remote_committed', 'completed')),
-  response JSONB,
+    CHECK (status IN ('reserved', 'remote_committed', 'completed', 'ambiguous')),
+  result JSONB,
+  external_reference TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   remote_committed_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
+  ambiguous_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (flow_run_id, visit_id, node_key)
+  UNIQUE (flow_run_id, visit_id, node_key, effect_kind)
 );
 
-ALTER TABLE flow_http_effects ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS flow_http_effects_select ON flow_http_effects;
-CREATE POLICY flow_http_effects_select ON flow_http_effects FOR SELECT
+ALTER TABLE flow_node_effects ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS flow_node_effects_select ON flow_node_effects;
+CREATE POLICY flow_node_effects_select ON flow_node_effects FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM flow_runs run
-      WHERE run.id = flow_http_effects.flow_run_id
+      WHERE run.id = flow_node_effects.flow_run_id
         AND is_account_member(run.account_id, 'viewer')
     )
   );
 
-CREATE OR REPLACE FUNCTION reserve_flow_http_effect(
+CREATE OR REPLACE FUNCTION reserve_flow_node_effect(
   p_run_id UUID,
   p_flow_version_id UUID,
   p_node_key TEXT,
-  p_visit_id UUID
+  p_visit_id UUID,
+  p_effect_kind TEXT,
+  p_invocation_token UUID
 )
-RETURNS SETOF flow_http_effects
+RETURNS TABLE (
+  id UUID,
+  operation_id UUID,
+  status TEXT,
+  result JSONB,
+  external_reference TEXT,
+  is_owner BOOLEAN
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  IF NULLIF(BTRIM(p_effect_kind), '') IS NULL THEN
+    RETURN;
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM flow_runs
     WHERE id = p_run_id
@@ -748,39 +766,52 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO flow_http_effects (
-    flow_run_id, flow_version_id, visit_id, node_key
+  INSERT INTO flow_node_effects (
+    flow_run_id, flow_version_id, visit_id, node_key, effect_kind,
+    invocation_token
   )
-  VALUES (p_run_id, p_flow_version_id, p_visit_id, p_node_key)
-  ON CONFLICT (flow_run_id, visit_id, node_key) DO NOTHING;
+  VALUES (
+    p_run_id, p_flow_version_id, p_visit_id, p_node_key, p_effect_kind,
+    p_invocation_token
+  )
+  ON CONFLICT (flow_run_id, visit_id, node_key, effect_kind) DO NOTHING;
 
   RETURN QUERY
-  SELECT effect.*
-  FROM flow_http_effects effect
+  SELECT
+    effect.id,
+    effect.operation_id,
+    effect.status,
+    effect.result,
+    effect.external_reference,
+    effect.invocation_token = p_invocation_token
+  FROM flow_node_effects effect
   WHERE effect.flow_run_id = p_run_id
     AND effect.visit_id = p_visit_id
-    AND effect.node_key = p_node_key;
+    AND effect.node_key = p_node_key
+    AND effect.effect_kind = p_effect_kind;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) FROM authenticated;
-GRANT EXECUTE ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) TO service_role;
+REVOKE ALL ON FUNCTION reserve_flow_node_effect(UUID, UUID, TEXT, UUID, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION reserve_flow_node_effect(UUID, UUID, TEXT, UUID, TEXT, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION reserve_flow_node_effect(UUID, UUID, TEXT, UUID, TEXT, UUID) TO service_role;
 
-CREATE OR REPLACE FUNCTION mark_flow_http_effect_committed(
+CREATE OR REPLACE FUNCTION mark_flow_node_effect_committed(
   p_effect_id UUID,
   p_operation_id UUID,
-  p_response JSONB
+  p_result JSONB,
+  p_external_reference TEXT DEFAULT NULL
 )
-RETURNS SETOF flow_http_effects
+RETURNS SETOF flow_node_effects
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  UPDATE flow_http_effects
+  UPDATE flow_node_effects
   SET status = 'remote_committed',
-      response = p_response,
+      result = p_result,
+      external_reference = LEFT(p_external_reference, 500),
       remote_committed_at = COALESCE(remote_committed_at, NOW()),
       updated_at = NOW()
   WHERE id = p_effect_id
@@ -789,18 +820,18 @@ BEGIN
 
   RETURN QUERY
   SELECT effect.*
-  FROM flow_http_effects effect
+  FROM flow_node_effects effect
   WHERE effect.id = p_effect_id
     AND effect.operation_id = p_operation_id
     AND effect.status IN ('remote_committed', 'completed');
 END;
 $$;
 
-REVOKE ALL ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) FROM PUBLIC;
-REVOKE ALL ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) FROM authenticated;
-GRANT EXECUTE ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) TO service_role;
+REVOKE ALL ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_node_effect_committed(UUID, UUID, JSONB, TEXT) TO service_role;
 
-CREATE OR REPLACE FUNCTION complete_flow_http_effect(
+CREATE OR REPLACE FUNCTION mark_flow_node_effect_ambiguous(
   p_effect_id UUID,
   p_operation_id UUID
 )
@@ -810,7 +841,32 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  UPDATE flow_http_effects
+  UPDATE flow_node_effects
+  SET status = 'ambiguous',
+      ambiguous_at = COALESCE(ambiguous_at, NOW()),
+      updated_at = NOW()
+  WHERE id = p_effect_id
+    AND operation_id = p_operation_id
+    AND status IN ('reserved', 'ambiguous');
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_node_effect_ambiguous(UUID, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION complete_flow_node_effect(
+  p_effect_id UUID,
+  p_operation_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE flow_node_effects
   SET status = 'completed',
       completed_at = COALESCE(completed_at, NOW()),
       updated_at = NOW()
@@ -821,6 +877,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION complete_flow_http_effect(UUID, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION complete_flow_http_effect(UUID, UUID) FROM authenticated;
-GRANT EXECUTE ON FUNCTION complete_flow_http_effect(UUID, UUID) TO service_role;
+REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION complete_flow_node_effect(UUID, UUID) TO service_role;

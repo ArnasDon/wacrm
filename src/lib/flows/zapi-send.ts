@@ -4,7 +4,7 @@ import { sanitizePhone, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
 import { CommittedSideEffectError, NonRetryableExecutionError } from './execution-policy'
 
-interface CommittedOutboundPersistence {
+export interface CommittedOutboundPersistence {
   conversationId: string
   messageId: string
   contentType: 'text' | 'image' | 'video' | 'document' | 'interactive'
@@ -12,7 +12,7 @@ interface CommittedOutboundPersistence {
   conversationPreview: string
 }
 
-async function persistCommittedOutbound(
+export async function persistCommittedOutbound(
   db: ReturnType<typeof supabaseAdmin>,
   outbound: CommittedOutboundPersistence
 ): Promise<void> {
@@ -26,7 +26,18 @@ async function persistCommittedOutbound(
       message_id: outbound.messageId,
       status: 'sent',
     })
-    if (messageError) throw messageError
+    if (messageError) {
+      if ((messageError as { code?: string }).code !== '23505') {
+        throw messageError
+      }
+      const { data: existing, error: existingError } = await db
+        .from('messages')
+        .select('id')
+        .eq('message_id', outbound.messageId)
+        .eq('conversation_id', outbound.conversationId)
+        .maybeSingle()
+      if (existingError || !existing) throw messageError
+    }
 
     persistenceStage = 'conversation_update'
     const now = new Date().toISOString()
@@ -48,6 +59,10 @@ async function persistCommittedOutbound(
   }
 }
 
+type RemoteCommittedCallback = (result: {
+  whatsapp_message_id: string
+}) => Promise<void>
+
 interface SendTextEngineArgs {
   accountId: string
   userId: string
@@ -55,6 +70,7 @@ interface SendTextEngineArgs {
   contactId: string
   text: string
   signal?: AbortSignal
+  onRemoteCommitted?: RemoteCommittedCallback
 }
 
 export async function engineSendText(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
@@ -96,6 +112,7 @@ export async function engineSendText(args: SendTextEngineArgs): Promise<{ whatsa
     signal: args.signal,
   })
   const waMessageId = result.messageId
+  await args.onRemoteCommitted?.({ whatsapp_message_id: waMessageId })
 
   await persistCommittedOutbound(db, {
     conversationId: args.conversationId,
@@ -118,6 +135,7 @@ interface SendMediaEngineArgs {
   caption?: string
   filename?: string
   signal?: AbortSignal
+  onRemoteCommitted?: RemoteCommittedCallback
 }
 
 export async function engineSendMedia(args: SendMediaEngineArgs): Promise<{ whatsapp_message_id: string }> {
@@ -163,6 +181,7 @@ export async function engineSendMedia(args: SendMediaEngineArgs): Promise<{ what
     signal: args.signal,
   } as Parameters<typeof sendFn>[0])
   const waMessageId = result.messageId
+  await args.onRemoteCommitted?.({ whatsapp_message_id: waMessageId })
 
   const preview = args.caption?.trim() || `[${args.kind}]`
   await persistCommittedOutbound(db, {
@@ -202,6 +221,7 @@ interface SendInteractiveButtonsEngineArgs {
   headerText?: string
   footerText?: string
   signal?: AbortSignal
+  onRemoteCommitted?: RemoteCommittedCallback
 }
 
 interface SendInteractiveListEngineArgs {
@@ -215,6 +235,7 @@ interface SendInteractiveListEngineArgs {
   headerText?: string
   footerText?: string
   signal?: AbortSignal
+  onRemoteCommitted?: RemoteCommittedCallback
 }
 
 function buttonsToText(
@@ -274,6 +295,7 @@ interface SendInteractiveArgs {
   text: string
   originalBody: string
   signal?: AbortSignal
+  onRemoteCommitted?: RemoteCommittedCallback
 }
 
 async function engineSendInteractive(args: SendInteractiveArgs): Promise<{ whatsapp_message_id: string }> {
@@ -315,6 +337,7 @@ async function engineSendInteractive(args: SendInteractiveArgs): Promise<{ whats
     signal: args.signal,
   })
   const waMessageId = result.messageId
+  await args.onRemoteCommitted?.({ whatsapp_message_id: waMessageId })
 
   await persistCommittedOutbound(db, {
     conversationId: args.conversationId,

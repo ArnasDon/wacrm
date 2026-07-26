@@ -23,9 +23,10 @@ describe("migration 049 durable waits", () => {
       "complete_flow_wait_continuation",
       "ack_flow_wait_resume",
       "advance_flow_run_cursor",
-      "reserve_flow_http_effect",
-      "mark_flow_http_effect_committed",
-      "complete_flow_http_effect",
+      "reserve_flow_node_effect",
+      "mark_flow_node_effect_committed",
+      "mark_flow_node_effect_ambiguous",
+      "complete_flow_node_effect",
     ]) {
       expect(sql).toContain(`FUNCTION ${name}`);
       expect(sql).toMatch(
@@ -81,17 +82,24 @@ describe("migration 049 durable waits", () => {
     expect(sql).not.toMatch(/FUNCTION\s+resume_flow_wait\s*\(/i);
   });
 
-  it("uses a stable per-visit HTTP effect ledger and commits before completion", () => {
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS flow_http_effects");
-    expect(sql).toContain("UNIQUE (flow_run_id, visit_id, node_key)");
+  it("uses a stable per-visit effect ledger with fail-safe ambiguity", () => {
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS flow_node_effects");
+    expect(sql).toContain(
+      "UNIQUE (flow_run_id, visit_id, node_key, effect_kind)",
+    );
+    expect(sql).toContain("'ambiguous'");
+    expect(sql).toContain("invocation_token");
     expect(sql).toMatch(
-      /FUNCTION\s+reserve_flow_http_effect[\s\S]+?current_visit_id\s*=\s*p_visit_id/i,
+      /FUNCTION\s+reserve_flow_node_effect[\s\S]+?current_visit_id\s*=\s*p_visit_id[\s\S]+?effect\.invocation_token\s*=\s*p_invocation_token/i,
     );
     expect(sql).toMatch(
-      /FUNCTION\s+mark_flow_http_effect_committed[\s\S]+?status\s*=\s*'remote_committed'[\s\S]+?response\s*=\s*p_response/i,
+      /FUNCTION\s+mark_flow_node_effect_committed[\s\S]+?status\s*=\s*'remote_committed'[\s\S]+?result\s*=\s*p_result/i,
     );
     expect(sql).toMatch(
-      /FUNCTION\s+complete_flow_http_effect[\s\S]+?status\s*=\s*'completed'/i,
+      /FUNCTION\s+mark_flow_node_effect_ambiguous[\s\S]+?status\s*=\s*'ambiguous'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+complete_flow_node_effect[\s\S]+?status\s*=\s*'completed'/i,
     );
   });
 });

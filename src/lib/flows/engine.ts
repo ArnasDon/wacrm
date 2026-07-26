@@ -38,6 +38,7 @@ import {
   engineSendInteractiveList,
   engineSendMedia,
   engineSendText,
+  persistCommittedOutbound,
 } from "./zapi-send";
 import { decideFallback } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
@@ -48,6 +49,7 @@ import {
   type DispatchInboundInput,
   type DispatchInboundResult,
   type FlowNodeRow,
+  type FlowNodeEffectRow,
   type FlowRow,
   type FlowRunRow,
   type FlowFallbackPolicy,
@@ -489,19 +491,40 @@ async function finishNodeExecutionRecord(
 type PolicyNodeResult<T> =
   { ok: true; value: T } | { ok: false; nextNodeKey?: string };
 
+function committedSideEffectCause(
+  error: unknown,
+): CommittedSideEffectError | null {
+  if (error instanceof CommittedSideEffectError) return error;
+  if (error instanceof Error && "cause" in error && error.cause !== undefined) {
+    return committedSideEffectCause(error.cause);
+  }
+  return null;
+}
+
 async function executePolicyNode<T>(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
   globalPolicy: PartialNodeExecutionPolicy | undefined,
   operation: (signal: AbortSignal, operationId: string) => Promise<T>,
-  options: { operationId?: string } = {},
+  options: {
+    operationId?: string;
+    forceSingleAttempt?: boolean;
+    persistErrorTransition?: boolean;
+    suppressErrorPolicy?: boolean;
+  } = {},
 ): Promise<PolicyNodeResult<T>> {
   // Z-API executors consume this signal all the way through fetch. Supabase
   // query builders and tag helpers do not currently expose AbortSignal; a
   // timeout is therefore non-retryable so unabortable late completion is
   // never followed by an automatic duplicate attempt.
-  const policy = resolveNodeExecutionPolicy(globalPolicy, node.config);
+  const resolvedPolicy = resolveNodeExecutionPolicy(globalPolicy, node.config);
+  const policy = options.forceSingleAttempt
+    ? {
+        ...resolvedPolicy,
+        retry: { ...resolvedPolicy.retry, max_attempts: 1 },
+      }
+    : resolvedPolicy;
   const operationId = options.operationId ?? crypto.randomUUID();
   const executionIds = new Map<number, string | null>();
   try {
@@ -549,12 +572,18 @@ async function executePolicyNode<T>(
     return { ok: true, value: result.value };
   } catch (error) {
     if (isCommittedSideEffectError(error)) {
+      if (run.status === "resuming") {
+        throw committedSideEffectCause(error) ?? error;
+      }
       await endRun(
         db,
         run.id,
         "failed",
         "side_effect_committed_local_persistence_failed",
       );
+      return { ok: false };
+    }
+    if (options.suppressErrorPolicy) {
       return { ok: false };
     }
     const normalSuccessNextNodeKey = getDeterministicSuccessEdgeTarget(
@@ -589,84 +618,204 @@ async function executePolicyNode<T>(
       error_action: policy.on_error,
       advancing_to: resolution.nextNodeKey,
     });
+    if (options.persistErrorTransition !== false) {
+      try {
+        await persistDurableCursor(db, run, resolution.nextNodeKey);
+      } catch (cursorError) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "error_transition_cursor_persist_failed",
+          error: sanitizeExecutionError(cursorError),
+        });
+        await endRun(
+          db,
+          run.id,
+          "failed",
+          "error_transition_cursor_persist_failed",
+        );
+        return { ok: false };
+      }
+    }
     return { ok: false, nextNodeKey: resolution.nextNodeKey };
   }
 }
 
-interface DurableHttpEffect {
-  id: string;
-  operation_id: string;
-  status: "reserved" | "remote_committed" | "completed";
-  response: HttpRequestOutput | null;
+type DurableNodeEffect = Pick<
+  FlowNodeEffectRow,
+  "id" | "operation_id" | "status" | "result" | "external_reference"
+> & { is_owner: boolean };
+
+function sanitizeExternalReference(value: string | undefined): string | null {
+  if (!value) return null;
+  return value.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 500);
 }
 
-async function reserveHttpEffect(
+async function reserveNodeEffect(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
-): Promise<DurableHttpEffect> {
+  effectKind: string,
+): Promise<DurableNodeEffect> {
   if (!run.current_visit_id) {
     throw new Error("flow run is missing a durable visit identity");
   }
-  const { data, error } = await db.rpc("reserve_flow_http_effect", {
+  const { data, error } = await db.rpc("reserve_flow_node_effect", {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
     p_node_key: node.node_key,
     p_visit_id: run.current_visit_id,
+    p_effect_kind: effectKind,
+    p_invocation_token: crypto.randomUUID(),
   });
   const effect = Array.isArray(data)
-    ? (data[0] as DurableHttpEffect | undefined)
+    ? (data[0] as DurableNodeEffect | undefined)
     : undefined;
   if (error || !effect) {
-    throw error ?? new Error("HTTP effect reservation was not returned");
+    throw error ?? new Error("node effect reservation was not returned");
   }
   return effect;
 }
 
-async function markHttpEffectCommitted(
+async function markNodeEffectCommitted<T>(
   db: AdminClient,
-  effect: DurableHttpEffect,
-  response: HttpRequestOutput,
-): Promise<DurableHttpEffect> {
-  const { data, error } = await db.rpc("mark_flow_http_effect_committed", {
+  effect: DurableNodeEffect,
+  result: T,
+  externalReference?: string,
+): Promise<DurableNodeEffect> {
+  const { data, error } = await db.rpc("mark_flow_node_effect_committed", {
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
-    p_response: response,
+    p_result: result,
+    p_external_reference: sanitizeExternalReference(externalReference),
   });
   const committed = Array.isArray(data)
-    ? (data[0] as DurableHttpEffect | undefined)
+    ? (data[0] as DurableNodeEffect | undefined)
     : undefined;
   if (error || !committed) {
     throw new CommittedSideEffectError(
-      "HTTP response was received but its durable ledger could not be committed",
+      "External effect completed but its durable ledger could not be committed",
       {
-        externalReference: effect.operation_id,
-        persistenceStage: "http_effect_ledger_commit",
+        externalReference: externalReference ?? effect.operation_id,
+        persistenceStage: "node_effect_ledger_commit",
         cause: error,
       },
     );
   }
-  return committed;
+  return { ...committed, is_owner: effect.is_owner };
 }
 
-async function completeHttpEffect(
+async function completeNodeEffect(
   db: AdminClient,
-  effect: DurableHttpEffect,
+  effect: DurableNodeEffect,
 ): Promise<void> {
-  const { data, error } = await db.rpc("complete_flow_http_effect", {
+  const { data, error } = await db.rpc("complete_flow_node_effect", {
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
   });
   if (error || data !== true) {
     throw new CommittedSideEffectError(
-      "HTTP effect completed remotely but its local ledger was not finalized",
+      "External effect completed remotely but its ledger was not finalized",
       {
-        externalReference: effect.operation_id,
-        persistenceStage: "http_effect_ledger_complete",
+        externalReference: effect.external_reference ?? effect.operation_id,
+        persistenceStage: "node_effect_ledger_complete",
         cause: error,
       },
     );
   }
+}
+
+async function failAmbiguousNodeEffect(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  effect: DurableNodeEffect,
+): Promise<void> {
+  const { error } = await db.rpc("mark_flow_node_effect_ambiguous", {
+    p_effect_id: effect.id,
+    p_operation_id: effect.operation_id,
+  });
+  await logEvent(db, run.id, "error", node.node_key, {
+    reason: "external_effect_needs_reconciliation",
+    operation_id: effect.operation_id,
+    ledger_update_failed: error ? sanitizeExecutionError(error) : undefined,
+  });
+  await endRun(db, run.id, "failed", "external_effect_needs_reconciliation");
+}
+
+type DurableEffectResult<T> =
+  { ok: true; value: T; effect: DurableNodeEffect } | { ok: false };
+
+async function executeDurableNodeEffect<T>(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  globalPolicy: PartialNodeExecutionPolicy | undefined,
+  effectKind: string,
+  operation: (
+    signal: AbortSignal,
+    operationId: string,
+    remoteCommitted: (result: T, externalReference?: string) => Promise<void>,
+  ) => Promise<T>,
+): Promise<DurableEffectResult<T>> {
+  let effect: DurableNodeEffect;
+  try {
+    effect = await reserveNodeEffect(db, run, node, effectKind);
+  } catch (error) {
+    await logEvent(db, run.id, "error", node.node_key, {
+      reason: "node_effect_reservation_failed",
+      error: sanitizeExecutionError(error),
+    });
+    await endRun(db, run.id, "failed", "node_effect_reservation_failed");
+    return { ok: false };
+  }
+
+  if (effect.status === "ambiguous") {
+    await failAmbiguousNodeEffect(db, run, node, effect);
+    return { ok: false };
+  }
+  if (effect.status === "remote_committed" || effect.status === "completed") {
+    return {
+      ok: true,
+      value: effect.result as T,
+      effect,
+    };
+  }
+  if (!effect.is_owner) {
+    await failAmbiguousNodeEffect(db, run, node, effect);
+    return { ok: false };
+  }
+
+  let committedEffect: DurableNodeEffect | null = null;
+  const executed = await executePolicyNode<T>(
+    db,
+    run,
+    node,
+    globalPolicy,
+    (signal, operationId) =>
+      operation(signal, operationId, async (result, reference) => {
+        committedEffect = await markNodeEffectCommitted(
+          db,
+          effect,
+          result,
+          reference,
+        );
+      }),
+    {
+      operationId: effect.operation_id,
+      forceSingleAttempt: true,
+      persistErrorTransition: false,
+      suppressErrorPolicy: true,
+    },
+  );
+  if (!executed.ok) {
+    if (!committedEffect) {
+      await failAmbiguousNodeEffect(db, run, node, effect);
+    }
+    return { ok: false };
+  }
+  if (!committedEffect) {
+    committedEffect = await markNodeEffectCommitted(db, effect, executed.value);
+  }
+  return { ok: true, value: executed.value, effect: committedEffect };
 }
 
 async function persistDurableCursor(
@@ -702,7 +851,16 @@ async function persistDurableCursor(
   run.continuation_step = advanced.continuation_step;
 }
 
-async function stopAfterCommittedHttpPersistenceFailure(
+async function persistTransition(
+  db: AdminClient,
+  run: FlowRunRow,
+  nextNodeKey: string,
+): Promise<string> {
+  await persistDurableCursor(db, run, nextNodeKey);
+  return nextNodeKey;
+}
+
+async function stopAfterCommittedEffectPersistenceFailure(
   db: AdminClient,
   run: FlowRunRow,
   error: unknown,
@@ -716,6 +874,26 @@ async function stopAfterCommittedHttpPersistenceFailure(
     "failed",
     "side_effect_committed_local_persistence_failed",
   );
+}
+
+async function finalizeDurableNodeEffect(
+  db: AdminClient,
+  run: FlowRunRow,
+  effect: DurableNodeEffect,
+  localPersistence: () => Promise<void>,
+  nextNodeKey?: string,
+): Promise<boolean> {
+  try {
+    await localPersistence();
+    if (nextNodeKey) {
+      await persistTransition(db, run, nextNodeKey);
+    }
+    await completeNodeEffect(db, effect);
+    return true;
+  } catch (error) {
+    await stopAfterCommittedEffectPersistenceFailure(db, run, error);
+    return false;
+  }
 }
 
 // ============================================================
@@ -758,40 +936,61 @@ async function persistPromptAfterCommittedSend(
   }
 }
 
-async function advanceAfterCommittedSend(
+async function persistOutboundForNode(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
   whatsappMessageId: string,
 ): Promise<void> {
-  try {
-    const advanced = await advanceCurrentNodeKey(
-      db,
-      run.id,
-      run.current_node_key,
-      node.node_key,
-    );
-    if (!advanced) {
-      await logEvent(db, run.id, "error", node.node_key, {
-        reason: "lost_race_during_advance",
-      });
-    }
-  } catch (error) {
-    throw new CommittedSideEffectError(
-      "WhatsApp message was sent but the flow run pointer could not advance",
-      {
-        externalReference: whatsappMessageId,
-        persistenceStage: "flow_run_node_advance",
-        cause: error,
-      },
-    );
+  if (node.node_type === "send_media") {
+    const cfg = node.config as unknown as SendMediaNodeConfig;
+    const caption = cfg.caption
+      ? interpolateVars(cfg.caption, run.vars)
+      : undefined;
+    await persistCommittedOutbound(db, {
+      conversationId: run.conversation_id!,
+      messageId: whatsappMessageId,
+      contentType: cfg.media_type,
+      contentText: caption ?? null,
+      conversationPreview: caption?.trim() || `[${cfg.media_type}]`,
+    });
+    return;
   }
+  const interactive =
+    node.node_type === "send_buttons" || node.node_type === "send_list";
+  const text =
+    node.node_type === "send_message"
+      ? interpolateVars(
+          (node.config as unknown as SendMessageNodeConfig).text,
+          run.vars,
+        )
+      : node.node_type === "collect_input"
+        ? interpolateVars(
+            (node.config as unknown as CollectInputNodeConfig).prompt_text,
+            run.vars,
+          )
+        : String(node.config.text ?? "");
+  await persistCommittedOutbound(db, {
+    conversationId: run.conversation_id!,
+    messageId: whatsappMessageId,
+    contentType: interactive ? "interactive" : "text",
+    contentText: text,
+    conversationPreview: text,
+  });
 }
 
 async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  remoteCommitted?: (
+    result: {
+      outcome: "advanced";
+      node_key: string;
+      whatsapp_message_id: string;
+    },
+    externalReference?: string,
+  ) => Promise<void>,
   signal?: AbortSignal,
 ): Promise<{
   outcome: "advanced";
@@ -809,12 +1008,18 @@ async function sendButtonsAndSuspend(
     footerText: cfg.footer_text,
     buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
     signal,
+    onRemoteCommitted: remoteCommitted
+      ? (result) =>
+          remoteCommitted(
+            {
+              outcome: "advanced",
+              node_key: node.node_key,
+              whatsapp_message_id: result.whatsapp_message_id,
+            },
+            result.whatsapp_message_id,
+          )
+      : undefined,
   });
-  await logEvent(db, run.id, "message_sent", node.node_key, {
-    node_type: "send_buttons",
-    whatsapp_message_id,
-  });
-  await persistPromptAfterCommittedSend(db, run, whatsapp_message_id);
   return {
     outcome: "advanced",
     node_key: node.node_key,
@@ -826,6 +1031,14 @@ async function sendListAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  remoteCommitted?: (
+    result: {
+      outcome: "advanced";
+      node_key: string;
+      whatsapp_message_id: string;
+    },
+    externalReference?: string,
+  ) => Promise<void>,
   signal?: AbortSignal,
 ): Promise<{
   outcome: "advanced";
@@ -851,12 +1064,18 @@ async function sendListAndSuspend(
       })),
     })),
     signal,
+    onRemoteCommitted: remoteCommitted
+      ? (result) =>
+          remoteCommitted(
+            {
+              outcome: "advanced",
+              node_key: node.node_key,
+              whatsapp_message_id: result.whatsapp_message_id,
+            },
+            result.whatsapp_message_id,
+          )
+      : undefined,
   });
-  await logEvent(db, run.id, "message_sent", node.node_key, {
-    node_type: "send_list",
-    whatsapp_message_id,
-  });
-  await persistPromptAfterCommittedSend(db, run, whatsapp_message_id);
   return {
     outcome: "advanced",
     node_key: node.node_key,
@@ -1081,79 +1300,112 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
-      await persistDurableCursor(db, run, cfg.next_node_key);
-      currentKey = cfg.next_node_key;
+      currentKey = await persistTransition(db, run, cfg.next_node_key);
       continue;
     }
     if (runtimeHook === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
-      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
-        await executePolicyNode<{ whatsapp_message_id: string }>(
-          db,
-          run,
-          node,
-          globalExecutionPolicy,
-          async (signal) =>
-            engineSendText({
-              accountId: run.account_id,
-              userId: run.user_id,
-              conversationId: run.conversation_id!,
-              contactId: run.contact_id!,
-              text: interpolateVars(cfg.text, run.vars),
-              signal,
-            }),
-        );
+      const executed = await executeDurableNodeEffect<{
+        whatsapp_message_id: string;
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "outbound",
+        async (signal, _operationId, remoteCommitted) =>
+          engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: interpolateVars(cfg.text, run.vars),
+            signal,
+            onRemoteCommitted: (result) =>
+              remoteCommitted(result, result.whatsapp_message_id),
+          }),
+      );
       if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
         return { outcome: "completed" };
       }
-      await logEvent(db, run.id, "message_sent", node.node_key, {
-        node_type: "send_message",
-        whatsapp_message_id: executed.value.whatsapp_message_id,
-      });
-      await persistDurableCursor(db, run, cfg.next_node_key);
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () => {
+            await persistOutboundForNode(
+              db,
+              run,
+              node,
+              executed.value.whatsapp_message_id,
+            );
+            await logEvent(db, run.id, "message_sent", node.node_key, {
+              node_type: "send_message",
+              whatsapp_message_id: executed.value.whatsapp_message_id,
+            });
+          },
+          cfg.next_node_key,
+        ))
+      ) {
+        return { outcome: "completed" };
+      }
       currentKey = cfg.next_node_key;
       continue;
     }
     if (runtimeHook === "send_media") {
       const cfg = node.config as unknown as SendMediaNodeConfig;
-      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
-        await executePolicyNode<{ whatsapp_message_id: string }>(
-          db,
-          run,
-          node,
-          globalExecutionPolicy,
-          async (signal) =>
-            engineSendMedia({
-              accountId: run.account_id,
-              userId: run.user_id,
-              conversationId: run.conversation_id!,
-              contactId: run.contact_id!,
-              kind: cfg.media_type,
-              link: cfg.media_url,
-              caption: cfg.caption
-                ? interpolateVars(cfg.caption, run.vars)
-                : undefined,
-              filename: cfg.filename,
-              signal,
-            }),
-        );
+      const executed = await executeDurableNodeEffect<{
+        whatsapp_message_id: string;
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "outbound",
+        async (signal, _operationId, remoteCommitted) =>
+          engineSendMedia({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            kind: cfg.media_type,
+            link: cfg.media_url,
+            caption: cfg.caption
+              ? interpolateVars(cfg.caption, run.vars)
+              : undefined,
+            filename: cfg.filename,
+            signal,
+            onRemoteCommitted: (result) =>
+              remoteCommitted(result, result.whatsapp_message_id),
+          }),
+      );
       if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
         return { outcome: "completed" };
       }
-      await logEvent(db, run.id, "message_sent", node.node_key, {
-        node_type: "send_media",
-        media_type: cfg.media_type,
-        whatsapp_message_id: executed.value.whatsapp_message_id,
-      });
-      await persistDurableCursor(db, run, cfg.next_node_key);
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () => {
+            await persistOutboundForNode(
+              db,
+              run,
+              node,
+              executed.value.whatsapp_message_id,
+            );
+            await logEvent(db, run.id, "message_sent", node.node_key, {
+              node_type: "send_media",
+              media_type: cfg.media_type,
+              whatsapp_message_id: executed.value.whatsapp_message_id,
+            });
+          },
+          cfg.next_node_key,
+        ))
+      ) {
+        return { outcome: "completed" };
+      }
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -1161,47 +1413,48 @@ export async function advanceFromNodeKey(
       // Send the prompt and suspend. Customer's next TEXT reply will
       // wake us up via handleReplyForActiveRun's collect_input branch.
       const cfg = node.config as unknown as CollectInputNodeConfig;
-      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
-        await executePolicyNode<{ whatsapp_message_id: string }>(
-          db,
-          run,
-          node,
-          globalExecutionPolicy,
-          async (signal) => {
-            const sent = await engineSendText({
-              accountId: run.account_id,
-              userId: run.user_id,
-              conversationId: run.conversation_id!,
-              contactId: run.contact_id!,
-              text: interpolateVars(cfg.prompt_text, run.vars),
-              signal,
-            });
-            await persistPromptAfterCommittedSend(
-              db,
-              run,
-              sent.whatsapp_message_id,
-            );
-            await advanceAfterCommittedSend(
-              db,
-              run,
-              node,
-              sent.whatsapp_message_id,
-            );
-            return sent;
-          },
-        );
+      const executed = await executeDurableNodeEffect<{
+        whatsapp_message_id: string;
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "prompt:initial",
+        async (signal, _operationId, remoteCommitted) =>
+          engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: interpolateVars(cfg.prompt_text, run.vars),
+            signal,
+            onRemoteCommitted: (result) =>
+              remoteCommitted(result, result.whatsapp_message_id),
+          }),
+      );
       if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
         return { outcome: "completed" };
       }
       const { whatsapp_message_id } = executed.value;
-      await logEvent(db, run.id, "message_sent", node.node_key, {
-        node_type: "collect_input",
-        whatsapp_message_id,
-      });
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () => {
+            await persistOutboundForNode(db, run, node, whatsapp_message_id);
+            await persistPromptAfterCommittedSend(db, run, whatsapp_message_id);
+            await logEvent(db, run.id, "message_sent", node.node_key, {
+              node_type: "collect_input",
+              whatsapp_message_id,
+            });
+          },
+          node.node_key,
+        ))
+      ) {
+        return { outcome: "completed" };
+      }
       return { outcome: "advanced" };
     }
     if (runtimeHook === "condition") {
@@ -1223,12 +1476,12 @@ export async function advanceFromNodeKey(
         return { outcome: "completed" };
       }
       const branch: "true" | "false" = executed.value;
-      currentKey = branch === "true" ? cfg.true_next : cfg.false_next;
+      const nextNodeKey = branch === "true" ? cfg.true_next : cfg.false_next;
       await logEvent(db, run.id, "node_entered", node.node_key, {
         condition_result: branch,
-        advancing_to: currentKey,
+        advancing_to: nextNodeKey,
       });
-      await persistDurableCursor(db, run, currentKey);
+      currentKey = await persistTransition(db, run, nextNodeKey);
       continue;
     }
     if (runtimeHook === "switch") {
@@ -1265,11 +1518,10 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
-      currentKey = executed.value;
       await logEvent(db, run.id, "node_entered", node.node_key, {
-        switch_case_next: currentKey,
+        switch_case_next: executed.value,
       });
-      await persistDurableCursor(db, run, currentKey);
+      currentKey = await persistTransition(db, run, executed.value);
       continue;
     }
     if (runtimeHook === "variable_set") {
@@ -1326,118 +1578,95 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
-      await persistDurableCursor(db, run, cfg.next_node_key);
-      currentKey = cfg.next_node_key;
+      currentKey = await persistTransition(db, run, cfg.next_node_key);
       continue;
     }
     if (runtimeHook === "http_request") {
       const cfg = node.config as unknown as HttpRequestConfig & {
         next_node_key: string;
       };
-      let effect: DurableHttpEffect;
-      try {
-        effect = await reserveHttpEffect(db, run, node);
-      } catch (error) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "http_effect_reservation_failed",
-          error: sanitizeExecutionError(error),
-        });
-        await endRun(db, run.id, "failed", "http_effect_reservation_failed");
+      const executed = await executeDurableNodeEffect<HttpRequestOutput>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "http",
+        async (signal, idempotencyKey, remoteCommitted) => {
+          const renderedHeaders = Object.fromEntries(
+            Object.entries(cfg.headers ?? {}).map(([key, value]) => [
+              key,
+              interpolateVars(value, run.vars),
+            ]),
+          );
+          if (
+            !["GET", "DELETE"].includes(cfg.method) &&
+            !Object.keys(renderedHeaders).some(
+              (key) => key.toLowerCase() === "idempotency-key",
+            )
+          ) {
+            renderedHeaders["Idempotency-Key"] = idempotencyKey;
+          }
+          const output = await executeHttpRequest(
+            {
+              method: cfg.method,
+              url: interpolateVars(cfg.url, run.vars),
+              headers: renderedHeaders,
+              body: (() => {
+                const boundRequest = resolveBoundDataInput(
+                  node,
+                  "request",
+                  nodes,
+                  run.vars,
+                );
+                if (boundRequest !== undefined) {
+                  return JSON.stringify(boundRequest);
+                }
+                return cfg.body
+                  ? interpolateVars(cfg.body, run.vars)
+                  : undefined;
+              })(),
+              response_var: cfg.response_var,
+            },
+            { signal },
+          );
+          await remoteCommitted(output, `http:${output.status}`);
+          return output;
+        },
+      );
+      if (!executed.ok) {
         return { outcome: "completed" };
       }
-
-      let output = effect.response;
-      if (effect.status === "reserved" || !output) {
-        const executed: PolicyNodeResult<HttpRequestOutput> =
-          await executePolicyNode<HttpRequestOutput>(
-            db,
-            run,
-            node,
-            globalExecutionPolicy,
-            async (signal, idempotencyKey) => {
-              const renderedHeaders = Object.fromEntries(
-                Object.entries(cfg.headers ?? {}).map(([key, value]) => [
-                  key,
-                  interpolateVars(value, run.vars),
-                ]),
-              );
-              if (
-                !["GET", "DELETE"].includes(cfg.method) &&
-                !Object.keys(renderedHeaders).some(
-                  (key) => key.toLowerCase() === "idempotency-key",
-                )
-              ) {
-                renderedHeaders["Idempotency-Key"] = idempotencyKey;
-              }
-              return executeHttpRequest(
-                {
-                  method: cfg.method,
-                  url: interpolateVars(cfg.url, run.vars),
-                  headers: renderedHeaders,
-                  body: (() => {
-                    const boundRequest = resolveBoundDataInput(
-                      node,
-                      "request",
-                      nodes,
-                      run.vars,
-                    );
-                    if (boundRequest !== undefined) {
-                      return JSON.stringify(boundRequest);
-                    }
-                    return cfg.body
-                      ? interpolateVars(cfg.body, run.vars)
-                      : undefined;
-                  })(),
-                  response_var: cfg.response_var,
-                },
-                { signal },
-              );
-            },
-            { operationId: effect.operation_id },
-          );
-        if (!executed.ok) {
-          if (executed.nextNodeKey) {
-            currentKey = executed.nextNodeKey;
-            continue;
-          }
-          return { outcome: "completed" };
-        }
-        output = executed.value;
-        try {
-          effect = await markHttpEffectCommitted(db, effect, output);
-        } catch (error) {
-          await stopAfterCommittedHttpPersistenceFailure(db, run, error);
-          return { outcome: "completed" };
-        }
-      }
-
+      const output = executed.value;
       if (!output) {
         await endRun(db, run.id, "failed", "http_effect_response_missing");
         return { outcome: "completed" };
       }
       const nextVars = { ...run.vars, [cfg.response_var]: output };
-      const { error: varsError } = await db
-        .from("flow_runs")
-        .update({ vars: nextVars })
-        .eq("id", run.id);
-      if (varsError) {
-        const error = new CommittedSideEffectError(
-          "HTTP response was received but flow variables could not be persisted",
-          {
-            externalReference: effect.operation_id,
-            persistenceStage: "flow_run_vars_update",
-            cause: varsError,
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () => {
+            const { error: varsError } = await db
+              .from("flow_runs")
+              .update({ vars: nextVars })
+              .eq("id", run.id);
+            if (varsError) {
+              throw new CommittedSideEffectError(
+                "HTTP response was received but flow variables could not be persisted",
+                {
+                  externalReference: executed.effect.operation_id,
+                  persistenceStage: "flow_run_vars_update",
+                  cause: varsError,
+                },
+              );
+            }
+            run.vars = nextVars;
           },
-        );
-        await stopAfterCommittedHttpPersistenceFailure(db, run, error);
-        return { outcome: "completed" };
-      }
-      run.vars = nextVars;
-      try {
-        await persistDurableCursor(db, run, cfg.next_node_key);
-        await completeHttpEffect(db, effect);
-      } catch (error) {
-        await stopAfterCommittedHttpPersistenceFailure(db, run, error);
+          cfg.next_node_key,
+        ))
+      ) {
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
@@ -1486,95 +1715,144 @@ export async function advanceFromNodeKey(
     }
     if (runtimeHook === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;
-      const executed: PolicyNodeResult<{
+      const executed = await executeDurableNodeEffect<{
         mode: "add" | "remove";
         tag_id: string;
-      }> = await executePolicyNode<{
-        mode: "add" | "remove";
-        tag_id: string;
-      }>(db, run, node, globalExecutionPolicy, async () => {
-        if (cfg.mode === "add") {
-          await addContactTagAndDispatch({
-            db,
-            accountId: run.account_id,
-            contactId: run.contact_id!,
-            tagId: cfg.tag_id,
-            context: {
-              conversation_id: run.conversation_id ?? undefined,
-              vars: run.vars,
-            },
-          });
-        } else {
-          await removeContactTag(db, {
-            accountId: run.account_id,
-            contactId: run.contact_id!,
-            tagId: cfg.tag_id,
-          });
-        }
-        return { mode: cfg.mode, tag_id: cfg.tag_id };
-      });
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        `tag:${cfg.mode}:${cfg.tag_id}`,
+        async (_signal, _operationId, remoteCommitted) => {
+          if (cfg.mode === "add") {
+            await addContactTagAndDispatch({
+              db,
+              accountId: run.account_id,
+              contactId: run.contact_id!,
+              tagId: cfg.tag_id,
+              context: {
+                conversation_id: run.conversation_id ?? undefined,
+                vars: run.vars,
+              },
+            });
+          } else {
+            await removeContactTag(db, {
+              accountId: run.account_id,
+              contactId: run.contact_id!,
+              tagId: cfg.tag_id,
+            });
+          }
+          const result = { mode: cfg.mode, tag_id: cfg.tag_id };
+          await remoteCommitted(result, `tag:${cfg.tag_id}`);
+          return result;
+        },
+      );
       if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
+        return { outcome: "completed" };
+      }
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () => undefined,
+          cfg.next_node_key,
+        ))
+      ) {
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
       continue;
     }
     if (runtimeHook === "send_buttons") {
-      const executed: PolicyNodeResult<{
+      const executed = await executeDurableNodeEffect<{
         outcome: "advanced";
         node_key: string;
         whatsapp_message_id: string;
-      }> = await executePolicyNode<{
-        outcome: "advanced";
-        node_key: string;
-        whatsapp_message_id: string;
-      }>(db, run, node, globalExecutionPolicy, async (signal) => {
-        const sent = await sendButtonsAndSuspend(db, run, node, signal);
-        await advanceAfterCommittedSend(
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "prompt:initial",
+        async (signal, _operationId, remoteCommitted) =>
+          sendButtonsAndSuspend(db, run, node, remoteCommitted, signal),
+      );
+      if (!executed.ok) {
+        return { outcome: "completed" };
+      }
+      if (
+        !(await finalizeDurableNodeEffect(
           db,
           run,
-          node,
-          sent.whatsapp_message_id,
-        );
-        return sent;
-      });
-      if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
+          executed.effect,
+          async () => {
+            await persistOutboundForNode(
+              db,
+              run,
+              node,
+              executed.value.whatsapp_message_id,
+            );
+            await persistPromptAfterCommittedSend(
+              db,
+              run,
+              executed.value.whatsapp_message_id,
+            );
+            await logEvent(db, run.id, "message_sent", node.node_key, {
+              node_type: "send_buttons",
+              whatsapp_message_id: executed.value.whatsapp_message_id,
+            });
+          },
+          node.node_key,
+        ))
+      ) {
         return { outcome: "completed" };
       }
       return { outcome: "advanced" };
     }
     if (runtimeHook === "send_list") {
-      const executed: PolicyNodeResult<{
+      const executed = await executeDurableNodeEffect<{
         outcome: "advanced";
         node_key: string;
         whatsapp_message_id: string;
-      }> = await executePolicyNode<{
-        outcome: "advanced";
-        node_key: string;
-        whatsapp_message_id: string;
-      }>(db, run, node, globalExecutionPolicy, async (signal) => {
-        const sent = await sendListAndSuspend(db, run, node, signal);
-        await advanceAfterCommittedSend(
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "prompt:initial",
+        async (signal, _operationId, remoteCommitted) =>
+          sendListAndSuspend(db, run, node, remoteCommitted, signal),
+      );
+      if (!executed.ok) {
+        return { outcome: "completed" };
+      }
+      if (
+        !(await finalizeDurableNodeEffect(
           db,
           run,
-          node,
-          sent.whatsapp_message_id,
-        );
-        return sent;
-      });
-      if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
-        }
+          executed.effect,
+          async () => {
+            await persistOutboundForNode(
+              db,
+              run,
+              node,
+              executed.value.whatsapp_message_id,
+            );
+            await persistPromptAfterCommittedSend(
+              db,
+              run,
+              executed.value.whatsapp_message_id,
+            );
+            await logEvent(db, run.id, "message_sent", node.node_key, {
+              node_type: "send_list",
+              whatsapp_message_id: executed.value.whatsapp_message_id,
+            });
+          },
+          node.node_key,
+        ))
+      ) {
         return { outcome: "completed" };
       }
       return { outcome: "advanced" };
@@ -1628,41 +1906,6 @@ export async function advanceFromNodeKey(
   });
   await endRun(db, run.id, "failed", "advance_loop_overflow");
   return { outcome: "completed" };
-}
-
-/**
- * Optimistic UPDATE — only advance current_node_key when it matches
- * the value we read at the top of dispatch. If another webhook beat
- * us, the row's pointer has already moved and our UPDATE returns
- * zero rows; we treat that as a no-op and let the other run continue.
- */
-async function advanceCurrentNodeKey(
-  db: AdminClient,
-  runId: string,
-  expectedOldKey: string | null,
-  newKey: string,
-): Promise<boolean> {
-  // PostgREST: when expectedOldKey is null we can't `.eq` (would match
-  // any row); use `.is('current_node_key', null)` instead.
-  let q = db
-    .from("flow_runs")
-    .update({
-      current_node_key: newKey,
-      last_advanced_at: new Date().toISOString(),
-    })
-    .eq("id", runId)
-    .eq("status", "active");
-  if (expectedOldKey === null) {
-    q = q.is("current_node_key", null);
-  } else {
-    q = q.eq("current_node_key", expectedOldKey);
-  }
-  const { data, error } = await q.select("id");
-  if (error) {
-    console.error("[flows] advanceCurrentNodeKey error:", error.message);
-    throw error;
-  }
-  return Array.isArray(data) && data.length > 0;
 }
 
 // ============================================================
@@ -1892,33 +2135,40 @@ export async function handleReplyForActiveRun(
     // A reprompt is another execution attempt for the current node. Keep the
     // stored counter unchanged unless the prompt was actually sent; exhausted
     // fail_branch/default_value policies advance instead of falsely suspending.
-    let executed: PolicyNodeResult<unknown> | null = null;
+    let executed: DurableEffectResult<{
+      whatsapp_message_id: string;
+    }> | null = null;
     if (currentNode.node_type === "send_buttons") {
-      executed = await executePolicyNode(
+      executed = await executeDurableNodeEffect(
         db,
         run,
         currentNode,
         fallbackPolicy.execution,
-        async (signal) => sendButtonsAndSuspend(db, run, currentNode, signal),
+        `prompt:reprompt:${newReprompts}`,
+        async (signal, _operationId, remoteCommitted) =>
+          sendButtonsAndSuspend(db, run, currentNode, remoteCommitted, signal),
       );
     } else if (currentNode.node_type === "send_list") {
-      executed = await executePolicyNode(
+      executed = await executeDurableNodeEffect(
         db,
         run,
         currentNode,
         fallbackPolicy.execution,
-        async (signal) => sendListAndSuspend(db, run, currentNode, signal),
+        `prompt:reprompt:${newReprompts}`,
+        async (signal, _operationId, remoteCommitted) =>
+          sendListAndSuspend(db, run, currentNode, remoteCommitted, signal),
       );
     } else if (currentNode.node_type === "collect_input") {
       // Customer typed something we couldn't accept (empty after trim,
       // or var_key missing — rare). Re-send the prompt so they try again.
       const cfg = currentNode.config as unknown as CollectInputNodeConfig;
-      executed = await executePolicyNode(
+      executed = await executeDurableNodeEffect(
         db,
         run,
         currentNode,
         fallbackPolicy.execution,
-        async (signal) =>
+        `prompt:reprompt:${newReprompts}`,
+        async (signal, _operationId, remoteCommitted) =>
           engineSendText({
             accountId: run.account_id,
             userId: run.user_id,
@@ -1926,24 +2176,36 @@ export async function handleReplyForActiveRun(
             contactId: run.contact_id!,
             text: interpolateVars(cfg.prompt_text, run.vars),
             signal,
+            onRemoteCommitted: (result) =>
+              remoteCommitted(result, result.whatsapp_message_id),
           }),
       );
     }
     if (executed && !executed.ok) {
-      if (executed.nextNodeKey) {
-        const outcome = await advanceFromNodeKey(
-          db,
-          run,
-          executed.nextNodeKey,
-          nodes,
-          fallbackPolicy.execution,
-        );
-        return {
-          consumed: true,
-          flow_run_id: run.id,
-          outcome: outcome.outcome,
-        };
-      }
+      return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+    }
+    if (
+      executed?.ok &&
+      !(await finalizeDurableNodeEffect(
+        db,
+        run,
+        executed.effect,
+        async () => {
+          await persistOutboundForNode(
+            db,
+            run,
+            currentNode,
+            executed.value.whatsapp_message_id,
+          );
+          await persistPromptAfterCommittedSend(
+            db,
+            run,
+            executed.value.whatsapp_message_id,
+          );
+        },
+        currentNode.node_key,
+      ))
+    ) {
       return { consumed: true, flow_run_id: run.id, outcome: "completed" };
     }
     const { error } = await db

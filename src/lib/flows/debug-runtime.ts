@@ -14,6 +14,10 @@ const MAX_DEBUG_DEPTH = 8;
 const MAX_DEBUG_COLLECTION = 200;
 const SECRET_KEY =
   /authorization|api[-_]?key|token|secret|password|cookie|credential/i;
+const DEBUG_LEGACY_SIDE_EFFECT_NODES = new Set([
+  "send_template",
+  "send_webhook",
+]);
 
 export type DebugNodeOutputs = Record<string, Record<string, unknown>>;
 
@@ -154,7 +158,11 @@ export async function runIsolatedDebugNode(
   );
   if (!node) throw new Error("debug_node_not_found");
   const descriptor = getNodeDescriptor(node.node_type);
-  if (!descriptor?.supportsFlowRuntime) {
+  if (
+    !descriptor ||
+    (!descriptor.supportsFlowRuntime &&
+      !DEBUG_LEGACY_SIDE_EFFECT_NODES.has(node.node_type))
+  ) {
     throw new Error("debug_node_not_supported");
   }
   const parsed = descriptor.flowConfigSchema.safeParse(node.config);
@@ -267,6 +275,34 @@ export async function runIsolatedDebugNode(
           : {}),
       };
       effects = simulated("whatsapp_text", { text });
+    } else if (node.node_type === "send_template") {
+      outputs = plannedTransition("send_template", config);
+      effects = simulated("whatsapp_template", {
+        template_name: config.template_name,
+        language: config.language,
+        variables: Object.fromEntries(
+          Object.entries(asRecord(config.variables)).map(([key, value]) => [
+            key,
+            typeof value === "string" ? interpolate(value, variables) : value,
+          ]),
+        ),
+      });
+    } else if (node.node_type === "send_webhook") {
+      outputs = plannedTransition("http_request", config);
+      effects = simulated("http_request", {
+        method: "POST",
+        url: config.url,
+        headers: Object.fromEntries(
+          Object.entries(asRecord(config.headers)).map(([key, value]) => [
+            key,
+            typeof value === "string" ? interpolate(value, variables) : value,
+          ]),
+        ),
+        body:
+          typeof config.body_template === "string"
+            ? interpolate(config.body_template, variables)
+            : undefined,
+      });
     } else if (
       hook === "send_media" ||
       hook === "send_buttons" ||

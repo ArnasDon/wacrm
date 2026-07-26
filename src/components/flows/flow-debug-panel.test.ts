@@ -29,6 +29,9 @@ describe("flow debug inspector UI", () => {
       "const [selectedNodeKey, setSelectedNodeKey] = useState",
     );
     expect(source).toContain("setSelectedNodeKey");
+    expect(source).toContain(
+      'key={`${declaration.key}:${session.revision}`}',
+    );
   });
 
   it("offers source runs, typed variables and explicit simulation-only execution", () => {
@@ -47,5 +50,13 @@ describe("flow debug inspector UI", () => {
     expect(Object.keys(ko.Flows.debug).sort()).toEqual(
       Object.keys(en.Flows.debug).sort(),
     );
+  });
+
+  it("is mounted only for the flow owner capability", () => {
+    const shell = readFileSync(
+      join(process.cwd(), "src/components/flows/flow-editor-shell.tsx"),
+      "utf8",
+    );
+    expect(shell).toContain("canManageVersions && <FlowDebugPanel />");
   });
 });

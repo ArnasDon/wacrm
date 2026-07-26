@@ -163,7 +163,7 @@ export function FlowEditorShell({
               </div>
             )}
           </div>
-          <FlowDebugPanel />
+          {canManageVersions && <FlowDebugPanel />}
         </div>
 
         {/* ---- validation / activate-readiness bar ---- */}

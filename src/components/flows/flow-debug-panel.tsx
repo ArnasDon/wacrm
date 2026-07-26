@@ -289,7 +289,7 @@ export function FlowDebugPanel() {
               ) : (
                 state.variable_schema.map((declaration) => (
                   <VariableEditor
-                    key={declaration.key}
+                    key={`${declaration.key}:${session.revision}`}
                     declaration={declaration}
                     value={session.variables[declaration.key]}
                     disabled={busy}

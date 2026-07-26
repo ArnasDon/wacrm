@@ -153,6 +153,76 @@ describe("isolated flow debugger", () => {
     });
   });
 
+  it("simulates legacy template and webhook nodes by node identity without adapters", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const invokeRemote = vi.fn();
+    const legacyGraph = {
+      ...graph,
+      entry_node_key: "template",
+      nodes: [
+        {
+          node_key: "template",
+          node_type: "send_template",
+          config: {
+            template_name: "order_ready",
+            language: "en_US",
+            variables: { name: "{{vars.name}}" },
+            next_node_key: "webhook",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "webhook",
+          node_type: "send_webhook",
+          config: {
+            url: "https://example.com/hook",
+            headers: { Authorization: "Bearer secret" },
+            body_template: "{\"name\":\"{{vars.name}}\"}",
+            next_node_key: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    const template = await runIsolatedDebugNode({
+      graph: legacyGraph,
+      nodeKey: "template",
+      variables: { name: "Ada" },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: {},
+      adapters: { invokeRemote },
+    });
+    const webhook = await runIsolatedDebugNode({
+      graph: legacyGraph,
+      nodeKey: "webhook",
+      variables: { name: "Ada" },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: {},
+      adapters: { invokeRemote },
+    });
+
+    expect(template.simulatedEffects[0]).toMatchObject({
+      kind: "whatsapp_template",
+      payload: { template_name: "order_ready" },
+    });
+    expect(webhook.simulatedEffects[0]).toMatchObject({
+      kind: "http_request",
+      payload: {
+        url: "https://example.com/hook",
+        headers: { Authorization: "[REDACTED]" },
+      },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(invokeRemote).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it("coerces editable variables but keeps contact and message values read-only", () => {
     expect(
       editDebugVariables(

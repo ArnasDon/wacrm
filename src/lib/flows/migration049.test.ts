@@ -160,11 +160,23 @@ describe("migration 049 durable waits", () => {
     expect(sql).toMatch(
       /WHERE\s+status\s+IN\s*\(\s*'active'\s*,\s*'waiting'\s*,\s*'resuming'\s*,\s*'needs_recovery'\s*\)/i,
     );
+    expect(sql).toMatch(
+      /FUNCTION\s+reconcile_flow_node_effect_recovery[\s\S]+?v_effect\.status\s*=\s*'reserved'[\s\S]+?status\s*=\s*'remote_committed'/i,
+    );
+    expect(sql).toMatch(
+      /p_intended_next_node_key[\s\S]+?p_intended_next_visit_id[\s\S]+?'already_committed'/i,
+    );
   });
 
   it("preserves and clears wait continuation identity independently of status", () => {
     expect(sql).toMatch(
       /FUNCTION\s+advance_flow_run_cursor[\s\S]+?WHEN continuation_id IS NOT NULL THEN 'resuming'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+advance_flow_run_cursor[\s\S]+?current_visit_id\s*=\s*p_next_visit_id/i,
+    );
+    expect(sql).toMatch(
+      /current_node_key IS NOT DISTINCT FROM p_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_next_visit_id/i,
     );
     expect(sql).toMatch(
       /FUNCTION\s+ack_flow_wait_resume[\s\S]+?continuation_id = v_wait\.resume_id[\s\S]+?continuation_phase = 'completed'/i,

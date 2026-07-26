@@ -32,6 +32,15 @@ export class CommittedSideEffectError extends NonRetryableExecutionError {
       externalReference: string;
       persistenceStage: string;
       cause?: unknown;
+      effectId?: string;
+      operationId?: string;
+      effectKind?: string;
+      remoteResult?: unknown;
+      expectedNodeKey?: string;
+      expectedVisitId?: string;
+      expectedContinuationId?: string | null;
+      intendedNextNodeKey?: string;
+      intendedNextVisitId?: string;
     },
   ) {
     super(message, { cause: metadata.cause });

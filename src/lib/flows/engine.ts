@@ -724,7 +724,10 @@ async function reserveNodeEffect(
 
 async function markNodeEffectCommitted<T>(
   db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
   effect: DurableNodeEffect,
+  effectKind: string,
   result: T,
   externalReference?: string,
 ): Promise<DurableNodeEffect> {
@@ -745,11 +748,19 @@ async function markNodeEffectCommitted<T>(
       return { ...committed, is_owner: effect.is_owner };
     }
     lastError = error;
-    const readBack = await readNodeEffect(
-      db,
-      effect.id,
-      effect.operation_id,
-    );
+    let readBack: DurableNodeEffect | null = null;
+    try {
+      readBack = await readNodeEffect(
+        db,
+        effect.id,
+        effect.operation_id,
+      );
+    } catch (readError) {
+      lastError = new AggregateError(
+        [error, readError].filter(Boolean),
+        "ledger commit and read-back both failed",
+      );
+    }
     if (
       readBack?.status === "remote_committed" ||
       readBack?.status === "completed"
@@ -763,6 +774,13 @@ async function markNodeEffectCommitted<T>(
       externalReference: externalReference ?? effect.operation_id,
       persistenceStage: "node_effect_ledger_commit",
       cause: lastError,
+      effectId: effect.id,
+      operationId: effect.operation_id,
+      effectKind,
+      remoteResult: sanitizeExecutionData(result),
+      expectedNodeKey: node.node_key,
+      expectedVisitId: run.current_visit_id ?? undefined,
+      expectedContinuationId: run.continuation_id ?? null,
     },
   );
 }
@@ -776,14 +794,29 @@ async function completeNodeEffect(
     p_operation_id: effect.operation_id,
   });
   if (!error && data === true) return;
-  const readBack = await readNodeEffect(db, effect.id, effect.operation_id);
+  let readBack: DurableNodeEffect | null = null;
+  let readError: unknown = null;
+  try {
+    readBack = await readNodeEffect(db, effect.id, effect.operation_id);
+  } catch (caught) {
+    readError = caught;
+  }
   if (readBack?.status !== "completed") {
     throw new CommittedSideEffectError(
       "External effect completed remotely but its ledger was not finalized",
       {
         externalReference: effect.external_reference ?? effect.operation_id,
         persistenceStage: "node_effect_ledger_complete",
-        cause: error,
+        cause:
+          readError && error
+            ? new AggregateError(
+                [error, readError],
+                "ledger completion and read-back both failed",
+              )
+            : readError ?? error,
+        effectId: effect.id,
+        operationId: effect.operation_id,
+        remoteResult: sanitizeExecutionData(effect.result),
       },
     );
   }
@@ -794,23 +827,71 @@ async function failAmbiguousNodeEffect(
   run: FlowRunRow,
   node: FlowNodeRow,
   effect: DurableNodeEffect,
-): Promise<void> {
-  const { error } = await db.rpc("mark_flow_node_effect_ambiguous", {
-    p_effect_id: effect.id,
-    p_operation_id: effect.operation_id,
-  });
-  const readBack = error
-    ? await readNodeEffect(db, effect.id, effect.operation_id)
-    : null;
-  const ledgerUpdateFailed = error && readBack?.status !== "ambiguous";
+): Promise<DurableNodeEffect | null> {
+  let readBack: DurableNodeEffect | null = null;
+  let ledgerError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error } = await db.rpc(
+      "mark_flow_node_effect_ambiguous",
+      {
+        p_effect_id: effect.id,
+        p_operation_id: effect.operation_id,
+      },
+    );
+    ledgerError = error;
+    try {
+      readBack = await readNodeEffect(
+        db,
+        effect.id,
+        effect.operation_id,
+      );
+    } catch (readError) {
+      ledgerError = new AggregateError(
+        [error, readError].filter(Boolean),
+        "ambiguous ledger update and read-back failed",
+      );
+    }
+    if (
+      readBack?.status === "remote_committed" ||
+      readBack?.status === "completed"
+    ) {
+      return readBack;
+    }
+    if ((!error && data === true) || readBack?.status === "ambiguous") {
+      break;
+    }
+  }
+  if (run.current_node_key && run.current_visit_id) {
+    const recoveryArgs = {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_expected_node_key: run.current_node_key,
+      p_expected_visit_id: run.current_visit_id,
+      p_expected_continuation_id: run.continuation_id ?? null,
+      p_reason: "external_effect_needs_reconciliation",
+    };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { data, error } = await db.rpc(
+        "mark_flow_run_cursor_recovery",
+        recoveryArgs,
+      );
+      const recovered = Array.isArray(data)
+        ? (data[0] as FlowRunRow | undefined)
+        : undefined;
+      if (!error && recovered) {
+        syncRun(run, recovered);
+        break;
+      }
+    }
+  }
   await logEvent(db, run.id, "error", node.node_key, {
     reason: "external_effect_needs_reconciliation",
     operation_id: effect.operation_id,
-    ledger_update_failed: ledgerUpdateFailed
-      ? sanitizeExecutionError(error)
+    ledger_update_failed: ledgerError
+      ? sanitizeExecutionError(ledgerError)
       : undefined,
   });
-  await endRun(db, run.id, "failed", "external_effect_needs_reconciliation");
+  return null;
 }
 
 type DurableEffectResult<T> =
@@ -841,7 +922,20 @@ async function executeDurableNodeEffect<T>(
   }
 
   if (effect.status === "ambiguous") {
-    await failAmbiguousNodeEffect(db, run, node, effect);
+    const resolved = await failAmbiguousNodeEffect(
+      db,
+      run,
+      node,
+      effect,
+    );
+    if (
+      resolved &&
+      (resolved.status === "remote_committed" ||
+        resolved.status === "completed") &&
+      resolved.result !== null
+    ) {
+      return { ok: true, value: resolved.result as T, effect: resolved };
+    }
     return { ok: false };
   }
   if (effect.status === "remote_committed" || effect.status === "completed") {
@@ -852,7 +946,20 @@ async function executeDurableNodeEffect<T>(
     };
   }
   if (!effect.is_owner) {
-    await failAmbiguousNodeEffect(db, run, node, effect);
+    const resolved = await failAmbiguousNodeEffect(
+      db,
+      run,
+      node,
+      effect,
+    );
+    if (
+      resolved &&
+      (resolved.status === "remote_committed" ||
+        resolved.status === "completed") &&
+      resolved.result !== null
+    ) {
+      return { ok: true, value: resolved.result as T, effect: resolved };
+    }
     return { ok: false };
   }
 
@@ -870,7 +977,10 @@ async function executeDurableNodeEffect<T>(
           remoteResult = result;
           committedEffect = await markNodeEffectCommitted(
             db,
+            run,
+            node,
             effect,
+            effectKind,
             result,
             reference,
           );
@@ -883,12 +993,60 @@ async function executeDurableNodeEffect<T>(
       },
     );
   } catch (error) {
-    const committedError = committedSideEffectCause(error);
+    let committedError = committedSideEffectCause(error);
     if (!committedError) throw error;
-    let readBack =
-      committedEffect ??
-      (await readNodeEffect(db, effect.id, effect.operation_id));
+    let readBack: DurableNodeEffect | null =
+      committedEffect as DurableNodeEffect | null;
+    if (!readBack) {
+      try {
+        readBack = await readNodeEffect(
+          db,
+          effect.id,
+          effect.operation_id,
+        );
+      } catch (readError) {
+        committedError = new CommittedSideEffectError(
+          committedError.message,
+          {
+            ...committedError.metadata,
+            cause: new AggregateError(
+              [committedError, readError],
+              "committed effect read-back failed",
+            ),
+            effectId: effect.id,
+            operationId: effect.operation_id,
+            effectKind,
+            remoteResult: sanitizeExecutionData(
+              remoteResult ?? committedError.metadata.remoteResult,
+            ),
+            expectedNodeKey: node.node_key,
+            expectedVisitId: run.current_visit_id ?? undefined,
+            expectedContinuationId: run.continuation_id ?? null,
+          },
+        );
+      }
+    }
+    const recoverableResult =
+      remoteResult ?? (committedError.metadata.remoteResult as T | undefined);
     if (
+      readBack?.status === "reserved" &&
+      recoverableResult !== undefined
+    ) {
+      try {
+        readBack = await markNodeEffectCommitted(
+          db,
+          run,
+          node,
+          effect,
+          effectKind,
+          recoverableResult,
+          committedError.externalReference,
+        );
+      } catch (markError) {
+        committedError =
+          committedSideEffectCause(markError) ?? committedError;
+      }
+    } else if (
       readBack?.status === "reserved" &&
       (effectKind === "outbound" || effectKind.startsWith("prompt:"))
     ) {
@@ -896,12 +1054,20 @@ async function executeDurableNodeEffect<T>(
         whatsapp_message_id: committedError.externalReference,
       } as T;
       remoteResult = recoveredResult;
-      readBack = await markNodeEffectCommitted(
-        db,
-        effect,
-        recoveredResult,
-        committedError.externalReference,
-      );
+      try {
+        readBack = await markNodeEffectCommitted(
+          db,
+          run,
+          node,
+          effect,
+          effectKind,
+          recoveredResult,
+          committedError.externalReference,
+        );
+      } catch (markError) {
+        committedError =
+          committedSideEffectCause(markError) ?? committedError;
+      }
     }
     if (
       readBack &&
@@ -915,16 +1081,54 @@ async function executeDurableNodeEffect<T>(
         effect: { ...readBack, is_owner: effect.is_owner },
       };
     }
-    throw error;
+    const phaseCompleted =
+      run.current_visit_id &&
+      (await stopAfterCommittedEffectPersistenceFailure(
+        db,
+        run,
+        effect,
+        node.node_key,
+        run.current_visit_id,
+        run.continuation_id ?? null,
+        committedError,
+      ));
+    if (phaseCompleted && recoverableResult !== undefined) {
+      return {
+        ok: true,
+        value: recoverableResult,
+        effect: { ...effect, status: "completed" },
+      };
+    }
+    throw committedError;
   }
   if (!executed.ok) {
     if (!committedEffect) {
-      await failAmbiguousNodeEffect(db, run, node, effect);
+      const resolved = await failAmbiguousNodeEffect(
+        db,
+        run,
+        node,
+        effect,
+      );
+      if (
+        resolved &&
+        (resolved.status === "remote_committed" ||
+          resolved.status === "completed") &&
+        resolved.result !== null
+      ) {
+        return { ok: true, value: resolved.result as T, effect: resolved };
+      }
     }
     return { ok: false };
   }
   if (!committedEffect) {
-    committedEffect = await markNodeEffectCommitted(db, effect, executed.value);
+    committedEffect = await markNodeEffectCommitted(
+      db,
+      run,
+      node,
+      effect,
+      effectKind,
+      executed.value,
+    );
   }
   return { ok: true, value: executed.value, effect: committedEffect };
 }
@@ -943,29 +1147,52 @@ async function persistDurableCursor(
   }
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
+  const intendedNextVisitId = crypto.randomUUID();
   const { data, error } = await db.rpc("advance_flow_run_cursor", {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
     p_expected_node_key: expectedNodeKey,
     p_expected_visit_id: expectedVisitId,
     p_next_node_key: nextNodeKey,
+    p_next_visit_id: intendedNextVisitId,
   });
   let advanced = Array.isArray(data)
     ? (data[0] as FlowRunRow | undefined)
     : undefined;
   if (error || !advanced) {
-    const readBack = await loadRunById(db, run.id);
+    let readBack: FlowRunRow | null = null;
+    let readError: unknown = null;
+    try {
+      readBack = await loadRunById(db, run.id);
+    } catch (caught) {
+      readError = caught;
+    }
     if (
       readBack?.flow_version_id === run.flow_version_id &&
       readBack.current_node_key === nextNodeKey &&
-      readBack.current_visit_id !== expectedVisitId
+      readBack.current_visit_id === intendedNextVisitId
     ) {
       advanced = readBack;
     } else {
-      throw error ?? new Error("durable flow cursor was not advanced");
+      throw new CommittedSideEffectError(
+        "External effect completed but cursor advancement is ambiguous",
+        {
+          externalReference: "flow_cursor",
+          persistenceStage: "flow_cursor_advance",
+          cause: readError ?? error,
+          expectedNodeKey,
+          expectedVisitId,
+          expectedContinuationId: run.continuation_id ?? null,
+          intendedNextNodeKey: nextNodeKey,
+          intendedNextVisitId,
+        },
+      );
     }
   }
-  if (advanced.current_node_key !== nextNodeKey) {
+  if (
+    advanced.current_node_key !== nextNodeKey ||
+    advanced.current_visit_id !== intendedNextVisitId
+  ) {
     throw new Error("durable flow cursor lost an advancement race");
   }
   run.current_node_key = advanced.current_node_key;
@@ -1087,43 +1314,87 @@ async function stopAfterCommittedEffectPersistenceFailure(
   expectedContinuationId: string | null,
   error: unknown,
 ): Promise<boolean> {
-  const { data, error: reconcileError } = await db.rpc(
-    "reconcile_flow_node_effect_recovery",
-    {
-      p_run_id: run.id,
-      p_flow_version_id: run.flow_version_id,
-      p_effect_id: effect.id,
-      p_operation_id: effect.operation_id,
-      p_expected_node_key: expectedNodeKey,
-      p_expected_visit_id: expectedVisitId,
-      p_expected_continuation_id: expectedContinuationId,
-    },
-  );
-  const resolution = Array.isArray(data)
-    ? (data[0] as
-        | {
-            outcome: "completed" | "recovery_required" | "stale";
-            run_row: FlowRunRow;
-          }
-        | undefined)
-    : undefined;
-  if (!reconcileError && resolution) {
-    syncRun(run, resolution.run_row);
-    if (resolution.outcome === "completed") return true;
-    if (
-      resolution.outcome === "recovery_required" &&
-      expectedContinuationId
-    ) {
-      throw error;
+  const committedError =
+    committedSideEffectCause(error) ??
+    new CommittedSideEffectError(
+      "External effect completed but local state is ambiguous",
+      {
+        externalReference: effect.external_reference ?? effect.operation_id,
+        persistenceStage: "node_effect_reconciliation",
+        cause: error,
+        effectId: effect.id,
+        operationId: effect.operation_id,
+        remoteResult: sanitizeExecutionData(effect.result),
+        expectedNodeKey,
+        expectedVisitId,
+        expectedContinuationId,
+      },
+    );
+  const reconcileArgs = {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_effect_id: effect.id,
+    p_operation_id: effect.operation_id,
+    p_expected_node_key: expectedNodeKey,
+    p_expected_visit_id: expectedVisitId,
+    p_expected_continuation_id: expectedContinuationId,
+    p_intended_next_node_key:
+      committedError.metadata.intendedNextNodeKey ?? null,
+    p_intended_next_visit_id:
+      committedError.metadata.intendedNextVisitId ?? null,
+    p_remote_result:
+      committedError.metadata.remoteResult ?? effect.result ?? null,
+    p_external_reference:
+      committedError.externalReference ?? effect.external_reference,
+  };
+  let reconcileError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error: rpcError } = await db.rpc(
+      "reconcile_flow_node_effect_recovery",
+      reconcileArgs,
+    );
+    const resolution = Array.isArray(data)
+      ? (data[0] as
+          | {
+              outcome:
+                | "completed"
+                | "already_committed"
+                | "recovery_required"
+                | "stale";
+              run_row: FlowRunRow;
+            }
+          | undefined)
+      : undefined;
+    if (!rpcError && resolution) {
+      syncRun(run, resolution.run_row);
+      if (
+        resolution.outcome === "completed" ||
+        resolution.outcome === "already_committed"
+      ) {
+        return true;
+      }
+      throw committedError;
     }
-    return false;
+    reconcileError = rpcError;
   }
 
   // The reconciliation CAS itself may have committed without returning.
-  const [runReadBack, effectReadBack] = await Promise.all([
-    loadRunById(db, run.id),
-    readNodeEffect(db, effect.id, effect.operation_id),
-  ]);
+  let runReadBack: FlowRunRow | null = null;
+  let effectReadBack: DurableNodeEffect | null = null;
+  try {
+    [runReadBack, effectReadBack] = await Promise.all([
+      loadRunById(db, run.id),
+      readNodeEffect(db, effect.id, effect.operation_id),
+    ]);
+  } catch (readError) {
+    throw new CommittedSideEffectError(committedError.message, {
+      ...committedError.metadata,
+      cause: new AggregateError(
+        [reconcileError, readError].filter(Boolean),
+        "effect reconciliation and read-back both failed",
+      ),
+    });
+  }
   if (runReadBack) syncRun(run, runReadBack);
   if (effectReadBack?.status === "completed") return true;
   if (
@@ -1132,13 +1403,9 @@ async function stopAfterCommittedEffectPersistenceFailure(
     runReadBack.current_visit_id === expectedVisitId &&
     runReadBack.continuation_id === expectedContinuationId
   ) {
-    if (expectedContinuationId) throw error;
-    return false;
+    throw committedError;
   }
-  if (expectedContinuationId) {
-    throw error;
-  }
-  return false;
+  throw committedError;
 }
 
 async function finalizeDurableNodeEffect(
@@ -2443,7 +2710,7 @@ export async function dispatchInboundToFlows(
           outcome: "no_match",
         };
       }
-      return handleReplyForActiveRun(
+      return await handleReplyForActiveRun(
         db,
         activeRun,
         input.message,
@@ -2462,7 +2729,7 @@ export async function dispatchInboundToFlows(
     if (!flow) {
       return { consumed: false, outcome: "no_match" };
     }
-    return startNewRun(
+    return await startNewRun(
       db,
       flow.flow,
       flow.versionId,
@@ -2475,7 +2742,10 @@ export async function dispatchInboundToFlows(
       "[flows] dispatchInboundToFlows threw:",
       err instanceof Error ? err.message : err,
     );
-    return { consumed: false, outcome: "no_match" };
+    return {
+      consumed: isCommittedSideEffectError(err),
+      outcome: "no_match",
+    };
   }
 }
 

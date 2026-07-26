@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   adminClient: vi.fn(),
   sendText: vi.fn(),
+  httpRequest: vi.fn(),
+  addTag: vi.fn(),
 }));
 
 vi.mock("./admin-client", () => ({
@@ -18,14 +20,20 @@ vi.mock("./zapi-send", () => ({
 }));
 
 vi.mock("@/lib/contacts/tag-events", () => ({
-  addContactTagAndDispatch: vi.fn(),
+  addContactTagAndDispatch: h.addTag,
 }));
 
 vi.mock("@/lib/contacts/tag-write", () => ({
   removeContactTag: vi.fn(),
 }));
 
+vi.mock("./http-request", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./http-request")>();
+  return { ...original, executeHttpRequest: h.httpRequest };
+});
+
 import { dispatchInboundToFlows } from "./engine";
+import { resumeDueFlowWaits } from "./wait-runtime";
 import type { FlowRunRow } from "./types";
 import type { FlowVersionGraph } from "./versions";
 
@@ -165,6 +173,28 @@ class Query {
         });
       return { data: updated, error: null };
     }
+    if (
+      this.operation === "select" &&
+      this.table === "flow_node_effects" &&
+      this.state.effectReadFailures > 0
+    ) {
+      this.state.effectReadFailures -= 1;
+      return {
+        data: null,
+        error: { message: "effect read unavailable" },
+      };
+    }
+    if (
+      this.operation === "select" &&
+      this.table === "flow_runs" &&
+      this.state.runReadFailures > 0
+    ) {
+      this.state.runReadFailures -= 1;
+      return {
+        data: null,
+        error: { message: "run read unavailable" },
+      };
+    }
     let rows = this.state.rows(this.table).filter((row) => this.matches(row));
     if (this.maxRows !== null) rows = rows.slice(0, this.maxRows);
     if (this.countExact) {
@@ -196,12 +226,21 @@ class DispatchState {
   terminalizeOnCursorFailure = false;
   loseCursorResponseOnce = false;
   loseEffectCommitResponseOnce = false;
+  effectCommitResponseFailures = 0;
+  effectReadFailures = 0;
+  effectReadFailuresAfterCommit = 0;
+  runReadFailures = 0;
+  runReadFailuresAfterCursorLoss = 0;
   loseReplyCommitResponseOnce = false;
   failRepromptFinalizeOnce = false;
   loseRepromptFinalizeResponseOnce = false;
   fallbackFailure: "none" | "before_commit_once" | "after_commit_once" =
     "none";
   private sequence = 10;
+  waitEnabled = false;
+  waitStatus: "pending" | "claimed" | "resumed" = "pending";
+  readonly waitResumeId =
+    "90000000-0000-4000-8000-000000000001";
 
   from = (table: string) => new Query(this, table);
 
@@ -254,6 +293,65 @@ class DispatchState {
 
   rpc = async (name: string, value: Row) => {
     this.rpcCalls.push({ name, value });
+    if (name === "claim_due_flow_waits") {
+      if (!this.waitEnabled || this.waitStatus === "resumed") {
+        return { data: [], error: null };
+      }
+      this.waitStatus = "claimed";
+      return {
+        data: [
+          {
+            id: "wait-1",
+            flow_run_id: "run-1",
+            flow_version_id: "version-1",
+            node_key: "wait",
+            next_node_key: "send",
+            claim_token: "claim-1",
+            resume_id: this.waitResumeId,
+          },
+        ],
+        error: null,
+      };
+    }
+    if (name === "prepare_flow_wait_resume") {
+      const run = this.runById("run-1")!;
+      if (run.continuation_id === null) {
+        run.status = "resuming";
+        run.current_node_key = "send";
+        run.current_visit_id = this.waitResumeId;
+        run.continuation_id = this.waitResumeId;
+        run.continuation_phase = "running";
+      }
+      return { data: [{ ...run }], error: null };
+    }
+    if (name === "complete_flow_wait_continuation") {
+      const run = this.runById("run-1")!;
+      if (run.continuation_id !== this.waitResumeId) {
+        return { data: false, error: null };
+      }
+      run.continuation_phase = "completed";
+      return { data: true, error: null };
+    }
+    if (name === "ack_flow_wait_resume") {
+      const run = this.runById("run-1")!;
+      if (
+        run.continuation_id !== this.waitResumeId ||
+        run.continuation_phase !== "completed"
+      ) {
+        return { data: false, error: null };
+      }
+      this.waitStatus = "resumed";
+      if (
+        run.status === "resuming" ||
+        run.status === "needs_recovery"
+      ) {
+        run.status = "active";
+      }
+      run.continuation_id = null;
+      run.continuation_phase = "idle";
+      run.continuation_step = 0;
+      return { data: true, error: null };
+    }
     if (name === "commit_flow_reply_transition") {
       const existing = this.receipts.find(
         (receipt) =>
@@ -361,6 +459,15 @@ class DispatchState {
           error: { message: "effect commit response lost" },
         };
       }
+      if (this.effectCommitResponseFailures > 0) {
+        this.effectCommitResponseFailures -= 1;
+        this.effectReadFailures += this.effectReadFailuresAfterCommit;
+        this.effectReadFailuresAfterCommit = 0;
+        return {
+          data: null,
+          error: { message: "effect commit unavailable" },
+        };
+      }
       return { data: [{ ...effect }], error: null };
     }
     if (name === "complete_flow_node_effect") {
@@ -376,9 +483,34 @@ class DispatchState {
     if (name === "reconcile_flow_node_effect_recovery") {
       const run = this.runById(value.p_run_id)!;
       const effect = this.effectById(value.p_effect_id)!;
+      if (
+        effect.status === "reserved" &&
+        value.p_remote_result !== null &&
+        value.p_remote_result !== undefined
+      ) {
+        effect.status = "remote_committed";
+        effect.result = value.p_remote_result as Row;
+        effect.external_reference =
+          (value.p_external_reference as string | null) ?? null;
+      }
       if (effect.status === "completed") {
         return {
           data: [{ outcome: "completed", run_row: { ...run } }],
+          error: null,
+        };
+      }
+      if (
+        effect.status === "remote_committed" &&
+        run.current_node_key === value.p_intended_next_node_key &&
+        run.current_visit_id === value.p_intended_next_visit_id &&
+        (run.continuation_id ?? null) ===
+          (value.p_expected_continuation_id ?? null)
+      ) {
+        effect.status = "completed";
+        return {
+          data: [
+            { outcome: "already_committed", run_row: { ...run } },
+          ],
           error: null,
         };
       }
@@ -436,11 +568,13 @@ class DispatchState {
         return { data: [], error: null };
       }
       run.current_node_key = value.p_next_node_key as string;
-      run.current_visit_id = this.nextUuid("cursor");
+      run.current_visit_id = value.p_next_visit_id as string;
       run.continuation_step = (run.continuation_step ?? 0) + 1;
       if (run.status === "needs_recovery") run.status = "active";
       if (this.loseCursorResponseOnce) {
         this.loseCursorResponseOnce = false;
+        this.runReadFailures += this.runReadFailuresAfterCursorLoss;
+        this.runReadFailuresAfterCursorLoss = 0;
         return {
           data: null,
           error: { message: "cursor response lost" },
@@ -590,6 +724,50 @@ function graph(
   };
 }
 
+function graphForEffect(
+  kind: "zapi" | "http" | "tag",
+): FlowVersionGraph {
+  const flowGraph = graph();
+  if (kind === "zapi") return flowGraph;
+  const effectNode = flowGraph.nodes.find(
+    (candidate) => candidate.node_key === "send",
+  )!;
+  if (kind === "http") {
+    effectNode.node_type = "http_request";
+    effectNode.config = {
+      method: "POST",
+      url: "https://example.test/hook",
+      response_var: "http_result",
+      next_node_key: "end",
+    };
+  } else {
+    effectNode.node_type = "set_tag";
+    effectNode.config = {
+      mode: "add",
+      tag_id: "tag-1",
+      next_node_key: "end",
+    };
+  }
+  return flowGraph;
+}
+
+function waitEffectGraph(): FlowVersionGraph {
+  const flowGraph = graph();
+  flowGraph.entry_node_key = "wait";
+  flowGraph.nodes.unshift({
+    node_key: "wait",
+    node_type: "wait",
+    config: {
+      amount: 1,
+      unit: "minutes",
+      next_node_key: "send",
+    },
+    position_x: -50,
+    position_y: 0,
+  });
+  return flowGraph;
+}
+
 function run(
   overrides: Partial<FlowRunRow> = {},
 ): FlowRunRow {
@@ -666,6 +844,14 @@ function inbound(metaMessageId: string, text: string) {
 beforeEach(() => {
   h.adminClient.mockReset();
   h.sendText.mockReset();
+  h.httpRequest.mockReset();
+  h.addTag.mockReset();
+  h.httpRequest.mockResolvedValue({
+    status: 200,
+    body: { ok: true },
+    headers: {},
+  });
+  h.addTag.mockResolvedValue(undefined);
   h.sendText.mockImplementation(
     async (args: {
       onRemoteCommitted?: (
@@ -680,6 +866,45 @@ beforeEach(() => {
 });
 
 describe("public flow dispatcher recovery protocol", () => {
+  it.each(["zapi", "http", "tag"] as const)(
+    "keeps %s recoverable when ledger RPC and read-back both fail",
+    async (kind) => {
+      const state = new DispatchState();
+      state.effectCommitResponseFailures = 2;
+      state.effectReadFailuresAfterCommit = 3;
+      prepare(state, run(), graphForEffect(kind));
+
+      const first = await dispatchInboundToFlows(
+        inbound(`double-unavailable-${kind}`, "stable"),
+      );
+
+      expect(first.consumed).toBe(true);
+      expect(state.runs[0].status).toBe("needs_recovery");
+      expect(
+        state.writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.value.status === "failed",
+        ),
+      ).toBe(false);
+
+      const recovered = await dispatchInboundToFlows(
+        inbound(`double-unavailable-${kind}`, "changed"),
+      );
+      expect(recovered.outcome).toBe("completed");
+      expect(state.runs[0].status).toBe("completed");
+      expect(state.effects.values().next().value?.status).toBe("completed");
+      expect(state.runs[0].vars.code).toBe("stable");
+      const providerCalls =
+        kind === "zapi"
+          ? h.sendText.mock.calls.length
+          : kind === "http"
+            ? h.httpRequest.mock.calls.length
+            : h.addTag.mock.calls.length;
+      expect(providerCalls).toBe(1);
+    },
+  );
+
   it.each([
     "effect_commit",
     "cursor_advance",
@@ -710,6 +935,62 @@ describe("public flow dispatcher recovery protocol", () => {
       ).toBe(false);
     },
   );
+
+  it("continues from the intended cursor when advance response and read-back both fail", async () => {
+    const state = new DispatchState();
+    state.loseCursorResponseOnce = true;
+    state.runReadFailuresAfterCursorLoss = 1;
+    prepare(state, run());
+
+    const result = await dispatchInboundToFlows(
+      inbound("lost-cursor-and-read", "stable"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.runs[0].status).toBe("completed");
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(
+      state.rpcCalls.some(
+        (call) =>
+          call.name === "reconcile_flow_node_effect_recovery" &&
+          typeof call.value.p_intended_next_visit_id === "string",
+      ),
+    ).toBe(true);
+  });
+
+  it("acks a wait only after the intended cursor and downstream nodes continue", async () => {
+    const state = new DispatchState();
+    state.waitEnabled = true;
+    state.loseCursorResponseOnce = true;
+    state.runReadFailuresAfterCursorLoss = 1;
+    prepare(
+      state,
+      run({
+        status: "waiting",
+        current_node_key: "wait",
+        current_visit_id: "visit-wait",
+      }),
+      waitEffectGraph(),
+    );
+
+    const result = await resumeDueFlowWaits(state as never);
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(state.runs[0].status).toBe("completed");
+    expect(state.runs[0].continuation_id).toBeNull();
+    expect(state.runs[0].continuation_phase).toBe("idle");
+    expect(state.waitStatus).toBe("resumed");
+    const calls = state.rpcCalls.map((call) => call.name);
+    expect(calls.indexOf("advance_flow_run_cursor")).toBeLessThan(
+      calls.indexOf("complete_flow_wait_continuation"),
+    );
+    expect(calls.indexOf("complete_flow_wait_continuation")).toBeLessThan(
+      calls.indexOf("ack_flow_wait_resume"),
+    );
+  });
 
   it("continues after a committed reprompt finalize response is lost", async () => {
     const state = new DispatchState();
@@ -766,7 +1047,8 @@ describe("public flow dispatcher recovery protocol", () => {
       inbound("terminal-race", "stable"),
     );
 
-    expect(result.outcome).toBe("completed");
+    expect(result.outcome).toBe("no_match");
+    expect(result.consumed).toBe(true);
     expect(state.runs[0].status).toBe("completed");
     expect(
       state.rpcCalls.filter(

@@ -53,6 +53,9 @@ function fakeDb(
       response: Record<string, unknown> | null;
     };
     effectIsOwner?: boolean;
+    ambiguousFindsRemoteCommitted?: boolean;
+    failEffectCommitResponses?: number;
+    failEffectReadbacks?: number;
     failCursorOnce?: boolean;
     failRepromptFinalizeOnce?: boolean;
   } = {},
@@ -64,6 +67,9 @@ function fakeDb(
   let failCursorOnce = options.failCursorOnce === true;
   let failRepromptFinalizeOnce =
     options.failRepromptFinalizeOnce === true;
+  let failEffectCommitResponses =
+    options.failEffectCommitResponses ?? 0;
+  let failEffectReadbacks = options.failEffectReadbacks ?? 0;
   const replyTransitions = new Map<
     string,
     {
@@ -132,10 +138,23 @@ function fakeDb(
         effect.result = value.p_result as Record<string, unknown>;
         effect.external_reference =
           (value.p_external_reference as string | null) ?? null;
+        if (failEffectCommitResponses > 0) {
+          failEffectCommitResponses -= 1;
+          return Promise.resolve({
+            data: null,
+            error: { message: "effect commit response unavailable" },
+          });
+        }
         return Promise.resolve({ data: [{ ...effect }], error: null });
       }
       if (name === "mark_flow_node_effect_ambiguous") {
         const effect = effectForRpc(value) ?? httpEffect;
+        if (options.ambiguousFindsRemoteCommitted) {
+          effect.status = "remote_committed";
+          effect.result = { whatsapp_message_id: "wamid-recovered" };
+          effect.external_reference = "wamid-recovered";
+          return Promise.resolve({ data: false, error: null });
+        }
         effect.status = "ambiguous";
         return Promise.resolve({ data: true, error: null });
       }
@@ -191,6 +210,21 @@ function fakeDb(
           data: [{ outcome: "stale", run_row: {} }],
           error: null,
         });
+      }
+      if (name === "mark_flow_run_cursor_recovery") {
+        const recovered = {
+          status: "needs_recovery",
+          current_node_key: value.p_expected_node_key,
+          current_visit_id: value.p_expected_visit_id,
+          continuation_id: value.p_expected_continuation_id,
+          end_reason: value.p_reason,
+        };
+        writes.push({
+          table: "flow_runs",
+          kind: "update",
+          value: recovered,
+        });
+        return Promise.resolve({ data: [recovered], error: null });
       }
       if (name === "commit_flow_reply_transition") {
         const messageId = value.p_meta_message_id as string;
@@ -277,9 +311,7 @@ function fakeDb(
           data: [
             {
               current_node_key: value.p_next_node_key,
-              current_visit_id: `30000000-0000-4000-8000-${String(
-                cursorSequence,
-              ).padStart(12, "0")}`,
+              current_visit_id: value.p_next_visit_id,
               continuation_step: cursorSequence,
             },
           ],
@@ -329,6 +361,13 @@ function fakeDb(
                 return builder;
               },
               async maybeSingle() {
+                if (failEffectReadbacks > 0) {
+                  failEffectReadbacks -= 1;
+                  return {
+                    data: null,
+                    error: { message: "effect read unavailable" },
+                  };
+                }
                 const effect = [...effects.values()].find(
                   (candidate) =>
                     candidate.id === filters.id &&
@@ -542,7 +581,9 @@ describe("node execution policy in the flow engine", () => {
       ].map((entry) => [entry.node_key, entry]),
     );
 
-    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+    await expect(
+      advanceFromNodeKey(db as never, activeRun, "http", nodes),
+    ).rejects.toBeInstanceOf(CommittedSideEffectError);
 
     expect(h.httpRequest).toHaveBeenCalledTimes(1);
     expect(h.httpRequest).toHaveBeenCalledWith(
@@ -563,6 +604,55 @@ describe("node execution policy in the flow engine", () => {
             "side_effect_committed_local_persistence_failed",
       ),
     ).toBe(true);
+  });
+
+  it("keeps RPC plus SELECT ledger failure typed with recovery identity", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 202,
+      body: { accepted: true },
+      content_type: "application/json",
+    });
+    const activeRun = run({ current_node_key: "http" });
+    const expectedVisitId = activeRun.current_visit_id;
+    const { db } = fakeDb({
+      failEffectCommitResponses: 2,
+      failEffectReadbacks: 3,
+    });
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/create",
+          headers: {},
+          body: "{}",
+          response_var: "response",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const error = await advanceFromNodeKey(
+      db as never,
+      activeRun,
+      "http",
+      nodes,
+    ).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(CommittedSideEffectError);
+    expect((error as CommittedSideEffectError).metadata).toMatchObject({
+      effectId: expect.any(String),
+      operationId: expect.any(String),
+      effectKind: "http",
+      expectedNodeKey: "http",
+      expectedVisitId,
+      remoteResult: {
+        status: 202,
+        body: { accepted: true },
+      },
+    });
+    expect(activeRun.status).toBe("needs_recovery");
+    expect(h.httpRequest).toHaveBeenCalledTimes(1);
   });
 
   it("reuses a remote-committed HTTP visit without invoking the remote server", async () => {
@@ -960,6 +1050,33 @@ describe("node execution policy in the flow engine", () => {
     ).toBe(true);
   });
 
+  it("continues when an ambiguous mark loses a race to remote commit", async () => {
+    const { db, httpEffect } = fakeDb({
+      effectIsOwner: false,
+      ambiguousFindsRemoteCommitted: true,
+    });
+    const nodes = new Map(
+      [
+        node("send", "send_message", {
+          text: "hello",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const result = await advanceFromNodeKey(
+      db as never,
+      run({ current_node_key: "send" }),
+      "send",
+      nodes,
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(h.sendText).not.toHaveBeenCalled();
+    expect(httpEffect.status).toBe("completed");
+  });
+
   it("sanitizes the external reference stored in the effect ledger", async () => {
     h.sendText.mockImplementation(
       async (args: {
@@ -1130,7 +1247,7 @@ describe("node execution policy in the flow engine", () => {
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          write.value.status === "failed",
+          write.value.status === "needs_recovery",
       ),
     ).toBe(true);
     expect(
@@ -1189,7 +1306,7 @@ describe("node execution policy in the flow engine", () => {
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          write.value.status === "failed",
+          write.value.status === "needs_recovery",
       ),
     ).toBe(true);
   });
@@ -1422,14 +1539,14 @@ describe("node execution policy in the flow engine", () => {
         ].map((entry) => [entry.node_key, entry]),
       );
 
-      const result = await advanceFromNodeKey(
-        db as never,
-        run({ current_node_key: "prompt" }),
-        "prompt",
-        nodes,
-      );
-
-      expect(result).toEqual({ outcome: "completed" });
+      await expect(
+        advanceFromNodeKey(
+          db as never,
+          run({ current_node_key: "prompt" }),
+          "prompt",
+          nodes,
+        ),
+      ).rejects.toBeInstanceOf(CommittedSideEffectError);
       expect(sendMock).toHaveBeenCalledTimes(1);
       expect(
         writes.some(
@@ -1630,7 +1747,7 @@ describe("reprompt execution policy", () => {
         nodes,
         fallbackPolicy,
       ),
-    ).rejects.toThrow("cursor unavailable");
+    ).rejects.toBeInstanceOf(CommittedSideEffectError);
 
     expect(resumedRun.vars).toEqual({ code: "stable-value" });
     expect(resumedRun.current_node_key).toBe("send");
@@ -1809,7 +1926,7 @@ describe("reprompt execution policy", () => {
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          write.value.status === "failed",
+          write.value.status === "needs_recovery",
       ),
     ).toBe(true);
     expect(
@@ -1852,7 +1969,7 @@ describe("reprompt execution policy", () => {
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          write.value.status === "failed",
+          write.value.status === "needs_recovery",
       ),
     ).toBe(true);
     expect(

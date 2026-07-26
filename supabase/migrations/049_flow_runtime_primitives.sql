@@ -566,12 +566,15 @@ REVOKE ALL ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) FROM PU
 REVOKE ALL ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) TO service_role;
 
+DROP FUNCTION IF EXISTS advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION advance_flow_run_cursor(
   p_run_id UUID,
   p_flow_version_id UUID,
   p_expected_node_key TEXT,
   p_expected_visit_id UUID,
-  p_next_node_key TEXT
+  p_next_node_key TEXT,
+  p_next_visit_id UUID
 )
 RETURNS SETOF flow_runs
 LANGUAGE plpgsql
@@ -593,7 +596,8 @@ BEGIN
 
   IF v_run.current_node_key IS DISTINCT FROM p_expected_node_key
      OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id THEN
-    IF v_run.current_node_key IS NOT DISTINCT FROM p_next_node_key THEN
+    IF v_run.current_node_key IS NOT DISTINCT FROM p_next_node_key
+       AND v_run.current_visit_id IS NOT DISTINCT FROM p_next_visit_id THEN
       RETURN NEXT v_run;
     END IF;
     RETURN;
@@ -607,7 +611,7 @@ BEGIN
         ELSE status
       END,
       current_node_key = p_next_node_key,
-      current_visit_id = uuid_generate_v4(),
+      current_visit_id = p_next_visit_id,
       continuation_step = continuation_step + 1,
       last_advanced_at = NOW()
   WHERE id = p_run_id
@@ -615,9 +619,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) FROM authenticated;
-GRANT EXECUTE ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUID) TO service_role;
 
 CREATE OR REPLACE FUNCTION ack_flow_wait_resume(
   p_wait_id UUID,
@@ -1070,6 +1074,8 @@ GRANT EXECUTE ON FUNCTION complete_flow_node_effect(UUID, UUID) TO service_role;
 -- operation, cursor visit and wait continuation may move a run to recovery.
 -- A completed ledger is treated as success and stale/terminal state is never
 -- overwritten.
+DROP FUNCTION IF EXISTS reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID);
+
 CREATE OR REPLACE FUNCTION reconcile_flow_node_effect_recovery(
   p_run_id UUID,
   p_flow_version_id UUID,
@@ -1077,7 +1083,11 @@ CREATE OR REPLACE FUNCTION reconcile_flow_node_effect_recovery(
   p_operation_id UUID,
   p_expected_node_key TEXT,
   p_expected_visit_id UUID,
-  p_expected_continuation_id UUID DEFAULT NULL
+  p_expected_continuation_id UUID DEFAULT NULL,
+  p_intended_next_node_key TEXT DEFAULT NULL,
+  p_intended_next_visit_id UUID DEFAULT NULL,
+  p_remote_result JSONB DEFAULT NULL,
+  p_external_reference TEXT DEFAULT NULL
 )
 RETURNS TABLE (
   outcome TEXT,
@@ -1115,9 +1125,43 @@ BEGIN
     RETURN;
   END IF;
 
+  IF v_effect.status = 'reserved'
+     AND p_remote_result IS NOT NULL THEN
+    UPDATE flow_node_effects
+    SET status = 'remote_committed',
+        result = p_remote_result,
+        external_reference = LEFT(p_external_reference, 500),
+        remote_committed_at = COALESCE(remote_committed_at, NOW()),
+        updated_at = NOW()
+    WHERE id = v_effect.id
+      AND operation_id = p_operation_id
+      AND status = 'reserved'
+    RETURNING * INTO v_effect;
+  END IF;
+
   IF v_effect.status = 'completed' THEN
     RETURN QUERY
     SELECT 'completed', to_jsonb(v_run), v_effect.status;
+    RETURN;
+  END IF;
+
+  IF v_effect.status = 'remote_committed'
+     AND p_intended_next_node_key IS NOT NULL
+     AND p_intended_next_visit_id IS NOT NULL
+     AND v_run.current_node_key IS NOT DISTINCT FROM p_intended_next_node_key
+     AND v_run.current_visit_id IS NOT DISTINCT FROM p_intended_next_visit_id
+     AND v_run.continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+  THEN
+    UPDATE flow_node_effects
+    SET status = 'completed',
+        completed_at = COALESCE(completed_at, NOW()),
+        updated_at = NOW()
+    WHERE id = v_effect.id
+      AND operation_id = p_operation_id
+      AND status = 'remote_committed'
+    RETURNING * INTO v_effect;
+    RETURN QUERY
+    SELECT 'already_committed', to_jsonb(v_run), v_effect.status;
     RETURN;
   END IF;
 
@@ -1143,9 +1187,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) FROM PUBLIC;
-REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) FROM authenticated;
-GRANT EXECUTE ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID) TO service_role;
+REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB, TEXT) TO service_role;
 
 CREATE OR REPLACE FUNCTION mark_flow_run_cursor_recovery(
   p_run_id UUID,

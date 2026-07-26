@@ -55,6 +55,9 @@ interface GatedButtonProps extends Omit<ComponentProps<typeof Button>, "title"> 
    *  "Read-only" tooltip. Defaults to `true` so a `<GatedButton>`
    *  without the prop is just a Button. */
   canAct?: boolean;
+  /** `allowed` is an alias for `canAct` for shorter role-guarded
+   *  button usage without forwarding invalid DOM attributes. */
+  allowed?: boolean;
   /** Verb phrase that completes the sentence
    *  `"Read-only — your role can't <gateReason>"`. Provided
    *  per-call so each CTA can name what it does ("create flows",
@@ -67,6 +70,7 @@ interface GatedButtonProps extends Omit<ComponentProps<typeof Button>, "title"> 
 
 export function GatedButton({
   canAct = true,
+  allowed,
   gateReason,
   title,
   disabled,
@@ -74,8 +78,9 @@ export function GatedButton({
   children,
   ...rest
 }: GatedButtonProps) {
-  const effectivelyDisabled = disabled || !canAct;
-  const tooltip = !canAct && gateReason
+  const effectiveCanAct = allowed ?? canAct;
+  const effectivelyDisabled = disabled || !effectiveCanAct;
+  const tooltip = !effectiveCanAct && gateReason
     ? `Read-only — your role can't ${gateReason}`
     : title;
 
@@ -86,7 +91,7 @@ export function GatedButton({
       // here (not on the button) is what makes the tooltip work
       // in Safari / older Firefox — those browsers don't fire
       // mouseover on disabled buttons.
-      className={cn("inline-flex", !canAct && "cursor-not-allowed")}
+      className={cn("inline-flex", !effectiveCanAct && "cursor-not-allowed")}
       title={tooltip}
     >
       <Button

@@ -320,6 +320,42 @@ function fakeDb(
           error: null,
         });
       }
+      if (name === "commit_flow_variable_transition") {
+        const commit = () => {
+          cursorSequence += 1;
+          return {
+            data: [
+              {
+                current_node_key: value.p_next_node_key,
+                current_visit_id: value.p_next_visit_id,
+                continuation_id: value.p_expected_continuation_id,
+                continuation_step: cursorSequence,
+                status:
+                  value.p_expected_continuation_id === null
+                    ? "active"
+                    : "resuming",
+                vars: value.p_next_vars,
+              },
+            ],
+            error: null,
+          };
+        };
+        if (options.flowVarsPersistence) {
+          return options.flowVarsPersistence.then((result) =>
+            result.error ? result : commit(),
+          );
+        }
+        const shouldFail =
+          options.failFlowVarsPersistence === true || failVarsOnce;
+        if (shouldFail) {
+          if (failVarsOnce) failVarsOnce = false;
+          return Promise.resolve({
+            data: null,
+            error: { message: "vars persistence unavailable" },
+          });
+        }
+        return Promise.resolve(commit());
+      }
       return Promise.resolve({ data: [{ id: "ok" }], error: null });
     },
     from(table: string) {
@@ -546,9 +582,8 @@ describe("node execution policy in the flow engine", () => {
     expect(
       writes.some(
         (write) =>
-          write.table === "flow_runs" &&
-          write.kind === "update" &&
-          "vars" in write.value,
+          write.table === "rpc:commit_flow_variable_transition" &&
+          "p_next_vars" in write.value,
       ),
     ).toBe(true);
   });
@@ -740,7 +775,7 @@ describe("node execution policy in the flow engine", () => {
       continuation_id: "40000000-0000-4000-8000-000000000001",
       continuation_phase: "running",
     });
-    const { db, httpEffect } = fakeDb({
+    const { db, httpEffect, writes } = fakeDb({
       failFlowVarsPersistenceOnce: true,
     });
     const nodes = new Map(
@@ -757,11 +792,6 @@ describe("node execution policy in the flow engine", () => {
       ].map((entry) => [entry.node_key, entry]),
     );
 
-    await expect(
-      advanceFromNodeKey(db as never, resumedRun, "http", nodes),
-    ).rejects.toBeInstanceOf(CommittedSideEffectError);
-    expect(httpEffect.status).toBe("remote_committed");
-
     await advanceFromNodeKey(db as never, resumedRun, "http", nodes);
 
     expect(h.httpRequest).toHaveBeenCalledTimes(1);
@@ -774,6 +804,12 @@ describe("node execution policy in the flow engine", () => {
       expect.any(Object),
     );
     expect(httpEffect.status).toBe("completed");
+    const variableCommits = writes.filter(
+      (write) =>
+        write.table === "rpc:commit_flow_variable_transition",
+    );
+    expect(variableCommits).toHaveLength(2);
+    expect(variableCommits[0].value).toEqual(variableCommits[1].value);
   });
 
   it("does not let slow local persistence turn a confirmed HTTP response into a timeout", async () => {
@@ -910,7 +946,10 @@ describe("node execution policy in the flow engine", () => {
   });
 
   it("routes switch cases first-match and persists conservative variable assignments", async () => {
-    const activeRun = run({ vars: { tier: "gold-customer" } });
+    const activeRun = run({
+      current_node_key: "set",
+      vars: { tier: "gold-customer" },
+    });
     const { db, writes } = fakeDb();
     const nodes = new Map(
       [
@@ -952,7 +991,17 @@ describe("node execution policy in the flow engine", () => {
       writes
         .filter((write) => write.table === "rpc:advance_flow_run_cursor")
         .map((write) => write.value.p_next_node_key),
-    ).toEqual(["switch", "first"]);
+    ).toEqual(["first"]);
+    expect(
+      writes.find(
+        (write) =>
+          write.table === "rpc:commit_flow_variable_transition",
+      )?.value,
+    ).toMatchObject({
+      p_expected_node_key: "set",
+      p_next_node_key: "switch",
+      p_next_vars: { tier: "gold-customer", count: 42 },
+    });
   });
 
   it.each([
@@ -1174,13 +1223,13 @@ describe("node execution policy in the flow engine", () => {
     "persists the $label decision before continuing a pure node",
     async ({ policy, expectedNext, expectedVars }) => {
       const activeRun = run({ current_node_key: "set" });
-      const { db, writes } = fakeDb({
-        failFlowVarsPersistenceOnce: true,
-      });
+      const { db, writes } = fakeDb();
       const nodes = new Map(
         [
           node("set", "variable_set", {
-            assignments: [{ key: "value", type: "string", value: "x" }],
+            assignments: [
+              { key: "value", type: "number", value: "not-a-number" },
+            ],
             next_node_key: "end",
             ...policy,
           }),
@@ -1192,8 +1241,13 @@ describe("node execution policy in the flow engine", () => {
       await advanceFromNodeKey(db as never, activeRun, "set", nodes);
 
       expect(
-        writes.find((write) => write.table === "rpc:advance_flow_run_cursor")
-          ?.value.p_next_node_key,
+        writes.find(
+          (write) =>
+            write.table ===
+            (policy.on_error === "default_value"
+              ? "rpc:commit_flow_variable_transition"
+              : "rpc:advance_flow_run_cursor"),
+        )?.value.p_next_node_key,
       ).toBe(expectedNext);
       expect(activeRun.vars).toEqual(expectedVars);
     },
@@ -1224,9 +1278,7 @@ describe("node execution policy in the flow engine", () => {
     expect(
       writes.filter(
         (write) =>
-          write.table === "flow_runs" &&
-          write.kind === "update" &&
-          "vars" in write.value,
+          write.table === "rpc:commit_flow_variable_transition",
       ),
     ).toHaveLength(1);
   });

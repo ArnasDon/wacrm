@@ -623,6 +623,74 @@ REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUI
 REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT, UUID) TO service_role;
 
+-- Variable writes and their cursor edge form one idempotent transition. The
+-- caller renders p_next_vars once from the source visit and supplies a stable
+-- next visit UUID across retries. A replay at that exact intended visit returns
+-- the committed row without evaluating or writing the variables again.
+CREATE OR REPLACE FUNCTION commit_flow_variable_transition(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_expected_continuation_id UUID,
+  p_next_node_key TEXT,
+  p_next_visit_id UUID,
+  p_next_vars JSONB
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+BEGIN
+  IF jsonb_typeof(p_next_vars) IS DISTINCT FROM 'object'
+     OR NULLIF(BTRIM(p_next_node_key), '') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+    AND flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND
+     OR v_run.status NOT IN ('active', 'resuming', 'needs_recovery')
+     OR v_run.continuation_id IS DISTINCT FROM p_expected_continuation_id THEN
+    RETURN;
+  END IF;
+
+  IF v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id THEN
+    IF v_run.current_node_key IS NOT DISTINCT FROM p_next_node_key
+       AND v_run.current_visit_id IS NOT DISTINCT FROM p_next_visit_id THEN
+      RETURN NEXT v_run;
+    END IF;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  UPDATE flow_runs
+  SET status = CASE
+        WHEN continuation_id IS NOT NULL THEN 'resuming'
+        WHEN status = 'needs_recovery' THEN 'active'
+        ELSE status
+      END,
+      vars = p_next_vars,
+      current_node_key = p_next_node_key,
+      current_visit_id = p_next_visit_id,
+      continuation_step = continuation_step + 1,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+  RETURNING flow_runs.*;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION commit_flow_variable_transition(UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION commit_flow_variable_transition(UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB) FROM authenticated;
+GRANT EXECUTE ON FUNCTION commit_flow_variable_transition(UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB) TO service_role;
+
 CREATE OR REPLACE FUNCTION ack_flow_wait_resume(
   p_wait_id UUID,
   p_claim_token UUID,

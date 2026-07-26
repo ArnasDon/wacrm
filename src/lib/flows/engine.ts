@@ -615,29 +615,26 @@ async function executePolicyNode<T>(
       await endRun(db, run.id, "failed", "node_execution_failed");
       return { ok: false };
     }
-    if (policy.on_error === "default_value") {
-      const { error: varsError } = await db
-        .from("flow_runs")
-        .update({ vars: resolution.vars })
-        .eq("id", run.id);
-      if (varsError) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "default_value_persist_failed",
-          error: sanitizeExecutionError(varsError),
-        });
-        await endRun(db, run.id, "failed", "default_value_persist_failed");
-        return { ok: false };
-      }
-      run.vars = resolution.vars;
-    }
     await logEvent(db, run.id, "node_entered", node.node_key, {
       error_action: policy.on_error,
       advancing_to: resolution.nextNodeKey,
     });
     if (options.persistErrorTransition !== false) {
       try {
-        await persistDurableCursor(db, run, resolution.nextNodeKey);
+        if (policy.on_error === "default_value") {
+          await persistDurableVariableTransition(
+            db,
+            run,
+            resolution.nextNodeKey,
+            resolution.vars,
+          );
+        } else {
+          await persistDurableCursor(db, run, resolution.nextNodeKey);
+        }
       } catch (cursorError) {
+        if (isCommittedSideEffectError(cursorError)) {
+          throw committedSideEffectCause(cursorError) ?? cursorError;
+        }
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "error_transition_cursor_persist_failed",
           error: sanitizeExecutionError(cursorError),
@@ -679,6 +676,13 @@ async function readNodeEffect(
 
 function syncRun(target: FlowRunRow, source: FlowRunRow): void {
   Object.assign(target, source);
+}
+
+function isAmbiguousLocalTransitionReason(reason: string | null): boolean {
+  return (
+    reason === "flow_cursor_advance_ambiguous" ||
+    reason === "flow_variable_transition_ambiguous"
+  );
 }
 
 function sanitizeExternalReference(value: string | undefined): string | null {
@@ -1249,6 +1253,115 @@ async function persistDurableCursor(
   run.current_visit_id = advanced.current_visit_id;
   run.continuation_step = advanced.continuation_step;
   if (advanced.status) run.status = advanced.status;
+}
+
+async function persistDurableVariableTransition(
+  db: AdminClient,
+  run: FlowRunRow,
+  nextNodeKey: string,
+  nextVars: Record<string, unknown>,
+): Promise<void> {
+  if (
+    !run.current_node_key ||
+    !run.current_visit_id ||
+    !["active", "resuming", "needs_recovery"].includes(run.status)
+  ) {
+    return;
+  }
+  const expectedNodeKey = run.current_node_key;
+  const expectedVisitId = run.current_visit_id;
+  const expectedContinuationId = run.continuation_id ?? null;
+  const intendedNextVisitId = crypto.randomUUID();
+  const commitArgs = {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_expected_node_key: expectedNodeKey,
+    p_expected_visit_id: expectedVisitId,
+    p_expected_continuation_id: expectedContinuationId,
+    p_next_node_key: nextNodeKey,
+    p_next_visit_id: intendedNextVisitId,
+    p_next_vars: nextVars,
+  };
+  let committed: FlowRunRow | undefined;
+  let lastError: unknown = null;
+  let readError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error } = await db.rpc(
+      "commit_flow_variable_transition",
+      commitArgs,
+    );
+    const candidate = Array.isArray(data)
+      ? (data[0] as FlowRunRow | undefined)
+      : undefined;
+    if (
+      !error &&
+      candidate?.current_node_key === nextNodeKey &&
+      candidate.current_visit_id === intendedNextVisitId
+    ) {
+      committed = candidate;
+      break;
+    }
+    lastError =
+      error ?? new Error("durable variable transition was not committed");
+    try {
+      const readBack = await loadRunById(db, run.id);
+      if (
+        readBack?.flow_version_id === run.flow_version_id &&
+        readBack.current_node_key === nextNodeKey &&
+        readBack.current_visit_id === intendedNextVisitId
+      ) {
+        committed = readBack;
+        break;
+      }
+    } catch (caught) {
+      readError = caught;
+    }
+  }
+  if (!committed) {
+    const recoveryArgs = {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_expected_continuation_id: expectedContinuationId,
+      p_reason: "flow_variable_transition_ambiguous",
+      p_intended_next_node_key: nextNodeKey,
+      p_intended_next_visit_id: intendedNextVisitId,
+    };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { data, error } = await db.rpc(
+        "mark_flow_run_cursor_recovery",
+        recoveryArgs,
+      );
+      const recovered = Array.isArray(data)
+        ? (data[0] as FlowRunRow | undefined)
+        : undefined;
+      if (!error && recovered) {
+        syncRun(run, recovered);
+        break;
+      }
+    }
+    throw new CommittedSideEffectError(
+      "Flow variable transition remains ambiguous after bounded recovery",
+      {
+        externalReference: "flow_variable_transition",
+        persistenceStage: "flow_variable_transition",
+        cause:
+          readError && lastError
+            ? new AggregateError(
+                [lastError, readError],
+                "variable transition and read-back both failed",
+              )
+            : readError ?? lastError,
+        expectedNodeKey,
+        expectedVisitId,
+        expectedContinuationId,
+        intendedNextNodeKey: nextNodeKey,
+        intendedNextVisitId,
+      },
+    );
+  }
+  syncRun(run, committed);
 }
 
 async function persistTransition(
@@ -2315,12 +2428,6 @@ export async function advanceFromNodeKey(
               }
               nextVars[assignment.key] = coerced.value;
             }
-            const { error } = await db
-              .from("flow_runs")
-              .update({ vars: nextVars })
-              .eq("id", run.id);
-            if (error) throw error;
-            run.vars = nextVars;
             return nextVars;
           },
         );
@@ -2331,7 +2438,13 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
-      currentKey = await persistTransition(db, run, cfg.next_node_key);
+      await persistDurableVariableTransition(
+        db,
+        run,
+        cfg.next_node_key,
+        executed.value,
+      );
+      currentKey = cfg.next_node_key;
       continue;
     }
     if (runtimeHook === "http_request") {
@@ -2401,23 +2514,13 @@ export async function advanceFromNodeKey(
           run,
           executed.effect,
           async () => {
-            const { error: varsError } = await db
-              .from("flow_runs")
-              .update({ vars: nextVars })
-              .eq("id", run.id);
-            if (varsError) {
-              throw new CommittedSideEffectError(
-                "HTTP response was received but flow variables could not be persisted",
-                {
-                  externalReference: executed.effect.operation_id,
-                  persistenceStage: "flow_run_vars_update",
-                  cause: varsError,
-                },
-              );
-            }
-            run.vars = nextVars;
+            await persistDurableVariableTransition(
+              db,
+              run,
+              cfg.next_node_key,
+              nextVars,
+            );
           },
-          cfg.next_node_key,
         ))
       ) {
         return { outcome: "completed" };
@@ -2722,7 +2825,7 @@ export async function dispatchInboundToFlows(
         receiptRun?.account_id === input.accountId &&
         receiptRun.contact_id === input.contactId &&
         receiptRun.status === "needs_recovery" &&
-        receiptRun.end_reason === "flow_cursor_advance_ambiguous" &&
+        isAmbiguousLocalTransitionReason(receiptRun.end_reason) &&
         receiptRun.current_node_key &&
         receiptRun.current_visit_id
       ) {
@@ -2792,7 +2895,7 @@ export async function dispatchInboundToFlows(
       }
       if (
         activeRun.status === "needs_recovery" &&
-        activeRun.end_reason === "flow_cursor_advance_ambiguous" &&
+        isAmbiguousLocalTransitionReason(activeRun.end_reason) &&
         activeRun.current_node_key &&
         activeRun.current_visit_id
       ) {

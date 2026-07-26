@@ -23,6 +23,7 @@ describe("migration 049 durable waits", () => {
       "complete_flow_wait_continuation",
       "ack_flow_wait_resume",
       "advance_flow_run_cursor",
+      "commit_flow_variable_transition",
       "reserve_flow_node_effect",
       "mark_flow_node_effect_committed",
       "mark_flow_node_effect_ambiguous",
@@ -177,6 +178,9 @@ describe("migration 049 durable waits", () => {
     );
     expect(sql).toMatch(
       /current_node_key IS NOT DISTINCT FROM p_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_next_visit_id/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+commit_flow_variable_transition[\s\S]+?p_expected_continuation_id\s+UUID[\s\S]+?p_next_visit_id\s+UUID[\s\S]+?p_next_vars\s+JSONB[\s\S]+?current_node_key IS NOT DISTINCT FROM p_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_next_visit_id[\s\S]+?vars\s*=\s*p_next_vars/i,
     );
     expect(sql).toMatch(
       /FUNCTION\s+mark_flow_run_cursor_recovery[\s\S]+?p_intended_next_node_key\s+TEXT[\s\S]+?p_intended_next_visit_id\s+UUID[\s\S]+?current_node_key IS NOT DISTINCT FROM p_expected_node_key[\s\S]+?current_node_key IS NOT DISTINCT FROM p_intended_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_intended_next_visit_id/i,

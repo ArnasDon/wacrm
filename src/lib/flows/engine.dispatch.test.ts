@@ -228,6 +228,9 @@ class DispatchState {
   cursorResponseFailures = 0;
   commitFirstPersistentCursorFailure = false;
   private persistentCursorCommitted = false;
+  variableTransitionResponseFailures = 0;
+  commitFirstVariableTransitionFailure = false;
+  private variableTransitionCommitted = false;
   loseEffectCommitResponseOnce = false;
   effectCommitResponseFailures = 0;
   effectReadFailures = 0;
@@ -242,6 +245,7 @@ class DispatchState {
   private sequence = 10;
   waitEnabled = false;
   waitStatus: "pending" | "claimed" | "resumed" = "pending";
+  waitNextNodeKey = "send";
   readonly waitResumeId =
     "90000000-0000-4000-8000-000000000001";
 
@@ -318,7 +322,7 @@ class DispatchState {
             flow_run_id: "run-1",
             flow_version_id: "version-1",
             node_key: "wait",
-            next_node_key: "send",
+            next_node_key: this.waitNextNodeKey,
             claim_token: "claim-1",
             resume_id: this.waitResumeId,
           },
@@ -330,7 +334,7 @@ class DispatchState {
       const run = this.runById("run-1")!;
       if (run.continuation_id === null) {
         run.status = "resuming";
-        run.current_node_key = "send";
+        run.current_node_key = this.waitNextNodeKey;
         run.current_visit_id = this.waitResumeId;
         run.continuation_id = this.waitResumeId;
         run.continuation_phase = "running";
@@ -571,6 +575,50 @@ class DispatchState {
         return { data: [{ ...run }], error: null };
       }
       return { data: [], error: null };
+    }
+    if (name === "commit_flow_variable_transition") {
+      const run = this.runById(value.p_run_id)!;
+      const applyTransition = () => {
+        run.vars = value.p_next_vars as Record<string, unknown>;
+        run.current_node_key = value.p_next_node_key as string;
+        run.current_visit_id = value.p_next_visit_id as string;
+        run.continuation_step = (run.continuation_step ?? 0) + 1;
+        if (run.status === "needs_recovery") run.status = "active";
+      };
+      if (this.variableTransitionResponseFailures > 0) {
+        if (
+          this.commitFirstVariableTransitionFailure &&
+          !this.variableTransitionCommitted
+        ) {
+          applyTransition();
+          this.variableTransitionCommitted = true;
+        }
+        this.variableTransitionResponseFailures -= 1;
+        this.runReadFailures += 1;
+        return {
+          data: null,
+          error: { message: "variable transition unavailable" },
+        };
+      }
+      if (
+        run.current_node_key === value.p_next_node_key &&
+        run.current_visit_id === value.p_next_visit_id &&
+        (run.continuation_id ?? null) ===
+          (value.p_expected_continuation_id ?? null)
+      ) {
+        return { data: [{ ...run }], error: null };
+      }
+      if (
+        run.current_node_key !== value.p_expected_node_key ||
+        run.current_visit_id !== value.p_expected_visit_id ||
+        (run.continuation_id ?? null) !==
+          (value.p_expected_continuation_id ?? null) ||
+        !["active", "resuming", "needs_recovery"].includes(run.status)
+      ) {
+        return { data: [], error: null };
+      }
+      applyTransition();
+      return { data: [{ ...run }], error: null };
     }
     if (name === "advance_flow_run_cursor") {
       if (this.failCursorOnce) {
@@ -902,6 +950,145 @@ function pureChainGraph(
   } as FlowVersionGraph;
 }
 
+function appendVariableGraph(
+  options: { entryAtSet?: boolean; entryAtWait?: boolean } = {},
+): FlowVersionGraph {
+  const entryNodeKey = options.entryAtWait
+    ? "wait"
+    : options.entryAtSet
+      ? "set"
+      : "input";
+  return {
+    schema_version: 1,
+    trigger: {
+      type: "keyword",
+      config: { keywords: ["go"], match_type: "exact" },
+    },
+    entry_node_key: entryNodeKey,
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: options.entryAtSet
+      ? [{ key: "x", type: "string", required: false, default: "a" }]
+      : [],
+    nodes: [
+      {
+        node_key: "input",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "Value?",
+          var_key: "x",
+          next_node_key: "set",
+        },
+        position_x: 0,
+        position_y: 0,
+      },
+      {
+        node_key: "wait",
+        node_type: "wait",
+        config: {
+          amount: 1,
+          unit: "minutes",
+          next_node_key: "set",
+        },
+        position_x: 0,
+        position_y: 50,
+      },
+      {
+        node_key: "set",
+        node_type: "variable_set",
+        config: {
+          assignments: [
+            { key: "x", type: "string", value: "{{vars.x}}b" },
+          ],
+          next_node_key: "end",
+        },
+        position_x: 100,
+        position_y: 0,
+      },
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 200,
+        position_y: 0,
+      },
+    ],
+  } as FlowVersionGraph;
+}
+
+function policyRecoveryGraph(
+  policy: "fail_branch" | "default_value",
+): FlowVersionGraph {
+  return {
+    schema_version: 1,
+    trigger: {
+      type: "keyword",
+      config: { keywords: ["go"], match_type: "exact" },
+    },
+    entry_node_key: "input",
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: [],
+    nodes: [
+      {
+        node_key: "input",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "Value?",
+          var_key: "x",
+          next_node_key: "broken",
+        },
+        position_x: 0,
+        position_y: 0,
+      },
+      {
+        node_key: "broken",
+        node_type: "variable_set",
+        config: {
+          assignments: [
+            { key: "invalid", type: "number", value: "not-a-number" },
+          ],
+          next_node_key: "send",
+          on_error: policy,
+          ...(policy === "fail_branch"
+            ? { error_next_node_key: "send" }
+            : {
+                default_value: {
+                  key: "fallback",
+                  type: "string",
+                  value: "used",
+                },
+              }),
+        },
+        position_x: 100,
+        position_y: 0,
+      },
+      {
+        node_key: "send",
+        node_type: "send_message",
+        config: { text: "Recovered", next_node_key: "end" },
+        position_x: 200,
+        position_y: 0,
+      },
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 300,
+        position_y: 0,
+      },
+    ],
+  } as FlowVersionGraph;
+}
+
 function waitEffectGraph(): FlowVersionGraph {
   const flowGraph = graph();
   flowGraph.entry_node_key = "wait";
@@ -1143,9 +1330,13 @@ describe("public flow dispatcher recovery protocol", () => {
       "pure_start",
       "condition",
       "switch",
-      "set",
       "send",
     ]);
+    expect(
+      state.rpcCalls.filter(
+        (call) => call.name === "commit_flow_variable_transition",
+      ),
+    ).toHaveLength(1);
   });
 
   it("retries a pure transition for a new flow without a reply receipt", async () => {
@@ -1204,6 +1395,167 @@ describe("public flow dispatcher recovery protocol", () => {
     });
     expect(h.sendText).toHaveBeenCalledTimes(1);
   });
+
+  it("replays an uncommitted variable transition from the source visit without applying its template twice", async () => {
+    const state = new DispatchState();
+    state.variableTransitionResponseFailures = 2;
+    prepare(state, run(), appendVariableGraph());
+
+    const first = await dispatchInboundToFlows(
+      inbound("append-recovery", "a"),
+    );
+
+    expect(first.consumed).toBe(true);
+    expect(state.runs[0]).toMatchObject({
+      status: "needs_recovery",
+      current_node_key: "set",
+      vars: { x: "a" },
+      end_reason: "flow_variable_transition_ambiguous",
+    });
+    expect(
+      state.writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.value.status === "failed",
+      ),
+    ).toBe(false);
+
+    const recovered = await dispatchInboundToFlows(
+      inbound("append-recovery", "ignored"),
+    );
+
+    expect(recovered.outcome).toBe("completed");
+    expect(state.runs[0].vars).toEqual({ x: "ab" });
+    const commits = state.rpcCalls.filter(
+      (call) => call.name === "commit_flow_variable_transition",
+    );
+    expect(commits.slice(0, 2).map((call) => call.value)).toEqual([
+      commits[0].value,
+      commits[0].value,
+    ]);
+    expect(commits.map((call) => call.value.p_next_vars)).toEqual([
+      { x: "ab" },
+      { x: "ab" },
+      { x: "ab" },
+    ]);
+  });
+
+  it("recognizes a committed variable transition after response loss without rendering vars again", async () => {
+    const state = new DispatchState();
+    state.variableTransitionResponseFailures = 1;
+    state.commitFirstVariableTransitionFailure = true;
+    prepare(state, run(), appendVariableGraph());
+
+    const result = await dispatchInboundToFlows(
+      inbound("append-committed-loss", "a"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.runs[0].vars).toEqual({ x: "ab" });
+    const commits = state.rpcCalls.filter(
+      (call) => call.name === "commit_flow_variable_transition",
+    );
+    expect(commits).toHaveLength(2);
+    expect(commits[0].value).toEqual(commits[1].value);
+    expect(commits[0].value.p_next_vars).toEqual({ x: "ab" });
+  });
+
+  it("atomically commits an appended variable for a new flow without a receipt", async () => {
+    const state = new DispatchState();
+    state.variableTransitionResponseFailures = 1;
+    state.commitFirstVariableTransitionFailure = true;
+    prepare(state, null, appendVariableGraph({ entryAtSet: true }));
+
+    const result = await dispatchInboundToFlows(
+      inbound("append-new-flow", "go"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.receipts).toHaveLength(0);
+    expect(state.runs[0].vars).toEqual({ x: "ab" });
+    const commits = state.rpcCalls.filter(
+      (call) => call.name === "commit_flow_variable_transition",
+    );
+    expect(commits).toHaveLength(2);
+    expect(commits[0].value).toEqual(commits[1].value);
+  });
+
+  it("preserves wait continuation identity while atomically appending vars", async () => {
+    const state = new DispatchState();
+    state.waitEnabled = true;
+    state.waitNextNodeKey = "set";
+    state.variableTransitionResponseFailures = 1;
+    state.commitFirstVariableTransitionFailure = true;
+    prepare(
+      state,
+      run({
+        status: "waiting",
+        current_node_key: "wait",
+        current_visit_id: "visit-wait",
+        vars: { x: "a" },
+      }),
+      appendVariableGraph({ entryAtWait: true }),
+    );
+
+    const result = await resumeDueFlowWaits(state as never);
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(state.runs[0].vars).toEqual({ x: "ab" });
+    expect(state.runs[0].continuation_id).toBeNull();
+    const commits = state.rpcCalls.filter(
+      (call) => call.name === "commit_flow_variable_transition",
+    );
+    expect(commits).toHaveLength(2);
+    expect(commits[0].value).toEqual(commits[1].value);
+    expect(commits[0].value.p_expected_continuation_id).toBe(
+      state.waitResumeId,
+    );
+  });
+
+  it.each(["fail_branch", "default_value"] as const)(
+    "keeps an ambiguous %s policy transition recoverable and resumes its branch once",
+    async (policy) => {
+      const state = new DispatchState();
+      if (policy === "fail_branch") {
+        state.cursorResponseFailures = 2;
+        state.commitFirstPersistentCursorFailure = true;
+      } else {
+        state.variableTransitionResponseFailures = 2;
+        state.commitFirstVariableTransitionFailure = true;
+      }
+      prepare(state, run(), policyRecoveryGraph(policy));
+
+      const first = await dispatchInboundToFlows(
+        inbound(`policy-${policy}`, "a"),
+      );
+
+      expect(first.consumed).toBe(true);
+      expect(state.runs[0]).toMatchObject({
+        status: "needs_recovery",
+        current_node_key: "send",
+      });
+      expect(
+        state.writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.value.status === "failed",
+        ),
+      ).toBe(false);
+      expect(h.sendText).not.toHaveBeenCalled();
+
+      const recovered = await dispatchInboundToFlows(
+        inbound(`policy-${policy}`, "ignored"),
+      );
+
+      expect(recovered.outcome).toBe("completed");
+      expect(h.sendText).toHaveBeenCalledTimes(1);
+      expect(state.runs[0].vars).toEqual(
+        policy === "default_value"
+          ? { x: "a", fallback: "used" }
+          : { x: "a" },
+      );
+    },
+  );
 
   it("acks a wait only after the intended cursor and downstream nodes continue", async () => {
     const state = new DispatchState();

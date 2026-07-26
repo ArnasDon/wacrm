@@ -24,8 +24,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
+  BarChart3,
   CircleDot,
   History,
   Loader2,
@@ -55,6 +57,7 @@ import {
 
 export function EditorHeader() {
   const router = useRouter();
+  const tAnalytics = useTranslations("Flows.analytics");
   const {
     flow,
     state,
@@ -152,6 +155,14 @@ export function EditorHeader() {
             <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
               {flow.execution_count}
             </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push(`/flows/${flow.id}/analytics`)}
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            {tAnalytics("open")}
           </Button>
           <Button
             variant="ghost"

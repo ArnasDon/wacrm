@@ -315,6 +315,7 @@ export interface FlowNodeExecutionRow {
   id: string;
   flow_run_id: string;
   flow_version_id: string;
+  visit_id: string | null;
   node_key: string;
   node_type: FlowNodeType;
   status: "submitted" | "executing" | "completed" | "error";

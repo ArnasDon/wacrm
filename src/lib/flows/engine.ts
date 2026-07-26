@@ -479,6 +479,7 @@ async function startNodeExecutionRecord(
       .insert({
         flow_run_id: run.id,
         flow_version_id: run.active_flow_version_id ?? run.flow_version_id,
+        visit_id: run.current_visit_id ?? null,
         node_key: node.node_key,
         node_type: node.node_type,
         status: "executing",

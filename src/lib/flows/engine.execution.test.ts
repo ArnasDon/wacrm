@@ -1657,6 +1657,7 @@ describe("node execution policy in the flow engine", () => {
     expect(sendInserts[0].value).toMatchObject({
       flow_run_id: "run-1",
       flow_version_id: "version-7",
+      visit_id: expect.any(String),
       node_type: "send_message",
       status: "executing",
     });

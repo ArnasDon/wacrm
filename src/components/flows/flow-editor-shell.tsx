@@ -60,9 +60,14 @@ const LEGEND_TYPES = listBuilderNodeDescriptors().map(
 interface Props {
   initialFlow: FlowRow;
   initialNodes: FlowNodeRow[];
+  canManageVersions: boolean;
 }
 
-export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
+export function FlowEditorShell({
+  initialFlow,
+  initialNodes,
+  canManageVersions,
+}: Props) {
   const t = useTranslations("Flows.builder");
 
   // Read the persisted choice in the useState initializer. Safe even
@@ -97,7 +102,11 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
   };
 
   return (
-    <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
+    <FlowEditorProvider
+      initialFlow={initialFlow}
+      initialNodes={initialNodes}
+      canManageVersions={canManageVersions}
+    >
       <div className="flex h-full min-h-0 flex-col">
         <EditorHeader />
 

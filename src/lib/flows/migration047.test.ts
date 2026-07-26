@@ -34,10 +34,19 @@ describe("migration 047 flow versions", () => {
       /save_flow_draft[\s\S]*FOR UPDATE[\s\S]*draft_revision_conflict/i,
     );
     expect(sql).toMatch(
+      /save_flow_draft[\s\S]*p_expected_revision IS NULL[\s\S]*draft_revision_conflict/i,
+    );
+    expect(sql).not.toMatch(
+      /p_expected_revision IS NOT NULL\s+AND\s+v_flow\.draft_revision/i,
+    );
+    expect(sql).toMatch(
       /save_flow_draft[\s\S]*DELETE FROM flow_nodes[\s\S]*INSERT INTO flow_nodes/i,
     );
     expect(sql).toMatch(
       /publish_flow_version[\s\S]*p_expected_draft_revision[\s\S]*draft_revision_conflict[\s\S]*INSERT INTO flow_versions/i,
+    );
+    expect(sql).toMatch(
+      /publish_flow_version[\s\S]*p_expected_draft_revision IS NULL[\s\S]*draft_revision_conflict/i,
     );
   });
 
@@ -47,6 +56,9 @@ describe("migration 047 flow versions", () => {
     );
     expect(sql).toMatch(
       /restore_flow_version[\s\S]*draft_revision_conflict[\s\S]*published_version_conflict/i,
+    );
+    expect(sql).toMatch(
+      /restore_flow_version[\s\S]*p_expected_draft_revision IS NULL[\s\S]*draft_revision_conflict/i,
     );
     expect(sql).toMatch(
       /restore_flow_version[\s\S]*draft_revision = v_flow\.draft_revision \+ 1/i,

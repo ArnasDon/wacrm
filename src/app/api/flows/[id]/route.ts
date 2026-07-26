@@ -13,12 +13,16 @@ import {
  *                          full node graph (delete-then-insert under
  *                          the hood). These rows are an editable draft;
  *                          the runner reads only immutable versions.
+ *                          Requires `expected_draft_revision`; a missing
+ *                          or invalid token returns 428 with
+ *                          `code: "DRAFT_REVISION_REQUIRED"`.
  * DELETE /api/flows/[id] — hard delete (RLS+CASCADE clean up nodes,
  *                          runs, events).
  *
- * All three require a signed-in caller who owns the flow. Flows is in
- * soft-GA — the beta gate that previously 404'd non-beta accounts is
- * gone; the "Beta" label in the UI is the only remaining signal.
+ * All three require a signed-in caller with account access. The GET response
+ * separately reports whether the caller is the creator and may manage
+ * immutable versions. Flows is in soft-GA — the beta gate that previously
+ * 404'd non-beta accounts is gone.
  */
 
 async function requireOwnership(
@@ -27,6 +31,7 @@ async function requireOwnership(
   | {
       ok: true
       userId: string
+      canManageVersions: boolean
       supabase: Awaited<ReturnType<typeof createClient>>
     }
   | { ok: false; status: number; body: { error: string } }
@@ -38,17 +43,23 @@ async function requireOwnership(
   if (!user) {
     return { ok: false, status: 401, body: { error: 'Unauthorized' } }
   }
-  // RLS scopes this to the caller — a flow owned by another user
-  // returns null (404 below).
+  // RLS scopes this to the caller's account. Keep creator identity so the
+  // editor receives an explicit version-management capability even when a
+  // same-account teammate may read and edit the draft.
   const { data: flow } = await supabase
     .from('flows')
-    .select('id')
+    .select('id, user_id')
     .eq('id', flowId)
     .maybeSingle()
   if (!flow) {
     return { ok: false, status: 404, body: { error: 'Not found' } }
   }
-  return { ok: true, userId: user.id, supabase }
+  return {
+    ok: true,
+    userId: user.id,
+    canManageVersions: flow.user_id === user.id,
+    supabase,
+  }
 }
 
 export async function GET(
@@ -71,7 +82,13 @@ export async function GET(
   if (!flow) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  return NextResponse.json({ flow, nodes: nodes ?? [] })
+  return NextResponse.json({
+    flow,
+    nodes: nodes ?? [],
+    capabilities: {
+      can_manage_versions: guard.canManageVersions,
+    },
+  })
 }
 
 interface PutBody {
@@ -120,13 +137,16 @@ export async function PUT(
     )
   }
   if (
-    body.expected_draft_revision !== undefined &&
-    (!Number.isSafeInteger(body.expected_draft_revision) ||
-      body.expected_draft_revision < 0)
+    !Number.isSafeInteger(body.expected_draft_revision) ||
+    (body.expected_draft_revision ?? -1) < 0
   ) {
     return NextResponse.json(
-      { error: 'expected_draft_revision must be a non-negative integer' },
-      { status: 400 },
+      {
+        code: 'DRAFT_REVISION_REQUIRED',
+        error:
+          'expected_draft_revision must be the non-negative integer returned by the latest flow read',
+      },
+      { status: 428 },
     )
   }
   const unknownNode = body.nodes?.find(
@@ -170,7 +190,7 @@ export async function PUT(
     'save_flow_draft',
     {
       p_flow_id: id,
-      p_expected_revision: body.expected_draft_revision ?? null,
+      p_expected_revision: body.expected_draft_revision,
       p_patch: flowPatch,
       p_nodes:
         body.nodes === undefined

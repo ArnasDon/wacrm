@@ -29,6 +29,9 @@ export default function FlowEditorPage() {
 
   const [flow, setFlow] = useState<FlowRow | null>(null);
   const [nodes, setNodes] = useState<FlowNodeRow[]>([]);
+  const [canManageVersions, setCanManageVersions] = useState<boolean | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -46,10 +49,12 @@ export default function FlowEditorPage() {
         const json = (await res.json()) as {
           flow: FlowRow;
           nodes: FlowNodeRow[];
+          capabilities: { can_manage_versions: boolean };
         };
         if (!cancelled) {
           setFlow(json.flow);
           setNodes(json.nodes ?? []);
+          setCanManageVersions(json.capabilities.can_manage_versions);
         }
       } catch (err) {
         if (!cancelled) {
@@ -72,7 +77,7 @@ export default function FlowEditorPage() {
       </div>
     );
   }
-  if (notFound || !flow) {
+  if (notFound || !flow || canManageVersions === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-muted-foreground">{t("notFound")}</p>
@@ -87,5 +92,11 @@ export default function FlowEditorPage() {
     );
   }
 
-  return <FlowEditorShell initialFlow={flow} initialNodes={nodes} />;
+  return (
+    <FlowEditorShell
+      initialFlow={flow}
+      initialNodes={nodes}
+      canManageVersions={canManageVersions}
+    />
+  );
 }

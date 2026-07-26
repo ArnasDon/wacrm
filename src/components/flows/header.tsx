@@ -71,6 +71,7 @@ export function EditorHeader() {
     versionsLoading,
     canManageVersions,
     publishedVersionId,
+    reloadVersions,
     restoreVersion,
   } = useFlowEditor();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -129,7 +130,13 @@ export function EditorHeader() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setHistoryOpen((open) => !open)}
+              onClick={() =>
+                setHistoryOpen((open) => {
+                  const next = !open;
+                  if (next) void reloadVersions();
+                  return next;
+                })
+              }
             >
               <History className="h-3.5 w-3.5" />
               Versions

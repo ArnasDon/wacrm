@@ -225,11 +225,18 @@ export function buildDraftSaveRequest(
   };
 }
 
-export function versionHistoryAccess(
-  status: number,
-): "allowed" | "forbidden" | "error" {
-  if (status === 403) return "forbidden";
-  return status >= 200 && status < 300 ? "allowed" : "error";
+export function versionControlsBehavior(
+  canManageVersions: boolean,
+  historyStatus: number,
+) {
+  const historySucceeded = historyStatus >= 200 && historyStatus < 300;
+  const expectedNonOwnerDenial =
+    !canManageVersions && historyStatus === 403;
+  return {
+    showControls: canManageVersions,
+    shouldReportHistoryError:
+      !historySucceeded && !expectedNonOwnerDenial,
+  };
 }
 
 function builderStateFromRows(
@@ -277,12 +284,14 @@ export function useFlowEditor(): FlowEditorContextValue {
 interface ProviderProps {
   initialFlow: FlowRow;
   initialNodes: FlowNodeRow[];
+  canManageVersions: boolean;
   children: ReactNode;
 }
 
 export function FlowEditorProvider({
   initialFlow,
   initialNodes,
+  canManageVersions,
   children,
 }: ProviderProps) {
   const router = useRouter();
@@ -296,7 +305,11 @@ export function FlowEditorProvider({
   const [activating, setActivating] = useState(false);
   const [versions, setVersions] = useState<FlowVersionSummary[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
-  const [canManageVersions, setCanManageVersions] = useState(false);
+  const [versionHistoryStatus, setVersionHistoryStatus] = useState(200);
+  const versionControls = useMemo(
+    () => versionControlsBehavior(canManageVersions, versionHistoryStatus),
+    [canManageVersions, versionHistoryStatus],
+  );
   const [publishedVersionId, setPublishedVersionId] = useState(
     initialFlow.published_version_id,
   );
@@ -377,28 +390,31 @@ export function FlowEditorProvider({
     setVersionsLoading(true);
     try {
       const response = await fetch(`/api/flows/${initialFlow.id}/versions`);
-      const access = versionHistoryAccess(response.status);
-      if (access === "forbidden") {
-        setCanManageVersions(false);
+      setVersionHistoryStatus(response.status);
+      const behavior = versionControlsBehavior(
+        canManageVersions,
+        response.status,
+      );
+      if (!response.ok && !behavior.shouldReportHistoryError) {
         setVersions([]);
         return;
       }
-      if (access === "error") {
+      if (!response.ok) {
         throw new Error(`History failed: ${response.status}`);
       }
       const payload = (await response.json()) as {
         versions?: FlowVersionSummary[];
       };
-      setCanManageVersions(true);
       setVersions(payload.versions ?? []);
     } catch (error) {
+      setVersionHistoryStatus((status) => (status >= 400 ? status : 0));
       toast.error(
         error instanceof Error ? error.message : "Version history failed",
       );
     } finally {
       setVersionsLoading(false);
     }
-  }, [initialFlow.id]);
+  }, [canManageVersions, initialFlow.id]);
 
   useEffect(() => {
     void reloadVersions();
@@ -699,7 +715,7 @@ export function FlowEditorProvider({
       canActivate,
       versions,
       versionsLoading,
-      canManageVersions,
+      canManageVersions: versionControls.showControls,
       publishedVersionId,
       draftRevision,
       addNode,
@@ -728,7 +744,7 @@ export function FlowEditorProvider({
       canActivate,
       versions,
       versionsLoading,
-      canManageVersions,
+      versionControls.showControls,
       publishedVersionId,
       draftRevision,
       addNode,

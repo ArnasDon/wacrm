@@ -103,8 +103,8 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'flow not found';
   END IF;
-  IF p_expected_revision IS NOT NULL
-     AND v_flow.draft_revision <> p_expected_revision THEN
+  IF p_expected_revision IS NULL
+     OR v_flow.draft_revision <> p_expected_revision THEN
     RAISE EXCEPTION USING
       MESSAGE = 'draft_revision_conflict',
       ERRCODE = '40001';
@@ -251,7 +251,8 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'flow not found';
   END IF;
-  IF v_flow.draft_revision <> p_expected_draft_revision THEN
+  IF p_expected_draft_revision IS NULL
+     OR v_flow.draft_revision <> p_expected_draft_revision THEN
     RAISE EXCEPTION USING
       MESSAGE = 'draft_revision_conflict',
       ERRCODE = '40001';
@@ -311,7 +312,8 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'flow not found';
   END IF;
-  IF v_flow.draft_revision <> p_expected_draft_revision THEN
+  IF p_expected_draft_revision IS NULL
+     OR v_flow.draft_revision <> p_expected_draft_revision THEN
     RAISE EXCEPTION USING
       MESSAGE = 'draft_revision_conflict',
       ERRCODE = '40001';

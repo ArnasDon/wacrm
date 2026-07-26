@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   requireRole: vi.fn(),
   admin: vi.fn(),
   rpc: vi.fn(),
+  ownerUserId: "user-1",
   state: {
     flowUpdateCalls: [] as Record<string, unknown>[],
   },
@@ -22,15 +23,36 @@ vi.mock("@/lib/supabase/server", () => ({
         Promise.resolve({ data: { user: { id: "user-1" } } }),
     },
     from: (table: string) => {
-      if (table !== "flows") throw new Error(`unexpected table ${table}`);
-      return {
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: { id: "flow-1" }, error: null }),
+      if (table === "flows") {
+        return {
+          select: (columns: string) => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data:
+                    columns === "id, user_id"
+                      ? { id: "flow-1", user_id: h.ownerUserId }
+                      : {
+                          id: "flow-1",
+                          user_id: h.ownerUserId,
+                          draft_revision: 4,
+                        },
+                  error: null,
+                }),
+            }),
           }),
-        }),
-      };
+        };
+      }
+      if (table === "flow_nodes") {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => Promise.resolve({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
     },
   }),
 }));
@@ -39,13 +61,14 @@ vi.mock("@/lib/flows/admin-client", () => ({
   supabaseAdmin: h.admin,
 }));
 
-import { PUT } from "./route";
+import { GET, PUT } from "./route";
 
 function requestWithNode(node_type: string, config: Record<string, unknown>) {
   return new Request("http://localhost/api/flows/flow-1", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
+      expected_draft_revision: 0,
       nodes: [{ node_key: "x", node_type, config }],
     }),
   });
@@ -54,6 +77,7 @@ function requestWithNode(node_type: string, config: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks();
   h.state.flowUpdateCalls = [];
+  h.ownerUserId = "user-1";
   h.requireRole.mockResolvedValue(undefined);
   h.admin.mockReturnValue({
     rpc: h.rpc,
@@ -97,6 +121,31 @@ beforeEach(() => {
 });
 
 describe("PUT /api/flows/[id] flow runtime boundary", () => {
+  it.each([
+    ["missing", {}],
+    ["string", { expected_draft_revision: "4" }],
+    ["negative", { expected_draft_revision: -1 }],
+    ["fractional", { expected_draft_revision: 1.5 }],
+  ])("requires a valid draft revision precondition (%s)", async (_case, body) => {
+    const response = await PUT(
+      new Request("http://localhost/api/flows/flow-1", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, name: "Update" }),
+      }),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(428);
+    expect(await response.json()).toEqual({
+      code: "DRAFT_REVISION_REQUIRED",
+      error:
+        "expected_draft_revision must be the non-negative integer returned by the latest flow read",
+    });
+    expect(h.admin).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["wait", { amount: 5, unit: "minutes", next_node_key: "end" }],
     [
@@ -188,5 +237,28 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
       expect.objectContaining({ p_expected_revision: 4 }),
     );
     expect(h.state.flowUpdateCalls).toEqual([]);
+  });
+});
+
+describe("GET /api/flows/[id] capabilities", () => {
+  it.each([
+    ["creator", "user-1", true],
+    ["same-account non-owner", "user-2", false],
+  ])("returns explicit version management capability for the %s", async (
+    _case,
+    ownerUserId,
+    expected,
+  ) => {
+    h.ownerUserId = ownerUserId;
+
+    const response = await GET(
+      new Request("http://localhost/api/flows/flow-1"),
+      { params: Promise.resolve({ id: "flow-1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      capabilities: { can_manage_versions: expected },
+    });
   });
 });

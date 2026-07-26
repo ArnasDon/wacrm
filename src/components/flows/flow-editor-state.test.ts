@@ -6,7 +6,7 @@ import {
   buildDraftSaveRequest,
   defaultConfigFor,
   uniqueNodeKey,
-  versionHistoryAccess,
+  versionControlsBehavior,
 } from "./flow-editor-state";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import type { BuilderNode, NodeType } from "./shared";
@@ -159,10 +159,30 @@ describe("applyRestoredVersion", () => {
 });
 
 describe("version history capability", () => {
-  it("treats an expected 403 as non-owner without surfacing an error", () => {
-    expect(versionHistoryAccess(403)).toBe("forbidden");
-    expect(versionHistoryAccess(200)).toBe("allowed");
-    expect(versionHistoryAccess(500)).toBe("error");
+  it("hides controls and suppresses the expected history 403 for a confirmed non-owner", () => {
+    expect(versionControlsBehavior(false, 403)).toEqual({
+      showControls: false,
+      shouldReportHistoryError: false,
+    });
+  });
+
+  it("keeps owner controls visible and history retryable after transient failure", () => {
+    expect(versionControlsBehavior(true, 500)).toEqual({
+      showControls: true,
+      shouldReportHistoryError: true,
+    });
+    expect(versionControlsBehavior(true, 0)).toEqual({
+      showControls: true,
+      shouldReportHistoryError: true,
+    });
+    expect(versionControlsBehavior(true, 403)).toEqual({
+      showControls: true,
+      shouldReportHistoryError: true,
+    });
+    expect(versionControlsBehavior(true, 200)).toEqual({
+      showControls: true,
+      shouldReportHistoryError: false,
+    });
   });
 });
 

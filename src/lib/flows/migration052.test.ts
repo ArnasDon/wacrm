@@ -11,59 +11,77 @@ const sql = readFileSync(
 );
 
 describe("migration 052 bounded flow execution payloads", () => {
-  it("backfills legacy production payloads before adding idempotent checks", () => {
-    const backfill = sql.indexOf("UPDATE flow_node_executions");
-    const constraints = sql.indexOf("flow_node_executions_inputs_size");
-
-    expect(backfill).toBeGreaterThan(-1);
-    expect(constraints).toBeGreaterThan(backfill);
+  it("adds idempotent NOT VALID checks without deployment-time table rewrites", () => {
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS metadata JSONB");
-    expect(sql).toContain("legacy_payload_exceeded_limit");
-    for (const field of ["inputs", "outputs", "error", "metadata"]) {
-      expect(sql).toMatch(
-        new RegExp(
-          `flow_node_executions_${field}_size[\\s\\S]+?octet_length\\([\\s\\S]*?${field}[\\s\\S]+?<=\\s*61440`,
-          "i",
-        ),
-      );
-    }
-  });
+    expect(sql).not.toMatch(/\bUPDATE\s+flow_(?:debug_)?node_executions\b/i);
+    expect(sql).toContain("NOT VALID");
+    expect(sql).toContain("Validate during a maintenance window");
 
-  it("caps the aggregate production debug result before detail egress", () => {
-    expect(sql).toMatch(
-      /flow_node_executions_debug_result_size[\s\S]+?jsonb_build_object\([\s\S]+?'inputs'[\s\S]+?'outputs'[\s\S]+?'error'[\s\S]+?'metadata'[\s\S]+?<=\s*262144/i,
-    );
-  });
-
-  it("backfills and tightens debug execution fields with shape-safe sentinels", () => {
-    expect(sql).toContain("UPDATE flow_debug_node_executions");
-    expect(sql).toContain("jsonb_build_array");
-    for (const field of [
-      "inputs",
-      "outputs",
-      "simulated_effects",
-      "metadata",
-      "error",
+    for (const constraint of [
+      "flow_node_executions_inputs_size",
+      "flow_node_executions_outputs_size",
+      "flow_node_executions_error_size",
+      "flow_node_executions_metadata_size",
+      "flow_node_executions_debug_result_size",
+      "flow_debug_executions_inputs_bounded",
+      "flow_debug_executions_outputs_bounded",
+      "flow_debug_executions_simulated_effects_bounded",
+      "flow_debug_executions_metadata_bounded",
+      "flow_debug_executions_error_bounded",
+      "flow_debug_executions_result_json_bounded",
     ]) {
       expect(sql).toMatch(
         new RegExp(
-          `flow_debug_executions_${field}_bounded[\\s\\S]+?octet_length\\([\\s\\S]*?${field}[\\s\\S]+?<=\\s*32768`,
+          `ADD\\s+CONSTRAINT\\s+${constraint}[\\s\\S]+?NOT\\s+VALID`,
           "i",
         ),
       );
     }
   });
 
-  it("exposes source variables only through a service-only bounded result", () => {
+  it("reads an owner-bound source snapshot with latest-per-node and pre-egress sentinels", () => {
     expect(sql).toMatch(
-      /FUNCTION\s+read_flow_debug_source_variables[\s\S]+?p_max_bytes INTEGER[\s\S]+?RETURNS TABLE\(\s*result_json JSONB,\s*truncated BOOLEAN,\s*original_bytes INTEGER\s*\)[\s\S]+?SECURITY DEFINER/i,
+      /FUNCTION\s+read_flow_debug_source_snapshot[\s\S]+?p_created_by UUID[\s\S]+?SECURITY DEFINER/i,
     );
-    expect(sql).toContain("source_variables_exceeded_limit");
+    expect(sql).toContain("DISTINCT ON (e.node_key)");
+    expect(sql).toContain("ORDER BY e.node_key, e.started_at DESC, e.id DESC");
+    expect(sql).toContain("legacy_payload_exceeded_limit");
+    expect(sql).toContain("source_clone_budget_exceeded");
+    expect(sql).toMatch(/f\.user_id\s*=\s*p_created_by/i);
     expect(sql).toMatch(
-      /REVOKE ALL ON FUNCTION read_flow_debug_source_variables[\s\S]+?FROM authenticated/i,
+      /REVOKE ALL ON FUNCTION read_flow_debug_source_snapshot[\s\S]+?FROM authenticated/i,
     );
     expect(sql).toMatch(
-      /GRANT EXECUTE ON FUNCTION read_flow_debug_source_variables[\s\S]+?TO service_role/i,
+      /GRANT EXECUTE ON FUNCTION read_flow_debug_source_snapshot[\s\S]+?TO service_role/i,
     );
+  });
+
+  it("reads one debug execution through a service-only owner/session/flow-bound RPC", () => {
+    expect(sql).toMatch(
+      /FUNCTION\s+read_flow_debug_execution_detail[\s\S]+?p_flow_id UUID[\s\S]+?p_session_id UUID[\s\S]+?p_execution_id UUID[\s\S]+?p_created_by UUID[\s\S]+?SECURITY DEFINER/i,
+    );
+    expect(sql).toMatch(/s\.created_by\s*=\s*p_created_by/i);
+    expect(sql).toMatch(/s\.flow_id\s*=\s*p_flow_id/i);
+    expect(sql).toMatch(/e\.session_id\s*=\s*p_session_id/i);
+    expect(sql).toContain("legacy_payload_exceeded_limit");
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION read_flow_debug_execution_detail[\s\S]+?FROM authenticated/i,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION read_flow_debug_execution_detail[\s\S]+?TO service_role/i,
+    );
+  });
+
+  it("hardens security-definer lookup paths and keeps RPCs service-only", () => {
+    const definitions =
+      sql.match(
+        /CREATE OR REPLACE FUNCTION read_flow_debug_(?:source_snapshot|execution_detail)[\s\S]+?\$\$;/gi,
+      ) ?? [];
+    expect(definitions).toHaveLength(2);
+    for (const definition of definitions) {
+      expect(definition).toContain(
+        "SET search_path = pg_catalog, public, pg_temp",
+      );
+    }
   });
 });

@@ -13,12 +13,7 @@ import {
   sanitizeDebugSession,
   sanitizeDebugValue,
 } from "@/lib/flows/debug-runtime";
-import type {
-  FlowNodeExecutionRow,
-  FlowNodeRow,
-  FlowRow,
-  FlowRunRow,
-} from "@/lib/flows/types";
+import type { FlowNodeRow, FlowRow, FlowRunRow } from "@/lib/flows/types";
 import {
   buildFlowVersionGraph,
   parseFlowVersionGraph,
@@ -34,7 +29,8 @@ const bodySchema = z
   .strict();
 const flowIdSchema = z.string().uuid();
 const MAX_CLONED_OUTPUT_BYTES = 256 * 1024;
-const MAX_SOURCE_EXECUTION_ROWS = 32;
+const MAX_SOURCE_NODES = 100;
+const MAX_SOURCE_FIELD_BYTES = 32 * 1024;
 
 export async function GET(
   _request: Request,
@@ -53,8 +49,10 @@ export async function GET(
     )
     .eq("flow_id", id)
     .eq("created_by", owner.user.id)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString())
     .order("updated_at", { ascending: false })
-    .limit(20);
+    .limit(5);
   if (error) return debugRpcError(error);
   return debugJson({ sessions: sanitizeDebugValue(data ?? []) });
 }
@@ -154,22 +152,25 @@ export async function POST(
     } catch {
       return debugJson({ error: "Invalid flow snapshot" }, { status: 422 });
     }
-    const { data: sourceVariables, error: sourceVariablesError } =
-      await admin.rpc("read_flow_debug_source_variables", {
+    const { data: sourceSnapshot, error: sourceSnapshotError } =
+      await admin.rpc("read_flow_debug_source_snapshot", {
         p_flow_id: id,
         p_run_id: run.id,
-        p_max_bytes: 65_536,
+        p_created_by: owner.user.id,
+        p_max_nodes: MAX_SOURCE_NODES,
+        p_max_field_bytes: MAX_SOURCE_FIELD_BYTES,
+        p_max_total_bytes: MAX_CLONED_OUTPUT_BYTES,
       });
-    if (sourceVariablesError) {
-      return debugRpcError(sourceVariablesError, {
-        operation: "read_source_variables",
+    if (sourceSnapshotError) {
+      return debugRpcError(sourceSnapshotError, {
+        operation: "read_source_snapshot",
         flowId: id,
       });
     }
-    const sourceVariablesRow = Array.isArray(sourceVariables)
-      ? sourceVariables[0]
-      : sourceVariables;
-    if (!sourceVariablesRow || sourceVariablesRow.truncated === true) {
+    const sourceSnapshotRow = Array.isArray(sourceSnapshot)
+      ? sourceSnapshot[0]
+      : sourceSnapshot;
+    if (!sourceSnapshotRow || sourceSnapshotRow.variables_truncated === true) {
       return debugJson(
         {
           error: "Source variables exceed the debug size limit",
@@ -178,7 +179,7 @@ export async function POST(
         { status: 413 },
       );
     }
-    variables = sourceVariablesRow.result_json as Record<string, unknown>;
+    variables = sourceSnapshotRow.variables_json as Record<string, unknown>;
     try {
       assertDebugVariablesBounded(variables);
     } catch {
@@ -191,44 +192,26 @@ export async function POST(
       );
     }
     variables = sanitizeDebugValue(variables) as Record<string, unknown>;
-    const { data: executionRows, error: executionsError } = await admin
-      .from("flow_node_executions")
-      .select("node_key, outputs, started_at")
-      .eq("flow_run_id", run.id)
-      .order("started_at", { ascending: false })
-      .limit(MAX_SOURCE_EXECUTION_ROWS);
-    if (executionsError) {
-      return debugRpcError(executionsError, {
-        operation: "read_source_executions",
-        flowId: id,
-      });
+    const rawClonedOutputs = sourceSnapshotRow.source_node_outputs;
+    if (
+      !rawClonedOutputs ||
+      typeof rawClonedOutputs !== "object" ||
+      Array.isArray(rawClonedOutputs) ||
+      new TextEncoder().encode(JSON.stringify(rawClonedOutputs)).byteLength >
+        MAX_CLONED_OUTPUT_BYTES
+    ) {
+      return debugJson(
+        {
+          error: "Invalid bounded source snapshot",
+          code: "DEBUG_SOURCE_SNAPSHOT_INVALID",
+        },
+        { status: 502 },
+      );
     }
-    for (const execution of (executionRows ?? []) as Pick<
-      FlowNodeExecutionRow,
-      "node_key" | "outputs"
-    >[]) {
-      if (!Object.hasOwn(clonedOutputs, execution.node_key)) {
-        const sanitizedOutput = sanitizeDebugValue(execution.outputs) as Record<
-          string,
-          unknown
-        >;
-        const candidate = {
-          ...clonedOutputs,
-          [execution.node_key]: sanitizedOutput,
-        };
-        if (
-          new TextEncoder().encode(JSON.stringify(candidate)).byteLength >
-          MAX_CLONED_OUTPUT_BYTES
-        ) {
-          clonedOutputs[execution.node_key] = {
-            truncated: true,
-            reason: "source_clone_budget_exceeded",
-          };
-          continue;
-        }
-        clonedOutputs[execution.node_key] = sanitizedOutput;
-      }
-    }
+    Object.assign(
+      clonedOutputs,
+      sanitizeDebugValue(rawClonedOutputs) as Record<string, unknown>,
+    );
   } else if (flowVersionId) {
     const { data: version } = await admin
       .from("flow_versions")

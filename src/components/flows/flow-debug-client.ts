@@ -1,4 +1,5 @@
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
+import { z } from "zod";
 
 export interface DebugManifestPort {
   id: string;
@@ -43,6 +44,7 @@ export interface DebugExecution {
   outputs?: unknown;
   error?: unknown;
   simulated_effects?: unknown[];
+  metadata?: unknown;
   duration_ms?: number;
   attempt?: number;
   started_at?: string;
@@ -72,6 +74,42 @@ export interface FlightRecorderResponse {
 
 type Fetcher = typeof fetch;
 
+const debugExecutionSchema = z
+  .object({
+    id: z.string().min(1),
+    node_key: z.string().min(1),
+    node_type: z.string().min(1).optional(),
+    status: z.string().min(1),
+    inputs: z.unknown().optional(),
+    outputs: z.unknown().optional(),
+    error: z.unknown().optional(),
+    simulated_effects: z.array(z.unknown()).optional(),
+    metadata: z.unknown().optional(),
+    duration_ms: z.number().int().nonnegative().optional(),
+    attempt: z.number().int().positive().optional(),
+    started_at: z.string().optional(),
+    created_at: z.string().optional(),
+  })
+  .passthrough();
+
+const debugRunExecutionSchema = debugExecutionSchema.extend({
+  node_type: z.string().min(1),
+  attempt: z.number().int().positive(),
+});
+
+const debugSessionSchema = z
+  .object({
+    id: z.string().min(1),
+    revision: z.number().int().nonnegative(),
+    status: z.string().min(1),
+    variables: z.record(z.string(), z.unknown()),
+    manifest: z.object({
+      variable_schema: z.array(z.unknown()),
+      nodes: z.array(z.unknown()),
+    }),
+  })
+  .passthrough();
+
 export class FlowDebugClientError extends Error {
   constructor(
     message: string,
@@ -93,6 +131,28 @@ async function readResponse<T>(response: Response): Promise<T> {
     );
   }
   return body;
+}
+
+function invalidResponse(): FlowDebugClientError {
+  return new FlowDebugClientError("Invalid flow debug response", 502);
+}
+
+function parseDebugExecution(value: unknown): DebugExecution {
+  const parsed = debugExecutionSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse();
+  return parsed.data as DebugExecution;
+}
+
+function parseDebugRunExecution(value: unknown): DebugExecution {
+  const parsed = debugRunExecutionSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse();
+  return parsed.data as DebugExecution;
+}
+
+function parseDebugSession(value: unknown): DebugSession {
+  const parsed = debugSessionSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse();
+  return parsed.data as unknown as DebugSession;
 }
 
 export async function fetchDebugSessions(
@@ -126,7 +186,19 @@ export async function resumeDebugSession(
     `/api/flows/${flowId}/debug/sessions/${sessionId}${query}`,
     { cache: "no-store" },
   );
-  return readResponse(response);
+  const body = await readResponse<{
+    session?: unknown;
+    executions?: unknown[];
+    page?: FlightRecorderPage;
+  }>(response);
+  if (!body.session || !Array.isArray(body.executions)) {
+    throw invalidResponse();
+  }
+  return {
+    session: parseDebugSession(body.session),
+    executions: body.executions.map(parseDebugExecution),
+    ...(body.page ? { page: body.page } : {}),
+  };
 }
 
 export async function recoverDebugSession(
@@ -218,7 +290,11 @@ export async function fetchFlightRecorder(
     `/api/flows/${flowId}/debug/flight-recorder${query}`,
     { cache: "no-store" },
   );
-  return readResponse(response);
+  const body = await readResponse<FlightRecorderResponse>(response);
+  return {
+    ...body,
+    executions: body.executions.map(parseDebugExecution),
+  };
 }
 
 export async function fetchFlightExecutionDetail(
@@ -230,6 +306,51 @@ export async function fetchFlightExecutionDetail(
     `/api/flows/${flowId}/debug/flight-recorder/${executionId}`,
     { cache: "no-store" },
   );
-  const body = await readResponse<{ execution: DebugExecution }>(response);
-  return body.execution;
+  const body = await readResponse<{ execution?: unknown }>(response);
+  return parseDebugExecution(body.execution);
+}
+
+export async function fetchDebugExecutionDetail(
+  fetcher: Fetcher,
+  flowId: string,
+  sessionId: string,
+  executionId: string,
+): Promise<DebugExecution> {
+  const response = await fetcher(
+    `/api/flows/${flowId}/debug/sessions/${sessionId}/executions/${executionId}`,
+    { cache: "no-store" },
+  );
+  const body = await readResponse<{ execution?: unknown }>(response);
+  return parseDebugRunExecution(body.execution);
+}
+
+export async function runDebugNode(
+  fetcher: Fetcher,
+  flowId: string,
+  sessionId: string,
+  nodeKey: string,
+  input: {
+    expectedRevision: number;
+    overrides: Record<string, unknown>;
+  },
+): Promise<{ session: DebugSession; execution: DebugExecution }> {
+  const response = await fetcher(
+    `/api/flows/${flowId}/debug/sessions/${sessionId}/nodes/${encodeURIComponent(nodeKey)}/run`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expected_revision: input.expectedRevision,
+        overrides: input.overrides,
+      }),
+    },
+  );
+  const body = await readResponse<{
+    session?: unknown;
+    execution?: unknown;
+  }>(response);
+  return {
+    session: parseDebugSession(body.session),
+    execution: parseDebugRunExecution(body.execution),
+  };
 }

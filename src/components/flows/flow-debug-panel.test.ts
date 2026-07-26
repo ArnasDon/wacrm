@@ -52,10 +52,21 @@ describe("flow debug inspector UI", () => {
     expect(source).toContain("availableSessions");
     expect(source).toContain("closeDebugSession");
     expect(source).toContain("fetchFlightExecutionDetail");
+    expect(source).toContain("fetchDebugExecutionDetail");
     expect(source).toContain("selectedFlightDetail");
+    expect(source).toContain("selectedDebugDetail");
     expect(source).not.toContain("selectedFlightExecution");
     expect(source).not.toContain("state.variable_schema");
     expect(source).not.toContain("state.nodes");
+  });
+
+  it("renders sanitized execution metadata with the lazy debug detail", () => {
+    expect(client).toContain("metadata?: unknown");
+    expect(source).toContain(
+      '["inputs", "outputs", "error", "simulated_effects", "metadata"]',
+    );
+    expect(en.Flows.debug.metadata).toBe("Metadata");
+    expect(ko.Flows.debug.metadata).toBeTruthy();
   });
 
   it("keeps invalid typed overrides local and disables execution", () => {

@@ -1074,6 +1074,7 @@
       "outputs": "Outputs",
       "error": "Error",
       "simulatedEffects": "Simulated effects",
+      "metadata": "Metadata",
       "existingSessions": "Existing debug sessions",
       "noExistingSessions": "No debug sessions yet.",
       "resumeSession": "Resume",

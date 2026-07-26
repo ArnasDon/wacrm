@@ -9,12 +9,14 @@ import { Input } from "@/components/ui/input";
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
 import {
   closeDebugSessionAndRefresh,
+  fetchDebugExecutionDetail,
   fetchDebugSessions,
   fetchFlightExecutionDetail,
   fetchFlightRecorder,
   FlowDebugClientError,
   recoverDebugSession,
   resumeDebugSession,
+  runDebugNode,
   type DebugExecution,
   type DebugManifestPort,
   type DebugSession,
@@ -40,6 +42,8 @@ export function FlowDebugPanel() {
   );
   const [selectedFlightDetail, setSelectedFlightDetail] =
     useState<DebugExecution | null>(null);
+  const [selectedDebugDetail, setSelectedDebugDetail] =
+    useState<DebugExecution | null>(null);
   const [flightPage, setFlightPage] = useState<FlightRecorderPage | null>(null);
   const [debugPage, setDebugPage] = useState<FlightRecorderPage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,7 +54,7 @@ export function FlowDebugPanel() {
   );
   const hasOverrideErrors = Object.keys(overrideErrors).length > 0;
 
-  const selectedExecution = useMemo(
+  const selectedDebugSummary = useMemo(
     () =>
       debugExecutions.find(
         (execution) => execution.node_key === selectedNodeKey,
@@ -78,6 +82,38 @@ export function FlowDebugPanel() {
       setSelectedNodeKey(session.manifest.nodes[0]?.node_key ?? null);
     }
   }, [selectedNodeKey, session, setSelectedNodeKey]);
+
+  useEffect(() => {
+    if (!session || !selectedDebugSummary) {
+      setSelectedDebugDetail(null);
+      return;
+    }
+    if (
+      ["inputs", "outputs", "error", "simulated_effects", "metadata"].some(
+        (field) => Object.hasOwn(selectedDebugSummary, field),
+      )
+    ) {
+      setSelectedDebugDetail(selectedDebugSummary);
+      return;
+    }
+    let cancelled = false;
+    setSelectedDebugDetail(null);
+    void fetchDebugExecutionDetail(
+      fetch,
+      flow.id,
+      session.id,
+      selectedDebugSummary.id,
+    )
+      .then((detail) => {
+        if (!cancelled) setSelectedDebugDetail(detail);
+      })
+      .catch(() => {
+        if (!cancelled) setMessage(t("detailLoadError"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [flow.id, selectedDebugSummary, session, t]);
 
   const loadFlightRecorder = useCallback(
     async (runId?: string, cursor?: string) => {
@@ -110,6 +146,7 @@ export function FlowDebugPanel() {
       setDebugExecutions((current) =>
         cursor ? [...current, ...body.executions] : body.executions,
       );
+      if (!cursor) setSelectedDebugDetail(null);
       setDebugPage(body.page ?? null);
       setAvailableSessions((current) =>
         current.map((candidate) =>
@@ -126,11 +163,13 @@ export function FlowDebugPanel() {
       if (result.outcome === "resumed") {
         setSession(result.session);
         setDebugExecutions(result.executions);
+        setSelectedDebugDetail(null);
         setDebugPage(null);
         setMessage(t("conflictReloaded"));
       } else {
         setSession(null);
         setDebugExecutions([]);
+        setSelectedDebugDetail(null);
         setDebugPage(null);
         setAvailableSessions(result.sessions);
         setMessage(t("sessionUnavailable"));
@@ -166,6 +205,7 @@ export function FlowDebugPanel() {
       }
       setSession(body.session);
       setDebugExecutions([]);
+      setSelectedDebugDetail(null);
       setDebugPage(null);
       await loadSessions();
       setMessage(t("sessionReady"));
@@ -191,6 +231,7 @@ export function FlowDebugPanel() {
       if (session?.id === candidate.id && result.outcome !== "conflict") {
         setSession(null);
         setDebugExecutions([]);
+        setSelectedDebugDetail(null);
         setDebugPage(null);
       }
       if (result.outcome === "conflict") {
@@ -290,38 +331,29 @@ export function FlowDebugPanel() {
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch(
-        `/api/flows/${flow.id}/debug/sessions/${session.id}/nodes/${encodeURIComponent(selectedNodeKey)}/run`,
+      const body = await runDebugNode(
+        fetch,
+        flow.id,
+        session.id,
+        selectedNodeKey,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expected_revision: session.revision,
-            overrides,
-          }),
+          expectedRevision: session.revision,
+          overrides,
         },
       );
-      if (response.status === 409) {
-        await recoverSession(session.id);
-        return;
-      }
-      if (response.status === 404 || response.status === 410) {
-        await recoverSession(session.id);
-        return;
-      }
-      const body = (await response.json().catch(() => ({}))) as {
-        session?: DebugSession;
-        execution?: DebugExecution;
-        error?: string;
-      };
-      if (!response.ok || !body.session || !body.execution) {
-        throw new Error(body.error ?? t("runError"));
-      }
       setSession(body.session);
-      setDebugExecutions((current) => [body.execution!, ...current]);
+      setDebugExecutions((current) => [body.execution, ...current]);
+      setSelectedDebugDetail(body.execution);
       void loadSessions();
       setMessage(t("runComplete"));
     } catch (error) {
+      if (
+        error instanceof FlowDebugClientError &&
+        (error.status === 404 || error.status === 409 || error.status === 410)
+      ) {
+        await recoverSession(session.id);
+        return;
+      }
       setMessage(error instanceof Error ? error.message : t("runError"));
     } finally {
       setBusy(false);
@@ -436,6 +468,7 @@ export function FlowDebugPanel() {
                               ) {
                                 setSession(null);
                                 setDebugExecutions([]);
+                                setSelectedDebugDetail(null);
                                 setDebugPage(null);
                                 await loadSessions();
                                 setMessage(t("sessionUnavailable"));
@@ -598,7 +631,7 @@ export function FlowDebugPanel() {
               </Button>
             </section>
 
-            <ExecutionDetails execution={selectedExecution} />
+            <ExecutionDetails execution={selectedDebugDetail} />
             {debugPage?.truncated && debugPage.next_cursor ? (
               <Button
                 type="button"
@@ -792,18 +825,18 @@ function ExecutionDetails({ execution }: { execution: DebugExecution | null }) {
         <dt>{t("attempt")}</dt>
         <dd>{execution.attempt ?? 1}</dd>
       </dl>
-      {(["inputs", "outputs", "error", "simulated_effects"] as const).map(
-        (field) => (
-          <details key={field}>
-            <summary className="cursor-pointer text-xs font-medium">
-              {t(field === "simulated_effects" ? "simulatedEffects" : field)}
-            </summary>
-            <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 text-[10px]">
-              {JSON.stringify(execution[field] ?? null, null, 2)}
-            </pre>
-          </details>
-        ),
-      )}
+      {(
+        ["inputs", "outputs", "error", "simulated_effects", "metadata"] as const
+      ).map((field) => (
+        <details key={field}>
+          <summary className="cursor-pointer text-xs font-medium">
+            {t(field === "simulated_effects" ? "simulatedEffects" : field)}
+          </summary>
+          <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 text-[10px]">
+            {JSON.stringify(execution[field] ?? null, null, 2)}
+          </pre>
+        </details>
+      ))}
     </section>
   );
 }

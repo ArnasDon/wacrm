@@ -1074,6 +1074,7 @@
       "outputs": "출력",
       "error": "오류",
       "simulatedEffects": "시뮬레이션된 효과",
+      "metadata": "메타데이터",
       "existingSessions": "기존 디버그 세션",
       "noExistingSessions": "아직 디버그 세션이 없습니다.",
       "resumeSession": "재개",

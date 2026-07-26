@@ -13,6 +13,7 @@ import {
   sanitizeDebugSession,
   sanitizeDebugValue,
 } from "@/lib/flows/debug-runtime";
+import { sanitizeDebugExecutionSummary } from "@/lib/flows/debug-execution";
 import { parseFlowVersionGraph } from "@/lib/flows/versions";
 import {
   decodeDebugCursor,
@@ -38,12 +39,6 @@ const getQuerySchema = z.object({
   cursor: z.string().max(512).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(25),
 });
-const RESPONSE_RESERVE_BYTES = 4 * 1024;
-
-function responseBytes(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-}
-
 function isUnavailableSession(session: Record<string, unknown>): boolean {
   if (session.status !== "active" || typeof session.expires_at !== "string") {
     return true;
@@ -107,9 +102,7 @@ export async function GET(
 
   let executionsQuery = supabaseAdmin()
     .from("flow_debug_node_executions")
-    .select(
-      "id, node_key, node_type, status, inputs, outputs, simulated_effects, metadata, duration_ms, error, attempt, created_at",
-    )
+    .select("id, node_key, node_type, status, duration_ms, attempt, created_at")
     .eq("session_id", state.params.sessionId);
   if (decodedCursor) {
     executionsQuery = executionsQuery.or(
@@ -125,31 +118,15 @@ export async function GET(
     const session = sanitizeDebugSession(
       state.session as Record<string, unknown>,
     );
-    const executions: Record<string, unknown>[] = [];
-    let truncationReason: "page" | "budget" | null =
+    const truncationReason: "page" | null =
       (rawExecutions ?? []).length > parsedQuery.data.limit ? "page" : null;
-    for (const execution of (rawExecutions ?? []).slice(
-      0,
-      parsedQuery.data.limit,
-    )) {
-      const sanitized = Object.fromEntries(
-        Object.entries(execution).map(([key, value]) => [
-          key,
-          sanitizeDebugValue(value),
-        ]),
+    const executions = (rawExecutions ?? [])
+      .slice(0, parsedQuery.data.limit)
+      .map((execution) =>
+        sanitizeDebugExecutionSummary(
+          execution as unknown as Record<string, unknown>,
+        ),
       );
-      if (
-        responseBytes({
-          session,
-          executions: [...executions, sanitized],
-        }) >
-        MAX_DEBUG_EXECUTION_RESPONSE_BYTES - RESPONSE_RESERVE_BYTES
-      ) {
-        truncationReason = "budget";
-        break;
-      }
-      executions.push(sanitized);
-    }
     const lastExecution = executions.at(-1);
     const nextCursor =
       truncationReason &&

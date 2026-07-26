@@ -10,9 +10,9 @@ import {
 import {
   runIsolatedDebugNode,
   sanitizeDebugSession,
-  sanitizeDebugValue,
   type DebugNodeOutputs,
 } from "@/lib/flows/debug-runtime";
+import { sanitizeDebugExecutionDetail } from "@/lib/flows/debug-execution";
 import { boundDebugExecutionPayload } from "@/lib/flows/execution-payload";
 import { parseFlowVersionGraph } from "@/lib/flows/versions";
 
@@ -206,7 +206,7 @@ export async function POST(
   try {
     return debugJson({
       session: row?.session ? sanitizeDebugSession(row.session) : null,
-      execution: sanitizeDebugValue(row?.execution ?? null),
+      execution: sanitizeDebugExecutionDetail(row?.execution ?? {}),
     });
   } catch (sanitizationError) {
     if (
@@ -219,6 +219,18 @@ export async function POST(
           error: "The debug session is too large to inspect.",
         },
         { status: 413 },
+      );
+    }
+    if (
+      sanitizationError instanceof Error &&
+      sanitizationError.message === "invalid_debug_execution"
+    ) {
+      return debugJson(
+        {
+          code: "DEBUG_EXECUTION_RESPONSE_INVALID",
+          error: "Invalid debug execution response.",
+        },
+        { status: 502 },
       );
     }
     throw sanitizationError;

@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   sessionVariables: { name: "Ada" } as Record<string, unknown>,
   sessionOverride: null as Record<string, unknown> | null,
   committedSessionOverride: null as Record<string, unknown> | null,
+  committedExecutionOverride: null as Record<string, unknown> | null,
   rateAllowed: true,
   rateError: null as { message: string } | null,
 }));
@@ -41,7 +42,8 @@ vi.mock("@/lib/flows/admin-client", () => ({
                   maybeSingle: async () => ({
                     data:
                       h.sessionOverride ??
-                      (h.sessionFlowId === "20000000-0000-4000-8000-000000000001"
+                      (h.sessionFlowId ===
+                      "20000000-0000-4000-8000-000000000001"
                         ? {
                             id: "10000000-0000-4000-8000-000000000001",
                             flow_id: "20000000-0000-4000-8000-000000000001",
@@ -127,14 +129,23 @@ vi.mock("@/lib/flows/admin-client", () => ({
         data: h.rpcError
           ? null
           : {
-              session:
-                h.committedSessionOverride ??
-                { id: args.p_session_id, revision: 3 },
-              execution: {
-                id: "exec-1",
+              session: h.committedSessionOverride ?? {
+                id: args.p_session_id,
+                revision: 3,
+              },
+              execution: h.committedExecutionOverride ?? {
+                id: "30000000-0000-4000-8000-000000000001",
                 node_key: args.p_node_key,
+                node_type: args.p_node_type,
+                status: args.p_status,
+                attempt: 1,
+                duration_ms: args.p_duration_ms,
+                created_at: "2026-07-26T12:00:00.000Z",
+                inputs: args.p_inputs,
                 outputs: args.p_outputs,
+                error: args.p_error,
                 simulated_effects: args.p_simulated_effects,
+                metadata: args.p_metadata,
               },
             },
         error: h.rpcError,
@@ -162,6 +173,7 @@ beforeEach(() => {
   h.sessionVariables = { name: "Ada" };
   h.sessionOverride = null;
   h.committedSessionOverride = null;
+  h.committedExecutionOverride = null;
   h.rateAllowed = true;
   h.rateError = null;
 });
@@ -279,6 +291,72 @@ describe("isolated debug node API", () => {
       manifest: expect.any(Object),
     });
     expect(body.session).not.toHaveProperty("truncated");
+  });
+
+  it("preserves the typed execution envelope while bounding and sanitizing fields", async () => {
+    h.committedExecutionOverride = {
+      id: "30000000-0000-4000-8000-000000000001",
+      node_key: "send",
+      node_type: "send_message",
+      status: "completed",
+      attempt: 3,
+      duration_ms: 12,
+      created_at: "2026-07-26T12:00:00.000Z",
+      inputs: { huge: "x".repeat(70_000) },
+      outputs: { authorization: "Bearer secret", sent: true },
+      error: null,
+      simulated_effects: [],
+      metadata: { api_token: "secret", request_id: "safe" },
+    };
+
+    const response = await POST(
+      new Request("http://localhost/debug", {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: 2, overrides: {} }),
+      }),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.execution).toMatchObject({
+      id: "30000000-0000-4000-8000-000000000001",
+      node_key: "send",
+      node_type: "send_message",
+      status: "completed",
+      attempt: 3,
+      duration_ms: 12,
+      inputs: { truncated: true },
+      outputs: { authorization: "[REDACTED]", sent: true },
+      metadata: { api_token: "[REDACTED]", request_id: "safe" },
+    });
+    expect(body.execution).not.toHaveProperty("truncated");
+  });
+
+  it("fails closed when the committed execution envelope is incomplete", async () => {
+    h.committedExecutionOverride = {
+      id: "30000000-0000-4000-8000-000000000001",
+      node_key: "send",
+      node_type: "send_message",
+      status: "completed",
+      duration_ms: 12,
+      created_at: "2026-07-26T12:00:00.000Z",
+      inputs: {},
+      outputs: {},
+      error: null,
+      simulated_effects: [],
+      metadata: {},
+    };
+
+    const response = await POST(
+      new Request("http://localhost/debug", {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: 2, overrides: {} }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(502);
   });
 
   it("returns stable 422 for an unknown override port without committing", async () => {
@@ -402,17 +480,13 @@ function variableSetSession() {
         on_timeout_hours: 24,
         on_exhaust: "end",
       },
-      variable_schema: [
-        { key: "name", type: "string", default: "Ada" },
-      ],
+      variable_schema: [{ key: "name", type: "string", default: "Ada" }],
       nodes: [
         {
           node_key: "send",
           node_type: "variable_set",
           config: {
-            assignments: [
-              { key: "name", type: "string", value: "configured" },
-            ],
+            assignments: [{ key: "name", type: "string", value: "configured" }],
             next_node_key: "end",
           },
           position_x: 0,

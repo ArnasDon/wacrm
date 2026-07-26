@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   closeDebugSessionAndRefresh,
   closeDebugSession,
+  fetchDebugExecutionDetail,
   fetchDebugSessions,
   fetchFlightExecutionDetail,
   fetchFlightRecorder,
   recoverDebugSession,
   resumeDebugSession,
+  runDebugNode,
 } from "./flow-debug-client";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -150,6 +152,104 @@ describe("flow debug inspector client", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "/api/flows/flow-a/debug/flight-recorder/execution-a",
       { cache: "no-store" },
+    );
+  });
+
+  it("loads session execution details lazily and validates the typed envelope", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        execution: {
+          id: "debug-1",
+          node_key: "send",
+          node_type: "send_message",
+          status: "completed",
+          attempt: 2,
+          duration_ms: 8,
+          metadata: { request_id: "safe" },
+        },
+      }),
+    );
+
+    const execution = await fetchDebugExecutionDetail(
+      fetcher,
+      "flow-a",
+      "session-a",
+      "debug-1",
+    );
+
+    expect(execution.metadata).toEqual({ request_id: "safe" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/flows/flow-a/debug/sessions/session-a/executions/debug-1",
+      { cache: "no-store" },
+    );
+  });
+
+  it("rejects a successful run response with an invalid execution shape", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        session: {
+          id: "session-a",
+          revision: 2,
+          status: "active",
+          variables: {},
+          manifest: { variable_schema: [], nodes: [] },
+        },
+        execution: {
+          id: "debug-1",
+          node_key: "send",
+          node_type: "send_message",
+          status: "completed",
+          duration_ms: 4,
+        },
+      }),
+    );
+
+    await expect(
+      runDebugNode(fetcher, "flow-a", "session-a", "send", {
+        expectedRevision: 1,
+        overrides: {},
+      }),
+    ).rejects.toThrow("Invalid flow debug response");
+  });
+
+  it("runs a node through the validated client contract", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        session: {
+          id: "session-a",
+          revision: 2,
+          status: "active",
+          variables: {},
+          manifest: { variable_schema: [], nodes: [] },
+        },
+        execution: {
+          id: "debug-1",
+          node_key: "send",
+          node_type: "send_message",
+          status: "completed",
+          attempt: 1,
+          duration_ms: 4,
+          metadata: {},
+        },
+      }),
+    );
+
+    const result = await runDebugNode(fetcher, "flow-a", "session-a", "send", {
+      expectedRevision: 1,
+      overrides: { text: "Preview" },
+    });
+
+    expect(result.execution.id).toBe("debug-1");
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/flows/flow-a/debug/sessions/session-a/nodes/send/run",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected_revision: 1,
+          overrides: { text: "Preview" },
+        }),
+      },
     );
   });
 

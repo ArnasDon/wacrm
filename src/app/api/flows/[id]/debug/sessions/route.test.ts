@@ -11,10 +11,13 @@ const h = vi.hoisted(() => ({
   rpcName: "",
   rpcCalls: [] as string[],
   rpcArgs: {} as Record<string, unknown>,
+  rpcArgsByName: {} as Record<string, Record<string, unknown>>,
   rpcError: null as { message: string } | null,
   createdSession: null as Record<string, unknown> | null,
   sessionListSelect: "",
   sessionListLimit: 0,
+  sessionStatusFilter: "",
+  sessionExpiryFilter: "",
   listedSessions: [] as Record<string, unknown>[],
 }));
 
@@ -51,23 +54,50 @@ vi.mock("@/lib/flows/admin-client", () => ({
       h.rpcName = name;
       h.rpcCalls.push(name);
       h.rpcArgs = args;
-      if (name === "read_flow_debug_source_variables") {
+      h.rpcArgsByName[name] = args;
+      if (name === "read_flow_debug_source_snapshot") {
         const variables =
           (h.sourceRun?.vars as Record<string, unknown> | undefined) ?? {};
         const originalBytes = new TextEncoder().encode(
           JSON.stringify(variables),
         ).byteLength;
+        const latestOutputs = Object.fromEntries(
+          h.sourceExecutions
+            .filter(
+              (execution, index, all) =>
+                all.findIndex(
+                  (candidate) => candidate.node_key === execution.node_key,
+                ) === index,
+            )
+            .map((execution) => {
+              const outputs = execution.outputs;
+              const outputBytes = new TextEncoder().encode(
+                JSON.stringify(outputs),
+              ).byteLength;
+              return [
+                execution.node_key,
+                outputBytes > 32_768
+                  ? {
+                      truncated: true,
+                      reason: "legacy_payload_exceeded_limit",
+                      original_bytes: outputBytes,
+                    }
+                  : outputs,
+              ];
+            }),
+        );
         return {
           data: {
-            result_json:
+            variables_json:
               originalBytes > 65_536
                 ? {
                     truncated: true,
                     reason: "source_variables_exceeded_limit",
                   }
                 : variables,
-            truncated: originalBytes > 65_536,
-            original_bytes: originalBytes,
+            variables_truncated: originalBytes > 65_536,
+            source_node_outputs: latestOutputs,
+            outputs_truncated: false,
           },
           error: null,
         };
@@ -171,21 +201,33 @@ vi.mock("@/lib/flows/admin-client", () => ({
         return {
           select: (columns: string) => {
             h.sessionListSelect = columns;
-            return {
-              eq: () => ({
-                eq: () => ({
-                  order: () => ({
-                    limit: async (limit: number) => {
-                      h.sessionListLimit = limit;
-                      return {
-                        data: h.listedSessions.slice(0, limit),
-                        error: null,
-                      };
-                    },
-                  }),
-                }),
-              }),
+            const query = {
+              eq: (column: string, value: unknown) => {
+                if (column === "status") h.sessionStatusFilter = String(value);
+                return query;
+              },
+              gt: (column: string, value: unknown) => {
+                if (column === "expires_at") {
+                  h.sessionExpiryFilter = String(value);
+                }
+                return query;
+              },
+              order: () => query,
+              limit: async (limit: number) => {
+                h.sessionListLimit = limit;
+                return {
+                  data: h.listedSessions
+                    .filter(
+                      (session) =>
+                        !h.sessionStatusFilter ||
+                        session.status === h.sessionStatusFilter,
+                    )
+                    .slice(0, limit),
+                  error: null,
+                };
+              },
             };
+            return query;
           },
         };
       }
@@ -213,10 +255,13 @@ beforeEach(() => {
   h.rpcName = "";
   h.rpcCalls = [];
   h.rpcArgs = {};
+  h.rpcArgsByName = {};
   h.rpcError = null;
   h.createdSession = null;
   h.sessionListSelect = "";
   h.sessionListLimit = 0;
+  h.sessionStatusFilter = "";
+  h.sessionExpiryFilter = "";
   h.listedSessions = [];
 });
 
@@ -238,13 +283,43 @@ describe("flow debug session inventory", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(h.sessionListLimit).toBe(20);
+    expect(h.sessionListLimit).toBe(5);
+    expect(h.sessionStatusFilter).toBe("active");
+    expect(h.sessionExpiryFilter).not.toBe("");
     expect(h.sessionListSelect).not.toContain("variables");
     expect(body.sessions[0]).toMatchObject({
       id: "session-1",
       revision: 4,
       status: "active",
     });
+  });
+
+  it("keeps all five active quota-consuming sessions visible ahead of terminal history", async () => {
+    h.listedSessions = [
+      ...Array.from({ length: 20 }, (_, index) => ({
+        id: `closed-${index}`,
+        revision: 1,
+        status: "closed",
+        expires_at: "2099-01-01T00:00:00.000Z",
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `active-${index}`,
+        revision: index,
+        status: "active",
+        expires_at: "2099-01-01T00:00:00.000Z",
+      })),
+    ];
+
+    const response = await GET(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions"),
+      context,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.sessions.map((session: { id: string }) => session.id)).toEqual(
+      Array.from({ length: 5 }, (_, index) => `active-${index}`),
+    );
   });
 });
 
@@ -362,7 +437,7 @@ describe("flow debug session creation", () => {
 
     expect(response.status).toBe(201);
     expect(h.rpcCalls).not.toContain("read_flow_draft_for_publish");
-    expect(h.rpcCalls).toContain("read_flow_debug_source_variables");
+    expect(h.rpcCalls).toContain("read_flow_debug_source_snapshot");
     expect(h.sourceRunSelect).not.toContain("vars");
     expect(h.rpcArgs).toMatchObject({
       p_flow_version_id: sourceVersionId,
@@ -376,7 +451,15 @@ describe("flow debug session creation", () => {
     expect(h.rpcArgs.p_graph_snapshot).toMatchObject({
       entry_node_key: "source-end",
     });
-    expect(h.sourceExecutionLimit).toBe(32);
+    expect(h.sourceExecutionLimit).toBe(0);
+    expect(h.rpcArgsByName.read_flow_debug_source_snapshot).toMatchObject({
+      p_flow_id: "20000000-0000-4000-8000-000000000001",
+      p_run_id: sourceRunId,
+      p_created_by: "owner-1",
+      p_max_nodes: 100,
+      p_max_field_bytes: 32_768,
+      p_max_total_bytes: 262_144,
+    });
     expect(
       new TextEncoder().encode(JSON.stringify(h.rpcArgs.p_source_node_outputs))
         .byteLength,

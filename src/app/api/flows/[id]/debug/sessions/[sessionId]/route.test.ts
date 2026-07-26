@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   rpcSessionOverride: null as Record<string, unknown> | null,
   executionsRead: false,
   executionLimit: 0,
+  executionSelect: "",
   executionCursorFilter: null as string | null,
   executionOrders: [] as string[],
   executionRows: [] as Record<string, unknown>[],
@@ -79,33 +80,36 @@ vi.mock("@/lib/flows/admin-client", () => ({
       }
       if (table === "flow_debug_node_executions") {
         return {
-          select: () => ({
-            eq: () => {
-              const query = {
-                or: (filter: string) => {
-                  h.executionCursorFilter = filter;
-                  return query;
-                },
-                order: (column: string) => {
-                  h.executionOrders.push(column);
-                  return query;
-                },
-                limit: async (limit: number) => {
-                  h.executionsRead = true;
-                  h.executionLimit = limit;
-                  return {
-                    data: h.executionRows
-                      .filter((_row, index) =>
-                        h.executionCursorFilter ? index > 0 : true,
-                      )
-                      .slice(0, limit),
-                    error: null,
-                  };
-                },
-              };
-              return query;
-            },
-          }),
+          select: (columns: string) => {
+            h.executionSelect = columns;
+            return {
+              eq: () => {
+                const query = {
+                  or: (filter: string) => {
+                    h.executionCursorFilter = filter;
+                    return query;
+                  },
+                  order: (column: string) => {
+                    h.executionOrders.push(column);
+                    return query;
+                  },
+                  limit: async (limit: number) => {
+                    h.executionsRead = true;
+                    h.executionLimit = limit;
+                    return {
+                      data: h.executionRows
+                        .filter((_row, index) =>
+                          h.executionCursorFilter ? index > 0 : true,
+                        )
+                        .slice(0, limit),
+                      error: null,
+                    };
+                  },
+                };
+                return query;
+              },
+            };
+          },
         };
       }
       throw new Error(`unexpected table ${table}`);
@@ -141,6 +145,7 @@ beforeEach(() => {
   h.rpcSessionOverride = null;
   h.executionsRead = false;
   h.executionLimit = 0;
+  h.executionSelect = "";
   h.executionCursorFilter = null;
   h.executionOrders = [];
   h.executionRows = [
@@ -271,8 +276,8 @@ describe("flow debug session API", () => {
     expect(h.executionLimit).toBe(2);
   });
 
-  it("preserves the session envelope while enforcing an aggregate execution budget", async () => {
-    h.executionRows = Array.from({ length: 10 }, (_, index) => ({
+  it("returns metadata-only summaries and an advancing cursor even for legacy oversized payloads", async () => {
+    h.executionRows = Array.from({ length: 11 }, (_, index) => ({
       id: `30000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       node_key: `node_${index}`,
       node_type: "send_message",
@@ -297,12 +302,26 @@ describe("flow debug session API", () => {
 
     expect(response.status).toBe(200);
     expect(body.session).toMatchObject({ id: expect.any(String) });
+    expect(h.executionSelect).not.toContain("inputs");
+    expect(h.executionSelect).not.toContain("outputs");
+    expect(h.executionSelect).not.toContain("error");
+    expect(h.executionSelect).not.toContain("metadata");
     expect(body.page).toMatchObject({
       truncated: true,
-      truncation_reason: "budget",
+      truncation_reason: "page",
+      returned: 10,
+      next_cursor: expect.any(String),
       budget_bytes: 262_144,
     });
-    expect(body.executions.length).toBeLessThan(10);
+    expect(body.executions).toHaveLength(10);
+    expect(body.executions[0]).toEqual({
+      id: "30000000-0000-4000-8000-000000000000",
+      node_key: "node_0",
+      node_type: "send_message",
+      status: "completed",
+      attempt: 1,
+      created_at: "2026-01-01T00:00:10.000Z",
+    });
     expect(
       new TextEncoder().encode(JSON.stringify(body)).byteLength,
     ).toBeLessThanOrEqual(262_144);

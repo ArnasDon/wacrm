@@ -162,6 +162,7 @@ export interface NodeDescriptor<Id extends string = string> {
   flowConfigSchema: ZodType<Record<string, unknown>>;
   supportsFlowRuntime: boolean;
   supportsExecutionPolicy: boolean;
+  supportsDefaultValue: boolean;
   compatibilityFlowTriggerType?: "keyword" | "first_inbound_message" | "manual";
   validate: (
     node: NodeLike,

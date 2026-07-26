@@ -376,6 +376,7 @@ export function FlowEditorProvider({
           trigger_type: state.trigger_type,
           trigger_config: state.trigger_config,
           entry_node_id: state.entry_node_id,
+          fallback_policy: state.fallback_policy,
         },
         state.nodes,
       ),

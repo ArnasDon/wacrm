@@ -2,7 +2,51 @@ import { sendText, sendImage, sendVideo, sendDocument } from '@/lib/whatsapp/zap
 import { buildZapiCredentials } from '@/lib/whatsapp/zapi-config'
 import { sanitizePhone, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
-import { NonRetryableExecutionError } from './execution-policy'
+import { CommittedSideEffectError, NonRetryableExecutionError } from './execution-policy'
+
+interface CommittedOutboundPersistence {
+  conversationId: string
+  messageId: string
+  contentType: 'text' | 'image' | 'video' | 'document' | 'interactive'
+  contentText: string | null
+  conversationPreview: string
+}
+
+async function persistCommittedOutbound(
+  db: ReturnType<typeof supabaseAdmin>,
+  outbound: CommittedOutboundPersistence
+): Promise<void> {
+  let persistenceStage = 'message_insert'
+  try {
+    const { error: messageError } = await db.from('messages').insert({
+      conversation_id: outbound.conversationId,
+      sender_type: 'bot',
+      content_type: outbound.contentType,
+      content_text: outbound.contentText,
+      message_id: outbound.messageId,
+      status: 'sent',
+    })
+    if (messageError) throw messageError
+
+    persistenceStage = 'conversation_update'
+    const now = new Date().toISOString()
+    const { error: conversationError } = await db
+      .from('conversations')
+      .update({
+        last_message_text: outbound.conversationPreview,
+        last_message_at: now,
+        updated_at: now,
+      })
+      .eq('id', outbound.conversationId)
+    if (conversationError) throw conversationError
+  } catch (error) {
+    throw new CommittedSideEffectError(`Z-API message was sent but local ${persistenceStage} failed`, {
+      externalReference: outbound.messageId,
+      persistenceStage,
+      cause: error,
+    })
+  }
+}
 
 interface SendTextEngineArgs {
   accountId: string
@@ -53,26 +97,13 @@ export async function engineSendText(args: SendTextEngineArgs): Promise<{ whatsa
   })
   const waMessageId = result.messageId
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: 'text',
-    content_text: args.text,
-    message_id: waMessageId,
-    status: 'sent',
+  await persistCommittedOutbound(db, {
+    conversationId: args.conversationId,
+    messageId: waMessageId,
+    contentType: 'text',
+    contentText: args.text,
+    conversationPreview: args.text,
   })
-  if (msgErr) {
-    throw new NonRetryableExecutionError(`sent via Z-API but DB insert failed: ${msgErr.message}`)
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: args.text,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.conversationId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -134,26 +165,13 @@ export async function engineSendMedia(args: SendMediaEngineArgs): Promise<{ what
   const waMessageId = result.messageId
 
   const preview = args.caption?.trim() || `[${args.kind}]`
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: args.kind,
-    content_text: args.caption ?? null,
-    message_id: waMessageId,
-    status: 'sent',
+  await persistCommittedOutbound(db, {
+    conversationId: args.conversationId,
+    messageId: waMessageId,
+    contentType: args.kind,
+    contentText: args.caption ?? null,
+    conversationPreview: preview,
   })
-  if (msgErr) {
-    throw new NonRetryableExecutionError(`sent via Z-API but DB insert failed: ${msgErr.message}`)
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: preview,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.conversationId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -298,26 +316,13 @@ async function engineSendInteractive(args: SendInteractiveArgs): Promise<{ whats
   })
   const waMessageId = result.messageId
 
-  const { error: msgErr } = await db.from('messages').insert({
-    conversation_id: args.conversationId,
-    sender_type: 'bot',
-    content_type: 'interactive',
-    content_text: args.originalBody,
-    message_id: waMessageId,
-    status: 'sent',
+  await persistCommittedOutbound(db, {
+    conversationId: args.conversationId,
+    messageId: waMessageId,
+    contentType: 'interactive',
+    contentText: args.originalBody,
+    conversationPreview: args.originalBody,
   })
-  if (msgErr) {
-    throw new NonRetryableExecutionError(`sent via Z-API but DB insert failed: ${msgErr.message}`)
-  }
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: args.originalBody,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', args.conversationId)
 
   return { whatsapp_message_id: waMessageId }
 }

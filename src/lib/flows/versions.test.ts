@@ -133,6 +133,46 @@ describe("flow version graph", () => {
     ).toThrow(/execution policy/i);
   });
 
+  it("rejects a snapshot that uses default_value on a multi-exit node", () => {
+    expect(() =>
+      buildFlowVersionGraph(draft, [
+        {
+          node_key: "start",
+          node_type: "start",
+          config: { next_node_key: "menu" },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "menu",
+          node_type: "send_buttons",
+          config: {
+            text: "Choose",
+            buttons: [
+              { reply_id: "yes", title: "Yes", next_node_key: "end" },
+              { reply_id: "no", title: "No", next_node_key: "end" },
+            ],
+            on_error: "default_value",
+            default_value: {
+              key: "delivery",
+              type: "string",
+              value: "skipped",
+            },
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "end",
+          node_type: "end",
+          config: {},
+          position_x: 0,
+          position_y: 0,
+        },
+      ]),
+    ).toThrow(/default value|deterministic|config/i);
+  });
+
   it("new matching uses V2 while an in-flight V1 keeps V1 nodes", () => {
     const v1 = buildFlowVersionGraph(draft, nodes);
     const v2 = buildFlowVersionGraph(

@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  AutomationStepType,
-  AutomationTriggerType,
-} from "@/types";
+import type { AutomationStepType, AutomationTriggerType } from "@/types";
 import { NODE_META } from "@/components/flows/shared";
 import { getRuntimeDescriptor } from "./engine";
 import {
   FLOW_NODE_DESCRIPTORS,
+  getDeterministicSuccessEdgeTarget,
   getNodeDescriptor,
   listBuilderNodeDescriptors,
 } from "./registry";
@@ -55,6 +53,7 @@ describe("canonical flow node registry", () => {
       expect(descriptor.configSchema).toBeDefined();
       expect(descriptor.flowConfigSchema).toBeDefined();
       expect(typeof descriptor.supportsFlowRuntime).toBe("boolean");
+      expect(typeof descriptor.supportsDefaultValue).toBe("boolean");
       expect(typeof descriptor.validate).toBe("function");
       expect(descriptor.runtimeHook).not.toBe("");
       expect(descriptor.form).toBeDefined();
@@ -107,5 +106,35 @@ describe("canonical flow node registry", () => {
     expect(
       getNodeDescriptor("trigger_keyword_match")?.supportsFlowRuntime,
     ).toBe(false);
+  });
+
+  it("offers a default value only for a concrete config with one success edge", () => {
+    expect(
+      getDeterministicSuccessEdgeTarget("send_message", {
+        text: "Hello",
+        next_node_key: "end",
+      }),
+    ).toBe("end");
+    expect(
+      getDeterministicSuccessEdgeTarget("condition", {
+        true_next: "yes",
+        false_next: "no",
+      }),
+    ).toBeUndefined();
+    expect(
+      getDeterministicSuccessEdgeTarget("send_buttons", {
+        buttons: [{ next_node_key: "yes" }, { next_node_key: "no" }],
+      }),
+    ).toBeUndefined();
+    expect(
+      getDeterministicSuccessEdgeTarget("send_list", {
+        sections: [
+          {
+            rows: [{ next_node_key: "one" }, { next_node_key: "two" }],
+          },
+        ],
+      }),
+    ).toBeUndefined();
+    expect(getDeterministicSuccessEdgeTarget("handoff", {})).toBeUndefined();
   });
 });

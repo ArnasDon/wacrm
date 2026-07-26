@@ -116,6 +116,18 @@ export function listBuilderNodeDescriptors(): NodeDescriptor[] {
   );
 }
 
+export function getDeterministicSuccessEdgeTarget(
+  nodeType: string,
+  config: Record<string, unknown>,
+): string | undefined {
+  const descriptor = getNodeDescriptor(nodeType);
+  if (!descriptor?.supportsDefaultValue) return undefined;
+  const successEdges = descriptor
+    .outgoingEdgeTargets(config)
+    .filter(({ field }) => field !== "error_next_node_key");
+  return successEdges.length === 1 ? successEdges[0].target : undefined;
+}
+
 export type {
   NodeBuilderDescriptor,
   NodeCategory,

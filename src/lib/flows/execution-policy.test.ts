@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CommittedSideEffectError,
   DEFAULT_NODE_EXECUTION_POLICY,
   NonRetryableExecutionError,
   NodeExecutionTimeoutError,
   executeWithNodePolicy,
   resolveExhaustedNodePolicy,
   resolveNodeExecutionPolicy,
+  sanitizeExecutionError,
 } from "./execution-policy";
 
 describe("resolveNodeExecutionPolicy", () => {
@@ -128,6 +130,35 @@ describe("executeWithNodePolicy", () => {
 
     expect(error).toMatchObject({ attempts: 1 });
     expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a committed external side effect and preserves support metadata", async () => {
+    const operation = vi.fn(async () => {
+      throw new CommittedSideEffectError(
+        "message sent but local persistence failed",
+        {
+          externalReference: "wamid-committed",
+          persistenceStage: "message_insert",
+          cause: new Error("database unavailable"),
+        },
+      );
+    });
+
+    const error = await executeWithNodePolicy(operation, {
+      retry: { max_attempts: 3, interval_ms: 0, backoff: "fixed" },
+      on_error: "fail_branch",
+      error_next_node_key: "recover",
+      timeout_ms: 1_000,
+    }).catch((caught) => caught);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(sanitizeExecutionError(error.cause)).toMatchObject({
+      name: "CommittedSideEffectError",
+      retryable: false,
+      side_effect_committed: true,
+      external_reference: "wamid-committed",
+      persistence_stage: "message_insert",
+    });
   });
 
   it("keeps observability hook failures from changing business execution", async () => {

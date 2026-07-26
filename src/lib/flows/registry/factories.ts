@@ -30,6 +30,7 @@ interface CommonOptions<Id extends string> {
   runtimeHook?: string;
   runtimeKind?: NodeRuntimeKind;
   supportsExecutionPolicy?: boolean;
+  supportsDefaultValue?: boolean;
   form?: NodeFormDescriptor;
   visible?: boolean;
   defaultConfig?: Record<string, unknown>;
@@ -67,6 +68,8 @@ export function createLinearNodeDescriptor<const Id extends string>(
       : (options.flowConfigSchema ?? options.configSchema),
     supportsFlowRuntime,
     supportsExecutionPolicy,
+    supportsDefaultValue:
+      supportsExecutionPolicy && (options.supportsDefaultValue ?? true),
     inputs: CONTROL_INPUT,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,
@@ -111,6 +114,7 @@ export function createTerminalNodeDescriptor<const Id extends string>(
       : (options.flowConfigSchema ?? options.configSchema),
     supportsFlowRuntime,
     supportsExecutionPolicy,
+    supportsDefaultValue: false,
     inputs: CONTROL_INPUT,
     outputs: NO_PORTS,
     validate: noValidation,
@@ -138,6 +142,7 @@ export function createTriggerNodeDescriptor<const Id extends string>(
     flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
     supportsFlowRuntime: false,
     supportsExecutionPolicy: false,
+    supportsDefaultValue: false,
     inputs: NO_PORTS,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,

@@ -129,6 +129,7 @@ export async function POST(
       trigger_type: draft.trigger_type,
       trigger_config: draft.trigger_config as Record<string, unknown>,
       entry_node_id: draft.entry_node_id,
+      fallback_policy: draft.fallback_policy,
     },
     draftNodes,
   );

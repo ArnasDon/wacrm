@@ -22,6 +22,30 @@ export class NonRetryableExecutionError extends Error {
   }
 }
 
+export class CommittedSideEffectError extends NonRetryableExecutionError {
+  readonly sideEffectCommitted = true;
+
+  constructor(
+    message: string,
+    readonly metadata: {
+      externalReference: string;
+      persistenceStage: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, { cause: metadata.cause });
+    this.name = "CommittedSideEffectError";
+  }
+
+  get externalReference(): string {
+    return this.metadata.externalReference;
+  }
+
+  get persistenceStage(): string {
+    return this.metadata.persistenceStage;
+  }
+}
+
 export class NodeExecutionTimeoutError extends NonRetryableExecutionError {
   constructor(timeoutMs: number) {
     super(`Node execution timed out after ${timeoutMs}ms`);
@@ -96,6 +120,16 @@ function isNonRetryable(error: unknown): boolean {
       error !== null &&
       "retryable" in error &&
       (error as { retryable?: unknown }).retryable === false)
+  );
+}
+
+export function isCommittedSideEffectError(error: unknown): boolean {
+  if (error instanceof CommittedSideEffectError) return true;
+  return (
+    error instanceof Error &&
+    "cause" in error &&
+    error.cause !== undefined &&
+    isCommittedSideEffectError(error.cause)
   );
 }
 
@@ -247,6 +281,13 @@ export function sanitizeExecutionError(
       message: error.message.slice(0, 500),
       ...(code ? { code } : {}),
       retryable: !isNonRetryable(error),
+      ...(error instanceof CommittedSideEffectError
+        ? {
+            side_effect_committed: true,
+            external_reference: error.externalReference.slice(0, 500),
+            persistence_stage: error.persistenceStage.slice(0, 100),
+          }
+        : {}),
     };
   }
   return {

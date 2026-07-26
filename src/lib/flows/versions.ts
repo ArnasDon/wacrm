@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveFallbackPolicy } from "./fallback";
 import {
   getCompatibilityFlowTriggerDescriptor,
+  getDeterministicSuccessEdgeTarget,
   getNodeDescriptor,
   isFlowRuntimeNodeType,
   type RegisteredNodeType,
@@ -134,6 +135,16 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
     });
     if (issues.some((issue) => (issue.severity ?? "error") === "error")) {
       invalid(`config for node "${node.node_key}" is invalid`);
+    }
+    const effectiveOnError =
+      node.config.on_error ?? graph.fallback_policy.execution?.on_error;
+    if (
+      effectiveOnError === "default_value" &&
+      !getDeterministicSuccessEdgeTarget(node.node_type, node.config)
+    ) {
+      invalid(
+        `default value for node "${node.node_key}" requires exactly one deterministic success edge`,
+      );
     }
     for (const edge of descriptor.outgoingEdgeTargets(node.config)) {
       if (!keys.has(edge.target)) {

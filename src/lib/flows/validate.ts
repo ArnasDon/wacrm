@@ -10,7 +10,9 @@ import type { ZodIssue } from "zod";
 
 import {
   getCompatibilityFlowTriggerDescriptor,
+  getDeterministicSuccessEdgeTarget,
   getNodeDescriptor,
+  type PartialNodeExecutionPolicy,
   type NodeValidationConsumer,
 } from "./registry";
 
@@ -27,6 +29,9 @@ interface FlowInput {
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
+  fallback_policy?: {
+    execution?: PartialNodeExecutionPolicy;
+  };
 }
 
 interface NodeInput {
@@ -98,7 +103,14 @@ export function validateFlowForActivation(
   }
 
   for (const node of nodes) {
-    issues.push(...validateNodeConfig(node, keys, consumer));
+    issues.push(
+      ...validateNodeConfig(
+        node,
+        keys,
+        consumer,
+        flow.fallback_policy?.execution,
+      ),
+    );
     issues.push(...validateEdgeTargets(node, keys));
   }
 
@@ -167,6 +179,7 @@ function validateNodeConfig(
   node: NodeInput,
   knownNodeKeys: ReadonlySet<string>,
   consumer: NodeValidationConsumer,
+  globalExecutionPolicy?: PartialNodeExecutionPolicy,
 ): ValidationIssue[] {
   const descriptor = getNodeDescriptor(node.node_type);
   if (!descriptor) {
@@ -220,6 +233,21 @@ function validateNodeConfig(
         message: issue.message,
       })),
   );
+  const effectiveOnError =
+    node.config.on_error ?? globalExecutionPolicy?.on_error;
+  if (
+    effectiveOnError === "default_value" &&
+    !getDeterministicSuccessEdgeTarget(node.node_type, node.config)
+  ) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: node.node_key,
+      field: "default_value",
+      message:
+        "A default value requires exactly one deterministic success edge.",
+    });
+  }
   return issues;
 }
 

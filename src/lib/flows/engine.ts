@@ -61,10 +61,16 @@ import {
   type StartNodeConfig,
   type KeywordTriggerConfig,
 } from "./types";
-import { getNodeDescriptor, type NodeDescriptor } from "./registry";
+import {
+  getDeterministicSuccessEdgeTarget,
+  getNodeDescriptor,
+  type NodeDescriptor,
+} from "./registry";
 import type { PartialNodeExecutionPolicy } from "./registry";
 import {
+  CommittedSideEffectError,
   executeWithNodePolicy,
+  isCommittedSideEffectError,
   resolveExhaustedNodePolicy,
   resolveNodeExecutionPolicy,
   sanitizeExecutionData,
@@ -513,11 +519,20 @@ async function executePolicyNode<T>(
       },
     });
     return { ok: true, value: result.value };
-  } catch {
-    const descriptor = getRuntimeDescriptor(node.node_type);
-    const normalSuccessNextNodeKey = descriptor
-      ?.outgoingEdgeTargets(node.config)
-      .find(({ field }) => field !== "error_next_node_key")?.target;
+  } catch (error) {
+    if (isCommittedSideEffectError(error)) {
+      await endRun(
+        db,
+        run.id,
+        "failed",
+        "external_send_committed_local_persistence_failed",
+      );
+      return { ok: false };
+    }
+    const normalSuccessNextNodeKey = getDeterministicSuccessEdgeTarget(
+      node.node_type,
+      node.config,
+    );
     const resolution = resolveExhaustedNodePolicy(
       policy,
       run.vars,
@@ -556,12 +571,80 @@ async function executePolicyNode<T>(
 // thread can quote the prompt the customer is replying to.
 // ============================================================
 
+async function persistPromptAfterCommittedSend(
+  db: AdminClient,
+  run: FlowRunRow,
+  whatsappMessageId: string,
+): Promise<void> {
+  let persistenceStage = "prompt_message_lookup";
+  try {
+    const { data: message, error: messageError } = await db
+      .from("messages")
+      .select("id")
+      .eq("message_id", whatsappMessageId)
+      .maybeSingle();
+    if (messageError) throw messageError;
+    const messageId = (message as { id: string } | null)?.id;
+    if (!messageId) throw new Error("Persisted prompt message was not found");
+
+    persistenceStage = "flow_run_prompt_update";
+    const { error: runError } = await db
+      .from("flow_runs")
+      .update({ last_prompt_message_id: messageId })
+      .eq("id", run.id);
+    if (runError) throw runError;
+  } catch (error) {
+    throw new CommittedSideEffectError(
+      `WhatsApp prompt was sent but local ${persistenceStage} failed`,
+      {
+        externalReference: whatsappMessageId,
+        persistenceStage,
+        cause: error,
+      },
+    );
+  }
+}
+
+async function advanceAfterCommittedSend(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  whatsappMessageId: string,
+): Promise<void> {
+  try {
+    const advanced = await advanceCurrentNodeKey(
+      db,
+      run.id,
+      run.current_node_key,
+      node.node_key,
+    );
+    if (!advanced) {
+      await logEvent(db, run.id, "error", node.node_key, {
+        reason: "lost_race_during_advance",
+      });
+    }
+  } catch (error) {
+    throw new CommittedSideEffectError(
+      "WhatsApp message was sent but the flow run pointer could not advance",
+      {
+        externalReference: whatsappMessageId,
+        persistenceStage: "flow_run_node_advance",
+        cause: error,
+      },
+    );
+  }
+}
+
 async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
   signal?: AbortSignal,
-): Promise<{ outcome: "advanced"; node_key: string }> {
+): Promise<{
+  outcome: "advanced";
+  node_key: string;
+  whatsapp_message_id: string;
+}> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveButtons({
     accountId: run.account_id,
@@ -578,20 +661,12 @@ async function sendButtonsAndSuspend(
     node_type: "send_buttons",
     whatsapp_message_id,
   });
-  // Look up our internal message id so we can stash it on the run.
-  // Cheap — indexed on `messages.message_id`.
-  const { data: msg } = await db
-    .from("messages")
-    .select("id")
-    .eq("message_id", whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from("flow_runs")
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq("id", run.id);
-  return { outcome: "advanced", node_key: node.node_key };
+  await persistPromptAfterCommittedSend(db, run, whatsapp_message_id);
+  return {
+    outcome: "advanced",
+    node_key: node.node_key,
+    whatsapp_message_id,
+  };
 }
 
 async function sendListAndSuspend(
@@ -599,7 +674,11 @@ async function sendListAndSuspend(
   run: FlowRunRow,
   node: FlowNodeRow,
   signal?: AbortSignal,
-): Promise<{ outcome: "advanced"; node_key: string }> {
+): Promise<{
+  outcome: "advanced";
+  node_key: string;
+  whatsapp_message_id: string;
+}> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveList({
     accountId: run.account_id,
@@ -624,18 +703,12 @@ async function sendListAndSuspend(
     node_type: "send_list",
     whatsapp_message_id,
   });
-  const { data: msg } = await db
-    .from("messages")
-    .select("id")
-    .eq("message_id", whatsapp_message_id)
-    .maybeSingle();
-  await db
-    .from("flow_runs")
-    .update({
-      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-    })
-    .eq("id", run.id);
-  return { outcome: "advanced", node_key: node.node_key };
+  await persistPromptAfterCommittedSend(db, run, whatsapp_message_id);
+  return {
+    outcome: "advanced",
+    node_key: node.node_key,
+    whatsapp_message_id,
+  };
 }
 
 async function executeHandoff(
@@ -895,15 +968,28 @@ export async function advanceFromNodeKey(
           run,
           node,
           globalExecutionPolicy,
-          async (signal) =>
-            engineSendText({
+          async (signal) => {
+            const sent = await engineSendText({
               accountId: run.account_id,
               userId: run.user_id,
               conversationId: run.conversation_id!,
               contactId: run.contact_id!,
               text: interpolateVars(cfg.prompt_text, run.vars),
               signal,
-            }),
+            });
+            await persistPromptAfterCommittedSend(
+              db,
+              run,
+              sent.whatsapp_message_id,
+            );
+            await advanceAfterCommittedSend(
+              db,
+              run,
+              node,
+              sent.whatsapp_message_id,
+            );
+            return sent;
+          },
         );
       if (!executed.ok) {
         if (executed.nextNodeKey) {
@@ -917,35 +1003,6 @@ export async function advanceFromNodeKey(
         node_type: "collect_input",
         whatsapp_message_id,
       });
-      try {
-        const { data: msg } = await db
-          .from("messages")
-          .select("id")
-          .eq("message_id", whatsapp_message_id)
-          .maybeSingle();
-        await db
-          .from("flow_runs")
-          .update({
-            last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
-          })
-          .eq("id", run.id);
-      } catch (error) {
-        console.error(
-          "[flows] prompt message lookup failed:",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
-        });
-      }
       return { outcome: "advanced" };
     }
     if (runtimeHook === "condition") {
@@ -1017,30 +1074,27 @@ export async function advanceFromNodeKey(
       const executed: PolicyNodeResult<{
         outcome: "advanced";
         node_key: string;
+        whatsapp_message_id: string;
       }> = await executePolicyNode<{
         outcome: "advanced";
         node_key: string;
-      }>(db, run, node, globalExecutionPolicy, async (signal) =>
-        sendButtonsAndSuspend(db, run, node, signal),
-      );
+        whatsapp_message_id: string;
+      }>(db, run, node, globalExecutionPolicy, async (signal) => {
+        const sent = await sendButtonsAndSuspend(db, run, node, signal);
+        await advanceAfterCommittedSend(
+          db,
+          run,
+          node,
+          sent.whatsapp_message_id,
+        );
+        return sent;
+      });
       if (!executed.ok) {
         if (executed.nextNodeKey) {
           currentKey = executed.nextNodeKey;
           continue;
         }
         return { outcome: "completed" };
-      }
-      // Persist the new current_node_key via optimistic UPDATE.
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
-        });
       }
       return { outcome: "advanced" };
     }
@@ -1048,29 +1102,27 @@ export async function advanceFromNodeKey(
       const executed: PolicyNodeResult<{
         outcome: "advanced";
         node_key: string;
+        whatsapp_message_id: string;
       }> = await executePolicyNode<{
         outcome: "advanced";
         node_key: string;
-      }>(db, run, node, globalExecutionPolicy, async (signal) =>
-        sendListAndSuspend(db, run, node, signal),
-      );
+        whatsapp_message_id: string;
+      }>(db, run, node, globalExecutionPolicy, async (signal) => {
+        const sent = await sendListAndSuspend(db, run, node, signal);
+        await advanceAfterCommittedSend(
+          db,
+          run,
+          node,
+          sent.whatsapp_message_id,
+        );
+        return sent;
+      });
       if (!executed.ok) {
         if (executed.nextNodeKey) {
           currentKey = executed.nextNodeKey;
           continue;
         }
         return { outcome: "completed" };
-      }
-      const advanced = await advanceCurrentNodeKey(
-        db,
-        run.id,
-        run.current_node_key,
-        node.node_key,
-      );
-      if (!advanced) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "lost_race_during_advance",
-        });
       }
       return { outcome: "advanced" };
     }
@@ -1155,7 +1207,7 @@ async function advanceCurrentNodeKey(
   const { data, error } = await q.select("id");
   if (error) {
     console.error("[flows] advanceCurrentNodeKey error:", error.message);
-    return false;
+    throw error;
   }
   return Array.isArray(data) && data.length > 0;
 }

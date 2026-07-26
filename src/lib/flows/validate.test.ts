@@ -239,6 +239,7 @@ describe("validateFlowForActivation — nodes", () => {
         }),
       ]),
     );
+
   });
 
   it("requires a typed default value for default_value handling", () => {
@@ -266,7 +267,84 @@ describe("validateFlowForActivation — nodes", () => {
         }),
       ]),
     );
+
+    (nodes[1].config as Record<string, unknown>).default_value = {
+      key: "sent",
+      type: "boolean",
+      value: false,
+    };
+    expect(
+      validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, nodes),
+    ).toEqual([]);
   });
+
+  it.each([
+    [
+      "condition",
+      {
+        subject: "var",
+        subject_key: "tier",
+        operator: "equals",
+        value: "vip",
+        true_next: "h",
+        false_next: "h",
+      },
+    ],
+    [
+      "send_buttons",
+      {
+        text: "Choose",
+        buttons: [
+          { reply_id: "yes", title: "Yes", next_node_key: "h" },
+          { reply_id: "no", title: "No", next_node_key: "h" },
+        ],
+      },
+    ],
+    [
+      "send_list",
+      {
+        text: "Choose",
+        button_label: "Options",
+        sections: [
+          {
+            title: "Choices",
+            rows: [
+              { reply_id: "one", title: "One", next_node_key: "h" },
+              { reply_id: "two", title: "Two", next_node_key: "h" },
+            ],
+          },
+        ],
+      },
+    ],
+    ["handoff", {}],
+  ])(
+    "rejects default_value for non-deterministic %s nodes",
+    (nodeType, config) => {
+      const configured = {
+        ...config,
+        on_error: "default_value",
+        default_value: { key: "fallback", type: "string", value: "skipped" },
+      };
+      const nodes = [
+        { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
+        { node_key: "x", node_type: nodeType, config: configured },
+        { node_key: "h", node_type: "handoff", config: {} },
+      ];
+
+      expect(
+        validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, nodes),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            node_key: "x",
+            field: "default_value",
+            message: expect.stringMatching(/exactly one|deterministic/i),
+          }),
+        ]),
+      );
+    },
+  );
+
   it.each([
     ["wait", { amount: 5, unit: "minutes", next_node_key: "h" }],
     [

@@ -14,6 +14,7 @@ vi.mock("./zapi-send", () => ({
 }));
 
 import { advanceFromNodeKey, handleReplyForActiveRun } from "./engine";
+import { CommittedSideEffectError } from "./execution-policy";
 import type { FlowNodeRow, FlowRunRow } from "./types";
 
 interface CapturedWrite {
@@ -22,7 +23,12 @@ interface CapturedWrite {
   value: Record<string, unknown>;
 }
 
-function fakeDb(options: { failExecutionLogging?: boolean } = {}) {
+function fakeDb(
+  options: {
+    failExecutionLogging?: boolean;
+    failPromptPersistence?: boolean;
+  } = {},
+) {
   const writes: CapturedWrite[] = [];
   let executionSequence = 0;
 
@@ -34,7 +40,10 @@ function fakeDb(options: { failExecutionLogging?: boolean } = {}) {
             eq: () => ({
               maybeSingle: async () => ({
                 data: { id: "message-1" },
-                error: null,
+                error:
+                  table === "messages" && options.failPromptPersistence
+                    ? { message: "prompt lookup unavailable" }
+                    : null,
               }),
             }),
           };
@@ -279,6 +288,196 @@ describe("node execution policy in the flow engine", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    {
+      label: "fail_branch",
+      config: {
+        retry: { max_attempts: 3, interval_ms: 0, backoff: "fixed" as const },
+        on_error: "fail_branch" as const,
+        error_next_node_key: "recover",
+      },
+    },
+    {
+      label: "default_value",
+      config: {
+        retry: { max_attempts: 3, interval_ms: 0, backoff: "fixed" as const },
+        on_error: "default_value" as const,
+        default_value: {
+          key: "delivery",
+          type: "string" as const,
+          value: "skipped",
+        },
+      },
+    },
+  ])(
+    "forces fail_run after a committed send despite $label handling",
+    async ({ config }) => {
+      h.sendText.mockRejectedValue(
+        new CommittedSideEffectError(
+          "message sent but local persistence failed",
+          {
+            externalReference: "wamid-committed",
+            persistenceStage: "message_insert",
+          },
+        ),
+      );
+      const activeRun = run({ vars: { existing: true } });
+      const { db, writes } = fakeDb();
+
+      const result = await advanceFromNodeKey(
+        db as never,
+        activeRun,
+        "start",
+        graph(config),
+      );
+
+      expect(result).toEqual({ outcome: "completed" });
+      expect(h.sendText).toHaveBeenCalledTimes(1);
+      expect(activeRun.vars).toEqual({ existing: true });
+      expect(
+        writes.filter(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.kind === "update" &&
+            write.value.status === "failed" &&
+            write.value.end_reason ===
+              "external_send_committed_local_persistence_failed",
+        ),
+      ).toHaveLength(1);
+      expect(
+        writes.some(
+          (write) =>
+            write.table === "flow_node_executions" &&
+            write.kind === "update" &&
+            write.value.status === "error" &&
+            (write.value.error as { side_effect_committed?: boolean })
+              .side_effect_committed === true,
+        ),
+      ).toBe(true);
+      expect(
+        writes.some(
+          (write) =>
+            write.table === "flow_run_events" &&
+            write.kind === "insert" &&
+            write.value.event_type === "error" &&
+            (
+              (write.value.payload as { error?: Record<string, unknown> })
+                .error ?? {}
+            ).side_effect_committed === true,
+        ),
+      ).toBe(true);
+      expect(
+        writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.kind === "update" &&
+            write.value.status === "completed",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    {
+      label: "send_buttons",
+      nodeType: "send_buttons" as const,
+      config: {
+        text: "Choose",
+        buttons: [{ reply_id: "yes", title: "Yes", next_node_key: "done" }],
+      },
+      prepare: () =>
+        h.sendButtons.mockResolvedValue({
+          whatsapp_message_id: "wamid-buttons",
+        }),
+      sendMock: h.sendButtons,
+    },
+    {
+      label: "send_list",
+      nodeType: "send_list" as const,
+      config: {
+        text: "Choose",
+        button_label: "Options",
+        sections: [
+          {
+            title: "Choices",
+            rows: [
+              { reply_id: "one", title: "One", next_node_key: "done" },
+            ],
+          },
+        ],
+      },
+      prepare: () =>
+        h.sendList.mockResolvedValue({
+          whatsapp_message_id: "wamid-list",
+        }),
+      sendMock: h.sendList,
+    },
+    {
+      label: "collect_input",
+      nodeType: "collect_input" as const,
+      config: {
+        prompt_text: "Your name?",
+        var_key: "name",
+        next_node_key: "done",
+      },
+      prepare: () =>
+        h.sendText.mockResolvedValue({
+          whatsapp_message_id: "wamid-collect",
+        }),
+      sendMock: h.sendText,
+    },
+  ])(
+    "fails $label safely when prompt bookkeeping fails after send",
+    async ({ nodeType, config, prepare, sendMock }) => {
+      prepare();
+      const { db, writes } = fakeDb({ failPromptPersistence: true });
+      const nodes = new Map(
+        [
+          node("prompt", nodeType, {
+            ...config,
+            retry: {
+              max_attempts: 3,
+              interval_ms: 0,
+              backoff: "fixed",
+            },
+            on_error: "fail_branch",
+            error_next_node_key: "recover",
+          }),
+          node("done", "end", {}),
+          node("recover", "end", {}),
+        ].map((entry) => [entry.node_key, entry]),
+      );
+
+      const result = await advanceFromNodeKey(
+        db as never,
+        run({ current_node_key: "prompt" }),
+        "prompt",
+        nodes,
+      );
+
+      expect(result).toEqual({ outcome: "completed" });
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect(
+        writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.kind === "update" &&
+            write.value.status === "failed" &&
+            write.value.end_reason ===
+              "external_send_committed_local_persistence_failed",
+        ),
+      ).toBe(true);
+      expect(
+        writes.some(
+          (write) =>
+            write.table === "flow_runs" &&
+            write.kind === "update" &&
+            write.value.status === "completed",
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("reprompt execution policy", () => {
@@ -364,7 +563,7 @@ describe("reprompt execution policy", () => {
     ).toBe(false);
   });
 
-  it("persists a reprompt default and follows the normal success edge without suspending", async () => {
+  it("fails safely instead of choosing an arbitrary button edge for default_value", async () => {
     h.sendButtons.mockRejectedValue(new Error("Z-API unavailable"));
     const activeRun = run({
       current_node_key: "menu",
@@ -388,21 +587,21 @@ describe("reprompt execution policy", () => {
     );
 
     expect(result.outcome).toBe("completed");
-    expect(activeRun.vars).toEqual({ existing: true, delivery: "skipped" });
+    expect(activeRun.vars).toEqual({ existing: true });
     expect(
       writes.some(
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          "reprompt_count" in write.value,
+          write.value.status === "failed",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       writes.some(
         (write) =>
           write.table === "flow_runs" &&
           write.kind === "update" &&
-          "last_prompt_message_id" in write.value,
+          write.value.status === "completed",
       ),
     ).toBe(false);
   });

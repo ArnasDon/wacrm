@@ -35,6 +35,7 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
   flowConfigSchema: withCommonExecutionPolicy(flowConditionConfigSchema),
   supportsFlowRuntime: true,
   supportsExecutionPolicy: true,
+  supportsDefaultValue: false,
   validate: (node, ctx) => {
     const config = node.config;
     const subject = config.subject;

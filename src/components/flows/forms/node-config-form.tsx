@@ -46,6 +46,7 @@ import {
   MEDIA_MAX_BYTES,
 } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
+import { errorHandlingOptionsForNode } from "./error-handling-options";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
 interface NodeConfigFormProps {
@@ -74,6 +75,7 @@ export function NodeConfigForm({
         descriptor.runtimeKind !== "trigger" &&
         descriptor.runtimeKind !== "terminal" && (
           <ErrorHandlingSection
+            nodeType={node.node_type}
             cfg={node.config}
             allNodes={allNodes}
             currentKey={node.node_key}
@@ -180,23 +182,27 @@ interface DefaultValueConfig {
 }
 
 function ErrorHandlingSection({
+  nodeType,
   cfg,
   allNodes,
   currentKey,
   onUpdateConfig,
 }: {
+  nodeType: string;
   cfg: Record<string, unknown>;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
+  const availableOnError = errorHandlingOptionsForNode(nodeType, cfg);
   const retry = (cfg.retry as RetryConfig | undefined) ?? {
     max_attempts: 1,
     interval_ms: 0,
     backoff: "fixed",
   };
   const onError =
-    cfg.on_error === "fail_branch" || cfg.on_error === "default_value"
+    (cfg.on_error === "fail_branch" || cfg.on_error === "default_value") &&
+    availableOnError.includes(cfg.on_error)
       ? cfg.on_error
       : "fail_run";
   const defaultValue = (cfg.default_value as
@@ -296,7 +302,9 @@ function ErrorHandlingSection({
             <SelectContent>
               <SelectItem value="fail_run">Fail run</SelectItem>
               <SelectItem value="fail_branch">Follow error branch</SelectItem>
-              <SelectItem value="default_value">Use default value</SelectItem>
+              {availableOnError.includes("default_value") && (
+                <SelectItem value="default_value">Use default value</SelectItem>
+              )}
             </SelectContent>
           </Select>
         </label>

@@ -64,6 +64,7 @@ import {
 import {
   getDeterministicSuccessEdgeTarget,
   getNodeDescriptor,
+  resolveNodeOutput,
   type NodeDescriptor,
 } from "./registry";
 import type { PartialNodeExecutionPolicy } from "./registry";
@@ -494,46 +495,55 @@ async function executePolicyNode<T>(
   node: FlowNodeRow,
   globalPolicy: PartialNodeExecutionPolicy | undefined,
   operation: (signal: AbortSignal, operationId: string) => Promise<T>,
+  options: { operationId?: string } = {},
 ): Promise<PolicyNodeResult<T>> {
   // Z-API executors consume this signal all the way through fetch. Supabase
   // query builders and tag helpers do not currently expose AbortSignal; a
   // timeout is therefore non-retryable so unabortable late completion is
   // never followed by an automatic duplicate attempt.
   const policy = resolveNodeExecutionPolicy(globalPolicy, node.config);
-  const operationId = crypto.randomUUID();
+  const operationId = options.operationId ?? crypto.randomUUID();
   const executionIds = new Map<number, string | null>();
   try {
     const result = await executeWithNodePolicy(
       (signal) => operation(signal, operationId),
       policy,
       {
-      onAttemptStart: async (attempt) => {
-        executionIds.set(
-          attempt,
-          await startNodeExecutionRecord(db, run, node, attempt),
-        );
-      },
-      onAttemptSuccess: async (attempt, value, durationMs) => {
-        await finishNodeExecutionRecord(db, executionIds.get(attempt) ?? null, {
-          status: "completed",
-          duration_ms: Math.max(0, Math.round(durationMs)),
-          outputs: value,
-        });
-      },
-      onAttemptError: async (attempt, error, durationMs) => {
-        const sanitized = sanitizeExecutionError(error);
-        await finishNodeExecutionRecord(db, executionIds.get(attempt) ?? null, {
-          status: "error",
-          duration_ms: Math.max(0, Math.round(durationMs)),
-          error: sanitized,
-        });
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "node_attempt_failed",
-          attempt,
-          node_type: node.node_type,
-          error: sanitized,
-        });
-      },
+        onAttemptStart: async (attempt) => {
+          executionIds.set(
+            attempt,
+            await startNodeExecutionRecord(db, run, node, attempt),
+          );
+        },
+        onAttemptSuccess: async (attempt, value, durationMs) => {
+          await finishNodeExecutionRecord(
+            db,
+            executionIds.get(attempt) ?? null,
+            {
+              status: "completed",
+              duration_ms: Math.max(0, Math.round(durationMs)),
+              outputs: value,
+            },
+          );
+        },
+        onAttemptError: async (attempt, error, durationMs) => {
+          const sanitized = sanitizeExecutionError(error);
+          await finishNodeExecutionRecord(
+            db,
+            executionIds.get(attempt) ?? null,
+            {
+              status: "error",
+              duration_ms: Math.max(0, Math.round(durationMs)),
+              error: sanitized,
+            },
+          );
+          await logEvent(db, run.id, "error", node.node_key, {
+            reason: "node_attempt_failed",
+            attempt,
+            node_type: node.node_type,
+            error: sanitized,
+          });
+        },
       },
     );
     return { ok: true, value: result.value };
@@ -581,6 +591,131 @@ async function executePolicyNode<T>(
     });
     return { ok: false, nextNodeKey: resolution.nextNodeKey };
   }
+}
+
+interface DurableHttpEffect {
+  id: string;
+  operation_id: string;
+  status: "reserved" | "remote_committed" | "completed";
+  response: HttpRequestOutput | null;
+}
+
+async function reserveHttpEffect(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+): Promise<DurableHttpEffect> {
+  if (!run.current_visit_id) {
+    throw new Error("flow run is missing a durable visit identity");
+  }
+  const { data, error } = await db.rpc("reserve_flow_http_effect", {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_node_key: node.node_key,
+    p_visit_id: run.current_visit_id,
+  });
+  const effect = Array.isArray(data)
+    ? (data[0] as DurableHttpEffect | undefined)
+    : undefined;
+  if (error || !effect) {
+    throw error ?? new Error("HTTP effect reservation was not returned");
+  }
+  return effect;
+}
+
+async function markHttpEffectCommitted(
+  db: AdminClient,
+  effect: DurableHttpEffect,
+  response: HttpRequestOutput,
+): Promise<DurableHttpEffect> {
+  const { data, error } = await db.rpc("mark_flow_http_effect_committed", {
+    p_effect_id: effect.id,
+    p_operation_id: effect.operation_id,
+    p_response: response,
+  });
+  const committed = Array.isArray(data)
+    ? (data[0] as DurableHttpEffect | undefined)
+    : undefined;
+  if (error || !committed) {
+    throw new CommittedSideEffectError(
+      "HTTP response was received but its durable ledger could not be committed",
+      {
+        externalReference: effect.operation_id,
+        persistenceStage: "http_effect_ledger_commit",
+        cause: error,
+      },
+    );
+  }
+  return committed;
+}
+
+async function completeHttpEffect(
+  db: AdminClient,
+  effect: DurableHttpEffect,
+): Promise<void> {
+  const { data, error } = await db.rpc("complete_flow_http_effect", {
+    p_effect_id: effect.id,
+    p_operation_id: effect.operation_id,
+  });
+  if (error || data !== true) {
+    throw new CommittedSideEffectError(
+      "HTTP effect completed remotely but its local ledger was not finalized",
+      {
+        externalReference: effect.operation_id,
+        persistenceStage: "http_effect_ledger_complete",
+        cause: error,
+      },
+    );
+  }
+}
+
+async function persistDurableCursor(
+  db: AdminClient,
+  run: FlowRunRow,
+  nextNodeKey: string,
+): Promise<void> {
+  if (
+    !run.current_node_key ||
+    !run.current_visit_id ||
+    !["active", "resuming"].includes(run.status)
+  ) {
+    return;
+  }
+  const { data, error } = await db.rpc("advance_flow_run_cursor", {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_expected_node_key: run.current_node_key,
+    p_expected_visit_id: run.current_visit_id,
+    p_next_node_key: nextNodeKey,
+  });
+  const advanced = Array.isArray(data)
+    ? (data[0] as FlowRunRow | undefined)
+    : undefined;
+  if (error || !advanced) {
+    throw error ?? new Error("durable flow cursor was not advanced");
+  }
+  if (advanced.current_node_key !== nextNodeKey) {
+    throw new Error("durable flow cursor lost an advancement race");
+  }
+  run.current_node_key = advanced.current_node_key;
+  run.current_visit_id = advanced.current_visit_id;
+  run.continuation_step = advanced.continuation_step;
+}
+
+async function stopAfterCommittedHttpPersistenceFailure(
+  db: AdminClient,
+  run: FlowRunRow,
+  error: unknown,
+): Promise<never | void> {
+  if (run.status === "resuming") {
+    throw error;
+  }
+  await endRun(
+    db,
+    run.id,
+    "failed",
+    "side_effect_committed_local_persistence_failed",
+  );
 }
 
 // ============================================================
@@ -864,21 +999,7 @@ function resolveBoundDataInput(
     typeof binding?.source_handle === "string" ? binding.source_handle : null;
   const source = sourceKey ? nodes.get(sourceKey) : undefined;
   if (!source || !sourceHandle) return undefined;
-  if (source.node_type === "collect_input" && sourceHandle === "value") {
-    const key = source.config.var_key;
-    return typeof key === "string" ? vars[key] : undefined;
-  }
-  if (
-    (source.node_type as string) === "http_request" &&
-    sourceHandle === "response"
-  ) {
-    const key = source.config.response_var;
-    return typeof key === "string" ? vars[key] : undefined;
-  }
-  if (source.node_type === "variable_set" && sourceHandle === "variables") {
-    return vars;
-  }
-  return undefined;
+  return resolveNodeOutput(source.node_type, source.config, sourceHandle, vars);
 }
 
 async function endRun(
@@ -960,6 +1081,7 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
+      await persistDurableCursor(db, run, cfg.next_node_key);
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -992,6 +1114,7 @@ export async function advanceFromNodeKey(
         node_type: "send_message",
         whatsapp_message_id: executed.value.whatsapp_message_id,
       });
+      await persistDurableCursor(db, run, cfg.next_node_key);
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -1030,6 +1153,7 @@ export async function advanceFromNodeKey(
         media_type: cfg.media_type,
         whatsapp_message_id: executed.value.whatsapp_message_id,
       });
+      await persistDurableCursor(db, run, cfg.next_node_key);
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -1104,6 +1228,7 @@ export async function advanceFromNodeKey(
         condition_result: branch,
         advancing_to: currentKey,
       });
+      await persistDurableCursor(db, run, currentKey);
       continue;
     }
     if (runtimeHook === "switch") {
@@ -1113,25 +1238,26 @@ export async function advanceFromNodeKey(
         cases: SwitchCase[];
         default_next: string;
       };
-      const executed: PolicyNodeResult<string> = await executePolicyNode<string>(
-        db,
-        run,
-        node,
-        globalExecutionPolicy,
-        async () => {
-          const boundSubject = resolveBoundDataInput(
-            node,
-            "subject",
-            nodes,
-            run.vars,
-          );
-          const subject =
-            boundSubject === undefined
-              ? await resolveSwitchSubject(db, run, cfg)
-              : boundSubject;
-          return evaluateSwitch(subject, cfg.cases) ?? cfg.default_next;
-        },
-      );
+      const executed: PolicyNodeResult<string> =
+        await executePolicyNode<string>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async () => {
+            const boundSubject = resolveBoundDataInput(
+              node,
+              "subject",
+              nodes,
+              run.vars,
+            );
+            const subject =
+              boundSubject === undefined
+                ? await resolveSwitchSubject(db, run, cfg)
+                : boundSubject;
+            return evaluateSwitch(subject, cfg.cases) ?? cfg.default_next;
+          },
+        );
       if (!executed.ok) {
         if (executed.nextNodeKey) {
           currentKey = executed.nextNodeKey;
@@ -1143,6 +1269,7 @@ export async function advanceFromNodeKey(
       await logEvent(db, run.id, "node_entered", node.node_key, {
         switch_case_next: currentKey,
       });
+      await persistDurableCursor(db, run, currentKey);
       continue;
     }
     if (runtimeHook === "variable_set") {
@@ -1156,42 +1283,42 @@ export async function advanceFromNodeKey(
       };
       const executed: PolicyNodeResult<Record<string, unknown>> =
         await executePolicyNode<Record<string, unknown>>(
-        db,
-        run,
-        node,
-        globalExecutionPolicy,
-        async () => {
-          const nextVars = { ...run.vars };
-          const boundValue = resolveBoundDataInput(
-            node,
-            "value",
-            nodes,
-            run.vars,
-          );
-          for (const [index, assignment] of cfg.assignments.entries()) {
-            const raw =
-              index === 0 && boundValue !== undefined
-                ? boundValue
-                : typeof assignment.value === "string"
-                ? interpolateVars(assignment.value, run.vars)
-                : assignment.value;
-            const coerced = coerceDeclaredValue(assignment.type, raw);
-            if (!coerced.ok) {
-              throw new Error(
-                `variable "${assignment.key}" ${coerced.reason}`,
-              );
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async () => {
+            const nextVars = { ...run.vars };
+            const boundValue = resolveBoundDataInput(
+              node,
+              "value",
+              nodes,
+              run.vars,
+            );
+            for (const [index, assignment] of cfg.assignments.entries()) {
+              const raw =
+                index === 0 && boundValue !== undefined
+                  ? boundValue
+                  : typeof assignment.value === "string"
+                    ? interpolateVars(assignment.value, run.vars)
+                    : assignment.value;
+              const coerced = coerceDeclaredValue(assignment.type, raw);
+              if (!coerced.ok) {
+                throw new Error(
+                  `variable "${assignment.key}" ${coerced.reason}`,
+                );
+              }
+              nextVars[assignment.key] = coerced.value;
             }
-            nextVars[assignment.key] = coerced.value;
-          }
-          const { error } = await db
-            .from("flow_runs")
-            .update({ vars: nextVars })
-            .eq("id", run.id);
-          if (error) throw error;
-          run.vars = nextVars;
-          return nextVars;
-        },
-      );
+            const { error } = await db
+              .from("flow_runs")
+              .update({ vars: nextVars })
+              .eq("id", run.id);
+            if (error) throw error;
+            run.vars = nextVars;
+            return nextVars;
+          },
+        );
       if (!executed.ok) {
         if (executed.nextNodeKey) {
           currentKey = executed.nextNodeKey;
@@ -1199,6 +1326,7 @@ export async function advanceFromNodeKey(
         }
         return { outcome: "completed" };
       }
+      await persistDurableCursor(db, run, cfg.next_node_key);
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -1206,74 +1334,110 @@ export async function advanceFromNodeKey(
       const cfg = node.config as unknown as HttpRequestConfig & {
         next_node_key: string;
       };
-      const executed: PolicyNodeResult<HttpRequestOutput> =
-        await executePolicyNode<HttpRequestOutput>(
-        db,
-        run,
-        node,
-        globalExecutionPolicy,
-        async (signal, idempotencyKey) => {
-          const renderedHeaders = Object.fromEntries(
-            Object.entries(cfg.headers ?? {}).map(([key, value]) => [
-              key,
-              interpolateVars(value, run.vars),
-            ]),
-          );
-          if (
-            !["GET", "DELETE"].includes(cfg.method) &&
-            !Object.keys(renderedHeaders).some(
-              (key) => key.toLowerCase() === "idempotency-key",
-            )
-          ) {
-            renderedHeaders["Idempotency-Key"] = idempotencyKey;
-          }
-          const output = await executeHttpRequest(
-            {
-              method: cfg.method,
-              url: interpolateVars(cfg.url, run.vars),
-              headers: renderedHeaders,
-              body: (() => {
-                const boundRequest = resolveBoundDataInput(
-                  node,
-                  "request",
-                  nodes,
-                  run.vars,
-                );
-                if (boundRequest !== undefined) {
-                  return JSON.stringify(boundRequest);
-                }
-                return cfg.body
-                  ? interpolateVars(cfg.body, run.vars)
-                  : undefined;
-              })(),
-              response_var: cfg.response_var,
+      let effect: DurableHttpEffect;
+      try {
+        effect = await reserveHttpEffect(db, run, node);
+      } catch (error) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "http_effect_reservation_failed",
+          error: sanitizeExecutionError(error),
+        });
+        await endRun(db, run.id, "failed", "http_effect_reservation_failed");
+        return { outcome: "completed" };
+      }
+
+      let output = effect.response;
+      if (effect.status === "reserved" || !output) {
+        const executed: PolicyNodeResult<HttpRequestOutput> =
+          await executePolicyNode<HttpRequestOutput>(
+            db,
+            run,
+            node,
+            globalExecutionPolicy,
+            async (signal, idempotencyKey) => {
+              const renderedHeaders = Object.fromEntries(
+                Object.entries(cfg.headers ?? {}).map(([key, value]) => [
+                  key,
+                  interpolateVars(value, run.vars),
+                ]),
+              );
+              if (
+                !["GET", "DELETE"].includes(cfg.method) &&
+                !Object.keys(renderedHeaders).some(
+                  (key) => key.toLowerCase() === "idempotency-key",
+                )
+              ) {
+                renderedHeaders["Idempotency-Key"] = idempotencyKey;
+              }
+              return executeHttpRequest(
+                {
+                  method: cfg.method,
+                  url: interpolateVars(cfg.url, run.vars),
+                  headers: renderedHeaders,
+                  body: (() => {
+                    const boundRequest = resolveBoundDataInput(
+                      node,
+                      "request",
+                      nodes,
+                      run.vars,
+                    );
+                    if (boundRequest !== undefined) {
+                      return JSON.stringify(boundRequest);
+                    }
+                    return cfg.body
+                      ? interpolateVars(cfg.body, run.vars)
+                      : undefined;
+                  })(),
+                  response_var: cfg.response_var,
+                },
+                { signal },
+              );
             },
-            { signal },
+            { operationId: effect.operation_id },
           );
-          const nextVars = { ...run.vars, [cfg.response_var]: output };
-          const { error } = await db
-            .from("flow_runs")
-            .update({ vars: nextVars })
-            .eq("id", run.id);
-          if (error) {
-            throw new CommittedSideEffectError(
-              "HTTP response was received but flow variables could not be persisted",
-              {
-                externalReference: `http:${output.status}`,
-                persistenceStage: "flow_run_vars_update",
-                cause: error,
-              },
-            );
+        if (!executed.ok) {
+          if (executed.nextNodeKey) {
+            currentKey = executed.nextNodeKey;
+            continue;
           }
-          run.vars = nextVars;
-          return output;
-        },
-      );
-      if (!executed.ok) {
-        if (executed.nextNodeKey) {
-          currentKey = executed.nextNodeKey;
-          continue;
+          return { outcome: "completed" };
         }
+        output = executed.value;
+        try {
+          effect = await markHttpEffectCommitted(db, effect, output);
+        } catch (error) {
+          await stopAfterCommittedHttpPersistenceFailure(db, run, error);
+          return { outcome: "completed" };
+        }
+      }
+
+      if (!output) {
+        await endRun(db, run.id, "failed", "http_effect_response_missing");
+        return { outcome: "completed" };
+      }
+      const nextVars = { ...run.vars, [cfg.response_var]: output };
+      const { error: varsError } = await db
+        .from("flow_runs")
+        .update({ vars: nextVars })
+        .eq("id", run.id);
+      if (varsError) {
+        const error = new CommittedSideEffectError(
+          "HTTP response was received but flow variables could not be persisted",
+          {
+            externalReference: effect.operation_id,
+            persistenceStage: "flow_run_vars_update",
+            cause: varsError,
+          },
+        );
+        await stopAfterCommittedHttpPersistenceFailure(db, run, error);
+        return { outcome: "completed" };
+      }
+      run.vars = nextVars;
+      try {
+        await persistDurableCursor(db, run, cfg.next_node_key);
+        await completeHttpEffect(db, effect);
+      } catch (error) {
+        await stopAfterCommittedHttpPersistenceFailure(db, run, error);
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
@@ -1291,32 +1455,26 @@ export async function advanceFromNodeKey(
       }> = await executePolicyNode<{
         wake_at: string;
         next_node_key: string;
-      }>(
-        db,
-        run,
-        node,
-        globalExecutionPolicy,
-        async () => {
-          const multiplier =
-            cfg.unit === "minutes"
-              ? 60_000
-              : cfg.unit === "hours"
-                ? 3_600_000
-                : 86_400_000;
-          const wakeAt = new Date(
-            Date.now() + cfg.amount * multiplier,
-          ).toISOString();
-          const { error } = await db.rpc("schedule_flow_wait", {
-            p_run_id: run.id,
-            p_flow_version_id: run.flow_version_id,
-            p_node_key: node.node_key,
-            p_next_node_key: cfg.next_node_key,
-            p_wake_at: wakeAt,
-          });
-          if (error) throw error;
-          return { wake_at: wakeAt, next_node_key: cfg.next_node_key };
-        },
-      );
+      }>(db, run, node, globalExecutionPolicy, async () => {
+        const multiplier =
+          cfg.unit === "minutes"
+            ? 60_000
+            : cfg.unit === "hours"
+              ? 3_600_000
+              : 86_400_000;
+        const wakeAt = new Date(
+          Date.now() + cfg.amount * multiplier,
+        ).toISOString();
+        const { error } = await db.rpc("schedule_flow_wait", {
+          p_run_id: run.id,
+          p_flow_version_id: run.flow_version_id,
+          p_node_key: node.node_key,
+          p_next_node_key: cfg.next_node_key,
+          p_wake_at: wakeAt,
+        });
+        if (error) throw error;
+        return { wake_at: wakeAt, next_node_key: cfg.next_node_key };
+      });
       if (!executed.ok) {
         if (executed.nextNodeKey) {
           currentKey = executed.nextNodeKey;
@@ -1666,11 +1824,7 @@ export async function handleReplyForActiveRun(
     if (
       captured.length > 0 &&
       cfg.var_key &&
-      validateCollectedInput(
-        captured,
-        cfg.validation ?? "any",
-        cfg.regex,
-      )
+      validateCollectedInput(captured, cfg.validation ?? "any", cfg.regex)
     ) {
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };

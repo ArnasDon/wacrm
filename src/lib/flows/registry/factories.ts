@@ -42,6 +42,11 @@ interface CommonOptions<Id extends string> {
   outgoingEdgeTargets?: (
     config: Record<string, unknown>,
   ) => readonly OutgoingEdgeTarget[];
+  resolveOutput?: (
+    config: Record<string, unknown>,
+    portId: string,
+    vars: Readonly<Record<string, unknown>>,
+  ) => unknown;
 }
 
 export function createLinearNodeDescriptor<const Id extends string>(

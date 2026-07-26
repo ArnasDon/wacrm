@@ -19,11 +19,20 @@ export const collectInputNodeDescriptor = createLinearNodeDescriptor({
     },
   ],
   runtimeKind: "suspend",
+  resolveOutput: (config, portId, vars) =>
+    portId === "value" && typeof config.var_key === "string"
+      ? vars[config.var_key]
+      : undefined,
   visible: true,
   form: {
     kind: "fields",
     fields: [
-      { kind: "textarea", key: "prompt_text", label: "Prompt to customer", rows: 2 },
+      {
+        kind: "textarea",
+        key: "prompt_text",
+        label: "Prompt to customer",
+        rows: 2,
+      },
       { kind: "text", key: "var_key", label: "Variable key" },
       {
         kind: "select",

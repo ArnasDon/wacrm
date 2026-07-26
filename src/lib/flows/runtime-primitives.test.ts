@@ -97,17 +97,25 @@ describe("validateCollectedInput", () => {
   });
 
   it("rejects unsafe or invalid regular expressions", () => {
-    expect(validateCollectedInput("ABC-12", "regex", "^[A-Z]+-\\d+$")).toBe(
-      true,
-    );
+    expect(
+      validateCollectedInput("ABC-12", "regex", "^[A-Z][A-Z][A-Z]-\\d\\d$"),
+    ).toBe(true);
     expect(validateCollectedInput("ABC", "regex", "[")).toBe(false);
     expect(validateCollectedInput("aaaaaaaa", "regex", "(a+)+$")).toBe(false);
     expect(validateCollectedInput("aaaaaaaa", "regex", "(a|aa)+$")).toBe(false);
     expect(validateCollectedInput("aaaaaaaa", "regex", "(a?)+$")).toBe(false);
     expect(validateCollectedInput("aaaaaaaa", "regex", "a+a+$")).toBe(false);
     expect(
-      validateCollectedInput("a".repeat(4_097), "regex", "^a+$"),
+      validateCollectedInput(
+        `${"a".repeat(100)}b`,
+        "regex",
+        "^a{0,100}a{0,100}a{0,100}b$",
+      ),
     ).toBe(false);
+    expect(validateCollectedInput("a", "regex", "^a?$")).toBe(false);
+    expect(validateCollectedInput("a".repeat(4_097), "regex", "^a+$")).toBe(
+      false,
+    );
     expect(validateCollectedInput("anything", "regex", "x".repeat(257))).toBe(
       false,
     );

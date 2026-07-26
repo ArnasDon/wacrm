@@ -112,6 +112,27 @@ export function canonicalNodeType(
   return getNodeDescriptor(nodeType)?.id as RegisteredNodeType | undefined;
 }
 
+export function resolveNodeOutput(
+  nodeType: string,
+  config: Record<string, unknown>,
+  portId: string,
+  vars: Readonly<Record<string, unknown>>,
+): unknown {
+  const descriptor = getNodeDescriptor(nodeType);
+  return descriptor
+    ? resolveDescriptorOutput(descriptor, config, portId, vars)
+    : undefined;
+}
+
+export function resolveDescriptorOutput(
+  descriptor: NodeDescriptor,
+  config: Record<string, unknown>,
+  portId: string,
+  vars: Readonly<Record<string, unknown>>,
+): unknown {
+  return descriptor.resolveOutput?.(config, portId, vars);
+}
+
 export function isFlowRuntimeNodeType(nodeType: string): boolean {
   return getNodeDescriptor(nodeType)?.supportsFlowRuntime === true;
 }

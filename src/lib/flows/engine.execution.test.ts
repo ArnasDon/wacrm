@@ -34,14 +34,55 @@ function fakeDb(
     failExecutionLogging?: boolean;
     failPromptPersistence?: boolean;
     failFlowVarsPersistence?: boolean;
+    failFlowVarsPersistenceOnce?: boolean;
+    flowVarsPersistence?: Promise<{ data: unknown; error: unknown }>;
+    initialHttpEffect?: {
+      status: "reserved" | "remote_committed" | "completed";
+      response: Record<string, unknown> | null;
+    };
   } = {},
 ) {
   const writes: CapturedWrite[] = [];
   let executionSequence = 0;
+  let cursorSequence = 0;
+  let failVarsOnce = options.failFlowVarsPersistenceOnce === true;
+  const httpEffect = {
+    id: "10000000-0000-4000-8000-000000000001",
+    operation_id: "20000000-0000-4000-8000-000000000001",
+    status: options.initialHttpEffect?.status ?? "reserved",
+    response: options.initialHttpEffect?.response ?? null,
+  };
 
   const db = {
     rpc(name: string, value: Record<string, unknown>) {
       writes.push({ table: `rpc:${name}`, kind: "insert", value });
+      if (name === "reserve_flow_http_effect") {
+        return Promise.resolve({ data: [{ ...httpEffect }], error: null });
+      }
+      if (name === "mark_flow_http_effect_committed") {
+        httpEffect.status = "remote_committed";
+        httpEffect.response = value.p_response as Record<string, unknown>;
+        return Promise.resolve({ data: [{ ...httpEffect }], error: null });
+      }
+      if (name === "complete_flow_http_effect") {
+        httpEffect.status = "completed";
+        return Promise.resolve({ data: true, error: null });
+      }
+      if (name === "advance_flow_run_cursor") {
+        cursorSequence += 1;
+        return Promise.resolve({
+          data: [
+            {
+              current_node_key: value.p_next_node_key,
+              current_visit_id: `30000000-0000-4000-8000-${String(
+                cursorSequence,
+              ).padStart(12, "0")}`,
+              continuation_step: cursorSequence,
+            },
+          ],
+          error: null,
+        });
+      }
       return Promise.resolve({ data: [{ id: "ok" }], error: null });
     },
     from(table: string) {
@@ -77,21 +118,32 @@ function fakeDb(
         update(value: Record<string, unknown>) {
           writes.push({ table, kind: "update", value });
           return {
-            eq: async () => ({
-              data: [{ id: "ok" }],
-              error:
+            eq: async () => {
+              if (
                 table === "flow_runs" &&
                 "vars" in value &&
-                options.failFlowVarsPersistence
+                options.flowVarsPersistence
+              ) {
+                return options.flowVarsPersistence;
+              }
+              const shouldFailVars =
+                table === "flow_runs" &&
+                "vars" in value &&
+                (options.failFlowVarsPersistence === true || failVarsOnce);
+              if (shouldFailVars && failVarsOnce) failVarsOnce = false;
+              return {
+                data: [{ id: "ok" }],
+                error: shouldFailVars
                   ? { message: "vars persistence unavailable" }
                   : null,
-            }),
+              };
+            },
           };
         },
       };
     },
   };
-  return { db, writes };
+  return { db, writes, httpEffect };
 }
 
 function run(overrides: Partial<FlowRunRow> = {}): FlowRunRow {
@@ -105,6 +157,10 @@ function run(overrides: Partial<FlowRunRow> = {}): FlowRunRow {
     conversation_id: "conversation-1",
     status: "active",
     current_node_key: "start",
+    current_visit_id: "00000000-0000-4000-8000-000000000001",
+    continuation_id: null,
+    continuation_phase: "idle",
+    continuation_step: 0,
     last_prompt_message_id: null,
     vars: {},
     reprompt_count: 0,
@@ -252,6 +308,187 @@ describe("node execution policy in the flow engine", () => {
     ).toBe(true);
   });
 
+  it("reuses a remote-committed HTTP visit without invoking the remote server", async () => {
+    const committed = {
+      status: 201,
+      body: { created: true },
+      content_type: "application/json",
+    };
+    const activeRun = run({ current_node_key: "http" });
+    const { db } = fakeDb({
+      initialHttpEffect: {
+        status: "remote_committed",
+        response: committed,
+      },
+    });
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/create",
+          headers: {},
+          body: "{}",
+          response_var: "response",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(h.httpRequest).not.toHaveBeenCalled();
+    expect(activeRun.vars.response).toEqual(committed);
+  });
+
+  it("keeps one stable operation id when a reserved HTTP visit is retried", async () => {
+    h.httpRequest
+      .mockRejectedValueOnce(new Error("connection reset during request"))
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { ok: true },
+        content_type: "application/json",
+      });
+    const activeRun = run({ current_node_key: "http" });
+    const { db, httpEffect } = fakeDb();
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/create",
+          headers: {},
+          body: "{}",
+          response_var: "response",
+          next_node_key: "end",
+          retry: {
+            max_attempts: 2,
+            interval_ms: 0,
+            backoff: "fixed",
+          },
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(h.httpRequest).toHaveBeenCalledTimes(2);
+    expect(
+      h.httpRequest.mock.calls.map(
+        ([request]) => request.headers["Idempotency-Key"],
+      ),
+    ).toEqual([httpEffect.operation_id, httpEffect.operation_id]);
+  });
+
+  it("reclaims committed HTTP persistence failure with the same operation id", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { created: true },
+      content_type: "application/json",
+    });
+    const resumedRun = run({
+      status: "resuming",
+      current_node_key: "http",
+      continuation_id: "40000000-0000-4000-8000-000000000001",
+      continuation_phase: "running",
+    });
+    const { db, httpEffect } = fakeDb({
+      failFlowVarsPersistenceOnce: true,
+    });
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/create",
+          headers: {},
+          body: "{}",
+          response_var: "response",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await expect(
+      advanceFromNodeKey(db as never, resumedRun, "http", nodes),
+    ).rejects.toBeInstanceOf(CommittedSideEffectError);
+    expect(httpEffect.status).toBe("remote_committed");
+
+    await advanceFromNodeKey(db as never, resumedRun, "http", nodes);
+
+    expect(h.httpRequest).toHaveBeenCalledTimes(1);
+    expect(h.httpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Idempotency-Key": httpEffect.operation_id,
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(httpEffect.status).toBe("completed");
+  });
+
+  it("does not let slow local persistence turn a confirmed HTTP response into a timeout", async () => {
+    vi.useFakeTimers();
+    let resolvePersistence!: (value: { data: unknown; error: unknown }) => void;
+    const persistence = new Promise<{ data: unknown; error: unknown }>(
+      (resolve) => {
+        resolvePersistence = resolve;
+      },
+    );
+    try {
+      h.httpRequest.mockResolvedValue({
+        status: 200,
+        body: { ok: true },
+        content_type: "application/json",
+      });
+      const activeRun = run({ current_node_key: "http" });
+      const { db } = fakeDb({ flowVarsPersistence: persistence });
+      const nodes = new Map(
+        [
+          node("http", "http_request", {
+            method: "POST",
+            url: "https://api.example.com/slow-local-write",
+            headers: {},
+            body: "{}",
+            response_var: "response",
+            next_node_key: "end",
+            timeout_ms: 10,
+            retry: {
+              max_attempts: 3,
+              interval_ms: 0,
+              backoff: "fixed",
+            },
+            on_error: "fail_branch",
+            error_next_node_key: "recover",
+          }),
+          node("end", "end", {}),
+          node("recover", "end", {}),
+        ].map((entry) => [entry.node_key, entry]),
+      );
+      let settled = false;
+      const advancing = advanceFromNodeKey(
+        db as never,
+        activeRun,
+        "http",
+        nodes,
+      ).finally(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(h.httpRequest).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(false);
+
+      resolvePersistence({ data: [{ id: "run-1" }], error: null });
+      await advancing;
+      expect(h.httpRequest).toHaveBeenCalledTimes(1);
+      expect(activeRun.vars.response).toMatchObject({ status: 200 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("feeds persisted typed output ports into connected runtime inputs", async () => {
     h.httpRequest.mockResolvedValue({
       status: 200,
@@ -326,7 +563,7 @@ describe("node execution policy in the flow engine", () => {
 
   it("routes switch cases first-match and persists conservative variable assignments", async () => {
     const activeRun = run({ vars: { tier: "gold-customer" } });
-    const { db } = fakeDb();
+    const { db, writes } = fakeDb();
     const nodes = new Map(
       [
         node("set", "variable_set", {
@@ -363,6 +600,11 @@ describe("node execution policy in the flow engine", () => {
     await advanceFromNodeKey(db as never, activeRun, "set", nodes);
 
     expect(activeRun.vars).toEqual({ tier: "gold-customer", count: 42 });
+    expect(
+      writes
+        .filter((write) => write.table === "rpc:advance_flow_run_cursor")
+        .map((write) => write.value.p_next_node_key),
+    ).toEqual(["switch", "first"]);
   });
   it("takes an error branch after a simulated Z-API failure without failing the run", async () => {
     h.sendText.mockRejectedValue(new Error("Z-API unavailable"));
@@ -630,9 +872,7 @@ describe("node execution policy in the flow engine", () => {
         sections: [
           {
             title: "Choices",
-            rows: [
-              { reply_id: "one", title: "One", next_node_key: "done" },
-            ],
+            rows: [{ reply_id: "one", title: "One", next_node_key: "done" }],
           },
         ],
       },
@@ -774,7 +1014,7 @@ describe("reprompt execution policy", () => {
           prompt_text: "Code?",
           var_key: "code",
           validation: "regex",
-          regex: "^[A-Z]+-\\d+$",
+          regex: "^[A-Z][A-Z][A-Z]-\\d\\d$",
           next_node_key: "success",
         }),
         node("success", "end", {}),

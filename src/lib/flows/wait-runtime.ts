@@ -15,6 +15,7 @@ interface ClaimedFlowWait {
   node_key: string;
   next_node_key: string;
   claim_token: string;
+  resume_id: string;
 }
 
 interface ResumeStats {
@@ -72,13 +73,10 @@ export async function resumeDueFlowWaits(
   for (const claim of claims) {
     const pinned = await loadPinnedGraph(db, claim.flow_version_id);
     const waitNode = pinned?.graph.nodes.find(
-      (node) =>
-        node.node_key === claim.node_key &&
-        node.node_type === "wait",
+      (node) => node.node_key === claim.node_key && node.node_type === "wait",
     );
     const pinnedNext =
-      waitNode &&
-      typeof waitNode.config.next_node_key === "string"
+      waitNode && typeof waitNode.config.next_node_key === "string"
         ? waitNode.config.next_node_key
         : null;
     if (!pinned || pinnedNext !== claim.next_node_key) {
@@ -102,7 +100,9 @@ export async function resumeDueFlowWaits(
       continue;
     }
     const needsAdvance =
-      run.status === "resuming" && run.current_node_key === claim.node_key;
+      run.status === "resuming" &&
+      run.continuation_phase === "running" &&
+      typeof run.current_node_key === "string";
     try {
       if (needsAdvance) {
         const nodes = new Map(
@@ -114,11 +114,20 @@ export async function resumeDueFlowWaits(
         await advance(
           db as ReturnType<typeof import("./admin-client").supabaseAdmin>,
           run,
-          pinnedNext,
+          run.current_node_key!,
           nodes,
           pinned.graph.fallback_policy.execution,
         );
       }
+      const { error: completeError } = await db.rpc(
+        "complete_flow_wait_continuation",
+        {
+          p_wait_id: claim.id,
+          p_claim_token: claim.claim_token,
+          p_flow_version_id: claim.flow_version_id,
+        },
+      );
+      if (completeError) throw completeError;
       const { data: acknowledged, error: ackError } = await db.rpc(
         "ack_flow_wait_resume",
         {

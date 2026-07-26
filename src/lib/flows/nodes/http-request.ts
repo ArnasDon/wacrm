@@ -28,6 +28,10 @@ export const httpRequestNodeDescriptor = createLinearNodeDescriptor({
   ],
   runtimeKind: "auto",
   runtimeHook: "http_request",
+  resolveOutput: (config, portId, vars) =>
+    portId === "response" && typeof config.response_var === "string"
+      ? vars[config.response_var]
+      : undefined,
   visible: true,
   form: { kind: "specialized", component: "http_request" },
   defaultConfig: {

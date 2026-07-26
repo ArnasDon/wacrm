@@ -4,6 +4,8 @@ import {
   canonicalNodeType,
   getNodeDescriptor,
   isRegisteredNodeType,
+  resolveDescriptorOutput,
+  resolveNodeOutput,
 } from "./registry";
 import {
   collectInputConfigSchema,
@@ -30,6 +32,37 @@ describe("flow runtime primitive descriptors", () => {
     );
     expect(isRegisteredNodeType("http_fetch")).toBe(true);
     expect(canonicalNodeType("http_fetch")).toBe("http_request");
+  });
+
+  it("resolves typed outputs through the descriptor contract", () => {
+    expect(
+      resolveNodeOutput(
+        "http_request",
+        { response_var: "result" },
+        "response",
+        { result: { ok: true } },
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      resolveNodeOutput("collect_input", { var_key: "answer" }, "value", {
+        answer: "yes",
+      }),
+    ).toBe("yes");
+
+    const artificial = {
+      ...getNodeDescriptor("variable_set")!,
+      id: "artificial",
+      resolveOutput: (
+        _config: Record<string, unknown>,
+        portId: string,
+        vars: Readonly<Record<string, unknown>>,
+      ) => (portId === "custom" ? vars.extension_value : undefined),
+    };
+    expect(
+      resolveDescriptorOutput(artificial, {}, "custom", {
+        extension_value: 17,
+      }),
+    ).toBe(17);
   });
 });
 
@@ -120,7 +153,7 @@ describe("runtime primitive schemas", () => {
         prompt_text: "Code?",
         var_key: "code",
         validation: "regex",
-        regex: "^[A-Z]+-\\d+$",
+        regex: "^[A-Z][A-Z][A-Z]-\\d\\d$",
         next_node_key: "end",
       }).success,
     ).toBe(true);

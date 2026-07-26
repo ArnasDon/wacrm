@@ -281,6 +281,12 @@ export interface FlowRunRow {
     | "paused_by_agent"
     | "failed";
   current_node_key: string | null;
+  /** Durable identity of the currently executing graph visit. */
+  current_visit_id?: string | null;
+  /** Durable wait continuation this run is currently completing. */
+  continuation_id?: string | null;
+  continuation_phase?: "idle" | "running" | "completed";
+  continuation_step?: number;
   last_prompt_message_id: string | null;
   vars: Record<string, unknown>;
   reprompt_count: number;

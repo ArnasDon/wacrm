@@ -1,10 +1,5 @@
 export type FlowVariableType =
-  | "string"
-  | "number"
-  | "boolean"
-  | "json"
-  | "contact"
-  | "message";
+  "string" | "number" | "boolean" | "json" | "contact" | "message";
 
 export interface FlowVariableDeclaration {
   key: string;
@@ -17,8 +12,7 @@ export function initializeFlowVariables(
   declarations: readonly FlowVariableDeclaration[],
 ): Record<string, unknown> {
   const missingRequired = declarations.find(
-    (declaration) =>
-      declaration.required && declaration.default === undefined,
+    (declaration) => declaration.required && declaration.default === undefined,
   );
   if (missingRequired) {
     throw new Error(
@@ -35,8 +29,7 @@ export function initializeFlowVariables(
 }
 
 export type CoercionResult =
-  | { ok: true; value: unknown }
-  | { ok: false; reason: string };
+  { ok: true; value: unknown } | { ok: false; reason: string };
 
 export function coerceDeclaredValue(
   type: FlowVariableType,
@@ -166,22 +159,17 @@ export const MAX_COLLECT_INPUT_REGEX_LENGTH = 256;
 export const MAX_COLLECT_INPUT_LENGTH = 4_096;
 
 /**
- * Reject the nested-quantifier patterns most commonly used for ReDoS.
- * JavaScript does not expose a safe-regex engine; keeping authored patterns
- * small and excluding nested/unbounded ambiguous repetition makes the runtime
- * contract predictable without accepting arbitrary expensive expressions.
+ * JavaScript does not expose a safe-regex engine, so authored expressions use
+ * a deliberately small linear subset with no repetition or alternation.
  */
 export function isSafeCollectInputRegex(pattern: string): boolean {
   if (!pattern || pattern.length > MAX_COLLECT_INPUT_REGEX_LENGTH) return false;
   if (/\\[1-9]/.test(pattern)) return false;
-  // The accepted subset deliberately excludes grouping and alternation. This
-  // removes nested/overlapping quantified branches, including `(a|aa)+` and
-  // `(a?)+`, instead of trying to predict V8 backtracking behavior.
-  if (/[()|]/.test(pattern)) return false;
-
+  // Deliberately tiny linear subset: anchors, literals, escapes and character
+  // classes only. No repetition, optionality, grouping or alternation reaches
+  // V8's backtracking engine.
   let escaped = false;
   let inClass = false;
-  const unboundedQuantifiers: number[] = [];
   for (let index = 0; index < pattern.length; index += 1) {
     const char = pattern[index];
     if (escaped) {
@@ -201,27 +189,9 @@ export function isSafeCollectInputRegex(pattern: string): boolean {
       continue;
     }
     if (inClass) continue;
-    if (char === "*" || char === "+") {
-      unboundedQuantifiers.push(index);
-    } else if (char === "{") {
-      const end = pattern.indexOf("}", index + 1);
-      if (end < 0) return false;
-      const range = pattern.slice(index + 1, end);
-      if (/^\d+,$/.test(range)) unboundedQuantifiers.push(index);
-      index = end;
-    }
+    if ("()*+?{}|".includes(char)) return false;
   }
   if (inClass || escaped) return false;
-  for (let index = 1; index < unboundedQuantifiers.length; index += 1) {
-    const between = pattern.slice(
-      unboundedQuantifiers[index - 1] + 1,
-      unboundedQuantifiers[index],
-    );
-    // Multiple unbounded repetitions require a mandatory literal separator.
-    // This accepts patterns such as `^[A-Z]+-\d+$` while rejecting `a+a+`
-    // and `.*.*`, whose repetitions can partition the same input.
-    if (!/(?:^|[^\\])[-_,:;/]/.test(between)) return false;
-  }
   try {
     void new RegExp(pattern, "u");
     return true;

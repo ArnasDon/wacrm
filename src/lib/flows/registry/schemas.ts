@@ -327,7 +327,7 @@ export const collectInputConfigSchema = z
           code: "custom",
           path: ["regex"],
           message:
-            "Regex must be valid, at most 256 characters, and avoid unsafe nested quantifiers.",
+            "Regex must use the linear subset: anchors, literals, escapes, and character classes only.",
         });
       }
     } else if (config.regex !== undefined) {

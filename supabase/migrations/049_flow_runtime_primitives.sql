@@ -223,7 +223,17 @@ ALTER TABLE flow_runs
     'failed'
   ));
 ALTER TABLE flow_runs
-  ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS current_visit_id UUID NOT NULL DEFAULT uuid_generate_v4(),
+  ADD COLUMN IF NOT EXISTS continuation_id UUID,
+  ADD COLUMN IF NOT EXISTS continuation_phase TEXT NOT NULL DEFAULT 'idle',
+  ADD COLUMN IF NOT EXISTS continuation_step BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE flow_runs
+  DROP CONSTRAINT IF EXISTS flow_runs_continuation_phase_check;
+ALTER TABLE flow_runs
+  ADD CONSTRAINT flow_runs_continuation_phase_check
+  CHECK (continuation_phase IN ('idle', 'running', 'completed'));
 
 DROP INDEX IF EXISTS idx_one_active_run_per_contact;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_contact
@@ -241,12 +251,16 @@ CREATE TABLE IF NOT EXISTS flow_waits (
     status IN ('pending', 'claimed', 'resumed', 'failed')
   ),
   claim_token UUID,
+  resume_id UUID NOT NULL DEFAULT uuid_generate_v4(),
   claimed_at TIMESTAMPTZ,
   resumed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (flow_run_id)
 );
+
+ALTER TABLE flow_waits
+  ADD COLUMN IF NOT EXISTS resume_id UUID NOT NULL DEFAULT uuid_generate_v4();
 
 CREATE INDEX IF NOT EXISTS idx_flow_waits_due
   ON flow_waits(wake_at, id)
@@ -325,6 +339,7 @@ BEGIN
     claim_token,
     claimed_at,
     resumed_at,
+    resume_id,
     updated_at
   )
   VALUES (
@@ -337,6 +352,7 @@ BEGIN
     NULL,
     NULL,
     NULL,
+    uuid_generate_v4(),
     NOW()
   )
   ON CONFLICT (flow_run_id) DO UPDATE
@@ -348,11 +364,16 @@ BEGIN
       claim_token = NULL,
       claimed_at = NULL,
       resumed_at = NULL,
+      resume_id = uuid_generate_v4(),
       updated_at = NOW();
 
   UPDATE flow_runs
   SET status = 'waiting',
       current_node_key = p_node_key,
+      current_visit_id = uuid_generate_v4(),
+      continuation_id = NULL,
+      continuation_phase = 'idle',
+      continuation_step = 0,
       wake_at = p_wake_at,
       last_advanced_at = NOW()
   WHERE id = p_run_id;
@@ -375,7 +396,8 @@ RETURNS TABLE (
   flow_version_id UUID,
   node_key TEXT,
   next_node_key TEXT,
-  claim_token UUID
+  claim_token UUID,
+  resume_id UUID
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -421,7 +443,8 @@ BEGIN
     claimed.flow_version_id,
     claimed.node_key,
     claimed.next_node_key,
-    claimed.claim_token
+    claimed.claim_token,
+    claimed.resume_id
   FROM claimed;
 END;
 $$;
@@ -474,13 +497,10 @@ BEGIN
     RETURN;
   END IF;
 
-  -- A continuation that already moved past the wait is returned as-is so a
-  -- replacement worker can acknowledge it without replaying side effects.
+  -- A reclaimed worker continues from the durable cursor of this exact
+  -- continuation. It never starts again from the wait node.
   IF v_run.flow_version_id = p_flow_version_id
-    AND (
-      v_run.current_node_key IS DISTINCT FROM v_wait.node_key
-      OR v_run.status IN ('completed', 'handed_off', 'timed_out', 'failed')
-    ) THEN
+     AND v_run.continuation_id = v_wait.resume_id THEN
     RETURN NEXT v_run;
     RETURN;
   END IF;
@@ -488,10 +508,15 @@ BEGIN
   RETURN QUERY
   UPDATE flow_runs
   SET status = 'resuming',
+      current_node_key = v_wait.next_node_key,
+      current_visit_id = v_wait.resume_id,
+      continuation_id = v_wait.resume_id,
+      continuation_phase = 'running',
+      continuation_step = 0,
       last_advanced_at = NOW()
   WHERE id = v_wait.flow_run_id
     AND flow_version_id = p_flow_version_id
-    AND status IN ('waiting', 'resuming')
+    AND status = 'waiting'
     AND current_node_key = v_wait.node_key
   RETURNING flow_runs.*;
 END;
@@ -500,6 +525,92 @@ $$;
 REVOKE ALL ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION complete_flow_wait_continuation(
+  p_wait_id UUID,
+  p_claim_token UUID,
+  p_flow_version_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_wait flow_waits%ROWTYPE;
+BEGIN
+  SELECT * INTO v_wait
+  FROM flow_waits
+  WHERE id = p_wait_id
+    AND status = 'claimed'
+    AND claim_token = p_claim_token
+    AND flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE flow_runs
+  SET continuation_phase = 'completed',
+      last_advanced_at = NOW()
+  WHERE id = v_wait.flow_run_id
+    AND flow_version_id = p_flow_version_id
+    AND continuation_id = v_wait.resume_id
+    AND continuation_phase IN ('running', 'completed');
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION complete_flow_wait_continuation(UUID, UUID, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION advance_flow_run_cursor(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_next_node_key TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+BEGIN
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+    AND flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_run.status NOT IN ('active', 'resuming') THEN
+    RETURN;
+  END IF;
+
+  IF v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id THEN
+    IF v_run.current_node_key IS NOT DISTINCT FROM p_next_node_key THEN
+      RETURN NEXT v_run;
+    END IF;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  UPDATE flow_runs
+  SET current_node_key = p_next_node_key,
+      current_visit_id = uuid_generate_v4(),
+      continuation_step = continuation_step + 1,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+  RETURNING flow_runs.*;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION advance_flow_run_cursor(UUID, UUID, TEXT, UUID, TEXT) TO service_role;
 
 CREATE OR REPLACE FUNCTION ack_flow_wait_resume(
   p_wait_id UUID,
@@ -533,6 +644,13 @@ BEGIN
     RETURN FALSE;
   END IF;
 
+  IF v_wait.status = 'resumed'
+     AND v_wait.claim_token = p_claim_token
+     AND v_wait.flow_version_id = p_flow_version_id
+     AND v_wait.node_key = p_node_key THEN
+    RETURN TRUE;
+  END IF;
+
   -- A second wait can supersede this claim while the first continuation is
   -- advancing. That durable replacement is itself the acknowledgement.
   IF v_wait.claim_token IS DISTINCT FROM p_claim_token THEN
@@ -544,7 +662,8 @@ BEGIN
   IF v_wait.status <> 'claimed'
      OR v_wait.flow_version_id IS DISTINCT FROM p_flow_version_id
      OR v_wait.node_key IS DISTINCT FROM p_node_key
-     OR v_run.current_node_key IS NOT DISTINCT FROM p_node_key THEN
+     OR v_run.continuation_id IS DISTINCT FROM v_wait.resume_id
+     OR v_run.continuation_phase <> 'completed' THEN
     RETURN FALSE;
   END IF;
 
@@ -562,6 +681,9 @@ BEGIN
   UPDATE flow_runs
   SET status = 'active',
       wake_at = NULL,
+      continuation_id = NULL,
+      continuation_phase = 'idle',
+      continuation_step = 0,
       last_advanced_at = NOW()
   WHERE id = v_wait.flow_run_id
     AND status = 'resuming';
@@ -573,3 +695,132 @@ $$;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO service_role;
+
+-- An HTTP visit reserves one stable operation id. Once a response is recorded
+-- as remote_committed, recovery reuses it and never invokes the remote visit.
+CREATE TABLE IF NOT EXISTS flow_http_effects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
+  flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
+  visit_id UUID NOT NULL,
+  node_key TEXT NOT NULL,
+  operation_id UUID NOT NULL DEFAULT uuid_generate_v4(),
+  status TEXT NOT NULL DEFAULT 'reserved'
+    CHECK (status IN ('reserved', 'remote_committed', 'completed')),
+  response JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  remote_committed_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (flow_run_id, visit_id, node_key)
+);
+
+ALTER TABLE flow_http_effects ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS flow_http_effects_select ON flow_http_effects;
+CREATE POLICY flow_http_effects_select ON flow_http_effects FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM flow_runs run
+      WHERE run.id = flow_http_effects.flow_run_id
+        AND is_account_member(run.account_id, 'viewer')
+    )
+  );
+
+CREATE OR REPLACE FUNCTION reserve_flow_http_effect(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_node_key TEXT,
+  p_visit_id UUID
+)
+RETURNS SETOF flow_http_effects
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM flow_runs
+    WHERE id = p_run_id
+      AND flow_version_id = p_flow_version_id
+      AND current_visit_id = p_visit_id
+      AND status IN ('active', 'resuming')
+  ) THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO flow_http_effects (
+    flow_run_id, flow_version_id, visit_id, node_key
+  )
+  VALUES (p_run_id, p_flow_version_id, p_visit_id, p_node_key)
+  ON CONFLICT (flow_run_id, visit_id, node_key) DO NOTHING;
+
+  RETURN QUERY
+  SELECT effect.*
+  FROM flow_http_effects effect
+  WHERE effect.flow_run_id = p_run_id
+    AND effect.visit_id = p_visit_id
+    AND effect.node_key = p_node_key;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION reserve_flow_http_effect(UUID, UUID, TEXT, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION mark_flow_http_effect_committed(
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_response JSONB
+)
+RETURNS SETOF flow_http_effects
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE flow_http_effects
+  SET status = 'remote_committed',
+      response = p_response,
+      remote_committed_at = COALESCE(remote_committed_at, NOW()),
+      updated_at = NOW()
+  WHERE id = p_effect_id
+    AND operation_id = p_operation_id
+    AND status = 'reserved';
+
+  RETURN QUERY
+  SELECT effect.*
+  FROM flow_http_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.status IN ('remote_committed', 'completed');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_http_effect_committed(UUID, UUID, JSONB) TO service_role;
+
+CREATE OR REPLACE FUNCTION complete_flow_http_effect(
+  p_effect_id UUID,
+  p_operation_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE flow_http_effects
+  SET status = 'completed',
+      completed_at = COALESCE(completed_at, NOW()),
+      updated_at = NOW()
+  WHERE id = p_effect_id
+    AND operation_id = p_operation_id
+    AND status IN ('remote_committed', 'completed');
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION complete_flow_http_effect(UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION complete_flow_http_effect(UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION complete_flow_http_effect(UUID, UUID) TO service_role;

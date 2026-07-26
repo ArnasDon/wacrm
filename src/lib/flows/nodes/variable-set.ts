@@ -28,6 +28,8 @@ export const variableSetNodeDescriptor = createLinearNodeDescriptor({
   ],
   runtimeKind: "auto",
   runtimeHook: "variable_set",
+  resolveOutput: (_config, portId, vars) =>
+    portId === "variables" ? vars : undefined,
   visible: true,
   form: {
     kind: "specialized",

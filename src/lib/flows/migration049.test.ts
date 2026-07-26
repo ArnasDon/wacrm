@@ -3,10 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(
-  join(
-    process.cwd(),
-    "supabase/migrations/049_flow_runtime_primitives.sql",
-  ),
+  join(process.cwd(), "supabase/migrations/049_flow_runtime_primitives.sql"),
   "utf8",
 );
 
@@ -23,7 +20,12 @@ describe("migration 049 durable waits", () => {
       "schedule_flow_wait",
       "claim_due_flow_waits",
       "prepare_flow_wait_resume",
+      "complete_flow_wait_continuation",
       "ack_flow_wait_resume",
+      "advance_flow_run_cursor",
+      "reserve_flow_http_effect",
+      "mark_flow_http_effect_committed",
+      "complete_flow_http_effect",
     ]) {
       expect(sql).toContain(`FUNCTION ${name}`);
       expect(sql).toMatch(
@@ -36,7 +38,10 @@ describe("migration 049 durable waits", () => {
         new RegExp(`REVOKE ALL ON FUNCTION ${name}[\\s\\S]+?FROM PUBLIC`, "i"),
       );
       expect(sql).toMatch(
-        new RegExp(`GRANT EXECUTE ON FUNCTION ${name}[\\s\\S]+?TO service_role`, "i"),
+        new RegExp(
+          `GRANT EXECUTE ON FUNCTION ${name}[\\s\\S]+?TO service_role`,
+          "i",
+        ),
       );
     }
   });
@@ -56,12 +61,37 @@ describe("migration 049 durable waits", () => {
 
   it("keeps a continuation reclaimable until advancement is acknowledged", () => {
     expect(sql).toContain("'resuming'");
+    expect(sql).toContain("current_visit_id");
+    expect(sql).toContain("continuation_id");
+    expect(sql).toContain("continuation_phase");
+    expect(sql).toContain("continuation_step");
+    expect(sql).toContain("resume_id");
     expect(sql).toMatch(
-      /FUNCTION\s+prepare_flow_wait_resume[\s\S]+?SET\s+status\s*=\s*'resuming'/i,
+      /FUNCTION\s+prepare_flow_wait_resume[\s\S]+?SET\s+status\s*=\s*'resuming'[\s\S]+?current_node_key\s*=\s*v_wait\.next_node_key[\s\S]+?current_visit_id\s*=\s*v_wait\.resume_id/i,
     );
     expect(sql).toMatch(
-      /FUNCTION\s+ack_flow_wait_resume[\s\S]+?current_node_key\s+IS\s+DISTINCT\s+FROM\s+p_node_key[\s\S]+?status\s*=\s*'resumed'/i,
+      /FUNCTION\s+complete_flow_wait_continuation[\s\S]+?continuation_phase\s*=\s*'completed'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+ack_flow_wait_resume[\s\S]+?continuation_phase\s*<>\s*'completed'[\s\S]+?status\s*=\s*'resumed'/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+ack_flow_wait_resume[\s\S]+?v_wait\.status\s*=\s*'resumed'[\s\S]+?v_wait\.claim_token\s*=\s*p_claim_token[\s\S]+?RETURN TRUE/i,
     );
     expect(sql).not.toMatch(/FUNCTION\s+resume_flow_wait\s*\(/i);
+  });
+
+  it("uses a stable per-visit HTTP effect ledger and commits before completion", () => {
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS flow_http_effects");
+    expect(sql).toContain("UNIQUE (flow_run_id, visit_id, node_key)");
+    expect(sql).toMatch(
+      /FUNCTION\s+reserve_flow_http_effect[\s\S]+?current_visit_id\s*=\s*p_visit_id/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+mark_flow_http_effect_committed[\s\S]+?status\s*=\s*'remote_committed'[\s\S]+?response\s*=\s*p_response/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+complete_flow_http_effect[\s\S]+?status\s*=\s*'completed'/i,
+    );
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { resumeDueFlowWaits } from "./wait-runtime";
 
-function graph() {
+function graph(next: "end" | "switch" = "end") {
   return {
     schema_version: 1,
     trigger: { type: "manual", config: {} },
@@ -17,10 +17,34 @@ function graph() {
       {
         node_key: "wait",
         node_type: "wait",
-        config: { amount: 1, unit: "minutes", next_node_key: "end" },
+        config: { amount: 1, unit: "minutes", next_node_key: next },
         position_x: 0,
         position_y: 0,
       },
+      ...(next === "switch"
+        ? [
+            {
+              node_key: "switch",
+              node_type: "switch",
+              config: {
+                subject: "var",
+                subject_key: "kind",
+                cases: [
+                  {
+                    id: "known",
+                    label: "Known",
+                    operator: "equals",
+                    value: "x",
+                    next: "end",
+                  },
+                ],
+                default_next: "end",
+              },
+              position_x: 0,
+              position_y: 0,
+            },
+          ]
+        : []),
       {
         node_key: "end",
         node_type: "end",
@@ -32,282 +56,188 @@ function graph() {
   };
 }
 
-describe("durable flow wait resume", () => {
-  it("claims due waits and resumes using the immutable pinned version", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
+function durableHarness(
+  next: "end" | "switch" = "end",
+  options: { failCompleteOnce?: boolean; claimedNextOverride?: string } = {},
+) {
+  const resumeId = "10000000-0000-4000-8000-000000000001";
+  const run = {
+    id: "run-1",
+    flow_id: "flow-1",
+    flow_version_id: "version-7",
+    account_id: "account-1",
+    user_id: "user-1",
+    contact_id: "contact-1",
+    conversation_id: "conversation-1",
+    status: "waiting",
+    current_node_key: "wait",
+    current_visit_id: "00000000-0000-4000-8000-000000000001",
+    continuation_id: null as string | null,
+    continuation_phase: "idle",
+    continuation_step: 0,
+    last_prompt_message_id: null,
+    vars: { kind: "x" },
+    reprompt_count: 0,
+    started_at: "",
+    last_advanced_at: "",
+    ended_at: null,
+    end_reason: null,
+  };
+  let waitStatus = "pending";
+  let claimToken = "";
+  let claimSequence = 0;
+  let failComplete = options.failCompleteOnce === true;
+
+  const rpc = vi.fn(async (name: string) => {
+    if (name === "claim_due_flow_waits") {
+      if (waitStatus === "resumed") return { data: [], error: null };
+      claimToken = `token-${++claimSequence}`;
+      waitStatus = "claimed";
+      return {
         data: [
           {
             id: "wait-1",
             flow_run_id: "run-1",
             flow_version_id: "version-7",
             node_key: "wait",
-            next_node_key: "end",
-            claim_token: "token-1",
+            next_node_key: options.claimedNextOverride ?? next,
+            claim_token: claimToken,
+            resume_id: resumeId,
           },
         ],
         error: null,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "run-1",
-            flow_id: "flow-1",
-            flow_version_id: "version-7",
-            account_id: "account-1",
-            user_id: "user-1",
-            contact_id: "contact-1",
-            conversation_id: "conversation-1",
-            status: "resuming",
-            current_node_key: "wait",
-            vars: {},
-            reprompt_count: 0,
-            started_at: "",
-            last_advanced_at: "",
-          },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: true,
-        error: null,
-      });
-    const versionQuery = {
-      select: vi.fn(() => versionQuery),
-      eq: vi.fn(() => versionQuery),
-      maybeSingle: vi.fn(async () => ({
-        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
-        error: null,
-      })),
-    };
-    const insert = vi.fn(async () => ({ error: null }));
-    const updateQuery = {
-      eq: vi.fn(async () => ({ error: null, data: [{ id: "ok" }] })),
-    };
-    const db = {
-      rpc,
-      from: vi.fn((table: string) => {
-        if (table === "flow_versions") return versionQuery;
-        return {
-          insert,
-          update: vi.fn(() => updateQuery),
-        };
-      }),
-    };
-    const advance = vi.fn(async () => ({ outcome: "completed" as const }));
-
-    const result = await resumeDueFlowWaits(
-      db as never,
-      new Date("2026-07-26T00:00:00.000Z"),
-      { advance },
-    );
-
-    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
-    expect(rpc).toHaveBeenNthCalledWith(
-      2,
-      "prepare_flow_wait_resume",
-      expect.objectContaining({
-        p_wait_id: "wait-1",
-        p_claim_token: "token-1",
-        p_flow_version_id: "version-7",
-      }),
-    );
-    expect(advance).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({ flow_version_id: "version-7" }),
-      "end",
-      expect.any(Map),
-      undefined,
-    );
-    expect(rpc).toHaveBeenNthCalledWith(
-      3,
-      "ack_flow_wait_resume",
-      expect.objectContaining({
-        p_wait_id: "wait-1",
-        p_claim_token: "token-1",
-        p_flow_version_id: "version-7",
-        p_node_key: "wait",
-      }),
-    );
+      };
+    }
+    if (name === "prepare_flow_wait_resume") {
+      if (run.continuation_id === null) {
+        run.status = "resuming";
+        run.current_node_key = next;
+        run.current_visit_id = resumeId;
+        run.continuation_id = resumeId;
+        run.continuation_phase = "running";
+      }
+      return { data: [{ ...run }], error: null };
+    }
+    if (name === "complete_flow_wait_continuation") {
+      if (failComplete) {
+        failComplete = false;
+        return { data: false, error: { message: "worker lost DB" } };
+      }
+      run.continuation_phase = "completed";
+      return { data: true, error: null };
+    }
+    if (name === "ack_flow_wait_resume") {
+      if (run.continuation_phase !== "completed") {
+        return { data: false, error: null };
+      }
+      waitStatus = "resumed";
+      if (run.status === "resuming") run.status = "active";
+      return { data: true, error: null };
+    }
+    throw new Error(`unexpected RPC ${name}`);
   });
-
-  it("leaves the claimed continuation reclaimable when advance crashes", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "wait-1",
-            flow_run_id: "run-1",
-            flow_version_id: "version-7",
-            node_key: "wait",
-            next_node_key: "end",
-            claim_token: "token-1",
-          },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "run-1",
-            flow_id: "flow-1",
-            flow_version_id: "version-7",
-            account_id: "account-1",
-            status: "resuming",
-            current_node_key: "wait",
-            vars: {},
-          },
-        ],
-        error: null,
-      });
-    const versionQuery = {
-      select: vi.fn(() => versionQuery),
-      eq: vi.fn(() => versionQuery),
-      maybeSingle: vi.fn(async () => ({
-        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
-        error: null,
-      })),
-    };
-    const db = { rpc, from: vi.fn(() => versionQuery) };
-    const advance = vi.fn(async () => {
-      throw new Error("worker crashed");
-    });
-
-    const result = await resumeDueFlowWaits(db as never, new Date(), {
-      advance,
-    });
-
-    expect(result).toEqual({ claimed: 1, resumed: 0, failed: 1 });
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(
-      rpc.mock.calls.some(([name]) => name === "ack_flow_wait_resume"),
-    ).toBe(false);
-  });
-
-  it("acks without replaying when a prior worker advanced before crashing", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "wait-1",
-            flow_run_id: "run-1",
-            flow_version_id: "version-7",
-            node_key: "wait",
-            next_node_key: "end",
-            claim_token: "token-2",
-          },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "run-1",
-            flow_id: "flow-1",
-            flow_version_id: "version-7",
-            account_id: "account-1",
-            status: "completed",
-            current_node_key: "end",
-            vars: {},
-          },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: true, error: null });
-    const versionQuery = {
-      select: vi.fn(() => versionQuery),
-      eq: vi.fn(() => versionQuery),
-      maybeSingle: vi.fn(async () => ({
-        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
-        error: null,
-      })),
-    };
-    const db = { rpc, from: vi.fn(() => versionQuery) };
-    const advance = vi.fn();
-
-    const result = await resumeDueFlowWaits(db as never, new Date(), {
-      advance,
-    });
-
-    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
-    expect(advance).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenNthCalledWith(
-      3,
-      "ack_flow_wait_resume",
-      expect.any(Object),
-    );
-  });
-
-  it("does not ack a claim when the run remains in a mismatched state", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: "wait-1",
-            flow_run_id: "run-1",
-            flow_version_id: "version-7",
-            node_key: "wait",
-            next_node_key: "end",
-            claim_token: "token-1",
-          },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: [], error: null });
-    const versionQuery = {
-      select: vi.fn(() => versionQuery),
-      eq: vi.fn(() => versionQuery),
-      maybeSingle: vi.fn(async () => ({
-        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
-        error: null,
-      })),
-    };
-    const db = { rpc, from: vi.fn(() => versionQuery) };
-    const advance = vi.fn();
-
-    const result = await resumeDueFlowWaits(db as never, new Date(), {
-      advance,
-    });
-
-    expect(result).toEqual({ claimed: 1, resumed: 0, failed: 1 });
-    expect(advance).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not resume when the claimed edge differs from the pinned snapshot", async () => {
-    const rpc = vi.fn().mockResolvedValueOnce({
-      data: [
-        {
-          id: "wait-1",
-          flow_run_id: "run-1",
-          flow_version_id: "version-7",
-          node_key: "wait",
-          next_node_key: "attacker-node",
-          claim_token: "token-1",
-        },
-      ],
+  const versionQuery = {
+    select: vi.fn(() => versionQuery),
+    eq: vi.fn(() => versionQuery),
+    maybeSingle: vi.fn(async () => ({
+      data: { id: "version-7", flow_id: "flow-1", graph: graph(next) },
       error: null,
-    });
-    const query = {
-      select: vi.fn(() => query),
-      eq: vi.fn(() => query),
-      maybeSingle: vi.fn(async () => ({
-        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
-        error: null,
-      })),
-    };
-    const db = {
+    })),
+  };
+  return {
+    run,
+    rpc,
+    db: {
       rpc,
-      from: vi.fn(() => query),
-    };
+      from: vi.fn(() => versionQuery),
+    },
+    get waitStatus() {
+      return waitStatus;
+    },
+  };
+}
 
-    const result = await resumeDueFlowWaits(db as never, new Date());
+describe("durable flow wait resume", () => {
+  it.each(["end", "switch"] as const)(
+    "persists the continuation before advancing wait → %s and acknowledges it",
+    async (next) => {
+      const harness = durableHarness(next);
+      const advance = vi.fn(async (_db, resumedRun, startNodeKey) => {
+        expect(resumedRun.current_node_key).toBe(next);
+        expect(resumedRun.current_visit_id).toBe(
+          "10000000-0000-4000-8000-000000000001",
+        );
+        expect(startNodeKey).toBe(next);
+        harness.run.status = "completed";
+        return { outcome: "completed" as const };
+      });
+
+      const result = await resumeDueFlowWaits(
+        harness.db as never,
+        new Date("2026-07-26T00:00:00.000Z"),
+        { advance },
+      );
+
+      expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+      expect(harness.waitStatus).toBe("resumed");
+      expect(harness.run.continuation_phase).toBe("completed");
+      expect(harness.rpc.mock.calls.map(([name]) => name)).toEqual([
+        "claim_due_flow_waits",
+        "prepare_flow_wait_resume",
+        "complete_flow_wait_continuation",
+        "ack_flow_wait_resume",
+      ]);
+    },
+  );
+
+  it("reclaims a crash before auto-node completion from the persisted cursor", async () => {
+    const harness = durableHarness("switch");
+    const advance = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("worker crashed"))
+      .mockImplementationOnce(async (_db, resumedRun, startNodeKey) => {
+        expect(resumedRun.current_node_key).toBe("switch");
+        expect(startNodeKey).toBe("switch");
+        harness.run.status = "completed";
+        return { outcome: "completed" as const };
+      });
+
+    expect(
+      await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
+    ).toEqual({ claimed: 1, resumed: 0, failed: 1 });
+    expect(harness.run.current_node_key).toBe("switch");
+    expect(harness.run.continuation_phase).toBe("running");
+
+    expect(
+      await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
+    ).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(advance).toHaveBeenCalledTimes(2);
+  });
+
+  it("reclaims a crash after terminal advancement without replaying it", async () => {
+    const harness = durableHarness("end", { failCompleteOnce: true });
+    const advance = vi.fn(async () => {
+      harness.run.status = "completed";
+      return { outcome: "completed" as const };
+    });
+
+    expect(
+      await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
+    ).toEqual({ claimed: 1, resumed: 0, failed: 1 });
+    expect(
+      await resumeDueFlowWaits(harness.db as never, new Date(), { advance }),
+    ).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(advance).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an edge that differs from the immutable version", async () => {
+    const harness = durableHarness("end", {
+      claimedNextOverride: "attacker-node",
+    });
+
+    const result = await resumeDueFlowWaits(harness.db as never, new Date());
 
     expect(result).toEqual({ claimed: 1, resumed: 0, failed: 1 });
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(harness.rpc).toHaveBeenCalledTimes(1);
   });
 });

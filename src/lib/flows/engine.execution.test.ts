@@ -57,6 +57,7 @@ function fakeDb(
     failEffectCommitResponses?: number;
     failEffectReadbacks?: number;
     failCursorOnce?: boolean;
+    failCursorAttempts?: number;
     failRepromptFinalizeOnce?: boolean;
   } = {},
 ) {
@@ -64,7 +65,8 @@ function fakeDb(
   let executionSequence = 0;
   let cursorSequence = 0;
   let failVarsOnce = options.failFlowVarsPersistenceOnce === true;
-  let failCursorOnce = options.failCursorOnce === true;
+  let failCursorAttempts =
+    options.failCursorAttempts ?? (options.failCursorOnce === true ? 1 : 0);
   let failRepromptFinalizeOnce =
     options.failRepromptFinalizeOnce === true;
   let failEffectCommitResponses =
@@ -299,8 +301,8 @@ function fakeDb(
         });
       }
       if (name === "advance_flow_run_cursor") {
-        if (failCursorOnce) {
-          failCursorOnce = false;
+        if (failCursorAttempts > 0) {
+          failCursorAttempts -= 1;
           return Promise.resolve({
             data: null,
             error: { message: "cursor unavailable" },
@@ -993,7 +995,7 @@ describe("node execution policy in the flow engine", () => {
         continuation_id: "40000000-0000-4000-8000-000000000001",
         continuation_phase: "running",
       });
-      const { db, httpEffect } = fakeDb({ failCursorOnce: true });
+      const { db, httpEffect } = fakeDb({ failCursorAttempts: 2 });
       const nodes = new Map(
         [node("effect", nodeType, config), node("end", "end", {})].map(
           (entry) => [entry.node_key, entry],
@@ -1124,7 +1126,7 @@ describe("node execution policy in the flow engine", () => {
       continuation_id: "40000000-0000-4000-8000-000000000001",
       continuation_phase: "running",
     });
-    const { db, httpEffect } = fakeDb({ failCursorOnce: true });
+    const { db, httpEffect } = fakeDb({ failCursorAttempts: 2 });
     const nodes = new Map(
       [
         node("tag", "set_tag", {
@@ -1718,7 +1720,7 @@ describe("reprompt execution policy", () => {
       continuation_id: "40000000-0000-4000-8000-000000000001",
       continuation_phase: "running",
     });
-    const { db, writes } = fakeDb({ failCursorOnce: true });
+    const { db, writes } = fakeDb({ failCursorAttempts: 2 });
     const nodes = new Map(
       [
         node("input", "collect_input", {

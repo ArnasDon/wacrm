@@ -225,6 +225,9 @@ class DispatchState {
   failCursorOnce = false;
   terminalizeOnCursorFailure = false;
   loseCursorResponseOnce = false;
+  cursorResponseFailures = 0;
+  commitFirstPersistentCursorFailure = false;
+  private persistentCursorCommitted = false;
   loseEffectCommitResponseOnce = false;
   effectCommitResponseFailures = 0;
   effectReadFailures = 0;
@@ -269,6 +272,16 @@ class DispatchState {
       this.executions.push(row);
     } else if (table === "flow_runs") {
       row.id = `new-run-${this.runs.length + 1}`;
+      row.current_visit_id ??= this.nextUuid("visit");
+      row.continuation_id ??= null;
+      row.continuation_phase ??= "idle";
+      row.continuation_step ??= 0;
+      row.last_prompt_message_id ??= null;
+      row.reprompt_count ??= 0;
+      row.started_at ??= "2026-01-01T00:00:00.000Z";
+      row.last_advanced_at ??= "2026-01-01T00:00:00.000Z";
+      row.ended_at ??= null;
+      row.end_reason ??= null;
       this.runs.push(row as unknown as FlowRunRow);
     }
     this.writes.push({ table, kind: "insert", value: row });
@@ -539,9 +552,16 @@ class DispatchState {
     }
     if (name === "mark_flow_run_cursor_recovery") {
       const run = this.runById(value.p_run_id)!;
-      if (
+      const atExpectedCursor =
         run.current_node_key === value.p_expected_node_key &&
-        run.current_visit_id === value.p_expected_visit_id &&
+        run.current_visit_id === value.p_expected_visit_id;
+      const atIntendedCursor =
+        typeof value.p_intended_next_node_key === "string" &&
+        typeof value.p_intended_next_visit_id === "string" &&
+        run.current_node_key === value.p_intended_next_node_key &&
+        run.current_visit_id === value.p_intended_next_visit_id;
+      if (
+        (atExpectedCursor || atIntendedCursor) &&
         (run.continuation_id ?? null) ===
           (value.p_expected_continuation_id ?? null) &&
         ["active", "resuming", "needs_recovery"].includes(run.status)
@@ -561,10 +581,36 @@ class DispatchState {
         return { data: null, error: { message: "cursor unavailable" } };
       }
       const run = this.runById(value.p_run_id)!;
+      if (!["active", "resuming", "needs_recovery"].includes(run.status)) {
+        return { data: [], error: null };
+      }
+      if (this.cursorResponseFailures > 0) {
+        if (
+          this.commitFirstPersistentCursorFailure &&
+          !this.persistentCursorCommitted
+        ) {
+          run.current_node_key = value.p_next_node_key as string;
+          run.current_visit_id = value.p_next_visit_id as string;
+          run.continuation_step = (run.continuation_step ?? 0) + 1;
+          this.persistentCursorCommitted = true;
+        }
+        this.cursorResponseFailures -= 1;
+        this.runReadFailures += 1;
+        return {
+          data: null,
+          error: { message: "cursor persistently unavailable" },
+        };
+      }
       if (
         run.current_node_key !== value.p_expected_node_key ||
         run.current_visit_id !== value.p_expected_visit_id
       ) {
+        if (
+          run.current_node_key === value.p_next_node_key &&
+          run.current_visit_id === value.p_next_visit_id
+        ) {
+          return { data: [{ ...run }], error: null };
+        }
         return { data: [], error: null };
       }
       run.current_node_key = value.p_next_node_key as string;
@@ -749,6 +795,111 @@ function graphForEffect(
     };
   }
   return flowGraph;
+}
+
+function pureChainGraph(
+  options: { entryAtStart?: boolean; withEffect?: boolean } = {},
+): FlowVersionGraph {
+  const withEffect = options.withEffect ?? true;
+  return {
+    schema_version: 1,
+    trigger: {
+      type: "keyword",
+      config: { keywords: ["go"], match_type: "exact" },
+    },
+    entry_node_key: options.entryAtStart ? "pure_start" : "input",
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: [],
+    nodes: [
+      {
+        node_key: "input",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "Code?",
+          var_key: "code",
+          next_node_key: "pure_start",
+        },
+        position_x: 0,
+        position_y: 0,
+      },
+      {
+        node_key: "pure_start",
+        node_type: "start",
+        config: { next_node_key: "condition" },
+        position_x: 50,
+        position_y: 0,
+      },
+      {
+        node_key: "condition",
+        node_type: "condition",
+        config: {
+          subject: "var",
+          subject_key: "code",
+          operator: "present",
+          true_next: "switch",
+          false_next: "switch",
+        },
+        position_x: 100,
+        position_y: 0,
+      },
+      {
+        node_key: "switch",
+        node_type: "switch",
+        config: {
+          subject: "var",
+          subject_key: "code",
+          cases: [
+            {
+              id: "stable",
+              label: "Stable",
+              operator: "equals",
+              value: "stable",
+              next: "set",
+            },
+          ],
+          default_next: "set",
+        },
+        position_x: 150,
+        position_y: 0,
+      },
+      {
+        node_key: "set",
+        node_type: "variable_set",
+        config: {
+          assignments: [{ key: "pure_chain", type: "boolean", value: "true" }],
+          next_node_key: withEffect ? "send" : "end",
+        },
+        position_x: 200,
+        position_y: 0,
+      },
+      ...(withEffect
+        ? [
+            {
+              node_key: "send",
+              node_type: "send_message",
+              config: {
+                text: "Pure chain complete",
+                next_node_key: "end",
+              },
+              position_x: 250,
+              position_y: 0,
+            },
+          ]
+        : []),
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 300,
+        position_y: 0,
+      },
+    ],
+  } as FlowVersionGraph;
 }
 
 function waitEffectGraph(): FlowVersionGraph {
@@ -950,13 +1101,108 @@ describe("public flow dispatcher recovery protocol", () => {
     expect(state.runs[0].status).toBe("completed");
     expect(state.effects.values().next().value?.status).toBe("completed");
     expect(h.sendText).toHaveBeenCalledTimes(1);
+    const advances = state.rpcCalls.filter(
+      (call) => call.name === "advance_flow_run_cursor",
+    );
+    expect(advances).toHaveLength(2);
+    expect(advances[0].value).toEqual(advances[1].value);
     expect(
       state.rpcCalls.some(
-        (call) =>
-          call.name === "reconcile_flow_node_effect_recovery" &&
-          typeof call.value.p_intended_next_visit_id === "string",
+        (call) => call.name === "mark_flow_run_cursor_recovery",
       ),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("retries the same pure cursor transition and executes downstream effects once", async () => {
+    const state = new DispatchState();
+    state.loseCursorResponseOnce = true;
+    state.runReadFailuresAfterCursorLoss = 1;
+    prepare(state, run(), pureChainGraph());
+
+    const result = await dispatchInboundToFlows(
+      inbound("pure-chain-lost-response", "stable"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.runs[0].vars).toEqual({
+      code: "stable",
+      pure_chain: true,
+    });
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    const advances = state.rpcCalls.filter(
+      (call) => call.name === "advance_flow_run_cursor",
+    );
+    expect(advances.slice(0, 2).map((call) => call.value)).toEqual([
+      advances[0].value,
+      advances[0].value,
+    ]);
+    expect(
+      advances.map((call) => call.value.p_expected_node_key),
+    ).toEqual([
+      "pure_start",
+      "pure_start",
+      "condition",
+      "switch",
+      "set",
+      "send",
+    ]);
+  });
+
+  it("retries a pure transition for a new flow without a reply receipt", async () => {
+    const state = new DispatchState();
+    state.loseCursorResponseOnce = true;
+    state.runReadFailuresAfterCursorLoss = 1;
+    prepare(state, null, pureChainGraph({ entryAtStart: true }));
+
+    const result = await dispatchInboundToFlows(
+      inbound("new-flow-pure-chain", "go"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.receipts).toHaveLength(0);
+    expect(state.runs).toHaveLength(1);
+    expect(state.runs[0].vars).toEqual({ pure_chain: true });
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    const advances = state.rpcCalls.filter(
+      (call) => call.name === "advance_flow_run_cursor",
+    );
+    expect(advances[0].value).toEqual(advances[1].value);
+  });
+
+  it("marks a persistently unavailable pure transition recoverable and resumes it once", async () => {
+    const state = new DispatchState();
+    state.cursorResponseFailures = 2;
+    state.commitFirstPersistentCursorFailure = true;
+    prepare(state, run(), pureChainGraph());
+
+    const first = await dispatchInboundToFlows(
+      inbound("persistent-pure-chain", "stable"),
+    );
+
+    expect(first.consumed).toBe(true);
+    expect(state.runs[0]).toMatchObject({
+      status: "needs_recovery",
+      current_node_key: "condition",
+      end_reason: "flow_cursor_advance_ambiguous",
+    });
+    expect(h.sendText).not.toHaveBeenCalled();
+    const attempted = state.rpcCalls.filter(
+      (call) => call.name === "advance_flow_run_cursor",
+    );
+    expect(attempted).toHaveLength(2);
+    expect(attempted[0].value).toEqual(attempted[1].value);
+
+    const recovered = await dispatchInboundToFlows(
+      inbound("persistent-pure-chain", "changed"),
+    );
+
+    expect(recovered.outcome).toBe("completed");
+    expect(state.runs[0].status).toBe("completed");
+    expect(state.runs[0].vars).toEqual({
+      code: "stable",
+      pure_chain: true,
+    });
+    expect(h.sendText).toHaveBeenCalledTimes(1);
   });
 
   it("acks a wait only after the intended cursor and downstream nodes continue", async () => {
@@ -1016,7 +1262,7 @@ describe("public flow dispatcher recovery protocol", () => {
 
   it("recovers the first downstream effect from the receipt cursor", async () => {
     const state = new DispatchState();
-    state.failCursorOnce = true;
+    state.cursorResponseFailures = 2;
     prepare(state, run());
 
     const first = await dispatchInboundToFlows(inbound("reply-1", "ABC"));
@@ -1052,9 +1298,9 @@ describe("public flow dispatcher recovery protocol", () => {
     expect(state.runs[0].status).toBe("completed");
     expect(
       state.rpcCalls.filter(
-        (call) => call.name === "reconcile_flow_node_effect_recovery",
+        (call) => call.name === "mark_flow_run_cursor_recovery",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 
   it("recovers a remote-committed reprompt on a reachable public status", async () => {

@@ -179,6 +179,9 @@ describe("migration 049 durable waits", () => {
       /current_node_key IS NOT DISTINCT FROM p_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_next_visit_id/i,
     );
     expect(sql).toMatch(
+      /FUNCTION\s+mark_flow_run_cursor_recovery[\s\S]+?p_intended_next_node_key\s+TEXT[\s\S]+?p_intended_next_visit_id\s+UUID[\s\S]+?current_node_key IS NOT DISTINCT FROM p_expected_node_key[\s\S]+?current_node_key IS NOT DISTINCT FROM p_intended_next_node_key[\s\S]+?current_visit_id IS NOT DISTINCT FROM p_intended_next_visit_id/i,
+    );
+    expect(sql).toMatch(
       /FUNCTION\s+ack_flow_wait_resume[\s\S]+?continuation_id = v_wait\.resume_id[\s\S]+?continuation_phase = 'completed'/i,
     );
   });

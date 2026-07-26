@@ -1191,13 +1191,17 @@ REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUI
 REVOKE ALL ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION reconcile_flow_node_effect_recovery(UUID, UUID, UUID, UUID, TEXT, UUID, UUID, TEXT, UUID, JSONB, TEXT) TO service_role;
 
+DROP FUNCTION IF EXISTS mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION mark_flow_run_cursor_recovery(
   p_run_id UUID,
   p_flow_version_id UUID,
   p_expected_node_key TEXT,
   p_expected_visit_id UUID,
   p_expected_continuation_id UUID,
-  p_reason TEXT
+  p_reason TEXT,
+  p_intended_next_node_key TEXT,
+  p_intended_next_visit_id UUID
 )
 RETURNS SETOF flow_runs
 LANGUAGE plpgsql
@@ -1214,16 +1218,26 @@ BEGIN
   WHERE id = p_run_id
     AND flow_version_id = p_flow_version_id
     AND status IN ('active', 'resuming', 'needs_recovery')
-    AND current_node_key IS NOT DISTINCT FROM p_expected_node_key
-    AND current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
     AND continuation_id IS NOT DISTINCT FROM p_expected_continuation_id
+    AND (
+      (
+        current_node_key IS NOT DISTINCT FROM p_expected_node_key
+        AND current_visit_id IS NOT DISTINCT FROM p_expected_visit_id
+      )
+      OR (
+        p_intended_next_node_key IS NOT NULL
+        AND p_intended_next_visit_id IS NOT NULL
+        AND current_node_key IS NOT DISTINCT FROM p_intended_next_node_key
+        AND current_visit_id IS NOT DISTINCT FROM p_intended_next_visit_id
+      )
+    )
   RETURNING flow_runs.*;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) FROM authenticated;
-GRANT EXECUTE ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT, TEXT, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT, TEXT, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION mark_flow_run_cursor_recovery(UUID, UUID, TEXT, UUID, UUID, TEXT, TEXT, UUID) TO service_role;
 
 -- A reprompt's cursor visit, counter and effect completion are one state
 -- transition. Recovery therefore sees either the old remote_committed visit or

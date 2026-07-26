@@ -869,6 +869,8 @@ async function failAmbiguousNodeEffect(
       p_expected_visit_id: run.current_visit_id,
       p_expected_continuation_id: run.continuation_id ?? null,
       p_reason: "external_effect_needs_reconciliation",
+      p_intended_next_node_key: null,
+      p_intended_next_visit_id: null,
     };
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const { data, error } = await db.rpc(
@@ -1147,21 +1149,38 @@ async function persistDurableCursor(
   }
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
+  const expectedContinuationId = run.continuation_id ?? null;
   const intendedNextVisitId = crypto.randomUUID();
-  const { data, error } = await db.rpc("advance_flow_run_cursor", {
+  const advanceArgs = {
     p_run_id: run.id,
     p_flow_version_id: run.flow_version_id,
     p_expected_node_key: expectedNodeKey,
     p_expected_visit_id: expectedVisitId,
     p_next_node_key: nextNodeKey,
     p_next_visit_id: intendedNextVisitId,
-  });
-  let advanced = Array.isArray(data)
-    ? (data[0] as FlowRunRow | undefined)
-    : undefined;
-  if (error || !advanced) {
+  };
+  let advanced: FlowRunRow | undefined;
+  let lastError: unknown = null;
+  let readError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error } = await db.rpc(
+      "advance_flow_run_cursor",
+      advanceArgs,
+    );
+    const candidate = Array.isArray(data)
+      ? (data[0] as FlowRunRow | undefined)
+      : undefined;
+    if (
+      !error &&
+      candidate?.current_node_key === nextNodeKey &&
+      candidate.current_visit_id === intendedNextVisitId
+    ) {
+      advanced = candidate;
+      break;
+    }
+    lastError =
+      error ?? new Error("durable flow cursor was not advanced");
     let readBack: FlowRunRow | null = null;
-    let readError: unknown = null;
     try {
       readBack = await loadRunById(db, run.id);
     } catch (caught) {
@@ -1173,21 +1192,52 @@ async function persistDurableCursor(
       readBack.current_visit_id === intendedNextVisitId
     ) {
       advanced = readBack;
-    } else {
-      throw new CommittedSideEffectError(
-        "External effect completed but cursor advancement is ambiguous",
-        {
-          externalReference: "flow_cursor",
-          persistenceStage: "flow_cursor_advance",
-          cause: readError ?? error,
-          expectedNodeKey,
-          expectedVisitId,
-          expectedContinuationId: run.continuation_id ?? null,
-          intendedNextNodeKey: nextNodeKey,
-          intendedNextVisitId,
-        },
-      );
+      break;
     }
+  }
+  if (!advanced) {
+    const recoveryArgs = {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_expected_continuation_id: expectedContinuationId,
+      p_reason: "flow_cursor_advance_ambiguous",
+      p_intended_next_node_key: nextNodeKey,
+      p_intended_next_visit_id: intendedNextVisitId,
+    };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { data, error } = await db.rpc(
+        "mark_flow_run_cursor_recovery",
+        recoveryArgs,
+      );
+      const recovered = Array.isArray(data)
+        ? (data[0] as FlowRunRow | undefined)
+        : undefined;
+      if (!error && recovered) {
+        syncRun(run, recovered);
+        break;
+      }
+    }
+    throw new CommittedSideEffectError(
+      "Flow cursor advancement remains ambiguous after bounded recovery",
+      {
+        externalReference: "flow_cursor",
+        persistenceStage: "flow_cursor_advance",
+        cause:
+          readError && lastError
+            ? new AggregateError(
+                [lastError, readError],
+                "cursor advance and read-back both failed",
+              )
+            : readError ?? lastError,
+        expectedNodeKey,
+        expectedVisitId,
+        expectedContinuationId,
+        intendedNextNodeKey: nextNodeKey,
+        intendedNextVisitId,
+      },
+    );
   }
   if (
     advanced.current_node_key !== nextNodeKey ||
@@ -1579,6 +1629,8 @@ async function finalizeFallbackDecision(
       p_expected_visit_id: expectedVisitId,
       p_expected_continuation_id: run.continuation_id ?? null,
       p_reason: "fallback_decision_persistence_failed",
+      p_intended_next_node_key: null,
+      p_intended_next_visit_id: null,
     },
   );
   const recoveryRun = Array.isArray(recoveryRows)
@@ -2666,6 +2718,34 @@ export async function dispatchInboundToFlows(
           };
         }
       }
+      if (
+        receiptRun?.account_id === input.accountId &&
+        receiptRun.contact_id === input.contactId &&
+        receiptRun.status === "needs_recovery" &&
+        receiptRun.end_reason === "flow_cursor_advance_ambiguous" &&
+        receiptRun.current_node_key &&
+        receiptRun.current_visit_id
+      ) {
+        const version = await loadFlowVersion(
+          db,
+          receiptRun.flow_version_id,
+          receiptRun.flow_id,
+        );
+        if (version) {
+          const recovered = await advanceFromNodeKey(
+            db,
+            receiptRun,
+            receiptRun.current_node_key,
+            snapshotNodes(receiptRun.flow_id, version.graph),
+            version.graph.fallback_policy.execution,
+          );
+          return {
+            consumed: true,
+            flow_run_id: receiptRun.id,
+            outcome: recovered.outcome,
+          };
+        }
+      }
       return {
         consumed: true,
         ...(receipt.flow_run_id
@@ -2708,6 +2788,25 @@ export async function dispatchInboundToFlows(
           consumed: true,
           flow_run_id: activeRun.id,
           outcome: "no_match",
+        };
+      }
+      if (
+        activeRun.status === "needs_recovery" &&
+        activeRun.end_reason === "flow_cursor_advance_ambiguous" &&
+        activeRun.current_node_key &&
+        activeRun.current_visit_id
+      ) {
+        const recovered = await advanceFromNodeKey(
+          db,
+          activeRun,
+          activeRun.current_node_key,
+          snapshotNodes(activeRun.flow_id, version.graph),
+          version.graph.fallback_policy.execution,
+        );
+        return {
+          consumed: true,
+          flow_run_id: activeRun.id,
+          outcome: recovered.outcome,
         };
       }
       return await handleReplyForActiveRun(

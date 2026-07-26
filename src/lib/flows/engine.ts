@@ -793,37 +793,55 @@ async function completeNodeEffect(
   db: AdminClient,
   effect: DurableNodeEffect,
 ): Promise<void> {
-  const { data, error } = await db.rpc("complete_flow_node_effect", {
+  const completeArgs = {
     p_effect_id: effect.id,
     p_operation_id: effect.operation_id,
-  });
-  if (!error && data === true) return;
-  let readBack: DurableNodeEffect | null = null;
+  };
+  let lastError: unknown = null;
   let readError: unknown = null;
-  try {
-    readBack = await readNodeEffect(db, effect.id, effect.operation_id);
-  } catch (caught) {
-    readError = caught;
-  }
-  if (readBack?.status !== "completed") {
-    throw new CommittedSideEffectError(
-      "External effect completed remotely but its ledger was not finalized",
-      {
-        externalReference: effect.external_reference ?? effect.operation_id,
-        persistenceStage: "node_effect_ledger_complete",
-        cause:
-          readError && error
-            ? new AggregateError(
-                [error, readError],
-                "ledger completion and read-back both failed",
-              )
-            : readError ?? error,
-        effectId: effect.id,
-        operationId: effect.operation_id,
-        remoteResult: sanitizeExecutionData(effect.result),
-      },
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data, error } = await db.rpc(
+      "complete_flow_node_effect",
+      completeArgs,
     );
+    if (!error && data === true) {
+      effect.status = "completed";
+      return;
+    }
+    lastError = error ?? new Error("effect ledger was not completed");
+    try {
+      const readBack = await readNodeEffect(
+        db,
+        effect.id,
+        effect.operation_id,
+      );
+      if (readBack?.status === "completed") {
+        effect.status = "completed";
+        effect.result = readBack.result;
+        effect.external_reference = readBack.external_reference;
+        return;
+      }
+    } catch (caught) {
+      readError = caught;
+    }
   }
+  throw new CommittedSideEffectError(
+    "External effect completed remotely but its ledger was not finalized",
+    {
+      externalReference: effect.external_reference ?? effect.operation_id,
+      persistenceStage: "node_effect_ledger_complete",
+      cause:
+        readError && lastError
+          ? new AggregateError(
+              [lastError, readError],
+              "ledger completion and read-back both failed",
+            )
+          : readError ?? lastError,
+      effectId: effect.id,
+      operationId: effect.operation_id,
+      remoteResult: sanitizeExecutionData(effect.result),
+    },
+  );
 }
 
 async function failAmbiguousNodeEffect(
@@ -1139,17 +1157,25 @@ async function executeDurableNodeEffect<T>(
   return { ok: true, value: executed.value, effect: committedEffect };
 }
 
+interface DurableCursorTransition {
+  expectedNodeKey: string;
+  expectedVisitId: string;
+  expectedContinuationId: string | null;
+  intendedNextNodeKey: string;
+  intendedNextVisitId: string;
+}
+
 async function persistDurableCursor(
   db: AdminClient,
   run: FlowRunRow,
   nextNodeKey: string,
-): Promise<void> {
+): Promise<DurableCursorTransition | null> {
   if (
     !run.current_node_key ||
     !run.current_visit_id ||
     !["active", "resuming", "needs_recovery"].includes(run.status)
   ) {
-    return;
+    return null;
   }
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
@@ -1253,6 +1279,13 @@ async function persistDurableCursor(
   run.current_visit_id = advanced.current_visit_id;
   run.continuation_step = advanced.continuation_step;
   if (advanced.status) run.status = advanced.status;
+  return {
+    expectedNodeKey,
+    expectedVisitId,
+    expectedContinuationId,
+    intendedNextNodeKey: nextNodeKey,
+    intendedNextVisitId,
+  };
 }
 
 async function persistDurableVariableTransition(
@@ -1260,13 +1293,13 @@ async function persistDurableVariableTransition(
   run: FlowRunRow,
   nextNodeKey: string,
   nextVars: Record<string, unknown>,
-): Promise<void> {
+): Promise<DurableCursorTransition | null> {
   if (
     !run.current_node_key ||
     !run.current_visit_id ||
     !["active", "resuming", "needs_recovery"].includes(run.status)
   ) {
-    return;
+    return null;
   }
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
@@ -1362,6 +1395,13 @@ async function persistDurableVariableTransition(
     );
   }
   syncRun(run, committed);
+  return {
+    expectedNodeKey,
+    expectedVisitId,
+    expectedContinuationId,
+    intendedNextNodeKey: nextNodeKey,
+    intendedNextVisitId,
+  };
 }
 
 async function persistTransition(
@@ -1575,21 +1615,35 @@ async function finalizeDurableNodeEffect(
   db: AdminClient,
   run: FlowRunRow,
   effect: DurableNodeEffect,
-  localPersistence: () => Promise<void>,
+  localPersistence: () => Promise<void | DurableCursorTransition | null>,
   nextNodeKey?: string,
 ): Promise<boolean> {
   if (!run.current_node_key || !run.current_visit_id) return false;
   const expectedNodeKey = run.current_node_key;
   const expectedVisitId = run.current_visit_id;
   const expectedContinuationId = run.continuation_id ?? null;
+  let committedCursor: DurableCursorTransition | null = null;
   try {
-    await localPersistence();
+    committedCursor = (await localPersistence()) ?? null;
     if (nextNodeKey) {
-      await persistTransition(db, run, nextNodeKey);
+      committedCursor = await persistDurableCursor(db, run, nextNodeKey);
     }
     await completeNodeEffect(db, effect);
     return true;
   } catch (error) {
+    const committedError = committedSideEffectCause(error);
+    const enrichedError =
+      committedCursor && committedError
+        ? new CommittedSideEffectError(committedError.message, {
+            ...committedError.metadata,
+            expectedNodeKey: committedCursor.expectedNodeKey,
+            expectedVisitId: committedCursor.expectedVisitId,
+            expectedContinuationId:
+              committedCursor.expectedContinuationId,
+            intendedNextNodeKey: committedCursor.intendedNextNodeKey,
+            intendedNextVisitId: committedCursor.intendedNextVisitId,
+          })
+        : error;
     return stopAfterCommittedEffectPersistenceFailure(
       db,
       run,
@@ -1597,7 +1651,7 @@ async function finalizeDurableNodeEffect(
       expectedNodeKey,
       expectedVisitId,
       expectedContinuationId,
-      error,
+      enrichedError,
     );
   }
 }
@@ -2514,7 +2568,7 @@ export async function advanceFromNodeKey(
           run,
           executed.effect,
           async () => {
-            await persistDurableVariableTransition(
+            return await persistDurableVariableTransition(
               db,
               run,
               cfg.next_node_key,

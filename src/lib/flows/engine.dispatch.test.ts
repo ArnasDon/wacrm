@@ -233,6 +233,9 @@ class DispatchState {
   private variableTransitionCommitted = false;
   loseEffectCommitResponseOnce = false;
   effectCommitResponseFailures = 0;
+  completeEffectResponseFailures = 0;
+  commitFirstCompleteEffectFailure = false;
+  private completeEffectCommitted = false;
   effectReadFailures = 0;
   effectReadFailuresAfterCommit = 0;
   runReadFailures = 0;
@@ -489,6 +492,21 @@ class DispatchState {
     }
     if (name === "complete_flow_node_effect") {
       const effect = this.effectById(value.p_effect_id)!;
+      if (this.completeEffectResponseFailures > 0) {
+        if (
+          this.commitFirstCompleteEffectFailure &&
+          !this.completeEffectCommitted
+        ) {
+          effect.status = "completed";
+          this.completeEffectCommitted = true;
+        }
+        this.completeEffectResponseFailures -= 1;
+        this.effectReadFailures += 1;
+        return {
+          data: null,
+          error: { message: "effect completion response unavailable" },
+        };
+      }
       effect.status = "completed";
       return { data: true, error: null };
     }
@@ -1089,6 +1107,77 @@ function policyRecoveryGraph(
   } as FlowVersionGraph;
 }
 
+function effectCompletionGraph(
+  effect: "http" | "zapi",
+  options: { entryAtEffect?: boolean } = {},
+): FlowVersionGraph {
+  return {
+    schema_version: 1,
+    trigger: {
+      type: "keyword",
+      config: { keywords: ["go"], match_type: "exact" },
+    },
+    entry_node_key: options.entryAtEffect ? "effect" : "input",
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: [],
+    nodes: [
+      {
+        node_key: "input",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "Value?",
+          var_key: "input",
+          next_node_key: "effect",
+        },
+        position_x: 0,
+        position_y: 0,
+      },
+      {
+        node_key: "effect",
+        node_type: effect === "http" ? "http_request" : "send_message",
+        config:
+          effect === "http"
+            ? {
+                method: "POST",
+                url: "https://example.test/complete",
+                response_var: "response",
+                next_node_key: "successor",
+              }
+            : {
+                text: "Effect",
+                next_node_key: "successor",
+              },
+        position_x: 100,
+        position_y: 0,
+      },
+      {
+        node_key: "successor",
+        node_type: "variable_set",
+        config: {
+          assignments: [
+            { key: "successor", type: "string", value: "once" },
+          ],
+          next_node_key: "end",
+        },
+        position_x: 200,
+        position_y: 0,
+      },
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 300,
+        position_y: 0,
+      },
+    ],
+  } as FlowVersionGraph;
+}
+
 function waitEffectGraph(): FlowVersionGraph {
   const flowGraph = graph();
   flowGraph.entry_node_key = "wait";
@@ -1556,6 +1645,100 @@ describe("public flow dispatcher recovery protocol", () => {
       );
     },
   );
+
+  it("reconciles ledger completion before commit after HTTP vars and cursor advance atomically", async () => {
+    const state = new DispatchState();
+    state.completeEffectResponseFailures = 2;
+    prepare(
+      state,
+      null,
+      effectCompletionGraph("http", { entryAtEffect: true }),
+    );
+
+    const result = await dispatchInboundToFlows(
+      inbound("http-complete-before-commit", "go"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(state.receipts).toHaveLength(0);
+    expect(h.httpRequest).toHaveBeenCalledTimes(1);
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(state.runs[0].vars).toMatchObject({
+      response: { status: 200, body: { ok: true } },
+      successor: "once",
+    });
+    expect(
+      state.rpcCalls.filter(
+        (call) => call.name === "complete_flow_node_effect",
+      ),
+    ).toHaveLength(2);
+    expect(
+      state.rpcCalls
+        .filter(
+          (call) => call.name === "commit_flow_variable_transition",
+        )
+        .map((call) => call.value.p_expected_node_key),
+    ).toEqual(["effect", "successor"]);
+    const httpCursor = state.rpcCalls.find(
+      (call) =>
+        call.name === "commit_flow_variable_transition" &&
+        call.value.p_expected_node_key === "effect",
+    )!;
+    expect(
+      state.rpcCalls.find(
+        (call) => call.name === "reconcile_flow_node_effect_recovery",
+      )?.value,
+    ).toMatchObject({
+      p_expected_node_key: "effect",
+      p_intended_next_node_key: "successor",
+      p_intended_next_visit_id: httpCursor.value.p_next_visit_id,
+    });
+  });
+
+  it("recognizes committed ledger completion after response loss and continues a Z-API successor once", async () => {
+    const state = new DispatchState();
+    state.completeEffectResponseFailures = 2;
+    state.commitFirstCompleteEffectFailure = true;
+    prepare(state, run(), effectCompletionGraph("zapi"));
+
+    const result = await dispatchInboundToFlows(
+      inbound("zapi-complete-after-commit", "value"),
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(state.effects.values().next().value?.status).toBe("completed");
+    expect(state.runs[0].vars).toEqual({
+      input: "value",
+      successor: "once",
+    });
+    const completes = state.rpcCalls.filter(
+      (call) => call.name === "complete_flow_node_effect",
+    );
+    expect(completes).toHaveLength(2);
+    expect(completes[0].value).toEqual(completes[1].value);
+    expect(
+      state.rpcCalls.filter(
+        (call) =>
+          call.name === "commit_flow_variable_transition" &&
+          call.value.p_expected_node_key === "successor",
+      ),
+    ).toHaveLength(1);
+    const zapiCursor = state.rpcCalls.find(
+      (call) =>
+        call.name === "advance_flow_run_cursor" &&
+        call.value.p_expected_node_key === "effect",
+    )!;
+    expect(
+      state.rpcCalls.find(
+        (call) => call.name === "reconcile_flow_node_effect_recovery",
+      )?.value,
+    ).toMatchObject({
+      p_expected_node_key: "effect",
+      p_intended_next_node_key: "successor",
+      p_intended_next_visit_id: zapiCursor.value.p_next_visit_id,
+    });
+  });
 
   it("acks a wait only after the intended cursor and downstream nodes continue", async () => {
     const state = new DispatchState();

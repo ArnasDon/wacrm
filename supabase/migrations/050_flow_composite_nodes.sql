@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS flow_call_frames (
   return_node_key TEXT NOT NULL,
   parent_vars JSONB NOT NULL DEFAULT '{}'::JSONB,
   output_mapping JSONB NOT NULL DEFAULT '[]'::JSONB,
+  error_policy JSONB NOT NULL DEFAULT '{"on_error":"fail_run"}'::JSONB,
   child_flow_id UUID NOT NULL REFERENCES flows(id) ON DELETE RESTRICT,
   child_flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
   child_entry_node_key TEXT NOT NULL,
@@ -59,13 +60,17 @@ CREATE TABLE IF NOT EXISTS flow_call_frames (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ,
   completed_child_visit_id UUID,
+  failure_reason TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (flow_run_id, parent_flow_version_id, parent_node_key, parent_visit_id)
 );
 
 ALTER TABLE flow_call_frames
   ADD COLUMN IF NOT EXISTS output_mapping JSONB NOT NULL DEFAULT '[]'::JSONB,
-  ADD COLUMN IF NOT EXISTS completed_child_visit_id UUID;
+  ADD COLUMN IF NOT EXISTS completed_child_visit_id UUID,
+  ADD COLUMN IF NOT EXISTS error_policy JSONB NOT NULL
+    DEFAULT '{"on_error":"fail_run"}'::JSONB,
+  ADD COLUMN IF NOT EXISTS failure_reason TEXT;
 
 -- A completed frame frees its stack depth for a later call. Earlier local
 -- iterations of this migration used an unconditional UNIQUE constraint.
@@ -243,6 +248,9 @@ REVOKE ALL ON FUNCTION advance_flow_loop_iteration(UUID, UUID, TEXT, UUID, UUID,
 REVOKE ALL ON FUNCTION advance_flow_loop_iteration(UUID, UUID, TEXT, UUID, UUID, BIGINT, INTEGER, BOOLEAN, TEXT, UUID, JSONB) FROM authenticated;
 GRANT EXECUTE ON FUNCTION advance_flow_loop_iteration(UUID, UUID, TEXT, UUID, UUID, BIGINT, INTEGER, BOOLEAN, TEXT, UUID, JSONB) TO service_role;
 
+DROP FUNCTION IF EXISTS push_flow_call_frame(
+  UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB
+);
 CREATE OR REPLACE FUNCTION push_flow_call_frame(
   p_run_id UUID,
   p_parent_flow_version_id UUID,
@@ -253,7 +261,8 @@ CREATE OR REPLACE FUNCTION push_flow_call_frame(
   p_child_flow_version_id UUID,
   p_child_entry_node_key TEXT,
   p_child_vars JSONB,
-  p_output_mapping JSONB
+  p_output_mapping JSONB,
+  p_error_policy JSONB
 )
 RETURNS SETOF flow_runs
 LANGUAGE plpgsql
@@ -271,6 +280,9 @@ BEGIN
   IF NOT FOUND
      OR jsonb_typeof(p_child_vars) IS DISTINCT FROM 'object'
      OR jsonb_typeof(p_output_mapping) IS DISTINCT FROM 'array'
+     OR jsonb_typeof(p_error_policy) IS DISTINCT FROM 'object'
+     OR p_error_policy->>'on_error'
+        NOT IN ('fail_run', 'fail_branch', 'default_value')
   THEN RETURN; END IF;
 
   IF EXISTS (
@@ -310,7 +322,7 @@ BEGIN
   INSERT INTO flow_call_frames (
     account_id, flow_run_id, depth,
     parent_flow_id, parent_flow_version_id, parent_node_key, parent_visit_id,
-    return_node_key, parent_vars, output_mapping,
+    return_node_key, parent_vars, output_mapping, error_policy,
     child_flow_id, child_flow_version_id, child_entry_node_key
   )
   VALUES (
@@ -318,6 +330,7 @@ BEGIN
     COALESCE(v_run.active_flow_id, v_run.flow_id),
     p_parent_flow_version_id, p_parent_node_key,
     p_expected_visit_id, p_return_node_key, v_run.vars, p_output_mapping,
+    p_error_policy,
     p_child_flow_id, p_child_flow_version_id, p_child_entry_node_key
   )
   ON CONFLICT (flow_run_id, parent_flow_version_id, parent_node_key, parent_visit_id)
@@ -340,9 +353,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB) FROM PUBLIC;
-REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB) FROM authenticated;
-GRANT EXECUTE ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB) TO service_role;
+REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) FROM authenticated;
+GRANT EXECUTE ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) TO service_role;
 
 CREATE OR REPLACE FUNCTION pop_flow_call_frame(
   p_run_id UUID,
@@ -444,6 +457,129 @@ $$;
 REVOKE ALL ON FUNCTION pop_flow_call_frame(UUID, UUID, UUID, JSONB) FROM PUBLIC;
 REVOKE ALL ON FUNCTION pop_flow_call_frame(UUID, UUID, UUID, JSONB) FROM authenticated;
 GRANT EXECUTE ON FUNCTION pop_flow_call_frame(UUID, UUID, UUID, JSONB) TO service_role;
+
+CREATE OR REPLACE FUNCTION fail_flow_call_frame(
+  p_run_id UUID,
+  p_child_flow_version_id UUID,
+  p_expected_visit_id UUID,
+  p_failure_reason TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_frame flow_call_frames%ROWTYPE;
+  v_action TEXT;
+  v_next_node_key TEXT;
+  v_next_vars JSONB;
+  v_default JSONB;
+  v_default_key TEXT;
+BEGIN
+  SELECT * INTO v_run FROM flow_runs WHERE id = p_run_id FOR UPDATE;
+  IF NOT FOUND
+     OR NULLIF(BTRIM(p_failure_reason), '') IS NULL
+  THEN RETURN; END IF;
+
+  SELECT * INTO v_frame
+  FROM flow_call_frames
+  WHERE flow_run_id = p_run_id
+    AND child_flow_version_id = p_child_flow_version_id
+    AND completed_child_visit_id = p_expected_visit_id
+    AND state = 'failed'
+  ORDER BY depth DESC
+  LIMIT 1;
+  IF FOUND
+     AND v_run.active_flow_version_id = v_frame.parent_flow_version_id
+  THEN RETURN NEXT v_run; RETURN; END IF;
+
+  IF v_run.active_flow_version_id IS DISTINCT FROM p_child_flow_version_id
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id
+  THEN RETURN; END IF;
+
+  SELECT * INTO v_frame
+  FROM flow_call_frames
+  WHERE flow_run_id = p_run_id
+    AND child_flow_version_id = p_child_flow_version_id
+    AND state IN ('active', 'returning')
+  ORDER BY depth DESC
+  LIMIT 1
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_action := COALESCE(v_frame.error_policy->>'on_error', 'fail_run');
+  v_next_vars := v_frame.parent_vars;
+  IF v_action = 'fail_branch'
+     AND NULLIF(BTRIM(v_frame.error_policy->>'error_next_node_key'), '')
+         IS NOT NULL
+  THEN
+    v_next_node_key := v_frame.error_policy->>'error_next_node_key';
+  ELSIF v_action = 'default_value'
+        AND jsonb_typeof(v_frame.error_policy->'default_value') = 'object'
+  THEN
+    v_default := v_frame.error_policy->'default_value';
+    v_default_key := v_default->>'key';
+    IF v_default_key !~ '^[A-Za-z_][A-Za-z0-9_]*$'
+       OR NOT (v_default ? 'value')
+    THEN
+      v_action := 'fail_run';
+      v_next_node_key := v_frame.parent_node_key;
+    ELSE
+      v_next_node_key := v_frame.return_node_key;
+      v_next_vars := jsonb_set(
+        v_next_vars,
+        ARRAY[v_default_key],
+        v_default->'value',
+        TRUE
+      );
+    END IF;
+  ELSE
+    v_action := 'fail_run';
+    v_next_node_key := v_frame.parent_node_key;
+  END IF;
+
+  UPDATE flow_call_frames
+  SET state = 'failed',
+      completed_child_visit_id = p_expected_visit_id,
+      failure_reason = LEFT(p_failure_reason, 500),
+      completed_at = NOW(),
+      updated_at = NOW()
+  WHERE id = v_frame.id
+    AND state IN ('active', 'returning');
+  IF NOT FOUND THEN RETURN; END IF;
+
+  UPDATE flow_runs
+  SET status = CASE
+        WHEN v_action = 'fail_run' THEN 'failed'
+        WHEN continuation_id IS NOT NULL THEN 'resuming'
+        ELSE 'active'
+      END,
+      ended_at = CASE
+        WHEN v_action = 'fail_run' THEN NOW()
+        ELSE NULL
+      END,
+      end_reason = CASE
+        WHEN v_action = 'fail_run' THEN 'sub_flow_child_failed'
+        ELSE NULL
+      END,
+      active_flow_id = v_frame.parent_flow_id,
+      active_flow_version_id = v_frame.parent_flow_version_id,
+      current_node_key = v_next_node_key,
+      current_visit_id = uuid_generate_v4(),
+      vars = v_next_vars,
+      continuation_step = continuation_step + 1,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+  RETURNING * INTO v_run;
+  RETURN NEXT v_run;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION fail_flow_call_frame(UUID, UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fail_flow_call_frame(UUID, UUID, UUID, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION fail_flow_call_frame(UUID, UUID, UUID, TEXT) TO service_role;
 
 -- Wait continuations use the active child version while the immutable
 -- flow_runs.flow_version_id continues to identify the root invocation.

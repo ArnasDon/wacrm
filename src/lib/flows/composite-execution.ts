@@ -25,6 +25,16 @@ interface CompositeRun {
   vars: Record<string, unknown>;
 }
 
+export interface SubFlowFailurePolicy {
+  on_error: "fail_run" | "fail_branch" | "default_value";
+  error_next_node_key?: string;
+  default_value?: {
+    key: string;
+    type: string;
+    value: unknown;
+  };
+}
+
 interface LoopStateRow {
   id: string;
   items: unknown[] | null;
@@ -216,6 +226,7 @@ export async function enterSubFlow(
     returnNodeKey: string;
     inputMapping: readonly SubFlowVariableMapping[];
     outputMapping: readonly SubFlowVariableMapping[];
+    failurePolicy: SubFlowFailurePolicy;
   },
 ): Promise<CompositeRun> {
   if (!run.current_node_key || !run.current_visit_id) {
@@ -235,6 +246,29 @@ export async function enterSubFlow(
     p_child_entry_node_key: args.childEntryNodeKey,
     p_child_vars: mapSubFlowInputs(run.vars, args.inputMapping),
     p_output_mapping: args.outputMapping,
+    p_error_policy: args.failurePolicy,
+    },
+  );
+  Object.assign(run, committed);
+  return committed;
+}
+
+export async function failFromSubFlow(
+  db: RpcClient,
+  run: CompositeRun,
+  failureReason: string,
+): Promise<CompositeRun> {
+  if (!run.current_visit_id) {
+    throw new Error("Child flow is missing its durable failure visit.");
+  }
+  const committed = await durableRpcRow<CompositeRun>(
+    db,
+    "fail_flow_call_frame",
+    {
+      p_run_id: run.id,
+      p_child_flow_version_id: activeVersion(run),
+      p_expected_visit_id: run.current_visit_id,
+      p_failure_reason: failureReason,
     },
   );
   Object.assign(run, committed);

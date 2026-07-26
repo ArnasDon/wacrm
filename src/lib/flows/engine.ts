@@ -102,7 +102,9 @@ import {
   enterSubFlow,
   executeEachIteration,
   executeLoopIteration,
+  failFromSubFlow,
   returnFromSubFlow,
+  type SubFlowFailurePolicy,
 } from "./composite-execution";
 import { generateFlowAiReply } from "./ai-reply-runtime";
 
@@ -2640,6 +2642,22 @@ export async function advanceFromNodeKey(
         node,
         globalExecutionPolicy,
         async () => {
+          const resolvedPolicy = resolveNodeExecutionPolicy(
+            globalExecutionPolicy,
+            node.config,
+          );
+          const failurePolicy: SubFlowFailurePolicy = {
+            on_error: resolvedPolicy.on_error,
+            ...(resolvedPolicy.error_next_node_key
+              ? {
+                  error_next_node_key:
+                    resolvedPolicy.error_next_node_key,
+                }
+              : {}),
+            ...(resolvedPolicy.default_value
+              ? { default_value: resolvedPolicy.default_value }
+              : {}),
+          };
           await enterSubFlow(db, run, {
             childFlowId: cfg.flow_id,
             childVersionId: cfg.flow_version_id,
@@ -2647,6 +2665,7 @@ export async function advanceFromNodeKey(
             returnNodeKey: cfg.next_node_key,
             inputMapping: cfg.input_mapping,
             outputMapping: cfg.output_mapping,
+            failurePolicy,
           });
           const child = await loadFlowVersion(
             db,
@@ -2667,8 +2686,13 @@ export async function advanceFromNodeKey(
             readBack.active_flow_version_id === cfg.flow_version_id
           ) {
             syncRun(run, readBack);
-            await returnFromSubFlow(db, run, run.vars);
-            throw new Error("Child flow execution failed.");
+            return (
+              (await recoverFailedSubFlowRun(
+                db,
+                run,
+                readBack.end_reason ?? "child_flow_execution_failed",
+              )) ?? { outcome: "completed" as const }
+            );
           }
           return outcome;
         },
@@ -3089,6 +3113,73 @@ export async function advanceFromNodeKey(
 // Public entry point — the webhook calls this on every inbound.
 // ============================================================
 
+/**
+ * Unwind a failed child even when the original sub_flow call stack disappeared
+ * after a wait or reply suspension. The durable frame owns the resolved parent
+ * policy; nested fail_run policies propagate one frame at a time.
+ */
+export async function recoverFailedSubFlowRun(
+  db: AdminClient,
+  run: FlowRunRow,
+  failureReason = "child_flow_execution_failed",
+): Promise<
+  { outcome: "advanced" | "completed" | "handed_off" } | null
+> {
+  const readBack = await loadRunById(db, run.id);
+  if (!readBack || readBack.status !== "failed") return null;
+  const durableFailureReason =
+    readBack.end_reason ?? failureReason;
+  syncRun(run, readBack);
+  const activeVersion =
+    run.active_flow_version_id ?? run.flow_version_id;
+  if (activeVersion === run.flow_version_id) {
+    return { outcome: "completed" };
+  }
+
+  const restored = await failFromSubFlow(
+    db,
+    run,
+    durableFailureReason,
+  );
+  syncRun(run, restored as FlowRunRow);
+  if (run.status === "failed") {
+    return recoverFailedSubFlowRun(
+      db,
+      run,
+      "nested_sub_flow_child_failed",
+    );
+  }
+
+  const parentFlowId = run.active_flow_id ?? run.flow_id;
+  const parentVersionId =
+    run.active_flow_version_id ?? run.flow_version_id;
+  const parent = await loadFlowVersion(db, parentVersionId, parentFlowId);
+  if (!parent || !run.current_node_key) {
+    await endRun(
+      db,
+      run.id,
+      "failed",
+      "sub_flow_parent_snapshot_unavailable",
+    );
+    return recoverFailedSubFlowRun(
+      db,
+      run,
+      "sub_flow_parent_snapshot_unavailable",
+    );
+  }
+  const outcome = await advanceFromNodeKey(
+    db,
+    run,
+    run.current_node_key,
+    snapshotNodes(parentFlowId, parent.graph),
+    parent.graph.fallback_policy.execution,
+  );
+  return (
+    (await recoverFailedSubFlowRun(db, run, failureReason)) ??
+    outcome
+  );
+}
+
 export async function dispatchInboundToFlows(
   input: DispatchInboundInput & { isFirstInboundMessage: boolean },
 ): Promise<DispatchInboundResult> {
@@ -3125,10 +3216,14 @@ export async function dispatchInboundToFlows(
             snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
+          const unwound = await recoverFailedSubFlowRun(
+            db,
+            receiptRun,
+          );
           return {
             consumed: true,
             flow_run_id: receiptRun.id,
-            outcome: recovered.outcome,
+            outcome: unwound?.outcome ?? recovered.outcome,
           };
         }
       }
@@ -3149,10 +3244,14 @@ export async function dispatchInboundToFlows(
             snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
+          const unwound = await recoverFailedSubFlowRun(
+            db,
+            receiptRun,
+          );
           return {
             consumed: true,
             flow_run_id: receiptRun.id,
-            outcome: recovered.outcome,
+            outcome: unwound?.outcome ?? recovered.outcome,
           };
         }
       }
@@ -3209,19 +3308,25 @@ export async function dispatchInboundToFlows(
           snapshotNodes(version.flowId, version.graph),
           version.graph.fallback_policy.execution,
         );
+        const unwound = await recoverFailedSubFlowRun(db, activeRun);
         return {
           consumed: true,
           flow_run_id: activeRun.id,
-          outcome: recovered.outcome,
+          outcome: unwound?.outcome ?? recovered.outcome,
         };
       }
-      return await handleReplyForActiveRun(
+      const handled = await handleReplyForActiveRun(
         db,
         activeRun,
         input.message,
         snapshotNodes(version.flowId, version.graph),
         version.graph.fallback_policy,
       );
+      const unwound = await recoverFailedSubFlowRun(db, activeRun);
+      return {
+        ...handled,
+        outcome: unwound?.outcome ?? handled.outcome,
+      };
     }
 
     // No active run → look for a flow whose entry trigger matches.

@@ -16,6 +16,8 @@ describe("migration 050 composite flow state", () => {
     );
     expect(sql).toContain("child_flow_version_id");
     expect(sql).toContain("parent_flow_version_id");
+    expect(sql).toContain("error_policy");
+    expect(sql).toContain("failure_reason");
     expect(sql).toContain("depth");
     expect(sql).toMatch(
       /CREATE UNIQUE INDEX[\s\S]*flow_run_id,\s*depth[\s\S]*WHERE state IN \('active', 'returning'\)/i,
@@ -28,6 +30,7 @@ describe("migration 050 composite flow state", () => {
       "advance_flow_loop_iteration",
       "push_flow_call_frame",
       "pop_flow_call_frame",
+      "fail_flow_call_frame",
     ]) {
       expect(sql).toMatch(
         new RegExp(

@@ -64,6 +64,26 @@ interface EffectRow extends Row {
   invocation_token: string;
 }
 
+interface FrameRow extends Row {
+  id: string;
+  depth: number;
+  parent_flow_id: string;
+  parent_flow_version_id: string;
+  parent_node_key: string;
+  return_node_key: string;
+  parent_vars: Record<string, unknown>;
+  child_flow_id: string;
+  child_flow_version_id: string;
+  error_policy: {
+    on_error: "fail_run" | "fail_branch" | "default_value";
+    error_next_node_key?: string;
+    default_value?: { key: string; type: string; value: unknown };
+  };
+  state: "active" | "completed" | "failed";
+  completed_child_visit_id?: string;
+  failure_reason?: string;
+}
+
 class Query {
   private operation: "select" | "insert" | "update" = "select";
   private value: Row | Row[] | null = null;
@@ -212,6 +232,7 @@ class DispatchState {
   runs: FlowRunRow[] = [];
   receipts: ReceiptRow[] = [];
   effects = new Map<string, EffectRow>();
+  frames: FrameRow[] = [];
   versions: Row[] = [];
   flows: Row[] = [];
   conversations: Row[] = [
@@ -243,12 +264,15 @@ class DispatchState {
   loseReplyCommitResponseOnce = false;
   failRepromptFinalizeOnce = false;
   loseRepromptFinalizeResponseOnce = false;
+  loseFailFrameResponseOnce = false;
   fallbackFailure: "none" | "before_commit_once" | "after_commit_once" =
     "none";
   private sequence = 10;
   waitEnabled = false;
   waitStatus: "pending" | "claimed" | "resumed" = "pending";
   waitNextNodeKey = "send";
+  waitFlowVersionId = "version-1";
+  waitNodeKey = "wait";
   readonly waitResumeId =
     "90000000-0000-4000-8000-000000000001";
 
@@ -260,6 +284,7 @@ class DispatchState {
     if (table === "flow_node_effects") {
       return [...this.effects.values()];
     }
+    if (table === "flow_call_frames") return this.frames;
     if (table === "flow_versions") return this.versions;
     if (table === "flows") return this.flows;
     if (table === "conversations") return this.conversations;
@@ -323,8 +348,8 @@ class DispatchState {
           {
             id: "wait-1",
             flow_run_id: "run-1",
-            flow_version_id: "version-1",
-            node_key: "wait",
+            flow_version_id: this.waitFlowVersionId,
+            node_key: this.waitNodeKey,
             next_node_key: this.waitNextNodeKey,
             claim_token: "claim-1",
             resume_id: this.waitResumeId,
@@ -341,6 +366,84 @@ class DispatchState {
         run.current_visit_id = this.waitResumeId;
         run.continuation_id = this.waitResumeId;
         run.continuation_phase = "running";
+      }
+      return { data: [{ ...run }], error: null };
+    }
+    if (name === "fail_flow_call_frame") {
+      const run = this.runById(value.p_run_id)!;
+      const replay = this.frames.find(
+        (frame) =>
+          frame.child_flow_version_id ===
+            value.p_child_flow_version_id &&
+          frame.completed_child_visit_id ===
+            value.p_expected_visit_id &&
+          frame.state === "failed",
+      );
+      if (
+        replay &&
+        run.active_flow_version_id ===
+          replay.parent_flow_version_id
+      ) {
+        return { data: [{ ...run }], error: null };
+      }
+      const frame = [...this.frames]
+        .sort((left, right) => right.depth - left.depth)
+        .find(
+          (candidate) =>
+            candidate.state === "active" &&
+            candidate.child_flow_version_id ===
+              value.p_child_flow_version_id,
+        );
+      if (
+        !frame ||
+        run.active_flow_version_id !==
+          value.p_child_flow_version_id ||
+        run.current_visit_id !== value.p_expected_visit_id
+      ) {
+        return { data: [], error: null };
+      }
+      frame.state = "failed";
+      frame.completed_child_visit_id =
+        value.p_expected_visit_id as string;
+      frame.failure_reason = value.p_failure_reason as string;
+      run.active_flow_id = frame.parent_flow_id;
+      run.active_flow_version_id =
+        frame.parent_flow_version_id;
+      run.vars = { ...frame.parent_vars };
+      run.current_visit_id = this.nextUuid("frame-failure");
+      const policy = frame.error_policy;
+      if (
+        policy.on_error === "fail_branch" &&
+        policy.error_next_node_key
+      ) {
+        run.status =
+          run.continuation_id === null ? "active" : "resuming";
+        run.current_node_key = policy.error_next_node_key;
+        run.ended_at = null;
+        run.end_reason = null;
+      } else if (
+        policy.on_error === "default_value" &&
+        policy.default_value
+      ) {
+        run.status =
+          run.continuation_id === null ? "active" : "resuming";
+        run.current_node_key = frame.return_node_key;
+        run.vars[policy.default_value.key] =
+          policy.default_value.value;
+        run.ended_at = null;
+        run.end_reason = null;
+      } else {
+        run.status = "failed";
+        run.current_node_key = frame.parent_node_key;
+        run.end_reason = "sub_flow_child_failed";
+      }
+      run.continuation_step = (run.continuation_step ?? 0) + 1;
+      if (this.loseFailFrameResponseOnce) {
+        this.loseFailFrameResponseOnce = false;
+        return {
+          data: null,
+          error: { message: "frame failure response lost" },
+        };
       }
       return { data: [{ ...run }], error: null };
     }
@@ -836,6 +939,114 @@ function graph(
     },
     variable_schema: [],
     nodes,
+  };
+}
+
+function terminalGraph(entryNodeKey = "end"): FlowVersionGraph {
+  return {
+    schema_version: 1,
+    trigger: { type: "manual", config: {} },
+    entry_node_key: entryNodeKey,
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: [],
+    nodes: [
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 0,
+        position_y: 0,
+      },
+    ],
+  };
+}
+
+function failingChildGraph(
+  entry: "input" | "wait" = "input",
+): FlowVersionGraph {
+  return {
+    schema_version: 1,
+    trigger: { type: "manual", config: {} },
+    entry_node_key: entry,
+    fallback_policy: {
+      on_unknown_reply: "reprompt",
+      max_reprompts: 2,
+      on_timeout_hours: 24,
+      on_exhaust: "handoff",
+    },
+    variable_schema: [],
+    nodes: [
+      ...(entry === "input"
+        ? [
+            {
+              node_key: "input",
+              node_type: "collect_input",
+              config: {
+                prompt_text: "Child value?",
+                var_key: "child_value",
+                next_node_key: "broken",
+              },
+              position_x: 0,
+              position_y: 0,
+            },
+          ]
+        : [
+            {
+              node_key: "wait",
+              node_type: "wait",
+              config: {
+                amount: 1,
+                unit: "minutes",
+                next_node_key: "broken",
+              },
+              position_x: 0,
+              position_y: 0,
+            },
+          ]),
+      {
+        node_key: "broken",
+        node_type: "variable_set",
+        config: {
+          assignments: [
+            { key: "invalid", type: "number", value: "not-a-number" },
+          ],
+          next_node_key: "end",
+        },
+        position_x: 100,
+        position_y: 0,
+      },
+      {
+        node_key: "end",
+        node_type: "end",
+        config: {},
+        position_x: 200,
+        position_y: 0,
+      },
+    ],
+  } as FlowVersionGraph;
+}
+
+function frame(
+  overrides: Partial<FrameRow> = {},
+): FrameRow {
+  return {
+    id: `frame-${overrides.depth ?? 1}`,
+    depth: 1,
+    parent_flow_id: "flow-1",
+    parent_flow_version_id: "version-1",
+    parent_node_key: "call_child",
+    return_node_key: "end",
+    parent_vars: { parent: true },
+    child_flow_id: "child-flow",
+    child_flow_version_id: "child-version",
+    error_policy: { on_error: "fail_run" },
+    state: "active",
+    ...overrides,
   };
 }
 
@@ -1351,6 +1562,224 @@ describe("public flow dispatcher recovery protocol", () => {
         p_flow_version_id: "child-version",
         p_node_key: "child_wait",
       }),
+    });
+  });
+
+  it.each([
+    {
+      policy: {
+        on_error: "fail_branch" as const,
+        error_next_node_key: "end",
+      },
+      expectedStatus: "completed",
+      expectedVars: { parent: true },
+    },
+    {
+      policy: {
+        on_error: "default_value" as const,
+        default_value: {
+          key: "fallback",
+          type: "string",
+          value: "used",
+        },
+      },
+      expectedStatus: "completed",
+      expectedVars: { parent: true, fallback: "used" },
+    },
+    {
+      policy: { on_error: "fail_run" as const },
+      expectedStatus: "failed",
+      expectedVars: { parent: true },
+    },
+  ])(
+    "unwinds a reply-suspended child exactly once with $policy.on_error",
+    async ({ policy, expectedStatus, expectedVars }) => {
+      const state = new DispatchState();
+      prepare(
+        state,
+        run({
+          active_flow_id: "child-flow",
+          active_flow_version_id: "child-version",
+          current_node_key: "input",
+          current_visit_id: "child-reply-visit",
+          vars: { child_only: true },
+        }),
+        terminalGraph(),
+      );
+      state.versions.push({
+        id: "child-version",
+        flow_id: "child-flow",
+        graph: failingChildGraph(),
+      });
+      state.frames.push(frame({ error_policy: policy }));
+
+      const result = await dispatchInboundToFlows(
+        inbound(`child-${policy.on_error}`, "value"),
+      );
+
+      expect(result.consumed).toBe(true);
+      expect(state.runs[0].status).toBe(expectedStatus);
+      expect(state.runs[0].vars).toEqual(expectedVars);
+      expect(state.frames).toEqual([
+        expect.objectContaining({
+          state: "failed",
+          failure_reason: "node_execution_failed",
+          completed_child_visit_id: expect.any(String),
+        }),
+      ]);
+      expect(
+        state.rpcCalls.filter(
+          (call) => call.name === "fail_flow_call_frame",
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("propagates nested fail_run to the outer frame policy", async () => {
+    const state = new DispatchState();
+    prepare(
+      state,
+      run({
+        active_flow_id: "grandchild-flow",
+        active_flow_version_id: "grandchild-version",
+        current_node_key: "input",
+        current_visit_id: "grandchild-reply-visit",
+      }),
+      terminalGraph(),
+    );
+    state.versions.push(
+      {
+        id: "middle-version",
+        flow_id: "middle-flow",
+        graph: terminalGraph(),
+      },
+      {
+        id: "grandchild-version",
+        flow_id: "grandchild-flow",
+        graph: failingChildGraph(),
+      },
+    );
+    state.frames.push(
+      frame({
+        id: "outer-frame",
+        depth: 1,
+        child_flow_id: "middle-flow",
+        child_flow_version_id: "middle-version",
+        error_policy: {
+          on_error: "fail_branch",
+          error_next_node_key: "end",
+        },
+      }),
+      frame({
+        id: "inner-frame",
+        depth: 2,
+        parent_flow_id: "middle-flow",
+        parent_flow_version_id: "middle-version",
+        parent_node_key: "call_grandchild",
+        child_flow_id: "grandchild-flow",
+        child_flow_version_id: "grandchild-version",
+        error_policy: { on_error: "fail_run" },
+      }),
+    );
+
+    await dispatchInboundToFlows(inbound("nested-failure", "value"));
+
+    expect(state.runs[0]).toMatchObject({
+      active_flow_id: "flow-1",
+      active_flow_version_id: "version-1",
+      status: "completed",
+    });
+    expect(state.frames.map(({ state: status }) => status)).toEqual([
+      "failed",
+      "failed",
+    ]);
+    expect(
+      state.rpcCalls.filter(
+        (call) => call.name === "fail_flow_call_frame",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("replays a committed frame failure after losing the RPC response", async () => {
+    const state = new DispatchState();
+    state.loseFailFrameResponseOnce = true;
+    prepare(
+      state,
+      run({
+        active_flow_id: "child-flow",
+        active_flow_version_id: "child-version",
+        current_node_key: "input",
+        current_visit_id: "lost-frame-response-visit",
+      }),
+      terminalGraph(),
+    );
+    state.versions.push({
+      id: "child-version",
+      flow_id: "child-flow",
+      graph: failingChildGraph(),
+    });
+    state.frames.push(
+      frame({
+        error_policy: {
+          on_error: "fail_branch",
+          error_next_node_key: "end",
+        },
+      }),
+    );
+
+    await dispatchInboundToFlows(inbound("lost-frame-response", "value"));
+
+    expect(state.frames).toHaveLength(1);
+    expect(state.frames[0].state).toBe("failed");
+    const calls = state.rpcCalls.filter(
+      (call) => call.name === "fail_flow_call_frame",
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(calls[1]);
+    expect(state.runs[0].status).toBe("completed");
+  });
+
+  it("unwinds a child that fails after a durable wait resumes", async () => {
+    const state = new DispatchState();
+    state.waitEnabled = true;
+    state.waitFlowVersionId = "child-version";
+    state.waitNodeKey = "wait";
+    state.waitNextNodeKey = "broken";
+    prepare(
+      state,
+      run({
+        active_flow_id: "child-flow",
+        active_flow_version_id: "child-version",
+        status: "waiting",
+        current_node_key: "wait",
+        current_visit_id: "child-wait-visit",
+      }),
+      terminalGraph(),
+    );
+    state.versions.push({
+      id: "child-version",
+      flow_id: "child-flow",
+      graph: failingChildGraph("wait"),
+    });
+    state.frames.push(
+      frame({
+        error_policy: {
+          on_error: "fail_branch",
+          error_next_node_key: "end",
+        },
+      }),
+    );
+
+    const result = await resumeDueFlowWaits(
+      state as never,
+      new Date("2026-07-26T00:00:00.000Z"),
+    );
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(state.frames[0]).toMatchObject({ state: "failed" });
+    expect(state.runs[0]).toMatchObject({
+      active_flow_version_id: "version-1",
+      status: "completed",
     });
   });
 

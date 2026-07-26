@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { advanceFromNodeKey } from "./engine";
+import {
+  advanceFromNodeKey,
+  recoverFailedSubFlowRun,
+} from "./engine";
 import type { FlowRunRow } from "./types";
 import {
   parseFlowVersionGraph,
@@ -126,6 +129,12 @@ export async function resumeDueFlowWaits(
           nodes,
           pinned.graph.fallback_policy.execution,
         );
+        if (!dependencies.advance) {
+          await recoverFailedSubFlowRun(
+            db as ReturnType<typeof import("./admin-client").supabaseAdmin>,
+            run,
+          );
+        }
       }
       const ackArgs = {
         p_wait_id: claim.id,

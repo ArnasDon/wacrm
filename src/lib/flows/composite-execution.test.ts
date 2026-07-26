@@ -4,6 +4,7 @@ import {
   enterSubFlow,
   executeEachIteration,
   executeLoopIteration,
+  failFromSubFlow,
   returnFromSubFlow,
 } from "./composite-execution";
 
@@ -161,12 +162,20 @@ describe("composite execution RPC boundary", () => {
       returnNodeKey: "after",
       inputMapping: [{ parent_key: "existing", child_key: "enabled" }],
       outputMapping: [{ child_key: "answer", parent_key: "result" }],
+      failurePolicy: {
+        on_error: "fail_branch",
+        error_next_node_key: "recover",
+      },
     });
     expect(db.rpc).toHaveBeenCalledWith(
       "push_flow_call_frame",
       expect.objectContaining({
         p_child_flow_version_id: "child-version",
         p_child_vars: { enabled: true },
+        p_error_policy: {
+          on_error: "fail_branch",
+          error_next_node_key: "recover",
+        },
       }),
     );
     await returnFromSubFlow(
@@ -178,6 +187,46 @@ describe("composite execution RPC boundary", () => {
       "pop_flow_call_frame",
       expect.objectContaining({
         p_child_vars: { answer: "ok" },
+      }),
+    );
+  });
+
+  it("replays a failed child-frame CAS after the committed response is lost", async () => {
+    const failed = {
+      ...run,
+      active_flow_id: "parent",
+      active_flow_version_id: "parent-version",
+      current_node_key: "recover",
+      current_visit_id: "parent-failure-visit",
+    };
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "response lost" },
+      })
+      .mockResolvedValueOnce({ data: [failed], error: null });
+
+    const result = await failFromSubFlow(
+      { rpc },
+      {
+        ...run,
+        active_flow_id: "child",
+        active_flow_version_id: "child-version",
+        current_visit_id: "child-failure-visit",
+      },
+      "node_execution_failed",
+    );
+
+    expect(result).toEqual(failed);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "fail_flow_call_frame",
+      expect.objectContaining({
+        p_child_flow_version_id: "child-version",
+        p_expected_visit_id: "child-failure-visit",
+        p_failure_reason: "node_execution_failed",
       }),
     );
   });

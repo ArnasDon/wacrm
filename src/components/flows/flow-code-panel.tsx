@@ -13,8 +13,10 @@ import { toast } from "sonner";
 import {
   acceptCanvasCode,
   acceptEditedCode,
+  acceptEditedPreview,
   createFlowCodeEditorState,
   editFlowCode,
+  invalidateFlowCodePreview,
   keepEditedCode,
   receiveCanvasCode,
   withFlowCodeDiagnostics,
@@ -204,19 +206,35 @@ export function FlowCodePanel() {
             );
             return;
           }
-          const blocking = result.preview.issues.some(
+          const hardBlocking = result.preview.issues.some(
             (issue) =>
-              issue.severity === "fatal" || issue.severity === "blocking",
+              issue.severity === "fatal" ||
+              (issue.severity === "blocking" &&
+                issue.code !== "SECRET_REQUIRED"),
           );
-          setPendingPreview({
-            text: submitted,
-            digest: result.preview.digest,
-            secretRequirements: result.preview.secret_requirements,
-          });
-          if (blocking) {
+          if (hardBlocking) {
+            setPendingPreview(null);
             setController((current) =>
               current
                 ? withFlowCodeDiagnostics(current, result.preview.issues)
+                : current,
+            );
+            return;
+          }
+          const needsSecrets = result.preview.secret_requirements.length > 0;
+          setPendingPreview({
+            text: needsSecrets ? submitted : result.preview.normalized,
+            digest: result.preview.digest,
+            secretRequirements: result.preview.secret_requirements,
+          });
+          if (needsSecrets) {
+            setController((current) =>
+              current
+                ? acceptEditedPreview(
+                    withFlowCodeDiagnostics(current, result.preview.issues),
+                    submitted,
+                    result.preview.digest,
+                  )
                 : current,
             );
             return;
@@ -228,6 +246,7 @@ export function FlowCodePanel() {
             current
               ? acceptEditedCode(
                   withFlowCodeDiagnostics(current, result.preview.issues),
+                  submitted,
                   result.preview.normalized,
                   result.preview.digest,
                 )
@@ -267,6 +286,7 @@ export function FlowCodePanel() {
       return;
     }
     const text = await file.text();
+    setPendingPreview(null);
     setController((current) =>
       current ? editFlowCode(current, text) : current,
     );
@@ -275,14 +295,12 @@ export function FlowCodePanel() {
   const saveCode = async () => {
     setSavingCode(true);
     try {
-      const document =
-        pendingPreview?.text === controller.editedText
-          ? controller.editedText
-          : controller.canonicalText;
-      const previewDigest =
-        pendingPreview?.text === document
-          ? pendingPreview.digest
-          : controller.digest;
+      const validated = controller.validatedPreview;
+      if (!validated || validated.text !== controller.editedText) {
+        throw new Error("IMPORT_PREVIEW_REQUIRED");
+      }
+      const document = controller.editedText;
+      const previewDigest = validated.digest;
       let bindingToken: string | undefined;
       if ((pendingPreview?.secretRequirements.length ?? 0) > 0) {
         if (!secretsFormRef.current) throw new Error("SECRET_REQUIRED");
@@ -296,6 +314,10 @@ export function FlowCodePanel() {
         }
         const sidecarResponse = await fetch("/api/flows/import/secrets", {
           method: "POST",
+          headers: {
+            "x-flow-id": flow.id,
+            "x-flow-code-digest": previewDigest,
+          },
           body: formData,
         });
         const sidecarPayload = (await sidecarResponse
@@ -370,6 +392,7 @@ export function FlowCodePanel() {
             disabled={
               savingCode ||
               controller.conflict ||
+              controller.validatedPreview?.text !== controller.editedText ||
               controller.diagnostics.some(
                 (issue) =>
                   issue.severity === "fatal" ||
@@ -425,11 +448,12 @@ export function FlowCodePanel() {
         id="flow-code-editor"
         value={controller.editedText}
         spellCheck={false}
-        onChange={(event) =>
+        onChange={(event) => {
+          setPendingPreview(null);
           setController((current) =>
             current ? editFlowCode(current, event.target.value) : current,
-          )
-        }
+          );
+        }}
         className="min-h-0 flex-1 resize-none bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
 
@@ -491,6 +515,12 @@ export function FlowCodePanel() {
                     }
                     onChange={(event) => {
                       const ref = issue.path!.slice("resources.".length);
+                      setPendingPreview(null);
+                      setController((current) =>
+                        current
+                          ? invalidateFlowCodePreview(current)
+                          : current,
+                      );
                       setResourceBindings((current) => ({
                         ...current,
                         [ref]: event.target.value,

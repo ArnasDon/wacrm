@@ -1058,6 +1058,7 @@
       "useCanvas": "캔버스 사용",
       "useCode": "코드 사용",
       "editorLabel": "이식 가능한 플로우 JSON 편집기",
+      "viewAria": "플로우 편집기 보기",
       "diagnostics": "플로우 코드 진단",
       "secrets": "가져오기 비밀 값 연결",
       "secretsNotice": "값은 일회성 메모리 사이드카에만 유지되며 JSON 문서나 응답에 포함되지 않습니다.",

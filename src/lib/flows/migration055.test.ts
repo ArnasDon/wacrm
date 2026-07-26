@@ -35,6 +35,14 @@ describe("migration 055 flow code import", () => {
     expect(sql).not.toMatch(/source_document|secret_bindings|raw_document/i);
   });
 
+  it("deep-rejects portable markers, raw tokens and non-destination UUIDs", () => {
+    expect(sql).toContain("p_allowed_resource_ids");
+    expect(sql).toMatch(/\\\$\(secret\|resource\)/i);
+    expect(sql).toMatch(/regexp_matches\(\s*p_nodes::TEXT/i);
+    expect(sql).toContain("import_source_identifier_forbidden");
+    expect(sql).toMatch(/bearer\[\[:space:\]\]/i);
+  });
+
   it("preserves immutable published history while replacing only draft rows", () => {
     expect(sql).toMatch(/DELETE FROM public\.flow_nodes/i);
     expect(sql).toMatch(/INSERT INTO public\.flow_nodes/i);

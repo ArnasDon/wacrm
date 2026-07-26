@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -75,6 +77,13 @@ export async function loadFlowCodeCatalog(
           .select("id, graph")
           .in("id", versionIds);
   if (versions.error) throw new Error("FLOW_CODE_CATALOG_UNAVAILABLE");
+  const assetPrefix = `account-${accountId}`;
+  const assetBucket = admin.storage.from("flow-media");
+  const assets = await assetBucket.list(assetPrefix, {
+    limit: 500,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (assets.error) throw new Error("FLOW_CODE_CATALOG_UNAVAILABLE");
   const versionById = new Map(
     ((versions.data ?? []) as Array<{
       id: string;
@@ -119,6 +128,27 @@ export async function loadFlowCodeCatalog(
       kind: "member" as const,
       name: row.full_name || "Unnamed member",
     })),
+    ...((assets.data ?? []) as Array<{ name: string }>).flatMap((row) => {
+      if (
+        !row.name ||
+        row.name === "." ||
+        row.name === ".." ||
+        row.name.includes("/") ||
+        row.name.includes("\\")
+      ) {
+        return [];
+      }
+      const path = `${assetPrefix}/${row.name}`;
+      const { data } = assetBucket.getPublicUrl(path);
+      return [
+        {
+          id: `asset:${createHash("sha256").update(path).digest("hex")}`,
+          kind: "asset" as const,
+          name: row.name,
+          runtimeValue: data.publicUrl,
+        },
+      ];
+    }),
   ];
   return {
     resources,
@@ -204,6 +234,7 @@ export function safeImportRpcError(message: string | undefined): {
     message?.includes("import_payload_invalid") ||
     message?.includes("import_node_invalid") ||
     message?.includes("import_entry_node_missing") ||
+    message?.includes("import_source_identifier_forbidden") ||
     message?.includes("import_secret_unbound")
   ) {
     return { status: 422, code: "IMPORT_INVALID" };

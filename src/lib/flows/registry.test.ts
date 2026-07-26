@@ -68,6 +68,10 @@ describe("canonical flow node registry", () => {
       }
       expect(descriptor.configSchema).toBeDefined();
       expect(descriptor.flowConfigSchema).toBeDefined();
+      expect(descriptor.portability.configShape).toBeDefined();
+      expect(
+        Object.keys(descriptor.portability.configShape).sort(),
+      ).toEqual([...descriptor.portability.portableFields].sort());
       expect(typeof descriptor.supportsFlowRuntime).toBe("boolean");
       expect(typeof descriptor.supportsDefaultValue).toBe("boolean");
       expect(typeof descriptor.validate).toBe("function");

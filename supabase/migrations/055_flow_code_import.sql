@@ -14,7 +14,8 @@ CREATE OR REPLACE FUNCTION public.import_flow_draft(
   p_entry_node_id TEXT,
   p_fallback_policy JSONB,
   p_variable_schema JSONB,
-  p_nodes JSONB
+  p_nodes JSONB,
+  p_allowed_resource_ids JSONB
 )
 RETURNS SETOF public.flows
 LANGUAGE plpgsql
@@ -64,6 +65,8 @@ BEGIN
      OR pg_catalog.jsonb_typeof(p_fallback_policy) <> 'object'
      OR pg_catalog.jsonb_typeof(p_variable_schema) <> 'array'
      OR pg_catalog.jsonb_typeof(p_nodes) <> 'array'
+     OR pg_catalog.jsonb_typeof(p_allowed_resource_ids) <> 'array'
+     OR pg_catalog.jsonb_array_length(p_allowed_resource_ids) > 1000
      OR pg_catalog.jsonb_array_length(p_nodes) > 500 THEN
     RAISE EXCEPTION USING
       MESSAGE = 'import_payload_invalid',
@@ -95,8 +98,73 @@ BEGIN
       ERRCODE = '22023';
   END IF;
 
-  -- Secret placeholders may not cross the persistence boundary.
-  IF p_nodes::TEXT LIKE '%"$secret"%' THEN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.jsonb_array_elements(p_allowed_resource_ids) AS item(value)
+    WHERE pg_catalog.jsonb_typeof(item.value) <> 'string'
+       OR item.value #>> '{}' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  ) THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'import_payload_invalid',
+      ERRCODE = '22023';
+  END IF;
+
+  -- Portable markers may never cross the persistence boundary, regardless
+  -- of which authorable JSON field contains them.
+  IF pg_catalog.concat_ws(
+       ' ',
+       p_trigger_config::TEXT,
+       p_fallback_policy::TEXT,
+       p_variable_schema::TEXT,
+       p_nodes::TEXT
+     ) ~ '"\$(secret|resource)"[[:space:]]*:'
+  THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'import_secret_unbound',
+      ERRCODE = '22023';
+  END IF;
+
+  -- Source identifiers are forbidden in non-resource fields.
+  IF pg_catalog.concat_ws(
+       ' ',
+       p_trigger_config::TEXT,
+       p_fallback_policy::TEXT,
+       p_variable_schema::TEXT
+     ) ~* '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+  THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'import_source_identifier_forbidden',
+      ERRCODE = '22023';
+  END IF;
+
+  -- Runtime nodes may contain only destination UUIDs explicitly resolved by
+  -- the application against the current account-scoped catalog.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.regexp_matches(
+      p_nodes::TEXT,
+      '([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})',
+      'gi'
+    ) AS match(value)
+    WHERE NOT (
+      p_allowed_resource_ids
+      ? pg_catalog.lower(match.value[1])
+    )
+  ) THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'import_source_identifier_forbidden',
+      ERRCODE = '22023';
+  END IF;
+
+  -- Common raw-token forms are rejected defensively at the database boundary.
+  IF pg_catalog.concat_ws(
+       ' ',
+       p_trigger_config::TEXT,
+       p_fallback_policy::TEXT,
+       p_variable_schema::TEXT,
+       p_nodes::TEXT
+     ) ~* '(bearer[[:space:]]+[a-z0-9._~+/=-]{8,}|sk-[a-z0-9_-]{16,}|[a-f0-9]{32,})'
+  THEN
     RAISE EXCEPTION USING
       MESSAGE = 'import_secret_unbound',
       ERRCODE = '22023';
@@ -206,11 +274,11 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
 ) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.import_flow_draft(
-  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB
+  UUID, UUID, UUID, BIGINT, TEXT, TEXT, TEXT, JSONB, TEXT, JSONB, JSONB, JSONB, JSONB
 ) TO service_role;

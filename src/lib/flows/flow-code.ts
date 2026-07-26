@@ -7,6 +7,7 @@ import {
   getNodeDescriptor,
   isFlowRuntimeNodeType,
   type PortableResourceKind,
+  type PortableValueShape,
 } from "@/lib/flows/registry";
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
 import type {
@@ -19,6 +20,8 @@ export const FLOW_CODE_LIMITS = {
   maxBytes: 1024 * 1024,
   maxNodes: 500,
   maxResources: 500,
+  maxVariables: 100,
+  maxSecretRequirements: 100,
   maxDepth: 40,
   maxString: 16_384,
   maxName: 200,
@@ -73,6 +76,8 @@ export interface CatalogResource {
   kind: FlowCodeResourceKind;
   name: string;
   parentId?: string;
+  /** Runtime value persisted for resources whose catalog id must remain opaque. */
+  runtimeValue?: string;
   /** Only subflows use these destination-derived pins. */
   publishedVersionId?: string | null;
   entryNodeKey?: string | null;
@@ -135,6 +140,15 @@ const HIGH_CONFIDENCE_SECRET =
 const UUID_IDENTIFIER =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
 const SAFE_KEY = /^[a-zA-Z_][a-zA-Z0-9_.:-]{0,127}$/;
+const TRIGGER_SHAPES = {
+  keyword: {
+    keywords: [true],
+    match_type: true,
+    case_sensitive: true,
+  },
+  first_inbound_message: {},
+  manual: {},
+} as const;
 
 export class FlowCodeError extends Error {
   constructor(
@@ -170,6 +184,89 @@ function assertExactKeys(
   for (const key of Object.keys(value)) {
     if (!allow.has(key)) fail("UNKNOWN_FIELD", `${path}.${key}`);
   }
+}
+
+function isPortableMarker(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.keys(value).length === 1 &&
+    ((typeof value.$resource === "string" && SAFE_KEY.test(value.$resource)) ||
+      (typeof value.$secret === "string" && SAFE_KEY.test(value.$secret)))
+  );
+}
+
+function assertPortableShape(
+  value: unknown,
+  shape: PortableValueShape,
+  path: string,
+): void {
+  if (isPortableMarker(value)) return;
+  if (shape === "json") {
+    assertNoPortableMarkers(value, path);
+    return;
+  }
+  if (shape === "string_map") {
+    if (!isRecord(value)) fail("INVALID_CONFIG_FIELD", path);
+    for (const [key, entry] of Object.entries(value)) {
+      if (PROTOTYPE_KEYS.has(key)) fail("PROTOTYPE_KEY", `${path}.${key}`);
+      if (typeof entry !== "string" && !isPortableMarker(entry)) {
+        fail("INVALID_CONFIG_FIELD", `${path}.${key}`);
+      }
+    }
+    return;
+  }
+  if (shape === true) {
+    if (
+      value !== null &&
+      (typeof value === "object" || typeof value === "function")
+    ) {
+      fail("INVALID_CONFIG_FIELD", path);
+    }
+    return;
+  }
+  if (Array.isArray(shape)) {
+    if (!Array.isArray(value)) fail("INVALID_CONFIG_FIELD", path);
+    value.forEach((entry, index) =>
+      assertPortableShape(entry, shape[0], `${path}[${index}]`),
+    );
+    return;
+  }
+  if (!isRecord(value)) fail("INVALID_CONFIG_FIELD", path);
+  for (const key of Object.keys(value)) {
+    if (!(key in shape)) fail("UNKNOWN_CONFIG_FIELD", `${path}.${key}`);
+  }
+  for (const [key, childShape] of Object.entries(shape)) {
+    if (key in value) {
+      assertPortableShape(value[key], childShape, `${path}.${key}`);
+    }
+  }
+}
+
+function assertNoPortableMarkers(value: unknown, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      assertNoPortableMarkers(entry, `${path}[${index}]`),
+    );
+    return;
+  }
+  if (!isRecord(value)) return;
+  if ("$secret" in value || "$resource" in value) {
+    fail("PORTABLE_MARKER_FORBIDDEN", path);
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    assertNoPortableMarkers(entry, `${path}.${key}`);
+  }
+}
+
+function assertPortableNodeConfig(
+  nodeType: string,
+  config: Record<string, unknown>,
+  path: string,
+) {
+  const canonical = canonicalNodeType(nodeType);
+  const descriptor = canonical ? getNodeDescriptor(canonical) : undefined;
+  if (!descriptor) fail("UNKNOWN_NODE_TYPE", nodeType);
+  assertPortableShape(config, descriptor.portability.configShape, path);
 }
 
 function assertSafeTree(value: unknown, depth = 0, path = "$"): void {
@@ -247,6 +344,9 @@ function parseFallback(value: unknown): FlowFallbackPolicy {
   if (!["handoff", "end"].includes(String(value.on_exhaust))) {
     fail("INVALID_DOCUMENT", "fallback.on_exhaust");
   }
+  assertNoPortableMarkers(value, "fallback");
+  assertNoSecret(value, "fallback");
+  assertNoSourceIdentifier(value, "fallback");
   return structuredClone(value) as unknown as FlowFallbackPolicy;
 }
 
@@ -271,6 +371,11 @@ function parseVariable(value: unknown, index: number): FlowCodeVariable {
   }
   if (value.sensitive && "default" in value) {
     fail("SENSITIVE_DEFAULT_FORBIDDEN", `variables[${index}].default`);
+  }
+  if ("default" in value) {
+    assertNoPortableMarkers(value.default, `variables[${index}].default`);
+    assertNoSecret(value.default, `variables[${index}].default`);
+    assertNoSourceIdentifier(value.default, `variables[${index}].default`);
   }
   return structuredClone(value) as unknown as FlowCodeVariable;
 }
@@ -304,7 +409,7 @@ function parseSecretRequirement(
     ["name", "node_key", "path"],
     `secret_requirements[${index}]`,
   );
-  return {
+  const requirement = {
     name: expectString(value.name, `secret_requirements[${index}].name`, 256),
     node_key: expectString(
       value.node_key,
@@ -313,6 +418,14 @@ function parseSecretRequirement(
     ),
     path: expectString(value.path, `secret_requirements[${index}].path`, 256),
   };
+  if (
+    !SAFE_KEY.test(requirement.name) ||
+    !SAFE_KEY.test(requirement.node_key) ||
+    !SAFE_KEY.test(requirement.path)
+  ) {
+    fail("INVALID_DOCUMENT", `secret_requirements[${index}]`);
+  }
+  return requirement;
 }
 
 function parseNode(value: unknown, index: number): FlowCodeNode {
@@ -331,9 +444,18 @@ function parseNode(value: unknown, index: number): FlowCodeNode {
   ) {
     fail("INVALID_DOCUMENT", `nodes[${index}].position`);
   }
+  const nodeType = expectString(value.type, `nodes[${index}].type`, 128);
+  assertPortableNodeConfig(
+    nodeType,
+    value.config,
+    `nodes[${index}].config`,
+  );
+  assertNoSecret(value.config, `nodes[${index}].config`);
+  assertNoSourceIdentifier(value.config, `nodes[${index}].config`);
+  assertSafeUrlFields(value.config, `nodes[${index}]`);
   return {
     key: expectString(value.key, `nodes[${index}].key`, 128),
-    type: expectString(value.type, `nodes[${index}].type`, 128),
+    type: nodeType,
     config: structuredClone(value.config),
     position: { x, y },
   };
@@ -385,8 +507,20 @@ export function parseFlowCodeText(text: string): {
     fail("INVALID_TRIGGER", String(value.trigger.type));
   }
   assertRecord(value.trigger.config, "trigger.config");
+  assertPortableShape(
+    value.trigger.config,
+    TRIGGER_SHAPES[
+      value.trigger.type as keyof typeof TRIGGER_SHAPES
+    ],
+    "trigger.config",
+  );
+  assertNoSecret(value.trigger.config, "trigger.config");
+  assertNoSourceIdentifier(value.trigger.config, "trigger.config");
   if (!Array.isArray(value.variables)) {
     fail("INVALID_DOCUMENT", "variables must be an array");
+  }
+  if (value.variables.length > FLOW_CODE_LIMITS.maxVariables) {
+    fail("TOO_MANY_VARIABLES", String(value.variables.length));
   }
   if (!Array.isArray(value.resources)) {
     fail("INVALID_DOCUMENT", "resources must be an array");
@@ -396,6 +530,15 @@ export function parseFlowCodeText(text: string): {
   }
   if (!Array.isArray(value.secret_requirements)) {
     fail("INVALID_DOCUMENT", "secret_requirements must be an array");
+  }
+  if (
+    value.secret_requirements.length >
+    FLOW_CODE_LIMITS.maxSecretRequirements
+  ) {
+    fail(
+      "TOO_MANY_SECRET_REQUIREMENTS",
+      String(value.secret_requirements.length),
+    );
   }
   if (!Array.isArray(value.nodes)) fail("INVALID_DOCUMENT", "nodes must be an array");
   if (value.nodes.length > FLOW_CODE_LIMITS.maxNodes) {
@@ -495,12 +638,23 @@ export function parseFlowCodeInput(text: string): {
     steps: parsed.steps,
   });
   const trigger = graph.nodes[0];
-  const migratedNodes = graph.nodes.slice(1).map((node, index) => ({
-    key: node.node_key,
-    type: node.node_type,
-    config: migrateLegacyNodeConfig(node.node_type, node.config),
-    position: { x: 0, y: index * 120 },
-  }));
+  const migratedResources: FlowCodeResource[] = [];
+  const migratedVariables: FlowCodeVariable[] = [];
+  const migratedNodes = graph.nodes.slice(1).map((node, index) => {
+    const migrated = migrateLegacyNode(
+      node.node_type,
+      node.config,
+      index,
+      migratedResources,
+      migratedVariables,
+    );
+    return {
+      key: node.node_key,
+      type: migrated.type,
+      config: migrated.config,
+      position: { x: 0, y: index * 120 },
+    };
+  });
   const document: FlowCodeDocument = {
     kind: "wacrm.flow",
     schema_version: 1,
@@ -521,8 +675,8 @@ export function parseFlowCodeInput(text: string): {
       on_timeout_hours: 24,
       on_exhaust: "handoff",
     },
-    variables: [],
-    resources: [],
+    variables: migratedVariables,
+    resources: migratedResources,
     secret_requirements: [],
     entry:
       typeof trigger?.config.next_node_key === "string"
@@ -543,14 +697,17 @@ export function parseFlowCodeInput(text: string): {
   };
 }
 
-function migrateLegacyNodeConfig(
+function migrateLegacyNode(
   nodeType: string,
   input: Record<string, unknown>,
-): Record<string, unknown> {
+  index: number,
+  resources: FlowCodeResource[],
+  variables: FlowCodeVariable[],
+): { type: string; config: Record<string, unknown> } {
   if (nodeType === "send_buttons" && input.kind === "buttons") {
     const next =
       typeof input.next_node_key === "string" ? input.next_node_key : "";
-    return {
+    return { type: "send_buttons", config: {
       text: input.body,
       ...(input.header ? { header_text: input.header } : {}),
       ...(input.footer ? { footer_text: input.footer } : {}),
@@ -565,12 +722,12 @@ function migrateLegacyNodeConfig(
               : button,
           )
         : [],
-    };
+    } };
   }
   if (nodeType === "send_list" && input.kind === "list") {
     const next =
       typeof input.next_node_key === "string" ? input.next_node_key : "";
-    return {
+    return { type: "send_list", config: {
       text: input.body,
       button_label: input.button_label,
       ...(input.header ? { header_text: input.header } : {}),
@@ -596,9 +753,67 @@ function migrateLegacyNodeConfig(
               : section,
           )
         : [],
+    } };
+  }
+  if (nodeType === "add_tag" || nodeType === "remove_tag") {
+    const ref = `legacy_manual_tag_${index}`;
+    resources.push({
+      ref,
+      kind: "tag",
+      name: "Select destination tag",
+    });
+    return {
+      type: "set_tag",
+      config: {
+        mode: nodeType === "add_tag" ? "add" : "remove",
+        tag_id: { $resource: ref },
+        next_node_key: input.next_node_key,
+      },
     };
   }
-  return structuredClone(input);
+  if (nodeType === "condition") {
+    if (
+      input.subject !== "contact_field" ||
+      typeof input.operand !== "string" ||
+      !["name", "email", "phone", "company"].includes(input.operand)
+    ) {
+      fail("UNSUPPORTED_LEGACY_STEP", `${nodeType}:${String(input.subject)}`);
+    }
+    return {
+      type: "condition",
+      config: {
+        subject: "contact_field",
+        subject_key: input.operand,
+        operator: "equals",
+        value: input.value,
+        true_next: input.true_next,
+        false_next: input.false_next,
+      },
+    };
+  }
+  if (nodeType === "send_webhook") {
+    const responseVar = `legacy_webhook_response_${index}`;
+    variables.push({
+      key: responseVar,
+      type: "json",
+      sensitive: true,
+    });
+    return {
+      type: "http_request",
+      config: {
+        method: input.body_template ? "POST" : "GET",
+        url: input.url,
+        ...(input.headers ? { headers: input.headers } : {}),
+        ...(input.body_template ? { body: input.body_template } : {}),
+        response_var: responseVar,
+        next_node_key: input.next_node_key,
+      },
+    };
+  }
+  if (isFlowRuntimeNodeType(nodeType)) {
+    return { type: nodeType, config: structuredClone(input) };
+  }
+  fail("UNSUPPORTED_LEGACY_STEP", nodeType);
 }
 
 function assertUnique<T extends object>(
@@ -626,14 +841,24 @@ function sortRecord(value: unknown): unknown {
 export function canonicalFlowCodeText(document: FlowCodeDocument): string {
   const normalized: FlowCodeDocument = {
     ...structuredClone(document),
-    variables: [...document.variables].sort((a, b) => a.key.localeCompare(b.key)),
-    resources: [...document.resources].sort((a, b) => a.ref.localeCompare(b.ref)),
-    secret_requirements: [...document.secret_requirements].sort((a, b) =>
-      a.name.localeCompare(b.name),
+    variables: [...document.variables].sort((a, b) =>
+      compareCodePoints(a.key, b.key),
     ),
-    nodes: [...document.nodes].sort((a, b) => a.key.localeCompare(b.key)),
+    resources: [...document.resources].sort((a, b) =>
+      compareCodePoints(a.ref, b.ref),
+    ),
+    secret_requirements: [...document.secret_requirements].sort((a, b) =>
+      compareCodePoints(a.name, b.name),
+    ),
+    nodes: [...document.nodes].sort((a, b) =>
+      compareCodePoints(a.key, b.key),
+    ),
   };
   return `${JSON.stringify(sortRecord(normalized), null, 2)}\n`;
+}
+
+function compareCodePoints(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function digestFlowCode(canonicalText: string): string {
@@ -703,18 +928,20 @@ export function exportFlowCode(input: {
       fail("UNKNOWN_NODE_TYPE", node.node_type);
     }
     const portable = descriptor.portability;
+    assertPortableNodeConfig(
+      node.node_type,
+      node.config,
+      `nodes.${node.node_key}.config`,
+    );
     const allowed = new Set(portable.portableFields);
     const config: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node.config)) {
       if (portable.derivedFields?.includes(key)) continue;
       if (!allowed.has(key)) {
-        warnings.push({
-          code: "UNKNOWN_CONFIG_FIELD_DROPPED",
-          severity: "warning",
-          path: `nodes.${node.node_key}.config.${key}`,
-          message: `Config field "${key}" is not portable and was discarded.`,
-        });
-        continue;
+        fail(
+          "UNKNOWN_CONFIG_FIELD",
+          `nodes.${node.node_key}.config.${key}`,
+        );
       }
       config[key] = structuredClone(value);
     }
@@ -758,33 +985,9 @@ export function exportFlowCode(input: {
       }
       const found = catalog.find(
         (candidate) =>
-          candidate.id === sourceId && candidate.kind === resourceRef.kind,
+          (candidate.id === sourceId || candidate.runtimeValue === sourceId) &&
+          candidate.kind === resourceRef.kind,
       );
-      if (!found && resourceRef.kind === "asset") {
-        let assetName = "asset";
-        try {
-          const url = new URL(sourceId);
-          if (url.username || url.password) {
-            fail(
-              "URL_USERINFO_FORBIDDEN",
-              `${node.node_key}.${resourceRef.field}`,
-            );
-          }
-          assetName =
-            decodeURIComponent(url.pathname.split("/").filter(Boolean).at(-1) ?? "") ||
-            "asset";
-        } catch {
-          fail("INVALID_URL", `${node.node_key}.${resourceRef.field}`);
-        }
-        const ref = `asset:${slug(assetName)}`;
-        resources.set(ref, {
-          ref,
-          kind: "asset",
-          name: assetName,
-        });
-        config[resourceRef.field] = { $resource: ref };
-        continue;
-      }
       if (!found) {
         fail(
           "SOURCE_RESOURCE_NOT_FOUND",
@@ -854,6 +1057,14 @@ export function exportFlowCode(input: {
     entry: input.flow.entry_node_id,
     nodes,
   };
+  assertPortableShape(
+    document.trigger.config,
+    TRIGGER_SHAPES[document.trigger.type],
+    "trigger.config",
+  );
+  assertNoPortableMarkers(document.trigger.config, "trigger.config");
+  assertNoSecret(document.trigger.config, "trigger.config");
+  assertNoSourceIdentifier(document.trigger.config, "trigger.config");
   // Reparse the canonical document to enforce the same limits as import.
   return {
     document: parseFlowCodeText(canonicalFlowCodeText(document)).document,
@@ -863,7 +1074,7 @@ export function exportFlowCode(input: {
 
 function assertSafeUrlFields(config: Record<string, unknown>, nodeKey: string) {
   for (const key of ["url", "media_url"]) {
-    if (typeof config[key] !== "string") continue;
+    if (typeof config[key] !== "string" || !config[key]) continue;
     let url: URL;
     try {
       url = new URL(config[key] as string);
@@ -946,6 +1157,7 @@ function resolveResource(
   requested: FlowCodeResource,
   allRequested: readonly FlowCodeResource[],
   catalog: readonly CatalogResource[],
+  resolved: ReadonlyMap<string, CatalogResource>,
   manualId?: string,
 ): { resource?: CatalogResource; issue?: FlowCodeIssue } {
   const parentRequest = requested.parent_ref
@@ -961,18 +1173,30 @@ function resolveResource(
       },
     };
   }
+  const resolvedParent = requested.parent_ref
+    ? resolved.get(requested.parent_ref)
+    : undefined;
+  if (requested.parent_ref && !resolvedParent) {
+    return {
+      issue: {
+        code: "RESOURCE_PARENT_UNRESOLVED",
+        severity: "blocking",
+        path: `resources.${requested.ref}.parent_ref`,
+        message: `Parent resource "${requested.parent_ref}" is unresolved.`,
+      },
+    };
+  }
+  const requiresManualBinding = requested.ref.startsWith("legacy_manual_");
   const matches = catalog.filter((candidate) => {
     if (candidate.kind !== requested.kind) return false;
-    if (normalizedName(candidate.name) !== normalizedName(requested.name)) {
+    if (
+      !requiresManualBinding &&
+      normalizedName(candidate.name) !== normalizedName(requested.name)
+    ) {
       return false;
     }
-    if (!parentRequest) return true;
-    const parent = catalog.find((entry) => entry.id === candidate.parentId);
-    return (
-      !!parent &&
-      parent.kind === parentRequest.kind &&
-      normalizedName(parent.name) === normalizedName(parentRequest.name)
-    );
+    if (!resolvedParent) return true;
+    return candidate.parentId === resolvedParent.id;
   });
   if (manualId) {
     const selected = matches.find((candidate) => candidate.id === manualId);
@@ -990,7 +1214,9 @@ function resolveResource(
       },
     };
   }
-  if (matches.length === 1) return { resource: matches[0] };
+  if (!requiresManualBinding && matches.length === 1) {
+    return { resource: matches[0] };
+  }
   return {
     issue: {
       code:
@@ -1036,7 +1262,7 @@ function hydrateMarkers(
       });
       return "";
     }
-    return resource.id;
+    return resource.runtimeValue ?? resource.id;
   }
   if (Object.keys(value).length === 1 && typeof value.$secret === "string") {
     const secret = secrets[value.$secret];
@@ -1071,11 +1297,16 @@ export function compileFlowCode(
   const issues: FlowCodeIssue[] = [];
   const resolved = new Map<string, CatalogResource>();
   const available = toCatalog(catalog);
-  for (const resource of document.resources) {
+  const resourcesInDependencyOrder = [...document.resources].sort(
+    (left, right) =>
+      Number(Boolean(left.parent_ref)) - Number(Boolean(right.parent_ref)),
+  );
+  for (const resource of resourcesInDependencyOrder) {
     const result = resolveResource(
       resource,
       document.resources,
       available,
+      resolved,
       options.resourceBindings?.[resource.ref],
     );
     if (result.resource) resolved.set(resource.ref, result.resource);
@@ -1102,12 +1333,28 @@ export function compileFlowCode(
       });
     }
     const allowed = new Set(descriptor?.portability.portableFields ?? []);
+    try {
+      assertPortableNodeConfig(
+        node.type,
+        node.config,
+        `nodes.${node.key}.config`,
+      );
+    } catch (error) {
+      issues.push({
+        code:
+          error instanceof FlowCodeError ? error.code : "INVALID_NODE_CONFIG",
+        severity: "fatal",
+        path: `nodes.${node.key}.config`,
+        message:
+          error instanceof Error ? error.message : "Node config is invalid.",
+      });
+    }
     const config: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node.config)) {
       if (!allowed.has(key)) {
         issues.push({
-          code: "UNKNOWN_CONFIG_FIELD_DROPPED",
-          severity: "warning",
+          code: "UNKNOWN_CONFIG_FIELD",
+          severity: "fatal",
           path: `nodes.${node.key}.config.${key}`,
           message: `Config field "${key}" was discarded.`,
         });

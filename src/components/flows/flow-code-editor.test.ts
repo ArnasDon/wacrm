@@ -56,15 +56,47 @@ describe("flow code editor controller", () => {
     expect(invalid.editedText).toBe(codeNext);
     expect(invalid.canonicalText).toBe(initial);
 
-    const accepted = acceptEditedCode(invalid, codeNext, "digest-code");
+    const accepted = acceptEditedCode(
+      invalid,
+      codeNext,
+      codeNext,
+      "digest-code",
+    );
     expect(accepted.applyGeneration).toBe(1);
     expect(accepted.canonicalText).toBe(codeNext);
     expect(accepted.editedText).toBe(codeNext);
-    expect(accepted.diagnostics).toEqual([]);
+    expect(accepted.diagnostics).toEqual([
+      { code: "INVALID_JSON", severity: "fatal" },
+    ]);
 
     expect(
-      acceptEditedCode(accepted, codeNext, "digest-code").applyGeneration,
+      acceptEditedCode(
+        accepted,
+        codeNext,
+        codeNext,
+        "digest-code",
+      ).applyGeneration,
     ).toBe(1);
+  });
+
+  it("never validates a newer edit with a stale preview response", () => {
+    const firstEdit = editFlowCode(
+      createFlowCodeEditorState(initial, "digest-1"),
+      codeNext,
+    );
+    expect(firstEdit.validatedPreview).toBeNull();
+    const newerText = '{\n  "name": "Newer"\n}\n';
+    const newerEdit = editFlowCode(firstEdit, newerText);
+
+    const stale = acceptEditedCode(
+      newerEdit,
+      codeNext,
+      codeNext,
+      "digest-code",
+    );
+    expect(stale.editedText).toBe(newerText);
+    expect(stale.validatedPreview).toBeNull();
+    expect(stale.applyGeneration).toBe(0);
   });
 
   it("surfaces explicit use-code/use-canvas conflict resolution", () => {

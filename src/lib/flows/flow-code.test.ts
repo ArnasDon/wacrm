@@ -78,6 +78,55 @@ describe("flow code v1", () => {
     ).toThrowError(/PROTOTYPE_KEY/);
   });
 
+  it("rejects unknown nested node config fields and malformed map values", () => {
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          nodes: [
+            {
+              key: "menu",
+              type: "send_buttons",
+              config: {
+                text: "Choose",
+                buttons: [
+                  {
+                    reply_id: "yes",
+                    title: "Yes",
+                    next_node_key: "end",
+                    source_id: "must-not-pass",
+                  },
+                ],
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/UNKNOWN_CONFIG_FIELD/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          nodes: [
+            {
+              key: "request",
+              type: "http_request",
+              config: {
+                method: "GET",
+                url: "https://example.test",
+                headers: { Authorization: { value: "secret" } },
+                response_var: "result",
+                next_node_key: "end",
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/INVALID_CONFIG_FIELD/);
+  });
+
   it("enforces input bytes, depth and collection limits", () => {
     expect(() =>
       parseFlowCodeText(" ".repeat(FLOW_CODE_LIMITS.maxBytes + 1)),
@@ -112,6 +161,49 @@ describe("flow code v1", () => {
         }),
       ),
     ).toThrowError(/TOO_MANY_NODES/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          variables: Array.from({ length: 101 }, (_, index) => ({
+            key: `v_${index}`,
+            type: "string",
+            sensitive: true,
+          })),
+        }),
+      ),
+    ).toThrowError(/TOO_MANY_VARIABLES/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          secret_requirements: Array.from({ length: 101 }, (_, index) => ({
+            name: `secret_${index}`,
+            node_key: "node",
+            path: `config.headers.h_${index}`,
+          })),
+        }),
+      ),
+    ).toThrowError(/TOO_MANY_SECRET_REQUIREMENTS/);
+  });
+
+  it("sorts canonical arrays by code points independent of host locale", () => {
+    const text = canonicalFlowCodeText({
+      ...draft,
+      variables: [
+        { key: "éclair", type: "string", sensitive: true },
+        { key: "zebra", type: "string", sensitive: true },
+        { key: "Alpha", type: "string", sensitive: true },
+      ],
+    });
+    const parsed = JSON.parse(text) as {
+      variables: Array<{ key: string }>;
+    };
+    expect(parsed.variables.map(({ key }) => key)).toEqual([
+      "Alpha",
+      "zebra",
+      "éclair",
+    ]);
   });
 
   it("requires every registered node to declare an allowlisted portability contract", () => {
@@ -125,7 +217,7 @@ describe("flow code v1", () => {
   });
 
   it("redacts source identifiers, pins, secrets and unknown config fields", () => {
-    const result = exportFlowCode({
+    const input = {
       flow: {
         id: "flow-uuid",
         account_id: "account-uuid",
@@ -176,7 +268,13 @@ describe("flow code v1", () => {
         },
       ],
       resourceCatalog: emptyCatalog,
-    });
+    } satisfies Parameters<typeof exportFlowCode>[0];
+    expect(() => exportFlowCode(input)).toThrowError(/UNKNOWN_CONFIG_FIELD/);
+    const requestConfig = input.nodes[0].config;
+    delete requestConfig.pinned_version_id;
+    delete requestConfig.api_key;
+    delete requestConfig.unexpected;
+    const result = exportFlowCode(input);
     const text = canonicalFlowCodeText(result.document);
 
     expect(
@@ -190,9 +288,7 @@ describe("flow code v1", () => {
     expect(text).not.toMatch(
       /flow-uuid|account-uuid|user-uuid|node-uuid|version-uuid|super-secret|abcdef|must-not-export|unexpected/,
     );
-    expect(result.warnings.map((warning) => warning.code)).toContain(
-      "UNKNOWN_CONFIG_FIELD_DROPPED",
-    );
+    expect(result.warnings).toEqual([]);
   });
 
   it("blocks UUID-shaped identifiers, URL userinfo and malformed marker objects", () => {
@@ -256,6 +352,91 @@ describe("flow code v1", () => {
         }),
       ),
     ).toThrowError(/INVALID_PORTABLE_MARKER/);
+  });
+
+  it("rejects unsafe trigger, variable-default and raw node values", () => {
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          trigger: {
+            type: "keyword",
+            config: {
+              keywords: ["hello"],
+              match_type: "contains",
+              case_sensitive: false,
+              unknown: true,
+            },
+          },
+        }),
+      ),
+    ).toThrowError(/UNKNOWN_CONFIG_FIELD/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          trigger: {
+            type: "keyword",
+            config: {
+              keywords: ["sk-abcdefghijklmnopqrstuvwxyz"],
+              match_type: "contains",
+              case_sensitive: false,
+            },
+          },
+        }),
+      ),
+    ).toThrowError(/SUSPECTED_SECRET/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          variables: [
+            {
+              key: "public",
+              type: "string",
+              sensitive: false,
+              default: "11111111-1111-4111-8111-111111111111",
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/SOURCE_IDENTIFIER_FORBIDDEN/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          variables: [
+            {
+              key: "private",
+              type: "string",
+              sensitive: true,
+              default: "hidden",
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/SENSITIVE_DEFAULT_FORBIDDEN/);
+    expect(() =>
+      parseFlowCodeText(
+        JSON.stringify({
+          ...draft,
+          nodes: [
+            {
+              key: "request",
+              type: "http_request",
+              config: {
+                method: "GET",
+                url: "https://example.test",
+                headers: { Authorization: "sk-abcdefghijklmnopqrstuvwxyz" },
+                response_var: "response",
+                next_node_key: "end",
+              },
+              position: { x: 0, y: 0 },
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/SUSPECTED_SECRET/);
   });
 
   it("round-trips registered runtime nodes through strict compile", () => {
@@ -365,6 +546,107 @@ describe("flow code v1", () => {
       ),
     ).toEqual([]);
     expect(manuallyResolved.resolved["pipeline:sales"]).toBe("pipe-1");
+
+    const homonymousCatalog: FlowCodeCatalog = {
+      flows: [],
+      resources: [
+        { id: "pipe-1", kind: "pipeline", name: "Sales" },
+        { id: "pipe-2", kind: "pipeline", name: "Sales" },
+        { id: "stage-1", kind: "stage", name: "Won", parentId: "pipe-1" },
+        { id: "stage-2", kind: "stage", name: "Won", parentId: "pipe-2" },
+      ],
+    };
+    const wrongChild = compileFlowCode(document, homonymousCatalog, {
+      resourceBindings: {
+        "pipeline:sales": "pipe-1",
+        "stage:won": "stage-2",
+      },
+    });
+    expect(wrongChild.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "RESOURCE_BINDING_INVALID" }),
+      ]),
+    );
+    const correctChild = compileFlowCode(
+      { ...document, resources: [...document.resources].reverse() },
+      homonymousCatalog,
+      {
+        resourceBindings: {
+          "pipeline:sales": "pipe-1",
+          "stage:won": "stage-1",
+        },
+      },
+    );
+    expect(
+      correctChild.issues.filter((issue) => issue.severity === "blocking"),
+    ).toEqual([]);
+    expect(correctChild.graph.nodes[0].config.stage_id).toBe("stage-1");
+  });
+
+  it("round-trips account-scoped assets without leaking their URL", () => {
+    const sourceUrl =
+      "https://storage.example.test/flow-media/account-source/private.png";
+    const destinationUrl =
+      "https://storage.example.test/flow-media/account-destination/private.png";
+    const exported = exportFlowCode({
+      flow: {
+        name: "Media",
+        description: null,
+        trigger_type: "manual",
+        trigger_config: {},
+        entry_node_id: "media",
+        fallback_policy: draft.fallback,
+        variable_schema: [],
+      },
+      nodes: [
+        {
+          node_key: "media",
+          node_type: "send_media",
+          position_x: 0,
+          position_y: 0,
+          config: {
+            media_type: "image",
+            media_url: sourceUrl,
+            caption: "",
+            filename: "private.png",
+            next_node_key: "",
+          },
+        },
+      ],
+      resourceCatalog: {
+        flows: [],
+        resources: [
+          {
+            id: "asset:source-hash",
+            kind: "asset",
+            name: "private.png",
+            runtimeValue: sourceUrl,
+          },
+        ],
+      },
+    });
+    const canonical = canonicalFlowCodeText(exported.document);
+    expect(canonical).not.toContain(sourceUrl);
+    expect(canonical).not.toContain("account-source");
+
+    const compiled = compileFlowCode(exported.document, {
+      flows: [],
+      resources: [
+        {
+          id: "asset:destination-hash",
+          kind: "asset",
+          name: "private.png",
+          runtimeValue: destinationUrl,
+        },
+      ],
+    });
+    expect(
+      compiled.issues.filter((issue) => issue.severity === "blocking"),
+    ).toEqual([]);
+    expect(compiled.graph.nodes[0].config.media_url).toBe(destinationUrl);
+    expect(compiled.resolved["asset:private_png"]).toBe(
+      "asset:destination-hash",
+    );
   });
 
   it("repins subflows to the destination published version and rejects self references", () => {
@@ -481,5 +763,99 @@ describe("flow code v1", () => {
         }),
       ),
     ).toThrowError(/UNSUPPORTED_LEGACY_TRIGGER/);
+  });
+
+  it.each([
+    ["send_message", { text: "Hi" }, "send_message"],
+    [
+      "send_buttons",
+      {
+        kind: "buttons",
+        body: "Choose",
+        buttons: [{ id: "yes", title: "Yes" }],
+      },
+      "send_buttons",
+    ],
+    [
+      "send_list",
+      {
+        kind: "list",
+        body: "Choose",
+        button_label: "Open",
+        sections: [{ rows: [{ id: "one", title: "One" }] }],
+      },
+      "send_list",
+    ],
+    ["add_tag", { tag_id: "legacy-tag" }, "set_tag"],
+    ["remove_tag", { tag_id: "legacy-tag" }, "set_tag"],
+    ["wait", { amount: 1, unit: "hours" }, "wait"],
+    [
+      "condition",
+      { subject: "contact_field", operand: "email", value: "a@example.test" },
+      "condition",
+    ],
+    [
+      "send_webhook",
+      { url: "https://example.test/hook" },
+      "http_request",
+    ],
+  ])(
+    "migrates legacy %s to the safe runtime node %s",
+    (stepType, stepConfig, expectedType) => {
+      const result = parseFlowCodeInput(
+        JSON.stringify({
+          name: "Legacy matrix",
+          description: "",
+          trigger_type: "first_inbound_message",
+          trigger_config: {},
+          steps: [
+            {
+              step_type: stepType,
+              step_config: stepConfig,
+              branch: null,
+              parent_index: null,
+            },
+          ],
+        }),
+      );
+      expect(result.document.nodes.some((node) => node.type === expectedType)).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each([
+    ["send_template", { template_name: "welcome" }],
+    ["assign_conversation", { mode: "round_robin" }],
+    ["update_contact_field", { field: "name", value: "New" }],
+    [
+      "create_deal",
+      {
+        pipeline_id: "pipeline",
+        stage_id: "stage",
+        title: "Deal",
+      },
+    ],
+    ["move_deal_stage", { pipeline_id: "pipeline", stage_id: "stage" }],
+    ["close_conversation", {}],
+  ])("rejects legacy %s explicitly", (stepType, stepConfig) => {
+    expect(() =>
+      parseFlowCodeInput(
+        JSON.stringify({
+          name: "Legacy unsupported",
+          description: "",
+          trigger_type: "first_inbound_message",
+          trigger_config: {},
+          steps: [
+            {
+              step_type: stepType,
+              step_config: stepConfig,
+              branch: null,
+              parent_index: null,
+            },
+          ],
+        }),
+      ),
+    ).toThrowError(/UNSUPPORTED_LEGACY_STEP/);
   });
 });

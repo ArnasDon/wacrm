@@ -38,6 +38,8 @@ export async function commitFlowCode(args: {
           token: args.bindingToken,
           actorId: args.actorId,
           accountId: args.accountId,
+          flowId: args.flowId,
+          digest: args.previewDigest,
         })
       : {};
     if (args.bindingToken && !secretBindings) {
@@ -65,6 +67,26 @@ export async function commitFlowCode(args: {
         { status: 422 },
       );
     }
+    const resolvedIds = new Set(Object.values(preview.resolved));
+    const allowedPersistenceIds = new Set<string>();
+    const collectUuid = (value: string | null | undefined) => {
+      for (const match of value?.matchAll(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi,
+      ) ?? []) {
+        allowedPersistenceIds.add(match[0].toLowerCase());
+      }
+    };
+    for (const resource of catalog.resources) {
+      if (!resolvedIds.has(resource.id)) continue;
+      collectUuid(resource.id);
+      collectUuid(resource.runtimeValue);
+      collectUuid(resource.publishedVersionId);
+    }
+    for (const flow of catalog.flows) {
+      if (!resolvedIds.has(flow.id)) continue;
+      collectUuid(flow.id);
+      collectUuid(flow.publishedVersionId);
+    }
     const { data, error } = await args.admin.rpc("import_flow_draft", {
       p_actor_id: args.actorId,
       p_account_id: args.accountId,
@@ -78,6 +100,7 @@ export async function commitFlowCode(args: {
       p_fallback_policy: graph.fallback_policy,
       p_variable_schema: graph.variable_schema,
       p_nodes: graph.nodes,
+      p_allowed_resource_ids: [...allowedPersistenceIds],
     });
     if (error) {
       const mapped = safeImportRpcError(error.message);

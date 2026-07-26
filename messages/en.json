@@ -1058,6 +1058,7 @@
       "useCanvas": "Use canvas",
       "useCode": "Use code",
       "editorLabel": "Portable flow JSON editor",
+      "viewAria": "Flow editor view",
       "diagnostics": "Flow code diagnostics",
       "secrets": "Import secret bindings",
       "secretsNotice": "Values stay in an in-memory, one-time sidecar and are never added to the JSON document or response.",

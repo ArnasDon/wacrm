@@ -192,6 +192,19 @@ export interface NodePortabilityDescriptor {
   secretMaps?: readonly string[];
   /** Runtime pins or values recomputed by the destination compiler. */
   derivedFields?: readonly string[];
+  /** Recursive allowlist; `json` is explicit arbitrary user data, never config. */
+  configShape: PortableObjectShape;
+}
+
+export type PortableValueShape =
+  | true
+  | "json"
+  | "string_map"
+  | PortableObjectShape
+  | readonly [PortableValueShape];
+
+export interface PortableObjectShape {
+  readonly [field: string]: PortableValueShape;
 }
 
 export interface OutgoingEdgeTarget {
@@ -264,11 +277,35 @@ const POLICY_FIELDS = [
 
 function portable(
   fields: readonly string[],
-  options: Omit<NodePortabilityDescriptor, "portableFields"> = {},
+  options: Omit<
+    NodePortabilityDescriptor,
+    "portableFields" | "configShape"
+  > & { configShape?: PortableObjectShape } = {},
 ): NodePortabilityDescriptor {
+  const { configShape = {}, ...rest } = options;
+  const policyShape: PortableObjectShape = {
+    retry: {
+      max_attempts: true,
+      interval_ms: true,
+      backoff: true,
+    },
+    on_error: true,
+    error_next_node_key: true,
+    timeout_ms: true,
+    default_value: {
+      key: true,
+      type: true,
+      value: "json",
+    },
+  };
   return {
     portableFields: [...new Set([...fields, ...POLICY_FIELDS])],
-    ...options,
+    configShape: {
+      ...Object.fromEntries(fields.map((field) => [field, true])),
+      ...policyShape,
+      ...configShape,
+    },
+    ...rest,
   };
 }
 
@@ -290,7 +327,13 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
     case "send_message":
       return portable(["text", "next_node_key"]);
     case "send_buttons":
-      return portable(["text", "header_text", "footer_text", "buttons"]);
+      return portable(["text", "header_text", "footer_text", "buttons"], {
+        configShape: {
+          buttons: [
+            { reply_id: true, title: true, next_node_key: true },
+          ],
+        },
+      });
     case "send_list":
       return portable([
         "text",
@@ -298,7 +341,23 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
         "header_text",
         "footer_text",
         "sections",
-      ]);
+      ], {
+        configShape: {
+          sections: [
+            {
+              title: true,
+              rows: [
+                {
+                  reply_id: true,
+                  title: true,
+                  description: true,
+                  next_node_key: true,
+                },
+              ],
+            },
+          ],
+        },
+      });
     case "send_media":
       return portable(
         ["media_type", "media_url", "caption", "filename", "next_node_key"],
@@ -346,13 +405,14 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
         "language",
         "variables",
         "next_node_key",
-      ]);
+      ], { configShape: { variables: "string_map" } });
     case "assign_conversation":
       return portable(["mode", "agent_id", "next_node_key"], {
         resourceRefs: [{ field: "agent_id", kind: "member" }],
       });
     case "update_contact_field":
       return portable(["field", "value", "next_node_key"], {
+        configShape: { value: "json" },
         resourceRefs: [{ field: "field", kind: "custom_field" }],
       });
     case "create_deal":
@@ -377,12 +437,36 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
         "approved_next",
         "rejected_next",
       ], {
+        configShape: {
+          retry: {
+            max_attempts: true,
+            interval_ms: true,
+            backoff: true,
+          },
+          default_value: { key: true, type: true, value: "json" },
+        },
         resourceRefs: [{ field: "assignee_user_id", kind: "member" }],
       });
     case "variable_set":
-      return portable(["assignments", "next_node_key"]);
+      return portable(["assignments", "next_node_key"], {
+        configShape: {
+          assignments: [{ key: true, type: true, value: "json" }],
+        },
+      });
     case "switch":
-      return portable(["subject", "subject_key", "cases", "default_next"]);
+      return portable(["subject", "subject_key", "cases", "default_next"], {
+        configShape: {
+          cases: [
+            {
+              id: true,
+              label: true,
+              operator: true,
+              value: "json",
+              next: true,
+            },
+          ],
+        },
+      });
     case "http_request":
       return portable(
         [
@@ -394,7 +478,13 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
           "response_var",
           "next_node_key",
         ],
-        { secretMaps: ["headers", "query"] },
+        {
+          secretMaps: ["headers", "query"],
+          configShape: {
+            headers: "string_map",
+            query: "string_map",
+          },
+        },
       );
     case "each":
       return portable([
@@ -414,7 +504,7 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
         "max_iterations",
         "body_next",
         "done_next",
-      ]);
+      ], { configShape: { value: "json" } });
     case "sub_flow":
       return portable(
         [
@@ -425,6 +515,10 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
           "next_node_key",
         ],
         {
+          configShape: {
+            input_mapping: [{ parent_key: true, child_key: true }],
+            output_mapping: [{ parent_key: true, child_key: true }],
+          },
           resourceRefs: [{ field: "flow_id", kind: "subflow" }],
           derivedFields: ["flow_version_id", "child_entry_node_key"],
         },
@@ -437,11 +531,14 @@ export function portabilityForNode(id: string): NodePortabilityDescriptor {
         "output_variable",
         "max_tokens",
         "next_node_key",
-      ]);
+      ], { configShape: { input_variables: [true] } });
     case "send_webhook":
       return portable(
         ["url", "headers", "body_template", "next_node_key"],
-        { secretMaps: ["headers"] },
+        {
+          secretMaps: ["headers"],
+          configShape: { headers: "string_map" },
+        },
       );
     case "trigger_keyword_match":
       return portable([

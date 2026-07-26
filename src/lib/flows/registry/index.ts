@@ -201,4 +201,5 @@ export type {
   NodeValidationIssue,
   OutgoingEdgeTarget,
   PortableResourceKind,
+  PortableValueShape,
 } from "./types";

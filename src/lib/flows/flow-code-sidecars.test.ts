@@ -13,6 +13,8 @@ describe("flow code secret sidecars", () => {
     const token = createSecretSidecar({
       actorId: "actor-1",
       accountId: "account-1",
+      flowId: "flow-1",
+      digest: "a".repeat(64),
       bindings: { "request.headers.authorization": "Bearer private" },
       now: 1_000,
     });
@@ -22,6 +24,8 @@ describe("flow code secret sidecars", () => {
         token,
         actorId: "actor-2",
         accountId: "account-1",
+        flowId: "flow-1",
+        digest: "a".repeat(64),
         now: 2_000,
       }),
     ).toBeNull();
@@ -30,6 +34,18 @@ describe("flow code secret sidecars", () => {
         token,
         actorId: "actor-1",
         accountId: "account-1",
+        flowId: "flow-1",
+        digest: "b".repeat(64),
+        now: 2_000,
+      }),
+    ).toBeNull();
+    expect(
+      consumeSecretSidecar({
+        token,
+        actorId: "actor-1",
+        accountId: "account-1",
+        flowId: "flow-1",
+        digest: "a".repeat(64),
         now: 2_000,
       }),
     ).toEqual({
@@ -40,6 +56,8 @@ describe("flow code secret sidecars", () => {
         token,
         actorId: "actor-1",
         accountId: "account-1",
+        flowId: "flow-1",
+        digest: "a".repeat(64),
         now: 2_000,
       }),
     ).toBeNull();
@@ -47,6 +65,7 @@ describe("flow code secret sidecars", () => {
     const expired = createSecretSidecar({
       actorId: "actor-1",
       accountId: "account-1",
+      digest: "c".repeat(64),
       bindings: { token: "private" },
       now: 1_000,
     });
@@ -55,6 +74,7 @@ describe("flow code secret sidecars", () => {
         token: expired,
         actorId: "actor-1",
         accountId: "account-1",
+        digest: "c".repeat(64),
         now: 60 * 60 * 1_000,
       }),
     ).toBeNull();

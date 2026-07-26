@@ -12,6 +12,7 @@ export interface FlowCodeEditorState {
   digest: string;
   origin: "initial" | "canvas" | "code";
   diagnostics: FlowCodeEditorDiagnostic[];
+  validatedPreview: { text: string; digest: string } | null;
   pendingCanvas: { text: string; digest: string } | null;
   conflict: boolean;
   /** In-memory only. Never serialize this controller state. */
@@ -32,6 +33,7 @@ export function createFlowCodeEditorState(
     digest,
     origin: "initial",
     diagnostics: [],
+    validatedPreview: { text: canonicalText, digest },
     pendingCanvas: null,
     conflict: false,
     sidecars: { secretBindings: new Map() },
@@ -48,6 +50,10 @@ export function editFlowCode(
     editedText,
     origin: "code",
     diagnostics: [],
+    validatedPreview:
+      editedText === state.canonicalText
+        ? { text: state.canonicalText, digest: state.digest }
+        : null,
   };
 }
 
@@ -72,6 +78,7 @@ export function receiveCanvasCode(
     digest,
     origin: "canvas",
     diagnostics: [],
+    validatedPreview: { text, digest },
     pendingCanvas: null,
     conflict: false,
   };
@@ -84,11 +91,19 @@ export function withFlowCodeDiagnostics(
   return { ...state, diagnostics };
 }
 
+export function invalidateFlowCodePreview(
+  state: FlowCodeEditorState,
+): FlowCodeEditorState {
+  return { ...state, validatedPreview: null };
+}
+
 export function acceptEditedCode(
   state: FlowCodeEditorState,
+  submittedText: string,
   canonicalText: string,
   digest: string,
 ): FlowCodeEditorState {
+  if (state.editedText !== submittedText) return state;
   const isAlreadyApplied =
     digest === state.digest &&
     canonicalText === state.canonicalText &&
@@ -99,11 +114,23 @@ export function acceptEditedCode(
     editedText: canonicalText,
     digest,
     origin: "code",
-    diagnostics: [],
+    validatedPreview: { text: canonicalText, digest },
     pendingCanvas: null,
     conflict: false,
     applyGeneration:
       state.applyGeneration + (isAlreadyApplied ? 0 : 1),
+  };
+}
+
+export function acceptEditedPreview(
+  state: FlowCodeEditorState,
+  submittedText: string,
+  digest: string,
+): FlowCodeEditorState {
+  if (state.editedText !== submittedText) return state;
+  return {
+    ...state,
+    validatedPreview: { text: submittedText, digest },
   };
 }
 
@@ -118,6 +145,10 @@ export function acceptCanvasCode(
     digest: state.pendingCanvas.digest,
     origin: "canvas",
     diagnostics: [],
+    validatedPreview: {
+      text: state.pendingCanvas.text,
+      digest: state.pendingCanvas.digest,
+    },
     pendingCanvas: null,
     conflict: false,
   };

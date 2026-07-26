@@ -8,6 +8,8 @@ const MAX_SECRET_LENGTH = 16_384;
 interface SecretSidecar {
   actorId: string;
   accountId: string;
+  flowId: string | null;
+  digest: string;
   expiresAt: number;
   bindings: Record<string, string>;
 }
@@ -28,11 +30,14 @@ function purge(now: number) {
 export function createSecretSidecar(args: {
   actorId: string;
   accountId: string;
+  flowId?: string;
+  digest: string;
   bindings: Record<string, string>;
   now?: number;
 }): string {
   const entries = Object.entries(args.bindings);
   if (
+    !/^[a-f0-9]{64}$/.test(args.digest) ||
     entries.length < 1 ||
     entries.length > MAX_BINDINGS ||
     entries.some(
@@ -50,6 +55,8 @@ export function createSecretSidecar(args: {
   sidecars.set(token, {
     actorId: args.actorId,
     accountId: args.accountId,
+    flowId: args.flowId ?? null,
+    digest: args.digest,
     expiresAt: now + SIDECAR_TTL_MS,
     bindings: Object.fromEntries(entries),
   });
@@ -60,6 +67,8 @@ export function consumeSecretSidecar(args: {
   token: string;
   actorId: string;
   accountId: string;
+  flowId?: string;
+  digest: string;
   now?: number;
 }): Record<string, string> | null {
   const now = args.now ?? Date.now();
@@ -68,7 +77,9 @@ export function consumeSecretSidecar(args: {
   if (
     !sidecar ||
     sidecar.actorId !== args.actorId ||
-    sidecar.accountId !== args.accountId
+    sidecar.accountId !== args.accountId ||
+    sidecar.flowId !== (args.flowId ?? null) ||
+    sidecar.digest !== args.digest
   ) {
     return null;
   }

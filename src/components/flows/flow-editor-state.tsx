@@ -60,6 +60,7 @@ import type {
 } from "@/lib/flows/types";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
+import { normalizeNodeErrorHandlingConfig } from "./forms/error-handling-options";
 
 // ============================================================
 // State shape
@@ -181,6 +182,19 @@ export function applyNodePositions(
         }
       : n;
   });
+}
+
+export function applyNodeConfigPatch(
+  node: BuilderNode,
+  patch: Record<string, unknown>,
+): BuilderNode {
+  return {
+    ...node,
+    config: normalizeNodeErrorHandlingConfig(node.node_type, {
+      ...node.config,
+      ...patch,
+    }),
+  };
 }
 
 export function applyRestoredVersion(
@@ -622,9 +636,7 @@ export function FlowEditorProvider({
       setState((s) => ({
         ...s,
         nodes: s.nodes.map((n) =>
-          n.node_key === key
-            ? { ...n, config: { ...n.config, ...configPatch } }
-            : n,
+          n.node_key === key ? applyNodeConfigPatch(n, configPatch) : n,
         ),
       }));
     },

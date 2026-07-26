@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyNodeConfigPatch,
   applyRestoredVersion,
   applyNodePositions,
   builderStateToSavePayload,
@@ -8,6 +9,7 @@ import {
   uniqueNodeKey,
   versionControlsBehavior,
 } from "./flow-editor-state";
+import { validateFlowForActivation } from "@/lib/flows/validate";
 import type { FlowVersionGraph } from "@/lib/flows/versions";
 import type { BuilderNode, NodeType } from "./shared";
 
@@ -78,6 +80,49 @@ describe("applyNodePositions", () => {
         position_y: 20,
       },
     ]);
+  });
+});
+
+describe("applyNodeConfigPatch", () => {
+  it("normalizes a stale default policy when its success edge is removed", () => {
+    const node: BuilderNode = {
+      node_key: "message",
+      node_type: "send_message",
+      config: {
+        text: "Hello",
+        next_node_key: "end",
+        on_error: "default_value",
+        default_value: {
+          key: "delivery",
+          type: "string",
+          value: "skipped",
+        },
+        error_next_node_key: "stale-error",
+      },
+    };
+
+    const updated = applyNodeConfigPatch(node, { next_node_key: "" });
+
+    expect(updated.config).toEqual({
+      text: "Hello",
+      next_node_key: "",
+      on_error: "fail_run",
+    });
+    const issues = validateFlowForActivation(
+      {
+        name: "Draft",
+        trigger_type: "manual",
+        trigger_config: {},
+        entry_node_id: "message",
+      },
+      [updated],
+    );
+    expect(
+      issues.some(
+        (issue) =>
+          issue.node_key === "message" && issue.field === "default_value",
+      ),
+    ).toBe(false);
   });
 });
 

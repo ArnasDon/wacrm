@@ -9,6 +9,7 @@ import {
   type RegisteredNodeType,
 } from "./registry";
 import { commonExecutionPolicySchema } from "./registry/schemas";
+import { pinnedSubFlowConfigSchema } from "./registry/schemas";
 import type { FlowVariableDeclaration } from "./runtime-primitives";
 import type {
   FlowFallbackPolicy,
@@ -216,6 +217,12 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
     const configResult = descriptor?.flowConfigSchema.safeParse(node.config);
     if (!descriptor || !configResult?.success) {
       invalid(`config for node "${node.node_key}" is invalid`);
+    }
+    if (
+      node.node_type === "sub_flow" &&
+      !pinnedSubFlowConfigSchema.safeParse(node.config).success
+    ) {
+      invalid(`sub-flow "${node.node_key}" is not pinned to a published version`);
     }
     const issues = descriptor.validate(node, {
       consumer: "flow",

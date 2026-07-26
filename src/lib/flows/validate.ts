@@ -128,6 +128,7 @@ export function validateFlowForActivation(
     issues.push(...validateEdgeTargets(node, keys));
     issues.push(...validateVariableReferences(node, flow.variable_schema ?? []));
   }
+  issues.push(...validateStructuredCycles(nodes));
 
   if (flow.entry_node_id && keys.has(flow.entry_node_id)) {
     const reached = reachableFromEntry(flow.entry_node_id, nodes);
@@ -255,6 +256,76 @@ function validateVariableReferences(
       return [];
     });
   }
+  if (node.node_type === "each") {
+    const references = [
+      {
+        key: node.config.array_variable,
+        expected: "json",
+        field: "array_variable",
+      },
+      {
+        key: node.config.item_variable,
+        expected: undefined,
+        field: "item_variable",
+      },
+      ...(typeof node.config.index_variable === "string"
+        ? [
+            {
+              key: node.config.index_variable,
+              expected: "number",
+              field: "index_variable",
+            },
+          ]
+        : []),
+    ];
+    return references.flatMap(({ key, expected, field }) => {
+      if (typeof key !== "string") return [];
+      const declaration = declarations.get(key);
+      if (!declaration) {
+        return [
+          issue(field, `Variable "${key}" is not declared by this flow.`),
+        ];
+      }
+      if (expected && declaration.type !== expected) {
+        return [
+          issue(field, `Variable "${key}" must be declared as ${expected}.`),
+        ];
+      }
+      return [];
+    });
+  }
+  if (node.node_type === "ai_reply") {
+    const inputVariables = Array.isArray(node.config.input_variables)
+      ? node.config.input_variables
+      : [];
+    const references = [
+      ...inputVariables.map((key, index) => ({
+        key,
+        expected: undefined,
+        field: `input_variables.${index}`,
+      })),
+      {
+        key: node.config.output_variable,
+        expected: "string",
+        field: "output_variable",
+      },
+    ];
+    return references.flatMap(({ key, expected, field }) => {
+      if (typeof key !== "string") return [];
+      const declaration = declarations.get(key);
+      if (!declaration) {
+        return [
+          issue(field, `Variable "${key}" is not declared by this flow.`),
+        ];
+      }
+      if (expected && declaration.type !== expected) {
+        return [
+          issue(field, `Variable "${key}" must be declared as ${expected}.`),
+        ];
+      }
+      return [];
+    });
+  }
   const reference =
     node.node_type === "collect_input"
       ? { key: node.config.var_key, expected: "string", field: "var_key" }
@@ -291,6 +362,57 @@ function validateVariableReferences(
     ];
   }
   return [];
+}
+
+function validateStructuredCycles(nodes: NodeInput[]): ValidationIssue[] {
+  const byKey = new Map(nodes.map((node) => [node.node_key, node]));
+  const state = new Map<string, "visiting" | "visited">();
+  const stack: string[] = [];
+  const reported = new Set<string>();
+  const issues: ValidationIssue[] = [];
+
+  const visit = (key: string): void => {
+    if (state.get(key) === "visited") return;
+    if (state.get(key) === "visiting") return;
+    const node = byKey.get(key);
+    if (!node) return;
+    state.set(key, "visiting");
+    stack.push(key);
+    const descriptor = getNodeDescriptor(node.node_type);
+    for (const target of descriptor?.outgoingEdges(node.config) ?? []) {
+      if (state.get(target) === "visiting") {
+        const start = stack.lastIndexOf(target);
+        const cycle = stack.slice(start);
+        const structured = cycle.some((cycleKey) => {
+          const type = byKey.get(cycleKey)?.node_type;
+          return type === "each" || type === "loop";
+        });
+        if (!structured) {
+          const signature = [...cycle].sort().join(":");
+          if (!reported.has(signature)) {
+            reported.add(signature);
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: key,
+              field: descriptor
+                ?.outgoingEdgeTargets(node.config)
+                .find((edge) => edge.target === target)?.field,
+              message:
+                "Cycles must return through a structured each or loop node.",
+            });
+          }
+        }
+      } else {
+        visit(target);
+      }
+    }
+    stack.pop();
+    state.set(key, "visited");
+  };
+
+  for (const node of nodes) visit(node.node_key);
+  return issues;
 }
 
 function validateTrigger(

@@ -1229,6 +1229,38 @@
         "end": {
           "label": "종료",
           "blurb": "플로우를 종료합니다"
+        },
+        "wait": {
+          "label": "Wait",
+          "blurb": "Pauses durably until a scheduled time"
+        },
+        "http_request": {
+          "label": "HTTP request",
+          "blurb": "Calls a public HTTP API"
+        },
+        "switch": {
+          "label": "Switch",
+          "blurb": "Routes through the first matching case"
+        },
+        "variable_set": {
+          "label": "Set variables",
+          "blurb": "Writes typed flow variables"
+        },
+        "each": {
+          "label": "For each",
+          "blurb": "Iterates a bounded array durably"
+        },
+        "loop": {
+          "label": "Loop until",
+          "blurb": "Repeats a branch with a hard stop"
+        },
+        "sub_flow": {
+          "label": "Sub-flow",
+          "blurb": "Runs a pinned published flow"
+        },
+        "ai_reply": {
+          "label": "AI reply",
+          "blurb": "Generates a bounded AI response"
         }
       }
     },

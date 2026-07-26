@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { assertAuthorableHttpUrl } from "@/lib/flows/http-request";
 import { isSafeCollectInputRegex } from "@/lib/flows/runtime-primitives";
+import {
+  MAX_COMPOSITE_ITERATIONS,
+  MAX_SUB_FLOW_DEPTH,
+} from "@/lib/flows/composite-runtime";
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 
 const requiredText = (message: string) => z.string().trim().min(1, message);
@@ -575,6 +579,93 @@ export const httpRequestConfigSchema = z.looseObject({
   headers: z.record(z.string(), z.string()).optional(),
   body: z.string().optional(),
   response_var: variableKeySchema,
+  next_node_key: nextNodeKeySchema,
+});
+
+const compositeBranchSchema = requiredText("A branch node is required.");
+const compositeLimitSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_COMPOSITE_ITERATIONS);
+
+export const eachConfigSchema = z.looseObject({
+  array_variable: variableKeySchema,
+  item_variable: variableKeySchema,
+  index_variable: variableKeySchema.optional(),
+  max_iterations: compositeLimitSchema,
+  body_next: compositeBranchSchema,
+  done_next: compositeBranchSchema,
+});
+
+export const loopConfigSchema = z
+  .looseObject({
+    subject: z.enum(["var", "contact_field"]),
+    subject_key: requiredText("A loop subject key is required."),
+    operator: switchOperatorSchema,
+    value: z.unknown().optional(),
+    max_iterations: compositeLimitSchema,
+    body_next: compositeBranchSchema,
+    done_next: compositeBranchSchema,
+  })
+  .superRefine((config, ctx) => {
+    if (
+      !["present", "absent"].includes(config.operator) &&
+      config.value === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "This loop operator requires a comparison value.",
+      });
+    }
+  });
+
+const subFlowMappingSchema = z.strictObject({
+  parent_key: variableKeySchema,
+  child_key: variableKeySchema,
+});
+
+export const subFlowConfigSchema = z
+  .looseObject({
+    flow_id: requiredText("A child flow is required."),
+    flow_version_id: z.string().uuid().optional(),
+    input_mapping: z.array(subFlowMappingSchema).max(50).default([]),
+    output_mapping: z.array(subFlowMappingSchema).max(50).default([]),
+    max_depth: z.number().int().min(1).max(MAX_SUB_FLOW_DEPTH).default(8),
+    next_node_key: nextNodeKeySchema,
+  })
+  .superRefine((config, ctx) => {
+    for (const key of ["input_mapping", "output_mapping"] as const) {
+      const seen = new Set<string>();
+      config[key].forEach((entry, index) => {
+        const destination =
+          key === "input_mapping" ? entry.child_key : entry.parent_key;
+        if (seen.has(destination)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key, index],
+            message: `Duplicate mapped destination "${destination}".`,
+          });
+        }
+        seen.add(destination);
+      });
+    }
+  });
+
+export const pinnedSubFlowConfigSchema = subFlowConfigSchema.and(
+  z.looseObject({
+    flow_version_id: z.string().uuid(),
+    child_entry_node_key: requiredText("A pinned child entry is required."),
+  }),
+);
+
+export const aiReplyConfigSchema = z.looseObject({
+  system_prompt: z.string().max(4_000).optional(),
+  prompt: requiredText("An AI prompt is required.").max(8_000),
+  input_variables: z.array(variableKeySchema).max(25).default([]),
+  output_variable: variableKeySchema,
+  max_tokens: z.number().int().min(1).max(1_024).default(256),
   next_node_key: nextNodeKeySchema,
 });
 

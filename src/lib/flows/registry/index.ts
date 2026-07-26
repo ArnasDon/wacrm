@@ -21,6 +21,10 @@ import { updateContactFieldNodeDescriptor } from "../nodes/update-contact-field"
 import { variableSetNodeDescriptor } from "../nodes/variable-set";
 import { waitNodeDescriptor } from "../nodes/wait";
 import { switchNodeDescriptor } from "../nodes/switch";
+import { eachNodeDescriptor } from "../nodes/each";
+import { loopNodeDescriptor } from "../nodes/loop";
+import { subFlowNodeDescriptor } from "../nodes/sub-flow";
+import { aiReplyNodeDescriptor } from "../nodes/ai-reply";
 import { conversationAssignedTriggerDescriptor } from "../triggers/conversation-assigned";
 import { dealStageChangedTriggerDescriptor } from "../triggers/deal-stage-changed";
 import { firstInboundMessageTriggerDescriptor } from "../triggers/first-inbound-message";
@@ -60,6 +64,10 @@ export const FLOW_NODE_DESCRIPTORS = [
   httpRequestNodeDescriptor,
   switchNodeDescriptor,
   variableSetNodeDescriptor,
+  eachNodeDescriptor,
+  loopNodeDescriptor,
+  subFlowNodeDescriptor,
+  aiReplyNodeDescriptor,
   sendWebhookNodeDescriptor,
   closeConversationNodeDescriptor,
   newMessageReceivedTriggerDescriptor,

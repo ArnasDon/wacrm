@@ -32,4 +32,14 @@ describe("runtime primitive node forms", () => {
     expect(source).toContain('"contact"');
     expect(source).toContain('"message"');
   });
+
+  it("renders bounded composite and AI reply editors", () => {
+    for (const component of ["EachForm", "LoopForm", "SubFlowForm", "AiReplyForm"]) {
+      expect(source).toContain(`<${component}`);
+    }
+    expect(source).toContain("max_iterations");
+    expect(source).toContain("output_mapping");
+    expect(source).toContain("input_variables");
+    expect(source).toContain("max_tokens");
+  });
 });

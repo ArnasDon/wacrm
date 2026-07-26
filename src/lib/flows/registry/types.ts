@@ -150,7 +150,11 @@ export type NodeFormDescriptor =
         | "set_tag"
         | "switch"
         | "variable_set"
-        | "http_request";
+        | "http_request"
+        | "each"
+        | "loop"
+        | "sub_flow"
+        | "ai_reply";
     };
 
 export interface NodeUiDescriptor {

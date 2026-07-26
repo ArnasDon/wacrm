@@ -98,6 +98,13 @@ import {
   type FlowVariableType,
   type SwitchCase,
 } from "./runtime-primitives";
+import {
+  enterSubFlow,
+  executeEachIteration,
+  executeLoopIteration,
+  returnFromSubFlow,
+} from "./composite-execution";
+import { generateFlowAiReply } from "./ai-reply-runtime";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -302,6 +309,16 @@ async function loadFlowVersion(
   }
 }
 
+async function loadActiveFlowVersionForRun(
+  db: AdminClient,
+  run: FlowRunRow,
+): Promise<{ id: string; flowId: string; graph: FlowVersionGraph } | null> {
+  const flowId = run.active_flow_id ?? run.flow_id;
+  const versionId = run.active_flow_version_id ?? run.flow_version_id;
+  const version = await loadFlowVersion(db, versionId, flowId);
+  return version ? { ...version, flowId } : null;
+}
+
 function snapshotNodes(
   flowId: string,
   graph: FlowVersionGraph,
@@ -452,7 +469,8 @@ async function startNodeExecutionRecord(
       .from("flow_node_executions")
       .insert({
         flow_run_id: run.id,
-        flow_version_id: run.flow_version_id,
+        flow_version_id:
+          run.active_flow_version_id ?? run.flow_version_id,
         node_key: node.node_key,
         node_type: node.node_type,
         status: "executing",
@@ -2186,7 +2204,7 @@ export async function advanceFromNodeKey(
   let currentKey: string | null = startNodeKey;
   // Defensive cap — if a flow has a cycle (which the validator
   // SHOULD catch but doesn't yet in v1), we bail rather than loop.
-  for (let safety = 0; safety < 64; safety += 1) {
+  for (let safety = 0; safety < 1_024; safety += 1) {
     if (!currentKey) {
       await logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
@@ -2513,6 +2531,200 @@ export async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
+    if (runtimeHook === "each") {
+      const cfg = node.config as {
+        array_variable: string;
+        item_variable: string;
+        index_variable?: string;
+        max_iterations: number;
+        body_next: string;
+        done_next: string;
+      };
+      const executed: PolicyNodeResult<{
+        branch: "body" | "done";
+        nextNodeKey: string;
+        run: unknown;
+      }> = await executePolicyNode(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => executeEachIteration(db, run, cfg),
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      currentKey = executed.value.nextNodeKey;
+      continue;
+    }
+    if (runtimeHook === "loop") {
+      const cfg = node.config as {
+        subject: "var" | "contact_field";
+        subject_key: string;
+        operator: SwitchCase["operator"];
+        value?: unknown;
+        max_iterations: number;
+        body_next: string;
+        done_next: string;
+      };
+      const executed: PolicyNodeResult<{
+        branch: "body" | "done";
+        nextNodeKey: string;
+        exhausted?: boolean;
+        run: unknown;
+      }> = await executePolicyNode(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => {
+          const subject = await resolveSwitchSubject(db, run, cfg);
+          const exitPredicate =
+            evaluateSwitch(subject, [
+              {
+                id: "exit",
+                operator: cfg.operator,
+                value: cfg.value,
+                next: cfg.done_next,
+              },
+            ]) !== null;
+          return executeLoopIteration(db, run, cfg, exitPredicate);
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      currentKey = executed.value.nextNodeKey;
+      continue;
+    }
+    if (runtimeHook === "sub_flow") {
+      const cfg = node.config as {
+        flow_id: string;
+        flow_version_id: string;
+        child_entry_node_key: string;
+        input_mapping: Array<{
+          parent_key: string;
+          child_key: string;
+        }>;
+        output_mapping: Array<{
+          parent_key: string;
+          child_key: string;
+        }>;
+        next_node_key: string;
+      };
+      const executed: PolicyNodeResult<{
+        outcome: "advanced" | "completed" | "handed_off";
+      }> = await executePolicyNode(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => {
+          await enterSubFlow(db, run, {
+            childFlowId: cfg.flow_id,
+            childVersionId: cfg.flow_version_id,
+            childEntryNodeKey: cfg.child_entry_node_key,
+            returnNodeKey: cfg.next_node_key,
+            inputMapping: cfg.input_mapping,
+            outputMapping: cfg.output_mapping,
+          });
+          const child = await loadFlowVersion(
+            db,
+            cfg.flow_version_id,
+            cfg.flow_id,
+          );
+          if (!child) throw new Error("Pinned child flow version is unavailable.");
+          const outcome = await advanceFromNodeKey(
+            db,
+            run,
+            cfg.child_entry_node_key,
+            snapshotNodes(cfg.flow_id, child.graph),
+            child.graph.fallback_policy.execution,
+          );
+          const readBack = await loadRunById(db, run.id);
+          if (
+            readBack?.status === "failed" &&
+            readBack.active_flow_version_id === cfg.flow_version_id
+          ) {
+            syncRun(run, readBack);
+            await returnFromSubFlow(db, run, run.vars);
+            throw new Error("Child flow execution failed.");
+          }
+          return outcome;
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      return executed.value;
+    }
+    if (runtimeHook === "ai_reply") {
+      const cfg = node.config as {
+        system_prompt?: string;
+        prompt: string;
+        input_variables: string[];
+        output_variable: string;
+        max_tokens: number;
+        next_node_key: string;
+      };
+      const executed = await executeDurableNodeEffect<{ reply: string }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        "ai_reply",
+        async (signal, _operationId, remoteCommitted) => {
+          const generated = await generateFlowAiReply(db, {
+            accountId: run.account_id,
+            conversationId: run.conversation_id,
+            systemPrompt: cfg.system_prompt ?? "",
+            prompt: cfg.prompt,
+            inputVariables: cfg.input_variables,
+            vars: run.vars,
+            maxTokens: cfg.max_tokens,
+            signal,
+          });
+          const result = { reply: generated.text };
+          await remoteCommitted(result, "ai:reply");
+          return result;
+        },
+      );
+      if (!executed.ok) return { outcome: "completed" };
+      const nextVars = {
+        ...run.vars,
+        [cfg.output_variable]: executed.value.reply,
+      };
+      if (
+        !(await finalizeDurableNodeEffect(
+          db,
+          run,
+          executed.effect,
+          async () =>
+            persistDurableVariableTransition(
+              db,
+              run,
+              cfg.next_node_key,
+              nextVars,
+            ),
+        ))
+      ) {
+        return { outcome: "completed" };
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
     if (runtimeHook === "http_request") {
       const cfg = node.config as unknown as HttpRequestConfig & {
         next_node_key: string;
@@ -2618,7 +2830,8 @@ export async function advanceFromNodeKey(
         ).toISOString();
         const scheduleArgs = {
           p_run_id: run.id,
-          p_flow_version_id: run.flow_version_id,
+          p_flow_version_id:
+            run.active_flow_version_id ?? run.flow_version_id,
           p_node_key: node.node_key,
           p_next_node_key: cfg.next_node_key,
           p_wake_at: wakeAt,
@@ -2803,6 +3016,36 @@ export async function advanceFromNodeKey(
       return { outcome: "handed_off" };
     }
     if (runtimeHook === "end") {
+      if (
+        run.active_flow_version_id &&
+        run.active_flow_version_id !== run.flow_version_id
+      ) {
+        const returned = await returnFromSubFlow(db, run, run.vars);
+        const parentFlowId = returned.active_flow_id ?? returned.flow_id;
+        const parentVersionId =
+          returned.active_flow_version_id ?? returned.flow_version_id;
+        const parent = await loadFlowVersion(
+          db,
+          parentVersionId,
+          parentFlowId,
+        );
+        if (!parent || !returned.current_node_key) {
+          await endRun(
+            db,
+            run.id,
+            "failed",
+            "sub_flow_parent_snapshot_unavailable",
+          );
+          return { outcome: "completed" };
+        }
+        return advanceFromNodeKey(
+          db,
+          run,
+          returned.current_node_key,
+          snapshotNodes(parentFlowId, parent.graph),
+          parent.graph.fallback_policy.execution,
+        );
+      }
       const executed: PolicyNodeResult<{ status: "completed" }> =
         await executePolicyNode<{ status: "completed" }>(
           db,
@@ -2867,17 +3110,13 @@ export async function dispatchInboundToFlows(
         receiptRun.current_node_key === receipt.next_node_key &&
         receiptRun.current_visit_id === receipt.next_visit_id;
       if (recoverable) {
-        const version = await loadFlowVersion(
-          db,
-          receiptRun.flow_version_id,
-          receiptRun.flow_id,
-        );
+        const version = await loadActiveFlowVersionForRun(db, receiptRun);
         if (version) {
           const recovered = await advanceFromNodeKey(
             db,
             receiptRun,
             receipt.next_node_key,
-            snapshotNodes(receiptRun.flow_id, version.graph),
+            snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
           return {
@@ -2895,17 +3134,13 @@ export async function dispatchInboundToFlows(
         receiptRun.current_node_key &&
         receiptRun.current_visit_id
       ) {
-        const version = await loadFlowVersion(
-          db,
-          receiptRun.flow_version_id,
-          receiptRun.flow_id,
-        );
+        const version = await loadActiveFlowVersionForRun(db, receiptRun);
         if (version) {
           const recovered = await advanceFromNodeKey(
             db,
             receiptRun,
             receiptRun.current_node_key,
-            snapshotNodes(receiptRun.flow_id, version.graph),
+            snapshotNodes(version.flowId, version.graph),
             version.graph.fallback_policy.execution,
           );
           return {
@@ -2936,11 +3171,7 @@ export async function dispatchInboundToFlows(
       // Never consult the mutable draft: the pinned version owns nodes,
       // trigger semantics, and fallback behavior for the run's lifetime.
       const version = activeRun.flow_version_id
-        ? await loadFlowVersion(
-            db,
-            activeRun.flow_version_id,
-            activeRun.flow_id,
-          )
+        ? await loadActiveFlowVersionForRun(db, activeRun)
         : null;
       if (!version) {
         await logEvent(db, activeRun.id, "error", activeRun.current_node_key, {
@@ -2969,7 +3200,7 @@ export async function dispatchInboundToFlows(
           db,
           activeRun,
           activeRun.current_node_key,
-          snapshotNodes(activeRun.flow_id, version.graph),
+          snapshotNodes(version.flowId, version.graph),
           version.graph.fallback_policy.execution,
         );
         return {
@@ -2982,7 +3213,7 @@ export async function dispatchInboundToFlows(
         db,
         activeRun,
         input.message,
-        snapshotNodes(activeRun.flow_id, version.graph),
+        snapshotNodes(version.flowId, version.graph),
         version.graph.fallback_policy,
       );
     }
@@ -3323,6 +3554,8 @@ async function startNewRun(
     .insert({
       flow_id: flow.id,
       flow_version_id: versionId,
+      active_flow_id: flow.id,
+      active_flow_version_id: versionId,
       // Tenancy: NOT NULL post-017. The partial unique index
       // `idx_one_active_run_per_contact` is over (account_id,
       // contact_id) WHERE status='active', so two accounts sharing

@@ -6,6 +6,9 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const signal = args.signal
+    ? AbortSignal.any([controller.signal, args.signal])
+    : controller.signal
 
   let res: Response
   try {
@@ -34,7 +37,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
             ? { response_format: { type: responseFormat } }
             : {}),
       }),
-      signal: controller.signal,
+      signal,
     })
   } catch (err) {
     if ((err as Error).name === 'AbortError') {

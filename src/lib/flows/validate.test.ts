@@ -942,3 +942,69 @@ describe("reachableFromEntry", () => {
     expect(set).toEqual(new Set(["a", "b"]));
   });
 });
+
+describe("structured composite topology", () => {
+  it("rejects an arbitrary runtime cycle", () => {
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "a" },
+      [
+        {
+          node_key: "a",
+          node_type: "send_message",
+          config: { text: "a", next_node_key: "b" },
+        },
+        {
+          node_key: "b",
+          node_type: "send_message",
+          config: { text: "b", next_node_key: "a" },
+        },
+      ],
+    );
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "node",
+          message: expect.stringMatching(/structured each or loop/i),
+        }),
+      ]),
+    );
+  });
+
+  it("allows a body to return to its bounded each node", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "each",
+        variable_schema: [
+          { key: "items", type: "json" as const, default: [] },
+          { key: "item", type: "string" as const, default: "" },
+          { key: "index", type: "number" as const, default: 0 },
+        ],
+      },
+      [
+        {
+          node_key: "each",
+          node_type: "each",
+          config: {
+            array_variable: "items",
+            item_variable: "item",
+            index_variable: "index",
+            max_iterations: 10,
+            body_next: "body",
+            done_next: "end",
+          },
+        },
+        {
+          node_key: "body",
+          node_type: "variable_set",
+          config: {
+            assignments: [{ key: "item", type: "string", value: "next" }],
+            next_node_key: "each",
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+    expect(issues.filter(({ severity }) => severity === "error")).toEqual([]);
+  });
+});

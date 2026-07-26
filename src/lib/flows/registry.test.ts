@@ -122,6 +122,36 @@ describe("canonical flow node registry", () => {
     expect(
       getNodeDescriptor("trigger_keyword_match")?.supportsFlowRuntime,
     ).toBe(false);
+    for (const type of ["each", "loop", "sub_flow", "ai_reply"]) {
+      expect(getNodeDescriptor(type)?.supportsFlowRuntime).toBe(true);
+      expect(listBuilderNodeDescriptors().map(({ id }) => id)).toContain(type);
+    }
+  });
+
+  it("declares structured composite control ports", () => {
+    expect(getNodeDescriptor("each")?.outputs.map(({ id }) => id)).toEqual([
+      "body",
+      "done",
+    ]);
+    expect(getNodeDescriptor("loop")?.inputs.map(({ id }) => id)).toEqual([
+      "in",
+      "continue",
+    ]);
+    expect(getNodeDescriptor("loop")?.outputs.map(({ id }) => id)).toEqual([
+      "body",
+      "done",
+    ]);
+    expect(getNodeDescriptor("sub_flow")?.outputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "next", type: "control" }),
+        expect.objectContaining({ id: "outputs", type: "json" }),
+      ]),
+    );
+    expect(getNodeDescriptor("ai_reply")?.outputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "reply", type: "string" }),
+      ]),
+    );
   });
 
   it("offers a default value only for a concrete config with one success edge", () => {

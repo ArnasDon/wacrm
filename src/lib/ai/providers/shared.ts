@@ -16,6 +16,7 @@ export interface ProviderArgs {
   messages: ChatMessage[]
   timeoutMs: number
   maxTokens: number
+  signal?: AbortSignal
   /** OpenAI-only: request Chat Completions JSON mode. Anthropic has no
    *  equivalent flag in the raw Messages API used here — generateJson
    *  relies on strict prompting + tolerant parsing for that provider. */

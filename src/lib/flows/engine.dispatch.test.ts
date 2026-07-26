@@ -1296,6 +1296,64 @@ beforeEach(() => {
 });
 
 describe("public flow dispatcher recovery protocol", () => {
+  it("uses the active child snapshot when a reply arrives inside a sub-flow", async () => {
+    const state = new DispatchState();
+    prepare(
+      state,
+      run({
+        active_flow_id: "child-flow",
+        active_flow_version_id: "child-version",
+        current_node_key: "child_input",
+        current_visit_id: "visit-child-input",
+      }),
+    );
+    const childGraph = graph({ nextNode: "end" });
+    childGraph.entry_node_key = "child_input";
+    const input = childGraph.nodes.find(
+      (node) => node.node_key === "input",
+    )!;
+    input.node_key = "child_input";
+    input.config = {
+      prompt_text: "Child value?",
+      var_key: "child_value",
+      next_node_key: "child_wait",
+    };
+    childGraph.nodes.splice(1, 0, {
+      node_key: "child_wait",
+      node_type: "wait",
+      config: {
+        amount: 1,
+        unit: "minutes",
+        next_node_key: "end",
+      },
+      position_x: 50,
+      position_y: 0,
+    });
+    state.versions.push({
+      id: "child-version",
+      flow_id: "child-flow",
+      graph: childGraph,
+    });
+
+    const result = await dispatchInboundToFlows(
+      inbound("child-reply", "from child"),
+    );
+
+    expect(result).toMatchObject({
+      consumed: true,
+      flow_run_id: "run-1",
+      outcome: "advanced",
+    });
+    expect(state.runs[0].vars.child_value).toBe("from child");
+    expect(state.rpcCalls).toContainEqual({
+      name: "schedule_flow_wait",
+      value: expect.objectContaining({
+        p_flow_version_id: "child-version",
+        p_node_key: "child_wait",
+      }),
+    });
+  });
+
   it("treats a concurrent reserved effect as in progress without poisoning the owner", async () => {
     const state = new DispatchState();
     prepare(state, run());

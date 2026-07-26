@@ -265,6 +265,9 @@ export interface FlowRunRow {
   flow_id: string;
   /** Immutable graph captured when this run started. */
   flow_version_id: string;
+  /** Current graph context; differs from the immutable root only in sub-flows. */
+  active_flow_id?: string | null;
+  active_flow_version_id?: string | null;
   /** Tenancy. Matches flows.account_id; NOT NULL post-017. */
   account_id: string;
   /** Audit. Matches the parent flow.user_id. */

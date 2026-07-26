@@ -334,7 +334,7 @@ export function sanitizeExecutionData(value: unknown): unknown {
       }
       return [
         key,
-        /token|secret|password|authorization|cookie|api[_-]?key|credential/i.test(
+        /token|secret|password|authorization|cookie|api[_-]?key|credential|prompt|response|reply/i.test(
           key,
         )
           ? "[REDACTED]"

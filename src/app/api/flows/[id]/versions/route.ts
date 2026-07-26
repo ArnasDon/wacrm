@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/flows/admin-client";
 import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
 import { validateFlowForActivation } from "@/lib/flows/validate";
 import { buildFlowVersionGraph } from "@/lib/flows/versions";
+import { resolveSubFlowPinsForPublish } from "@/lib/flows/sub-flow-pins";
 import { createClient } from "@/lib/supabase/server";
 
 async function ownerContext(
@@ -146,7 +147,14 @@ export async function POST(
 
   let graph;
   try {
-    graph = buildFlowVersionGraph(draft, draftNodes);
+    const pinnedNodes = await resolveSubFlowPinsForPublish(
+      admin,
+      draft.account_id,
+      draft.id,
+      draftNodes,
+      draft.variable_schema,
+    );
+    graph = buildFlowVersionGraph(draft, pinnedNodes);
   } catch (error) {
     return NextResponse.json(
       {

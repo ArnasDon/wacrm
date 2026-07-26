@@ -197,6 +197,27 @@ export function applyNodeConfigPatch(
   };
 }
 
+export function removeNodeAndNormalizeReferences(
+  nodes: BuilderNode[],
+  deletedKey: string,
+): BuilderNode[] {
+  const unlinked = unlinkNodeReferences(
+    nodes.filter((node) => node.node_key !== deletedKey),
+    deletedKey,
+  );
+  return unlinked.map((node) => {
+    const config =
+      node.config.on_error === "fail_branch" &&
+      node.config.error_next_node_key === deletedKey
+        ? { ...node.config, on_error: "fail_run" }
+        : node.config;
+    return {
+      ...node,
+      config: normalizeNodeErrorHandlingConfig(node.node_type, config),
+    };
+  });
+}
+
 export function applyRestoredVersion(
   state: BuilderState,
   graph: FlowVersionGraph,
@@ -706,10 +727,7 @@ export function FlowEditorProvider({
       // builder forms already use).
       setState((s) => ({
         ...s,
-        nodes: unlinkNodeReferences(
-          s.nodes.filter((n) => n.node_key !== key),
-          key,
-        ),
+        nodes: removeNodeAndNormalizeReferences(s.nodes, key),
         entry_node_id: s.entry_node_id === key ? null : s.entry_node_id,
       }));
     },

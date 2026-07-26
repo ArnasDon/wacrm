@@ -6,6 +6,7 @@ import {
   builderStateToSavePayload,
   buildDraftSaveRequest,
   defaultConfigFor,
+  removeNodeAndNormalizeReferences,
   uniqueNodeKey,
   versionControlsBehavior,
 } from "./flow-editor-state";
@@ -123,6 +124,74 @@ describe("applyNodeConfigPatch", () => {
           issue.node_key === "message" && issue.field === "default_value",
       ),
     ).toBe(false);
+  });
+});
+
+describe("removeNodeAndNormalizeReferences", () => {
+  it("normalizes default_value when deleting its only success target", () => {
+    const nodes: BuilderNode[] = [
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {
+          text: "Hello",
+          next_node_key: "victim",
+          on_error: "default_value",
+          default_value: {
+            key: "delivery",
+            type: "string",
+            value: "skipped",
+          },
+          custom_field: "preserved",
+        },
+      },
+      { node_key: "victim", node_type: "end", config: {} },
+    ];
+
+    expect(removeNodeAndNormalizeReferences(nodes, "victim")).toEqual([
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {
+          text: "Hello",
+          next_node_key: "",
+          on_error: "fail_run",
+          custom_field: "preserved",
+        },
+      },
+    ]);
+  });
+
+  it("normalizes fail_branch when deleting its error target", () => {
+    const nodes: BuilderNode[] = [
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {
+          text: "Hello",
+          next_node_key: "safe",
+          on_error: "fail_branch",
+          error_next_node_key: "victim",
+          custom_field: "preserved",
+        },
+      },
+      { node_key: "safe", node_type: "end", config: {} },
+      { node_key: "victim", node_type: "end", config: {} },
+    ];
+
+    expect(removeNodeAndNormalizeReferences(nodes, "victim")).toEqual([
+      {
+        node_key: "message",
+        node_type: "send_message",
+        config: {
+          text: "Hello",
+          next_node_key: "safe",
+          on_error: "fail_run",
+          custom_field: "preserved",
+        },
+      },
+      { node_key: "safe", node_type: "end", config: {} },
+    ]);
   });
 });
 

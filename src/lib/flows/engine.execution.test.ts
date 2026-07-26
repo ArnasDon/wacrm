@@ -54,6 +54,7 @@ function fakeDb(
     };
     effectIsOwner?: boolean;
     failCursorOnce?: boolean;
+    failRepromptFinalizeOnce?: boolean;
   } = {},
 ) {
   const writes: CapturedWrite[] = [];
@@ -61,6 +62,22 @@ function fakeDb(
   let cursorSequence = 0;
   let failVarsOnce = options.failFlowVarsPersistenceOnce === true;
   let failCursorOnce = options.failCursorOnce === true;
+  let failRepromptFinalizeOnce =
+    options.failRepromptFinalizeOnce === true;
+  const replyTransitions = new Map<
+    string,
+    {
+      from_node_key: string;
+      from_visit_id: string;
+      next_node_key: string;
+      next_visit_id: string;
+      current_node_key: string;
+      run_vars: Record<string, unknown>;
+      reprompt_count: number;
+      current_visit_id: string;
+      continuation_step: number;
+    }
+  >();
   const httpEffect = {
     id: "10000000-0000-4000-8000-000000000001",
     operation_id: "20000000-0000-4000-8000-000000000001",
@@ -69,27 +86,129 @@ function fakeDb(
     external_reference: null as string | null,
     is_owner: options.effectIsOwner ?? true,
   };
+  const effects = new Map<string, typeof httpEffect>();
+
+  function effectForRpc(value: Record<string, unknown>) {
+    return [...effects.values()].find(
+      (effect) => effect.id === value.p_effect_id,
+    );
+  }
 
   const db = {
     rpc(name: string, value: Record<string, unknown>) {
       writes.push({ table: `rpc:${name}`, kind: "insert", value });
       if (name === "reserve_flow_node_effect") {
-        return Promise.resolve({ data: [{ ...httpEffect }], error: null });
+        const key = [
+          value.p_visit_id,
+          value.p_node_key,
+          value.p_effect_kind,
+        ].join(":");
+        let effect = effects.get(key);
+        if (!effect) {
+          effect =
+            effects.size === 0
+              ? httpEffect
+              : {
+                  id: `10000000-0000-4000-8000-${String(
+                    effects.size + 1,
+                  ).padStart(12, "0")}`,
+                  operation_id: `20000000-0000-4000-8000-${String(
+                    effects.size + 1,
+                  ).padStart(12, "0")}`,
+                  status: "reserved",
+                  result: null,
+                  external_reference: null,
+                  is_owner: options.effectIsOwner ?? true,
+                };
+          effects.set(key, effect);
+        }
+        return Promise.resolve({ data: [{ ...effect }], error: null });
       }
       if (name === "mark_flow_node_effect_committed") {
-        httpEffect.status = "remote_committed";
-        httpEffect.result = value.p_result as Record<string, unknown>;
-        httpEffect.external_reference =
+        const effect = effectForRpc(value) ?? httpEffect;
+        effect.status = "remote_committed";
+        effect.result = value.p_result as Record<string, unknown>;
+        effect.external_reference =
           (value.p_external_reference as string | null) ?? null;
-        return Promise.resolve({ data: [{ ...httpEffect }], error: null });
+        return Promise.resolve({ data: [{ ...effect }], error: null });
       }
       if (name === "mark_flow_node_effect_ambiguous") {
-        httpEffect.status = "ambiguous";
+        const effect = effectForRpc(value) ?? httpEffect;
+        effect.status = "ambiguous";
         return Promise.resolve({ data: true, error: null });
       }
       if (name === "complete_flow_node_effect") {
-        httpEffect.status = "completed";
+        const effect = effectForRpc(value) ?? httpEffect;
+        effect.status = "completed";
         return Promise.resolve({ data: true, error: null });
+      }
+      if (name === "commit_flow_reply_transition") {
+        const messageId = value.p_meta_message_id as string;
+        const existing = replyTransitions.get(messageId);
+        if (existing) {
+          return Promise.resolve({
+            data: [{ ...existing, duplicate: true }],
+            error: null,
+          });
+        }
+        cursorSequence += 1;
+        const committedVisit = `31000000-0000-4000-8000-${String(
+          cursorSequence,
+        ).padStart(12, "0")}`;
+        const committed = {
+          from_node_key: value.p_expected_node_key as string,
+          from_visit_id: value.p_expected_visit_id as string,
+          next_node_key: value.p_next_node_key as string,
+          next_visit_id: committedVisit,
+          current_node_key: value.p_next_node_key as string,
+          current_visit_id: committedVisit,
+          run_vars:
+            (value.p_vars as Record<string, unknown> | null) ?? {},
+          reprompt_count: 0,
+          continuation_step: cursorSequence,
+        };
+        replyTransitions.set(messageId, committed);
+        return Promise.resolve({
+          data: [{ ...committed, duplicate: false }],
+          error: null,
+        });
+      }
+      if (name === "finalize_flow_reprompt_effect") {
+        if (failRepromptFinalizeOnce) {
+          failRepromptFinalizeOnce = false;
+          return Promise.resolve({
+            data: null,
+            error: { message: "reprompt finalize unavailable" },
+          });
+        }
+        const effect = effectForRpc(value) ?? httpEffect;
+        effect.status = "completed";
+        cursorSequence += 1;
+        const finalizedVisit = `32000000-0000-4000-8000-${String(
+          cursorSequence,
+        ).padStart(12, "0")}`;
+        replyTransitions.set(value.p_meta_message_id as string, {
+          from_node_key: value.p_expected_node_key as string,
+          from_visit_id: value.p_expected_visit_id as string,
+          next_node_key: value.p_expected_node_key as string,
+          next_visit_id: finalizedVisit,
+          current_node_key: value.p_expected_node_key as string,
+          current_visit_id: finalizedVisit,
+          run_vars: {},
+          reprompt_count: value.p_reprompt_count as number,
+          continuation_step: cursorSequence,
+        });
+        return Promise.resolve({
+          data: [
+            {
+              current_node_key: value.p_expected_node_key,
+              current_visit_id: finalizedVisit,
+              reprompt_count: value.p_reprompt_count,
+              continuation_step: cursorSequence,
+            },
+          ],
+          error: null,
+        });
       }
       if (name === "advance_flow_run_cursor") {
         if (failCursorOnce) {
@@ -118,6 +237,34 @@ function fakeDb(
     from(table: string) {
       return {
         select() {
+          if (table === "flow_reply_transitions") {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq(column: string, filterValue: unknown) {
+                filters[column] = filterValue;
+                return builder;
+              },
+              async maybeSingle() {
+                const transition = replyTransitions.get(
+                  filters.meta_message_id as string,
+                );
+                return {
+                  data:
+                    transition &&
+                    filters.flow_run_id === "run-1"
+                      ? {
+                          from_node_key: transition.from_node_key,
+                          from_visit_id: transition.from_visit_id,
+                          next_node_key: transition.next_node_key,
+                          next_visit_id: transition.next_visit_id,
+                        }
+                      : null,
+                  error: null,
+                };
+              },
+            };
+            return builder;
+          }
           return {
             eq: () => ({
               maybeSingle: async () => ({
@@ -1370,6 +1517,183 @@ describe("reprompt execution policy", () => {
 
     expect(result.outcome).toBe("completed");
     expect(activeRun.vars).toEqual({ code: "ABC-12" });
+  });
+
+  it("commits collect vars and branch before downstream recovery", async () => {
+    h.sendText.mockImplementation(
+      async (args: {
+        onRemoteCommitted?: (result: {
+          whatsapp_message_id: string;
+        }) => Promise<void>;
+      }) => {
+        const result = { whatsapp_message_id: "wamid-after-reply" };
+        await args.onRemoteCommitted?.(result);
+        return result;
+      },
+    );
+    const resumedRun = run({
+      status: "resuming",
+      current_node_key: "input",
+      continuation_id: "40000000-0000-4000-8000-000000000001",
+      continuation_phase: "running",
+    });
+    const { db, writes } = fakeDb({ failCursorOnce: true });
+    const nodes = new Map(
+      [
+        node("input", "collect_input", {
+          prompt_text: "Code?",
+          var_key: "code",
+          next_node_key: "send",
+        }),
+        node("send", "send_message", {
+          text: "Captured {{code}}",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+    const inbound = {
+      kind: "text" as const,
+      text: "stable-value",
+      meta_message_id: "valid-crash-1",
+    };
+
+    await expect(
+      handleReplyForActiveRun(
+        db as never,
+        resumedRun,
+        inbound,
+        nodes,
+        fallbackPolicy,
+      ),
+    ).rejects.toThrow("cursor unavailable");
+
+    expect(resumedRun.vars).toEqual({ code: "stable-value" });
+    expect(resumedRun.current_node_key).toBe("send");
+
+    const staleDuplicate = await handleReplyForActiveRun(
+      db as never,
+      run({
+        status: "resuming",
+        current_node_key: "input",
+        continuation_id: resumedRun.continuation_id,
+        continuation_phase: "running",
+      }),
+      inbound,
+      nodes,
+      fallbackPolicy,
+    );
+    expect(staleDuplicate.outcome).toBe("duplicate_inbound_ignored");
+
+    const recovered = await handleReplyForActiveRun(
+      db as never,
+      resumedRun,
+      inbound,
+      nodes,
+      fallbackPolicy,
+    );
+
+    expect(recovered.outcome).toBe("completed");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(
+      writes.filter(
+        (write) =>
+          write.table === "rpc:commit_flow_reply_transition" &&
+          write.value.p_meta_message_id === "valid-crash-1",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("recovers reprompt count and ledger atomically before exhaustion", async () => {
+    h.sendText.mockImplementation(
+      async (args: {
+        onRemoteCommitted?: (result: {
+          whatsapp_message_id: string;
+        }) => Promise<void>;
+      }) => {
+        const result = {
+          whatsapp_message_id: `wamid-reprompt-${h.sendText.mock.calls.length}`,
+        };
+        await args.onRemoteCommitted?.(result);
+        return result;
+      },
+    );
+    const resumedRun = run({
+      status: "resuming",
+      current_node_key: "input",
+      continuation_id: "40000000-0000-4000-8000-000000000001",
+      continuation_phase: "running",
+    });
+    const { db, httpEffect, writes } = fakeDb({
+      failRepromptFinalizeOnce: true,
+    });
+    const nodes = new Map(
+      [
+        node("input", "collect_input", {
+          prompt_text: "Code?",
+          var_key: "code",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await expect(
+      handleReplyForActiveRun(
+        db as never,
+        resumedRun,
+        { kind: "text", text: "", meta_message_id: "invalid-atomic-1" },
+        nodes,
+        fallbackPolicy,
+      ),
+    ).rejects.toThrow(
+      "Reprompt was sent but its durable state was not finalized",
+    );
+    expect(httpEffect.status).toBe("remote_committed");
+    expect(resumedRun.reprompt_count).toBe(0);
+
+    const recovered = await handleReplyForActiveRun(
+      db as never,
+      resumedRun,
+      { kind: "text", text: "", meta_message_id: "invalid-atomic-1" },
+      nodes,
+      fallbackPolicy,
+    );
+    expect(recovered.outcome).toBe("fallback_fired");
+    expect(httpEffect.status).toBe("completed");
+    expect(resumedRun.reprompt_count).toBe(1);
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+
+    await handleReplyForActiveRun(
+      db as never,
+      resumedRun,
+      { kind: "text", text: "", meta_message_id: "invalid-atomic-2" },
+      nodes,
+      fallbackPolicy,
+    );
+    expect(resumedRun.reprompt_count).toBe(2);
+    expect(h.sendText).toHaveBeenCalledTimes(2);
+
+    const exhausted = await handleReplyForActiveRun(
+      db as never,
+      resumedRun,
+      { kind: "text", text: "", meta_message_id: "invalid-atomic-3" },
+      nodes,
+      fallbackPolicy,
+    );
+    expect(exhausted.outcome).toBe("handed_off");
+    expect(h.sendText).toHaveBeenCalledTimes(2);
+    expect(
+      writes
+        .filter(
+          (write) => write.table === "rpc:reserve_flow_node_effect",
+        )
+        .map((write) => write.value.p_effect_kind),
+    ).toEqual([
+      "prompt:reprompt:1",
+      "prompt:reprompt:1",
+      "prompt:reprompt:2",
+    ]);
   });
 
   it("does not retry an ambiguous reprompt", async () => {

@@ -340,14 +340,9 @@ async function logEvent(
 }
 
 /**
- * Idempotency check — has a `reply_received` event with this Meta
- * message_id already been recorded for any of the contact's flow
- * runs? If yes, the inbound is a duplicate (Meta retry) and we
- * exit without re-advancing.
- *
- * Implementation note: scoped to runs belonging to this user/contact
- * so the lookup is cheap (the index on flow_run_events(flow_run_id,
- * event_type) plus the small set of runs per contact).
+ * An inbound is duplicate only after its runtime transition is committed.
+ * Audit events are excluded because a process can crash after logging the
+ * inbound but before finalizing a remote-committed reprompt.
  */
 async function isDuplicateInbound(
   db: AdminClient,
@@ -367,11 +362,10 @@ async function isDuplicateInbound(
   const runIds = runs.map((r) => (r as { id: string }).id);
 
   const { count } = await db
-    .from("flow_run_events")
+    .from("flow_reply_transitions")
     .select("id", { count: "exact", head: true })
     .in("flow_run_id", runIds)
-    .eq("event_type", "reply_received")
-    .filter("payload->>meta_message_id", "eq", metaMessageId);
+    .eq("meta_message_id", metaMessageId);
   return (count ?? 0) > 0;
 }
 
@@ -860,6 +854,71 @@ async function persistTransition(
   return nextNodeKey;
 }
 
+interface CommittedReplyTransition {
+  current_node_key: string;
+  current_visit_id: string;
+  next_node_key: string;
+  run_vars: Record<string, unknown>;
+  reprompt_count: number;
+  continuation_step: number;
+  duplicate: boolean;
+}
+
+async function findCommittedReplyTransition(
+  db: AdminClient,
+  runId: string,
+  metaMessageId: string,
+): Promise<{
+  from_node_key: string;
+  from_visit_id: string;
+  next_node_key: string;
+  next_visit_id: string;
+} | null> {
+  const { data, error } = await db
+    .from("flow_reply_transitions")
+    .select(
+      "from_node_key, from_visit_id, next_node_key, next_visit_id",
+    )
+    .eq("flow_run_id", runId)
+    .eq("meta_message_id", metaMessageId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as {
+    from_node_key: string;
+    from_visit_id: string;
+    next_node_key: string;
+    next_visit_id: string;
+  } | null;
+}
+
+async function commitReplyTransition(
+  db: AdminClient,
+  run: FlowRunRow,
+  nextNodeKey: string,
+  metaMessageId: string,
+  vars: Record<string, unknown> | null,
+): Promise<CommittedReplyTransition> {
+  if (!run.current_node_key || !run.current_visit_id) {
+    throw new Error("flow reply is missing its durable source visit");
+  }
+  const { data, error } = await db.rpc("commit_flow_reply_transition", {
+    p_run_id: run.id,
+    p_flow_version_id: run.flow_version_id,
+    p_expected_node_key: run.current_node_key,
+    p_expected_visit_id: run.current_visit_id,
+    p_next_node_key: nextNodeKey,
+    p_meta_message_id: metaMessageId,
+    p_vars: vars,
+  });
+  const committed = Array.isArray(data)
+    ? (data[0] as CommittedReplyTransition | undefined)
+    : undefined;
+  if (error || !committed) {
+    throw error ?? new Error("flow reply transition was not committed");
+  }
+  return committed;
+}
+
 async function stopAfterCommittedEffectPersistenceFailure(
   db: AdminClient,
   run: FlowRunRow,
@@ -889,6 +948,56 @@ async function finalizeDurableNodeEffect(
       await persistTransition(db, run, nextNodeKey);
     }
     await completeNodeEffect(db, effect);
+    return true;
+  } catch (error) {
+    await stopAfterCommittedEffectPersistenceFailure(db, run, error);
+    return false;
+  }
+}
+
+async function finalizeRepromptEffect(
+  db: AdminClient,
+  run: FlowRunRow,
+  effect: DurableNodeEffect,
+  repromptCount: number,
+  metaMessageId: string,
+  localPersistence: () => Promise<void>,
+): Promise<boolean> {
+  try {
+    if (!run.current_node_key || !run.current_visit_id) {
+      throw new Error("reprompt is missing its durable source visit");
+    }
+    const expectedNodeKey = run.current_node_key;
+    const expectedVisitId = run.current_visit_id;
+    await localPersistence();
+    const { data, error } = await db.rpc("finalize_flow_reprompt_effect", {
+      p_run_id: run.id,
+      p_flow_version_id: run.flow_version_id,
+      p_effect_id: effect.id,
+      p_operation_id: effect.operation_id,
+      p_expected_node_key: expectedNodeKey,
+      p_expected_visit_id: expectedVisitId,
+      p_reprompt_count: repromptCount,
+      p_meta_message_id: metaMessageId,
+    });
+    const finalized = Array.isArray(data)
+      ? (data[0] as FlowRunRow | undefined)
+      : undefined;
+    if (error || !finalized) {
+      throw new CommittedSideEffectError(
+        "Reprompt was sent but its durable state was not finalized",
+        {
+          externalReference:
+            effect.external_reference ?? effect.operation_id,
+          persistenceStage: "reprompt_state_finalize",
+          cause: error,
+        },
+      );
+    }
+    run.current_node_key = finalized.current_node_key;
+    run.current_visit_id = finalized.current_visit_id;
+    run.continuation_step = finalized.continuation_step;
+    run.reprompt_count = finalized.reprompt_count;
     return true;
   } catch (error) {
     await stopAfterCommittedEffectPersistenceFailure(db, run, error);
@@ -2009,6 +2118,38 @@ export async function handleReplyForActiveRun(
   nodes: Map<string, FlowNodeRow>,
   fallbackPolicy: FlowFallbackPolicy,
 ): Promise<DispatchInboundResult> {
+  const priorTransition = await findCommittedReplyTransition(
+    db,
+    run.id,
+    message.meta_message_id,
+  );
+  if (priorTransition) {
+    if (
+      run.current_node_key &&
+      run.current_visit_id &&
+      run.current_visit_id !== priorTransition.from_visit_id &&
+      ["active", "resuming"].includes(run.status)
+    ) {
+      const recovered = await advanceFromNodeKey(
+        db,
+        run,
+        run.current_node_key,
+        nodes,
+        fallbackPolicy.execution,
+      );
+      return {
+        consumed: true,
+        flow_run_id: run.id,
+        outcome: recovered.outcome,
+      };
+    }
+    return {
+      consumed: true,
+      flow_run_id: run.id,
+      outcome: "duplicate_inbound_ignored",
+    };
+  }
+
   // Note: we intentionally do NOT persist the raw customer text. A
   // `collect_input` prompt that asks "what's your card number?" would
   // otherwise leave the PAN sitting in flow_run_events.payload forever,
@@ -2016,12 +2157,12 @@ export async function handleReplyForActiveRun(
   // table. Length is enough for "did they actually reply?" debugging;
   // for the captured value itself, the `node_entered` event already
   // records `captured_key` + `captured_length` after the var is stored.
-  await logEvent(db, run.id, "reply_received", run.current_node_key, {
+  const replyEventPayload = {
     meta_message_id: message.meta_message_id,
     reply_kind: message.kind,
     reply_id: message.kind === "interactive_reply" ? message.reply_id : null,
     text_length: message.kind === "text" ? message.text.length : null,
-  });
+  };
 
   if (!run.current_node_key) {
     // Defensive — a run with status='active' but no current node is
@@ -2046,6 +2187,9 @@ export async function handleReplyForActiveRun(
   //
   // Everything else falls through to the fallback policy below.
   let matched: string | null = null;
+  let capturedVars: Record<string, unknown> | null = null;
+  let capturedKey: string | null = null;
+  let capturedLength = 0;
   if (
     message.kind === "interactive_reply" &&
     (currentNode.node_type === "send_buttons" ||
@@ -2070,43 +2214,45 @@ export async function handleReplyForActiveRun(
       validateCollectedInput(captured, cfg.validation ?? "any", cfg.regex)
     ) {
       // Persist captured value + reset reprompt count atomically.
-      const newVars = { ...run.vars, [cfg.var_key]: captured };
-      const { error: capErr } = await db
-        .from("flow_runs")
-        .update({
-          vars: newVars,
-          reprompt_count: 0,
-        })
-        .eq("id", run.id);
-      if (!capErr) {
-        // Mirror the UPDATE in-memory so downstream interpolation in
-        // the advance loop sees the captured var without us having to
-        // re-SELECT the whole row.
-        run.vars = newVars;
-        run.reprompt_count = 0;
-        await logEvent(db, run.id, "node_entered", currentNode.node_key, {
-          captured_key: cfg.var_key,
-          captured_length: captured.length,
-        });
-        matched = cfg.next_node_key;
-      }
+      capturedVars = { ...run.vars, [cfg.var_key]: captured };
+      capturedKey = cfg.var_key;
+      capturedLength = captured.length;
+      matched = cfg.next_node_key;
     }
   }
 
   if (matched) {
-    // Reset reprompt count on a successful match. Skip the write when
-    // already 0 — the collect_input capture branch above already
-    // zeroed it, and interactive-reply matches against a fresh run
-    // (post-prior-reset) are also already 0. The previous re-read of
-    // the whole row was needed only because we weren't mirroring the
-    // capture UPDATE into the in-memory `run`; now that we do, the
-    // local copy is the source of truth.
-    if (run.reprompt_count !== 0) {
-      const { error } = await db
-        .from("flow_runs")
-        .update({ reprompt_count: 0 })
-        .eq("id", run.id);
-      if (!error) run.reprompt_count = 0;
+    const committed = await commitReplyTransition(
+      db,
+      run,
+      matched,
+      message.meta_message_id,
+      capturedVars,
+    );
+    if (committed.duplicate) {
+      return {
+        consumed: true,
+        flow_run_id: run.id,
+        outcome: "duplicate_inbound_ignored",
+      };
+    }
+    run.current_node_key = committed.current_node_key;
+    run.current_visit_id = committed.current_visit_id;
+    run.continuation_step = committed.continuation_step;
+    run.vars = committed.run_vars;
+    run.reprompt_count = committed.reprompt_count;
+    await logEvent(
+      db,
+      run.id,
+      "reply_received",
+      currentNode.node_key,
+      replyEventPayload,
+    );
+    if (capturedKey) {
+      await logEvent(db, run.id, "node_entered", currentNode.node_key, {
+        captured_key: capturedKey,
+        captured_length: capturedLength,
+      });
     }
     const outcome = await advanceFromNodeKey(
       db,
@@ -2123,6 +2269,13 @@ export async function handleReplyForActiveRun(
   }
 
   // No match → fallback. Apply the policy.
+  await logEvent(
+    db,
+    run.id,
+    "reply_received",
+    currentNode.node_key,
+    replyEventPayload,
+  );
   const policy = fallbackPolicy;
   const newReprompts = run.reprompt_count + 1;
 
@@ -2186,10 +2339,12 @@ export async function handleReplyForActiveRun(
     }
     if (
       executed?.ok &&
-      !(await finalizeDurableNodeEffect(
+      !(await finalizeRepromptEffect(
         db,
         run,
         executed.effect,
+        newReprompts,
+        message.meta_message_id,
         async () => {
           await persistOutboundForNode(
             db,
@@ -2203,25 +2358,27 @@ export async function handleReplyForActiveRun(
             executed.value.whatsapp_message_id,
           );
         },
-        currentNode.node_key,
       ))
     ) {
       return { consumed: true, flow_run_id: run.id, outcome: "completed" };
     }
-    const { error } = await db
-      .from("flow_runs")
-      .update({ reprompt_count: newReprompts })
-      .eq("id", run.id);
-    if (!error) run.reprompt_count = newReprompts;
     return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
   }
 
   // Non-reprompt fallback actions count the rejected reply immediately. A
   // reprompt defers this write until its send succeeds above.
-  await db
+  const { error: countError } = await db
     .from("flow_runs")
     .update({ reprompt_count: newReprompts })
     .eq("id", run.id);
+  if (countError) {
+    await logEvent(db, run.id, "error", run.current_node_key, {
+      reason: "fallback_count_persist_failed",
+    });
+    await endRun(db, run.id, "failed", "fallback_count_persist_failed");
+    return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+  }
+  run.reprompt_count = newReprompts;
   if (action.type === "ignore") {
     // Don't consume — let automations have a shot at it.
     return { consumed: false, flow_run_id: run.id, outcome: "no_match" };

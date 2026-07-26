@@ -696,6 +696,149 @@ REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM authenticated;
 GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO service_role;
 
+-- A reply is not considered consumed until its selected edge is durable.
+-- The unique inbound identity makes retries return the original edge instead
+-- of re-evaluating mutable in-memory state.
+CREATE TABLE IF NOT EXISTS flow_reply_transitions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
+  flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
+  meta_message_id TEXT NOT NULL,
+  from_node_key TEXT NOT NULL,
+  from_visit_id UUID NOT NULL,
+  next_node_key TEXT NOT NULL,
+  next_visit_id UUID NOT NULL,
+  vars_after JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (flow_run_id, meta_message_id)
+);
+
+ALTER TABLE flow_reply_transitions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS flow_reply_transitions_select ON flow_reply_transitions;
+CREATE POLICY flow_reply_transitions_select ON flow_reply_transitions FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM flow_runs run
+      WHERE run.id = flow_reply_transitions.flow_run_id
+        AND is_account_member(run.account_id, 'viewer')
+    )
+  );
+
+CREATE OR REPLACE FUNCTION commit_flow_reply_transition(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_next_node_key TEXT,
+  p_meta_message_id TEXT,
+  p_vars JSONB DEFAULT NULL
+)
+RETURNS TABLE (
+  flow_run_id UUID,
+  current_node_key TEXT,
+  current_visit_id UUID,
+  next_node_key TEXT,
+  run_vars JSONB,
+  reprompt_count INTEGER,
+  continuation_step BIGINT,
+  duplicate BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_transition flow_reply_transitions%ROWTYPE;
+  v_next_visit_id UUID;
+BEGIN
+  IF NULLIF(BTRIM(p_expected_node_key), '') IS NULL
+     OR NULLIF(BTRIM(p_next_node_key), '') IS NULL
+     OR NULLIF(BTRIM(p_meta_message_id), '') IS NULL
+     OR (p_vars IS NOT NULL AND jsonb_typeof(p_vars) <> 'object') THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_run.flow_version_id IS DISTINCT FROM p_flow_version_id THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_transition
+  FROM flow_reply_transitions transition
+  WHERE transition.flow_run_id = p_run_id
+    AND transition.meta_message_id = p_meta_message_id;
+  IF FOUND THEN
+    RETURN QUERY SELECT
+      v_run.id,
+      v_run.current_node_key,
+      v_run.current_visit_id,
+      v_transition.next_node_key,
+      v_run.vars,
+      v_run.reprompt_count,
+      v_run.continuation_step,
+      TRUE;
+    RETURN;
+  END IF;
+
+  IF v_run.status NOT IN ('active', 'resuming')
+     OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id THEN
+    RETURN;
+  END IF;
+
+  v_next_visit_id := uuid_generate_v4();
+  INSERT INTO flow_reply_transitions (
+    flow_run_id,
+    flow_version_id,
+    meta_message_id,
+    from_node_key,
+    from_visit_id,
+    next_node_key,
+    next_visit_id,
+    vars_after
+  )
+  VALUES (
+    p_run_id,
+    p_flow_version_id,
+    p_meta_message_id,
+    p_expected_node_key,
+    p_expected_visit_id,
+    p_next_node_key,
+    v_next_visit_id,
+    COALESCE(p_vars, v_run.vars)
+  )
+  RETURNING * INTO v_transition;
+
+  UPDATE flow_runs
+  SET vars = COALESCE(p_vars, flow_runs.vars),
+      reprompt_count = 0,
+      current_node_key = p_next_node_key,
+      current_visit_id = v_next_visit_id,
+      continuation_step = flow_runs.continuation_step + 1,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+  RETURNING * INTO v_run;
+
+  RETURN QUERY SELECT
+    v_run.id,
+    v_run.current_node_key,
+    v_run.current_visit_id,
+    v_transition.next_node_key,
+    v_run.vars,
+    v_run.reprompt_count,
+    v_run.continuation_step,
+    FALSE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION commit_flow_reply_transition(UUID, UUID, TEXT, UUID, TEXT, TEXT, JSONB) FROM PUBLIC;
+REVOKE ALL ON FUNCTION commit_flow_reply_transition(UUID, UUID, TEXT, UUID, TEXT, TEXT, JSONB) FROM authenticated;
+GRANT EXECUTE ON FUNCTION commit_flow_reply_transition(UUID, UUID, TEXT, UUID, TEXT, TEXT, JSONB) TO service_role;
+
 -- Every external effect reserves one stable operation id before invocation.
 -- A different worker finding a reserved visit must mark it ambiguous and stop:
 -- providers are not assumed to support idempotency. Once remote_committed,
@@ -880,3 +1023,118 @@ $$;
 REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION complete_flow_node_effect(UUID, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION complete_flow_node_effect(UUID, UUID) TO service_role;
+
+-- A reprompt's cursor visit, counter and effect completion are one state
+-- transition. Recovery therefore sees either the old remote_committed visit or
+-- the fully advanced completed visit, never a completed ledger with a stale
+-- counter.
+CREATE OR REPLACE FUNCTION finalize_flow_reprompt_effect(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_effect_id UUID,
+  p_operation_id UUID,
+  p_expected_node_key TEXT,
+  p_expected_visit_id UUID,
+  p_reprompt_count INTEGER,
+  p_meta_message_id TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+  v_effect flow_node_effects%ROWTYPE;
+  v_next_visit_id UUID;
+BEGIN
+  IF p_reprompt_count < 1
+     OR NULLIF(BTRIM(p_meta_message_id), '') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_run.flow_version_id IS DISTINCT FROM p_flow_version_id THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_effect
+  FROM flow_node_effects effect
+  WHERE effect.id = p_effect_id
+    AND effect.operation_id = p_operation_id
+    AND effect.flow_run_id = p_run_id
+    AND effect.flow_version_id = p_flow_version_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF v_effect.status = 'completed' THEN
+    IF v_run.reprompt_count >= p_reprompt_count THEN
+      RETURN NEXT v_run;
+    END IF;
+    RETURN;
+  END IF;
+
+  IF v_effect.status <> 'remote_committed'
+     OR v_effect.node_key IS DISTINCT FROM p_expected_node_key
+     OR v_effect.visit_id IS DISTINCT FROM p_expected_visit_id
+     OR v_run.status NOT IN ('active', 'resuming')
+     OR v_run.current_node_key IS DISTINCT FROM p_expected_node_key
+     OR v_run.current_visit_id IS DISTINCT FROM p_expected_visit_id
+     OR p_reprompt_count <> v_run.reprompt_count + 1 THEN
+    RETURN;
+  END IF;
+
+  v_next_visit_id := uuid_generate_v4();
+  INSERT INTO flow_reply_transitions (
+    flow_run_id,
+    flow_version_id,
+    meta_message_id,
+    from_node_key,
+    from_visit_id,
+    next_node_key,
+    next_visit_id,
+    vars_after
+  )
+  VALUES (
+    p_run_id,
+    p_flow_version_id,
+    p_meta_message_id,
+    p_expected_node_key,
+    p_expected_visit_id,
+    p_expected_node_key,
+    v_next_visit_id,
+    v_run.vars
+  );
+
+  UPDATE flow_runs
+  SET reprompt_count = p_reprompt_count,
+      current_node_key = p_expected_node_key,
+      current_visit_id = v_next_visit_id,
+      continuation_step = continuation_step + 1,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id
+  RETURNING * INTO v_run;
+
+  UPDATE flow_node_effects
+  SET status = 'completed',
+      completed_at = COALESCE(completed_at, NOW()),
+      updated_at = NOW()
+  WHERE id = p_effect_id
+    AND operation_id = p_operation_id
+    AND status = 'remote_committed';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'reprompt effect completion race';
+  END IF;
+
+  RETURN NEXT v_run;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION finalize_flow_reprompt_effect(UUID, UUID, UUID, UUID, TEXT, UUID, INTEGER, TEXT) TO service_role;

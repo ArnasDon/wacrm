@@ -27,6 +27,8 @@ describe("migration 049 durable waits", () => {
       "mark_flow_node_effect_committed",
       "mark_flow_node_effect_ambiguous",
       "complete_flow_node_effect",
+      "commit_flow_reply_transition",
+      "finalize_flow_reprompt_effect",
     ]) {
       expect(sql).toContain(`FUNCTION ${name}`);
       expect(sql).toMatch(
@@ -100,6 +102,21 @@ describe("migration 049 durable waits", () => {
     );
     expect(sql).toMatch(
       /FUNCTION\s+complete_flow_node_effect[\s\S]+?status\s*=\s*'completed'/i,
+    );
+  });
+
+  it("commits replies and reprompt completion at their state boundaries", () => {
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS flow_reply_transitions");
+    expect(sql).toContain("UNIQUE (flow_run_id, meta_message_id)");
+    expect(sql).toContain("next_visit_id UUID NOT NULL");
+    expect(sql).toMatch(
+      /FUNCTION\s+commit_flow_reply_transition[\s\S]+?FOR UPDATE[\s\S]+?INSERT INTO flow_reply_transitions/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+commit_flow_reply_transition[\s\S]+?reprompt_count\s*=\s*0[\s\S]+?current_node_key\s*=\s*p_next_node_key/i,
+    );
+    expect(sql).toMatch(
+      /FUNCTION\s+finalize_flow_reprompt_effect[\s\S]+?FOR UPDATE[\s\S]+?reprompt_count\s*=\s*p_reprompt_count[\s\S]+?UPDATE flow_node_effects[\s\S]+?status\s*=\s*'completed'/i,
     );
   });
 });

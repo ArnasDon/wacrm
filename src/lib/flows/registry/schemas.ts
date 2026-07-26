@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { assertAuthorableHttpUrl } from "@/lib/flows/http-request";
+import { isSafeCollectInputRegex } from "@/lib/flows/runtime-primitives";
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 
 const requiredText = (message: string) => z.string().trim().min(1, message);
@@ -307,16 +309,35 @@ export const sendMediaConfigSchema = z.looseObject({
   next_node_key: nextNodeKeySchema,
 });
 
-export const collectInputConfigSchema = z.looseObject({
-  prompt_text: requiredText("A prompt is required."),
-  var_key: requiredText("A variable key is required.").regex(
-    /^[a-zA-Z_][a-zA-Z0-9_]*$/,
-    "Variable key must start with a letter or underscore and contain only letters, numbers, and underscores.",
-  ),
-  validation: z.enum(["any", "email", "phone", "regex"]).optional(),
-  regex: z.string().optional(),
-  next_node_key: nextNodeKeySchema,
-});
+export const collectInputConfigSchema = z
+  .looseObject({
+    prompt_text: requiredText("A prompt is required."),
+    var_key: requiredText("A variable key is required.").regex(
+      /^[a-zA-Z_][a-zA-Z0-9_]*$/,
+      "Variable key must start with a letter or underscore and contain only letters, numbers, and underscores.",
+    ),
+    validation: z.enum(["any", "email", "phone", "regex"]).optional(),
+    regex: z.string().optional(),
+    next_node_key: nextNodeKeySchema,
+  })
+  .superRefine((config, ctx) => {
+    if (config.validation === "regex") {
+      if (!config.regex || !isSafeCollectInputRegex(config.regex)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["regex"],
+          message:
+            "Regex must be valid, at most 256 characters, and avoid unsafe nested quantifiers.",
+        });
+      }
+    } else if (config.regex !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["regex"],
+        message: "Regex is only allowed when validation is regex.",
+      });
+    }
+  });
 
 export const conditionConfigSchema = z.looseObject({
   subject: z.enum([
@@ -415,9 +436,145 @@ export const moveDealStageConfigSchema = z.looseObject({
   next_node_key: nextNodeKeySchema,
 });
 
-export const waitConfigSchema = z.looseObject({
-  amount: z.number().positive("Wait amount must be greater than zero."),
-  unit: z.enum(["minutes", "hours", "days"]),
+export const MAX_WAIT_DURATION_MS = 365 * 24 * 60 * 60 * 1_000;
+
+export const waitConfigSchema = z
+  .looseObject({
+    amount: z
+      .number()
+      .int("Wait amount must be a whole number.")
+      .positive("Wait amount must be greater than zero."),
+    unit: z.enum(["minutes", "hours", "days"]),
+    next_node_key: nextNodeKeySchema,
+  })
+  .superRefine((config, ctx) => {
+    const multiplier =
+      config.unit === "minutes"
+        ? 60_000
+        : config.unit === "hours"
+          ? 3_600_000
+          : 86_400_000;
+    if (config.amount * multiplier > MAX_WAIT_DURATION_MS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["amount"],
+        message: "Wait duration cannot exceed 365 days.",
+      });
+    }
+  });
+
+const variableKeySchema = requiredText("A variable key is required.").regex(
+  /^[a-zA-Z_][a-zA-Z0-9_]*$/,
+  "Variable key must start with a letter or underscore and contain only letters, numbers, and underscores.",
+);
+
+export const flowVariableTypeSchema = z.enum([
+  "string",
+  "number",
+  "boolean",
+  "json",
+  "contact",
+  "message",
+]);
+
+export const variableSetConfigSchema = z
+  .looseObject({
+    assignments: z
+      .array(
+        z.strictObject({
+          key: variableKeySchema,
+          type: flowVariableTypeSchema,
+          value: z.unknown(),
+        }),
+      )
+      .min(1, "At least one variable assignment is required."),
+    next_node_key: nextNodeKeySchema,
+  })
+  .superRefine((config, ctx) => {
+    const seen = new Set<string>();
+    config.assignments.forEach((assignment, index) => {
+      if (seen.has(assignment.key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["assignments", index, "key"],
+          message: `Duplicate variable assignment "${assignment.key}".`,
+        });
+      }
+      seen.add(assignment.key);
+    });
+  });
+
+export const switchOperatorSchema = z.enum([
+  "equals",
+  "not_equals",
+  "contains",
+  "present",
+  "absent",
+  "greater_than",
+  "greater_or_equal",
+  "less_than",
+  "less_or_equal",
+]);
+
+export const switchConfigSchema = z
+  .looseObject({
+    subject: z.enum(["var", "contact_field"]),
+    subject_key: requiredText("A switch subject key is required."),
+    cases: z
+      .array(
+        z.looseObject({
+          id: requiredText("A case id is required.").regex(
+            /^[a-zA-Z_][a-zA-Z0-9_-]*$/,
+          ),
+          label: requiredText("A case label is required."),
+          operator: switchOperatorSchema,
+          value: z.unknown().optional(),
+          next: nextNodeKeySchema,
+        }),
+      )
+      .min(1, "At least one switch case is required.")
+      .max(20, "A switch supports at most 20 cases."),
+    default_next: nextNodeKeySchema,
+  })
+  .superRefine((config, ctx) => {
+    const seen = new Set<string>();
+    config.cases.forEach((entry, index) => {
+      if (seen.has(entry.id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cases", index, "id"],
+          message: `Duplicate switch case id "${entry.id}".`,
+        });
+      }
+      seen.add(entry.id);
+      if (
+        !["present", "absent"].includes(entry.operator) &&
+        entry.value === undefined
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["cases", index, "value"],
+          message: "This switch operator requires a comparison value.",
+        });
+      }
+    });
+  });
+
+export const httpRequestConfigSchema = z.looseObject({
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  url: requiredText("A URL is required.").superRefine((value, ctx) => {
+    try {
+      assertAuthorableHttpUrl(value);
+    } catch (error) {
+      ctx.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Unsafe HTTP URL.",
+      });
+    }
+  }),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.string().optional(),
+  response_var: variableKeySchema,
   next_node_key: nextNodeKeySchema,
 });
 

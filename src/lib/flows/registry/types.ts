@@ -143,7 +143,13 @@ export type NodeFormDescriptor =
   | {
       kind: "specialized";
       component:
-        "send_buttons" | "send_list" | "send_media" | "condition" | "set_tag";
+        | "send_buttons"
+        | "send_list"
+        | "send_media"
+        | "condition"
+        | "set_tag"
+        | "switch"
+        | "variable_set";
     };
 
 export interface NodeUiDescriptor {

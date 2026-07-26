@@ -309,7 +309,22 @@ export function sanitizeExecutionData(value: unknown): unknown {
       key,
       /token|secret|password|authorization|api[_-]?key|credential/i.test(key)
         ? "[REDACTED]"
+        : key === "url" && typeof nested === "string"
+          ? sanitizeExecutionUrl(nested)
         : sanitizeExecutionData(nested),
     ]),
   );
+}
+
+function sanitizeExecutionUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "[REDACTED_URL]";
+  }
 }

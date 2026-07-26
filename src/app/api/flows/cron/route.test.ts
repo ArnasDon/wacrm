@@ -14,4 +14,9 @@ describe("flow timeout version pinning", () => {
     expect(source).toContain("parseFlowVersionGraph");
     expect(source).not.toContain("flows ( fallback_policy )");
   });
+
+  it("resumes durable waits before sweeping abandoned input runs", () => {
+    expect(source).toContain("resumeDueFlowWaits");
+    expect(source).toContain("resumed");
+  });
 });

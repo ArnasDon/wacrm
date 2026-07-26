@@ -146,6 +146,109 @@ describe("deriveCanvasEdges — condition (true/false branches)", () => {
   });
 });
 
+describe("deriveCanvasEdges — runtime primitives", () => {
+  it("derives linear wait/http/variable edges and switch case/default edges", () => {
+    const edges = deriveCanvasEdges(
+      nodes(
+        {
+          node_key: "wait",
+          node_type: "wait",
+          config: { amount: 1, unit: "hours", next_node_key: "http" },
+        },
+        {
+          node_key: "http",
+          node_type: "http_request",
+          config: {
+            method: "GET",
+            url: "https://example.com",
+            response_var: "response",
+            next_node_key: "set",
+          },
+        },
+        {
+          node_key: "set",
+          node_type: "variable_set",
+          config: { assignments: [], next_node_key: "switch" },
+        },
+        {
+          node_key: "switch",
+          node_type: "switch",
+          config: {
+            subject: "var",
+            subject_key: "tier",
+            cases: [
+              {
+                id: "gold",
+                label: "Gold",
+                operator: "equals",
+                value: "gold",
+                next: "vip",
+              },
+            ],
+            default_next: "standard",
+          },
+        },
+        { node_key: "vip", node_type: "end", config: {} },
+        { node_key: "standard", node_type: "end", config: {} },
+      ),
+    );
+
+    expect(
+      edges.map((edge) => [edge.sourceHandle, edge.target, edge.label]),
+    ).toEqual([
+      ["next", "http", undefined],
+      ["next", "set", undefined],
+      ["next", "switch", undefined],
+      ["case:gold", "vip", "Gold"],
+      ["default", "standard", "default"],
+    ]);
+  });
+
+  it("patches switch cases/default and clears references on deletion", () => {
+    const switchNode: BuilderNode = {
+      node_key: "switch",
+      node_type: "switch",
+      config: {
+        cases: [
+          { id: "gold", label: "Gold", operator: "equals", next: "" },
+        ],
+        default_next: "",
+      },
+    };
+    expect(applyEdgeConnection(switchNode, "case:gold", "vip")).toEqual({
+      cases: [
+        { id: "gold", label: "Gold", operator: "equals", next: "vip" },
+      ],
+    });
+    expect(applyEdgeConnection(switchNode, "default", "standard")).toEqual({
+      default_next: "standard",
+    });
+    const after = unlinkNodeReferences(
+      [
+        {
+          ...switchNode,
+          config: {
+            cases: [
+              {
+                id: "gold",
+                label: "Gold",
+                operator: "equals",
+                next: "victim",
+              },
+            ],
+            default_next: "victim",
+          },
+        },
+      ],
+      "victim",
+    );
+    expect(after[0].config).toMatchObject({
+      cases: [expect.objectContaining({ next: "" })],
+      default_next: "",
+    });
+  });
+});
+
 describe("deriveCanvasEdges — send_buttons (per-button)", () => {
   it("emits one edge per button, labeled with the button title", () => {
     const edges = deriveCanvasEdges(

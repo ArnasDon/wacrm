@@ -46,6 +46,7 @@ import {
   MEDIA_MAX_BYTES,
 } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
+import { useFlowEditor } from "../flow-editor-state";
 import { errorHandlingOptionsForNode } from "./error-handling-options";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
@@ -164,6 +165,26 @@ function NodeSpecificConfigForm({
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
           t={t}
+        />
+      );
+
+    case "switch":
+      return (
+        <SwitchForm
+          cfg={cfg as SwitchCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
+
+    case "variable_set":
+      return (
+        <VariableSetForm
+          cfg={cfg as VariableSetCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
         />
       );
   }
@@ -473,6 +494,19 @@ function DescriptorFieldsForm({
           );
         }
         if (field.kind === "text" || field.kind === "textarea") {
+          if (
+            field.kind === "text" &&
+            (field.key === "var_key" || field.key === "response_var")
+          ) {
+            return (
+              <VariableKeyField
+                key={field.key}
+                label={field.label}
+                value={typeof value === "string" ? value : ""}
+                onChange={(next) => onUpdateConfig({ [field.key]: next })}
+              />
+            );
+          }
           return (
             <TextRow
               key={field.key}
@@ -526,6 +560,47 @@ function DescriptorFieldsForm({
         );
       })}
     </>
+  );
+}
+
+function VariableKeyField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { state } = useFlowEditor();
+  if (state.variable_schema.length === 0) {
+    return (
+      <TextRow label={label} value={value} onChange={onChange} />
+    );
+  }
+  return (
+    <div>
+      <label className="text-muted-foreground mb-1 block text-xs">
+        {label}
+      </label>
+      <Select
+        value={value}
+        onValueChange={(nextValue) => {
+          if (nextValue !== null) onChange(nextValue);
+        }}
+      >
+        <SelectTrigger className="bg-muted font-mono text-xs">
+          <SelectValue placeholder="Pick a declared variable" />
+        </SelectTrigger>
+        <SelectContent>
+          {state.variable_schema.map((variable) => (
+            <SelectItem key={variable.key} value={variable.key}>
+              {variable.key} ({variable.type})
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -1064,6 +1139,350 @@ function ConditionForm({
           label={t("ifFalseAdvance")}
         />
       </div>
+    </>
+  );
+}
+
+interface SwitchCfg {
+  subject?: "var" | "contact_field";
+  subject_key?: string;
+  cases?: Array<{
+    id: string;
+    label: string;
+    operator: string;
+    value?: unknown;
+    next: string;
+  }>;
+  default_next?: string;
+}
+
+function SwitchForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+}: {
+  cfg: SwitchCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  const { state } = useFlowEditor();
+  const cases = cfg.cases ?? [];
+  const updateCase = (index: number, patch: Record<string, unknown>) =>
+    onUpdateConfig({
+      cases: cases.map((entry, i) =>
+        i === index ? { ...entry, ...patch } : entry,
+      ),
+    });
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <Select
+          value={cfg.subject ?? "var"}
+          onValueChange={(subject) => onUpdateConfig({ subject })}
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="var">Variable</SelectItem>
+            <SelectItem value="contact_field">Contact field</SelectItem>
+          </SelectContent>
+        </Select>
+        {cfg.subject === "contact_field" ? (
+          <Select
+            value={cfg.subject_key ?? ""}
+            onValueChange={(subject_key) => onUpdateConfig({ subject_key })}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue placeholder="Contact field" />
+            </SelectTrigger>
+            <SelectContent>
+              {["name", "email", "phone", "company"].map((field) => (
+                <SelectItem key={field} value={field}>
+                  {field}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : state.variable_schema.length > 0 ? (
+          <VariableKeyField
+            label="Subject variable"
+            value={cfg.subject_key ?? ""}
+            onChange={(subject_key) => onUpdateConfig({ subject_key })}
+          />
+        ) : (
+          <Input
+            className="bg-muted font-mono text-xs"
+            value={cfg.subject_key ?? ""}
+            onChange={(event) =>
+              onUpdateConfig({ subject_key: event.target.value })
+            }
+            placeholder="Subject key"
+          />
+        )}
+      </div>
+      <div className="grid gap-2">
+        {cases.map((entry, index) => (
+          <div
+            className="border-border bg-muted/30 grid gap-2 rounded-md border p-2"
+            key={entry.id}
+          >
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <Input
+                value={entry.label}
+                onChange={(event) =>
+                  updateCase(index, {
+                    label: event.target.value,
+                    id: slugify(event.target.value, `case_${index + 1}`),
+                  })
+                }
+                placeholder="Case label"
+              />
+              <Select
+                value={entry.operator}
+                onValueChange={(operator) => updateCase(index, { operator })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "present",
+                    "absent",
+                    "greater_than",
+                    "greater_or_equal",
+                    "less_than",
+                    "less_or_equal",
+                  ].map((operator) => (
+                    <SelectItem key={operator} value={operator}>
+                      {operator.replaceAll("_", " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Remove switch case"
+                onClick={() =>
+                  onUpdateConfig({
+                    cases: cases.filter((_, i) => i !== index),
+                  })
+                }
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {!["present", "absent"].includes(entry.operator) && (
+              <Input
+                value={
+                  typeof entry.value === "string" ||
+                  typeof entry.value === "number"
+                    ? entry.value
+                    : ""
+                }
+                onChange={(event) =>
+                  updateCase(index, {
+                    value: [
+                      "greater_than",
+                      "greater_or_equal",
+                      "less_than",
+                      "less_or_equal",
+                    ].includes(entry.operator)
+                      ? event.target.valueAsNumber
+                      : event.target.value,
+                  })
+                }
+                type={
+                  [
+                    "greater_than",
+                    "greater_or_equal",
+                    "less_than",
+                    "less_or_equal",
+                  ].includes(entry.operator)
+                    ? "number"
+                    : "text"
+                }
+                placeholder="Comparison value"
+              />
+            )}
+            <NextNodeRow
+              value={entry.next}
+              allNodes={allNodes}
+              currentKey={currentKey}
+              onChange={(next) => updateCase(index, { next })}
+              label="Advance to"
+            />
+          </div>
+        ))}
+        {cases.length < 20 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onUpdateConfig({
+                cases: [
+                  ...cases,
+                  {
+                    id: `case_${cases.length + 1}`,
+                    label: `Case ${cases.length + 1}`,
+                    operator: "equals",
+                    value: "",
+                    next: "",
+                  },
+                ],
+              })
+            }
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add case
+          </Button>
+        )}
+      </div>
+      <NextNodeRow
+        value={cfg.default_next ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(default_next) => onUpdateConfig({ default_next })}
+        label="Default branch"
+      />
+    </>
+  );
+}
+
+interface VariableSetCfg {
+  assignments?: Array<{
+    key: string;
+    type: "string" | "number" | "boolean" | "json" | "contact" | "message";
+    value: unknown;
+  }>;
+  next_node_key?: string;
+}
+
+function VariableSetForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+}: {
+  cfg: VariableSetCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  const assignments = cfg.assignments ?? [];
+  const update = (index: number, patch: Record<string, unknown>) =>
+    onUpdateConfig({
+      assignments: assignments.map((entry, i) =>
+        i === index ? { ...entry, ...patch } : entry,
+      ),
+    });
+  return (
+    <>
+      {assignments.map((entry, index) => (
+        <div
+          key={`${entry.key}:${index}`}
+          className="border-border grid grid-cols-[1fr_1fr_1fr_auto] gap-2 rounded-md border p-2"
+        >
+          <VariableKeyField
+            label="Variable"
+            value={entry.key}
+            onChange={(key) => update(index, { key })}
+          />
+          <Select
+            value={entry.type}
+            onValueChange={(type) => update(index, { type })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["string", "number", "boolean", "json"].map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {entry.type === "boolean" ? (
+            <Select
+              value={String(entry.value)}
+              onValueChange={(value) =>
+                update(index, { value: value === "true" })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">true</SelectItem>
+                <SelectItem value="false">false</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={
+                typeof entry.value === "string" ||
+                typeof entry.value === "number"
+                  ? entry.value
+                  : JSON.stringify(entry.value ?? "")
+              }
+              onChange={(event) =>
+                update(index, {
+                  value:
+                    entry.type === "number"
+                      ? event.target.value
+                      : event.target.value,
+                })
+              }
+              placeholder="Value or {{vars.key}}"
+            />
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Remove variable assignment"
+            onClick={() =>
+              onUpdateConfig({
+                assignments: assignments.filter((_, i) => i !== index),
+              })
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          onUpdateConfig({
+            assignments: [
+              ...assignments,
+              { key: `value_${assignments.length + 1}`, type: "string", value: "" },
+            ],
+          })
+        }
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add assignment
+      </Button>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(next_node_key) => onUpdateConfig({ next_node_key })}
+        label="Continue to"
+      />
     </>
   );
 }

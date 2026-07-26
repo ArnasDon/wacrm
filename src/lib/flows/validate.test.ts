@@ -168,6 +168,47 @@ describe("validateFlowForActivation — trigger", () => {
 });
 
 describe("validateFlowForActivation — nodes", () => {
+  it("validates variable-using nodes against a declared schema", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        entry_node_id: "set",
+        variable_schema: [
+          { key: "count", type: "number", required: true, default: 0 },
+          { key: "response", type: "json" },
+        ],
+      },
+      [
+        {
+          node_key: "set",
+          node_type: "variable_set",
+          config: {
+            assignments: [
+              { key: "missing", type: "string", value: "x" },
+              { key: "count", type: "string", value: "1" },
+            ],
+            next_node_key: "end",
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "set",
+          field: "assignments.0.key",
+          message: expect.stringContaining("not declared"),
+        }),
+        expect.objectContaining({
+          node_key: "set",
+          field: "assignments.1.type",
+          message: expect.stringContaining("declared as number"),
+        }),
+      ]),
+    );
+  });
   it("validates common execution-policy bounds", () => {
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "m" } },
@@ -346,7 +387,6 @@ describe("validateFlowForActivation — nodes", () => {
   );
 
   it.each([
-    ["wait", { amount: 5, unit: "minutes", next_node_key: "h" }],
     [
       "send_webhook",
       { url: "https://hooks.example.com/in", next_node_key: "h" },

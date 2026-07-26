@@ -7,8 +7,29 @@ export const waitNodeDescriptor = createLinearNodeDescriptor({
   category: "flow",
   icon: "clock",
   configSchema: waitConfigSchema,
-  runtimeKind: "legacy",
-  runtimeHook: "legacy_automation_step",
+  runtimeKind: "suspend",
+  runtimeHook: "wait",
+  supportsFlowRuntime: true,
+  visible: true,
+  form: {
+    kind: "fields",
+    fields: [
+      { kind: "number", key: "amount", label: "Duration", min: 1 },
+      {
+        kind: "select",
+        key: "unit",
+        label: "Unit",
+        options: [
+          { value: "minutes", label: "Minutes" },
+          { value: "hours", label: "Hours" },
+          { value: "days", label: "Days" },
+        ],
+      },
+      { kind: "next-node", key: "next_node_key", label: "Continue to" },
+    ],
+    help: "Durable wait. Maximum duration is 365 days.",
+  },
+  defaultConfig: { amount: 1, unit: "hours", next_node_key: "" },
   ui: {
     color: "text-orange-400",
     blurb: "Pauses execution for a duration",

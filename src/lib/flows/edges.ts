@@ -48,7 +48,10 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "send_message":
       case "send_media":
       case "collect_input":
-      case "set_tag": {
+      case "set_tag":
+      case "wait":
+      case "http_request":
+      case "variable_set": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
         if (next && knownKeys.has(next)) {
           edges.push({
@@ -80,6 +83,36 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             target: falseNext,
             sourceHandle: "false",
             label: "false",
+          });
+        }
+        break;
+      }
+
+      case "switch": {
+        const cases = Array.isArray(cfg.cases)
+          ? (cfg.cases as Array<Record<string, unknown>>)
+          : [];
+        for (const entry of cases) {
+          const id = typeof entry.id === "string" ? entry.id : null;
+          const next = typeof entry.next === "string" ? entry.next : null;
+          if (!id || !next || !knownKeys.has(next)) continue;
+          edges.push({
+            id: `${node.node_key}--case:${id}--${next}`,
+            source: node.node_key,
+            target: next,
+            sourceHandle: `case:${id}`,
+            label: typeof entry.label === "string" ? entry.label : id,
+          });
+        }
+        const defaultNext =
+          typeof cfg.default_next === "string" ? cfg.default_next : null;
+        if (defaultNext && knownKeys.has(defaultNext)) {
+          edges.push({
+            id: `${node.node_key}--default--${defaultNext}`,
+            source: node.node_key,
+            target: defaultNext,
+            sourceHandle: "default",
+            label: "default",
           });
         }
         break;
@@ -179,6 +212,9 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
+    case "wait":
+    case "http_request":
+    case "variable_set":
       return [{ id: "next", label: "Next" }];
 
     case "condition":
@@ -186,6 +222,28 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
         { id: "true", label: "true" },
         { id: "false", label: "false" },
       ];
+
+    case "switch": {
+      const cases = Array.isArray(cfg.cases)
+        ? (cfg.cases as Array<Record<string, unknown>>)
+        : [];
+      return [
+        ...cases.flatMap((entry) =>
+          typeof entry.id === "string" && entry.id
+            ? [
+                {
+                  id: `case:${entry.id}`,
+                  label:
+                    typeof entry.label === "string" && entry.label
+                      ? entry.label
+                      : entry.id,
+                },
+              ]
+            : [],
+        ),
+        { id: "default", label: "default" },
+      ];
+    }
 
     case "send_buttons": {
       const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
@@ -254,6 +312,9 @@ export function applyEdgeConnection(
     case "send_media":
     case "collect_input":
     case "set_tag":
+    case "wait":
+    case "http_request":
+    case "variable_set":
       if (sourceHandle === "next") return { next_node_key: targetKey };
       return null;
 
@@ -315,6 +376,23 @@ export function applyEdgeConnection(
     case "end":
     default:
       return null;
+
+    case "switch": {
+      if (sourceHandle === "default") {
+        return { default_next: targetKey };
+      }
+      if (!sourceHandle.startsWith("case:")) return null;
+      const id = sourceHandle.slice("case:".length);
+      const cases = Array.isArray(node.config.cases)
+        ? (node.config.cases as Array<Record<string, unknown>>)
+        : [];
+      if (!cases.some((entry) => entry.id === id)) return null;
+      return {
+        cases: cases.map((entry) =>
+          entry.id === id ? { ...entry, next: targetKey } : entry,
+        ),
+      };
+    }
   }
 }
 
@@ -348,7 +426,10 @@ function patchedConfigWithoutKey(
     case "send_message":
     case "send_media":
     case "collect_input":
-    case "set_tag": {
+    case "set_tag":
+    case "wait":
+    case "http_request":
+    case "variable_set": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };
@@ -363,6 +444,22 @@ function patchedConfigWithoutKey(
         ...cfg,
         ...(trueMatch ? { true_next: "" } : {}),
         ...(falseMatch ? { false_next: "" } : {}),
+      };
+    }
+
+    case "switch": {
+      const cases = Array.isArray(cfg.cases)
+        ? (cfg.cases as Array<Record<string, unknown>>)
+        : [];
+      const caseMatch = cases.some((entry) => entry.next === deletedKey);
+      const defaultMatch = cfg.default_next === deletedKey;
+      if (!caseMatch && !defaultMatch) return null;
+      return {
+        ...cfg,
+        cases: cases.map((entry) =>
+          entry.next === deletedKey ? { ...entry, next: "" } : entry,
+        ),
+        ...(defaultMatch ? { default_next: "" } : {}),
       };
     }
 

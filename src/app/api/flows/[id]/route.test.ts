@@ -147,7 +147,6 @@ describe("PUT /api/flows/[id] flow runtime boundary", () => {
   });
 
   it.each([
-    ["wait", { amount: 5, unit: "minutes", next_node_key: "end" }],
     [
       "send_webhook",
       { url: "https://hooks.example.com/in", next_node_key: "end" },

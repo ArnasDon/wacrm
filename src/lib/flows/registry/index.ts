@@ -6,6 +6,7 @@ import { conditionNodeDescriptor } from "../nodes/condition";
 import { createDealNodeDescriptor } from "../nodes/create-deal";
 import { endNodeDescriptor } from "../nodes/end";
 import { handoffNodeDescriptor } from "../nodes/handoff";
+import { httpRequestNodeDescriptor } from "../nodes/http-request";
 import { moveDealStageNodeDescriptor } from "../nodes/move-deal-stage";
 import { removeTagNodeDescriptor } from "../nodes/remove-tag";
 import { sendButtonsNodeDescriptor } from "../nodes/send-buttons";
@@ -17,7 +18,9 @@ import { sendWebhookNodeDescriptor } from "../nodes/send-webhook";
 import { setTagNodeDescriptor } from "../nodes/set-tag";
 import { startNodeDescriptor } from "../nodes/start";
 import { updateContactFieldNodeDescriptor } from "../nodes/update-contact-field";
+import { variableSetNodeDescriptor } from "../nodes/variable-set";
 import { waitNodeDescriptor } from "../nodes/wait";
+import { switchNodeDescriptor } from "../nodes/switch";
 import { conversationAssignedTriggerDescriptor } from "../triggers/conversation-assigned";
 import { dealStageChangedTriggerDescriptor } from "../triggers/deal-stage-changed";
 import { firstInboundMessageTriggerDescriptor } from "../triggers/first-inbound-message";
@@ -54,6 +57,9 @@ export const FLOW_NODE_DESCRIPTORS = [
   createDealNodeDescriptor,
   moveDealStageNodeDescriptor,
   waitNodeDescriptor,
+  httpRequestNodeDescriptor,
+  switchNodeDescriptor,
+  variableSetNodeDescriptor,
   sendWebhookNodeDescriptor,
   closeConversationNodeDescriptor,
   newMessageReceivedTriggerDescriptor,
@@ -74,6 +80,10 @@ const descriptorById = new Map<string, NodeDescriptor>(
   FLOW_NODE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]),
 );
 
+const descriptorAliases = new Map<string, NodeDescriptor>([
+  ["http_fetch", httpRequestNodeDescriptor],
+]);
+
 const compatibilityFlowTriggerByType = new Map(
   FLOW_NODE_DESCRIPTORS.flatMap((descriptor) =>
     descriptor.compatibilityFlowTriggerType
@@ -89,18 +99,20 @@ if (descriptorById.size !== FLOW_NODE_DESCRIPTORS.length) {
 export function getNodeDescriptor(
   nodeType: string,
 ): NodeDescriptor | undefined {
-  return descriptorById.get(nodeType);
+  return descriptorById.get(nodeType) ?? descriptorAliases.get(nodeType);
 }
 
-export function isRegisteredNodeType(
-  nodeType: string,
-): nodeType is RegisteredNodeType {
-  return descriptorById.has(nodeType);
+export function isRegisteredNodeType(nodeType: string): boolean {
+  return getNodeDescriptor(nodeType) !== undefined;
 }
 
-export function isFlowRuntimeNodeType(
+export function canonicalNodeType(
   nodeType: string,
-): nodeType is RegisteredNodeType {
+): RegisteredNodeType | undefined {
+  return getNodeDescriptor(nodeType)?.id as RegisteredNodeType | undefined;
+}
+
+export function isFlowRuntimeNodeType(nodeType: string): boolean {
   return getNodeDescriptor(nodeType)?.supportsFlowRuntime === true;
 }
 
@@ -143,6 +155,7 @@ export type {
   PartialNodeExecutionPolicy,
   NodeLike,
   NodePortDescriptor,
+  NodePortType,
   NodeRuntimeKind,
   NodeUiDescriptor,
   NodeValidationContext,

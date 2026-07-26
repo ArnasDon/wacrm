@@ -52,7 +52,10 @@ import {
 import { useTranslations } from "next-intl";
 import { unlinkNodeReferences } from "@/lib/flows/edges";
 import { resolveFallbackPolicy } from "@/lib/flows/fallback";
-import { getNodeDescriptor } from "@/lib/flows/registry";
+import {
+  canonicalNodeType,
+  getNodeDescriptor,
+} from "@/lib/flows/registry";
 import type {
   FlowFallbackPolicy,
   FlowNodeRow,
@@ -233,7 +236,8 @@ export function applyRestoredVersion(
     variable_schema: graph.variable_schema,
     nodes: graph.nodes.map((node) => ({
       node_key: node.node_key,
-      node_type: node.node_type as NodeType,
+      node_type: (canonicalNodeType(node.node_type) ??
+        node.node_type) as NodeType,
       config: node.config,
       position_x: node.position_x,
       position_y: node.position_y,
@@ -293,7 +297,8 @@ function builderStateFromRows(
     status: flow.status,
     nodes: nodes.map((node) => ({
       node_key: node.node_key,
-      node_type: node.node_type as NodeType,
+      node_type: (canonicalNodeType(node.node_type) ??
+        node.node_type) as NodeType,
       config: node.config as Record<string, unknown>,
       position_x: node.position_x,
       position_y: node.position_y,
@@ -417,6 +422,7 @@ export function FlowEditorProvider({
           trigger_config: state.trigger_config,
           entry_node_id: state.entry_node_id,
           fallback_policy: state.fallback_policy,
+          variable_schema: state.variable_schema,
         },
         state.nodes,
       ),

@@ -82,6 +82,19 @@ import {
   versionGraphNodes,
   type FlowVersionGraph,
 } from "./versions";
+import {
+  executeHttpRequest,
+  type HttpRequestConfig,
+  type HttpRequestOutput,
+} from "./http-request";
+import {
+  coerceDeclaredValue,
+  evaluateSwitch,
+  initializeFlowVariables,
+  validateCollectedInput,
+  type FlowVariableType,
+  type SwitchCase,
+} from "./runtime-primitives";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -789,6 +802,25 @@ async function evaluateConditionNode(
   });
 }
 
+async function resolveSwitchSubject(
+  db: AdminClient,
+  run: FlowRunRow,
+  config: { subject: "var" | "contact_field"; subject_key: string },
+): Promise<unknown> {
+  if (config.subject === "var") return run.vars[config.subject_key];
+  const allowed = ["name", "email", "phone", "company"] as const;
+  if (!allowed.includes(config.subject_key as (typeof allowed)[number])) {
+    throw new Error(`unsupported contact_field: ${config.subject_key}`);
+  }
+  const { data, error } = await db
+    .from("contacts")
+    .select(config.subject_key)
+    .eq("id", run.contact_id!)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Record<string, unknown> | null)?.[config.subject_key];
+}
+
 /**
  * Tiny `{{vars.foo}}` interpolation. Used by send_message + collect_input
  * prompt text so a captured `name` can show up in the next prompt
@@ -1030,6 +1062,181 @@ export async function advanceFromNodeKey(
         advancing_to: currentKey,
       });
       continue;
+    }
+    if (runtimeHook === "switch") {
+      const cfg = node.config as {
+        subject: "var" | "contact_field";
+        subject_key: string;
+        cases: SwitchCase[];
+        default_next: string;
+      };
+      const executed: PolicyNodeResult<string> = await executePolicyNode<string>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => {
+          const subject = await resolveSwitchSubject(db, run, cfg);
+          return evaluateSwitch(subject, cfg.cases) ?? cfg.default_next;
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      currentKey = executed.value;
+      await logEvent(db, run.id, "node_entered", node.node_key, {
+        switch_case_next: currentKey,
+      });
+      continue;
+    }
+    if (runtimeHook === "variable_set") {
+      const cfg = node.config as {
+        assignments: Array<{
+          key: string;
+          type: FlowVariableType;
+          value: unknown;
+        }>;
+        next_node_key: string;
+      };
+      const executed: PolicyNodeResult<Record<string, unknown>> =
+        await executePolicyNode<Record<string, unknown>>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => {
+          const nextVars = { ...run.vars };
+          for (const assignment of cfg.assignments) {
+            const raw =
+              typeof assignment.value === "string"
+                ? interpolateVars(assignment.value, run.vars)
+                : assignment.value;
+            const coerced = coerceDeclaredValue(assignment.type, raw);
+            if (!coerced.ok) {
+              throw new Error(
+                `variable "${assignment.key}" ${coerced.reason}`,
+              );
+            }
+            nextVars[assignment.key] = coerced.value;
+          }
+          const { error } = await db
+            .from("flow_runs")
+            .update({ vars: nextVars })
+            .eq("id", run.id);
+          if (error) throw error;
+          run.vars = nextVars;
+          return nextVars;
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (runtimeHook === "http_request") {
+      const cfg = node.config as unknown as HttpRequestConfig & {
+        next_node_key: string;
+      };
+      const executed: PolicyNodeResult<HttpRequestOutput> =
+        await executePolicyNode<HttpRequestOutput>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async (signal) => {
+          const renderedHeaders = Object.fromEntries(
+            Object.entries(cfg.headers ?? {}).map(([key, value]) => [
+              key,
+              interpolateVars(value, run.vars),
+            ]),
+          );
+          const output = await executeHttpRequest(
+            {
+              method: cfg.method,
+              url: interpolateVars(cfg.url, run.vars),
+              headers: renderedHeaders,
+              body: cfg.body
+                ? interpolateVars(cfg.body, run.vars)
+                : undefined,
+              response_var: cfg.response_var,
+            },
+            { signal },
+          );
+          const nextVars = { ...run.vars, [cfg.response_var]: output };
+          const { error } = await db
+            .from("flow_runs")
+            .update({ vars: nextVars })
+            .eq("id", run.id);
+          if (error) throw error;
+          run.vars = nextVars;
+          return output;
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (runtimeHook === "wait") {
+      const cfg = node.config as {
+        amount: number;
+        unit: "minutes" | "hours" | "days";
+        next_node_key: string;
+      };
+      const executed: PolicyNodeResult<{
+        wake_at: string;
+        next_node_key: string;
+      }> = await executePolicyNode<{
+        wake_at: string;
+        next_node_key: string;
+      }>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => {
+          const multiplier =
+            cfg.unit === "minutes"
+              ? 60_000
+              : cfg.unit === "hours"
+                ? 3_600_000
+                : 86_400_000;
+          const wakeAt = new Date(
+            Date.now() + cfg.amount * multiplier,
+          ).toISOString();
+          const { error } = await db.rpc("schedule_flow_wait", {
+            p_run_id: run.id,
+            p_flow_version_id: run.flow_version_id,
+            p_node_key: node.node_key,
+            p_next_node_key: cfg.next_node_key,
+            p_wake_at: wakeAt,
+          });
+          if (error) throw error;
+          return { wake_at: wakeAt, next_node_key: cfg.next_node_key };
+        },
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      return { outcome: "advanced" };
     }
     if (runtimeHook === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;
@@ -1368,7 +1575,15 @@ export async function handleReplyForActiveRun(
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
-    if (captured.length > 0 && cfg.var_key) {
+    if (
+      captured.length > 0 &&
+      cfg.var_key &&
+      validateCollectedInput(
+        captured,
+        cfg.validation ?? "any",
+        cfg.regex,
+      )
+    ) {
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       const { error: capErr } = await db
@@ -1553,6 +1768,7 @@ async function startNewRun(
       conversation_id: input.conversationId,
       status: "active",
       current_node_key: graph.entry_node_key,
+      vars: initializeFlowVariables(graph.variable_schema),
     })
     .select("*")
     .maybeSingle();

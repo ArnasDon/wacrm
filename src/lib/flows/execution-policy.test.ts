@@ -8,8 +8,23 @@ import {
   executeWithNodePolicy,
   resolveExhaustedNodePolicy,
   resolveNodeExecutionPolicy,
+  sanitizeExecutionData,
   sanitizeExecutionError,
 } from "./execution-policy";
+
+describe("sanitizeExecutionData", () => {
+  it("redacts nested secret headers and URL query parameters", () => {
+    expect(
+      sanitizeExecutionData({
+        url: "https://api.example.com/path?token=secret&id=42",
+        headers: { Authorization: "Bearer secret", "X-Trace": "ok" },
+      }),
+    ).toEqual({
+      url: "https://api.example.com/path",
+      headers: { Authorization: "[REDACTED]", "X-Trace": "ok" },
+    });
+  });
+});
 
 describe("resolveNodeExecutionPolicy", () => {
   it("keeps legacy snapshots on one fail-run attempt with a bounded timeout", () => {

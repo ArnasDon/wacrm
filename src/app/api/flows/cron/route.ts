@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { parseFlowVersionGraph } from '@/lib/flows/versions'
+import { resumeDueFlowWaits } from '@/lib/flows/wait-runtime'
 
 /**
  * Sweep abandoned active flow runs.
@@ -47,6 +48,15 @@ export async function GET(request: Request) {
 
   const admin = supabaseAdmin()
   const now = new Date()
+  let resumed = 0
+  try {
+    resumed = (await resumeDueFlowWaits(admin, now)).resumed
+  } catch (waitError) {
+    console.error(
+      '[flows-cron] durable wait resume failed:',
+      waitError instanceof Error ? waitError.message : waitError,
+    )
+  }
 
   // Pull all currently-active runs along with their parent flow's
   // fallback_policy. Joined in one query — the small set of active
@@ -62,7 +72,7 @@ export async function GET(request: Request) {
     console.error('[flows-cron] active-run scan failed:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  if (!runs?.length) return NextResponse.json({ swept: 0 })
+  if (!runs?.length) return NextResponse.json({ swept: 0, resumed })
 
   type Row = {
     id: string
@@ -133,5 +143,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ swept })
+  return NextResponse.json({ swept, resumed })
 }

@@ -7,6 +7,7 @@
  */
 
 import type { ZodIssue } from "zod";
+import type { FlowVariableDeclaration } from "./runtime-primitives";
 
 import {
   getCompatibilityFlowTriggerDescriptor,
@@ -32,6 +33,7 @@ interface FlowInput {
   fallback_policy?: {
     execution?: PartialNodeExecutionPolicy;
   };
+  variable_schema?: FlowVariableDeclaration[];
 }
 
 interface NodeInput {
@@ -112,6 +114,7 @@ export function validateFlowForActivation(
       ),
     );
     issues.push(...validateEdgeTargets(node, keys));
+    issues.push(...validateVariableReferences(node, flow.variable_schema ?? []));
   }
 
   if (flow.entry_node_id && keys.has(flow.entry_node_id)) {
@@ -129,6 +132,84 @@ export function validateFlowForActivation(
   }
 
   return issues;
+}
+
+function validateVariableReferences(
+  node: NodeInput,
+  schema: readonly FlowVariableDeclaration[],
+): ValidationIssue[] {
+  // Empty schemas are legacy-compatible: old snapshots used ad-hoc vars.
+  if (schema.length === 0) return [];
+  const declarations = new Map(schema.map((entry) => [entry.key, entry]));
+  const issue = (field: string, message: string): ValidationIssue => ({
+    severity: "error",
+    scope: "node",
+    node_key: node.node_key,
+    field,
+    message,
+  });
+  if (node.node_type === "variable_set") {
+    const assignments = Array.isArray(node.config.assignments)
+      ? (node.config.assignments as Array<Record<string, unknown>>)
+      : [];
+    return assignments.flatMap((assignment, index) => {
+      const key = typeof assignment.key === "string" ? assignment.key : "";
+      const declaration = declarations.get(key);
+      if (!declaration) {
+        return [
+          issue(
+            `assignments.${index}.key`,
+            `Variable "${key}" is not declared by this flow.`,
+          ),
+        ];
+      }
+      if (assignment.type !== declaration.type) {
+        return [
+          issue(
+            `assignments.${index}.type`,
+            `Variable "${key}" is declared as ${declaration.type}.`,
+          ),
+        ];
+      }
+      return [];
+    });
+  }
+  const reference =
+    node.node_type === "collect_input"
+      ? { key: node.config.var_key, expected: "string", field: "var_key" }
+      : node.node_type === "http_request" || node.node_type === "http_fetch"
+        ? {
+            key: node.config.response_var,
+            expected: "json",
+            field: "response_var",
+          }
+        : (node.node_type === "switch" || node.node_type === "condition") &&
+            node.config.subject === "var"
+          ? {
+              key: node.config.subject_key,
+              expected: undefined,
+              field: "subject_key",
+            }
+          : null;
+  if (!reference || typeof reference.key !== "string") return [];
+  const declaration = declarations.get(reference.key);
+  if (!declaration) {
+    return [
+      issue(
+        reference.field,
+        `Variable "${reference.key}" is not declared by this flow.`,
+      ),
+    ];
+  }
+  if (reference.expected && declaration.type !== reference.expected) {
+    return [
+      issue(
+        reference.field,
+        `Variable "${reference.key}" must be declared as ${reference.expected}.`,
+      ),
+    ];
+  }
+  return [];
 }
 
 function validateTrigger(

@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   sendText: vi.fn(),
   sendButtons: vi.fn(),
   sendList: vi.fn(),
+  httpRequest: vi.fn(),
 }));
 
 vi.mock("./zapi-send", () => ({
@@ -12,6 +13,11 @@ vi.mock("./zapi-send", () => ({
   engineSendInteractiveButtons: h.sendButtons,
   engineSendInteractiveList: h.sendList,
 }));
+
+vi.mock("./http-request", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./http-request")>();
+  return { ...original, executeHttpRequest: h.httpRequest };
+});
 
 import { advanceFromNodeKey, handleReplyForActiveRun } from "./engine";
 import { CommittedSideEffectError } from "./execution-policy";
@@ -33,6 +39,10 @@ function fakeDb(
   let executionSequence = 0;
 
   const db = {
+    rpc(name: string, value: Record<string, unknown>) {
+      writes.push({ table: `rpc:${name}`, kind: "insert", value });
+      return Promise.resolve({ data: [{ id: "ok" }], error: null });
+    },
     from(table: string) {
       return {
         select() {
@@ -132,9 +142,126 @@ beforeEach(() => {
   h.sendText.mockReset();
   h.sendButtons.mockReset();
   h.sendList.mockReset();
+  h.httpRequest.mockReset();
 });
 
 describe("node execution policy in the flow engine", () => {
+  it("persists a typed HTTP response and continues through the success edge", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { answer: 42 },
+      content_type: "application/json",
+    });
+    const activeRun = run();
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "GET",
+          url: "https://api.example.com/data",
+          headers: {},
+          response_var: "response",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(h.httpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://api.example.com/data" }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(activeRun.vars).toEqual({
+      response: {
+        status: 200,
+        body: { answer: 42 },
+        content_type: "application/json",
+      },
+    });
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "vars" in write.value,
+      ),
+    ).toBe(true);
+  });
+
+  it("schedules a durable wait through an atomic RPC without sleeping", async () => {
+    const activeRun = run({ current_node_key: "wait" });
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("wait", "wait", {
+          amount: 5,
+          unit: "minutes",
+          next_node_key: "end",
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const result = await advanceFromNodeKey(
+      db as never,
+      activeRun,
+      "wait",
+      nodes,
+    );
+
+    expect(result).toEqual({ outcome: "advanced" });
+    expect(
+      writes.find((write) => write.table === "rpc:schedule_flow_wait")?.value,
+    ).toMatchObject({
+      p_run_id: "run-1",
+      p_flow_version_id: "version-7",
+      p_node_key: "wait",
+      p_next_node_key: "end",
+    });
+  });
+
+  it("routes switch cases first-match and persists conservative variable assignments", async () => {
+    const activeRun = run({ vars: { tier: "gold-customer" } });
+    const { db } = fakeDb();
+    const nodes = new Map(
+      [
+        node("set", "variable_set", {
+          assignments: [{ key: "count", type: "number", value: "42" }],
+          next_node_key: "switch",
+        }),
+        node("switch", "switch", {
+          subject: "var",
+          subject_key: "tier",
+          cases: [
+            {
+              id: "contains",
+              label: "Gold-ish",
+              operator: "contains",
+              value: "gold",
+              next: "first",
+            },
+            {
+              id: "equals",
+              label: "Exact",
+              operator: "equals",
+              value: "gold-customer",
+              next: "second",
+            },
+          ],
+          default_next: "fallback",
+        }),
+        node("first", "end", {}),
+        node("second", "end", {}),
+        node("fallback", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "set", nodes);
+
+    expect(activeRun.vars).toEqual({ tier: "gold-customer", count: 42 });
+  });
   it("takes an error branch after a simulated Z-API failure without failing the run", async () => {
     h.sendText.mockRejectedValue(new Error("Z-API unavailable"));
     const { db, writes } = fakeDb();
@@ -500,6 +627,69 @@ describe("reprompt execution policy", () => {
     ];
     return new Map(entries.map((entry) => [entry.node_key, entry]));
   }
+
+  it("does not persist an invalid collect_input value and reprompts the same node", async () => {
+    h.sendText.mockResolvedValue({ whatsapp_message_id: "wamid-reprompt" });
+    const { db, writes } = fakeDb();
+    const nodes = new Map(
+      [
+        node("input", "collect_input", {
+          prompt_text: "Email?",
+          var_key: "email",
+          validation: "email",
+          next_node_key: "success",
+        }),
+        node("success", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      run({ current_node_key: "input" }),
+      { kind: "text", text: "not-an-email", meta_message_id: "invalid-1" },
+      nodes,
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("fallback_fired");
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          "vars" in write.value,
+      ),
+    ).toBe(false);
+  });
+
+  it("persists a valid regex collect_input and advances", async () => {
+    const activeRun = run({ current_node_key: "input" });
+    const { db } = fakeDb();
+    const nodes = new Map(
+      [
+        node("input", "collect_input", {
+          prompt_text: "Code?",
+          var_key: "code",
+          validation: "regex",
+          regex: "^[A-Z]+-\\d+$",
+          next_node_key: "success",
+        }),
+        node("success", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    const result = await handleReplyForActiveRun(
+      db as never,
+      activeRun,
+      { kind: "text", text: "ABC-12", meta_message_id: "valid-1" },
+      nodes,
+      fallbackPolicy,
+    );
+
+    expect(result.outcome).toBe("completed");
+    expect(activeRun.vars).toEqual({ code: "ABC-12" });
+  });
 
   it("retries a failed reprompt and increments reprompt_count once after success", async () => {
     h.sendButtons

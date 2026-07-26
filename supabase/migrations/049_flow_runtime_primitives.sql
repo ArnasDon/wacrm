@@ -207,3 +207,267 @@ $$;
 REVOKE ALL ON FUNCTION restore_flow_version(UUID, UUID, BIGINT, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION restore_flow_version(UUID, UUID, BIGINT, UUID) FROM authenticated;
 GRANT EXECUTE ON FUNCTION restore_flow_version(UUID, UUID, BIGINT, UUID) TO service_role;
+
+-- Durable waits are persisted state transitions, never in-process sleeps.
+ALTER TABLE flow_runs
+  DROP CONSTRAINT IF EXISTS flow_runs_status_check;
+ALTER TABLE flow_runs
+  ADD CONSTRAINT flow_runs_status_check CHECK (status IN (
+    'active',
+    'waiting',
+    'completed',
+    'handed_off',
+    'timed_out',
+    'paused_by_agent',
+    'failed'
+  ));
+ALTER TABLE flow_runs
+  ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ;
+
+DROP INDEX IF EXISTS idx_one_active_run_per_contact;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_contact
+  ON flow_runs(account_id, contact_id)
+  WHERE status IN ('active', 'waiting');
+
+CREATE TABLE IF NOT EXISTS flow_waits (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
+  flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
+  node_key TEXT NOT NULL,
+  next_node_key TEXT NOT NULL,
+  wake_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'claimed', 'resumed', 'failed')
+  ),
+  claim_token UUID,
+  claimed_at TIMESTAMPTZ,
+  resumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (flow_run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_flow_waits_due
+  ON flow_waits(wake_at, id)
+  WHERE status = 'pending';
+
+ALTER TABLE flow_waits ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS flow_waits_select ON flow_waits;
+CREATE POLICY flow_waits_select ON flow_waits FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM flow_runs run
+      WHERE run.id = flow_waits.flow_run_id
+        AND is_account_member(run.account_id, 'viewer')
+    )
+  );
+
+CREATE OR REPLACE FUNCTION schedule_flow_wait(
+  p_run_id UUID,
+  p_flow_version_id UUID,
+  p_node_key TEXT,
+  p_next_node_key TEXT,
+  p_wake_at TIMESTAMPTZ
+)
+RETURNS SETOF flow_waits
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_run flow_runs%ROWTYPE;
+BEGIN
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = p_run_id
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR v_run.flow_version_id IS DISTINCT FROM p_flow_version_id THEN
+    RAISE EXCEPTION 'flow run is not eligible for wait';
+  END IF;
+
+  -- A caller can safely retry after the transaction committed but its response
+  -- was lost. Return the already-scheduled wait instead of rejecting the run
+  -- because it has moved to the waiting state.
+  IF v_run.status = 'waiting' THEN
+    RETURN QUERY
+    SELECT wait.*
+    FROM flow_waits wait
+    WHERE wait.flow_run_id = p_run_id
+      AND wait.flow_version_id = p_flow_version_id
+      AND wait.node_key = p_node_key
+      AND wait.next_node_key = p_next_node_key
+      AND wait.status IN ('pending', 'claimed');
+
+    IF FOUND THEN
+      RETURN;
+    END IF;
+  END IF;
+
+  IF v_run.status <> 'active' THEN
+    RAISE EXCEPTION 'flow run is not eligible for wait';
+  END IF;
+
+  IF p_wake_at <= NOW() OR NULLIF(BTRIM(p_next_node_key), '') IS NULL THEN
+    RAISE EXCEPTION 'invalid flow wait';
+  END IF;
+
+  INSERT INTO flow_waits (
+    flow_run_id,
+    flow_version_id,
+    node_key,
+    next_node_key,
+    wake_at,
+    status,
+    claim_token,
+    claimed_at,
+    resumed_at,
+    updated_at
+  )
+  VALUES (
+    p_run_id,
+    p_flow_version_id,
+    p_node_key,
+    p_next_node_key,
+    p_wake_at,
+    'pending',
+    NULL,
+    NULL,
+    NULL,
+    NOW()
+  )
+  ON CONFLICT (flow_run_id) DO UPDATE
+  SET flow_version_id = EXCLUDED.flow_version_id,
+      node_key = EXCLUDED.node_key,
+      next_node_key = EXCLUDED.next_node_key,
+      wake_at = EXCLUDED.wake_at,
+      status = 'pending',
+      claim_token = NULL,
+      claimed_at = NULL,
+      resumed_at = NULL,
+      updated_at = NOW();
+
+  UPDATE flow_runs
+  SET status = 'waiting',
+      current_node_key = p_node_key,
+      wake_at = p_wake_at,
+      last_advanced_at = NOW()
+  WHERE id = p_run_id;
+
+  RETURN QUERY SELECT * FROM flow_waits WHERE flow_run_id = p_run_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION schedule_flow_wait(UUID, UUID, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC;
+REVOKE ALL ON FUNCTION schedule_flow_wait(UUID, UUID, TEXT, TEXT, TIMESTAMPTZ) FROM authenticated;
+GRANT EXECUTE ON FUNCTION schedule_flow_wait(UUID, UUID, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+
+CREATE OR REPLACE FUNCTION claim_due_flow_waits(
+  p_now TIMESTAMPTZ,
+  p_limit INTEGER DEFAULT 100
+)
+RETURNS TABLE (
+  id UUID,
+  flow_run_id UUID,
+  flow_version_id UUID,
+  node_key TEXT,
+  next_node_key TEXT,
+  claim_token UUID
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT wait.id
+    FROM flow_waits wait
+    WHERE wait.wake_at <= p_now
+      AND (
+        wait.status = 'pending'
+        OR (
+          wait.status = 'claimed'
+          AND wait.claimed_at < p_now - INTERVAL '5 minutes'
+        )
+      )
+    ORDER BY wait.wake_at, wait.id
+    FOR UPDATE SKIP LOCKED
+    LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500)
+  ),
+  claimed AS (
+    UPDATE flow_waits wait
+    SET status = 'claimed',
+        claim_token = uuid_generate_v4(),
+        claimed_at = p_now,
+        updated_at = p_now
+    FROM candidates
+    WHERE wait.id = candidates.id
+    RETURNING wait.*
+  )
+  SELECT
+    claimed.id,
+    claimed.flow_run_id,
+    claimed.flow_version_id,
+    claimed.node_key,
+    claimed.next_node_key,
+    claimed.claim_token
+  FROM claimed;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) FROM authenticated;
+GRANT EXECUTE ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) TO service_role;
+
+CREATE OR REPLACE FUNCTION resume_flow_wait(
+  p_wait_id UUID,
+  p_claim_token UUID,
+  p_flow_version_id UUID,
+  p_next_node_key TEXT
+)
+RETURNS SETOF flow_runs
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_wait flow_waits%ROWTYPE;
+BEGIN
+  SELECT * INTO v_wait
+  FROM flow_waits
+  WHERE id = p_wait_id
+  FOR UPDATE;
+
+  IF NOT FOUND
+     OR v_wait.status <> 'claimed'
+     OR v_wait.claim_token IS DISTINCT FROM p_claim_token
+     OR v_wait.flow_version_id IS DISTINCT FROM p_flow_version_id
+     OR v_wait.next_node_key IS DISTINCT FROM p_next_node_key THEN
+    RETURN;
+  END IF;
+
+  UPDATE flow_waits
+  SET status = 'resumed',
+      resumed_at = NOW(),
+      updated_at = NOW()
+  WHERE id = p_wait_id;
+
+  RETURN QUERY
+  UPDATE flow_runs
+  SET status = 'active',
+      current_node_key = p_next_node_key,
+      wake_at = NULL,
+      last_advanced_at = NOW()
+  WHERE id = v_wait.flow_run_id
+    AND status = 'waiting'
+    AND flow_version_id = p_flow_version_id
+  RETURNING flow_runs.*;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) TO service_role;

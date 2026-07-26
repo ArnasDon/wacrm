@@ -15,13 +15,30 @@ export const collectInputNodeDescriptor = createLinearNodeDescriptor({
       { kind: "textarea", key: "prompt_text", label: "Prompt to customer", rows: 2 },
       { kind: "text", key: "var_key", label: "Variable key" },
       {
+        kind: "select",
+        key: "validation",
+        label: "Validation",
+        options: [
+          { value: "any", label: "Any non-empty text" },
+          { value: "email", label: "Email" },
+          { value: "phone", label: "Phone" },
+          { value: "regex", label: "Regular expression" },
+        ],
+      },
+      { kind: "text", key: "regex", label: "Regex pattern" },
+      {
         kind: "next-node",
         key: "next_node_key",
         label: "Advance after capture",
       },
     ],
   },
-  defaultConfig: { prompt_text: "", var_key: "answer", next_node_key: "" },
+  defaultConfig: {
+    prompt_text: "",
+    var_key: "answer",
+    validation: "any",
+    next_node_key: "",
+  },
   ui: {
     color: "text-teal-400",
     blurb: "Asks a question, saves the reply",

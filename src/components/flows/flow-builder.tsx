@@ -48,6 +48,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { type ValidationIssue } from '@/lib/flows/validate';
+import type {
+  FlowVariableDeclaration,
+  FlowVariableType,
+} from '@/lib/flows/runtime-primitives';
 import {
   NODE_META,
   NodeIconChip,
@@ -164,6 +168,8 @@ export function FlowBuilder() {
         t={t}
       />
 
+      <VariableSchemaPanel state={state} setState={setState} />
+
       <EntryPicker state={state} setState={setState} t={t} />
 
       <section className="flex flex-col gap-3">
@@ -204,6 +210,175 @@ export function FlowBuilder() {
         )}
       </section>
     </div>
+  );
+}
+
+function defaultForVariableType(type: FlowVariableType): unknown {
+  if (type === 'number') return 0;
+  if (type === 'boolean') return false;
+  if (type === 'json') return {};
+  if (type === 'contact' || type === 'message') return undefined;
+  return '';
+}
+
+function VariableSchemaPanel({
+  state,
+  setState,
+}: {
+  state: BuilderState;
+  setState: React.Dispatch<React.SetStateAction<BuilderState>>;
+}) {
+  const variables = state.variable_schema;
+  const updateVariable = (
+    index: number,
+    patch: Partial<FlowVariableDeclaration>,
+  ) =>
+    setState((current) => ({
+      ...current,
+      variable_schema: current.variable_schema.map((variable, i) =>
+        i === index ? { ...variable, ...patch } : variable,
+      ),
+    }));
+
+  return (
+    <section className="border-border bg-card rounded-lg border p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-foreground text-sm font-semibold">Variables</h2>
+          <p className="text-muted-foreground text-xs">
+            Declare typed values used by input, switch, HTTP and assignment nodes.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setState((current) => ({
+              ...current,
+              variable_schema: [
+                ...current.variable_schema,
+                {
+                  key: `value_${current.variable_schema.length + 1}`,
+                  type: 'string',
+                  required: false,
+                  default: '',
+                },
+              ],
+            }))
+          }
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add variable
+        </Button>
+      </div>
+      {variables.length === 0 ? (
+        <p className="text-muted-foreground text-xs">
+          No variables declared. Legacy flows remain compatible.
+        </p>
+      ) : (
+        <div className="grid gap-2">
+          {variables.map((variable, index) => (
+            <div
+              key={`${variable.key}:${index}`}
+              className="grid grid-cols-[1.2fr_1fr_1.2fr_auto_auto] items-center gap-2"
+            >
+              <Input
+                value={variable.key}
+                onChange={(event) =>
+                  updateVariable(index, { key: event.target.value })
+                }
+                placeholder="Variable key"
+                className="bg-muted font-mono text-xs"
+              />
+              <Select
+                value={variable.type}
+                onValueChange={(value) => {
+                  const type = value as FlowVariableType;
+                  updateVariable(index, {
+                    type,
+                    default: defaultForVariableType(type),
+                  });
+                }}
+              >
+                <SelectTrigger className="bg-muted">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    'string',
+                    'number',
+                    'boolean',
+                    'json',
+                    'contact',
+                    'message',
+                  ].map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={
+                  variable.default === undefined
+                    ? ''
+                    : typeof variable.default === 'string' ||
+                        typeof variable.default === 'number'
+                      ? variable.default
+                      : JSON.stringify(variable.default)
+                }
+                disabled={
+                  variable.type === 'contact' || variable.type === 'message'
+                }
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  let next: unknown = raw;
+                  if (variable.type === 'number') next = Number(raw);
+                  if (variable.type === 'boolean') next = raw === 'true';
+                  if (variable.type === 'json') {
+                    try {
+                      next = JSON.parse(raw);
+                    } catch {
+                      next = raw;
+                    }
+                  }
+                  updateVariable(index, { default: next });
+                }}
+                placeholder="Default value"
+                className="bg-muted text-xs"
+              />
+              <label className="text-muted-foreground flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={variable.required ?? false}
+                  onChange={(event) =>
+                    updateVariable(index, { required: event.target.checked })
+                  }
+                />
+                Required
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Remove variable declaration"
+                onClick={() =>
+                  setState((current) => ({
+                    ...current,
+                    variable_schema: current.variable_schema.filter(
+                      (_, i) => i !== index,
+                    ),
+                  }))
+                }
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -403,7 +578,6 @@ function NodeCard({
   onSetEntry: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const meta = NODE_META[node.node_type];
   const c = nodeColors(node.node_type);
   const hasError = issues.some((i) => i.severity === 'error');
   const tSummary = useTranslations('Flows.summary');

@@ -53,6 +53,7 @@ import { useTranslations } from "next-intl";
 import { unlinkNodeReferences } from "@/lib/flows/edges";
 import { getNodeDescriptor } from "@/lib/flows/registry";
 import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
+import type { FlowVersionGraph } from "@/lib/flows/versions";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 
 // ============================================================
@@ -91,6 +92,9 @@ export interface FlowEditorContextValue {
   activating: boolean;
   issues: ValidationIssue[];
   canActivate: boolean;
+  versions: FlowVersionSummary[];
+  versionsLoading: boolean;
+  publishedVersionId: string | null;
 
   // Node mutations. addNode returns the generated key so the caller
   // (a NodeCard "Add" button or canvas "+" button) can scroll to /
@@ -105,8 +109,10 @@ export interface FlowEditorContextValue {
   removeNode: (key: string) => void;
 
   // Actions
-  save: () => Promise<void>;
+  save: () => Promise<boolean>;
   setStatus: (status: BuilderState["status"]) => Promise<void>;
+  reloadVersions: () => Promise<void>;
+  restoreVersion: (versionId: string) => Promise<void>;
   deleteFlow: () => Promise<void>;
 
   /**
@@ -140,6 +146,15 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
   return structuredClone(defaults);
 }
 
+export interface FlowVersionSummary {
+  id: string;
+  flow_id: string;
+  version: number;
+  published_at: string;
+  published_by: string | null;
+  label: string | null;
+}
+
 export function applyNodePositions(
   nodes: BuilderNode[],
   positions: Record<string, { x: number; y: number }>,
@@ -154,6 +169,25 @@ export function applyNodePositions(
         }
       : n;
   });
+}
+
+export function applyRestoredVersion(
+  state: BuilderState,
+  graph: FlowVersionGraph,
+): BuilderState {
+  return {
+    ...state,
+    trigger_type: graph.trigger.type,
+    trigger_config: graph.trigger.config,
+    entry_node_id: graph.entry_node_key,
+    nodes: graph.nodes.map((node) => ({
+      node_key: node.node_key,
+      node_type: node.node_type as NodeType,
+      config: node.config,
+      position_x: node.position_x,
+      position_y: node.position_y,
+    })),
+  };
 }
 
 // ============================================================
@@ -208,6 +242,11 @@ export function FlowEditorProvider({
 
   const [saving, setSaving] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [versions, setVersions] = useState<FlowVersionSummary[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [publishedVersionId, setPublishedVersionId] = useState(
+    initialFlow.published_version_id,
+  );
   // dirty flips on user edits; status-only updates (after the activate
   // API succeeds) use setStateRaw so they don't falsely re-flag the
   // form as dirty.
@@ -278,6 +317,28 @@ export function FlowEditorProvider({
     [issues],
   );
 
+  const reloadVersions = useCallback(async () => {
+    setVersionsLoading(true);
+    try {
+      const response = await fetch(`/api/flows/${initialFlow.id}/versions`);
+      if (!response.ok) throw new Error(`History failed: ${response.status}`);
+      const payload = (await response.json()) as {
+        versions?: FlowVersionSummary[];
+      };
+      setVersions(payload.versions ?? []);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Version history failed",
+      );
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, [initialFlow.id]);
+
+  useEffect(() => {
+    void reloadVersions();
+  }, [reloadVersions]);
+
   // ---- Save (PUT) ----
   const save = useCallback(async () => {
     setSaving(true);
@@ -300,13 +361,15 @@ export function FlowEditorProvider({
       }
       setDirty(false);
       toast.success(t("saved"));
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
       toast.error(msg);
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [initialFlow.id, state]);
+  }, [initialFlow.id, state, t]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
@@ -321,7 +384,8 @@ export function FlowEditorProvider({
         // latest state — the user shouldn't have to remember "save
         // then activate".
         if (next === "active") {
-          await save();
+          const saved = await save();
+          if (!saved) return;
         }
         const res = await fetch(`/api/flows/${initialFlow.id}/activate`, {
           method: "POST",
@@ -332,7 +396,17 @@ export function FlowEditorProvider({
           const json = await res.json().catch(() => ({}));
           throw new Error(json.error ?? `Status update failed: ${res.status}`);
         }
+        const payload = (await res.json()) as {
+          version?: FlowVersionSummary;
+        };
         setStateRaw((s) => ({ ...s, status: next }));
+        if (next === "active" && payload.version) {
+          setPublishedVersionId(payload.version.id);
+          setVersions((current) => [
+            payload.version!,
+            ...current.filter((version) => version.id !== payload.version!.id),
+          ]);
+        }
         toast.success(
           next === "active"
             ? t("statusActivated")
@@ -347,7 +421,42 @@ export function FlowEditorProvider({
         setActivating(false);
       }
     },
-    [canActivate, save, initialFlow.id],
+    [canActivate, save, initialFlow.id, t],
+  );
+
+  const restoreVersion = useCallback(
+    async (versionId: string) => {
+      setActivating(true);
+      try {
+        const response = await fetch(
+          `/api/flows/${initialFlow.id}/versions/${versionId}/restore`,
+          { method: "POST" },
+        );
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          graph?: FlowVersionGraph;
+        };
+        if (!response.ok || !payload.graph) {
+          throw new Error(
+            payload.error ?? `Restore failed: ${response.status}`,
+          );
+        }
+        setStateRaw((current) =>
+          applyRestoredVersion(current, payload.graph!),
+        );
+        setDirty(false);
+        toast.success(
+          "Version restored to the draft. Publish when you are ready to make it live.",
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Version restore failed",
+        );
+      } finally {
+        setActivating(false);
+      }
+    },
+    [initialFlow.id],
   );
 
   // ---- Delete ----
@@ -478,6 +587,9 @@ export function FlowEditorProvider({
       activating,
       issues,
       canActivate,
+      versions,
+      versionsLoading,
+      publishedVersionId,
       addNode,
       updateNode,
       updateNodeConfig,
@@ -486,6 +598,8 @@ export function FlowEditorProvider({
       removeNode,
       save,
       setStatus,
+      reloadVersions,
+      restoreVersion,
       deleteFlow,
       flashKey,
       requestFlash,
@@ -499,6 +613,9 @@ export function FlowEditorProvider({
       activating,
       issues,
       canActivate,
+      versions,
+      versionsLoading,
+      publishedVersionId,
       addNode,
       updateNode,
       updateNodeConfig,
@@ -507,6 +624,8 @@ export function FlowEditorProvider({
       removeNode,
       save,
       setStatus,
+      reloadVersions,
+      restoreVersion,
       deleteFlow,
       flashKey,
       requestFlash,

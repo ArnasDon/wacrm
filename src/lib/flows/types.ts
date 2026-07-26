@@ -234,6 +234,7 @@ export interface FlowRow {
   name: string;
   description: string | null;
   status: "draft" | "active" | "archived";
+  published_version_id: string | null;
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
@@ -258,6 +259,8 @@ export interface FlowNodeRow {
 export interface FlowRunRow {
   id: string;
   flow_id: string;
+  /** Immutable graph captured when this run started. */
+  flow_version_id: string;
   /** Tenancy. Matches flows.account_id; NOT NULL post-017. */
   account_id: string;
   /** Audit. Matches the parent flow.user_id. */
@@ -279,6 +282,17 @@ export interface FlowRunRow {
   last_advanced_at: string;
   ended_at: string | null;
   end_reason: string | null;
+}
+
+export interface FlowVersionRow {
+  id: string;
+  flow_id: string;
+  account_id: string;
+  version: number;
+  graph: unknown;
+  published_at: string;
+  published_by: string | null;
+  label: string | null;
 }
 
 // ============================================================

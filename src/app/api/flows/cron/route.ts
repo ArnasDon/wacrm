@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { resolveFallbackPolicy } from '@/lib/flows/fallback'
+import { parseFlowVersionGraph } from '@/lib/flows/versions'
 
 /**
  * Sweep abandoned active flow runs.
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   const { data: runs, error } = await admin
     .from('flow_runs')
     .select(
-      'id, flow_id, user_id, contact_id, last_advanced_at, flows ( fallback_policy )',
+      'id, flow_id, flow_version_id, user_id, contact_id, last_advanced_at, flow_versions!flow_runs_flow_version_id_fkey ( graph )',
     )
     .eq('status', 'active')
 
@@ -67,16 +67,41 @@ export async function GET(request: Request) {
   type Row = {
     id: string
     flow_id: string
+    flow_version_id: string | null
     user_id: string
     contact_id: string | null
     last_advanced_at: string
-    flows: { fallback_policy: unknown } | { fallback_policy: unknown }[] | null
+    flow_versions: { graph: unknown } | { graph: unknown }[] | null
   }
 
   let swept = 0
   for (const r of runs as Row[]) {
-    const flowsField = Array.isArray(r.flows) ? r.flows[0] : r.flows
-    const policy = resolveFallbackPolicy(flowsField?.fallback_policy ?? null)
+    const versionField = Array.isArray(r.flow_versions)
+      ? r.flow_versions[0]
+      : r.flow_versions
+    let policy
+    try {
+      policy = parseFlowVersionGraph(versionField?.graph).fallback_policy
+    } catch {
+      await admin
+        .from('flow_runs')
+        .update({
+          status: 'failed',
+          ended_at: now.toISOString(),
+          end_reason: 'published_snapshot_unavailable',
+        })
+        .eq('id', r.id)
+        .eq('status', 'active')
+      await admin.from('flow_run_events').insert({
+        flow_run_id: r.id,
+        event_type: 'error',
+        payload: {
+          reason: 'published_snapshot_unavailable',
+          flow_version_id: r.flow_version_id,
+        },
+      })
+      continue
+    }
     const lastAdvanced = new Date(r.last_advanced_at)
     const ageHours = (now.getTime() - lastAdvanced.getTime()) / (1000 * 60 * 60)
     if (ageHours < policy.on_timeout_hours) continue

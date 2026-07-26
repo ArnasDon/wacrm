@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyRestoredVersion,
   applyNodePositions,
   defaultConfigFor,
   uniqueNodeKey,
 } from "./flow-editor-state";
+import type { FlowVersionGraph } from "@/lib/flows/versions";
 import type { BuilderNode, NodeType } from "./shared";
 
 describe("uniqueNodeKey", () => {
@@ -73,6 +75,50 @@ describe("applyNodePositions", () => {
         position_y: 20,
       },
     ]);
+  });
+});
+
+describe("applyRestoredVersion", () => {
+  it("overwrites runtime draft content without changing the live status", () => {
+    const current = {
+      name: "Current name",
+      description: "Current description",
+      status: "active" as const,
+      trigger_type: "keyword" as const,
+      trigger_config: { keywords: ["draft"] },
+      entry_node_id: "draft_start",
+      nodes: [
+        { node_key: "draft_start", node_type: "end" as const, config: {} },
+      ],
+    };
+    const restored: FlowVersionGraph = {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "restored_end",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 12,
+        on_exhaust: "end",
+      },
+      nodes: [
+        {
+          node_key: "restored_end",
+          node_type: "end",
+          config: {},
+          position_x: 5,
+          position_y: 6,
+        },
+      ],
+    };
+
+    expect(applyRestoredVersion(current, restored)).toEqual({
+      ...current,
+      trigger_type: "manual",
+      trigger_config: {},
+      entry_node_id: "restored_end",
+      nodes: restored.nodes,
+    });
   });
 });
 

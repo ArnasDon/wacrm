@@ -22,6 +22,7 @@
  * /flows/[id]/runs) — those don't belong in the hook.
  */
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
   Loader2,
   PauseCircle,
   PlayCircle,
+  RotateCcw,
   Save,
   Trash2,
   Workflow,
@@ -55,7 +57,15 @@ export function EditorHeader() {
     save,
     setStatus,
     deleteFlow,
+    versions,
+    versionsLoading,
+    publishedVersionId,
+    restoreVersion,
   } = useFlowEditor();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const publishedVersion = versions.find(
+    (version) => version.id === publishedVersionId,
+  );
 
   return (
     <div className="flex flex-col gap-1.5 px-6 pt-5">
@@ -82,6 +92,13 @@ export function EditorHeader() {
           className="min-w-[120px] max-w-[340px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-lg font-bold leading-tight tracking-tight text-foreground outline-none transition-colors hover:bg-muted focus:border-primary focus:bg-transparent focus:shadow-[0_0_0_3px_var(--primary-soft)]"
         />
         <StatusChip status={state.status} />
+        <span className="text-xs text-muted-foreground">
+          {publishedVersion
+            ? `Published v${publishedVersion.version}`
+            : publishedVersionId
+              ? "Published version"
+              : "Not published"}
+        </span>
         {dirty && (
           <span
             className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-300"
@@ -95,6 +112,14 @@ export function EditorHeader() {
 
         {/* ---- right: runs · delete · activate · save ---- */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setHistoryOpen((open) => !open)}
+          >
+            <History className="h-3.5 w-3.5" />
+            Versions
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -115,7 +140,7 @@ export function EditorHeader() {
             <Trash2 className="h-3.5 w-3.5" />
             Delete
           </Button>
-          {state.status === "active" ? (
+          {state.status === "active" && (
             <Button
               variant="outline"
               size="sm"
@@ -129,36 +154,83 @@ export function EditorHeader() {
               )}
               Pause
             </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void setStatus("active")}
-              disabled={activating || !canActivate}
-              title={
-                !canActivate
-                  ? "Fix the issues below before activating"
-                  : undefined
-              }
-            >
-              {activating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <PlayCircle className="h-3.5 w-3.5" />
-              )}
-              Activate
-            </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void setStatus("active")}
+            disabled={activating || !canActivate}
+            title={
+              !canActivate
+                ? "Fix the issues below before publishing"
+                : "Save the draft and publish a new immutable version"
+            }
+          >
+            {activating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PlayCircle className="h-3.5 w-3.5" />
+            )}
+            Publish
+          </Button>
           <Button onClick={() => void save()} disabled={saving} size="sm">
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Save className="h-3.5 w-3.5" />
             )}
-            Save
+            Save Draft
           </Button>
         </div>
       </div>
+
+      {historyOpen && (
+        <div className="mt-2 rounded-lg border border-border bg-card p-3">
+          <div className="mb-2 text-xs font-semibold text-foreground">
+            Published version history
+          </div>
+          {versionsLoading ? (
+            <div className="text-xs text-muted-foreground">
+              Loading versions…
+            </div>
+          ) : versions.length === 0 ? (
+            <div className="text-xs text-muted-foreground">
+              Publish this draft to create its first version.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {versions.map((version) => (
+                <div
+                  key={version.id}
+                  className="flex items-center gap-3 rounded-md border border-border/70 px-3 py-2 text-xs"
+                >
+                  <span className="font-semibold">v{version.version}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {version.label || "Unlabelled publication"}
+                  </span>
+                  {version.id === publishedVersionId && (
+                    <span className="text-emerald-400">Live</span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={activating}
+                    onClick={() => {
+                      const confirmed = window.confirm(
+                        `Restore version ${version.version}? This overwrites the current editable draft, including unsaved changes. The live published version will not change until you publish again.`,
+                      );
+                      if (confirmed) void restoreVersion(version.id);
+                    }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Restore draft
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---- description note (subtle, inline-editable) ---- */}
       <input

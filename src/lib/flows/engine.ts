@@ -39,7 +39,7 @@ import {
   engineSendMedia,
   engineSendText,
 } from "./zapi-send";
-import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { decideFallback } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
@@ -50,6 +50,8 @@ import {
   type FlowNodeRow,
   type FlowRow,
   type FlowRunRow,
+  type FlowFallbackPolicy,
+  type FlowVersionRow,
   type ParsedInbound,
   type SendButtonsNodeConfig,
   type SendListNodeConfig,
@@ -60,6 +62,12 @@ import {
   type KeywordTriggerConfig,
 } from "./types";
 import { getNodeDescriptor, type NodeDescriptor } from "./registry";
+import {
+  matchesFlowVersionTrigger,
+  parseFlowVersionGraph,
+  versionGraphNodes,
+  type FlowVersionGraph,
+} from "./versions";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -234,48 +242,41 @@ async function loadActiveRunForContact(
   return rows[0] ?? null;
 }
 
-async function loadFlow(
+/** Load and schema-validate the immutable snapshot pinned to a run. */
+async function loadFlowVersion(
   db: AdminClient,
-  flowId: string,
-): Promise<FlowRow | null> {
+  versionId: string,
+  expectedFlowId: string,
+): Promise<{ id: string; graph: FlowVersionGraph } | null> {
   const { data, error } = await db
-    .from("flows")
-    .select("*")
-    .eq("id", flowId)
+    .from("flow_versions")
+    .select("id, flow_id, graph")
+    .eq("id", versionId)
     .maybeSingle();
   if (error) {
-    console.error("[flows] loadFlow error:", error.message);
+    console.error("[flows] loadFlowVersion error:", error.message);
     return null;
   }
-  return (data as FlowRow | null) ?? null;
+  const row = data as Pick<FlowVersionRow, "id" | "flow_id" | "graph"> | null;
+  if (!row || row.flow_id !== expectedFlowId) return null;
+  try {
+    return { id: row.id, graph: parseFlowVersionGraph(row.graph) };
+  } catch (error) {
+    console.error(
+      "[flows] corrupt flow version:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
 }
 
-/**
- * Load every node of a flow in one round trip and key them by
- * `node_key`. The advance loop is then in-memory — a 5-node
- * auto-advancing chain costs one SELECT, not five.
- *
- * Returns an empty map on error so the caller can still dispatch
- * cleanly (every subsequent .get() returns undefined → the run
- * fails with node_not_found, same as the old per-node lookup).
- */
-async function loadAllNodes(
-  db: AdminClient,
+function snapshotNodes(
   flowId: string,
-): Promise<Map<string, FlowNodeRow>> {
-  const { data, error } = await db
-    .from("flow_nodes")
-    .select("*")
-    .eq("flow_id", flowId);
-  if (error) {
-    console.error("[flows] loadAllNodes error:", error.message);
-    return new Map();
-  }
-  const map = new Map<string, FlowNodeRow>();
-  for (const row of (data ?? []) as FlowNodeRow[]) {
-    map.set(row.node_key, row);
-  }
-  return map;
+  graph: FlowVersionGraph,
+): Map<string, FlowNodeRow> {
+  return new Map(
+    versionGraphNodes(graph, flowId).map((node) => [node.node_key, node]),
+  );
 }
 
 async function logEvent(
@@ -347,7 +348,9 @@ async function findEntryFlow(
   accountId: string,
   message: ParsedInbound,
   isFirstInbound: boolean,
-): Promise<FlowRow | null> {
+): Promise<
+  { flow: FlowRow; versionId: string; graph: FlowVersionGraph } | null
+> {
   // Only text messages can match an entry trigger. Interactive replies
   // are responses to existing prompts; they never start a new flow.
   if (message.kind !== "text") return null;
@@ -365,17 +368,18 @@ async function findEntryFlow(
 
   const typed = flows as FlowRow[];
   for (const flow of typed) {
-    if (flow.trigger_type === "keyword") {
-      if (matchesKeywordTrigger(
-        message.text,
-        flow.trigger_config as KeywordTriggerConfig,
-      )) {
-        return flow;
-      }
-    } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
-      return flow;
+    if (!flow.published_version_id) continue;
+    const version = await loadFlowVersion(
+      db,
+      flow.published_version_id,
+      flow.id,
+    );
+    if (
+      version &&
+      matchesFlowVersionTrigger(version.graph, message, isFirstInbound)
+    ) {
+      return { flow, versionId: version.id, graph: version.graph };
     }
-    // 'manual' triggers do not auto-start from inbound messages.
   }
   return null;
 }
@@ -901,10 +905,39 @@ export async function dispatchInboundToFlows(
           outcome: "duplicate_inbound_ignored",
         };
       }
-      // One SELECT for the whole flow's nodes — advance loop is now
-      // in-memory. See loadAllNodes.
-      const nodes = await loadAllNodes(db, activeRun.flow_id);
-      return handleReplyForActiveRun(db, activeRun, input.message, nodes);
+      // Never consult the mutable draft: the pinned version owns nodes,
+      // trigger semantics, and fallback behavior for the run's lifetime.
+      const version = activeRun.flow_version_id
+        ? await loadFlowVersion(
+            db,
+            activeRun.flow_version_id,
+            activeRun.flow_id,
+          )
+        : null;
+      if (!version) {
+        await logEvent(db, activeRun.id, "error", activeRun.current_node_key, {
+          reason: "published_snapshot_unavailable",
+          flow_version_id: activeRun.flow_version_id ?? null,
+        });
+        await endRun(
+          db,
+          activeRun.id,
+          "failed",
+          "published_snapshot_unavailable",
+        );
+        return {
+          consumed: true,
+          flow_run_id: activeRun.id,
+          outcome: "no_match",
+        };
+      }
+      return handleReplyForActiveRun(
+        db,
+        activeRun,
+        input.message,
+        snapshotNodes(activeRun.flow_id, version.graph),
+        version.graph.fallback_policy,
+      );
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -914,11 +947,17 @@ export async function dispatchInboundToFlows(
       input.message,
       input.isFirstInboundMessage,
     );
-    if (!flow || !flow.entry_node_id) {
+    if (!flow) {
       return { consumed: false, outcome: "no_match" };
     }
-    const nodes = await loadAllNodes(db, flow.id);
-    return startNewRun(db, flow, input, nodes);
+    return startNewRun(
+      db,
+      flow.flow,
+      flow.versionId,
+      flow.graph,
+      input,
+      snapshotNodes(flow.flow.id, flow.graph),
+    );
   } catch (err) {
     console.error(
       "[flows] dispatchInboundToFlows threw:",
@@ -933,6 +972,7 @@ async function handleReplyForActiveRun(
   run: FlowRunRow,
   message: ParsedInbound,
   nodes: Map<string, FlowNodeRow>,
+  fallbackPolicy: FlowFallbackPolicy,
 ): Promise<DispatchInboundResult> {
   // Note: we intentionally do NOT persist the raw customer text. A
   // `collect_input` prompt that asks "what's your card number?" would
@@ -1038,9 +1078,7 @@ async function handleReplyForActiveRun(
   }
 
   // No match → fallback. Apply the policy.
-  const policy = resolveFallbackPolicy(
-    (await loadFlow(db, run.flow_id))?.fallback_policy,
-  );
+  const policy = fallbackPolicy;
   const newReprompts = run.reprompt_count + 1;
   await db
     .from("flow_runs")
@@ -1104,6 +1142,8 @@ async function handleReplyForActiveRun(
 async function startNewRun(
   db: AdminClient,
   flow: FlowRow,
+  versionId: string,
+  graph: FlowVersionGraph,
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
@@ -1114,6 +1154,7 @@ async function startNewRun(
     .from("flow_runs")
     .insert({
       flow_id: flow.id,
+      flow_version_id: versionId,
       // Tenancy: NOT NULL post-017. The partial unique index
       // `idx_one_active_run_per_contact` is over (account_id,
       // contact_id) WHERE status='active', so two accounts sharing
@@ -1125,7 +1166,7 @@ async function startNewRun(
       contact_id: input.contactId,
       conversation_id: input.conversationId,
       status: "active",
-      current_node_key: flow.entry_node_id,
+      current_node_key: graph.entry_node_key,
     })
     .select("*")
     .maybeSingle();
@@ -1139,9 +1180,10 @@ async function startNewRun(
     return { consumed: false, outcome: "no_match" };
   }
   const run = inserted as FlowRunRow;
-  await logEvent(db, run.id, "started", flow.entry_node_id, {
+  await logEvent(db, run.id, "started", graph.entry_node_key, {
     flow_id: flow.id,
-    trigger_type: flow.trigger_type,
+    flow_version_id: versionId,
+    trigger_type: graph.trigger.type,
     meta_message_id: input.message.meta_message_id,
   });
   // Bump the flow's execution counter — used by the builder UI to
@@ -1161,7 +1203,12 @@ async function startNewRun(
   }
 
   // Run the advance loop starting from the entry node.
-  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id!, nodes);
+  const outcome = await advanceFromNodeKey(
+    db,
+    run,
+    graph.entry_node_key,
+    nodes,
+  );
   return {
     consumed: true,
     flow_run_id: run.id,

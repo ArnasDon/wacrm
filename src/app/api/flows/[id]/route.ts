@@ -11,9 +11,8 @@ import {
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
  * PUT   /api/flows/[id]  — replace name/trigger/entry/fallback + the
  *                          full node graph (delete-then-insert under
- *                          the hood; not atomic, but the runner is
- *                          resilient to mid-edit reads — node_not_found
- *                          gracefully ends the run).
+ *                          the hood). These rows are an editable draft;
+ *                          the runner reads only immutable versions.
  * DELETE /api/flows/[id] — hard delete (RLS+CASCADE clean up nodes,
  *                          runs, events).
  *
@@ -168,8 +167,8 @@ export async function PUT(
   }
 
   if (body.nodes !== undefined) {
-    // Delete-then-insert. Not transactional but the runner handles
-    // mid-edit reads safely (a node_not_found ends the run cleanly).
+    // Delete-then-insert affects only the editable draft. A failed save
+    // cannot change the published pointer or any pinned in-flight run.
     const { error: delErr } = await admin
       .from('flow_nodes')
       .delete()

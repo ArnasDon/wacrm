@@ -452,6 +452,29 @@ describe("flow code v1", () => {
     ).toThrowError(/SUSPECTED_SECRET/);
   });
 
+  it("rejects portable markers anywhere inside trigger config", () => {
+    for (const marker of [
+      { $secret: "trigger.keyword" },
+      { $resource: "tag:vip" },
+    ]) {
+      expect(() =>
+        parseFlowCodeText(
+          JSON.stringify({
+            ...draft,
+            trigger: {
+              type: "keyword",
+              config: {
+                keywords: [marker],
+                match_type: "contains",
+                case_sensitive: false,
+              },
+            },
+          }),
+        ),
+      ).toThrowError(/PORTABLE_MARKER_FORBIDDEN: trigger\.config/);
+    }
+  });
+
   it("allows portable markers only at descriptor-declared paths", () => {
     expect(() =>
       parseFlowCodeText(
@@ -603,14 +626,59 @@ describe("flow code v1", () => {
         }),
       ),
     ).toThrowError(/INVALID_VARIABLE_DEFAULT/);
-    expect(() =>
+    expect(
       parseFlowCodeText(
         variableDocument({
-          key: "runtime_only",
+          key: "contact",
           type: "contact",
           required: false,
           sensitive: false,
-          default: {},
+          default: { name: "Ada" },
+        }),
+      ).document.variables[0],
+    ).toEqual(
+      expect.objectContaining({
+        default: { name: "Ada" },
+      }),
+    );
+    expect(
+      parseFlowCodeText(
+        variableDocument({
+          key: "message",
+          type: "message",
+          required: false,
+          sensitive: false,
+          default: [{ kind: "text", text: "Hello" }],
+        }),
+      ).document.variables[0],
+    ).toEqual(
+      expect.objectContaining({
+        default: [{ kind: "text", text: "Hello" }],
+      }),
+    );
+    for (const type of ["contact", "message"]) {
+      expect(() =>
+        parseFlowCodeText(
+          variableDocument({
+            key: type,
+            type,
+            required: false,
+            sensitive: false,
+            default: "invalid",
+          }),
+        ),
+      ).toThrowError(/INVALID_VARIABLE_DEFAULT/);
+    }
+    expect(() =>
+      parseFlowCodeText(
+        variableDocument({
+          key: "oversized_contact",
+          type: "contact",
+          required: false,
+          sensitive: false,
+          default: {
+            notes: Array.from({ length: 7_000 }, () => "0123456789"),
+          },
         }),
       ),
     ).toThrowError(/INVALID_VARIABLE_DEFAULT/);
@@ -630,6 +698,42 @@ describe("flow code v1", () => {
         default: { enabled: true, retries: 2 },
       }),
     );
+  });
+
+  it("round-trips canonical contact and message defaults through export", () => {
+    const variableSchema = [
+      {
+        key: "contact",
+        type: "contact" as const,
+        required: false,
+        sensitive: false,
+        default: { name: "Ada", tags: ["vip"] },
+      },
+      {
+        key: "message",
+        type: "message" as const,
+        required: false,
+        sensitive: false,
+        default: [{ kind: "text", text: "Hello" }],
+      },
+    ];
+    const exported = exportFlowCode({
+      flow: {
+        name: "Variable defaults",
+        description: null,
+        trigger_type: "manual",
+        trigger_config: {},
+        entry_node_id: null,
+        fallback_policy: draft.fallback,
+        variable_schema: variableSchema,
+      },
+      nodes: [],
+    }).document;
+
+    expect(exported.variables).toEqual(variableSchema);
+    expect(
+      parseFlowCodeText(canonicalFlowCodeText(exported)).document.variables,
+    ).toEqual(variableSchema);
   });
 
   it("treats runtime config validation after hydration as fatal", () => {
@@ -906,9 +1010,124 @@ describe("flow code v1", () => {
       compiled.issues.filter((issue) => issue.severity === "blocking"),
     ).toEqual([]);
     expect(compiled.graph.nodes[0].config.media_url).toBe(destinationUrl);
-    expect(compiled.resolved["asset:private_png"]).toBe(
-      "asset:destination-hash",
+    const assetRef = exported.document.resources[0].ref;
+    expect(compiled.resolved[assetRef]).toBe("asset:destination-hash");
+  });
+
+  it("creates stable collision-free refs for resource names with the same slug", () => {
+    const exportInput = {
+      flow: {
+        name: "Colliding resources",
+        description: null,
+        trigger_type: "manual" as const,
+        trigger_config: {},
+        entry_node_id: "first",
+        fallback_policy: draft.fallback,
+        variable_schema: [],
+      },
+      nodes: [
+        {
+          node_key: "first",
+          node_type: "set_tag",
+          position_x: 0,
+          position_y: 0,
+          config: {
+            mode: "add",
+            tag_id: "tag-1",
+            next_node_key: "second",
+          },
+        },
+        {
+          node_key: "second",
+          node_type: "set_tag",
+          position_x: 0,
+          position_y: 100,
+          config: {
+            mode: "add",
+            tag_id: "tag-2",
+            next_node_key: "end",
+          },
+        },
+      ],
+      resourceCatalog: {
+        flows: [],
+        resources: [
+          { id: "tag-1", kind: "tag" as const, name: "A-B" },
+          { id: "tag-2", kind: "tag" as const, name: "A B" },
+        ],
+      },
+    };
+    const first = exportFlowCode(exportInput).document;
+    const reversed = exportFlowCode({
+      ...exportInput,
+      nodes: [...exportInput.nodes].reverse(),
+      resourceCatalog: {
+        ...exportInput.resourceCatalog,
+        resources: [...exportInput.resourceCatalog.resources].reverse(),
+      },
+    }).document;
+    const refs = first.resources.map(({ ref }) => ref);
+
+    expect(new Set(refs).size).toBe(2);
+    expect(canonicalFlowCodeText(first)).toBe(canonicalFlowCodeText(reversed));
+    expect(
+      first.nodes.map((node) => (node.config.tag_id as { $resource: string }).$resource),
+    ).toEqual(expect.arrayContaining(refs));
+
+    const compiled = compileFlowCode(first, exportInput.resourceCatalog);
+    expect(compiled.issues.filter((issue) => issue.severity === "blocking")).toEqual(
+      [],
     );
+    expect(
+      compiled.graph.nodes.map((node) => node.config.tag_id),
+    ).toEqual(expect.arrayContaining(["tag-1", "tag-2"]));
+  });
+
+  it("rejects distinct source resources with the same portable identity", () => {
+    expect(() =>
+      exportFlowCode({
+        flow: {
+          name: "Duplicate resources",
+          description: null,
+          trigger_type: "manual",
+          trigger_config: {},
+          entry_node_id: "first",
+          fallback_policy: draft.fallback,
+          variable_schema: [],
+        },
+        nodes: [
+          {
+            node_key: "first",
+            node_type: "set_tag",
+            position_x: 0,
+            position_y: 0,
+            config: {
+              mode: "add",
+              tag_id: "tag-1",
+              next_node_key: "second",
+            },
+          },
+          {
+            node_key: "second",
+            node_type: "set_tag",
+            position_x: 0,
+            position_y: 100,
+            config: {
+              mode: "add",
+              tag_id: "tag-2",
+              next_node_key: "end",
+            },
+          },
+        ],
+        resourceCatalog: {
+          flows: [],
+          resources: [
+            { id: "tag-1", kind: "tag", name: "VIP" },
+            { id: "tag-2", kind: "tag", name: "VIP" },
+          ],
+        },
+      }),
+    ).toThrowError(/RESOURCE_REF_COLLISION/);
   });
 
   it("keeps clean external HTTPS media portable and rejects secret or foreign-storage URLs", () => {

@@ -51,8 +51,9 @@ describe("migration 055 flow code import", () => {
     expect(sql).toMatch(
       /p_nodes::TEXT[\s\S]*"\\\$\(secret\|resource\)"/i,
     );
+    expect(sql).not.toMatch(/jsonb_object_length/i);
     expect(sql).toMatch(
-      /CASE[\s\S]*jsonb_typeof\(secret\.value\)[\s\S]*jsonb_object_length\(secret\.value\)/i,
+      /SELECT pg_catalog\.count\(\*\)[\s\S]*jsonb_object_keys\(secret\.value\)/i,
     );
   });
 

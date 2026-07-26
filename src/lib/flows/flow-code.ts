@@ -387,7 +387,9 @@ function parseVariable(value: unknown, index: number): FlowCodeVariable {
         typeof value.default === "number" &&
         Number.isFinite(value.default)) ||
       (type === "boolean" && typeof value.default === "boolean") ||
-      (type === "json" && value.default !== undefined);
+      (type === "json" && value.default !== undefined) ||
+      (["contact", "message"].includes(type) &&
+        (isRecord(value.default) || Array.isArray(value.default)));
     let encoded: string | undefined;
     try {
       encoded = JSON.stringify(value.default);
@@ -625,6 +627,7 @@ export function parseFlowCodeText(text: string): {
     ],
     "trigger.config",
   );
+  assertNoPortableMarkers(value.trigger.config, "trigger.config");
   assertNoSecret(value.trigger.config, "trigger.config");
   assertNoSourceIdentifier(value.trigger.config, "trigger.config");
   if (!Array.isArray(value.variables)) {
@@ -990,8 +993,21 @@ function slug(value: string): string {
   );
 }
 
-function canonicalResourceRef(resource: CatalogResource): string {
-  return `${resource.kind}:${slug(resource.name)}`;
+function canonicalResourceRef(
+  resource: CatalogResource,
+  parent?: CatalogResource,
+): string {
+  const identity = JSON.stringify([
+    resource.kind,
+    resource.name.normalize("NFKC").trim(),
+    parent?.kind ?? null,
+    parent?.name.normalize("NFKC").trim() ?? null,
+  ]);
+  const suffix = createHash("sha256")
+    .update(identity, "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  return `${resource.kind}:${slug(resource.name)}_${suffix}`;
 }
 
 function toCatalog(input?: FlowCodeCatalog): CatalogResource[] {
@@ -1031,6 +1047,7 @@ export function exportFlowCode(input: {
 }): { document: FlowCodeDocument; warnings: FlowCodeIssue[] } {
   const warnings: FlowCodeIssue[] = [];
   const resources = new Map<string, FlowCodeResource>();
+  const sourceResourceIdsByRef = new Map<string, string>();
   const requirements = new Map<string, FlowCodeSecretRequirement>();
   const catalog = toCatalog(input.resourceCatalog);
 
@@ -1114,10 +1131,15 @@ export function exportFlowCode(input: {
           `${node.node_key}.${resourceRef.field}`,
         );
       }
-      const ref = canonicalResourceRef(found);
       const parent = found.parentId
         ? catalog.find((candidate) => candidate.id === found.parentId)
         : undefined;
+      const ref = canonicalResourceRef(found, parent);
+      const existingSourceId = sourceResourceIdsByRef.get(ref);
+      if (existingSourceId !== undefined && existingSourceId !== found.id) {
+        fail("RESOURCE_REF_COLLISION", ref);
+      }
+      sourceResourceIdsByRef.set(ref, found.id);
       resources.set(ref, {
         ref,
         kind: found.kind,

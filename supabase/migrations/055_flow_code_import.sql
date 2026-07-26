@@ -121,7 +121,10 @@ BEGIN
     WHERE CASE
       WHEN pg_catalog.jsonb_typeof(secret.value) IS DISTINCT FROM 'object'
         THEN TRUE
-      WHEN pg_catalog.jsonb_object_length(secret.value) <> 2
+      WHEN (
+        SELECT pg_catalog.count(*)
+        FROM pg_catalog.jsonb_object_keys(secret.value)
+      ) <> 2
         OR NULLIF(secret.value->>'node_key', '') IS NULL
         OR secret.value->>'node_key' !~ '^[a-zA-Z_][a-zA-Z0-9_.:-]{0,127}$'
         OR pg_catalog.jsonb_typeof(secret.value->'path') IS DISTINCT FROM 'array'

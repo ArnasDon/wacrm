@@ -169,7 +169,7 @@ export function FlowCodePanel() {
     }
     const submitted = controller.editedText;
     const timeout = window.setTimeout(() => {
-      void fetch("/api/flows/import/preview", {
+      void fetch(`/api/flows/${flow.id}/import/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -255,7 +255,7 @@ export function FlowCodePanel() {
         });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [controller, resourceBindings, setState]);
+  }, [controller, flow.id, resourceBindings, setState]);
 
   if (loading || !controller) {
     return (
@@ -487,7 +487,9 @@ export function FlowCodePanel() {
                 {issue.code}
                 {issue.message ? ` — ${issue.message}` : ""}
               </span>
-              {issue.code === "RESOURCE_AMBIGUOUS" &&
+              {["RESOURCE_AMBIGUOUS", "RESOURCE_BINDING_INVALID"].includes(
+                issue.code,
+              ) &&
                 issue.path?.startsWith("resources.") &&
                 issue.candidates &&
                 issue.candidates.length > 0 && (
@@ -500,16 +502,24 @@ export function FlowCodePanel() {
                     }
                     onChange={(event) => {
                       const ref = issue.path!.slice("resources.".length);
+                      const selectedResourceId = event.target.value;
                       setPendingPreview(null);
                       setController((current) =>
                         current
                           ? invalidateFlowCodePreview(current)
                           : current,
                       );
-                      setResourceBindings((current) => ({
-                        ...current,
-                        [ref]: event.target.value,
-                      }));
+                      setResourceBindings((current) => {
+                        if (selectedResourceId) {
+                          return {
+                            ...current,
+                            [ref]: selectedResourceId,
+                          };
+                        }
+                        const next = { ...current };
+                        delete next[ref];
+                        return next;
+                      });
                     }}
                     className="ml-2 h-7 rounded border border-border bg-background px-2 text-foreground"
                   >

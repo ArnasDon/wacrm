@@ -1,6 +1,40 @@
 import { FLOW_CODE_LIMITS } from "@/lib/flows/flow-code";
 
-const REQUEST_OVERHEAD_BYTES = 32 * 1024;
+const JSON_REQUEST_OVERHEAD_BYTES = 32 * 1024;
+const MULTIPART_REQUEST_OVERHEAD_BYTES = 64 * 1024;
+const MAX_SECRET_VALUE_BYTES = 16 * 1024;
+const MAX_SECRET_BINDINGS_BYTES = 1024 * 1024;
+const MAX_MULTIPART_REQUEST_BYTES =
+  FLOW_CODE_LIMITS.maxBytes +
+  MAX_SECRET_BINDINGS_BYTES +
+  MULTIPART_REQUEST_OVERHEAD_BYTES;
+
+async function readBoundedBody(
+  request: Request,
+  maxBytes: number,
+): Promise<ArrayBuffer | null> {
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer as ArrayBuffer;
+}
 
 export async function readFlowCodeRequest(
   request: Request,
@@ -27,12 +61,13 @@ export async function readFlowCodeRequest(
     Number.isFinite(declared) &&
     declared >
       (isMultipart
-        ? FLOW_CODE_LIMITS.maxBytes
-        : FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES)
+        ? MAX_MULTIPART_REQUEST_BYTES
+        : FLOW_CODE_LIMITS.maxBytes + JSON_REQUEST_OVERHEAD_BYTES)
   ) {
     return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
   }
   const secretBindings: Record<string, string> = {};
+  let secretBindingBytes = 0;
   let value: unknown;
   if (isMultipart) {
     if (mode === "preview") {
@@ -40,7 +75,13 @@ export async function readFlowCodeRequest(
     }
     let form: FormData;
     try {
-      form = await request.formData();
+      const raw = await readBoundedBody(request, MAX_MULTIPART_REQUEST_BYTES);
+      if (!raw) {
+        return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
+      }
+      form = await new Response(raw, {
+        headers: { "content-type": contentType },
+      }).formData();
     } catch {
       return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
     }
@@ -51,11 +92,14 @@ export async function readFlowCodeRequest(
       }
       if (key.startsWith("secret:")) {
         const name = key.slice("secret:".length);
+        const entryBytes = new TextEncoder().encode(entry).byteLength;
+        secretBindingBytes += entryBytes;
         if (
           name in secretBindings ||
           !/^[a-zA-Z_][a-zA-Z0-9_.:-]{0,255}$/.test(name) ||
           !entry ||
-          entry.length > 16_384 ||
+          entryBytes > MAX_SECRET_VALUE_BYTES ||
+          secretBindingBytes > MAX_SECRET_BINDINGS_BYTES ||
           Object.keys(secretBindings).length >=
             FLOW_CODE_LIMITS.maxSecretRequirements
         ) {
@@ -84,7 +128,7 @@ export async function readFlowCodeRequest(
     const raw = await request.text();
     if (
       new TextEncoder().encode(raw).byteLength >
-      FLOW_CODE_LIMITS.maxBytes + REQUEST_OVERHEAD_BYTES
+      FLOW_CODE_LIMITS.maxBytes + JSON_REQUEST_OVERHEAD_BYTES
     ) {
       return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
     }
@@ -114,6 +158,12 @@ export async function readFlowCodeRequest(
     typeof body.document !== "string"
   ) {
     return { ok: false, status: 400, code: "INVALID_IMPORT_REQUEST" };
+  }
+  if (
+    new TextEncoder().encode(body.document).byteLength >
+    FLOW_CODE_LIMITS.maxBytes
+  ) {
+    return { ok: false, status: 413, code: "DOCUMENT_TOO_LARGE" };
   }
   const resourceBindings =
     body.resource_bindings === undefined

@@ -282,6 +282,7 @@ SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_request public.flow_approval_requests%ROWTYPE;
+  v_actor_profile public.profiles%ROWTYPE;
   v_actor UUID := auth.uid();
 BEGIN
   IF v_actor IS NULL THEN
@@ -299,24 +300,37 @@ BEGIN
   FROM public.flow_approval_requests
   WHERE id = p_request_id
   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'approval_not_found';
+  END IF;
+
+  -- Lock order: approval request first, then the actor profile. Membership
+  -- mutation RPCs UPDATE profiles and never lock approval requests, so this
+  -- FOR SHARE conflicts with removal/demotion/transfer without a lock cycle.
+  SELECT * INTO v_actor_profile
+  FROM public.profiles
+  WHERE user_id = v_actor
+  FOR SHARE;
   IF NOT FOUND
+     OR v_actor_profile.account_id IS DISTINCT FROM v_request.account_id
      OR NOT (
        (
          v_actor = v_request.assignee_user_id
-         AND public.is_account_member(v_request.account_id, 'agent')
+         AND v_actor_profile.account_role IN ('owner', 'admin', 'agent')
        )
-       OR public.is_account_member(v_request.account_id, 'admin')
+       OR v_actor_profile.account_role IN ('owner', 'admin')
      )
   THEN
     RAISE EXCEPTION 'approval_not_found';
   END IF;
-  IF v_request.expires_at <= clock_timestamp() THEN
-    RAISE EXCEPTION 'approval_expired';
-  END IF;
 
-  -- Same-decision replay is a successful no-op even if its old revision is
-  -- retried after the client lost the response. Opposite decisions conflict.
-  IF v_request.decision = p_decision THEN
+  -- An exact retry is a successful no-op even after the deadline if the
+  -- client lost the original response. Any changed decision, note, or CAS
+  -- revision remains a conflict.
+  IF v_request.decision = p_decision
+     AND p_expected_revision = v_request.revision - 1
+     AND v_request.decision_note IS NOT DISTINCT FROM NULLIF(BTRIM(p_note), '')
+  THEN
     RETURN jsonb_build_object(
       'id', v_request.id,
       'account_id', v_request.account_id,
@@ -337,6 +351,9 @@ BEGIN
     );
   ELSIF v_request.decision IS NOT NULL THEN
     RAISE EXCEPTION 'approval_already_decided';
+  END IF;
+  IF v_request.expires_at <= clock_timestamp() THEN
+    RAISE EXCEPTION 'approval_expired';
   END IF;
   IF v_request.status <> 'pending'
      OR v_request.revision <> p_expected_revision

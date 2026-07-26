@@ -6,6 +6,14 @@ const sql = readFileSync(
   join(process.cwd(), "supabase/migrations/053_flow_approvals.sql"),
   "utf8",
 );
+const memberRpcsSql = readFileSync(
+  join(process.cwd(), "supabase/migrations/018_account_member_rpcs.sql"),
+  "utf8",
+);
+const invitationRpcsSql = readFileSync(
+  join(process.cwd(), "supabase/migrations/019_invitation_rpcs.sql"),
+  "utf8",
+);
 
 describe("migration 053 durable flow approvals", () => {
   it("stores account/version/run/visit-bound requests with bounded payloads and retention", () => {
@@ -73,22 +81,70 @@ describe("migration 053 durable flow approvals", () => {
     expect(decision).not.toContain("'resume_id'");
   });
 
-  it("rechecks current tenant membership and expiry under the decision row lock", () => {
+  it("locks the request then the actor membership row before authorizing", () => {
     const decision = sql.match(
       /CREATE OR REPLACE FUNCTION decide_flow_approval[\s\S]+?\$\$;/i,
     )?.[0];
     expect(decision).toBeTruthy();
     expect(decision).toMatch(
-      /SELECT \* INTO v_request[\s\S]+?FOR UPDATE;[\s\S]+?v_actor\s*=\s*v_request\.assignee_user_id[\s\S]+?is_account_member\s*\(\s*v_request\.account_id,\s*'agent'\s*\)/i,
+      /SELECT \* INTO v_request[\s\S]+?flow_approval_requests[\s\S]+?FOR UPDATE;[\s\S]+?SELECT \* INTO v_actor_profile[\s\S]+?profiles[\s\S]+?user_id\s*=\s*v_actor[\s\S]+?FOR SHARE;/i,
     );
     expect(decision).toMatch(
-      /is_account_member\s*\(\s*v_request\.account_id,\s*'admin'\s*\)/i,
+      /v_actor_profile\.account_id\s+IS DISTINCT FROM\s+v_request\.account_id[\s\S]+?v_actor\s*=\s*v_request\.assignee_user_id[\s\S]+?v_actor_profile\.account_role\s+IN\s*\(\s*'owner',\s*'admin',\s*'agent'\s*\)[\s\S]+?v_actor_profile\.account_role\s+IN\s*\(\s*'owner',\s*'admin'\s*\)/i,
+    );
+    expect(decision).toContain(
+      "Lock order: approval request first, then the actor profile.",
+    );
+  });
+
+  it("serializes approval authorization with every membership removal, demotion, and transfer write", () => {
+    const setRole = memberRpcsSql.match(
+      /CREATE OR REPLACE FUNCTION public\.set_member_role[\s\S]+?\$\$;/i,
+    )?.[0];
+    const removeMember = memberRpcsSql.match(
+      /CREATE OR REPLACE FUNCTION public\.remove_account_member[\s\S]+?\$\$;/i,
+    )?.[0];
+    const transferOwner = memberRpcsSql.match(
+      /CREATE OR REPLACE FUNCTION public\.transfer_account_ownership[\s\S]+?\$\$;/i,
+    )?.[0];
+    const redeemInvitation = invitationRpcsSql.match(
+      /CREATE OR REPLACE FUNCTION public\.redeem_invitation[\s\S]+?\$\$;/i,
+    )?.[0];
+
+    expect(setRole).toMatch(
+      /UPDATE profiles[\s\S]+?SET account_role\s*=\s*p_new_role[\s\S]+?WHERE user_id\s*=\s*p_user_id/i,
+    );
+    expect(removeMember).toMatch(
+      /UPDATE profiles[\s\S]+?SET account_id\s*=\s*v_new_account_id[\s\S]+?account_role\s*=\s*'owner'[\s\S]+?WHERE user_id\s*=\s*p_user_id/i,
+    );
+    expect(transferOwner).toMatch(
+      /UPDATE profiles SET account_role\s*=\s*'admin'[\s\S]+?WHERE user_id\s*=\s*auth\.uid\(\)/i,
+    );
+    expect(redeemInvitation).toMatch(
+      /UPDATE profiles[\s\S]+?SET account_id\s*=\s*v_inv\.account_id[\s\S]+?account_role\s*=\s*v_inv\.role[\s\S]+?WHERE user_id\s*=\s*v_caller_id/i,
+    );
+  });
+
+  it("allows an exact authorized replay after expiry but blocks a first decision at the deadline", () => {
+    const decision = sql.match(
+      /CREATE OR REPLACE FUNCTION decide_flow_approval[\s\S]+?\$\$;/i,
+    )?.[0] ?? "";
+    const replayAt = decision.indexOf("IF v_request.decision = p_decision");
+    const expiryAt = decision.indexOf(
+      "v_request.expires_at <= clock_timestamp()",
+    );
+    const mutationAt = decision.indexOf(
+      "UPDATE public.flow_approval_requests",
+    );
+
+    expect(replayAt).toBeGreaterThan(-1);
+    expect(expiryAt).toBeGreaterThan(replayAt);
+    expect(mutationAt).toBeGreaterThan(expiryAt);
+    expect(decision).toMatch(
+      /IF v_request\.decision\s*=\s*p_decision[\s\S]+?p_expected_revision\s*=\s*v_request\.revision\s*-\s*1[\s\S]+?v_request\.decision_note\s+IS NOT DISTINCT FROM\s+NULLIF\(BTRIM\(p_note\),\s*''\)[\s\S]+?RETURN jsonb_build_object/i,
     );
     expect(decision).toMatch(
       /v_request\.expires_at\s*<=\s*clock_timestamp\(\)[\s\S]+?approval_expired/i,
-    );
-    expect(decision?.indexOf("approval_expired")).toBeLessThan(
-      decision?.indexOf("UPDATE public.flow_approval_requests") ?? -1,
     );
   });
 

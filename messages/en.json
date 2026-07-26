@@ -1209,6 +1209,7 @@
         "loopOperator_less_than": "is less than",
         "loopOperator_less_or_equal": "is less than or equal to",
         "subFlowPublished": "Published child flow",
+        "subFlowMaxDepth": "Maximum nested sub-flow depth",
         "subFlowPickPublished": "Pick a published flow",
         "inputMapping": "Input mapping",
         "outputMapping": "Output mapping",

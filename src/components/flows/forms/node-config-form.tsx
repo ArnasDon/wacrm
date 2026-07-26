@@ -1830,6 +1830,19 @@ function SubFlowForm({
         output
         onChange={(output_mapping) => onUpdateConfig({ output_mapping })}
       />
+      <label className="text-muted-foreground text-xs">
+        {t("subFlowMaxDepth")}
+        <Input
+          className="bg-muted mt-1"
+          type="number"
+          min={1}
+          max={8}
+          value={cfg.max_depth ?? 8}
+          onChange={(event) =>
+            onUpdateConfig({ max_depth: event.target.valueAsNumber })
+          }
+        />
+      </label>
       <NextNodeRow
         value={cfg.next_node_key ?? ""}
         allNodes={allNodes}

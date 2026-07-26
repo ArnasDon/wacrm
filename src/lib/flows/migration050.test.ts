@@ -19,6 +19,7 @@ describe("migration 050 composite flow state", () => {
     expect(sql).toContain("error_policy");
     expect(sql).toContain("failure_reason");
     expect(sql).toContain("depth");
+    expect(sql).toContain("depth_limit");
     expect(sql).toMatch(
       /CREATE UNIQUE INDEX[\s\S]*flow_run_id,\s*depth[\s\S]*WHERE state IN \('active', 'returning'\)/i,
     );
@@ -49,6 +50,9 @@ describe("migration 050 composite flow state", () => {
     expect(sql).toContain("FOR UPDATE");
     expect(sql).toMatch(
       /jsonb_typeof\(p_child_vars\) IS DISTINCT FROM 'object'/i,
+    );
+    expect(sql).toMatch(
+      /push_flow_call_frame[\s\S]*p_max_depth INTEGER[\s\S]*v_parent_depth_limit[\s\S]*LEAST\([\s\S]*p_max_depth[\s\S]*v_depth > v_depth_limit/i,
     );
   });
 

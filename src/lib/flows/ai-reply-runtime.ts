@@ -29,8 +29,85 @@ export interface FlowAiReplyArgs {
   prompt: string;
   inputVariables: readonly string[];
   vars: Readonly<Record<string, unknown>>;
+  context?: unknown;
   maxTokens: number;
   signal?: AbortSignal;
+}
+
+const MAX_PROMPT_CODE_POINTS = 12_000;
+const MAX_PROMPT_BYTES = 24_000;
+const MAX_VALUE_CODE_POINTS = 4_096;
+const MAX_VALUE_BYTES = 8_192;
+const MAX_VALUE_DEPTH = 4;
+const MAX_COLLECTION_ENTRIES = 50;
+
+function assertTextBudget(
+  text: string,
+  maxCodePoints: number,
+  maxBytes: number,
+): void {
+  if (
+    Array.from(text).length > maxCodePoints ||
+    new TextEncoder().encode(text).byteLength > maxBytes
+  ) {
+    throw new Error("AI prompt exceeds the execution budget.");
+  }
+}
+
+function normalizePromptValue(
+  value: unknown,
+  depth = 0,
+  stack: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (!value || typeof value !== "object") {
+    throw new Error("AI prompt context contains an unsupported value.");
+  }
+  if (depth >= MAX_VALUE_DEPTH) {
+    throw new Error("AI prompt context exceeds the depth limit.");
+  }
+  if (stack.has(value)) {
+    throw new Error("AI prompt context contains a circular value.");
+  }
+  const entries = Array.isArray(value)
+    ? value
+    : Object.entries(value);
+  if (entries.length > MAX_COLLECTION_ENTRIES) {
+    throw new Error("AI prompt context exceeds the collection limit.");
+  }
+  stack.add(value);
+  const normalized = Array.isArray(value)
+    ? value.map((entry) => normalizePromptValue(entry, depth + 1, stack))
+    : Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          normalizePromptValue(entry, depth + 1, stack),
+        ]),
+      );
+  stack.delete(value);
+  return normalized;
+}
+
+function serializePromptValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  const normalized = normalizePromptValue(value);
+  const serialized =
+    typeof normalized === "string"
+      ? normalized
+      : JSON.stringify(normalized);
+  assertTextBudget(
+    serialized,
+    MAX_VALUE_CODE_POINTS,
+    MAX_VALUE_BYTES,
+  );
+  return serialized;
 }
 
 function renderDeclaredVariables(
@@ -43,9 +120,37 @@ function renderDeclaredVariables(
     (_match, key: string) => {
       if (!declared.has(key)) return "";
       const value = vars[key];
-      return value === undefined || value === null ? "" : String(value);
+      return serializePromptValue(value);
     },
   );
+}
+
+function compileAiPrompt(args: FlowAiReplyArgs): {
+  systemPrompt: string;
+  prompt: string;
+} {
+  const declared = new Set(args.inputVariables);
+  const systemPrompt = renderDeclaredVariables(
+    args.systemPrompt,
+    args.vars,
+    declared,
+  );
+  const renderedPrompt = renderDeclaredVariables(
+    args.prompt,
+    args.vars,
+    declared,
+  );
+  const context =
+    args.context === undefined
+      ? ""
+      : `\n\nContext:\n${serializePromptValue(args.context)}`;
+  const prompt = `${renderedPrompt}${context}`;
+  assertTextBudget(
+    `${systemPrompt}\n${prompt}`,
+    MAX_PROMPT_CODE_POINTS,
+    MAX_PROMPT_BYTES,
+  );
+  return { systemPrompt, prompt };
 }
 
 export async function generateFlowAiReply(
@@ -56,6 +161,7 @@ export async function generateFlowAiReply(
   if (!args.conversationId) {
     throw new Error("AI reply requires a conversation.");
   }
+  const compiled = compileAiPrompt(args);
   const config = await (dependencies.loadConfig ?? loadAiConfig)(
     db as never,
     args.accountId,
@@ -94,15 +200,10 @@ export async function generateFlowAiReply(
     throw new Error("AI reply credit cap reached.");
   }
 
-  const declared = new Set(args.inputVariables);
   const generated = await (dependencies.generate ?? generateText)({
     config,
-    systemPrompt: renderDeclaredVariables(
-      args.systemPrompt,
-      args.vars,
-      declared,
-    ),
-    prompt: renderDeclaredVariables(args.prompt, args.vars, declared),
+    systemPrompt: compiled.systemPrompt,
+    prompt: compiled.prompt,
     maxTokens: args.maxTokens,
     signal: args.signal,
   });

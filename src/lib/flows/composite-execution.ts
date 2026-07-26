@@ -2,8 +2,10 @@ import {
   advanceEachState,
   advanceLoopState,
   mapSubFlowInputs,
+  mergeSubFlowInputs,
   type EachState,
   type LoopState,
+  type SubFlowVariableDeclaration,
   type SubFlowVariableMapping,
 } from "./composite-runtime";
 
@@ -226,7 +228,10 @@ export async function enterSubFlow(
     returnNodeKey: string;
     inputMapping: readonly SubFlowVariableMapping[];
     outputMapping: readonly SubFlowVariableMapping[];
+    maxDepth: number;
     failurePolicy: SubFlowFailurePolicy;
+    boundInputs?: unknown;
+    childVariableSchema?: readonly SubFlowVariableDeclaration[];
   },
 ): Promise<CompositeRun> {
   if (!run.current_node_key || !run.current_visit_id) {
@@ -244,9 +249,17 @@ export async function enterSubFlow(
     p_child_flow_id: args.childFlowId,
     p_child_flow_version_id: args.childVersionId,
     p_child_entry_node_key: args.childEntryNodeKey,
-    p_child_vars: mapSubFlowInputs(run.vars, args.inputMapping),
+    p_child_vars: args.childVariableSchema
+      ? mergeSubFlowInputs(
+          run.vars,
+          args.inputMapping,
+          args.boundInputs,
+          args.childVariableSchema,
+        )
+      : mapSubFlowInputs(run.vars, args.inputMapping),
     p_output_mapping: args.outputMapping,
     p_error_policy: args.failurePolicy,
+    p_max_depth: args.maxDepth,
     },
   );
   Object.assign(run, committed);

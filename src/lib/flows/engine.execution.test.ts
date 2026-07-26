@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   sendButtons: vi.fn(),
   sendList: vi.fn(),
   httpRequest: vi.fn(),
+  aiReply: vi.fn(),
   addTag: vi.fn(),
   removeTag: vi.fn(),
 }));
@@ -30,6 +31,10 @@ vi.mock("./http-request", async (importOriginal) => {
   const original = await importOriginal<typeof import("./http-request")>();
   return { ...original, executeHttpRequest: h.httpRequest };
 });
+
+vi.mock("./ai-reply-runtime", () => ({
+  generateFlowAiReply: h.aiReply,
+}));
 
 import { advanceFromNodeKey, handleReplyForActiveRun } from "./engine";
 import { CommittedSideEffectError } from "./execution-policy";
@@ -542,6 +547,7 @@ beforeEach(() => {
   h.sendButtons.mockReset();
   h.sendList.mockReset();
   h.httpRequest.mockReset();
+  h.aiReply.mockReset();
   h.addTag.mockReset();
   h.removeTag.mockReset();
 });
@@ -1008,6 +1014,98 @@ describe("node execution policy in the flow engine", () => {
       body: { answer: 42 },
       content_type: "application/json",
     });
+  });
+
+  it("feeds an upstream JSON output into the AI context data port", async () => {
+    h.aiReply.mockResolvedValue({ text: "Bound answer" });
+    const activeRun = run({
+      current_node_key: "ai",
+      vars: { upstream: { order: 42 } },
+    });
+    const { db } = fakeDb();
+    const nodes = new Map(
+      [
+        node("source", "variable_set", {
+          assignments: [],
+          next_node_key: "ai",
+        }),
+        node("ai", "ai_reply", {
+          system_prompt: "System",
+          prompt: "Answer",
+          input_variables: [],
+          output_variable: "answer",
+          max_tokens: 100,
+          next_node_key: "end",
+          _data_inputs: {
+            context: {
+              source_node_key: "source",
+              source_handle: "variables",
+            },
+          },
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "ai", nodes);
+
+    expect(h.aiReply).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        context: { upstream: { order: 42 } },
+      }),
+    );
+    expect(activeRun.vars.answer).toBe("Bound answer");
+  });
+
+  it("feeds concrete child outputs into a downstream HTTP request", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { accepted: true },
+      content_type: "application/json",
+    });
+    const activeRun = run({
+      current_node_key: "http",
+      vars: { child_result: 42 },
+    });
+    const { db } = fakeDb();
+    const nodes = new Map(
+      [
+        node("child", "sub_flow", {
+          flow_id: "child-flow",
+          input_mapping: [],
+          output_mapping: [
+            { child_key: "answer", parent_key: "child_result" },
+          ],
+          max_depth: 8,
+          next_node_key: "http",
+        }),
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/data",
+          headers: {},
+          response_var: "response",
+          next_node_key: "end",
+          _data_inputs: {
+            request: {
+              source_node_key: "child",
+              source_handle: "outputs",
+            },
+          },
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(h.httpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: JSON.stringify({ answer: 42 }),
+      }),
+      expect.anything(),
+    );
+    expect(activeRun.vars.response).toMatchObject({ status: 200 });
   });
 
   it("schedules a durable wait through an atomic RPC without sleeping", async () => {

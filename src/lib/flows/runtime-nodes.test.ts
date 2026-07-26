@@ -64,6 +64,30 @@ describe("flow runtime primitive descriptors", () => {
       }),
     ).toBe(17);
   });
+
+  it("exposes mapped sub-flow outputs as a concrete JSON object", () => {
+    expect(
+      resolveNodeOutput(
+        "sub_flow",
+        {
+          output_mapping: [
+            { child_key: "answer", parent_key: "result" },
+            { child_key: "count", parent_key: "total" },
+          ],
+        },
+        "outputs",
+        { result: "ok", total: 2 },
+      ),
+    ).toEqual({ answer: "ok", count: 2 });
+    expect(
+      resolveNodeOutput(
+        "sub_flow",
+        { output_mapping: [] },
+        "outputs",
+        {},
+      ),
+    ).toEqual({});
+  });
 });
 
 describe("runtime primitive schemas", () => {

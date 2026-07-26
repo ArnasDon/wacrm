@@ -18,6 +18,30 @@ export const subFlowNodeDescriptor = createLinearNodeDescriptor({
   ],
   supportsDefaultValue: false,
   runtimeHook: "sub_flow",
+  resolveOutput: (config, portId, vars) => {
+    if (portId !== "outputs") return undefined;
+    const mappings = Array.isArray(config.output_mapping)
+      ? config.output_mapping
+      : [];
+    return Object.fromEntries(
+      mappings.flatMap((entry) => {
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          !("child_key" in entry) ||
+          !("parent_key" in entry) ||
+          typeof entry.child_key !== "string" ||
+          typeof entry.parent_key !== "string" ||
+          !Object.hasOwn(vars, entry.parent_key)
+        ) {
+          return [];
+        }
+        return [
+          [entry.child_key, structuredClone(vars[entry.parent_key])],
+        ];
+      }),
+    );
+  },
   visible: true,
   form: { kind: "specialized", component: "sub_flow" },
   defaultConfig: {

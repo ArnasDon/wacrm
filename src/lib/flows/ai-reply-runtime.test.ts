@@ -36,6 +36,7 @@ describe("flow ai reply runtime", () => {
         effectId: "effect-1",
         operationId: "operation-1",
         claimToken: "claim-1",
+        context: { order: 42 },
       },
       { loadConfig, generate },
     );
@@ -49,7 +50,11 @@ describe("flow ai reply runtime", () => {
       p_max_replies: 2,
     });
     expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: "Hello Ada " }),
+      expect.objectContaining({
+        prompt: expect.stringMatching(
+          /Hello Ada [\s\S]*Context:[\s\S]*"order":42/,
+        ),
+      }),
     );
   });
 
@@ -195,5 +200,90 @@ describe("flow ai reply runtime", () => {
       generateFlowAiReply(nonOwnerDb, args, dependencies),
     ).rejects.toThrow(/another|owner|progress/i);
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: "repeated variable amplification",
+      prompt: Array.from({ length: 10 }, () => "{{vars.large}}").join(""),
+      vars: { large: "x".repeat(2_000) },
+      inputVariables: ["large"],
+      context: undefined,
+    },
+    {
+      label: "oversized JSON context",
+      prompt: "Hello",
+      vars: {},
+      inputVariables: [],
+      context: { payload: "x".repeat(20_000) },
+    },
+    {
+      label: "Unicode byte amplification",
+      prompt: "😀".repeat(7_000),
+      vars: {},
+      inputVariables: [],
+      context: undefined,
+    },
+  ])("rejects $label before credit or provider", async ({
+    prompt,
+    vars,
+    inputVariables,
+    context,
+  }) => {
+    const rpc = vi.fn();
+    const generate = vi.fn();
+    await expect(
+      generateFlowAiReply(
+        { rpc },
+        {
+          accountId: "account",
+          conversationId: "conversation",
+          systemPrompt: "",
+          prompt,
+          inputVariables,
+          vars,
+          maxTokens: 10,
+          effectId: "effect-budget",
+          operationId: "operation-budget",
+          claimToken: "claim-budget",
+          context,
+        },
+        { loadConfig: vi.fn(async () => aiConfig), generate },
+      ),
+    ).rejects.toThrow(/budget|limit|large/i);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("rejects circular, deep or oversized-array context before credit", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    for (const context of [
+      circular,
+      { a: { b: { c: { d: { e: true } } } } },
+      { values: Array.from({ length: 51 }, (_, index) => index) },
+    ]) {
+      const rpc = vi.fn();
+      await expect(
+        generateFlowAiReply(
+          { rpc },
+          {
+            accountId: "account",
+            conversationId: "conversation",
+            systemPrompt: "",
+            prompt: "Hello",
+            inputVariables: [],
+            vars: {},
+            maxTokens: 10,
+            effectId: "effect-structure",
+            operationId: "operation-structure",
+            claimToken: "claim-structure",
+            context,
+          },
+          { loadConfig: vi.fn(async () => aiConfig), generate: vi.fn() },
+        ),
+      ).rejects.toThrow(/context|depth|circular|array|limit/i);
+      expect(rpc).not.toHaveBeenCalled();
+    }
   });
 });

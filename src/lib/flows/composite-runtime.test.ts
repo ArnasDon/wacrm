@@ -8,6 +8,7 @@ import {
   createEachState,
   createLoopState,
   mapSubFlowInputs,
+  mergeSubFlowInputs,
   mapSubFlowOutputs,
   validateSubFlowCallGraph,
 } from "./composite-runtime";
@@ -82,6 +83,46 @@ describe("durable composite runtime decisions", () => {
         [{ child_key: "answer", parent_key: "result" }],
       ),
     ).toEqual({ existing: 1, result: "42" });
+  });
+
+  it("merges defaults, mappings and bound JSON with binding precedence", () => {
+    expect(
+      mergeSubFlowInputs(
+        { customer: "Mapped", age: 42 },
+        [
+          { parent_key: "customer", child_key: "name" },
+          { parent_key: "age", child_key: "age" },
+        ],
+        { name: "Bound" },
+        [
+          { key: "name", type: "string", default: "Default" },
+          { key: "age", type: "number", default: 0 },
+        ],
+      ),
+    ).toEqual({ name: "Bound", age: 42 });
+  });
+
+  it("rejects unknown or mistyped bound and mapped child inputs", () => {
+    const schema = [{ key: "name", type: "string" as const }];
+    expect(() =>
+      mergeSubFlowInputs({}, [], { unknown: "x" }, schema),
+    ).toThrow(/unknown/i);
+    expect(() =>
+      mergeSubFlowInputs({}, [], { name: 42 }, schema),
+    ).toThrow(/name.*string/i);
+    expect(() =>
+      mergeSubFlowInputs(
+        { parent: 42 },
+        [{ parent_key: "parent", child_key: "name" }],
+        undefined,
+        schema,
+      ),
+    ).toThrow(/name.*string/i);
+    expect(() =>
+      mergeSubFlowInputs({}, [], undefined, [
+        { key: "name", type: "string", required: true },
+      ]),
+    ).toThrow(/required.*name|name.*missing/i);
   });
 
   it("rejects recursive sub-flow calls and excessive depth", () => {

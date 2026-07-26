@@ -54,6 +54,9 @@ describe("runtime primitive node forms", () => {
     }
     expect(source).toContain("max_iterations");
     expect(source).toContain("output_mapping");
+    expect(source).toContain("max_depth");
+    expect(source).toContain('t("subFlowMaxDepth")');
+    expect(source).toContain("max={8}");
     expect(source).toContain("input_variables");
     expect(source).toContain("max_tokens");
   });

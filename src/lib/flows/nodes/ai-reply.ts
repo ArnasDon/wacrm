@@ -10,7 +10,7 @@ export const aiReplyNodeDescriptor = createLinearNodeDescriptor({
   configSchema: aiReplyConfigSchema,
   inputs: [
     ...CONTROL_INPUT,
-    { id: "context", label: "Context", type: "json", cardinality: "one" },
+    { id: "context", label: "Context", type: "any", cardinality: "one" },
   ],
   outputs: [
     ...CONTROL_OUTPUT,

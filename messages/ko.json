@@ -1209,6 +1209,7 @@
         "loopOperator_less_than": "보다 작음",
         "loopOperator_less_or_equal": "보다 작거나 같음",
         "subFlowPublished": "게시된 하위 플로우",
+        "subFlowMaxDepth": "최대 중첩 하위 플로우 깊이",
         "subFlowPickPublished": "게시된 플로우를 선택하세요",
         "inputMapping": "입력 매핑",
         "outputMapping": "출력 매핑",

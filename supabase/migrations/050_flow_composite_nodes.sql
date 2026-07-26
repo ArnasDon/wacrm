@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS flow_call_frames (
   account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   flow_run_id UUID NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
   depth INTEGER NOT NULL CHECK (depth BETWEEN 1 AND 8),
+  depth_limit INTEGER NOT NULL CHECK (depth_limit BETWEEN 1 AND 8),
   parent_flow_id UUID NOT NULL REFERENCES flows(id) ON DELETE RESTRICT,
   parent_flow_version_id UUID NOT NULL REFERENCES flow_versions(id) ON DELETE RESTRICT,
   parent_node_key TEXT NOT NULL,
@@ -66,11 +67,30 @@ CREATE TABLE IF NOT EXISTS flow_call_frames (
 );
 
 ALTER TABLE flow_call_frames
+  ADD COLUMN IF NOT EXISTS depth_limit INTEGER DEFAULT 8,
   ADD COLUMN IF NOT EXISTS output_mapping JSONB NOT NULL DEFAULT '[]'::JSONB,
   ADD COLUMN IF NOT EXISTS completed_child_visit_id UUID,
   ADD COLUMN IF NOT EXISTS error_policy JSONB NOT NULL
     DEFAULT '{"on_error":"fail_run"}'::JSONB,
   ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+
+UPDATE flow_call_frames SET depth_limit = 8 WHERE depth_limit IS NULL;
+ALTER TABLE flow_call_frames
+  ALTER COLUMN depth_limit SET DEFAULT 8,
+  ALTER COLUMN depth_limit SET NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'flow_call_frames_depth_limit_check'
+      AND conrelid = 'flow_call_frames'::regclass
+  ) THEN
+    ALTER TABLE flow_call_frames
+      ADD CONSTRAINT flow_call_frames_depth_limit_check
+      CHECK (depth_limit BETWEEN 1 AND 8);
+  END IF;
+END;
+$$;
 
 -- A completed frame frees its stack depth for a later call. Earlier local
 -- iterations of this migration used an unconditional UNIQUE constraint.
@@ -251,6 +271,9 @@ GRANT EXECUTE ON FUNCTION advance_flow_loop_iteration(UUID, UUID, TEXT, UUID, UU
 DROP FUNCTION IF EXISTS push_flow_call_frame(
   UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB
 );
+DROP FUNCTION IF EXISTS push_flow_call_frame(
+  UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB
+);
 CREATE OR REPLACE FUNCTION push_flow_call_frame(
   p_run_id UUID,
   p_parent_flow_version_id UUID,
@@ -262,7 +285,8 @@ CREATE OR REPLACE FUNCTION push_flow_call_frame(
   p_child_entry_node_key TEXT,
   p_child_vars JSONB,
   p_output_mapping JSONB,
-  p_error_policy JSONB
+  p_error_policy JSONB,
+  p_max_depth INTEGER
 )
 RETURNS SETOF flow_runs
 LANGUAGE plpgsql
@@ -272,6 +296,8 @@ AS $$
 DECLARE
   v_run flow_runs%ROWTYPE;
   v_depth INTEGER;
+  v_parent_depth_limit INTEGER;
+  v_depth_limit INTEGER;
 BEGIN
   SELECT * INTO v_run
   FROM flow_runs
@@ -281,6 +307,8 @@ BEGIN
      OR jsonb_typeof(p_child_vars) IS DISTINCT FROM 'object'
      OR jsonb_typeof(p_output_mapping) IS DISTINCT FROM 'array'
      OR jsonb_typeof(p_error_policy) IS DISTINCT FROM 'object'
+     OR p_max_depth IS NULL
+     OR p_max_depth NOT BETWEEN 1 AND 8
      OR p_error_policy->>'on_error'
         NOT IN ('fail_run', 'fail_branch', 'default_value')
   THEN RETURN; END IF;
@@ -307,7 +335,16 @@ BEGIN
   SELECT COALESCE(MAX(depth), 0) + 1 INTO v_depth
   FROM flow_call_frames
   WHERE flow_run_id = p_run_id AND state IN ('active', 'returning');
-  IF v_depth > 8 THEN RETURN; END IF;
+  SELECT COALESCE((
+    SELECT frame.depth_limit
+    FROM flow_call_frames frame
+    WHERE frame.flow_run_id = p_run_id
+      AND frame.state IN ('active', 'returning')
+    ORDER BY frame.depth DESC
+    LIMIT 1
+  ), 8) INTO v_parent_depth_limit;
+  v_depth_limit := LEAST(v_parent_depth_limit, p_max_depth, 8);
+  IF v_depth > v_depth_limit THEN RETURN; END IF;
 
   IF NOT EXISTS (
     SELECT 1
@@ -320,13 +357,13 @@ BEGIN
   ) THEN RETURN; END IF;
 
   INSERT INTO flow_call_frames (
-    account_id, flow_run_id, depth,
+    account_id, flow_run_id, depth, depth_limit,
     parent_flow_id, parent_flow_version_id, parent_node_key, parent_visit_id,
     return_node_key, parent_vars, output_mapping, error_policy,
     child_flow_id, child_flow_version_id, child_entry_node_key
   )
   VALUES (
-    v_run.account_id, p_run_id, v_depth,
+    v_run.account_id, p_run_id, v_depth, v_depth_limit,
     COALESCE(v_run.active_flow_id, v_run.flow_id),
     p_parent_flow_version_id, p_parent_node_key,
     p_expected_visit_id, p_return_node_key, v_run.vars, p_output_mapping,
@@ -353,9 +390,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) FROM PUBLIC;
-REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) FROM authenticated;
-GRANT EXECUTE ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB) TO service_role;
+REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB, INTEGER) FROM authenticated;
+GRANT EXECUTE ON FUNCTION push_flow_call_frame(UUID, UUID, TEXT, UUID, TEXT, UUID, UUID, TEXT, JSONB, JSONB, JSONB, INTEGER) TO service_role;
 
 CREATE OR REPLACE FUNCTION pop_flow_call_frame(
   p_run_id UUID,

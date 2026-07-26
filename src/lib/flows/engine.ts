@@ -2641,6 +2641,7 @@ export async function advanceFromNodeKey(
           parent_key: string;
           child_key: string;
         }>;
+        max_depth: number;
         next_node_key: string;
       };
       const executed: PolicyNodeResult<{
@@ -2667,6 +2668,20 @@ export async function advanceFromNodeKey(
               ? { default_value: resolvedPolicy.default_value }
               : {}),
           };
+          const child = await loadFlowVersion(
+            db,
+            cfg.flow_version_id,
+            cfg.flow_id,
+          );
+          if (!child) {
+            throw new Error("Pinned child flow version is unavailable.");
+          }
+          const boundInputs = resolveBoundDataInput(
+            node,
+            "inputs",
+            nodes,
+            run.vars,
+          );
           await enterSubFlow(db, run, {
             childFlowId: cfg.flow_id,
             childVersionId: cfg.flow_version_id,
@@ -2674,14 +2689,11 @@ export async function advanceFromNodeKey(
             returnNodeKey: cfg.next_node_key,
             inputMapping: cfg.input_mapping,
             outputMapping: cfg.output_mapping,
+            maxDepth: cfg.max_depth,
             failurePolicy,
+            boundInputs,
+            childVariableSchema: child.graph.variable_schema,
           });
-          const child = await loadFlowVersion(
-            db,
-            cfg.flow_version_id,
-            cfg.flow_id,
-          );
-          if (!child) throw new Error("Pinned child flow version is unavailable.");
           const outcome = await advanceFromNodeKey(
             db,
             run,
@@ -2741,6 +2753,12 @@ export async function advanceFromNodeKey(
             prompt: cfg.prompt,
             inputVariables: cfg.input_variables,
             vars: run.vars,
+            context: resolveBoundDataInput(
+              node,
+              "context",
+              nodes,
+              run.vars,
+            ),
             maxTokens: cfg.max_tokens,
             signal,
           });

@@ -162,6 +162,12 @@ describe("composite execution RPC boundary", () => {
       returnNodeKey: "after",
       inputMapping: [{ parent_key: "existing", child_key: "enabled" }],
       outputMapping: [{ child_key: "answer", parent_key: "result" }],
+      maxDepth: 3,
+      boundInputs: { enabled: false, payload: { order: 42 } },
+      childVariableSchema: [
+        { key: "enabled", type: "boolean", default: true },
+        { key: "payload", type: "json", default: {} },
+      ],
       failurePolicy: {
         on_error: "fail_branch",
         error_next_node_key: "recover",
@@ -171,7 +177,8 @@ describe("composite execution RPC boundary", () => {
       "push_flow_call_frame",
       expect.objectContaining({
         p_child_flow_version_id: "child-version",
-        p_child_vars: { enabled: true },
+        p_child_vars: { enabled: false, payload: { order: 42 } },
+        p_max_depth: 3,
         p_error_policy: {
           on_error: "fail_branch",
           error_next_node_key: "recover",
@@ -188,6 +195,40 @@ describe("composite execution RPC boundary", () => {
       expect.objectContaining({
         p_child_vars: { answer: "ok" },
       }),
+    );
+  });
+
+  it("replays the exact depth-bounded child push after response loss", async () => {
+    const childRun = {
+      ...run,
+      active_flow_id: "child",
+      active_flow_version_id: "child-version",
+      current_node_key: "child-start",
+    };
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "committed response lost" },
+      })
+      .mockResolvedValueOnce({ data: [childRun], error: null });
+
+    await enterSubFlow({ rpc }, run, {
+      childFlowId: "child",
+      childVersionId: "child-version",
+      childEntryNodeKey: "child-start",
+      returnNodeKey: "after",
+      inputMapping: [],
+      outputMapping: [],
+      maxDepth: 1,
+      failurePolicy: { on_error: "fail_run" },
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
+    expect(rpc).toHaveBeenCalledWith(
+      "push_flow_call_frame",
+      expect.objectContaining({ p_max_depth: 1 }),
     );
   });
 

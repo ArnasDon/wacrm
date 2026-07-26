@@ -76,4 +76,10 @@ describe("migration 053 durable flow approvals", () => {
     expect(sql).toContain("approval_request_id");
     expect(sql).not.toMatch(/\b(?:email|phone|telephone)\b/i);
   });
+
+  it("appends bounded run audit events for human decisions and timeouts", () => {
+    expect(sql).toContain("'approval_decision'");
+    expect(sql).toContain("'approval_timeout'");
+    expect(sql).not.toMatch(/flow_run_events[\s\S]{0,500}decision_note/i);
+  });
 });

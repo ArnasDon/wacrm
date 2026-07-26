@@ -329,6 +329,19 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'approval_revision_conflict';
   END IF;
+  INSERT INTO public.flow_run_events (
+    flow_run_id, event_type, node_key, payload
+  ) VALUES (
+    v_request.flow_run_id,
+    'node_entered',
+    v_request.node_key,
+    jsonb_build_object(
+      'reason', 'approval_decision',
+      'approval_request_id', v_request.id,
+      'decision', v_request.decision,
+      'decided_by', v_actor
+    )
+  );
   RETURN jsonb_build_object(
     'id', v_request.id,
     'account_id', v_request.account_id,
@@ -426,6 +439,23 @@ BEGIN
       SET status = 'failed', updated_at = NOW()
       WHERE flow_approval_requests.id = v_request.id;
       CONTINUE;
+    END IF;
+
+    IF v_request.decision = 'timed_out'
+       AND v_request.status = 'resolved'
+    THEN
+      INSERT INTO public.flow_run_events (
+        flow_run_id, event_type, node_key, payload
+      ) VALUES (
+        v_request.flow_run_id,
+        'timeout',
+        v_request.node_key,
+        jsonb_build_object(
+          'reason', 'approval_timeout',
+          'approval_request_id', v_request.id,
+          'timeout_action', v_request.timeout_action
+        )
+      );
     END IF;
 
     IF v_request.decision = 'timed_out'

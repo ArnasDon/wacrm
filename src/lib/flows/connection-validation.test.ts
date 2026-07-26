@@ -185,4 +185,56 @@ describe('typed flow port compatibility', () => {
       )
     ).toMatchObject({ valid: false, reason: 'unknown_source_port' });
   });
+
+  it('uses real runtime descriptor data ports and their cardinality', () => {
+    const runtimeNodes = [
+      { node_key: 'collect', node_type: 'collect_input' },
+      { node_key: 'set', node_type: 'variable_set' },
+      { node_key: 'http', node_type: 'http_request' },
+    ];
+
+    expect(
+      validateCanvasConnection(
+        {
+          source: 'collect',
+          target: 'set',
+          sourceHandle: 'value',
+          targetHandle: 'value',
+        },
+        runtimeNodes,
+        []
+      )
+    ).toEqual({ valid: true });
+    expect(
+      validateCanvasConnection(
+        {
+          source: 'collect',
+          target: 'http',
+          sourceHandle: 'value',
+          targetHandle: 'request',
+        },
+        runtimeNodes,
+        []
+      )
+    ).toMatchObject({ valid: false, reason: 'incompatible_types' });
+    expect(
+      validateCanvasConnection(
+        {
+          source: 'http',
+          target: 'set',
+          sourceHandle: 'response',
+          targetHandle: 'value',
+        },
+        runtimeNodes,
+        [
+          {
+            source: 'collect',
+            target: 'set',
+            sourceHandle: 'value',
+            targetHandle: 'value',
+          },
+        ]
+      )
+    ).toMatchObject({ valid: false, reason: 'target_cardinality' });
+  });
 });

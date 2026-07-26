@@ -33,18 +33,27 @@ describe("coerceDeclaredValue", () => {
       ok: false,
       reason: "expected_boolean",
     });
+    expect(coerceDeclaredValue("contact", '{"id":"contact-1"}')).toEqual({
+      ok: true,
+      value: { id: "contact-1" },
+    });
   });
 });
 
 describe("initializeFlowVariables", () => {
-  it("copies typed defaults without creating absent required values", () => {
+  it("copies typed defaults and rejects a missing required runtime value", () => {
     expect(
       initializeFlowVariables([
         { key: "count", type: "number", default: 0, required: true },
-        { key: "email", type: "string", required: true },
+        { key: "email", type: "string", required: false },
         { key: "enabled", type: "boolean", default: false },
       ]),
     ).toEqual({ count: 0, enabled: false });
+    expect(() =>
+      initializeFlowVariables([
+        { key: "email", type: "string", required: true },
+      ]),
+    ).toThrow('required variable "email"');
   });
 });
 
@@ -93,6 +102,12 @@ describe("validateCollectedInput", () => {
     );
     expect(validateCollectedInput("ABC", "regex", "[")).toBe(false);
     expect(validateCollectedInput("aaaaaaaa", "regex", "(a+)+$")).toBe(false);
+    expect(validateCollectedInput("aaaaaaaa", "regex", "(a|aa)+$")).toBe(false);
+    expect(validateCollectedInput("aaaaaaaa", "regex", "(a?)+$")).toBe(false);
+    expect(validateCollectedInput("aaaaaaaa", "regex", "a+a+$")).toBe(false);
+    expect(
+      validateCollectedInput("a".repeat(4_097), "regex", "^a+$"),
+    ).toBe(false);
     expect(validateCollectedInput("anything", "regex", "x".repeat(257))).toBe(
       false,
     );

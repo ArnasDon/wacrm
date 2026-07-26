@@ -23,6 +23,7 @@
  */
 
 import type { BuilderNode } from "@/components/flows/shared";
+import { getNodeDescriptor } from "@/lib/flows/registry";
 
 export interface CanvasEdge {
   /** Stable per-edge id — required by React-Flow. */
@@ -33,6 +34,8 @@ export interface CanvasEdge {
   target: string;
   /** Identifies which outgoing slot on the source node this edge belongs to. */
   sourceHandle: string;
+  /** Target-side port id. Control edges use `in`; data edges are explicit. */
+  targetHandle?: string;
   /** Human-readable label rendered on the canvas (e.g. "Yes button"). */
   label?: string;
 }
@@ -41,6 +44,47 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
   const knownKeys = new Set(nodes.map((n) => n.node_key));
   const edges: CanvasEdge[] = [];
 
+  for (const targetNode of nodes) {
+    const rawBindings = targetNode.config._data_inputs;
+    const bindings =
+      rawBindings &&
+      typeof rawBindings === "object" &&
+      !Array.isArray(rawBindings)
+        ? (rawBindings as Record<string, Record<string, unknown>>)
+        : {};
+    const targetDescriptor = getNodeDescriptor(targetNode.node_type);
+    for (const [targetHandle, binding] of Object.entries(bindings)) {
+      const source =
+        typeof binding.source_node_key === "string"
+          ? binding.source_node_key
+          : null;
+      const sourceHandle =
+        typeof binding.source_handle === "string"
+          ? binding.source_handle
+          : null;
+      const sourceNode = source
+        ? nodes.find((candidate) => candidate.node_key === source)
+        : undefined;
+      const sourcePort = sourceNode
+        ? getNodeDescriptor(sourceNode.node_type)?.outputs.find(
+            (port) => port.id === sourceHandle && port.type !== "control",
+          )
+        : undefined;
+      const targetPort = targetDescriptor?.inputs.find(
+        (port) => port.id === targetHandle && port.type !== "control",
+      );
+      if (!source || !sourceHandle || !sourcePort || !targetPort) continue;
+      edges.push({
+        id: `${source}--${sourceHandle}--${targetNode.node_key}:${targetHandle}`,
+        source,
+        target: targetNode.node_key,
+        sourceHandle,
+        targetHandle,
+        label: `${sourcePort.label} → ${targetPort.label}`,
+      });
+    }
+  }
+
   for (const node of nodes) {
     const cfg = node.config;
     switch (node.node_type) {
@@ -48,10 +92,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "send_message":
       case "send_media":
       case "collect_input":
-      case "set_tag":
-      case "wait":
-      case "http_request":
-      case "variable_set": {
+      case "set_tag": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
         if (next && knownKeys.has(next)) {
           edges.push({
@@ -83,36 +124,6 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             target: falseNext,
             sourceHandle: "false",
             label: "false",
-          });
-        }
-        break;
-      }
-
-      case "switch": {
-        const cases = Array.isArray(cfg.cases)
-          ? (cfg.cases as Array<Record<string, unknown>>)
-          : [];
-        for (const entry of cases) {
-          const id = typeof entry.id === "string" ? entry.id : null;
-          const next = typeof entry.next === "string" ? entry.next : null;
-          if (!id || !next || !knownKeys.has(next)) continue;
-          edges.push({
-            id: `${node.node_key}--case:${id}--${next}`,
-            source: node.node_key,
-            target: next,
-            sourceHandle: `case:${id}`,
-            label: typeof entry.label === "string" ? entry.label : id,
-          });
-        }
-        const defaultNext =
-          typeof cfg.default_next === "string" ? cfg.default_next : null;
-        if (defaultNext && knownKeys.has(defaultNext)) {
-          edges.push({
-            id: `${node.node_key}--default--${defaultNext}`,
-            source: node.node_key,
-            target: defaultNext,
-            sourceHandle: "default",
-            label: "default",
           });
         }
         break;
@@ -175,6 +186,31 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "end":
         // Terminal nodes — no outgoing edges.
         break;
+      default:
+        for (const slot of registryControlSlots(node)) {
+          const value = slot.field.split(".").reduce<unknown>(
+            (current, part) =>
+              current && typeof current === "object"
+                ? (current as Record<string, unknown>)[part]
+                : undefined,
+            node.config,
+          );
+          if (typeof value !== "string" || !knownKeys.has(value)) continue;
+          edges.push({
+            id: `${node.node_key}--${slot.id}--${value}`,
+            source: node.node_key,
+            target: value,
+            sourceHandle: slot.id,
+            targetHandle: "in",
+            label:
+              slot.id === "next"
+                ? undefined
+                : slot.id === "default"
+                  ? "default"
+                  : slot.label,
+          });
+        }
+        break;
     }
   }
 
@@ -204,6 +240,102 @@ export interface OutgoingSlot {
   label: string;
 }
 
+function registryControlSlots(
+  node: BuilderNode,
+): Array<OutgoingSlot & { field: string }> {
+  const descriptor = getNodeDescriptor(node.node_type);
+  if (!descriptor) return [];
+  return descriptor.outputs.flatMap((port) => {
+    if (port.type !== "control") return [];
+    if (port.handlePrefix === "case:") {
+      const cases = Array.isArray(node.config.cases)
+        ? (node.config.cases as Array<Record<string, unknown>>)
+        : [];
+      return cases.flatMap((entry, index) =>
+        typeof entry.id === "string" && entry.id
+          ? [
+              {
+                id: `case:${entry.id}`,
+                label:
+                  typeof entry.label === "string" && entry.label
+                    ? entry.label
+                    : entry.id,
+                field: `cases.${index}.next`,
+              },
+            ]
+          : [],
+      );
+    }
+    const field =
+      port.id === "next"
+        ? "next_node_key"
+        : port.id === "default"
+          ? "default_next"
+          : null;
+    return field ? [{ id: port.id, label: port.label, field }] : [];
+  });
+}
+
+function setConfigPath(
+  config: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
+  const parts = path.split(".");
+  const root = structuredClone(config);
+  let cursor: Record<string, unknown> | unknown[] = root;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index];
+    cursor = Array.isArray(cursor)
+      ? (cursor[Number(part)] as Record<string, unknown>)
+      : (cursor[part] as Record<string, unknown> | unknown[]);
+  }
+  const final = parts.at(-1)!;
+  if (Array.isArray(cursor)) cursor[Number(final)] = value;
+  else cursor[final] = value;
+  return root;
+}
+
+export function applyDataInputConnection(
+  target: BuilderNode,
+  targetHandle: string,
+  sourceKey: string,
+  sourceHandle: string,
+): Record<string, unknown> {
+  const current =
+    target.config._data_inputs &&
+    typeof target.config._data_inputs === "object" &&
+    !Array.isArray(target.config._data_inputs)
+      ? (target.config._data_inputs as Record<string, unknown>)
+      : {};
+  return {
+    _data_inputs: {
+      ...current,
+      [targetHandle]: {
+        source_node_key: sourceKey,
+        source_handle: sourceHandle,
+      },
+    },
+  };
+}
+
+export function removeDataInputConnection(
+  target: BuilderNode,
+  targetHandle: string,
+): Record<string, unknown> {
+  const current =
+    target.config._data_inputs &&
+    typeof target.config._data_inputs === "object" &&
+    !Array.isArray(target.config._data_inputs)
+      ? (target.config._data_inputs as Record<string, unknown>)
+      : {};
+  return {
+    _data_inputs: Object.fromEntries(
+      Object.entries(current).filter(([key]) => key !== targetHandle),
+    ),
+  };
+}
+
 export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
   const cfg = node.config;
   switch (node.node_type) {
@@ -212,9 +344,6 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
-    case "wait":
-    case "http_request":
-    case "variable_set":
       return [{ id: "next", label: "Next" }];
 
     case "condition":
@@ -222,28 +351,6 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
         { id: "true", label: "true" },
         { id: "false", label: "false" },
       ];
-
-    case "switch": {
-      const cases = Array.isArray(cfg.cases)
-        ? (cfg.cases as Array<Record<string, unknown>>)
-        : [];
-      return [
-        ...cases.flatMap((entry) =>
-          typeof entry.id === "string" && entry.id
-            ? [
-                {
-                  id: `case:${entry.id}`,
-                  label:
-                    typeof entry.label === "string" && entry.label
-                      ? entry.label
-                      : entry.id,
-                },
-              ]
-            : [],
-        ),
-        { id: "default", label: "default" },
-      ];
-    }
 
     case "send_buttons": {
       const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
@@ -286,8 +393,9 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
 
     case "handoff":
     case "end":
-    default:
       return [];
+    default:
+      return registryControlSlots(node);
   }
 }
 
@@ -312,9 +420,6 @@ export function applyEdgeConnection(
     case "send_media":
     case "collect_input":
     case "set_tag":
-    case "wait":
-    case "http_request":
-    case "variable_set":
       if (sourceHandle === "next") return { next_node_key: targetKey };
       return null;
 
@@ -374,24 +479,23 @@ export function applyEdgeConnection(
 
     case "handoff":
     case "end":
-    default:
       return null;
 
-    case "switch": {
-      if (sourceHandle === "default") {
+    default: {
+      const slot = registryControlSlots(node).find(
+        (candidate) => candidate.id === sourceHandle,
+      );
+      if (!slot) return null;
+      if (slot.field === "next_node_key") {
+        return { next_node_key: targetKey };
+      }
+      if (slot.field === "default_next") {
         return { default_next: targetKey };
       }
-      if (!sourceHandle.startsWith("case:")) return null;
-      const id = sourceHandle.slice("case:".length);
-      const cases = Array.isArray(node.config.cases)
-        ? (node.config.cases as Array<Record<string, unknown>>)
-        : [];
-      if (!cases.some((entry) => entry.id === id)) return null;
-      return {
-        cases: cases.map((entry) =>
-          entry.id === id ? { ...entry, next: targetKey } : entry,
-        ),
-      };
+      const next = setConfigPath(node.config, slot.field, targetKey);
+      return slot.field.startsWith("cases.")
+        ? { cases: next.cases }
+        : next;
     }
   }
 }
@@ -411,8 +515,33 @@ export function unlinkNodeReferences(
   deletedKey: string,
 ): BuilderNode[] {
   return nodes.map((n) => {
-    const patched = patchedConfigWithoutKey(n, deletedKey);
-    return patched ? { ...n, config: patched } : n;
+    const rawBindings = n.config._data_inputs;
+    const bindings =
+      rawBindings &&
+      typeof rawBindings === "object" &&
+      !Array.isArray(rawBindings)
+        ? (rawBindings as Record<string, Record<string, unknown>>)
+        : null;
+    const filteredBindings = bindings
+      ? Object.fromEntries(
+          Object.entries(bindings).filter(
+            ([, binding]) => binding.source_node_key !== deletedKey,
+          ),
+        )
+      : null;
+    const dataChanged =
+      bindings !== null &&
+      Object.keys(filteredBindings ?? {}).length !== Object.keys(bindings).length;
+    const candidate = dataChanged
+      ? {
+          ...n,
+          config: { ...n.config, _data_inputs: filteredBindings },
+        }
+      : n;
+    const patched = patchedConfigWithoutKey(candidate, deletedKey);
+    if (patched) return { ...candidate, config: patched };
+    if (dataChanged) return candidate;
+    return n;
   });
 }
 
@@ -426,10 +555,7 @@ function patchedConfigWithoutKey(
     case "send_message":
     case "send_media":
     case "collect_input":
-    case "set_tag":
-    case "wait":
-    case "http_request":
-    case "variable_set": {
+    case "set_tag": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };
@@ -444,22 +570,6 @@ function patchedConfigWithoutKey(
         ...cfg,
         ...(trueMatch ? { true_next: "" } : {}),
         ...(falseMatch ? { false_next: "" } : {}),
-      };
-    }
-
-    case "switch": {
-      const cases = Array.isArray(cfg.cases)
-        ? (cfg.cases as Array<Record<string, unknown>>)
-        : [];
-      const caseMatch = cases.some((entry) => entry.next === deletedKey);
-      const defaultMatch = cfg.default_next === deletedKey;
-      if (!caseMatch && !defaultMatch) return null;
-      return {
-        ...cfg,
-        cases: cases.map((entry) =>
-          entry.next === deletedKey ? { ...entry, next: "" } : entry,
-        ),
-        ...(defaultMatch ? { default_next: "" } : {}),
       };
     }
 
@@ -505,8 +615,17 @@ function patchedConfigWithoutKey(
 
     case "handoff":
     case "end":
-    default:
       return null;
+    default: {
+      const matching = getNodeDescriptor(node.node_type)
+        ?.outgoingEdgeTargets(cfg)
+        .filter((edge) => edge.target === deletedKey);
+      if (!matching?.length) return null;
+      return matching.reduce(
+        (next, edge) => setConfigPath(next, edge.field, ""),
+        cfg,
+      );
+    }
   }
 }
 

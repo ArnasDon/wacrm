@@ -17,11 +17,27 @@ describe("sanitizeExecutionData", () => {
     expect(
       sanitizeExecutionData({
         url: "https://api.example.com/path?token=secret&id=42",
-        headers: { Authorization: "Bearer secret", "X-Trace": "ok" },
+        headers: {
+          Authorization: "Bearer secret",
+          Cookie: "session=secret",
+          "Proxy-Authorization": "secret",
+          "X-Api-Key": "secret",
+          "X-Auth-Token": "secret",
+          "X-Trace": "ok",
+        },
+        nested: [{ client_secret: "secret", safe: true }],
       }),
     ).toEqual({
       url: "https://api.example.com/path",
-      headers: { Authorization: "[REDACTED]", "X-Trace": "ok" },
+      headers: {
+        Authorization: "[REDACTED]",
+        Cookie: "[REDACTED]",
+        "Proxy-Authorization": "[REDACTED]",
+        "X-Api-Key": "[REDACTED]",
+        "X-Auth-Token": "[REDACTED]",
+        "X-Trace": "ok",
+      },
+      nested: [{ client_secret: "[REDACTED]", safe: true }],
     });
   });
 });

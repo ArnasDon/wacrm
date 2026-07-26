@@ -80,6 +80,73 @@ describe("validateFlowForActivation — flow-level", () => {
     );
   });
 
+  it("requires every required variable to have an initial typed value", () => {
+    const issues = validateFlowForActivation(
+      {
+        ...validFlow,
+        variable_schema: [
+          { key: "email", type: "string" as const, required: true },
+        ],
+      },
+      validNodes,
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "flow",
+          field: "variable_schema.email.default",
+          severity: "error",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects incompatible persisted typed data bindings", () => {
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "collect" },
+      [
+        {
+          node_key: "collect",
+          node_type: "collect_input",
+          config: {
+            prompt_text: "Value?",
+            var_key: "answer",
+            next_node_key: "http",
+          },
+        },
+        {
+          node_key: "http",
+          node_type: "http_request",
+          config: {
+            method: "POST",
+            url: "https://api.example.com",
+            headers: {},
+            response_var: "response",
+            next_node_key: "end",
+            _data_inputs: {
+              request: {
+                source_node_key: "collect",
+                source_handle: "value",
+              },
+            },
+          },
+        },
+        { node_key: "end", node_type: "end", config: {} },
+      ],
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "http",
+          field: "_data_inputs.request",
+          message: expect.stringContaining("incompatible"),
+        }),
+      ]),
+    );
+  });
+
   it("flags duplicate node_key", () => {
     const dupes = [
       { node_key: "a", node_type: "start", config: { next_node_key: "b" } },

@@ -1,5 +1,6 @@
 import { createLinearNodeDescriptor } from "../registry/factories";
 import { collectInputConfigSchema } from "../registry/schemas";
+import { CONTROL_INPUT, CONTROL_OUTPUT } from "../registry/types";
 
 export const collectInputNodeDescriptor = createLinearNodeDescriptor({
   id: "collect_input",
@@ -7,6 +8,16 @@ export const collectInputNodeDescriptor = createLinearNodeDescriptor({
   category: "logic",
   icon: "inbox",
   configSchema: collectInputConfigSchema,
+  inputs: CONTROL_INPUT,
+  outputs: [
+    ...CONTROL_OUTPUT,
+    {
+      id: "value",
+      label: "Captured value",
+      type: "string",
+      cardinality: "many",
+    },
+  ],
   runtimeKind: "suspend",
   visible: true,
   form: {

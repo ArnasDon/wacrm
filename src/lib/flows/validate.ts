@@ -8,6 +8,7 @@
 
 import type { ZodIssue } from "zod";
 import type { FlowVariableDeclaration } from "./runtime-primitives";
+import { arePortTypesCompatible } from "./connection-validation";
 
 import {
   getCompatibilityFlowTriggerDescriptor,
@@ -63,6 +64,16 @@ export function validateFlowForActivation(
     });
   }
   issues.push(...validateTrigger(flow.trigger_type, flow.trigger_config));
+  for (const variable of flow.variable_schema ?? []) {
+    if (variable.required && variable.default === undefined) {
+      issues.push({
+        severity: "error",
+        scope: "flow",
+        field: `variable_schema.${variable.key}.default`,
+        message: `Required variable "${variable.key}" needs an initial value.`,
+      });
+    }
+  }
 
   if (!flow.entry_node_id) {
     issues.push({
@@ -103,6 +114,7 @@ export function validateFlowForActivation(
     }
     seen.add(node.node_key);
   }
+  issues.push(...validateDataPortBindings(nodes));
 
   for (const node of nodes) {
     issues.push(
@@ -131,6 +143,75 @@ export function validateFlowForActivation(
     }
   }
 
+  return issues;
+}
+
+function validateDataPortBindings(nodes: NodeInput[]): ValidationIssue[] {
+  const byKey = new Map(nodes.map((node) => [node.node_key, node]));
+  const issues: ValidationIssue[] = [];
+  const sourceUsage = new Map<string, number>();
+  for (const target of nodes) {
+    const bindings =
+      target.config._data_inputs &&
+      typeof target.config._data_inputs === "object" &&
+      !Array.isArray(target.config._data_inputs)
+        ? (target.config._data_inputs as Record<
+            string,
+            Record<string, unknown>
+          >)
+        : {};
+    const targetDescriptor = getNodeDescriptor(target.node_type);
+    for (const [targetHandle, binding] of Object.entries(bindings)) {
+      const sourceKey =
+        typeof binding.source_node_key === "string"
+          ? binding.source_node_key
+          : "";
+      const sourceHandle =
+        typeof binding.source_handle === "string" ? binding.source_handle : "";
+      const source = byKey.get(sourceKey);
+      const sourceDescriptor = source
+        ? getNodeDescriptor(source.node_type)
+        : undefined;
+      const sourcePort = sourceDescriptor?.outputs.find(
+        (port) => port.id === sourceHandle && port.type !== "control",
+      );
+      const targetPort = targetDescriptor?.inputs.find(
+        (port) => port.id === targetHandle && port.type !== "control",
+      );
+      const field = `_data_inputs.${targetHandle}`;
+      if (!source || !sourcePort || !targetPort) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: target.node_key,
+          field,
+          message: "Data binding references an unknown typed port.",
+        });
+        continue;
+      }
+      if (!arePortTypesCompatible(sourcePort.type, targetPort.type)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: target.node_key,
+          field,
+          message: `Data port types ${sourcePort.type} and ${targetPort.type} are incompatible.`,
+        });
+      }
+      const usageKey = `${sourceKey}:${sourceHandle}`;
+      const usage = (sourceUsage.get(usageKey) ?? 0) + 1;
+      sourceUsage.set(usageKey, usage);
+      if (sourcePort.cardinality === "one" && usage > 1) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: target.node_key,
+          field,
+          message: `Data output "${sourceHandle}" accepts only one connection.`,
+        });
+      }
+    }
+  }
   return issues;
 }
 

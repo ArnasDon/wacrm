@@ -52,7 +52,7 @@ describe("HTTP request runtime guard", () => {
   });
 
   it("checks DNS before fetching and every redirect hop", async () => {
-    const fetcher = vi
+    const transport = vi
       .fn()
       .mockResolvedValueOnce(
         new Response(null, {
@@ -72,14 +72,78 @@ describe("HTTP request runtime guard", () => {
           headers: {},
           response_var: "result",
         },
-        { fetch: fetcher, lookup },
+        { transport, lookup },
       ),
     ).rejects.toThrow("not publicly routable");
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledWith(
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledWith(
       "https://public.example/start",
+      "93.184.216.34",
       expect.objectContaining({ redirect: "manual" }),
     );
+  });
+
+  it("pins each connection to the address returned by the validated lookup", async () => {
+    const lookup = vi.fn(async () => ["93.184.216.34"]);
+    const transport = vi.fn(async () =>
+      new Response("ok", { headers: { "content-type": "text/plain" } }),
+    );
+
+    await executeHttpRequest(
+      {
+        method: "GET",
+        url: "https://public.example/data",
+        headers: {},
+        response_var: "result",
+      },
+      { lookup, transport },
+    );
+
+    expect(transport).toHaveBeenCalledWith(
+      "https://public.example/data",
+      "93.184.216.34",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Host: "public.example" }),
+      }),
+    );
+  });
+
+  it("strips credentials when a redirect changes origin", async () => {
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://other.example/next" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("ok", { headers: { "content-type": "text/plain" } }),
+      );
+
+    await executeHttpRequest(
+      {
+        method: "GET",
+        url: "https://public.example/start",
+        headers: {
+          Authorization: "Bearer secret",
+          Cookie: "session=secret",
+          "X-Api-Key": "secret",
+          "X-Trace": "safe",
+        },
+        response_var: "result",
+      },
+      {
+        lookup: async () => ["93.184.216.34"],
+        transport,
+      },
+    );
+
+    const redirectedHeaders = transport.mock.calls[1][2]?.headers;
+    expect(redirectedHeaders).toMatchObject({ "X-Trace": "safe" });
+    expect(redirectedHeaders).not.toHaveProperty("Authorization");
+    expect(redirectedHeaders).not.toHaveProperty("Cookie");
+    expect(redirectedHeaders).not.toHaveProperty("X-Api-Key");
   });
 
   it("rejects oversized and unsupported responses", async () => {
@@ -98,7 +162,7 @@ describe("HTTP request runtime guard", () => {
           headers: {},
           response_var: "result",
         },
-        { fetch: fetcher, lookup },
+        { transport: fetcher, lookup },
       ),
     ).rejects.toThrow("response is too large");
 
@@ -115,7 +179,7 @@ describe("HTTP request runtime guard", () => {
           headers: {},
           response_var: "result",
         },
-        { fetch: fetcher, lookup },
+        { transport: fetcher, lookup },
       ),
     ).rejects.toThrow("unsupported content type");
   });
@@ -123,7 +187,7 @@ describe("HTTP request runtime guard", () => {
   it("supports abort and returns typed output without leaking secrets", async () => {
     const lookup = vi.fn(async () => ["93.184.216.34"]);
     const fetcher = vi.fn(
-      async (_url: string, init?: RequestInit) =>
+      async (_url: string, _address: string, init?: RequestInit) =>
         await new Promise<Response>((_resolve, reject) => {
           if (init?.signal?.aborted) {
             reject(init.signal.reason);
@@ -141,7 +205,7 @@ describe("HTTP request runtime guard", () => {
         body: "{}",
         response_var: "result",
       },
-      { fetch: fetcher, lookup, signal: controller.signal },
+      { transport: fetcher, lookup, signal: controller.signal },
     );
     controller.abort(new Error("cancelled"));
     await expect(pending).rejects.toThrow("cancelled");
@@ -159,7 +223,7 @@ describe("HTTP request runtime guard", () => {
       },
       {
         lookup: async () => ["93.184.216.34"],
-        fetch: async () =>
+        transport: async () =>
           new Response('{"answer":42}', {
             status: 201,
             headers: { "content-type": "application/json" },
@@ -184,7 +248,7 @@ describe("HTTP request runtime guard", () => {
         },
         {
           lookup: async () => ["93.184.216.34"],
-          fetch: async () =>
+          transport: async () =>
             new Response('{"error":"busy"}', {
               status: 503,
               headers: { "content-type": "application/json" },

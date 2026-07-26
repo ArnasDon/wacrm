@@ -394,6 +394,40 @@ describe("deriveCanvasEdges — id stability", () => {
   });
 });
 
+describe("typed data bindings", () => {
+  it("derives a persisted data edge with both registry handle ids", () => {
+    const edges = deriveCanvasEdges([
+      {
+        node_key: "http",
+        node_type: "http_request",
+        config: { next_node_key: "" },
+      },
+      {
+        node_key: "set",
+        node_type: "variable_set",
+        config: {
+          assignments: [{ key: "result", type: "json", value: {} }],
+          next_node_key: "",
+          _data_inputs: {
+            value: { source_node_key: "http", source_handle: "response" },
+          },
+        },
+      },
+    ]);
+
+    expect(edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "http",
+          target: "set",
+          sourceHandle: "response",
+          targetHandle: "value",
+        }),
+      ]),
+    );
+  });
+});
+
 describe("outgoingSlots", () => {
   it("returns a single 'next' slot for the auto-advancing types", () => {
     const each = (node: BuilderNode) =>

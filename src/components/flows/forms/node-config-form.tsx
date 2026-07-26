@@ -187,6 +187,16 @@ function NodeSpecificConfigForm({
           onUpdateConfig={onUpdateConfig}
         />
       );
+
+    case "http_request":
+      return (
+        <HttpRequestForm
+          cfg={cfg as HttpRequestCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+        />
+      );
   }
 }
 
@@ -1366,6 +1376,141 @@ interface VariableSetCfg {
   next_node_key?: string;
 }
 
+interface HttpRequestCfg {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  url?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  response_var?: string;
+  next_node_key?: string;
+}
+
+function HttpRequestForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+}: {
+  cfg: HttpRequestCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  const headers = Object.entries(cfg.headers ?? {});
+  const replaceHeader = (
+    index: number,
+    nextKey: string,
+    nextValue: string,
+  ) =>
+    onUpdateConfig({
+      headers: Object.fromEntries(
+        headers.map(([key, value], current) =>
+          current === index ? [nextKey, nextValue] : [key, value],
+        ),
+      ),
+    });
+
+  return (
+    <>
+      <div className="grid grid-cols-[120px_1fr] gap-2">
+        <Select
+          value={cfg.method ?? "GET"}
+          onValueChange={(method) => onUpdateConfig({ method })}
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+              <SelectItem key={method} value={method}>
+                {method}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          value={cfg.url ?? ""}
+          onChange={(event) => onUpdateConfig({ url: event.target.value })}
+          placeholder="https://api.example.com/path"
+        />
+      </div>
+      <div className="grid gap-2">
+        <span className="text-muted-foreground text-xs">Request headers</span>
+        {headers.map(([key, value], index) => (
+          <div key={`${key}:${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+            <Input
+              aria-label="Header name"
+              value={key}
+              onChange={(event) =>
+                replaceHeader(index, event.target.value, value)
+              }
+              placeholder="Header name"
+            />
+            <Input
+              aria-label="Header value"
+              value={value}
+              onChange={(event) =>
+                replaceHeader(index, key, event.target.value)
+              }
+              placeholder="Value or {{vars.token}}"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Remove header"
+              onClick={() =>
+                onUpdateConfig({
+                  headers: Object.fromEntries(
+                    headers.filter((_, current) => current !== index),
+                  ),
+                })
+              }
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            onUpdateConfig({
+              headers: { ...(cfg.headers ?? {}), "X-Header": "" },
+            })
+          }
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add header
+        </Button>
+      </div>
+      {!["GET", "DELETE"].includes(cfg.method ?? "GET") && (
+        <TextRow
+          label="Request body"
+          value={cfg.body ?? ""}
+          onChange={(body) => onUpdateConfig({ body })}
+        />
+      )}
+      <VariableKeyField
+        label="Response variable"
+        value={cfg.response_var ?? ""}
+        onChange={(response_var) => onUpdateConfig({ response_var })}
+      />
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(next_node_key) => onUpdateConfig({ next_node_key })}
+        label="Continue to"
+      />
+      <p className="text-muted-foreground text-xs">
+        Only public HTTP(S) targets and JSON/text responses are allowed.
+      </p>
+    </>
+  );
+}
+
 function VariableSetForm({
   cfg,
   allNodes,
@@ -1404,7 +1549,14 @@ function VariableSetForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {["string", "number", "boolean", "json"].map((type) => (
+              {[
+                "string",
+                "number",
+                "boolean",
+                "json",
+                "contact",
+                "message",
+              ].map((type) => (
                 <SelectItem key={type} value={type}>
                   {type}
                 </SelectItem>

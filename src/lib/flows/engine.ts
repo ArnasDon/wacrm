@@ -493,16 +493,20 @@ async function executePolicyNode<T>(
   run: FlowRunRow,
   node: FlowNodeRow,
   globalPolicy: PartialNodeExecutionPolicy | undefined,
-  operation: (signal: AbortSignal) => Promise<T>,
+  operation: (signal: AbortSignal, operationId: string) => Promise<T>,
 ): Promise<PolicyNodeResult<T>> {
   // Z-API executors consume this signal all the way through fetch. Supabase
   // query builders and tag helpers do not currently expose AbortSignal; a
   // timeout is therefore non-retryable so unabortable late completion is
   // never followed by an automatic duplicate attempt.
   const policy = resolveNodeExecutionPolicy(globalPolicy, node.config);
+  const operationId = crypto.randomUUID();
   const executionIds = new Map<number, string | null>();
   try {
-    const result = await executeWithNodePolicy(operation, policy, {
+    const result = await executeWithNodePolicy(
+      (signal) => operation(signal, operationId),
+      policy,
+      {
       onAttemptStart: async (attempt) => {
         executionIds.set(
           attempt,
@@ -530,7 +534,8 @@ async function executePolicyNode<T>(
           error: sanitized,
         });
       },
-    });
+      },
+    );
     return { ok: true, value: result.value };
   } catch (error) {
     if (isCommittedSideEffectError(error)) {
@@ -538,7 +543,7 @@ async function executePolicyNode<T>(
         db,
         run.id,
         "failed",
-        "external_send_committed_local_persistence_failed",
+        "side_effect_committed_local_persistence_failed",
       );
       return { ok: false };
     }
@@ -838,6 +843,44 @@ function interpolateVars(
   });
 }
 
+function resolveBoundDataInput(
+  node: FlowNodeRow,
+  handle: string,
+  nodes: Map<string, FlowNodeRow>,
+  vars: Record<string, unknown>,
+): unknown {
+  const bindings =
+    node.config._data_inputs &&
+    typeof node.config._data_inputs === "object" &&
+    !Array.isArray(node.config._data_inputs)
+      ? (node.config._data_inputs as Record<string, Record<string, unknown>>)
+      : {};
+  const binding = bindings[handle];
+  const sourceKey =
+    typeof binding?.source_node_key === "string"
+      ? binding.source_node_key
+      : null;
+  const sourceHandle =
+    typeof binding?.source_handle === "string" ? binding.source_handle : null;
+  const source = sourceKey ? nodes.get(sourceKey) : undefined;
+  if (!source || !sourceHandle) return undefined;
+  if (source.node_type === "collect_input" && sourceHandle === "value") {
+    const key = source.config.var_key;
+    return typeof key === "string" ? vars[key] : undefined;
+  }
+  if (
+    (source.node_type as string) === "http_request" &&
+    sourceHandle === "response"
+  ) {
+    const key = source.config.response_var;
+    return typeof key === "string" ? vars[key] : undefined;
+  }
+  if (source.node_type === "variable_set" && sourceHandle === "variables") {
+    return vars;
+  }
+  return undefined;
+}
+
 async function endRun(
   db: AdminClient,
   runId: string,
@@ -1076,7 +1119,16 @@ export async function advanceFromNodeKey(
         node,
         globalExecutionPolicy,
         async () => {
-          const subject = await resolveSwitchSubject(db, run, cfg);
+          const boundSubject = resolveBoundDataInput(
+            node,
+            "subject",
+            nodes,
+            run.vars,
+          );
+          const subject =
+            boundSubject === undefined
+              ? await resolveSwitchSubject(db, run, cfg)
+              : boundSubject;
           return evaluateSwitch(subject, cfg.cases) ?? cfg.default_next;
         },
       );
@@ -1110,9 +1162,17 @@ export async function advanceFromNodeKey(
         globalExecutionPolicy,
         async () => {
           const nextVars = { ...run.vars };
-          for (const assignment of cfg.assignments) {
+          const boundValue = resolveBoundDataInput(
+            node,
+            "value",
+            nodes,
+            run.vars,
+          );
+          for (const [index, assignment] of cfg.assignments.entries()) {
             const raw =
-              typeof assignment.value === "string"
+              index === 0 && boundValue !== undefined
+                ? boundValue
+                : typeof assignment.value === "string"
                 ? interpolateVars(assignment.value, run.vars)
                 : assignment.value;
             const coerced = coerceDeclaredValue(assignment.type, raw);
@@ -1152,21 +1212,40 @@ export async function advanceFromNodeKey(
         run,
         node,
         globalExecutionPolicy,
-        async (signal) => {
+        async (signal, idempotencyKey) => {
           const renderedHeaders = Object.fromEntries(
             Object.entries(cfg.headers ?? {}).map(([key, value]) => [
               key,
               interpolateVars(value, run.vars),
             ]),
           );
+          if (
+            !["GET", "DELETE"].includes(cfg.method) &&
+            !Object.keys(renderedHeaders).some(
+              (key) => key.toLowerCase() === "idempotency-key",
+            )
+          ) {
+            renderedHeaders["Idempotency-Key"] = idempotencyKey;
+          }
           const output = await executeHttpRequest(
             {
               method: cfg.method,
               url: interpolateVars(cfg.url, run.vars),
               headers: renderedHeaders,
-              body: cfg.body
-                ? interpolateVars(cfg.body, run.vars)
-                : undefined,
+              body: (() => {
+                const boundRequest = resolveBoundDataInput(
+                  node,
+                  "request",
+                  nodes,
+                  run.vars,
+                );
+                if (boundRequest !== undefined) {
+                  return JSON.stringify(boundRequest);
+                }
+                return cfg.body
+                  ? interpolateVars(cfg.body, run.vars)
+                  : undefined;
+              })(),
               response_var: cfg.response_var,
             },
             { signal },
@@ -1176,7 +1255,16 @@ export async function advanceFromNodeKey(
             .from("flow_runs")
             .update({ vars: nextVars })
             .eq("id", run.id);
-          if (error) throw error;
+          if (error) {
+            throw new CommittedSideEffectError(
+              "HTTP response was received but flow variables could not be persisted",
+              {
+                externalReference: `http:${output.status}`,
+                persistenceStage: "flow_run_vars_update",
+                cause: error,
+              },
+            );
+          }
           run.vars = nextVars;
           return output;
         },
@@ -1748,6 +1836,16 @@ async function startNewRun(
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
+  let initialVars: Record<string, unknown>;
+  try {
+    initialVars = initializeFlowVariables(graph.variable_schema);
+  } catch (error) {
+    console.error(
+      "[flows] required variable initialization failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return { consumed: false, outcome: "no_match" };
+  }
   // INSERT — partial unique index `idx_one_active_run_per_contact`
   // catches concurrent inserts with 23505. We catch and return as
   // consumed:true (the parallel webhook handles it).
@@ -1768,7 +1866,7 @@ async function startNewRun(
       conversation_id: input.conversationId,
       status: "active",
       current_node_key: graph.entry_node_key,
-      vars: initializeFlowVariables(graph.variable_schema),
+      vars: initialVars,
     })
     .select("*")
     .maybeSingle();

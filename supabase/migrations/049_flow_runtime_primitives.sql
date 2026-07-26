@@ -215,6 +215,7 @@ ALTER TABLE flow_runs
   ADD CONSTRAINT flow_runs_status_check CHECK (status IN (
     'active',
     'waiting',
+    'resuming',
     'completed',
     'handed_off',
     'timed_out',
@@ -227,7 +228,7 @@ ALTER TABLE flow_runs
 DROP INDEX IF EXISTS idx_one_active_run_per_contact;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_contact
   ON flow_runs(account_id, contact_id)
-  WHERE status IN ('active', 'waiting');
+  WHERE status IN ('active', 'waiting', 'resuming');
 
 CREATE TABLE IF NOT EXISTS flow_waits (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -306,7 +307,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF v_run.status <> 'active' THEN
+  IF v_run.status NOT IN ('active', 'resuming') THEN
     RAISE EXCEPTION 'flow run is not eligible for wait';
   END IF;
 
@@ -385,16 +386,23 @@ BEGIN
   WITH candidates AS (
     SELECT wait.id
     FROM flow_waits wait
+    JOIN flow_runs run
+      ON run.id = wait.flow_run_id
+     AND run.flow_version_id = wait.flow_version_id
     WHERE wait.wake_at <= p_now
       AND (
-        wait.status = 'pending'
+        (
+          wait.status = 'pending'
+          AND run.status = 'waiting'
+          AND run.current_node_key = wait.node_key
+        )
         OR (
           wait.status = 'claimed'
           AND wait.claimed_at < p_now - INTERVAL '5 minutes'
         )
       )
     ORDER BY wait.wake_at, wait.id
-    FOR UPDATE SKIP LOCKED
+    FOR UPDATE OF wait SKIP LOCKED
     LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500)
   ),
   claimed AS (
@@ -422,11 +430,12 @@ REVOKE ALL ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) FROM authenticated;
 GRANT EXECUTE ON FUNCTION claim_due_flow_waits(TIMESTAMPTZ, INTEGER) TO service_role;
 
-CREATE OR REPLACE FUNCTION resume_flow_wait(
+DROP FUNCTION IF EXISTS resume_flow_wait(UUID, UUID, UUID, TEXT);
+
+CREATE OR REPLACE FUNCTION prepare_flow_wait_resume(
   p_wait_id UUID,
   p_claim_token UUID,
-  p_flow_version_id UUID,
-  p_next_node_key TEXT
+  p_flow_version_id UUID
 )
 RETURNS SETOF flow_runs
 LANGUAGE plpgsql
@@ -435,7 +444,24 @@ SET search_path = public
 AS $$
 DECLARE
   v_wait flow_waits%ROWTYPE;
+  v_run flow_runs%ROWTYPE;
+  v_run_id UUID;
 BEGIN
+  SELECT flow_run_id INTO v_run_id
+  FROM flow_waits
+  WHERE id = p_wait_id;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE id = v_run_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
   SELECT * INTO v_wait
   FROM flow_waits
   WHERE id = p_wait_id
@@ -444,30 +470,106 @@ BEGIN
   IF NOT FOUND
      OR v_wait.status <> 'claimed'
      OR v_wait.claim_token IS DISTINCT FROM p_claim_token
-     OR v_wait.flow_version_id IS DISTINCT FROM p_flow_version_id
-     OR v_wait.next_node_key IS DISTINCT FROM p_next_node_key THEN
+     OR v_wait.flow_version_id IS DISTINCT FROM p_flow_version_id THEN
     RETURN;
+  END IF;
+
+  -- A continuation that already moved past the wait is returned as-is so a
+  -- replacement worker can acknowledge it without replaying side effects.
+  IF v_run.flow_version_id = p_flow_version_id
+    AND (
+      v_run.current_node_key IS DISTINCT FROM v_wait.node_key
+      OR v_run.status IN ('completed', 'handed_off', 'timed_out', 'failed')
+    ) THEN
+    RETURN NEXT v_run;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  UPDATE flow_runs
+  SET status = 'resuming',
+      last_advanced_at = NOW()
+  WHERE id = v_wait.flow_run_id
+    AND flow_version_id = p_flow_version_id
+    AND status IN ('waiting', 'resuming')
+    AND current_node_key = v_wait.node_key
+  RETURNING flow_runs.*;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) FROM authenticated;
+GRANT EXECUTE ON FUNCTION prepare_flow_wait_resume(UUID, UUID, UUID) TO service_role;
+
+CREATE OR REPLACE FUNCTION ack_flow_wait_resume(
+  p_wait_id UUID,
+  p_claim_token UUID,
+  p_flow_version_id UUID,
+  p_node_key TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_wait flow_waits%ROWTYPE;
+  v_run flow_runs%ROWTYPE;
+BEGIN
+  SELECT * INTO v_run
+  FROM flow_runs
+  WHERE flow_version_id = p_flow_version_id
+    AND id = (SELECT flow_run_id FROM flow_waits WHERE id = p_wait_id)
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT * INTO v_wait
+  FROM flow_waits
+  WHERE id = p_wait_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- A second wait can supersede this claim while the first continuation is
+  -- advancing. That durable replacement is itself the acknowledgement.
+  IF v_wait.claim_token IS DISTINCT FROM p_claim_token THEN
+    RETURN v_wait.node_key IS DISTINCT FROM p_node_key
+      AND v_wait.status IN ('pending', 'claimed')
+      AND v_run.current_node_key IS DISTINCT FROM p_node_key;
+  END IF;
+
+  IF v_wait.status <> 'claimed'
+     OR v_wait.flow_version_id IS DISTINCT FROM p_flow_version_id
+     OR v_wait.node_key IS DISTINCT FROM p_node_key
+     OR v_run.current_node_key IS NOT DISTINCT FROM p_node_key THEN
+    RETURN FALSE;
   END IF;
 
   UPDATE flow_waits
   SET status = 'resumed',
       resumed_at = NOW(),
       updated_at = NOW()
-  WHERE id = p_wait_id;
+  WHERE id = p_wait_id
+    AND status = 'claimed'
+    AND claim_token = p_claim_token;
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
 
-  RETURN QUERY
   UPDATE flow_runs
   SET status = 'active',
-      current_node_key = p_next_node_key,
       wake_at = NULL,
       last_advanced_at = NOW()
   WHERE id = v_wait.flow_run_id
-    AND status = 'waiting'
-    AND flow_version_id = p_flow_version_id
-  RETURNING flow_runs.*;
+    AND status = 'resuming';
+
+  RETURN TRUE;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) FROM authenticated;
-GRANT EXECUTE ON FUNCTION resume_flow_wait(UUID, UUID, UUID, TEXT) TO service_role;
+REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION ack_flow_wait_resume(UUID, UUID, UUID, TEXT) TO service_role;

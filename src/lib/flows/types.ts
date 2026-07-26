@@ -273,6 +273,8 @@ export interface FlowRunRow {
   conversation_id: string | null;
   status:
     | "active"
+    | "waiting"
+    | "resuming"
     | "completed"
     | "handed_off"
     | "timed_out"

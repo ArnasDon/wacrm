@@ -74,9 +74,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
+  applyDataInputConnection,
   applyEdgeConnection,
   deriveCanvasEdges,
   outgoingSlots,
+  removeDataInputConnection,
 } from '@/lib/flows/edges';
 import { validateCanvasConnection } from '@/lib/flows/connection-validation';
 import { autoLayout, shouldAutoLayout } from '@/lib/flows/layout';
@@ -149,7 +151,9 @@ function FlowNodeCard({ data, selected }: NodeProps) {
   const summary = summarizeNode(node, tSummary);
   const slots = outgoingSlots(node);
   const descriptor = getNodeDescriptor(node.node_type);
-  const inputPort = descriptor?.inputs[0];
+  const inputPorts = descriptor?.inputs ?? [];
+  const dataOutputs =
+    descriptor?.outputs.filter((port) => port.type !== 'control') ?? [];
   const outputPortFor = (slotId: string) =>
     descriptor?.outputs.find(
       (port) =>
@@ -161,7 +165,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
   // don't need an incoming Handle. Every other node type accepts
   // incoming edges (including terminal handoff / end — they're the
   // common targets).
-  const hasTarget = node.node_type !== 'start';
+  const hasTarget = inputPorts.length > 0;
   // Single-slot nodes get a single source handle floated on the right
   // edge of the card. Multi-slot nodes (condition, send_buttons,
   // send_list) render slot rows inline so each handle visually sits
@@ -192,16 +196,26 @@ function FlowNodeCard({ data, selected }: NodeProps) {
         isFlashed && '!border-amber-400 ring-2 ring-amber-400/60'
       )}
     >
-      {hasTarget && (
-        <Handle
-          type="target"
-          id={inputPort?.id ?? 'in'}
-          position={Position.Left}
-          aria-label={`${inputPort?.label ?? 'Input'} (${inputPort?.type ?? 'control'})`}
-          data-port-type={inputPort?.type ?? 'control'}
-          className="!bg-card !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
-        />
-      )}
+      {hasTarget &&
+        inputPorts.map((inputPort, index) => (
+          <Handle
+            key={inputPort.id}
+            type="target"
+            id={inputPort.id}
+            position={Position.Left}
+            aria-label={`${inputPort.label} (${inputPort.type})`}
+            data-port-type={inputPort.type}
+            data-required={inputPort.required ? 'true' : 'false'}
+            data-cardinality={inputPort.cardinality}
+            style={{
+              top:
+                inputPorts.length === 1
+                  ? '50%'
+                  : `${30 + (index * 40) / (inputPorts.length - 1)}%`,
+            }}
+            className="!bg-card !h-2.5 !w-2.5 !border-2 !border-[var(--nc-ring)]"
+          />
+        ))}
 
       <div className="flex items-center gap-2">
         <NodeIconChip
@@ -271,6 +285,31 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           style={{ borderColor: c.solid }}
           className="!bg-card !h-2.5 !w-2.5 !border-2"
         />
+      )}
+
+      {dataOutputs.length > 0 && (
+        <div className="border-border mt-2 flex flex-col gap-1 border-t pt-2">
+          {dataOutputs.map((port) => (
+            <div
+              key={port.id}
+              className="text-muted-foreground relative flex items-center justify-between text-[10px]"
+            >
+              <span>
+                {port.label} · {port.type}
+              </span>
+              <Handle
+                type="source"
+                id={port.id}
+                position={Position.Right}
+                aria-label={`${port.label} (${port.type})`}
+                data-port-type={port.type}
+                data-required={port.required ? 'true' : 'false'}
+                data-cardinality={port.cardinality}
+                className="!bg-card !relative !top-auto !right-auto !h-2.5 !w-2.5 !translate-x-[14px] !transform-none !border-2 !border-[var(--nc-ring)]"
+              />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -395,6 +434,7 @@ function FlowCanvasInner() {
       source: e.source,
       target: e.target,
       sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle ?? 'in',
       label: e.label,
       // Mode-aware via CSS tokens so edge chrome flips with light/dark.
       labelStyle: { fill: 'var(--muted-foreground)', fontSize: 11 },
@@ -471,8 +511,29 @@ function FlowCanvasInner() {
       const sourceNode = builderNodes.find(
         (n) => n.node_key === connection.source
       );
-      if (!sourceNode) return;
-      if (!connection.sourceHandle) return;
+      const targetNode = builderNodes.find(
+        (n) => n.node_key === connection.target
+      );
+      if (!sourceNode || !targetNode) return;
+      if (!connection.sourceHandle || !connection.targetHandle) return;
+      const sourcePort = getNodeDescriptor(sourceNode.node_type)?.outputs.find(
+        (port) =>
+          port.id === connection.sourceHandle ||
+          (port.handlePrefix &&
+            connection.sourceHandle?.startsWith(port.handlePrefix))
+      );
+      if (sourcePort?.type !== 'control') {
+        updateNodeConfig(
+          targetNode.node_key,
+          applyDataInputConnection(
+            targetNode,
+            connection.targetHandle,
+            sourceNode.node_key,
+            connection.sourceHandle
+          )
+        );
+        return;
+      }
       const patch = applyEdgeConnection(
         sourceNode,
         connection.sourceHandle,
@@ -522,6 +583,16 @@ function FlowCanvasInner() {
     (deleted: RfEdge[]) => {
       for (const e of deleted) {
         if (!e.sourceHandle) continue;
+        if (e.targetHandle && e.targetHandle !== 'in') {
+          const targetNode = builderNodes.find((n) => n.node_key === e.target);
+          if (targetNode) {
+            updateNodeConfig(
+              targetNode.node_key,
+              removeDataInputConnection(targetNode, e.targetHandle)
+            );
+          }
+          continue;
+        }
         const sourceNode = builderNodes.find((n) => n.node_key === e.source);
         if (!sourceNode) continue;
         const patch = applyEdgeConnection(sourceNode, e.sourceHandle, '');

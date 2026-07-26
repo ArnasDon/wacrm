@@ -13,7 +13,15 @@ export const switchNodeDescriptor = defineNodeDescriptor({
   label: "Switch",
   category: "logic",
   icon: "git-fork",
-  inputs: CONTROL_INPUT,
+  inputs: [
+    ...CONTROL_INPUT,
+    {
+      id: "subject",
+      label: "Subject",
+      type: "any",
+      cardinality: "one",
+    },
+  ],
   outputs: [
     {
       id: "case",

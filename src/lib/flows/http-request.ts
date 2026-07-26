@@ -1,5 +1,8 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { Readable } from "node:stream";
 
 export const MAX_HTTP_REDIRECTS = 3;
 export const MAX_HTTP_RESPONSE_BYTES = 512 * 1024;
@@ -18,18 +21,21 @@ export interface HttpRequestOutput {
   content_type: string;
 }
 
-type FetchLike = (
+type PinnedTransport = (
   input: string,
-  init?: RequestInit,
+  address: string,
+  init: RequestInit,
 ) => Promise<Response>;
 
 export interface HttpRequestDependencies {
-  fetch?: FetchLike;
+  transport?: PinnedTransport;
   lookup?: (host: string) => Promise<readonly string[]>;
   signal?: AbortSignal;
 }
 
-const SECRET_HEADER = /^(authorization|cookie|proxy-authorization|x-api-key)$/i;
+const SECRET_HEADER =
+  /(?:^|[-_])(authorization|cookie|api[-_]?key|auth[-_]?token|access[-_]?token)(?:$|[-_])/i;
+const CROSS_ORIGIN_SECRET_HEADER = SECRET_HEADER;
 
 export function sanitizeHttpHeaders(
   headers: Record<string, string>,
@@ -115,7 +121,7 @@ export function assertAuthorableHttpUrl(rawUrl: string): string {
 async function assertPublicRuntimeTarget(
   url: URL,
   lookup: NonNullable<HttpRequestDependencies["lookup"]>,
-): Promise<void> {
+): Promise<string> {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const addresses = isIP(host) ? [host] : await lookup(host);
   if (
@@ -124,6 +130,77 @@ async function assertPublicRuntimeTarget(
   ) {
     throw new Error("HTTP request target is not publicly routable");
   }
+  return addresses[0];
+}
+
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  return Object.fromEntries(new Headers(headers).entries());
+}
+
+function stripCrossOriginCredentials(
+  headers: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([key]) => !CROSS_ORIGIN_SECRET_HEADER.test(key),
+    ),
+  );
+}
+
+async function pinnedNodeTransport(
+  input: string,
+  address: string,
+  init: RequestInit,
+): Promise<Response> {
+  const url = new URL(input);
+  const headers = headersToRecord(init.headers);
+  headers.Host = url.host;
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+  return await new Promise<Response>((resolve, reject) => {
+    const req = request(
+      {
+        protocol: url.protocol,
+        hostname: address,
+        port: url.port || undefined,
+        path: `${url.pathname}${url.search}`,
+        method: init.method,
+        headers,
+        signal: init.signal ?? undefined,
+        ...(url.protocol === "https:" && !isIP(url.hostname)
+          ? { servername: url.hostname }
+          : {}),
+      },
+      (incoming) => {
+        const responseHeaders = new Headers();
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value)) {
+            for (const entry of value) responseHeaders.append(key, entry);
+          } else if (value !== undefined) {
+            responseHeaders.set(key, value);
+          }
+        }
+        const status = incoming.statusCode ?? 500;
+        const responseBody = [204, 205, 304].includes(status)
+          ? null
+          : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>);
+        resolve(
+          new Response(responseBody, {
+            status,
+            statusText: incoming.statusMessage,
+            headers: responseHeaders,
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    if (typeof init.body === "string" || init.body instanceof Uint8Array) {
+      req.write(init.body);
+    } else if (init.body !== null && init.body !== undefined) {
+      req.destroy(new Error("HTTP request body type is unsupported"));
+      return;
+    }
+    req.end();
+  });
 }
 
 async function readBoundedBody(response: Response): Promise<Uint8Array> {
@@ -158,19 +235,21 @@ export async function executeHttpRequest(
   config: HttpRequestConfig,
   dependencies: HttpRequestDependencies = {},
 ): Promise<HttpRequestOutput> {
-  const fetcher = dependencies.fetch ?? fetch;
+  const transport: PinnedTransport =
+    dependencies.transport ?? pinnedNodeTransport;
   const lookup =
     dependencies.lookup ??
     (async (host: string) =>
       (await dnsLookup(host, { all: true })).map((result) => result.address));
   let url = parseAndAssertHttpUrl(config.url);
-  const headers = config.headers ?? {};
+  let headers = { ...(config.headers ?? {}) };
 
   for (let redirect = 0; redirect <= MAX_HTTP_REDIRECTS; redirect += 1) {
-    await assertPublicRuntimeTarget(url, lookup);
-    const response = await fetcher(url.toString(), {
+    const pinnedAddress = await assertPublicRuntimeTarget(url, lookup);
+    const requestHeaders = { ...headers, Host: url.host };
+    const response = await transport(url.toString(), pinnedAddress, {
       method: config.method,
-      headers,
+      headers: requestHeaders,
       body:
         config.method === "GET" || config.method === "DELETE"
           ? undefined
@@ -184,7 +263,11 @@ export async function executeHttpRequest(
       if (redirect === MAX_HTTP_REDIRECTS) {
         throw new Error("HTTP redirect limit exceeded");
       }
-      url = parseAndAssertHttpUrl(new URL(location, url).toString());
+      const nextUrl = parseAndAssertHttpUrl(new URL(location, url).toString());
+      if (nextUrl.origin !== url.origin) {
+        headers = stripCrossOriginCredentials(headers);
+      }
+      url = nextUrl;
       continue;
     }
     if (!response.ok) {
@@ -201,6 +284,7 @@ export async function executeHttpRequest(
       contentType !== "text/plain" &&
       !contentType.endsWith("+json")
     ) {
+      await response.body?.cancel();
       throw new Error("HTTP response has unsupported content type");
     }
     const bytes = await readBoundedBody(response);

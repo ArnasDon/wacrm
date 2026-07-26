@@ -33,6 +33,7 @@ function fakeDb(
   options: {
     failExecutionLogging?: boolean;
     failPromptPersistence?: boolean;
+    failFlowVarsPersistence?: boolean;
   } = {},
 ) {
   const writes: CapturedWrite[] = [];
@@ -76,7 +77,15 @@ function fakeDb(
         update(value: Record<string, unknown>) {
           writes.push({ table, kind: "update", value });
           return {
-            eq: async () => ({ data: [{ id: "ok" }], error: null }),
+            eq: async () => ({
+              data: [{ id: "ok" }],
+              error:
+                table === "flow_runs" &&
+                "vars" in value &&
+                options.failFlowVarsPersistence
+                  ? { message: "vars persistence unavailable" }
+                  : null,
+            }),
           };
         },
       };
@@ -188,6 +197,99 @@ describe("node execution policy in the flow engine", () => {
           "vars" in write.value,
       ),
     ).toBe(true);
+  });
+
+  it("never repeats an HTTP effect after the remote response is confirmed", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { created: true },
+      content_type: "application/json",
+    });
+    const activeRun = run({ current_node_key: "http" });
+    const { db, writes } = fakeDb({ failFlowVarsPersistence: true });
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "POST",
+          url: "https://api.example.com/create",
+          headers: {},
+          body: "{}",
+          response_var: "response",
+          next_node_key: "end",
+          retry: {
+            max_attempts: 3,
+            interval_ms: 0,
+            backoff: "fixed",
+          },
+          on_error: "fail_branch",
+          error_next_node_key: "recover",
+        }),
+        node("end", "end", {}),
+        node("recover", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(h.httpRequest).toHaveBeenCalledTimes(1);
+    expect(h.httpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Idempotency-Key": expect.any(String),
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(
+      writes.some(
+        (write) =>
+          write.table === "flow_runs" &&
+          write.kind === "update" &&
+          write.value.status === "failed" &&
+          write.value.end_reason ===
+            "side_effect_committed_local_persistence_failed",
+      ),
+    ).toBe(true);
+  });
+
+  it("feeds persisted typed output ports into connected runtime inputs", async () => {
+    h.httpRequest.mockResolvedValue({
+      status: 200,
+      body: { answer: 42 },
+      content_type: "application/json",
+    });
+    const activeRun = run({ current_node_key: "http" });
+    const { db } = fakeDb();
+    const nodes = new Map(
+      [
+        node("http", "http_request", {
+          method: "GET",
+          url: "https://api.example.com/data",
+          headers: {},
+          response_var: "response",
+          next_node_key: "set",
+        }),
+        node("set", "variable_set", {
+          assignments: [{ key: "copied", type: "json", value: "wrong" }],
+          next_node_key: "end",
+          _data_inputs: {
+            value: {
+              source_node_key: "http",
+              source_handle: "response",
+            },
+          },
+        }),
+        node("end", "end", {}),
+      ].map((entry) => [entry.node_key, entry]),
+    );
+
+    await advanceFromNodeKey(db as never, activeRun, "http", nodes);
+
+    expect(activeRun.vars.copied).toEqual({
+      status: 200,
+      body: { answer: 42 },
+      content_type: "application/json",
+    });
   });
 
   it("schedules a durable wait through an atomic RPC without sleeping", async () => {
@@ -469,7 +571,7 @@ describe("node execution policy in the flow engine", () => {
             write.kind === "update" &&
             write.value.status === "failed" &&
             write.value.end_reason ===
-              "external_send_committed_local_persistence_failed",
+              "side_effect_committed_local_persistence_failed",
         ),
       ).toHaveLength(1);
       expect(
@@ -592,7 +694,7 @@ describe("node execution policy in the flow engine", () => {
             write.kind === "update" &&
             write.value.status === "failed" &&
             write.value.end_reason ===
-              "external_send_committed_local_persistence_failed",
+              "side_effect_committed_local_persistence_failed",
         ),
       ).toBe(true);
       expect(

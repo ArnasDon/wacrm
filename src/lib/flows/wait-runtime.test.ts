@@ -59,14 +59,18 @@ describe("durable flow wait resume", () => {
             user_id: "user-1",
             contact_id: "contact-1",
             conversation_id: "conversation-1",
-            status: "active",
-            current_node_key: "end",
+            status: "resuming",
+            current_node_key: "wait",
             vars: {},
             reprompt_count: 0,
             started_at: "",
             last_advanced_at: "",
           },
         ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: true,
         error: null,
       });
     const versionQuery = {
@@ -102,12 +106,11 @@ describe("durable flow wait resume", () => {
     expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
     expect(rpc).toHaveBeenNthCalledWith(
       2,
-      "resume_flow_wait",
+      "prepare_flow_wait_resume",
       expect.objectContaining({
         p_wait_id: "wait-1",
         p_claim_token: "token-1",
         p_flow_version_id: "version-7",
-        p_next_node_key: "end",
       }),
     );
     expect(advance).toHaveBeenCalledWith(
@@ -117,6 +120,162 @@ describe("durable flow wait resume", () => {
       expect.any(Map),
       undefined,
     );
+    expect(rpc).toHaveBeenNthCalledWith(
+      3,
+      "ack_flow_wait_resume",
+      expect.objectContaining({
+        p_wait_id: "wait-1",
+        p_claim_token: "token-1",
+        p_flow_version_id: "version-7",
+        p_node_key: "wait",
+      }),
+    );
+  });
+
+  it("leaves the claimed continuation reclaimable when advance crashes", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "wait-1",
+            flow_run_id: "run-1",
+            flow_version_id: "version-7",
+            node_key: "wait",
+            next_node_key: "end",
+            claim_token: "token-1",
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "run-1",
+            flow_id: "flow-1",
+            flow_version_id: "version-7",
+            account_id: "account-1",
+            status: "resuming",
+            current_node_key: "wait",
+            vars: {},
+          },
+        ],
+        error: null,
+      });
+    const versionQuery = {
+      select: vi.fn(() => versionQuery),
+      eq: vi.fn(() => versionQuery),
+      maybeSingle: vi.fn(async () => ({
+        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
+        error: null,
+      })),
+    };
+    const db = { rpc, from: vi.fn(() => versionQuery) };
+    const advance = vi.fn(async () => {
+      throw new Error("worker crashed");
+    });
+
+    const result = await resumeDueFlowWaits(db as never, new Date(), {
+      advance,
+    });
+
+    expect(result).toEqual({ claimed: 1, resumed: 0, failed: 1 });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(
+      rpc.mock.calls.some(([name]) => name === "ack_flow_wait_resume"),
+    ).toBe(false);
+  });
+
+  it("acks without replaying when a prior worker advanced before crashing", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "wait-1",
+            flow_run_id: "run-1",
+            flow_version_id: "version-7",
+            node_key: "wait",
+            next_node_key: "end",
+            claim_token: "token-2",
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "run-1",
+            flow_id: "flow-1",
+            flow_version_id: "version-7",
+            account_id: "account-1",
+            status: "completed",
+            current_node_key: "end",
+            vars: {},
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: true, error: null });
+    const versionQuery = {
+      select: vi.fn(() => versionQuery),
+      eq: vi.fn(() => versionQuery),
+      maybeSingle: vi.fn(async () => ({
+        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
+        error: null,
+      })),
+    };
+    const db = { rpc, from: vi.fn(() => versionQuery) };
+    const advance = vi.fn();
+
+    const result = await resumeDueFlowWaits(db as never, new Date(), {
+      advance,
+    });
+
+    expect(result).toEqual({ claimed: 1, resumed: 1, failed: 0 });
+    expect(advance).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenNthCalledWith(
+      3,
+      "ack_flow_wait_resume",
+      expect.any(Object),
+    );
+  });
+
+  it("does not ack a claim when the run remains in a mismatched state", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "wait-1",
+            flow_run_id: "run-1",
+            flow_version_id: "version-7",
+            node_key: "wait",
+            next_node_key: "end",
+            claim_token: "token-1",
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null });
+    const versionQuery = {
+      select: vi.fn(() => versionQuery),
+      eq: vi.fn(() => versionQuery),
+      maybeSingle: vi.fn(async () => ({
+        data: { id: "version-7", flow_id: "flow-1", graph: graph() },
+        error: null,
+      })),
+    };
+    const db = { rpc, from: vi.fn(() => versionQuery) };
+    const advance = vi.fn();
+
+    const result = await resumeDueFlowWaits(db as never, new Date(), {
+      advance,
+    });
+
+    expect(result).toEqual({ claimed: 1, resumed: 0, failed: 1 });
+    expect(advance).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("does not resume when the claimed edge differs from the pinned snapshot", async () => {

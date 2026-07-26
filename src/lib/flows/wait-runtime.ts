@@ -86,36 +86,57 @@ export async function resumeDueFlowWaits(
       continue;
     }
 
-    const { data: resumedRows, error: resumeError } = await db.rpc(
-      "resume_flow_wait",
+    const { data: preparedRows, error: prepareError } = await db.rpc(
+      "prepare_flow_wait_resume",
       {
         p_wait_id: claim.id,
         p_claim_token: claim.claim_token,
         p_flow_version_id: claim.flow_version_id,
-        p_next_node_key: pinnedNext,
       },
     );
-    const run = Array.isArray(resumedRows)
-      ? (resumedRows[0] as FlowRunRow | undefined)
+    const run = Array.isArray(preparedRows)
+      ? (preparedRows[0] as FlowRunRow | undefined)
       : undefined;
-    if (resumeError || !run) {
+    if (prepareError || !run) {
       stats.failed += 1;
       continue;
     }
-    stats.resumed += 1;
-    const nodes = new Map(
-      versionGraphNodes(pinned.graph, pinned.flowId).map((node) => [
-        node.node_key,
-        node,
-      ]),
-    );
-    await advance(
-      db as ReturnType<typeof import("./admin-client").supabaseAdmin>,
-      run,
-      pinnedNext,
-      nodes,
-      pinned.graph.fallback_policy.execution,
-    );
+    const needsAdvance =
+      run.status === "resuming" && run.current_node_key === claim.node_key;
+    try {
+      if (needsAdvance) {
+        const nodes = new Map(
+          versionGraphNodes(pinned.graph, pinned.flowId).map((node) => [
+            node.node_key,
+            node,
+          ]),
+        );
+        await advance(
+          db as ReturnType<typeof import("./admin-client").supabaseAdmin>,
+          run,
+          pinnedNext,
+          nodes,
+          pinned.graph.fallback_policy.execution,
+        );
+      }
+      const { data: acknowledged, error: ackError } = await db.rpc(
+        "ack_flow_wait_resume",
+        {
+          p_wait_id: claim.id,
+          p_claim_token: claim.claim_token,
+          p_flow_version_id: claim.flow_version_id,
+          p_node_key: claim.node_key,
+        },
+      );
+      if (ackError || acknowledged !== true) {
+        stats.failed += 1;
+        continue;
+      }
+      stats.resumed += 1;
+    } catch {
+      // The claim remains durable and will be reclaimed after its lease.
+      stats.failed += 1;
+    }
   }
   return stats;
 }

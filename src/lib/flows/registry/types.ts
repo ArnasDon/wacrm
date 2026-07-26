@@ -149,7 +149,8 @@ export type NodeFormDescriptor =
         | "condition"
         | "set_tag"
         | "switch"
-        | "variable_set";
+        | "variable_set"
+        | "http_request";
     };
 
 export interface NodeUiDescriptor {

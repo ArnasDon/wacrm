@@ -16,6 +16,15 @@ export interface FlowVariableDeclaration {
 export function initializeFlowVariables(
   declarations: readonly FlowVariableDeclaration[],
 ): Record<string, unknown> {
+  const missingRequired = declarations.find(
+    (declaration) =>
+      declaration.required && declaration.default === undefined,
+  );
+  if (missingRequired) {
+    throw new Error(
+      `required variable "${missingRequired.key}" has no initial value`,
+    );
+  }
   return Object.fromEntries(
     declarations.flatMap((declaration) =>
       declaration.default === undefined
@@ -67,6 +76,16 @@ export function coerceDeclaredValue(
     return { ok: false, reason: "expected_json" };
   }
   if (input && typeof input === "object") return { ok: true, value: input };
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object") {
+        return { ok: true, value: parsed };
+      }
+    } catch {
+      // Fall through to the typed failure below.
+    }
+  }
   return { ok: false, reason: `expected_${type}` };
 }
 
@@ -144,6 +163,7 @@ export function evaluateSwitch(
 }
 
 export const MAX_COLLECT_INPUT_REGEX_LENGTH = 256;
+export const MAX_COLLECT_INPUT_LENGTH = 4_096;
 
 /**
  * Reject the nested-quantifier patterns most commonly used for ReDoS.
@@ -154,8 +174,53 @@ export const MAX_COLLECT_INPUT_REGEX_LENGTH = 256;
 export function isSafeCollectInputRegex(pattern: string): boolean {
   if (!pattern || pattern.length > MAX_COLLECT_INPUT_REGEX_LENGTH) return false;
   if (/\\[1-9]/.test(pattern)) return false;
-  if (/\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*{]/.test(pattern)) {
-    return false;
+  // The accepted subset deliberately excludes grouping and alternation. This
+  // removes nested/overlapping quantified branches, including `(a|aa)+` and
+  // `(a?)+`, instead of trying to predict V8 backtracking behavior.
+  if (/[()|]/.test(pattern)) return false;
+
+  let escaped = false;
+  let inClass = false;
+  const unboundedQuantifiers: number[] = [];
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "[" && !inClass) {
+      inClass = true;
+      continue;
+    }
+    if (char === "]" && inClass) {
+      inClass = false;
+      continue;
+    }
+    if (inClass) continue;
+    if (char === "*" || char === "+") {
+      unboundedQuantifiers.push(index);
+    } else if (char === "{") {
+      const end = pattern.indexOf("}", index + 1);
+      if (end < 0) return false;
+      const range = pattern.slice(index + 1, end);
+      if (/^\d+,$/.test(range)) unboundedQuantifiers.push(index);
+      index = end;
+    }
+  }
+  if (inClass || escaped) return false;
+  for (let index = 1; index < unboundedQuantifiers.length; index += 1) {
+    const between = pattern.slice(
+      unboundedQuantifiers[index - 1] + 1,
+      unboundedQuantifiers[index],
+    );
+    // Multiple unbounded repetitions require a mandatory literal separator.
+    // This accepts patterns such as `^[A-Z]+-\d+$` while rejecting `a+a+`
+    // and `.*.*`, whose repetitions can partition the same input.
+    if (!/(?:^|[^\\])[-_,:;/]/.test(between)) return false;
   }
   try {
     void new RegExp(pattern, "u");
@@ -170,7 +235,7 @@ export function validateCollectedInput(
   validation: "any" | "email" | "phone" | "regex" = "any",
   pattern?: string,
 ): boolean {
-  if (!value.trim()) return false;
+  if (!value.trim() || value.length > MAX_COLLECT_INPUT_LENGTH) return false;
   if (validation === "any") return true;
   if (validation === "email") {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;

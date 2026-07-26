@@ -1,5 +1,6 @@
 import { createLinearNodeDescriptor } from "../registry/factories";
 import { httpRequestConfigSchema } from "../registry/schemas";
+import { CONTROL_INPUT, CONTROL_OUTPUT } from "../registry/types";
 
 export const httpRequestNodeDescriptor = createLinearNodeDescriptor({
   id: "http_request",
@@ -7,28 +8,28 @@ export const httpRequestNodeDescriptor = createLinearNodeDescriptor({
   category: "data",
   icon: "webhook",
   configSchema: httpRequestConfigSchema,
+  inputs: [
+    ...CONTROL_INPUT,
+    {
+      id: "request",
+      label: "Request data",
+      type: "json",
+      cardinality: "one",
+    },
+  ],
+  outputs: [
+    ...CONTROL_OUTPUT,
+    {
+      id: "response",
+      label: "Response",
+      type: "json",
+      cardinality: "many",
+    },
+  ],
   runtimeKind: "auto",
   runtimeHook: "http_request",
   visible: true,
-  form: {
-    kind: "fields",
-    fields: [
-      {
-        kind: "select",
-        key: "method",
-        label: "Method",
-        options: ["GET", "POST", "PUT", "PATCH", "DELETE"].map((value) => ({
-          value,
-          label: value,
-        })),
-      },
-      { kind: "text", key: "url", label: "URL" },
-      { kind: "textarea", key: "body", label: "Request body", rows: 4 },
-      { kind: "text", key: "response_var", label: "Response variable" },
-      { kind: "next-node", key: "next_node_key", label: "Continue to" },
-    ],
-    help: "Only public HTTP(S) targets and JSON/text responses are allowed.",
-  },
+  form: { kind: "specialized", component: "http_request" },
   defaultConfig: {
     method: "GET",
     url: "",

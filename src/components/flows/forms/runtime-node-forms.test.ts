@@ -25,4 +25,11 @@ describe("runtime primitive node forms", () => {
     expect(source).toContain("<VariableSchemaPanel");
     expect(source).toContain("variable_schema");
   });
+
+  it("provides an HTTP header editor and all assignable variable types", () => {
+    expect(source).toContain("<HttpRequestForm");
+    expect(source).toContain('aria-label="Header name"');
+    expect(source).toContain('"contact"');
+    expect(source).toContain('"message"');
+  });
 });

@@ -217,7 +217,7 @@ function defaultForVariableType(type: FlowVariableType): unknown {
   if (type === 'number') return 0;
   if (type === 'boolean') return false;
   if (type === 'json') return {};
-  if (type === 'contact' || type === 'message') return undefined;
+  if (type === 'contact' || type === 'message') return {};
   return '';
 }
 
@@ -327,9 +327,6 @@ function VariableSchemaPanel({
                         typeof variable.default === 'number'
                       ? variable.default
                       : JSON.stringify(variable.default)
-                }
-                disabled={
-                  variable.type === 'contact' || variable.type === 'message'
                 }
                 onChange={(event) => {
                   const raw = event.target.value;

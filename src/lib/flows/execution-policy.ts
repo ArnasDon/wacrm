@@ -2,6 +2,7 @@ import type {
   NodeExecutionPolicy,
   PartialNodeExecutionPolicy,
 } from "./registry";
+import { sanitizeHttpHeaders } from "./http-request";
 
 export const DEFAULT_NODE_EXECUTION_POLICY: NodeExecutionPolicy = {
   retry: {
@@ -305,14 +306,34 @@ export function sanitizeExecutionData(value: unknown): unknown {
       : value;
   }
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
-      key,
-      /token|secret|password|authorization|api[_-]?key|credential/i.test(key)
-        ? "[REDACTED]"
-        : key === "url" && typeof nested === "string"
-          ? sanitizeExecutionUrl(nested)
-        : sanitizeExecutionData(nested),
-    ]),
+    Object.entries(value as Record<string, unknown>).map(([key, nested]) => {
+      if (
+        key.toLowerCase() === "headers" &&
+        nested &&
+        typeof nested === "object" &&
+        !Array.isArray(nested)
+      ) {
+        const entries = Object.entries(nested as Record<string, unknown>);
+        if (entries.every((entry) => typeof entry[1] === "string")) {
+          return [
+            key,
+            sanitizeHttpHeaders(
+              Object.fromEntries(entries) as Record<string, string>,
+            ),
+          ];
+        }
+      }
+      return [
+        key,
+        /token|secret|password|authorization|cookie|api[_-]?key|credential/i.test(
+          key,
+        )
+          ? "[REDACTED]"
+          : key === "url" && typeof nested === "string"
+            ? sanitizeExecutionUrl(nested)
+            : sanitizeExecutionData(nested),
+      ];
+    }),
   );
 }
 

@@ -25,19 +25,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  Paperclip,
-  Plus,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -47,7 +41,10 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { getNodeDescriptor, type NodeFormField } from "@/lib/flows/registry";
-import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
+import {
+  uploadAccountMedia,
+  MEDIA_MAX_BYTES,
+} from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
@@ -59,6 +56,35 @@ interface NodeConfigFormProps {
 }
 
 export function NodeConfigForm({
+  node,
+  allNodes,
+  showAdvanced,
+  onUpdateConfig,
+}: NodeConfigFormProps) {
+  const descriptor = getNodeDescriptor(node.node_type);
+  return (
+    <>
+      <NodeSpecificConfigForm
+        node={node}
+        allNodes={allNodes}
+        showAdvanced={showAdvanced}
+        onUpdateConfig={onUpdateConfig}
+      />
+      {descriptor?.supportsExecutionPolicy &&
+        descriptor.runtimeKind !== "trigger" &&
+        descriptor.runtimeKind !== "terminal" && (
+          <ErrorHandlingSection
+            cfg={node.config}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onUpdateConfig={onUpdateConfig}
+          />
+        )}
+    </>
+  );
+}
+
+function NodeSpecificConfigForm({
   node,
   allNodes,
   showAdvanced,
@@ -138,8 +164,268 @@ export function NodeConfigForm({
           t={t}
         />
       );
-
   }
+}
+
+interface RetryConfig {
+  max_attempts: number;
+  interval_ms: number;
+  backoff: "fixed" | "exponential";
+}
+
+interface DefaultValueConfig {
+  key: string;
+  type: "string" | "number" | "boolean" | "object" | "array" | "null";
+  value: unknown;
+}
+
+function ErrorHandlingSection({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+}: {
+  cfg: Record<string, unknown>;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  const retry = (cfg.retry as RetryConfig | undefined) ?? {
+    max_attempts: 1,
+    interval_ms: 0,
+    backoff: "fixed",
+  };
+  const onError =
+    cfg.on_error === "fail_branch" || cfg.on_error === "default_value"
+      ? cfg.on_error
+      : "fail_run";
+  const defaultValue = (cfg.default_value as
+    DefaultValueConfig | undefined) ?? {
+    key: "node_output",
+    type: "string",
+    value: "",
+  };
+  const setRetry = (patch: Partial<RetryConfig>) =>
+    onUpdateConfig({ retry: { ...retry, ...patch } });
+
+  return (
+    <details className="border-border bg-muted/20 rounded-md border p-3">
+      <summary className="text-foreground cursor-pointer text-xs font-medium">
+        Error handling
+      </summary>
+      <div className="mt-3 grid gap-3">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-muted-foreground text-xs">
+            Attempts
+            <Input
+              className="bg-muted mt-1"
+              type="number"
+              min={1}
+              max={3}
+              value={retry.max_attempts}
+              onChange={(event) =>
+                setRetry({ max_attempts: event.target.valueAsNumber })
+              }
+            />
+          </label>
+          <label className="text-muted-foreground text-xs">
+            Interval (ms)
+            <Input
+              className="bg-muted mt-1"
+              type="number"
+              min={0}
+              max={5_000}
+              value={retry.interval_ms}
+              onChange={(event) =>
+                setRetry({ interval_ms: event.target.valueAsNumber })
+              }
+            />
+          </label>
+        </div>
+        <label className="text-muted-foreground text-xs">
+          Backoff
+          <Select
+            value={retry.backoff}
+            onValueChange={(value) =>
+              setRetry({ backoff: value as RetryConfig["backoff"] })
+            }
+          >
+            <SelectTrigger className="bg-muted mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed">Fixed</SelectItem>
+              <SelectItem value="exponential">Exponential</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-muted-foreground text-xs">
+          Timeout (ms)
+          <Input
+            className="bg-muted mt-1"
+            type="number"
+            min={100}
+            max={15_000}
+            value={typeof cfg.timeout_ms === "number" ? cfg.timeout_ms : 15_000}
+            onChange={(event) =>
+              onUpdateConfig({ timeout_ms: event.target.valueAsNumber })
+            }
+          />
+        </label>
+        <label className="text-muted-foreground text-xs">
+          When all attempts fail
+          <Select
+            value={onError}
+            onValueChange={(value) =>
+              onUpdateConfig({
+                on_error: value,
+                error_next_node_key:
+                  value === "fail_branch"
+                    ? typeof cfg.error_next_node_key === "string"
+                      ? cfg.error_next_node_key
+                      : ""
+                    : undefined,
+                default_value:
+                  value === "default_value" ? defaultValue : undefined,
+              })
+            }
+          >
+            <SelectTrigger className="bg-muted mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fail_run">Fail run</SelectItem>
+              <SelectItem value="fail_branch">Follow error branch</SelectItem>
+              <SelectItem value="default_value">Use default value</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
+        {onError === "fail_branch" && (
+          <div>
+            <label className="text-muted-foreground mb-1 block text-xs">
+              Error branch
+            </label>
+            <NodeKeySelect
+              value={
+                typeof cfg.error_next_node_key === "string"
+                  ? cfg.error_next_node_key
+                  : null
+              }
+              nodes={allNodes}
+              excludeKey={currentKey}
+              onChange={(value) =>
+                onUpdateConfig({ error_next_node_key: value ?? "" })
+              }
+              placeholder="Pick an error node"
+            />
+          </div>
+        )}
+        {onError === "default_value" && (
+          <DefaultValueFields
+            value={defaultValue}
+            onChange={(value) => onUpdateConfig({ default_value: value })}
+          />
+        )}
+      </div>
+    </details>
+  );
+}
+
+function DefaultValueFields({
+  value,
+  onChange,
+}: {
+  value: DefaultValueConfig;
+  onChange: (value: DefaultValueConfig) => void;
+}) {
+  const serialized =
+    typeof value.value === "string"
+      ? value.value
+      : value.value === null
+        ? ""
+        : JSON.stringify(value.value);
+  return (
+    <div className="border-border grid gap-2 rounded-md border p-2">
+      <label className="text-muted-foreground text-xs">
+        Variable key
+        <Input
+          className="bg-muted mt-1"
+          value={value.key}
+          onChange={(event) => onChange({ ...value, key: event.target.value })}
+        />
+      </label>
+      <label className="text-muted-foreground text-xs">
+        Value type
+        <Select
+          value={value.type}
+          onValueChange={(nextType) => {
+            const type = nextType as DefaultValueConfig["type"];
+            const nextValue =
+              type === "boolean"
+                ? false
+                : type === "number"
+                  ? 0
+                  : type === "object"
+                    ? {}
+                    : type === "array"
+                      ? []
+                      : type === "null"
+                        ? null
+                        : "";
+            onChange({ ...value, type, value: nextValue });
+          }}
+        >
+          <SelectTrigger className="bg-muted mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["string", "number", "boolean", "object", "array", "null"].map(
+              (type) => (
+                <SelectItem key={type} value={type}>
+                  {type}
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+      </label>
+      {value.type === "boolean" ? (
+        <Select
+          value={String(value.value)}
+          onValueChange={(next) =>
+            onChange({ ...value, value: next === "true" })
+          }
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="false">false</SelectItem>
+            <SelectItem value="true">true</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : value.type !== "null" ? (
+        <Textarea
+          className="bg-muted font-mono text-xs"
+          value={serialized}
+          onChange={(event) => {
+            const raw = event.target.value;
+            let next: unknown = raw;
+            if (value.type === "number") next = Number(raw);
+            if (value.type === "object" || value.type === "array") {
+              try {
+                next = JSON.parse(raw);
+              } catch {
+                next = raw;
+              }
+            }
+            onChange({ ...value, value: next });
+          }}
+          rows={2}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function DescriptorFieldsForm({
@@ -159,7 +445,7 @@ function DescriptorFieldsForm({
 }) {
   if (fields.length === 0) {
     return help ? (
-      <p className="text-xs text-muted-foreground">{help}</p>
+      <p className="text-muted-foreground text-xs">{help}</p>
     ) : null;
   }
   return (
@@ -192,7 +478,7 @@ function DescriptorFieldsForm({
         if (field.kind === "number") {
           return (
             <div key={field.key}>
-              <label className="mb-1 block text-xs text-muted-foreground">
+              <label className="text-muted-foreground mb-1 block text-xs">
                 {field.label}
               </label>
               <Input
@@ -210,7 +496,7 @@ function DescriptorFieldsForm({
         }
         return (
           <div key={field.key}>
-            <label className="mb-1 block text-xs text-muted-foreground">
+            <label className="text-muted-foreground mb-1 block text-xs">
               {field.label}
             </label>
             <Select
@@ -298,7 +584,7 @@ function SendButtonsForm({
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs text-muted-foreground">
+          <label className="text-muted-foreground text-xs">
             {t("buttonsHelp")}
           </label>
         </div>
@@ -307,7 +593,7 @@ function SendButtonsForm({
             <div
               key={i}
               className={cn(
-                "grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/40 p-3",
+                "border-border bg-muted/40 grid grid-cols-1 gap-2 rounded-md border p-3",
                 showAdvanced
                   ? "md:grid-cols-[1fr_2fr_2fr_auto]"
                   : "md:grid-cols-[2fr_2fr_auto]",
@@ -408,9 +694,7 @@ function SendListForm({
     patch: Partial<NonNullable<SendListCfg["sections"]>[number]>,
   ) => {
     onUpdateConfig({
-      sections: sections.map((s, i) =>
-        i === sIdx ? { ...s, ...patch } : s,
-      ),
+      sections: sections.map((s, i) => (i === sIdx ? { ...s, ...patch } : s)),
     });
   };
   const addSection = () =>
@@ -496,20 +780,18 @@ function SendListForm({
       </div>
 
       <div className="mt-2">
-        <label className="mb-2 block text-xs text-muted-foreground">
+        <label className="text-muted-foreground mb-2 block text-xs">
           {t("rowsHelp")}
         </label>
         {sections.map((section, sIdx) => (
           <div
             key={sIdx}
-            className="mb-3 rounded-md border border-border bg-muted/40 p-3"
+            className="border-border bg-muted/40 mb-3 rounded-md border p-3"
           >
             <div className="mb-2 flex items-center gap-2">
               <Input
                 value={section.title ?? ""}
-                onChange={(e) =>
-                  updateSection(sIdx, { title: e.target.value })
-                }
+                onChange={(e) => updateSection(sIdx, { title: e.target.value })}
                 placeholder={t("sectionTitlePlaceholder", { count: sIdx + 1 })}
                 className="bg-muted text-xs"
               />
@@ -540,10 +822,7 @@ function SendListForm({
                     value={row.reply_id}
                     onChange={(e) =>
                       updateRow(sIdx, rIdx, {
-                        reply_id: slugify(
-                          e.target.value,
-                          `row_${rIdx + 1}`,
-                        ),
+                        reply_id: slugify(e.target.value, `row_${rIdx + 1}`),
                       })
                     }
                     placeholder="reply_id"
@@ -647,7 +926,9 @@ function ConditionForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("ifLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("ifLabel")}
+          </label>
           <Select
             value={subject}
             onValueChange={(v) =>
@@ -665,7 +946,7 @@ function ConditionForm({
           </Select>
         </div>
         <div className="md:col-span-2">
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="text-muted-foreground mb-1 block text-xs">
             {subject === "var"
               ? t("varName")
               : subject === "tag"
@@ -706,10 +987,12 @@ function ConditionForm({
           ) : (
             <Input
               value={cfg.subject_key ?? ""}
-              onChange={(e) =>
-                onUpdateConfig({ subject_key: e.target.value })
+              onChange={(e) => onUpdateConfig({ subject_key: e.target.value })}
+              placeholder={
+                subject === "var"
+                  ? t("varKeyPlaceholder")
+                  : t("tagUuidPlaceholder")
               }
-              placeholder={subject === "var" ? t("varKeyPlaceholder") : t("tagUuidPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -723,7 +1006,9 @@ function ConditionForm({
         )}
       >
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("operatorLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("operatorLabel")}
+          </label>
           <Select
             value={operator}
             onValueChange={(v) =>
@@ -743,7 +1028,9 @@ function ConditionForm({
         </div>
         {showValue && (
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">{t("valueLabel")}</label>
+            <label className="text-muted-foreground mb-1 block text-xs">
+              {t("valueLabel")}
+            </label>
             <Input
               value={cfg.value ?? ""}
               onChange={(e) => onUpdateConfig({ value: e.target.value })}
@@ -802,7 +1089,9 @@ function SetTagForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("actionLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("actionLabel")}
+          </label>
           <Select
             value={cfg.mode ?? "add"}
             onValueChange={(v) =>
@@ -819,7 +1108,9 @@ function SetTagForm({
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("tagLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("tagLabel")}
+          </label>
           {tags.length > 0 ? (
             <Select
               value={cfg.tag_id ?? ""}
@@ -928,7 +1219,7 @@ function SendMediaForm({
   const isDocument = mediaType === "document";
   const displayName =
     cfg.filename ||
-    (cfg.media_url ? cfg.media_url.split("/").pop() ?? "" : "");
+    (cfg.media_url ? (cfg.media_url.split("/").pop() ?? "") : "");
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -967,7 +1258,9 @@ function SendMediaForm({
   return (
     <>
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">{t("mediaTypeLabel")}</label>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("mediaTypeLabel")}
+        </label>
         <Select
           value={mediaType}
           onValueChange={(v) => {
@@ -987,23 +1280,23 @@ function SendMediaForm({
           <SelectContent>
             <SelectItem value="image">{t("imageLabel")}</SelectItem>
             <SelectItem value="video">{t("videoLabel")}</SelectItem>
-            <SelectItem value="document">
-              {t("documentLabel")}
-            </SelectItem>
+            <SelectItem value="document">{t("documentLabel")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">{t("fileLabel")}</label>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("fileLabel")}
+        </label>
         {cfg.media_url ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
+          <div className="border-border bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
             <a
               href={cfg.media_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-foreground hover:text-cyan-300"
+              className="text-foreground min-w-0 flex-1 truncate hover:text-cyan-300"
               title={displayName || cfg.media_url}
             >
               {displayName || cfg.media_url}
@@ -1011,7 +1304,7 @@ function SendMediaForm({
             <button
               type="button"
               onClick={handleClear}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
               aria-label={t("removeFile")}
               disabled={uploading}
             >
@@ -1023,7 +1316,7 @@ function SendMediaForm({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card px-3 py-4 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            className="border-border bg-card text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploading ? (
               <>
@@ -1061,7 +1354,7 @@ function SendMediaForm({
 
       {isDocument && (
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="text-muted-foreground mb-1 block text-xs">
             {t("filenameLabel")}
           </label>
           <Input

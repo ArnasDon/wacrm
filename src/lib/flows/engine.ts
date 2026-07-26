@@ -62,6 +62,14 @@ import {
   type KeywordTriggerConfig,
 } from "./types";
 import { getNodeDescriptor, type NodeDescriptor } from "./registry";
+import type { PartialNodeExecutionPolicy } from "./registry";
+import {
+  executeWithNodePolicy,
+  resolveExhaustedNodePolicy,
+  resolveNodeExecutionPolicy,
+  sanitizeExecutionData,
+  sanitizeExecutionError,
+} from "./execution-policy";
 import {
   matchesFlowVersionTrigger,
   parseFlowVersionGraph,
@@ -147,7 +155,9 @@ export function matchesKeywordTrigger(
   for (const raw of cfg.keywords) {
     if (!raw) continue;
     const needle = cfg.case_sensitive ? raw : raw.toLowerCase();
-    if (matchType === "exact" ? haystack === needle : haystack.includes(needle)) {
+    if (
+      matchType === "exact" ? haystack === needle : haystack.includes(needle)
+    ) {
       return true;
     }
   }
@@ -348,9 +358,11 @@ async function findEntryFlow(
   accountId: string,
   message: ParsedInbound,
   isFirstInbound: boolean,
-): Promise<
-  { flow: FlowRow; versionId: string; graph: FlowVersionGraph } | null
-> {
+): Promise<{
+  flow: FlowRow;
+  versionId: string;
+  graph: FlowVersionGraph;
+} | null> {
   // Only text messages can match an entry trigger. Interactive replies
   // are responses to existing prompts; they never start a new flow.
   if (message.kind !== "text") return null;
@@ -384,6 +396,160 @@ async function findEntryFlow(
   return null;
 }
 
+async function startNodeExecutionRecord(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  attempt: number,
+): Promise<string | null> {
+  try {
+    const { data, error } = await db
+      .from("flow_node_executions")
+      .insert({
+        flow_run_id: run.id,
+        flow_version_id: run.flow_version_id,
+        node_key: node.node_key,
+        node_type: node.node_type,
+        status: "executing",
+        inputs: sanitizeExecutionData(node.config),
+        attempt,
+        started_at: new Date().toISOString(),
+      })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[flows] execution record insert failed:", error.message);
+      return null;
+    }
+    return (data as { id?: string } | null)?.id ?? null;
+  } catch (error) {
+    console.error(
+      "[flows] execution record insert failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
+}
+
+async function finishNodeExecutionRecord(
+  db: AdminClient,
+  executionId: string | null,
+  update: {
+    status: "completed" | "error";
+    duration_ms: number;
+    outputs?: unknown;
+    error?: Record<string, unknown>;
+  },
+): Promise<void> {
+  if (!executionId) return;
+  try {
+    const { error } = await db
+      .from("flow_node_executions")
+      .update({
+        ...update,
+        outputs:
+          update.outputs === undefined
+            ? null
+            : sanitizeExecutionData(update.outputs),
+        error: update.error ?? null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", executionId);
+    if (error) {
+      console.error("[flows] execution record update failed:", error.message);
+    }
+  } catch (error) {
+    console.error(
+      "[flows] execution record update failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+type PolicyNodeResult<T> =
+  { ok: true; value: T } | { ok: false; nextNodeKey?: string };
+
+async function executePolicyNode<T>(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  globalPolicy: PartialNodeExecutionPolicy | undefined,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<PolicyNodeResult<T>> {
+  // Z-API executors consume this signal all the way through fetch. Supabase
+  // query builders and tag helpers do not currently expose AbortSignal; a
+  // timeout is therefore non-retryable so unabortable late completion is
+  // never followed by an automatic duplicate attempt.
+  const policy = resolveNodeExecutionPolicy(globalPolicy, node.config);
+  const executionIds = new Map<number, string | null>();
+  try {
+    const result = await executeWithNodePolicy(operation, policy, {
+      onAttemptStart: async (attempt) => {
+        executionIds.set(
+          attempt,
+          await startNodeExecutionRecord(db, run, node, attempt),
+        );
+      },
+      onAttemptSuccess: async (attempt, value, durationMs) => {
+        await finishNodeExecutionRecord(db, executionIds.get(attempt) ?? null, {
+          status: "completed",
+          duration_ms: Math.max(0, Math.round(durationMs)),
+          outputs: value,
+        });
+      },
+      onAttemptError: async (attempt, error, durationMs) => {
+        const sanitized = sanitizeExecutionError(error);
+        await finishNodeExecutionRecord(db, executionIds.get(attempt) ?? null, {
+          status: "error",
+          duration_ms: Math.max(0, Math.round(durationMs)),
+          error: sanitized,
+        });
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "node_attempt_failed",
+          attempt,
+          node_type: node.node_type,
+          error: sanitized,
+        });
+      },
+    });
+    return { ok: true, value: result.value };
+  } catch {
+    const descriptor = getRuntimeDescriptor(node.node_type);
+    const normalSuccessNextNodeKey = descriptor
+      ?.outgoingEdgeTargets(node.config)
+      .find(({ field }) => field !== "error_next_node_key")?.target;
+    const resolution = resolveExhaustedNodePolicy(
+      policy,
+      run.vars,
+      normalSuccessNextNodeKey,
+    );
+    if (resolution.action === "fail_run") {
+      await endRun(db, run.id, "failed", "node_execution_failed");
+      return { ok: false };
+    }
+    if (policy.on_error === "default_value") {
+      const { error: varsError } = await db
+        .from("flow_runs")
+        .update({ vars: resolution.vars })
+        .eq("id", run.id);
+      if (varsError) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "default_value_persist_failed",
+          error: sanitizeExecutionError(varsError),
+        });
+        await endRun(db, run.id, "failed", "default_value_persist_failed");
+        return { ok: false };
+      }
+      run.vars = resolution.vars;
+    }
+    await logEvent(db, run.id, "node_entered", node.node_key, {
+      error_action: policy.on_error,
+      advancing_to: resolution.nextNodeKey,
+    });
+    return { ok: false, nextNodeKey: resolution.nextNodeKey };
+  }
+}
+
 // ============================================================
 // Node executors — each handles ONE node type. send_buttons and
 // send_list also persist `last_prompt_message_id` so the inbox
@@ -394,6 +560,7 @@ async function sendButtonsAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  signal?: AbortSignal,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveButtons({
@@ -405,6 +572,7 @@ async function sendButtonsAndSuspend(
     headerText: cfg.header_text,
     footerText: cfg.footer_text,
     buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+    signal,
   });
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_buttons",
@@ -430,6 +598,7 @@ async function sendListAndSuspend(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
+  signal?: AbortSignal,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const { whatsapp_message_id } = await engineSendInteractiveList({
@@ -449,6 +618,7 @@ async function sendListAndSuspend(
         description: r.description,
       })),
     })),
+    signal,
   });
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_list",
@@ -512,7 +682,8 @@ async function evaluateConditionNode(
   let subjectValue: string | undefined;
   if (cfg.subject === "var") {
     const v = run.vars[cfg.subject_key];
-    subjectValue = typeof v === "string" ? v : v === undefined ? undefined : String(v);
+    subjectValue =
+      typeof v === "string" ? v : v === undefined ? undefined : String(v);
   } else if (cfg.subject === "tag") {
     const { count } = await db
       .from("contact_tags")
@@ -551,7 +722,10 @@ async function evaluateConditionNode(
  * ("Thanks {{vars.name}}, what's your email?"). Missing vars render as
  * empty string — the same behavior as the automations engine.
  */
-function interpolateVars(template: string, vars: Record<string, unknown>): string {
+function interpolateVars(
+  template: string,
+  vars: Record<string, unknown>,
+): string {
   if (!template) return "";
   return template.replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
     const v = vars[key];
@@ -582,11 +756,12 @@ async function endRun(
 // new current_node_key before returning.
 // ============================================================
 
-async function advanceFromNodeKey(
+export async function advanceFromNodeKey(
   db: AdminClient,
   run: FlowRunRow,
   startNodeKey: string,
   nodes: Map<string, FlowNodeRow>,
+  globalExecutionPolicy?: PartialNodeExecutionPolicy,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
   // Defensive cap — if a flow has a cycle (which the validator
@@ -621,62 +796,92 @@ async function advanceFromNodeKey(
     const runtimeHook = runtimeDescriptor.runtimeHook;
 
     if (runtimeHook === "start") {
-      currentKey = (node.config as unknown as StartNodeConfig).next_node_key;
-      continue;
-    }
-    if (runtimeHook === "send_message") {
-      const cfg = node.config as unknown as SendMessageNodeConfig;
-      try {
-        const { whatsapp_message_id } = await engineSendText({
-          accountId: run.account_id,
-    userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: interpolateVars(cfg.text, run.vars),
-        });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
-          node_type: "send_message",
-          whatsapp_message_id,
-        });
-      } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "send_text_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        await endRun(db, run.id, "failed", "send_text_failed");
+      const cfg = node.config as unknown as StartNodeConfig;
+      const executed: PolicyNodeResult<{ next_node_key: string }> =
+        await executePolicyNode<{ next_node_key: string }>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async () => ({ next_node_key: cfg.next_node_key }),
+        );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
       continue;
     }
-    if (runtimeHook === "send_media") {
-      const cfg = node.config as unknown as SendMediaNodeConfig;
-      try {
-        const { whatsapp_message_id } = await engineSendMedia({
-          accountId: run.account_id,
-    userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          kind: cfg.media_type,
-          link: cfg.media_url,
-          caption: cfg.caption
-            ? interpolateVars(cfg.caption, run.vars)
-            : undefined,
-          filename: cfg.filename,
-        });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
-          node_type: "send_media",
-          media_type: cfg.media_type,
-          whatsapp_message_id,
-        });
-      } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "send_media_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        await endRun(db, run.id, "failed", "send_media_failed");
+    if (runtimeHook === "send_message") {
+      const cfg = node.config as unknown as SendMessageNodeConfig;
+      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
+        await executePolicyNode<{ whatsapp_message_id: string }>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async (signal) =>
+            engineSendText({
+              accountId: run.account_id,
+              userId: run.user_id,
+              conversationId: run.conversation_id!,
+              contactId: run.contact_id!,
+              text: interpolateVars(cfg.text, run.vars),
+              signal,
+            }),
+        );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
         return { outcome: "completed" };
       }
+      await logEvent(db, run.id, "message_sent", node.node_key, {
+        node_type: "send_message",
+        whatsapp_message_id: executed.value.whatsapp_message_id,
+      });
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (runtimeHook === "send_media") {
+      const cfg = node.config as unknown as SendMediaNodeConfig;
+      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
+        await executePolicyNode<{ whatsapp_message_id: string }>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async (signal) =>
+            engineSendMedia({
+              accountId: run.account_id,
+              userId: run.user_id,
+              conversationId: run.conversation_id!,
+              contactId: run.contact_id!,
+              kind: cfg.media_type,
+              link: cfg.media_url,
+              caption: cfg.caption
+                ? interpolateVars(cfg.caption, run.vars)
+                : undefined,
+              filename: cfg.filename,
+              signal,
+            }),
+        );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      await logEvent(db, run.id, "message_sent", node.node_key, {
+        node_type: "send_media",
+        media_type: cfg.media_type,
+        whatsapp_message_id: executed.value.whatsapp_message_id,
+      });
       currentKey = cfg.next_node_key;
       continue;
     }
@@ -684,18 +889,35 @@ async function advanceFromNodeKey(
       // Send the prompt and suspend. Customer's next TEXT reply will
       // wake us up via handleReplyForActiveRun's collect_input branch.
       const cfg = node.config as unknown as CollectInputNodeConfig;
+      const executed: PolicyNodeResult<{ whatsapp_message_id: string }> =
+        await executePolicyNode<{ whatsapp_message_id: string }>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async (signal) =>
+            engineSendText({
+              accountId: run.account_id,
+              userId: run.user_id,
+              conversationId: run.conversation_id!,
+              contactId: run.contact_id!,
+              text: interpolateVars(cfg.prompt_text, run.vars),
+              signal,
+            }),
+        );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
+      const { whatsapp_message_id } = executed.value;
+      await logEvent(db, run.id, "message_sent", node.node_key, {
+        node_type: "collect_input",
+        whatsapp_message_id,
+      });
       try {
-        const { whatsapp_message_id } = await engineSendText({
-          accountId: run.account_id,
-    userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: interpolateVars(cfg.prompt_text, run.vars),
-        });
-        await logEvent(db, run.id, "message_sent", node.node_key, {
-          node_type: "collect_input",
-          whatsapp_message_id,
-        });
         const { data: msg } = await db
           .from("messages")
           .select("id")
@@ -707,13 +929,11 @@ async function advanceFromNodeKey(
             last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
           })
           .eq("id", run.id);
-      } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "collect_input_prompt_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        await endRun(db, run.id, "failed", "collect_input_prompt_failed");
-        return { outcome: "completed" };
+      } catch (error) {
+        console.error(
+          "[flows] prompt message lookup failed:",
+          error instanceof Error ? error.message : String(error),
+        );
       }
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -730,21 +950,24 @@ async function advanceFromNodeKey(
     }
     if (runtimeHook === "condition") {
       const cfg = node.config as unknown as ConditionNodeConfig;
-      let branch: "true" | "false";
-      try {
-        branch = (await evaluateConditionNode(db, run, cfg))
-          ? "true"
-          : "false";
-      } catch (err) {
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "condition_evaluation_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        await endRun(db, run.id, "failed", "condition_evaluation_failed");
+      const executed: PolicyNodeResult<"true" | "false"> =
+        await executePolicyNode<"true" | "false">(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async () =>
+            (await evaluateConditionNode(db, run, cfg)) ? "true" : "false",
+        );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
         return { outcome: "completed" };
       }
-      currentKey =
-        branch === "true" ? cfg.true_next : cfg.false_next;
+      const branch: "true" | "false" = executed.value;
+      currentKey = branch === "true" ? cfg.true_next : cfg.false_next;
       await logEvent(db, run.id, "node_entered", node.node_key, {
         condition_result: branch,
         advancing_to: currentKey,
@@ -753,7 +976,13 @@ async function advanceFromNodeKey(
     }
     if (runtimeHook === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;
-      try {
+      const executed: PolicyNodeResult<{
+        mode: "add" | "remove";
+        tag_id: string;
+      }> = await executePolicyNode<{
+        mode: "add" | "remove";
+        tag_id: string;
+      }>(db, run, node, globalExecutionPolicy, async () => {
         if (cfg.mode === "add") {
           await addContactTagAndDispatch({
             db,
@@ -772,19 +1001,35 @@ async function advanceFromNodeKey(
             tagId: cfg.tag_id,
           });
         }
-      } catch (err) {
-        // Non-fatal — log + advance. A tag-write failure shouldn't
-        // strand the customer mid-flow.
-        await logEvent(db, run.id, "error", node.node_key, {
-          reason: "set_tag_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
+        return { mode: cfg.mode, tag_id: cfg.tag_id };
+      });
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
       continue;
     }
     if (runtimeHook === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, node);
+      const executed: PolicyNodeResult<{
+        outcome: "advanced";
+        node_key: string;
+      }> = await executePolicyNode<{
+        outcome: "advanced";
+        node_key: string;
+      }>(db, run, node, globalExecutionPolicy, async (signal) =>
+        sendButtonsAndSuspend(db, run, node, signal),
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -800,7 +1045,22 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (runtimeHook === "send_list") {
-      await sendListAndSuspend(db, run, node);
+      const executed: PolicyNodeResult<{
+        outcome: "advanced";
+        node_key: string;
+      }> = await executePolicyNode<{
+        outcome: "advanced";
+        node_key: string;
+      }>(db, run, node, globalExecutionPolicy, async (signal) =>
+        sendListAndSuspend(db, run, node, signal),
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
       const advanced = await advanceCurrentNodeKey(
         db,
         run.id,
@@ -815,12 +1075,39 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (runtimeHook === "handoff") {
-      await executeHandoff(db, run, node);
+      const executed: PolicyNodeResult<void> = await executePolicyNode<void>(
+        db,
+        run,
+        node,
+        globalExecutionPolicy,
+        async () => executeHandoff(db, run, node),
+      );
+      if (!executed.ok) {
+        if (executed.nextNodeKey) {
+          currentKey = executed.nextNodeKey;
+          continue;
+        }
+        return { outcome: "completed" };
+      }
       return { outcome: "handed_off" };
     }
     if (runtimeHook === "end") {
-      await logEvent(db, run.id, "completed", node.node_key);
-      await endRun(db, run.id, "completed", "end_node");
+      const executed: PolicyNodeResult<{ status: "completed" }> =
+        await executePolicyNode<{ status: "completed" }>(
+          db,
+          run,
+          node,
+          globalExecutionPolicy,
+          async () => {
+            await logEvent(db, run.id, "completed", node.node_key);
+            await endRun(db, run.id, "completed", "end_node");
+            return { status: "completed" };
+          },
+        );
+      if (!executed.ok && executed.nextNodeKey) {
+        currentKey = executed.nextNodeKey;
+        continue;
+      }
       return { outcome: "completed" };
     }
     // Unknown node type — shouldn't happen given the CHECK constraint.
@@ -1069,7 +1356,13 @@ async function handleReplyForActiveRun(
         .eq("id", run.id);
       if (!error) run.reprompt_count = 0;
     }
-    const outcome = await advanceFromNodeKey(db, run, matched, nodes);
+    const outcome = await advanceFromNodeKey(
+      db,
+      run,
+      matched,
+      nodes,
+      fallbackPolicy.execution,
+    );
     return {
       consumed: true,
       flow_run_id: run.id,
@@ -1107,7 +1400,7 @@ async function handleReplyForActiveRun(
       try {
         await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
@@ -1208,6 +1501,7 @@ async function startNewRun(
     run,
     graph.entry_node_key,
     nodes,
+    graph.fallback_policy.execution,
   );
   return {
     consumed: true,

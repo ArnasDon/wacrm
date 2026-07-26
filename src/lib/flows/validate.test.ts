@@ -65,9 +65,7 @@ describe("validateFlowForActivation — flow-level", () => {
     );
     expect(
       issues.some(
-        (i) =>
-          i.field === "entry_node_id" &&
-          i.message.includes('"ghost"'),
+        (i) => i.field === "entry_node_id" && i.message.includes('"ghost"'),
       ),
     ).toBe(true);
   });
@@ -77,9 +75,9 @@ describe("validateFlowForActivation — flow-level", () => {
       { ...validFlow, entry_node_id: null },
       [],
     );
-    expect(
-      issues.some((i) => i.message.includes("at least one node")),
-    ).toBe(true);
+    expect(issues.some((i) => i.message.includes("at least one node"))).toBe(
+      true,
+    );
   });
 
   it("flags duplicate node_key", () => {
@@ -94,9 +92,7 @@ describe("validateFlowForActivation — flow-level", () => {
     );
     expect(
       issues.some(
-        (i) =>
-          i.message.includes("Duplicate node_key") &&
-          i.node_key === "a",
+        (i) => i.message.includes("Duplicate node_key") && i.node_key === "a",
       ),
     ).toBe(true);
   });
@@ -104,8 +100,7 @@ describe("validateFlowForActivation — flow-level", () => {
 
 describe("validateFlowForActivation — trigger", () => {
   it("delegates flow trigger config validation to its descriptor", () => {
-    const schema =
-      getNodeDescriptor("trigger_keyword_match")!.configSchema;
+    const schema = getNodeDescriptor("trigger_keyword_match")!.configSchema;
     const parse = vi.spyOn(schema, "safeParse");
 
     validateFlowForActivation(
@@ -128,8 +123,7 @@ describe("validateFlowForActivation — trigger", () => {
     expect(
       issues.some(
         (i) =>
-          i.scope === "trigger" &&
-          i.message.includes("at least one keyword"),
+          i.scope === "trigger" && i.message.includes("at least one keyword"),
       ),
     ).toBe(true);
   });
@@ -174,17 +168,23 @@ describe("validateFlowForActivation — trigger", () => {
 });
 
 describe("validateFlowForActivation — nodes", () => {
-  it.each([
-    ["wait", { amount: 5, unit: "minutes", next_node_key: "h" }],
-    [
-      "send_webhook",
-      { url: "https://hooks.example.com/in", next_node_key: "h" },
-    ],
-    ["trigger_keyword_match", { keywords: ["hello"], next_node_key: "h" }],
-  ])("rejects registered %s nodes that the flow runtime cannot execute", (nodeType, config) => {
+  it("validates common execution-policy bounds", () => {
     const nodes = [
-      { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
-      { node_key: "x", node_type: nodeType, config },
+      { node_key: "s", node_type: "start", config: { next_node_key: "m" } },
+      {
+        node_key: "m",
+        node_type: "send_message",
+        config: {
+          text: "hello",
+          next_node_key: "h",
+          retry: {
+            max_attempts: 99,
+            interval_ms: -1,
+            backoff: "random",
+          },
+          timeout_ms: 60_000,
+        },
+      },
       { node_key: "h", node_type: "handoff", config: {} },
     ];
 
@@ -195,16 +195,112 @@ describe("validateFlowForActivation — nodes", () => {
 
     expect(issues).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ node_key: "m", field: "retry.max_attempts" }),
+        expect.objectContaining({ node_key: "m", field: "retry.interval_ms" }),
+        expect.objectContaining({ node_key: "m", field: "retry.backoff" }),
+        expect.objectContaining({ node_key: "m", field: "timeout_ms" }),
+      ]),
+    );
+  });
+
+  it("requires a real reachable error branch only for fail_branch", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "m" } },
+      {
+        node_key: "m",
+        node_type: "send_message",
+        config: {
+          text: "hello",
+          next_node_key: "ok",
+          on_error: "fail_branch",
+          error_next_node_key: "recover",
+        },
+      },
+      { node_key: "ok", node_type: "end", config: {} },
+      { node_key: "recover", node_type: "end", config: {} },
+    ];
+
+    expect(
+      validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, nodes),
+    ).toEqual([]);
+    expect(reachableFromEntry("s", nodes)).toEqual(
+      new Set(["s", "m", "ok", "recover"]),
+    );
+
+    const missing = structuredClone(nodes);
+    delete missing[1].config.error_next_node_key;
+    expect(
+      validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, missing),
+    ).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
-          severity: "error",
-          scope: "node",
-          node_key: "x",
-          field: "node_type",
-          message: expect.stringContaining("flow runtime"),
+          node_key: "m",
+          field: "error_next_node_key",
         }),
       ]),
     );
   });
+
+  it("requires a typed default value for default_value handling", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "m" } },
+      {
+        node_key: "m",
+        node_type: "send_message",
+        config: {
+          text: "hello",
+          next_node_key: "h",
+          on_error: "default_value",
+          default_value: { key: "sent", type: "boolean", value: "no" },
+        },
+      },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+    expect(
+      validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, nodes),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "m",
+          field: expect.stringContaining("default_value"),
+        }),
+      ]),
+    );
+  });
+  it.each([
+    ["wait", { amount: 5, unit: "minutes", next_node_key: "h" }],
+    [
+      "send_webhook",
+      { url: "https://hooks.example.com/in", next_node_key: "h" },
+    ],
+    ["trigger_keyword_match", { keywords: ["hello"], next_node_key: "h" }],
+  ])(
+    "rejects registered %s nodes that the flow runtime cannot execute",
+    (nodeType, config) => {
+      const nodes = [
+        { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
+        { node_key: "x", node_type: nodeType, config },
+        { node_key: "h", node_type: "handoff", config: {} },
+      ];
+
+      const issues = validateFlowForActivation(
+        { ...validFlow, entry_node_id: "s" },
+        nodes,
+      );
+
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: "error",
+            scope: "node",
+            node_key: "x",
+            field: "node_type",
+            message: expect.stringContaining("flow runtime"),
+          }),
+        ]),
+      );
+    },
+  );
 
   it.each([
     [
@@ -226,20 +322,23 @@ describe("validateFlowForActivation — nodes", () => {
         next_node_key: "h",
       },
     ],
-  ])("rejects automation-compatible legacy %s config in a flow", (nodeType, config) => {
-    const nodes = [
-      { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
-      { node_key: "x", node_type: nodeType, config },
-      { node_key: "h", node_type: "handoff", config: {} },
-    ];
+  ])(
+    "rejects automation-compatible legacy %s config in a flow",
+    (nodeType, config) => {
+      const nodes = [
+        { node_key: "s", node_type: "start", config: { next_node_key: "x" } },
+        { node_key: "x", node_type: nodeType, config },
+        { node_key: "h", node_type: "handoff", config: {} },
+      ];
 
-    const issues = validateFlowForActivation(
-      { ...validFlow, entry_node_id: "s" },
-      nodes,
-    );
+      const issues = validateFlowForActivation(
+        { ...validFlow, entry_node_id: "s" },
+        nodes,
+      );
 
-    expect(issues.some((issue) => issue.node_key === "x")).toBe(true);
-  });
+      expect(issues.some((issue) => issue.node_key === "x")).toBe(true);
+    },
+  );
 
   it.each(["message_content", "tag_presence", "time_of_day", "deal_stage"])(
     "rejects automation-only condition subject %s in a flow",
@@ -289,9 +388,9 @@ describe("validateFlowForActivation — nodes", () => {
       { ...validFlow, entry_node_id: "s" },
       nodes,
     );
-    expect(
-      issues.some((i) => i.node_key === "b" && i.field === "text"),
-    ).toBe(true);
+    expect(issues.some((i) => i.node_key === "b" && i.field === "text")).toBe(
+      true,
+    );
   });
 
   it("flags send_buttons with zero buttons", () => {
@@ -359,9 +458,7 @@ describe("validateFlowForActivation — nodes", () => {
         node_type: "send_buttons",
         config: {
           text: "Hi",
-          buttons: [
-            { reply_id: "1", title: longTitle, next_node_key: "h" },
-          ],
+          buttons: [{ reply_id: "1", title: longTitle, next_node_key: "h" }],
         },
       },
       { node_key: "h", node_type: "handoff", config: {} },
@@ -390,9 +487,7 @@ describe("validateFlowForActivation — nodes", () => {
         node_type: "send_buttons",
         config: {
           text: "Hi",
-          buttons: [
-            { reply_id: "1", title: "Go", next_node_key: "ghost" },
-          ],
+          buttons: [{ reply_id: "1", title: "Go", next_node_key: "ghost" }],
         },
       },
     ];
@@ -403,8 +498,7 @@ describe("validateFlowForActivation — nodes", () => {
     expect(
       issues.some(
         (i) =>
-          i.field === "buttons.0.next_node_key" &&
-          i.message.includes("ghost"),
+          i.field === "buttons.0.next_node_key" && i.message.includes("ghost"),
       ),
     ).toBe(true);
     expect(edgeTargets).toHaveBeenCalled();
@@ -498,9 +592,9 @@ describe("validateFlowForActivation — nodes", () => {
       { ...validFlow, entry_node_id: "s" },
       nodes,
     );
-    expect(
-      issues.some((i) => i.message.includes("exceeds 24 chars")),
-    ).toBe(true);
+    expect(issues.some((i) => i.message.includes("exceeds 24 chars"))).toBe(
+      true,
+    );
   });
 
   it("warns about unreachable nodes", () => {
@@ -525,16 +619,14 @@ describe("validateFlowForActivation — nodes", () => {
   });
 
   it("doesn't crash on unknown node_type — flags it", () => {
-    const nodes = [
-      { node_key: "s", node_type: "wibble", config: {} },
-    ];
+    const nodes = [{ node_key: "s", node_type: "wibble", config: {} }];
     const issues = validateFlowForActivation(
       { ...validFlow, entry_node_id: "s" },
       nodes,
     );
-    expect(
-      issues.some((i) => i.message.includes("Unknown node type")),
-    ).toBe(true);
+    expect(issues.some((i) => i.message.includes("Unknown node type"))).toBe(
+      true,
+    );
   });
 });
 

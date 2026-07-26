@@ -1,7 +1,12 @@
-import { CONTROL_INPUT, defineNodeDescriptor } from "../registry/types";
+import {
+  CONTROL_INPUT,
+  defineNodeDescriptor,
+  executionPolicyEdgeTargets,
+} from "../registry/types";
 import {
   conditionConfigSchema,
   flowConditionConfigSchema,
+  withCommonExecutionPolicy,
 } from "../registry/schemas";
 
 export const conditionNodeDescriptor = defineNodeDescriptor({
@@ -11,18 +16,34 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
   icon: "git-fork",
   inputs: CONTROL_INPUT,
   outputs: [
-    { id: "true", label: "True", kind: "control", cardinality: "one", required: true },
-    { id: "false", label: "False", kind: "control", cardinality: "one", required: true },
+    {
+      id: "true",
+      label: "True",
+      kind: "control",
+      cardinality: "one",
+      required: true,
+    },
+    {
+      id: "false",
+      label: "False",
+      kind: "control",
+      cardinality: "one",
+      required: true,
+    },
   ],
-  configSchema: conditionConfigSchema,
-  flowConfigSchema: flowConditionConfigSchema,
+  configSchema: withCommonExecutionPolicy(conditionConfigSchema),
+  flowConfigSchema: withCommonExecutionPolicy(flowConditionConfigSchema),
   supportsFlowRuntime: true,
+  supportsExecutionPolicy: true,
   validate: (node, ctx) => {
     const config = node.config;
     const subject = config.subject;
     if (ctx.consumer === "flow") {
       const issues = [];
-      if (typeof config.subject_key !== "string" || !config.subject_key.trim()) {
+      if (
+        typeof config.subject_key !== "string" ||
+        !config.subject_key.trim()
+      ) {
         issues.push({
           field: "subject_key",
           message: "Condition needs a subject key.",
@@ -93,14 +114,18 @@ export const conditionNodeDescriptor = defineNodeDescriptor({
     blurb: "Branches on a rule",
     hue: { l: 0.72, c: 0.15, h: 65 },
   },
-  outgoingEdges: (config) =>
-    [config.true_next, config.false_next].filter(
+  outgoingEdges: (config) => [
+    ...[config.true_next, config.false_next].filter(
       (value): value is string => typeof value === "string" && value.length > 0,
     ),
-  outgoingEdgeTargets: (config) =>
-    (["true_next", "false_next"] as const).flatMap((field) =>
+    ...executionPolicyEdgeTargets(config).map(({ target }) => target),
+  ],
+  outgoingEdgeTargets: (config) => [
+    ...(["true_next", "false_next"] as const).flatMap((field) =>
       typeof config[field] === "string" && config[field]
         ? [{ target: config[field], field }]
         : [],
     ),
+    ...executionPolicyEdgeTargets(config),
+  ],
 });

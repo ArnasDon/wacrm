@@ -2,11 +2,42 @@ import type { ZodType } from "zod";
 
 export type NodeCategory = "trigger" | "messaging" | "logic" | "data" | "flow";
 export type NodeRuntimeKind =
-  | "trigger"
-  | "auto"
-  | "suspend"
-  | "terminal"
-  | "legacy";
+  "trigger" | "auto" | "suspend" | "terminal" | "legacy";
+
+export type NodeRetryBackoff = "fixed" | "exponential";
+export type NodeOnError = "fail_run" | "default_value" | "fail_branch";
+export type NodeDefaultValueType =
+  "string" | "number" | "boolean" | "object" | "array" | "null";
+
+export interface NodeDefaultValue {
+  key: string;
+  type: NodeDefaultValueType;
+  value: unknown;
+}
+
+export interface PartialNodeExecutionPolicy {
+  retry?: {
+    max_attempts: number;
+    interval_ms: number;
+    backoff: NodeRetryBackoff;
+  };
+  on_error?: NodeOnError;
+  error_next_node_key?: string;
+  timeout_ms?: number;
+  default_value?: NodeDefaultValue;
+}
+
+export interface NodeExecutionPolicy {
+  retry: {
+    max_attempts: number;
+    interval_ms: number;
+    backoff: NodeRetryBackoff;
+  };
+  on_error: NodeOnError;
+  error_next_node_key?: string;
+  timeout_ms: number;
+  default_value?: NodeDefaultValue;
+}
 
 export type NodeIconId =
   | "alarm-clock"
@@ -96,11 +127,7 @@ export type NodeFormDescriptor =
   | {
       kind: "specialized";
       component:
-        | "send_buttons"
-        | "send_list"
-        | "send_media"
-        | "condition"
-        | "set_tag";
+        "send_buttons" | "send_list" | "send_media" | "condition" | "set_tag";
     };
 
 export interface NodeUiDescriptor {
@@ -134,10 +161,8 @@ export interface NodeDescriptor<Id extends string = string> {
   configSchema: ZodType<Record<string, unknown>>;
   flowConfigSchema: ZodType<Record<string, unknown>>;
   supportsFlowRuntime: boolean;
-  compatibilityFlowTriggerType?:
-    | "keyword"
-    | "first_inbound_message"
-    | "manual";
+  supportsExecutionPolicy: boolean;
+  compatibilityFlowTriggerType?: "keyword" | "first_inbound_message" | "manual";
   validate: (
     node: NodeLike,
     ctx: NodeValidationContext,
@@ -202,4 +227,14 @@ export function terminalEdges(): readonly string[] {
 
 export function terminalEdgeTargets(): readonly OutgoingEdgeTarget[] {
   return [];
+}
+
+export function executionPolicyEdgeTargets(
+  config: Record<string, unknown>,
+): OutgoingEdgeTarget[] {
+  return config.on_error === "fail_branch" &&
+    typeof config.error_next_node_key === "string" &&
+    config.error_next_node_key
+    ? [{ target: config.error_next_node_key, field: "error_next_node_key" }]
+    : [];
 }

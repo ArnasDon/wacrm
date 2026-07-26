@@ -112,6 +112,27 @@ describe("flow version graph", () => {
     expect(editedDraft.trigger_config).toEqual({ keywords: ["sales"] });
   });
 
+  it("rejects invalid global node execution defaults at activation", () => {
+    expect(() =>
+      buildFlowVersionGraph(
+        {
+          ...draft,
+          fallback_policy: {
+            ...draft.fallback_policy,
+            execution: {
+              retry: {
+                max_attempts: 99,
+                interval_ms: 0,
+                backoff: "fixed" as const,
+              },
+            },
+          },
+        },
+        nodes,
+      ),
+    ).toThrow(/execution policy/i);
+  });
+
   it("new matching uses V2 while an in-flight V1 keeps V1 nodes", () => {
     const v1 = buildFlowVersionGraph(draft, nodes);
     const v2 = buildFlowVersionGraph(
@@ -141,9 +162,6 @@ describe("flow version graph", () => {
       matchesFlowVersionTrigger(v2, { kind: "text", text: "sales" }, false),
     ).toBe(true);
     expect(v1.nodes.map((node) => node.node_key)).toEqual(["start", "end"]);
-    expect(v2.nodes.map((node) => node.node_key)).toEqual([
-      "start",
-      "v2_end",
-    ]);
+    expect(v2.nodes.map((node) => node.node_key)).toEqual(["start", "v2_end"]);
   });
 });

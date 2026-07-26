@@ -7,6 +7,7 @@ import {
   isFlowRuntimeNodeType,
   type RegisteredNodeType,
 } from "./registry";
+import { commonExecutionPolicySchema } from "./registry/schemas";
 import type {
   FlowFallbackPolicy,
   FlowNodeRow,
@@ -40,6 +41,7 @@ const graphEnvelopeSchema = z.strictObject({
     max_reprompts: z.number().int().nonnegative(),
     on_timeout_hours: z.number().positive(),
     on_exhaust: z.enum(["handoff", "end"]),
+    execution: commonExecutionPolicySchema.optional(),
   }),
   nodes: z.array(storedNodeSchema).min(1),
 });
@@ -65,10 +67,7 @@ export interface FlowVersionGraph {
 
 type DraftEnvelope = Pick<
   FlowRow,
-  | "trigger_type"
-  | "trigger_config"
-  | "entry_node_id"
-  | "fallback_policy"
+  "trigger_type" | "trigger_config" | "entry_node_id" | "fallback_policy"
 >;
 
 type DraftNode = Pick<
@@ -94,11 +93,22 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
     }
     keys.add(node.node_key);
     if (!isFlowRuntimeNodeType(node.node_type)) {
-      invalid(`node type "${node.node_type}" is not supported by the flow runtime`);
+      invalid(
+        `node type "${node.node_type}" is not supported by the flow runtime`,
+      );
     }
   }
   if (!keys.has(graph.entry_node_key)) {
     invalid(`entry node "${graph.entry_node_key}" does not exist`);
+  }
+  if (
+    graph.fallback_policy.execution?.on_error === "fail_branch" &&
+    graph.fallback_policy.execution.error_next_node_key &&
+    !keys.has(graph.fallback_policy.execution.error_next_node_key)
+  ) {
+    invalid(
+      `global error branch "${graph.fallback_policy.execution.error_next_node_key}" does not exist`,
+    );
   }
 
   const triggerDescriptor = getCompatibilityFlowTriggerDescriptor(
@@ -127,7 +137,9 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
     }
     for (const edge of descriptor.outgoingEdgeTargets(node.config)) {
       if (!keys.has(edge.target)) {
-        invalid(`node "${node.node_key}" points to missing node "${edge.target}"`);
+        invalid(
+          `node "${node.node_key}" points to missing node "${edge.target}"`,
+        );
       }
     }
   }
@@ -141,6 +153,15 @@ export function buildFlowVersionGraph(
 ): FlowVersionGraph {
   if (!flow.entry_node_id) {
     invalid("entry node is required");
+  }
+  const rawFallback = flow.fallback_policy as FlowFallbackPolicy & {
+    execution?: unknown;
+  };
+  if (
+    rawFallback.execution !== undefined &&
+    !commonExecutionPolicySchema.safeParse(rawFallback.execution).success
+  ) {
+    invalid("global node execution policy is invalid");
   }
   return parseFlowVersionGraph({
     schema_version: 1,

@@ -11,10 +11,8 @@
  * older flow row (or a partial JSONB blob) doesn't crash the runner.
  */
 
-import {
-  DEFAULT_FALLBACK_POLICY,
-  type FlowFallbackPolicy,
-} from "./types";
+import { DEFAULT_FALLBACK_POLICY, type FlowFallbackPolicy } from "./types";
+import { commonExecutionPolicySchema } from "./registry/schemas";
 
 export type FallbackAction =
   /** Re-send the same prompt and wait again. */
@@ -32,11 +30,10 @@ export type FallbackAction =
  * shape, but rows authored before this default landed, or rows
  * manually edited to a subset, would otherwise crash the runner.
  */
-export function resolveFallbackPolicy(
-  raw: unknown,
-): FlowFallbackPolicy {
+export function resolveFallbackPolicy(raw: unknown): FlowFallbackPolicy {
   if (!raw || typeof raw !== "object") return DEFAULT_FALLBACK_POLICY;
   const r = raw as Partial<FlowFallbackPolicy>;
+  const execution = commonExecutionPolicySchema.safeParse(r.execution);
   return {
     on_unknown_reply:
       r.on_unknown_reply === "handoff" ||
@@ -56,6 +53,9 @@ export function resolveFallbackPolicy(
       r.on_exhaust === "handoff" || r.on_exhaust === "end"
         ? r.on_exhaust
         : DEFAULT_FALLBACK_POLICY.on_exhaust,
+    ...(execution.success && Object.keys(execution.data).length > 0
+      ? { execution: execution.data }
+      : {}),
   };
 }
 
@@ -85,7 +85,5 @@ export function decideFallback(args: {
   if (reprompt_count <= policy.max_reprompts) {
     return { type: "reprompt" };
   }
-  return policy.on_exhaust === "end"
-    ? { type: "end" }
-    : { type: "handoff" };
+  return policy.on_exhaust === "end" ? { type: "end" } : { type: "handoff" };
 }

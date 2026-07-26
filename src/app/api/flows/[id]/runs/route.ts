@@ -47,7 +47,7 @@ export async function GET(
   const { data: runs, error: runsErr } = await supabase
     .from('flow_runs')
     .select(
-      'id, status, current_node_key, started_at, last_advanced_at, ended_at, end_reason, vars, reprompt_count, contact:contacts(id, name, phone)',
+      'id, flow_version_id, status, current_node_key, started_at, last_advanced_at, ended_at, end_reason, vars, reprompt_count, contact:contacts(id, name, phone)',
     )
     .eq('flow_id', id)
     .order('started_at', { ascending: false })
@@ -64,6 +64,21 @@ export async function GET(
     payload: Record<string, unknown>
     created_at: string
   }> = []
+  let executions: Array<{
+    id: string
+    flow_run_id: string
+    flow_version_id: string
+    node_key: string
+    node_type: string
+    status: string
+    inputs: Record<string, unknown>
+    outputs: unknown
+    duration_ms: number | null
+    attempt: number
+    error: Record<string, unknown> | null
+    started_at: string
+    completed_at: string | null
+  }> = []
   if (runIds.length > 0) {
     const { data: evs, error: evsErr } = await supabase
       .from('flow_run_events')
@@ -76,11 +91,30 @@ export async function GET(
     } else if (evs) {
       events = evs as typeof events
     }
+
+    const { data: executionRows, error: executionsErr } = await supabase
+      .from('flow_node_executions')
+      .select(
+        'id, flow_run_id, flow_version_id, node_key, node_type, status, inputs, outputs, duration_ms, attempt, error, started_at, completed_at',
+      )
+      .in('flow_run_id', runIds)
+      .order('started_at', { ascending: true })
+    if (executionsErr) {
+      // Observability remains non-fatal even for reads: legacy deployments
+      // applying migrations during a rolling release can still show runs.
+      console.error(
+        '[flows-runs] node executions fetch failed:',
+        executionsErr.message,
+      )
+    } else if (executionRows) {
+      executions = executionRows as typeof executions
+    }
   }
 
   return NextResponse.json({
     flow,
     runs: runs ?? [],
     events,
+    executions,
   })
 }

@@ -5,6 +5,141 @@ import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 const requiredText = (message: string) => z.string().trim().min(1, message);
 export const nextNodeKeySchema = requiredText("A next node is required.");
 
+export const NODE_EXECUTION_POLICY_LIMITS = {
+  maxAttempts: 3,
+  maxIntervalMs: 5_000,
+  minTimeoutMs: 100,
+  maxTimeoutMs: 15_000,
+} as const;
+
+function defaultValueMatchesType(type: string, value: unknown): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return !!value && typeof value === "object" && !Array.isArray(value);
+    case "null":
+      return value === null;
+    default:
+      return false;
+  }
+}
+
+export const commonExecutionPolicySchema = z
+  .looseObject({
+    retry: z
+      .strictObject({
+        max_attempts: z
+          .number()
+          .int()
+          .min(1)
+          .max(NODE_EXECUTION_POLICY_LIMITS.maxAttempts),
+        interval_ms: z
+          .number()
+          .int()
+          .min(0)
+          .max(NODE_EXECUTION_POLICY_LIMITS.maxIntervalMs),
+        backoff: z.enum(["fixed", "exponential"]),
+      })
+      .optional(),
+    on_error: z.enum(["fail_run", "default_value", "fail_branch"]).optional(),
+    error_next_node_key: z.string().trim().min(1).optional(),
+    timeout_ms: z
+      .number()
+      .int()
+      .min(NODE_EXECUTION_POLICY_LIMITS.minTimeoutMs)
+      .max(NODE_EXECUTION_POLICY_LIMITS.maxTimeoutMs)
+      .optional(),
+    default_value: z
+      .strictObject({
+        key: z
+          .string()
+          .trim()
+          .min(1)
+          .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+        type: z.enum([
+          "string",
+          "number",
+          "boolean",
+          "object",
+          "array",
+          "null",
+        ]),
+        value: z.unknown(),
+      })
+      .optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.on_error === "fail_branch" && !config.error_next_node_key) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["error_next_node_key"],
+        message: "An error branch is required when on_error is fail_branch.",
+      });
+    } else if (
+      config.on_error !== "fail_branch" &&
+      config.error_next_node_key !== undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["error_next_node_key"],
+        message:
+          "An error branch is only allowed when on_error is fail_branch.",
+      });
+    }
+    if (config.on_error === "default_value" && !config.default_value) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["default_value"],
+        message: "A typed default value is required.",
+      });
+    } else if (
+      config.on_error !== "default_value" &&
+      config.default_value !== undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["default_value"],
+        message: "A default value is only allowed for default_value handling.",
+      });
+    }
+    if (
+      config.default_value &&
+      !defaultValueMatchesType(
+        config.default_value.type,
+        config.default_value.value,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["default_value", "value"],
+        message: `Default value must match type ${config.default_value.type}.`,
+      });
+    }
+  });
+
+export function withCommonExecutionPolicy(
+  schema: z.ZodType<Record<string, unknown>>,
+): z.ZodType<Record<string, unknown>> {
+  return schema.superRefine((config, ctx) => {
+    const policy = commonExecutionPolicySchema.safeParse(config);
+    if (policy.success) return;
+    for (const issue of policy.error.issues) {
+      ctx.addIssue({
+        code: "custom",
+        path: issue.path,
+        message: issue.message,
+      });
+    }
+  });
+}
+
 export const startConfigSchema = z.looseObject({
   next_node_key: nextNodeKeySchema,
 });
@@ -257,10 +392,12 @@ export const assignConversationConfigSchema = z
 
 export const updateContactFieldConfigSchema = z.looseObject({
   field: requiredText("A contact field is required."),
-  value: z.unknown().refine(
-    (value) => value !== undefined && value !== null && value !== "",
-    "A contact field value is required.",
-  ),
+  value: z
+    .unknown()
+    .refine(
+      (value) => value !== undefined && value !== null && value !== "",
+      "A contact field value is required.",
+    ),
   next_node_key: nextNodeKeySchema,
 });
 
@@ -285,18 +422,13 @@ export const waitConfigSchema = z.looseObject({
 });
 
 export const webhookConfigSchema = z.looseObject({
-  url: z
-    .url("A valid webhook URL is required.")
-    .refine(
-      (value) => {
-        try {
-          return ["http:", "https:"].includes(new URL(value).protocol);
-        } catch {
-          return false;
-        }
-      },
-      "Webhook URL must use HTTP or HTTPS.",
-    ),
+  url: z.url("A valid webhook URL is required.").refine((value) => {
+    try {
+      return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  }, "Webhook URL must use HTTP or HTTPS."),
   headers: z.record(z.string(), z.string()).optional(),
   body_template: z.string().optional(),
   next_node_key: nextNodeKeySchema,

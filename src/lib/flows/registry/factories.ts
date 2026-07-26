@@ -5,6 +5,7 @@ import {
   CONTROL_OUTPUT,
   NO_PORTS,
   defineNodeDescriptor,
+  executionPolicyEdgeTargets,
   nextNodeEdgeTargets,
   noValidation,
   terminalEdgeTargets,
@@ -15,6 +16,7 @@ import {
   type NodeUiDescriptor,
   type OutgoingEdgeTarget,
 } from "./types";
+import { withCommonExecutionPolicy } from "./schemas";
 
 interface CommonOptions<Id extends string> {
   id: Id;
@@ -24,19 +26,15 @@ interface CommonOptions<Id extends string> {
   configSchema: ZodType<Record<string, unknown>>;
   flowConfigSchema?: ZodType<Record<string, unknown>>;
   supportsFlowRuntime?: boolean;
-  compatibilityFlowTriggerType?:
-    | "keyword"
-    | "first_inbound_message"
-    | "manual";
+  compatibilityFlowTriggerType?: "keyword" | "first_inbound_message" | "manual";
   runtimeHook?: string;
   runtimeKind?: NodeRuntimeKind;
+  supportsExecutionPolicy?: boolean;
   form?: NodeFormDescriptor;
   visible?: boolean;
   defaultConfig?: Record<string, unknown>;
   ui: NodeUiDescriptor;
-  outgoingEdges?: (
-    config: Record<string, unknown>,
-  ) => readonly string[];
+  outgoingEdges?: (config: Record<string, unknown>) => readonly string[];
   outgoingEdgeTargets?: (
     config: Record<string, unknown>,
   ) => readonly OutgoingEdgeTarget[];
@@ -45,14 +43,30 @@ interface CommonOptions<Id extends string> {
 export function createLinearNodeDescriptor<const Id extends string>(
   options: CommonOptions<Id>,
 ) {
-  const outgoingEdgeTargets =
+  const baseOutgoingEdgeTargets =
     options.outgoingEdgeTargets ?? nextNodeEdgeTargets;
   const runtimeKind = options.runtimeKind ?? "auto";
+  const supportsFlowRuntime =
+    options.supportsFlowRuntime ?? runtimeKind !== "legacy";
+  const supportsExecutionPolicy =
+    options.supportsExecutionPolicy ??
+    (supportsFlowRuntime && options.id !== "start");
+  const outgoingEdgeTargets = (config: Record<string, unknown>) => [
+    ...baseOutgoingEdgeTargets(config),
+    ...(supportsExecutionPolicy ? executionPolicyEdgeTargets(config) : []),
+  ];
   return defineNodeDescriptor({
     ...options,
-    flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
-    supportsFlowRuntime:
-      options.supportsFlowRuntime ?? runtimeKind !== "legacy",
+    configSchema: supportsExecutionPolicy
+      ? withCommonExecutionPolicy(options.configSchema)
+      : options.configSchema,
+    flowConfigSchema: supportsExecutionPolicy
+      ? withCommonExecutionPolicy(
+          options.flowConfigSchema ?? options.configSchema,
+        )
+      : (options.flowConfigSchema ?? options.configSchema),
+    supportsFlowRuntime,
+    supportsExecutionPolicy,
     inputs: CONTROL_INPUT,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,
@@ -73,14 +87,30 @@ export function createLinearNodeDescriptor<const Id extends string>(
 export function createTerminalNodeDescriptor<const Id extends string>(
   options: CommonOptions<Id>,
 ) {
-  const outgoingEdgeTargets =
+  const baseOutgoingEdgeTargets =
     options.outgoingEdgeTargets ?? terminalEdgeTargets;
   const runtimeKind = options.runtimeKind ?? "terminal";
+  const supportsFlowRuntime =
+    options.supportsFlowRuntime ?? runtimeKind !== "legacy";
+  const supportsExecutionPolicy =
+    options.supportsExecutionPolicy ??
+    (supportsFlowRuntime && options.id !== "end");
+  const outgoingEdgeTargets = (config: Record<string, unknown>) => [
+    ...baseOutgoingEdgeTargets(config),
+    ...(supportsExecutionPolicy ? executionPolicyEdgeTargets(config) : []),
+  ];
   return defineNodeDescriptor({
     ...options,
-    flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
-    supportsFlowRuntime:
-      options.supportsFlowRuntime ?? runtimeKind !== "legacy",
+    configSchema: supportsExecutionPolicy
+      ? withCommonExecutionPolicy(options.configSchema)
+      : options.configSchema,
+    flowConfigSchema: supportsExecutionPolicy
+      ? withCommonExecutionPolicy(
+          options.flowConfigSchema ?? options.configSchema,
+        )
+      : (options.flowConfigSchema ?? options.configSchema),
+    supportsFlowRuntime,
+    supportsExecutionPolicy,
     inputs: CONTROL_INPUT,
     outputs: NO_PORTS,
     validate: noValidation,
@@ -107,6 +137,7 @@ export function createTriggerNodeDescriptor<const Id extends string>(
     ...options,
     flowConfigSchema: options.flowConfigSchema ?? options.configSchema,
     supportsFlowRuntime: false,
+    supportsExecutionPolicy: false,
     inputs: NO_PORTS,
     outputs: CONTROL_OUTPUT,
     validate: noValidation,

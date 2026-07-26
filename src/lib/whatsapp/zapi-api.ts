@@ -70,12 +70,14 @@ async function postJson(
   credentials: ZapiCredentials,
   path: string,
   body: Record<string, unknown>,
-  fallback: string
+  fallback: string,
+  signal?: AbortSignal
 ): Promise<Record<string, unknown>> {
   const res = await fetch(`${getBaseUrl(credentials)}${path}`, {
     method: 'POST',
     headers: buildHeaders(credentials),
     body: JSON.stringify(body),
+    signal,
   })
   if (!res.ok) await throwZapiError(res, fallback)
   return (await res.json()) as Record<string, unknown>
@@ -116,6 +118,7 @@ export interface SendTextArgs {
   phone: string
   text: string
   replyTo?: string
+  signal?: AbortSignal
 }
 
 export async function sendText(args: SendTextArgs): Promise<ZapiSendResult> {
@@ -125,12 +128,7 @@ export async function sendText(args: SendTextArgs): Promise<ZapiSendResult> {
   }
   if (args.replyTo) body.messageId = args.replyTo
 
-  const data = await postJson(
-    args.credentials,
-    '/send-text',
-    body,
-    'Failed to send text message'
-  )
+  const data = await postJson(args.credentials, '/send-text', body, 'Failed to send text message', args.signal)
   return normalizeSendResult(data)
 }
 
@@ -140,6 +138,7 @@ export interface SendImageArgs {
   url: string
   caption?: string
   replyTo?: string
+  signal?: AbortSignal
 }
 
 export async function sendImage(args: SendImageArgs): Promise<ZapiSendResult> {
@@ -150,7 +149,7 @@ export async function sendImage(args: SendImageArgs): Promise<ZapiSendResult> {
   if (args.caption) body.caption = args.caption
   if (args.replyTo) body.messageId = args.replyTo
 
-  const data = await postJson(args.credentials, '/send-image', body, 'Failed to send image')
+  const data = await postJson(args.credentials, '/send-image', body, 'Failed to send image', args.signal)
   return normalizeSendResult(data)
 }
 
@@ -160,6 +159,7 @@ export interface SendVideoArgs {
   url: string
   caption?: string
   replyTo?: string
+  signal?: AbortSignal
 }
 
 export async function sendVideo(args: SendVideoArgs): Promise<ZapiSendResult> {
@@ -170,7 +170,7 @@ export async function sendVideo(args: SendVideoArgs): Promise<ZapiSendResult> {
   if (args.caption) body.caption = args.caption
   if (args.replyTo) body.messageId = args.replyTo
 
-  const data = await postJson(args.credentials, '/send-video', body, 'Failed to send video')
+  const data = await postJson(args.credentials, '/send-video', body, 'Failed to send video', args.signal)
   return normalizeSendResult(data)
 }
 
@@ -181,6 +181,7 @@ export interface SendDocumentArgs {
   filename?: string
   caption?: string
   replyTo?: string
+  signal?: AbortSignal
 }
 
 function documentExtension(filename?: string): string {
@@ -202,7 +203,8 @@ export async function sendDocument(args: SendDocumentArgs): Promise<ZapiSendResu
     args.credentials,
     `/send-document/${documentExtension(args.filename)}`,
     body,
-    'Failed to send document'
+    'Failed to send document',
+    args.signal
   )
   return normalizeSendResult(data)
 }
@@ -221,12 +223,7 @@ export async function sendAudio(args: SendAudioArgs): Promise<ZapiSendResult> {
   }
   if (args.replyTo) body.messageId = args.replyTo
 
-  const data = await postJson(
-    args.credentials,
-    '/send-audio',
-    body,
-    'Failed to send audio'
-  )
+  const data = await postJson(args.credentials, '/send-audio', body, 'Failed to send audio')
   return normalizeSendResult(data)
 }
 
@@ -252,9 +249,7 @@ export async function sendReaction(args: SendReactionArgs): Promise<ZapiSendResu
   return { ...result, messageId: result.messageId || args.messageId }
 }
 
-export async function getInstance(
-  credentials: ZapiCredentials
-): Promise<ZapiInstanceInfo> {
+export async function getInstance(credentials: ZapiCredentials): Promise<ZapiInstanceInfo> {
   const res = await fetch(`${getBaseUrl(credentials)}/me`, {
     method: 'GET',
     headers: buildHeaders(credentials),
@@ -269,9 +264,7 @@ function normalizeQrValue(value: string): { value: string; mimetype: string } {
   return { mimetype: 'image/png', value }
 }
 
-export async function getQrCode(
-  credentials: ZapiCredentials
-): Promise<{ value: string; mimetype: string }> {
+export async function getQrCode(credentials: ZapiCredentials): Promise<{ value: string; mimetype: string }> {
   const res = await fetch(`${getBaseUrl(credentials)}/qr-code/image`, {
     method: 'GET',
     headers: buildHeaders(credentials),

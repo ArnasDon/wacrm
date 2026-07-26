@@ -18,7 +18,10 @@
  * references in JSONB.
  */
 
-import type { RegisteredNodeType } from "./registry";
+import type {
+  PartialNodeExecutionPolicy,
+  RegisteredNodeType,
+} from "./registry";
 
 // ============================================================
 // Node configs (discriminated union by node_type)
@@ -138,11 +141,7 @@ export interface CollectInputNodeConfig {
   next_node_key: string;
 }
 
-export type ConditionOperator =
-  | "equals"
-  | "contains"
-  | "present"
-  | "absent";
+export type ConditionOperator = "equals" | "contains" | "present" | "absent";
 
 export type ConditionSubject = "var" | "tag" | "contact_field";
 
@@ -237,7 +236,8 @@ export interface FlowRow {
   published_version_id: string | null;
   draft_revision: number;
   trigger_type: "keyword" | "first_inbound_message" | "manual";
-  trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
+  trigger_config:
+    KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;
@@ -296,6 +296,23 @@ export interface FlowVersionRow {
   label: string | null;
 }
 
+export interface FlowNodeExecutionRow {
+  id: string;
+  flow_run_id: string;
+  flow_version_id: string;
+  node_key: string;
+  node_type: FlowNodeType;
+  status: "submitted" | "executing" | "completed" | "error";
+  inputs: Record<string, unknown>;
+  outputs: unknown;
+  duration_ms: number | null;
+  attempt: number;
+  error: Record<string, unknown> | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
 // ============================================================
 // Fallback policy (matches flows.fallback_policy JSONB)
 // ============================================================
@@ -309,6 +326,8 @@ export interface FlowFallbackPolicy {
   on_timeout_hours: number;
   /** What to do once max_reprompts has been hit. */
   on_exhaust: "handoff" | "end";
+  /** Optional global defaults for per-node runtime error handling. */
+  execution?: PartialNodeExecutionPolicy;
 }
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {

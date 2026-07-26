@@ -28,6 +28,15 @@ export const variableSetNodeDescriptor = createLinearNodeDescriptor({
   ],
   runtimeKind: "auto",
   runtimeHook: "variable_set",
+  resolveDebugInput: (config, portId) => {
+    if (portId !== "value" || !Array.isArray(config.assignments)) {
+      return undefined;
+    }
+    const first = config.assignments[0];
+    return first && typeof first === "object" && "value" in first
+      ? (first as Record<string, unknown>).value
+      : undefined;
+  },
   resolveOutput: (_config, portId, vars) =>
     portId === "variables" ? vars : undefined,
   visible: true,

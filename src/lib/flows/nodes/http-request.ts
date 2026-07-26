@@ -28,6 +28,8 @@ export const httpRequestNodeDescriptor = createLinearNodeDescriptor({
   ],
   runtimeKind: "auto",
   runtimeHook: "http_request",
+  resolveDebugInput: (config, portId) =>
+    portId === "request" ? config.body : undefined,
   resolveOutput: (config, portId, vars) =>
     portId === "response" && typeof config.response_var === "string"
       ? vars[config.response_var]

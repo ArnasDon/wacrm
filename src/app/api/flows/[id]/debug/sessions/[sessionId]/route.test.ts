@@ -33,6 +33,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
                       expires_at: "2099-01-01T00:00:00.000Z",
                       variables: {
                         count: 1,
+                        note: "",
                         contact: { id: "contact-1" },
                       },
                       graph_snapshot: {
@@ -47,6 +48,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
                         },
                         variable_schema: [
                           { key: "count", type: "number", default: 1 },
+                          { key: "note", type: "string", default: "" },
                           { key: "contact", type: "contact" },
                         ],
                         nodes: [
@@ -133,6 +135,7 @@ describe("flow debug session API", () => {
     expect(h.rpcName).toBe("edit_flow_debug_session_variables");
     expect(h.rpcArgs.p_variables).toEqual({
       count: 2,
+      note: "",
       contact: { id: "contact-1" },
     });
   });
@@ -144,6 +147,16 @@ describe("flow debug session API", () => {
     expect(body.executions[0]).toMatchObject({
       node_key: "end",
       attempt: 2,
+    });
+    expect(body.session.manifest).toMatchObject({
+      variable_schema: [
+        { key: "count", type: "number", default: 1 },
+        { key: "note", type: "string", default: "" },
+        { key: "contact", type: "contact" },
+      ],
+      nodes: [
+        expect.objectContaining({ node_key: "end", node_type: "end" }),
+      ],
     });
   });
 
@@ -157,5 +170,36 @@ describe("flow debug session API", () => {
     );
     expect(response.status).toBe(200);
     expect(h.rpcName).toBe("close_flow_debug_session");
+  });
+
+  it("rejects edits to variables outside the pinned manifest", async () => {
+    const response = await PATCH(
+      new Request("http://localhost/debug", {
+        method: "PATCH",
+        body: JSON.stringify({
+          expected_revision: 1,
+          variables: { undeclared: "value" },
+        }),
+      }),
+      context,
+    );
+    expect(response.status).toBe(422);
+    expect(h.rpcName).toBe("");
+  });
+
+  it("rejects variable edits exceeding 64 KiB before the RPC", async () => {
+    const response = await PATCH(
+      new Request("http://localhost/debug", {
+        method: "PATCH",
+        body: JSON.stringify({
+          expected_revision: 1,
+          variables: { note: "x".repeat(70_000) },
+        }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(413);
+    expect(h.rpcName).toBe("");
   });
 });

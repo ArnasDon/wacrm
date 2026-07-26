@@ -107,14 +107,31 @@ export async function POST(
   if (!node) return debugJson({ error: "Not found" }, { status: 404 });
 
   const started = performance.now();
-  const result = await runIsolatedDebugNode({
-    graph,
-    nodeKey,
-    variables: session.variables as Record<string, unknown>,
-    savedOutputs: (session.node_outputs ?? {}) as DebugNodeOutputs,
-    clonedOutputs: (session.source_node_outputs ?? {}) as DebugNodeOutputs,
-    overrides: body.overrides,
-  });
+  let result;
+  try {
+    result = await runIsolatedDebugNode({
+      graph,
+      nodeKey,
+      variables: session.variables as Record<string, unknown>,
+      savedOutputs: (session.node_outputs ?? {}) as DebugNodeOutputs,
+      clonedOutputs: (session.source_node_outputs ?? {}) as DebugNodeOutputs,
+      overrides: body.overrides,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "debug_variables_too_large"
+    ) {
+      return debugJson(
+        {
+          error: "Debug variables exceed the size limit",
+          code: "DEBUG_VARIABLES_TOO_LARGE",
+        },
+        { status: 413 },
+      );
+    }
+    throw error;
+  }
   const durationMs = Math.min(
     60_000,
     Math.max(0, Math.round(performance.now() - started)),
@@ -137,7 +154,12 @@ export async function POST(
       p_error: result.error ?? null,
     },
   );
-  if (commitError) return debugRpcError(commitError);
+  if (commitError) {
+    return debugRpcError(commitError, {
+      operation: "commit_debug_execution",
+      flowId: id,
+    });
+  }
   const row = (Array.isArray(committed) ? committed[0] : committed) as {
     session?: Record<string, unknown>;
     execution?: Record<string, unknown>;

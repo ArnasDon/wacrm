@@ -15,6 +15,26 @@ interface DebugSession {
   variables: Record<string, unknown>;
   source_run_id?: string | null;
   status: string;
+  manifest: {
+    variable_schema: FlowVariableDeclaration[];
+    nodes: DebugManifestNode[];
+  };
+}
+
+interface DebugManifestPort {
+  id: string;
+  label: string;
+  type: string;
+  cardinality: "one" | "many";
+  required?: boolean;
+}
+
+interface DebugManifestNode {
+  node_key: string;
+  node_type: string;
+  label: string;
+  inputs: DebugManifestPort[];
+  outputs: DebugManifestPort[];
 }
 
 interface DebugExecution {
@@ -40,7 +60,6 @@ export function FlowDebugPanel() {
   const t = useTranslations("Flows.debug");
   const {
     flow,
-    state,
     selectedNodeKey,
     setSelectedNodeKey,
   } = useFlowEditor();
@@ -51,6 +70,7 @@ export function FlowDebugPanel() {
   const [executions, setExecutions] = useState<DebugExecution[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, unknown>>({});
 
   const selectedExecution = useMemo(
     () =>
@@ -59,6 +79,17 @@ export function FlowDebugPanel() {
       ) ?? null,
     [executions, selectedNodeKey],
   );
+  const selectedManifestNode = useMemo(
+    () =>
+      session?.manifest.nodes.find(
+        (node) => node.node_key === selectedNodeKey,
+      ) ?? null,
+    [selectedNodeKey, session],
+  );
+
+  useEffect(() => {
+    setOverrides({});
+  }, [selectedNodeKey, session?.id]);
 
   const loadFlightRecorder = useCallback(async () => {
     const response = await fetch(
@@ -183,7 +214,7 @@ export function FlowDebugPanel() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             expected_revision: session.revision,
-            overrides: {},
+            overrides,
           }),
         },
       );
@@ -282,12 +313,12 @@ export function FlowDebugPanel() {
           <>
             <section className="space-y-2">
               <h3 className="text-xs font-semibold">{t("variables")}</h3>
-              {state.variable_schema.length === 0 ? (
+              {session.manifest.variable_schema.length === 0 ? (
                 <p className="text-muted-foreground text-xs">
                   {t("noVariables")}
                 </p>
               ) : (
-                state.variable_schema.map((declaration) => (
+                session.manifest.variable_schema.map((declaration) => (
                   <VariableEditor
                     key={`${declaration.key}:${session.revision}`}
                     declaration={declaration}
@@ -312,12 +343,25 @@ export function FlowDebugPanel() {
                 className="border-border bg-muted w-full rounded-md border px-2 py-2 text-xs"
               >
                 <option value="">{t("selectNode")}</option>
-                {state.nodes.map((node) => (
+                {session.manifest.nodes.map((node) => (
                   <option key={node.node_key} value={node.node_key}>
                     {node.node_key} · {node.node_type}
                   </option>
                 ))}
               </select>
+              {selectedManifestNode?.inputs.map((port) => (
+                <DebugOverrideEditor
+                  key={`${session.id}:${selectedManifestNode.node_key}:${port.id}`}
+                  port={port}
+                  disabled={busy}
+                  onChange={(value) =>
+                    setOverrides((current) => ({
+                      ...current,
+                      [port.id]: value,
+                    }))
+                  }
+                />
+              ))}
               <Button
                 type="button"
                 size="sm"
@@ -363,6 +407,61 @@ export function FlowDebugPanel() {
         ) : null}
       </div>
     </aside>
+  );
+}
+
+function DebugOverrideEditor({
+  port,
+  disabled,
+  onChange,
+}: {
+  port: DebugManifestPort;
+  disabled: boolean;
+  onChange: (value: unknown) => void;
+}) {
+  if (port.type === "boolean") {
+    return (
+      <label className="flex items-center justify-between gap-2 text-xs">
+        <span>
+          {port.label} <code>{port.id}</code>
+        </span>
+        <input
+          type="checkbox"
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          aria-label={port.label}
+        />
+      </label>
+    );
+  }
+  return (
+    <label className="block space-y-1 text-xs">
+      <span>
+        {port.label} <code>{port.id}</code> · {port.type}
+        {port.required ? " *" : ""}
+      </span>
+      <Input
+        disabled={disabled}
+        aria-label={port.label}
+        className="bg-muted font-mono text-xs"
+        onBlur={(event) => {
+          const raw = event.target.value;
+          if (port.type === "number") {
+            onChange(Number(raw));
+            return;
+          }
+          if (port.type === "json" || port.type === "any") {
+            try {
+              onChange(JSON.parse(raw));
+            } catch {
+              onChange(raw);
+            }
+            return;
+          }
+          onChange(raw);
+        }}
+      />
+    </label>
   );
 }
 

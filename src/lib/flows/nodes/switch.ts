@@ -47,6 +47,12 @@ export const switchNodeDescriptor = defineNodeDescriptor({
   validate: () => [],
   runtimeKind: "auto",
   runtimeHook: "switch",
+  resolveDebugInput: (config, portId, vars) =>
+    portId === "subject" &&
+    config.subject === "var" &&
+    typeof config.subject_key === "string"
+      ? vars[config.subject_key]
+      : undefined,
   form: { kind: "specialized", component: "switch" },
   builder: {
     visible: true,

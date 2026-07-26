@@ -42,6 +42,11 @@ describe("flow debug inspector UI", () => {
     expect(source).toContain("contact");
     expect(source).toContain("message");
     expect(source).toContain("aria-live");
+    expect(source).toContain("session.manifest.variable_schema");
+    expect(source).toContain("session.manifest.nodes");
+    expect(source).toContain("overrides");
+    expect(source).not.toContain("state.variable_schema");
+    expect(source).not.toContain("state.nodes");
   });
 
   it("ships real English and Korean debug translations", () => {

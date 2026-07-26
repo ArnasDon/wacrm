@@ -28,6 +28,7 @@ export const eachNodeDescriptor = defineNodeDescriptor({
   inputs: [
     ...CONTROL_INPUT,
     { id: "continue", label: "Continue", type: "control", cardinality: "many" },
+    { id: "items", label: "Items", type: "json", cardinality: "one" },
   ],
   outputs: [
     { id: "body", label: "Body", type: "control", cardinality: "one", required: true },
@@ -41,6 +42,10 @@ export const eachNodeDescriptor = defineNodeDescriptor({
   validate: () => [],
   runtimeKind: "auto",
   runtimeHook: "each",
+  resolveDebugInput: (config, portId, vars) =>
+    portId === "items" && typeof config.array_variable === "string"
+      ? vars[config.array_variable]
+      : undefined,
   form: { kind: "specialized", component: "each" },
   builder: {
     visible: true,

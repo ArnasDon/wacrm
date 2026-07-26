@@ -47,6 +47,11 @@ interface CommonOptions<Id extends string> {
     portId: string,
     vars: Readonly<Record<string, unknown>>,
   ) => unknown;
+  resolveDebugInput?: (
+    config: Record<string, unknown>,
+    portId: string,
+    vars: Readonly<Record<string, unknown>>,
+  ) => unknown;
 }
 
 export function createLinearNodeDescriptor<const Id extends string>(

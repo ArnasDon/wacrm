@@ -209,6 +209,11 @@ export interface NodeDescriptor<Id extends string = string> {
     portId: string,
     vars: Readonly<Record<string, unknown>>,
   ) => unknown;
+  resolveDebugInput?: (
+    config: Record<string, unknown>,
+    portId: string,
+    vars: Readonly<Record<string, unknown>>,
+  ) => unknown;
 }
 
 export function defineNodeDescriptor<const Id extends string>(

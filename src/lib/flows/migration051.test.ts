@@ -49,15 +49,29 @@ describe("migration 051 isolated flow debugging", () => {
     expect(sql).toContain("FOR UPDATE");
   });
 
-  it("keeps authenticated access read-only and tenant scoped", () => {
+  it("keeps raw debug storage service-only and tenant scoped", () => {
     for (const table of [
       "flow_debug_sessions",
       "flow_debug_node_executions",
     ]) {
       expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
-      expect(sql).toContain(`GRANT SELECT ON TABLE ${table} TO authenticated`);
+      expect(sql).toContain(`REVOKE ALL ON TABLE ${table} FROM authenticated`);
       expect(sql).toContain(`GRANT ALL ON TABLE ${table} TO service_role`);
     }
     expect(sql).toContain("is_account_member");
+  });
+
+  it("bounds cloned data, active sessions and expiry cleanup", () => {
+    expect(sql).toMatch(
+      /source_node_outputs JSONB[\s\S]*jsonb_typeof\(source_node_outputs\) = 'object'[\s\S]*octet_length\(source_node_outputs::text\)/i,
+    );
+    expect(sql).toContain("debug_session_quota");
+    expect(sql).toContain("debug_session_rate_limited");
+    expect(sql).toContain("debug_edit_rate_limited");
+    expect(sql).toContain("flow_debug_executions_variables_size");
+    expect(sql).toMatch(/r\.flow_version_id\s*=\s*p_flow_version_id/i);
+    expect(sql).toMatch(
+      /FUNCTION\s+purge_expired_flow_debug_sessions[\s\S]+?p_limit INTEGER[\s\S]+?SECURITY DEFINER/i,
+    );
   });
 });

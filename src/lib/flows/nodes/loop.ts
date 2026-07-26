@@ -28,6 +28,7 @@ export const loopNodeDescriptor = defineNodeDescriptor({
   inputs: [
     ...CONTROL_INPUT,
     { id: "continue", label: "Continue", type: "control", cardinality: "many" },
+    { id: "subject", label: "Subject", type: "any", cardinality: "one" },
   ],
   outputs: [
     { id: "body", label: "Body", type: "control", cardinality: "one", required: true },
@@ -41,6 +42,12 @@ export const loopNodeDescriptor = defineNodeDescriptor({
   validate: () => [],
   runtimeKind: "auto",
   runtimeHook: "loop",
+  resolveDebugInput: (config, portId, vars) =>
+    portId === "subject" &&
+    config.subject === "var" &&
+    typeof config.subject_key === "string"
+      ? vars[config.subject_key]
+      : undefined,
   form: { kind: "specialized", component: "loop" },
   builder: {
     visible: true,

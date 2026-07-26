@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   rpcError: null as { message: string } | null,
   rpcArgs: {} as Record<string, unknown>,
   recentCount: 0,
+  sessionVariables: { name: "Ada" } as Record<string, unknown>,
 }));
 
 vi.mock("@/lib/flows/debug-api", async (importOriginal) => {
@@ -40,7 +41,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
                             revision: h.sessionRevision,
                             status: "active",
                             expires_at: "2099-01-01T00:00:00.000Z",
-                            variables: { name: "Ada" },
+                            variables: h.sessionVariables,
                             node_outputs: {},
                             graph_snapshot: {
                               schema_version: 1,
@@ -143,6 +144,7 @@ beforeEach(() => {
   h.rpcError = null;
   h.rpcArgs = {};
   h.recentCount = 0;
+  h.sessionVariables = { name: "Ada" };
 });
 
 describe("isolated debug node API", () => {
@@ -204,6 +206,20 @@ describe("isolated debug node API", () => {
       context,
     );
     expect(response.status).toBe(429);
+    expect(h.rpcArgs).toEqual({});
+  });
+
+  it("rejects oversized variables without committing an execution", async () => {
+    h.sessionVariables = { huge: "x".repeat(70_000) };
+    const response = await POST(
+      new Request("http://localhost/debug", {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: 2 }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(413);
     expect(h.rpcArgs).toEqual({});
   });
 });

@@ -4,8 +4,10 @@ const h = vi.hoisted(() => ({
   user: { id: "owner-1" } as { id: string } | null,
   flowOwner: "owner-1",
   sourceRun: null as Record<string, unknown> | null,
+  sourceVersion: null as Record<string, unknown> | null,
   sourceExecutions: [] as Record<string, unknown>[],
   rpcName: "",
+  rpcCalls: [] as string[],
   rpcArgs: {} as Record<string, unknown>,
   rpcError: null as { message: string } | null,
 }));
@@ -41,6 +43,7 @@ vi.mock("@/lib/flows/admin-client", () => ({
   supabaseAdmin: () => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       h.rpcName = name;
+      h.rpcCalls.push(name);
       h.rpcArgs = args;
       if (name === "read_flow_draft_for_publish") {
         return {
@@ -103,13 +106,29 @@ vi.mock("@/lib/flows/admin-client", () => ({
           }),
         };
       }
+      if (table === "flow_versions") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: h.sourceVersion,
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
       if (table === "flow_node_executions") {
         return {
           select: () => ({
             eq: () => ({
-              order: async () => ({
-                data: h.sourceExecutions,
-                error: null,
+              order: () => ({
+                limit: async () => ({
+                  data: h.sourceExecutions,
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -145,8 +164,10 @@ beforeEach(() => {
   h.user = { id: "owner-1" };
   h.flowOwner = "owner-1";
   h.sourceRun = null;
+  h.sourceVersion = null;
   h.sourceExecutions = [];
   h.rpcName = "";
+  h.rpcCalls = [];
   h.rpcArgs = {};
   h.rpcError = null;
 });
@@ -199,7 +220,178 @@ describe("flow debug session creation", () => {
       context,
     );
     expect(response.status).toBe(404);
-    expect(h.rpcName).toBe("read_flow_draft_for_publish");
+    expect(h.rpcCalls).not.toContain("read_flow_draft_for_publish");
+    expect(h.rpcCalls).not.toContain("create_flow_debug_session");
+  });
+
+  it("pins a cloned session to the source run's immutable version", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000001";
+    const sourceVersionId = "00000000-0000-4000-8000-000000000002";
+    h.sourceRun = {
+      id: sourceRunId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      account_id: "account-1",
+      flow_version_id: sourceVersionId,
+      vars: { name: "Grace" },
+    };
+    h.sourceVersion = {
+      id: sourceVersionId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      graph: {
+        schema_version: 1,
+        trigger: { type: "manual", config: {} },
+        entry_node_key: "source-end",
+        fallback_policy: {
+          on_unknown_reply: "ignore",
+          max_reprompts: 0,
+          on_timeout_hours: 24,
+          on_exhaust: "end",
+        },
+        variable_schema: [
+          { key: "name", type: "string", default: "Source default" },
+        ],
+        nodes: [
+          {
+            node_key: "source-end",
+            node_type: "end",
+            config: {},
+            position_x: 0,
+            position_y: 0,
+          },
+        ],
+      },
+    };
+    h.sourceExecutions = [
+      {
+        node_key: "source-end",
+        outputs: { completed: true },
+        started_at: "2026-07-26T12:00:00.000Z",
+      },
+      {
+        node_key: "source-end",
+        outputs: { completed: false },
+        started_at: "2026-07-26T11:00:00.000Z",
+      },
+    ];
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(201);
+    expect(h.rpcCalls).not.toContain("read_flow_draft_for_publish");
+    expect(h.rpcArgs).toMatchObject({
+      p_flow_version_id: sourceVersionId,
+      p_draft_revision: null,
+      p_source_run_id: sourceRunId,
+      p_variables: { name: "Grace" },
+      p_source_node_outputs: {
+        "source-end": { completed: true },
+      },
+    });
+    expect(h.rpcArgs.p_graph_snapshot).toMatchObject({
+      entry_node_key: "source-end",
+    });
+  });
+
+  it("rejects a version that conflicts with the source run", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000001";
+    h.sourceRun = {
+      id: sourceRunId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      account_id: "account-1",
+      flow_version_id: "00000000-0000-4000-8000-000000000002",
+      vars: {},
+    };
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({
+          source_run_id: sourceRunId,
+          flow_version_id: "00000000-0000-4000-8000-000000000003",
+        }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(409);
+    expect(h.rpcCalls).not.toContain("create_flow_debug_session");
+  });
+
+  it("rejects legacy source runs without an immutable version", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000001";
+    h.sourceRun = {
+      id: sourceRunId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      account_id: "account-1",
+      flow_version_id: null,
+      vars: {},
+    };
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(422);
+    expect(h.rpcCalls).not.toContain("read_flow_draft_for_publish");
+    expect(h.rpcCalls).not.toContain("create_flow_debug_session");
+  });
+
+  it("rejects oversized source variables before creating the session", async () => {
+    const sourceRunId = "00000000-0000-4000-8000-000000000001";
+    const sourceVersionId = "00000000-0000-4000-8000-000000000002";
+    h.sourceRun = {
+      id: sourceRunId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      account_id: "account-1",
+      flow_version_id: sourceVersionId,
+      vars: { huge: "x".repeat(70_000) },
+    };
+    h.sourceVersion = {
+      id: sourceVersionId,
+      flow_id: "20000000-0000-4000-8000-000000000001",
+      graph: {
+        schema_version: 1,
+        trigger: { type: "manual", config: {} },
+        entry_node_key: "end",
+        fallback_policy: {
+          on_unknown_reply: "ignore",
+          max_reprompts: 0,
+          on_timeout_hours: 24,
+          on_exhaust: "end",
+        },
+        variable_schema: [],
+        nodes: [
+          {
+            node_key: "end",
+            node_type: "end",
+            config: {},
+            position_x: 0,
+            position_y: 0,
+          },
+        ],
+      },
+    };
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/debug/sessions", {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId }),
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(413);
+    expect(h.rpcCalls).not.toContain("create_flow_debug_session");
   });
 
   it("returns a conflict when the draft revision changes", async () => {

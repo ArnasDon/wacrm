@@ -9,6 +9,7 @@ import {
   requireFlowDebugOwner,
 } from "@/lib/flows/debug-api";
 import {
+  assertDebugVariablesBounded,
   sanitizeDebugSession,
   sanitizeDebugValue,
 } from "@/lib/flows/debug-runtime";
@@ -21,6 +22,7 @@ import type {
 import {
   buildFlowVersionGraph,
   parseFlowVersionGraph,
+  type FlowVersionGraph,
 } from "@/lib/flows/versions";
 import { initializeFlowVariables } from "@/lib/flows/runtime-primitives";
 
@@ -31,6 +33,7 @@ const bodySchema = z
   })
   .strict();
 const flowIdSchema = z.string().uuid();
+const MAX_CLONED_OUTPUT_BYTES = 256 * 1024;
 
 export async function GET(
   _request: Request,
@@ -83,11 +86,116 @@ export async function POST(
   }
 
   const admin = supabaseAdmin();
-  let graph;
+  let graph: FlowVersionGraph;
   let draftRevision: number | null = null;
-  const flowVersionId: string | null = body.flow_version_id ?? null;
+  let flowVersionId: string | null = body.flow_version_id ?? null;
+  let variables: Record<string, unknown>;
+  const clonedOutputs: Record<string, Record<string, unknown>> = {};
 
-  if (flowVersionId) {
+  if (body.source_run_id) {
+    const { data: sourceRun, error: sourceRunError } = await admin
+      .from("flow_runs")
+      .select("id, flow_id, account_id, flow_version_id, vars")
+      .eq("id", body.source_run_id)
+      .eq("flow_id", id)
+      .maybeSingle();
+    if (sourceRunError) {
+      return debugRpcError(sourceRunError, {
+        operation: "read_source_run",
+        flowId: id,
+      });
+    }
+    const run = sourceRun as Pick<
+      FlowRunRow,
+      "id" | "flow_id" | "account_id" | "flow_version_id" | "vars"
+    > | null;
+    if (!run || run.account_id !== owner.accountId) {
+      return debugJson({ error: "Not found" }, { status: 404 });
+    }
+    if (!run.flow_version_id) {
+      return debugJson(
+        {
+          error: "Source run has no immutable flow version",
+          code: "DEBUG_SOURCE_RUN_UNVERSIONED",
+        },
+        { status: 422 },
+      );
+    }
+    if (flowVersionId && flowVersionId !== run.flow_version_id) {
+      return debugJson(
+        {
+          error: "Source run version conflict",
+          code: "DEBUG_SOURCE_VERSION_CONFLICT",
+        },
+        { status: 409 },
+      );
+    }
+    flowVersionId = run.flow_version_id;
+    const { data: version, error: versionError } = await admin
+      .from("flow_versions")
+      .select("id, flow_id, graph")
+      .eq("id", flowVersionId)
+      .eq("flow_id", id)
+      .maybeSingle();
+    if (versionError) {
+      return debugRpcError(versionError, {
+        operation: "read_source_version",
+        flowId: id,
+      });
+    }
+    if (!version) return debugJson({ error: "Not found" }, { status: 404 });
+    try {
+      graph = parseFlowVersionGraph(version.graph);
+    } catch {
+      return debugJson({ error: "Invalid flow snapshot" }, { status: 422 });
+    }
+    variables = run.vars as Record<string, unknown>;
+    try {
+      assertDebugVariablesBounded(variables);
+    } catch {
+      return debugJson(
+        {
+          error: "Source variables exceed the debug size limit",
+          code: "DEBUG_VARIABLES_TOO_LARGE",
+        },
+        { status: 413 },
+      );
+    }
+    variables = sanitizeDebugValue(variables) as Record<string, unknown>;
+    const { data: executionRows, error: executionsError } = await admin
+      .from("flow_node_executions")
+      .select("node_key, outputs, started_at")
+      .eq("flow_run_id", run.id)
+      .order("started_at", { ascending: false })
+      .limit(500);
+    if (executionsError) {
+      return debugRpcError(executionsError, {
+        operation: "read_source_executions",
+        flowId: id,
+      });
+    }
+    for (const execution of (executionRows ?? []) as Pick<
+      FlowNodeExecutionRow,
+      "node_key" | "outputs"
+    >[]) {
+      if (!Object.hasOwn(clonedOutputs, execution.node_key)) {
+        const sanitizedOutput = sanitizeDebugValue(
+          execution.outputs,
+        ) as Record<string, unknown>;
+        const candidate = {
+          ...clonedOutputs,
+          [execution.node_key]: sanitizedOutput,
+        };
+        if (
+          new TextEncoder().encode(JSON.stringify(candidate)).byteLength >
+          MAX_CLONED_OUTPUT_BYTES
+        ) {
+          continue;
+        }
+        clonedOutputs[execution.node_key] = sanitizedOutput;
+      }
+    }
+  } else if (flowVersionId) {
     const { data: version } = await admin
       .from("flow_versions")
       .select("id, flow_id, graph")
@@ -100,6 +208,7 @@ export async function POST(
     } catch {
       return debugJson({ error: "Invalid flow snapshot" }, { status: 422 });
     }
+    variables = initializeFlowVariables(graph.variable_schema);
   } else {
     const { data, error } = await admin.rpc("read_flow_draft_for_publish", {
       p_flow_id: id,
@@ -125,42 +234,20 @@ export async function POST(
         { status: 422 },
       );
     }
+    variables = initializeFlowVariables(graph.variable_schema);
   }
 
-  let variables = initializeFlowVariables(graph.variable_schema);
-  const clonedOutputs: Record<string, Record<string, unknown>> = {};
-  if (body.source_run_id) {
-    const { data: sourceRun } = await admin
-      .from("flow_runs")
-      .select("id, flow_id, account_id, vars")
-      .eq("id", body.source_run_id)
-      .eq("flow_id", id)
-      .maybeSingle();
-    const run = sourceRun as Pick<
-      FlowRunRow,
-      "id" | "flow_id" | "account_id" | "vars"
-    > | null;
-    if (!run || run.account_id !== owner.accountId) {
-      return debugJson({ error: "Not found" }, { status: 404 });
-    }
-    variables = sanitizeDebugValue(run.vars) as Record<string, unknown>;
-    const { data: executionRows } = await admin
-      .from("flow_node_executions")
-      .select("node_key, outputs, started_at")
-      .eq("flow_run_id", run.id)
-      .order("started_at", { ascending: false });
-    for (const execution of (executionRows ?? []) as Pick<
-      FlowNodeExecutionRow,
-      "node_key" | "outputs"
-    >[]) {
-      if (!Object.hasOwn(clonedOutputs, execution.node_key)) {
-        clonedOutputs[execution.node_key] = sanitizeDebugValue(
-          execution.outputs,
-        ) as Record<string, unknown>;
-      }
-    }
+  try {
+    assertDebugVariablesBounded(variables);
+  } catch {
+    return debugJson(
+      {
+        error: "Debug variables exceed the size limit",
+        code: "DEBUG_VARIABLES_TOO_LARGE",
+      },
+      { status: 413 },
+    );
   }
-
   const graphJson = JSON.stringify(graph);
   const snapshotHash = createHash("sha256").update(graphJson).digest("hex");
   const { data: created, error: createError } = await admin.rpc(

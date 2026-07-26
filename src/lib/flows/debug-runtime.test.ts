@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   editDebugVariables,
+  buildDebugManifest,
   runIsolatedDebugNode,
   sanitizeDebugSession,
   sanitizeDebugValue,
@@ -122,6 +123,120 @@ describe("isolated flow debugger", () => {
     expect(result.metadata.input_sources).toEqual({ value: "override" });
   });
 
+  it("resolves registry data ports with config as the final fallback", async () => {
+    const dataGraph = {
+      ...graph,
+      entry_node_key: "each",
+      variable_schema: [
+        ...graph.variable_schema,
+        { key: "items", type: "json", default: ["one"] },
+        { key: "done", type: "boolean", default: true },
+      ],
+      nodes: [
+        {
+          node_key: "each",
+          node_type: "each",
+          config: {
+            array_variable: "items",
+            item_variable: "item",
+            index_variable: "index",
+            max_iterations: 10,
+            body_next: "end",
+            done_next: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "loop",
+          node_type: "loop",
+          config: {
+            subject: "var",
+            subject_key: "done",
+            operator: "equals",
+            value: true,
+            max_iterations: 10,
+            body_next: "end",
+            done_next: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    const eachResult = await runIsolatedDebugNode({
+      graph: dataGraph,
+      nodeKey: "each",
+      variables: { items: ["one"], done: true },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: {},
+    });
+    const loopResult = await runIsolatedDebugNode({
+      graph: dataGraph,
+      nodeKey: "loop",
+      variables: { items: ["one"], done: true },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: {},
+    });
+
+    expect(eachResult.inputs).toEqual({ items: ["one"] });
+    expect(eachResult.metadata.input_sources).toEqual({ items: "config" });
+    expect(loopResult.inputs).toEqual({ subject: true });
+    expect(loopResult.metadata.input_sources).toEqual({ subject: "config" });
+  });
+
+  it("uses session outputs before cloned outputs and config fallbacks", async () => {
+    const switchGraph = {
+      ...graph,
+      entry_node_key: "switch",
+      nodes: [
+        {
+          node_key: "switch",
+          node_type: "switch",
+          config: {
+            subject: "var",
+            subject_key: "name",
+            cases: [
+              {
+                id: "case_1",
+                label: "Session",
+                operator: "equals",
+                value: "session",
+                next: "end",
+              },
+            ],
+            default_next: "end",
+            _data_inputs: {
+              subject: {
+                source_node_key: "source",
+                source_handle: "variables",
+              },
+            },
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    const result = await runIsolatedDebugNode({
+      graph: switchGraph,
+      nodeKey: "switch",
+      variables: { name: "configured" },
+      savedOutputs: { source: { variables: "session" } },
+      clonedOutputs: { source: { variables: "source" } },
+      overrides: {},
+    });
+
+    expect(result.inputs).toEqual({ subject: "session" });
+    expect(result.metadata.input_sources).toEqual({ subject: "session" });
+  });
+
   it("returns a planned transition for durable control nodes", async () => {
     const waitGraph: FlowVersionGraph = {
       ...graph,
@@ -235,6 +350,29 @@ describe("isolated flow debugger", () => {
       ),
     ).toEqual({ count: 2, contact: { id: "c1" } });
   });
+
+  it("rejects undeclared variable edits instead of silently ignoring them", () => {
+    expect(() =>
+      editDebugVariables(
+        [{ key: "known", type: "string" }],
+        { known: "value" },
+        { unknown: "unsafe" },
+      ),
+    ).toThrow('unknown debug variable "unknown"');
+  });
+
+  it("builds a client-safe pinned manifest from registry metadata", () => {
+    const manifest = buildDebugManifest(graph);
+    expect(manifest.variable_schema).toEqual(graph.variable_schema);
+    expect(manifest.nodes.find((node) => node.node_key === "send")).toMatchObject({
+      node_key: "send",
+      node_type: "send_message",
+      label: "Send message",
+      inputs: expect.any(Array),
+      outputs: expect.any(Array),
+    });
+    expect(JSON.stringify(manifest)).not.toContain("Hello");
+  });
 });
 
 describe("debug record sanitization", () => {
@@ -269,5 +407,57 @@ describe("debug record sanitization", () => {
       revision: 2,
       variables: { visible: true },
     });
+  });
+
+  it("preserves the result envelope when an effect exceeds 64 KiB", async () => {
+    const httpGraph = {
+      ...graph,
+      entry_node_key: "request",
+      nodes: [
+        {
+          node_key: "request",
+          node_type: "http_request",
+          config: {
+            method: "POST",
+            url: "https://example.com",
+            body: "x".repeat(70_000),
+            response_var: "response",
+            next_node_key: "end",
+          },
+          position_x: 0,
+          position_y: 0,
+        },
+        graph.nodes[2],
+      ],
+    } satisfies FlowVersionGraph;
+
+    const result = await runIsolatedDebugNode({
+      graph: httpGraph,
+      nodeKey: "request",
+      variables: { name: "Ada" },
+      savedOutputs: {},
+      clonedOutputs: {},
+      overrides: {},
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.variables).toEqual({ name: "Ada" });
+    expect(result.simulatedEffects[0]?.kind).toBe("http_request");
+    expect(
+      String(result.simulatedEffects[0]?.payload.body).length,
+    ).toBeLessThan(5_000);
+  });
+
+  it("fails closed when session variables exceed 64 KiB", async () => {
+    await expect(
+      runIsolatedDebugNode({
+        graph,
+        nodeKey: "send",
+        variables: { huge: "x".repeat(70_000) },
+        savedOutputs: {},
+        clonedOutputs: {},
+        overrides: {},
+      }),
+    ).rejects.toThrow("debug_variables_too_large");
   });
 });

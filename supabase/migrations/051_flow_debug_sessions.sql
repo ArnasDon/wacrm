@@ -18,17 +18,34 @@ CREATE TABLE IF NOT EXISTS flow_debug_sessions (
   status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'closed', 'expired')),
   revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  last_variable_edit_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '2 hours'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK ((flow_version_id IS NOT NULL) <> (draft_revision IS NOT NULL)),
   CHECK (octet_length(graph_snapshot::text) <= 1048576),
   CHECK (octet_length(variables::text) <= 65536),
-  CHECK (octet_length(node_outputs::text) <= 262144)
+  CHECK (octet_length(node_outputs::text) <= 262144),
+  CHECK (octet_length(source_node_outputs::text) <= 262144)
 );
 
 ALTER TABLE flow_debug_sessions
-  ADD COLUMN IF NOT EXISTS source_node_outputs JSONB NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN IF NOT EXISTS source_node_outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS last_variable_edit_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'flow_debug_sessions_source_outputs_shape'
+  ) THEN
+    ALTER TABLE flow_debug_sessions
+      ADD CONSTRAINT flow_debug_sessions_source_outputs_shape CHECK (
+        jsonb_typeof(source_node_outputs) = 'object'
+        AND octet_length(source_node_outputs::text) <= 262144
+      );
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS flow_debug_node_executions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -49,9 +66,24 @@ CREATE TABLE IF NOT EXISTS flow_debug_node_executions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (octet_length(inputs::text) <= 65536),
   CHECK (octet_length(COALESCE(outputs, 'null'::jsonb)::text) <= 65536),
+  CHECK (octet_length(variables::text) <= 65536),
   CHECK (octet_length(simulated_effects::text) <= 65536),
   UNIQUE (session_id, node_key, attempt)
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'flow_debug_executions_variables_size'
+  ) THEN
+    ALTER TABLE flow_debug_node_executions
+      ADD CONSTRAINT flow_debug_executions_variables_size CHECK (
+        jsonb_typeof(variables) = 'object'
+        AND octet_length(variables::text) <= 65536
+      );
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_flow_debug_sessions_owner_active
   ON flow_debug_sessions(created_by, flow_id, updated_at DESC)
@@ -86,10 +118,58 @@ CREATE POLICY flow_debug_node_executions_select
     )
   );
 
-GRANT SELECT ON TABLE flow_debug_sessions TO authenticated;
-GRANT SELECT ON TABLE flow_debug_node_executions TO authenticated;
+REVOKE ALL ON TABLE flow_debug_sessions FROM authenticated;
+REVOKE ALL ON TABLE flow_debug_node_executions FROM authenticated;
 GRANT ALL ON TABLE flow_debug_sessions TO service_role;
 GRANT ALL ON TABLE flow_debug_node_executions TO service_role;
+
+CREATE OR REPLACE FUNCTION purge_expired_flow_debug_sessions(
+  p_limit INTEGER DEFAULT 100
+)
+RETURNS TABLE(expired_count INTEGER, deleted_count INTEGER)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_expired INTEGER := 0;
+  v_deleted INTEGER := 0;
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 500 THEN
+    RAISE EXCEPTION 'invalid debug purge limit';
+  END IF;
+  WITH candidates AS (
+    SELECT id FROM flow_debug_sessions
+    WHERE status = 'active' AND expires_at <= NOW()
+    ORDER BY expires_at
+    LIMIT p_limit
+    FOR UPDATE SKIP LOCKED
+  )
+  UPDATE flow_debug_sessions s
+  SET status = 'expired', updated_at = NOW()
+  FROM candidates c
+  WHERE s.id = c.id;
+  GET DIAGNOSTICS v_expired = ROW_COUNT;
+
+  WITH stale AS (
+    SELECT id FROM flow_debug_sessions
+    WHERE status IN ('expired', 'closed')
+      AND updated_at < NOW() - INTERVAL '1 day'
+    ORDER BY updated_at
+    LIMIT p_limit
+    FOR UPDATE SKIP LOCKED
+  )
+  DELETE FROM flow_debug_sessions s
+  USING stale
+  WHERE s.id = stale.id;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN QUERY SELECT v_expired, v_deleted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) FROM authenticated;
+GRANT EXECUTE ON FUNCTION purge_expired_flow_debug_sessions(INTEGER) TO service_role;
 
 CREATE OR REPLACE FUNCTION create_flow_debug_session(
   p_flow_id UUID,
@@ -112,6 +192,7 @@ DECLARE
   v_flow flows%ROWTYPE;
   v_session flow_debug_sessions%ROWTYPE;
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_created_by::text, 0));
   SELECT * INTO v_flow FROM flows WHERE id = p_flow_id;
   IF NOT FOUND OR v_flow.user_id <> p_created_by THEN
     RAISE EXCEPTION 'flow not found';
@@ -133,6 +214,7 @@ BEGIN
     WHERE r.id = p_source_run_id
       AND r.flow_id = p_flow_id
       AND r.account_id = v_flow.account_id
+      AND r.flow_version_id = p_flow_version_id
   ) THEN
     RAISE EXCEPTION 'source run not found';
   END IF;
@@ -141,6 +223,30 @@ BEGIN
      OR jsonb_typeof(COALESCE(p_node_outputs, '{}'::jsonb)) <> 'object'
      OR jsonb_typeof(COALESCE(p_source_node_outputs, '{}'::jsonb)) <> 'object' THEN
     RAISE EXCEPTION 'invalid debug session payload';
+  END IF;
+  IF (
+    SELECT COUNT(*) FROM flow_debug_sessions s
+    WHERE s.created_by = p_created_by
+      AND s.created_at >= NOW() - INTERVAL '1 minute'
+  ) >= 10 THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'debug_session_rate_limited',
+      ERRCODE = '54000';
+  END IF;
+  UPDATE flow_debug_sessions
+  SET status = 'expired', updated_at = NOW()
+  WHERE created_by = p_created_by
+    AND status = 'active'
+    AND expires_at <= NOW();
+  IF (
+    SELECT COUNT(*) FROM flow_debug_sessions s
+    WHERE s.created_by = p_created_by
+      AND s.account_id = v_flow.account_id
+      AND s.status = 'active'
+  ) >= 5 THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'debug_session_quota',
+      ERRCODE = '54000';
   END IF;
 
   INSERT INTO flow_debug_sessions (
@@ -189,10 +295,17 @@ BEGIN
   IF jsonb_typeof(p_variables) <> 'object' THEN
     RAISE EXCEPTION 'invalid debug variables';
   END IF;
+  IF v_session.last_variable_edit_at IS NOT NULL
+     AND v_session.last_variable_edit_at > NOW() - INTERVAL '250 milliseconds' THEN
+    RAISE EXCEPTION USING
+      MESSAGE = 'debug_edit_rate_limited',
+      ERRCODE = '54000';
+  END IF;
 
   UPDATE flow_debug_sessions
   SET variables = p_variables,
       revision = revision + 1,
+      last_variable_edit_at = NOW(),
       updated_at = NOW()
   WHERE id = p_session_id
   RETURNING * INTO v_session;

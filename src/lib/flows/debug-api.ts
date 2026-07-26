@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeDebugValue } from "./debug-runtime";
 
 export const MAX_DEBUG_REQUEST_BYTES = 64 * 1024;
 
@@ -72,8 +73,15 @@ export function debugJson(
   return response;
 }
 
-export function debugRpcError(error: { message?: string } | null): NextResponse {
+export function debugRpcError(
+  error: { message?: string; code?: string } | null,
+  context: Record<string, unknown> = {},
+): NextResponse {
   const message = error?.message ?? "Debug operation failed";
+  console.error("[flow-debug] storage operation failed", {
+    context: sanitizeDebugValue(context),
+    database_code: error?.code ?? "unknown",
+  });
   if (message.includes("debug_revision_conflict")) {
     return debugJson(
       {
@@ -83,6 +91,27 @@ export function debugRpcError(error: { message?: string } | null): NextResponse 
       { status: 409 },
     );
   }
+  if (message.includes("debug_session_quota")) {
+    return debugJson(
+      {
+        code: "DEBUG_SESSION_QUOTA",
+        error: "Close an active debug session before creating another.",
+      },
+      { status: 429 },
+    );
+  }
+  if (
+    message.includes("debug_session_rate_limited") ||
+    message.includes("debug_edit_rate_limited")
+  ) {
+    return debugJson(
+      {
+        code: "DEBUG_RATE_LIMITED",
+        error: "Too many debug operations. Retry shortly.",
+      },
+      { status: 429 },
+    );
+  }
   if (
     message.includes("not found") ||
     message.includes("expired") ||
@@ -90,5 +119,11 @@ export function debugRpcError(error: { message?: string } | null): NextResponse 
   ) {
     return debugJson({ error: "Not found" }, { status: 404 });
   }
-  return debugJson({ error: message }, { status: 500 });
+  return debugJson(
+    {
+      code: "DEBUG_STORAGE_ERROR",
+      error: "The debug operation could not be completed.",
+    },
+    { status: 500 },
+  );
 }

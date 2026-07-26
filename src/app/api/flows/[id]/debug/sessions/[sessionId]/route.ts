@@ -8,6 +8,7 @@ import {
   requireFlowDebugOwner,
 } from "@/lib/flows/debug-api";
 import {
+  assertDebugVariablesBounded,
   editDebugVariables,
   sanitizeDebugSession,
   sanitizeDebugValue,
@@ -82,8 +83,13 @@ export async function PATCH(
   let body: z.infer<typeof patchSchema>;
   try {
     body = patchSchema.parse(await readDebugJson(request));
-  } catch {
-    return debugJson({ error: "Invalid variable edit" }, { status: 400 });
+  } catch (error) {
+    const tooLarge =
+      error instanceof Error && error.message === "debug_request_too_large";
+    return debugJson(
+      { error: tooLarge ? "Request too large" : "Invalid variable edit" },
+      { status: tooLarge ? 413 : 400 },
+    );
   }
   if (state.session.revision !== body.expected_revision) {
     return debugJson(
@@ -100,7 +106,20 @@ export async function PATCH(
       state.session.variables as Record<string, unknown>,
       body.variables,
     );
+    assertDebugVariablesBounded(variables);
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "debug_variables_too_large"
+    ) {
+      return debugJson(
+        {
+          error: "Debug variables exceed the size limit",
+          code: "DEBUG_VARIABLES_TOO_LARGE",
+        },
+        { status: 413 },
+      );
+    }
     return debugJson(
       { error: error instanceof Error ? error.message : "Invalid variables" },
       { status: 422 },
@@ -115,7 +134,12 @@ export async function PATCH(
       p_variables: sanitizeDebugValue(variables),
     },
   );
-  if (error) return debugRpcError(error);
+  if (error) {
+    return debugRpcError(error, {
+      operation: "edit_debug_variables",
+      flowId: state.params.id,
+    });
+  }
   return debugJson({
     session: sanitizeDebugSession(
       (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,
@@ -144,7 +168,12 @@ export async function DELETE(
       p_expected_revision: body.expected_revision,
     },
   );
-  if (error) return debugRpcError(error);
+  if (error) {
+    return debugRpcError(error, {
+      operation: "close_debug_session",
+      flowId: state.params.id,
+    });
+  }
   return debugJson({
     session: sanitizeDebugSession(
       (Array.isArray(data) ? data[0] : data) as Record<string, unknown>,

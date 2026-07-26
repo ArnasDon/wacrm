@@ -54,24 +54,38 @@ export async function GET(
         "id, flow_run_id, flow_version_id, node_key, node_type, status, inputs, outputs, duration_ms, attempt, error, started_at, completed_at",
       )
       .in("flow_run_id", runIds)
-      .order("started_at", { ascending: false });
-    if (error) return debugRpcError(error);
+      .order("started_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      return debugRpcError(error, {
+        operation: "read_flight_executions",
+        flowId: params.id,
+      });
+    }
     executions = (data ?? []) as Record<string, unknown>[];
   }
 
-  const latestByNode: Record<string, Record<string, unknown>> = {};
+  const latestByRun: Record<
+    string,
+    Record<string, Record<string, unknown>>
+  > = {};
   for (const execution of executions) {
+    const runId =
+      typeof execution.flow_run_id === "string" ? execution.flow_run_id : "";
     const key =
       typeof execution.node_key === "string" ? execution.node_key : "";
-    if (key && !Object.hasOwn(latestByNode, key)) {
-      latestByNode[key] = execution;
+    if (runId && key) {
+      latestByRun[runId] ??= {};
+      if (!Object.hasOwn(latestByRun[runId], key)) {
+        latestByRun[runId][key] = execution;
+      }
     }
   }
   return debugJson(
     sanitizeDebugValue({
       runs: runs ?? [],
       executions,
-      latest_by_node: latestByNode,
+      latest_by_run: latestByRun,
     }),
   );
 }

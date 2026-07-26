@@ -17,6 +17,16 @@ export const aiReplyNodeDescriptor = createLinearNodeDescriptor({
     { id: "reply", label: "Reply", type: "string", cardinality: "many" },
   ],
   runtimeHook: "ai_reply",
+  resolveDebugInput: (config, portId, vars) =>
+    portId === "context" && Array.isArray(config.input_variables)
+      ? Object.fromEntries(
+          config.input_variables.flatMap((key) =>
+            typeof key === "string" && Object.hasOwn(vars, key)
+              ? [[key, structuredClone(vars[key])]]
+              : [],
+          ),
+        )
+      : undefined,
   resolveOutput: (config, portId, vars) =>
     portId === "reply" && typeof config.output_variable === "string"
       ? vars[config.output_variable]

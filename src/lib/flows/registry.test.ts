@@ -179,6 +179,7 @@ describe("canonical flow node registry", () => {
     expect(getNodeDescriptor("loop")?.inputs.map(({ id }) => id)).toEqual([
       "in",
       "continue",
+      "subject",
     ]);
     expect(getNodeDescriptor("loop")?.outputs.map(({ id }) => id)).toEqual([
       "body",

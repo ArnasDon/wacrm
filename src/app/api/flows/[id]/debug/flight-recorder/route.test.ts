@@ -38,8 +38,9 @@ vi.mock("@/lib/flows/admin-client", () => ({
         return {
           select: () => ({
             in: () => ({
-              order: async () => ({
-                data: [
+              order: () => ({
+                limit: async () => ({
+                  data: [
                   {
                     id: "new",
                     flow_run_id: "10000000-0000-4000-8000-000000000001",
@@ -60,8 +61,9 @@ vi.mock("@/lib/flows/admin-client", () => ({
                     outputs: null,
                     started_at: "2026-01-01T00:00:01.000Z",
                   },
-                ],
-                error: null,
+                  ],
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -87,7 +89,9 @@ describe("production flow flight recorder", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.executions).toHaveLength(2);
-    expect(body.latest_by_node.send.id).toBe("new");
+    expect(
+      body.latest_by_run["10000000-0000-4000-8000-000000000001"].send.id,
+    ).toBe("new");
     expect(body.executions[0].inputs.headers.Authorization).toBe("[REDACTED]");
     expect(body.runs[0].vars.access_token).toBe("[REDACTED]");
     expect(response.headers.get("cache-control")).toBe("no-store");

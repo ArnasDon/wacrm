@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
+  resolveProviderConfig,
+  buildProvider,
+  sendWithPhoneRetry,
+  interpolateBodyText,
+  WhatsAppNotConfiguredError,
+} from '@/lib/whatsapp/send-core'
+import { isMetaProvider, type ProviderMediaKind } from '@/lib/whatsapp/provider-types'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -103,6 +104,9 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      body_text,
+      media_url,
+      media_kind,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -127,53 +131,71 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!template_name) {
+    if (!template_name && !body_text) {
       return NextResponse.json(
-        { error: 'template_name is required' },
+        { error: 'template_name or body_text is required' },
         { status: 400 }
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    let providerConfig
+    try {
+      providerConfig = await resolveProviderConfig(supabase, accountId)
+    } catch (err) {
+      if (err instanceof WhatsAppNotConfiguredError) {
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
+      throw err
+    }
+    const provider = buildProvider(providerConfig)
 
-    if (configError || !config) {
+    // Each provider has exactly one valid content source — Meta
+    // requires an approved template (Meta's own policy; see
+    // broadcast-core.ts for the same check on the public-API path),
+    // uazapi has no such pipeline so it takes free text instead.
+    const useTemplate = providerConfig.provider === 'meta'
+    if (useTemplate && !template_name) {
       return NextResponse.json(
-        {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
-        },
+        { error: 'template_name is required with the Meta provider' },
         { status: 400 }
       )
     }
-
-    const accessToken = decrypt(config.access_token)
+    if (!useTemplate && !body_text) {
+      return NextResponse.json(
+        { error: 'body_text is required for broadcasts on this account’s provider' },
+        { status: 400 }
+      )
+    }
+    if (useTemplate && !isMetaProvider(provider)) {
+      throw new Error('unreachable: provider guarded above')
+    }
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
     // the loop would N+1 against Supabase for every recipient.
     // Guard against a malformed local row crashing every send in
     // the loop with the same opaque TypeError — fail loudly once.
-    const { data: rawTemplateRow } = await supabase
-      .from('message_templates')
-      .select('*')
-      .eq('account_id', accountId)
-      .eq('name', template_name)
-      .eq('language', template_language || 'en_US')
-      .maybeSingle()
-    if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
-      return NextResponse.json(
-        {
-          error:
-            'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
-        },
-        { status: 500 },
-      )
+    // Meta-only — the free-text path has no local row to validate.
+    let templateRow = null
+    if (useTemplate) {
+      const { data: rawTemplateRow } = await supabase
+        .from('message_templates')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('name', template_name)
+        .eq('language', template_language || 'en_US')
+        .maybeSingle()
+      if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+        return NextResponse.json(
+          {
+            error:
+              'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
+          },
+          { status: 500 },
+        )
+      }
+      templateRow = rawTemplateRow ?? null
     }
-    const templateRow = rawTemplateRow ?? null
 
     const results: BroadcastResult[] = []
     let sentCount = 0
@@ -192,37 +214,41 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Retry with phone variants on "not in allowed list" so numbers
+      // Retry across phone variants on "not in allowed list" so numbers
       // that differ only in a trunk-prefix 0 still reach recipients.
-      const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
 
-      for (const variant of variants) {
-        try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: template_language || 'en_US',
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
-          sentMessageId = result.messageId
-          lastError = null
-          break
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error'
-          if (!isRecipientNotAllowedError(errorMessage)) {
-            lastError = errorMessage
-            break
+      try {
+        const { result } = await sendWithPhoneRetry(sanitized, async (variant) => {
+          if (useTemplate && isMetaProvider(provider)) {
+            const r = await provider.sendTemplate({
+              to: variant,
+              templateName: template_name,
+              language: template_language || 'en_US',
+              template: templateRow ?? undefined,
+              messageParams: recipient.messageParams,
+              params: recipient.params ?? [],
+            })
+            return r.messageId
           }
-          lastError = errorMessage
-          // retry with next variant
-        }
+          // Free-text path (uazapi, or any future non-template provider).
+          const text = interpolateBodyText(body_text ?? '', recipient.params ?? [])
+          if (media_url && media_kind) {
+            const r = await provider.sendMedia({
+              to: variant,
+              kind: media_kind as ProviderMediaKind,
+              link: media_url,
+              caption: text || undefined,
+            })
+            return r.messageId
+          }
+          const r = await provider.sendText({ to: variant, text })
+          return r.messageId
+        })
+        sentMessageId = result
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Unknown error'
       }
 
       if (sentMessageId) {

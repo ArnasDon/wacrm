@@ -7,7 +7,7 @@ import { createBroadcast, BroadcastError } from './broadcast-core';
 const db = {} as SupabaseClient;
 
 describe('createBroadcast validation', () => {
-  it('rejects a missing template_name', async () => {
+  it('rejects a broadcast with neither template_name nor body_text', async () => {
     await expect(
       createBroadcast(db, 'acc', 'user', {
         templateName: '',

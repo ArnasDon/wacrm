@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { MessageTemplate } from '@/types';
+import type { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -14,7 +14,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ArrowLeft, Send, Loader2, Users, Save, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 interface AudienceConfig {
@@ -26,13 +27,25 @@ interface AudienceConfig {
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
-  template: MessageTemplate;
+  /**
+   * Only the fields this step actually reads — a `Pick` rather than
+   * the full `MessageTemplate` so the free-text (uazapi) broadcast
+   * path can pass a lightweight `{ name, language }` stand-in instead
+   * of a real template row.
+   */
+  template: Pick<MessageTemplate, 'name' | 'language'>;
   audience: AudienceConfig;
   onSend: () => void;
   onSaveDraft?: () => void;
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  /**
+   * Shows the unofficial-API ban-risk warning. Set for accounts on a
+   * non-Meta provider — bulk near-identical sends over a personal
+   * number are the highest-risk pattern for WhatsApp to flag.
+   */
+  showBanRiskWarning?: boolean;
 }
 
 export function Step4ScheduleSend({
@@ -45,6 +58,7 @@ export function Step4ScheduleSend({
   onBack,
   isProcessing,
   progress,
+  showBanRiskWarning,
 }: Step4Props) {
   const t = useTranslations('Broadcasts.wizard');
   const [showConfirm, setShowConfirm] = useState(false);
@@ -100,6 +114,18 @@ export function Step4ScheduleSend({
           {t('scheduleSend.subtitle')}
         </p>
       </div>
+
+      {showBanRiskWarning && (
+        <Alert className="bg-amber-950/40 border-amber-600/40">
+          <AlertTriangle className="size-4 text-amber-400" />
+          <AlertTitle className="text-amber-200">
+            {t('scheduleSend.banRiskTitle')}
+          </AlertTitle>
+          <AlertDescription className="text-amber-100/80 text-xs leading-relaxed">
+            {t('scheduleSend.banRiskDesc')}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Broadcast Name */}
       <div>
@@ -201,13 +227,13 @@ export function Step4ScheduleSend({
           </DialogTrigger>
           <DialogContent className="border-border bg-popover sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-popover-foreground">Confirm Broadcast</DialogTitle>
+              <DialogTitle className="text-popover-foreground">Confirmar disparo</DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
+                Você está prestes a enviar este disparo para{' '}
                 <span className="font-medium text-popover-foreground">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-popover-foreground">{template.name}</span> template.
-                This action cannot be undone.
+                contatos usando o modelo{' '}
+                <span className="font-medium text-popover-foreground">{template.name}</span>.
+                Esta ação não pode ser desfeita.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

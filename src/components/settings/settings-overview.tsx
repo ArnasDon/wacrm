@@ -33,8 +33,16 @@ interface WhatsAppStatus {
 
 export function SettingsOverview({
   onSelect,
+  hiddenSections,
 }: {
   onSelect: (section: SettingsSection) => void;
+  /**
+   * Sections to omit from the tile grid — used to hide "Templates"
+   * for accounts on a provider with no approved-template concept
+   * (uazapi). The section itself still exists in SETTINGS_SECTIONS;
+   * this only affects what's offered here.
+   */
+  hiddenSections?: SettingsSection[];
 }) {
   const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
@@ -251,7 +259,9 @@ export function SettingsOverview({
 
       {/* Status tiles */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {tiles.map(({ section, loading, subtitle }) => {
+        {tiles
+          .filter(({ section }) => !hiddenSections?.includes(section))
+          .map(({ section, loading, subtitle }) => {
           const meta = SECTION_META[section];
           const Icon = meta.icon;
           return (

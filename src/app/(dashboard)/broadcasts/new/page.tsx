@@ -1,17 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import { MessageTemplate } from '@/types';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
+import { Step1ComposeText, type FreeTextMediaKind } from '@/components/broadcasts/step1-compose-text';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 const steps = [
@@ -27,8 +28,33 @@ export default function NewBroadcastPage() {
   const { accountId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
+  // Meta requires an approved template for business-initiated
+  // broadcasts (Meta's own policy); uazapi has no such pipeline, so
+  // accounts on it compose free text instead (Step1ComposeText). This
+  // is the one place in the wizard that genuinely forks by provider —
+  // audience selection and scheduling are identical either way.
+  const [provider, setProvider] = useState<'meta' | 'uazapi' | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/whatsapp/provider');
+        const data = await res.json();
+        setProvider(res.ok ? (data.provider ?? 'meta') : 'meta');
+      } catch {
+        setProvider('meta');
+      } finally {
+        setLoadingProvider(false);
+      }
+    })();
+  }, []);
+
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
+  const [bodyText, setBodyText] = useState('');
+  const [freeTextMediaUrl, setFreeTextMediaUrl] = useState('');
+  const [freeTextMediaKind, setFreeTextMediaKind] = useState<FreeTextMediaKind>('');
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
     tagIds?: string[];
@@ -46,28 +72,49 @@ export default function NewBroadcastPage() {
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
 
+  const isUazapi = provider === 'uazapi';
+  // Whether step 1's content requirement is satisfied — gates steps 2-4.
+  const hasContent = isUazapi ? bodyText.trim().length > 0 : template !== null;
+
   async function handleSend() {
-    if (!template) return;
+    if (!hasContent) return;
 
     try {
-      const broadcastId = await createAndSendBroadcast({
-        name,
-        template,
-        audience: {
-          type: audience.type,
-          tagIds: audience.tagIds,
-          customField: audience.customField,
-          csvContacts: audience.csvContacts,
-          excludeTagIds: audience.excludeTagIds,
-        },
-        variables,
-        headerMediaUrl,
-      });
+      const broadcastId = await createAndSendBroadcast(
+        isUazapi
+          ? {
+              name,
+              bodyText,
+              mediaUrl: freeTextMediaKind ? freeTextMediaUrl : undefined,
+              mediaKind: freeTextMediaKind || undefined,
+              audience: {
+                type: audience.type,
+                tagIds: audience.tagIds,
+                customField: audience.customField,
+                csvContacts: audience.csvContacts,
+                excludeTagIds: audience.excludeTagIds,
+              },
+              variables,
+            }
+          : {
+              name,
+              template: template!,
+              audience: {
+                type: audience.type,
+                tagIds: audience.tagIds,
+                customField: audience.customField,
+                csvContacts: audience.csvContacts,
+                excludeTagIds: audience.excludeTagIds,
+              },
+              variables,
+              headerMediaUrl,
+            },
+      );
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
       // Previously swallowed with console.error — the wizard would
       // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
+      const message = err instanceof Error ? err.message : 'Falha no disparo';
       console.error('Broadcast failed:', err);
       toast.error(message);
     }
@@ -83,7 +130,7 @@ export default function NewBroadcastPage() {
    * A full resume-draft UX is a future polish.
    */
   async function handleSaveDraft() {
-    if (!template || !name.trim()) {
+    if (!hasContent || !name.trim()) {
       toast.error(t('toastGiveName'));
       return;
     }
@@ -105,9 +152,12 @@ export default function NewBroadcastPage() {
       user_id: user.id,
       account_id: accountId,
       name: name.trim(),
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
+      template_name: isUazapi ? null : template!.name,
+      template_language: isUazapi ? null : (template!.language ?? 'en_US'),
       template_variables: variables,
+      body_text: isUazapi ? bodyText : null,
+      media_url: isUazapi && freeTextMediaKind ? freeTextMediaUrl : null,
+      media_kind: isUazapi && freeTextMediaKind ? freeTextMediaKind : null,
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
@@ -181,54 +231,78 @@ export default function NewBroadcastPage() {
 
       {/* Step Content */}
       <div className="relative min-h-[400px]">
-        <div
-          className="transition-all duration-300 ease-in-out"
-          style={{
-            opacity: isProcessing ? 0.6 : 1,
-            pointerEvents: isProcessing ? 'none' : 'auto',
-          }}
-        >
-          {currentStep === 0 && (
-            <Step1ChooseTemplate
-              selectedTemplate={template}
-              onSelect={setTemplate}
-              onNext={() => setCurrentStep(1)}
-              onBack={() => router.push('/broadcasts')}
-            />
-          )}
-          {currentStep === 1 && (
-            <Step2SelectAudience
-              audience={audience}
-              onUpdate={setAudience}
-              onNext={() => setCurrentStep(2)}
-              onBack={() => setCurrentStep(0)}
-            />
-          )}
-          {currentStep === 2 && template && (
-            <Step3Personalize
-              template={template}
-              variables={variables}
-              onUpdate={setVariables}
-              headerMediaUrl={headerMediaUrl}
-              onHeaderMediaUrlChange={setHeaderMediaUrl}
-              onNext={() => setCurrentStep(3)}
-              onBack={() => setCurrentStep(1)}
-            />
-          )}
-          {currentStep === 3 && template && (
-            <Step4ScheduleSend
-              name={name}
-              onNameChange={setName}
-              template={template}
-              audience={audience}
-              onSend={handleSend}
-              onSaveDraft={handleSaveDraft}
-              onBack={() => setCurrentStep(2)}
-              isProcessing={isProcessing}
-              progress={progress}
-            />
-          )}
-        </div>
+        {loadingProvider ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : (
+          <div
+            className="transition-all duration-300 ease-in-out"
+            style={{
+              opacity: isProcessing ? 0.6 : 1,
+              pointerEvents: isProcessing ? 'none' : 'auto',
+            }}
+          >
+            {currentStep === 0 && (
+              isUazapi ? (
+                <Step1ComposeText
+                  bodyText={bodyText}
+                  onBodyTextChange={setBodyText}
+                  mediaUrl={freeTextMediaUrl}
+                  onMediaUrlChange={setFreeTextMediaUrl}
+                  mediaKind={freeTextMediaKind}
+                  onMediaKindChange={setFreeTextMediaKind}
+                  onNext={() => setCurrentStep(1)}
+                  onBack={() => router.push('/broadcasts')}
+                />
+              ) : (
+                <Step1ChooseTemplate
+                  selectedTemplate={template}
+                  onSelect={setTemplate}
+                  onNext={() => setCurrentStep(1)}
+                  onBack={() => router.push('/broadcasts')}
+                />
+              )
+            )}
+            {currentStep === 1 && (
+              <Step2SelectAudience
+                audience={audience}
+                onUpdate={setAudience}
+                onNext={() => setCurrentStep(2)}
+                onBack={() => setCurrentStep(0)}
+              />
+            )}
+            {currentStep === 2 && hasContent && (
+              <Step3Personalize
+                template={
+                  isUazapi
+                    ? { body_text: bodyText, header_type: undefined, header_media_url: undefined }
+                    : template!
+                }
+                variables={variables}
+                onUpdate={setVariables}
+                headerMediaUrl={isUazapi ? '' : headerMediaUrl}
+                onHeaderMediaUrlChange={isUazapi ? () => {} : setHeaderMediaUrl}
+                onNext={() => setCurrentStep(3)}
+                onBack={() => setCurrentStep(1)}
+              />
+            )}
+            {currentStep === 3 && hasContent && (
+              <Step4ScheduleSend
+                name={name}
+                onNameChange={setName}
+                template={isUazapi ? { name: t('freeTextLabel'), language: undefined } : template!}
+                audience={audience}
+                onSend={handleSend}
+                onSaveDraft={handleSaveDraft}
+                onBack={() => setCurrentStep(2)}
+                isProcessing={isProcessing}
+                progress={progress}
+                showBanRiskWarning={isUazapi}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

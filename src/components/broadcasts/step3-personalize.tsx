@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Contact, CustomField, MessageTemplate } from '@/types';
+import type { Contact, CustomField, MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -23,7 +23,14 @@ interface VariableMapping {
 }
 
 interface Step3Props {
-  template: MessageTemplate;
+  /**
+   * Only the fields this step actually reads — a `Pick` rather than
+   * the full `MessageTemplate` so the free-text (uazapi) broadcast
+   * path can pass a lightweight body-only object instead of a real
+   * template row. The Meta path still passes a full `MessageTemplate`,
+   * which satisfies this narrower shape unchanged.
+   */
+  template: Pick<MessageTemplate, 'body_text' | 'header_type' | 'header_media_url'>;
   variables: Record<string, VariableMapping>;
   onUpdate: (variables: Record<string, VariableMapping>) => void;
   /** Media URL for an IMAGE/VIDEO/DOCUMENT header, when the template has one. */
@@ -59,10 +66,10 @@ const SAMPLE_CONTACT: Contact = {
   id: 'sample',
   user_id: '',
   account_id: '',
-  name: 'John Doe',
+  name: 'João da Silva',
   phone: '+1234567890',
-  email: 'john@example.com',
-  company: 'Acme Corp',
+  email: 'joao@exemplo.com',
+  company: 'Empresa Exemplo',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
@@ -270,15 +277,15 @@ export function Step3Personalize({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={headerMediaUrl.trim()}
-                alt="Header preview"
+                alt="Pré-visualização do cabeçalho"
                 className="mt-3 max-h-40 rounded-lg border border-border object-contain"
               />
             )}
           {headerMediaError && (
             <p className="mt-1.5 text-xs text-amber-300">
               {headerMediaError === 'missing'
-                ? 'A media URL is required to send this template.'
-                : 'Enter a valid http(s) URL.'}
+                ? 'É necessária uma URL de mídia para enviar este modelo.'
+                : 'Digite uma URL http(s) válida.'}
             </p>
           )}
         </div>
@@ -344,7 +351,7 @@ export function Step3Personalize({
                         onChange={(e) =>
                           updateVariable(key, { value: e.target.value })
                         }
-                        placeholder="Enter value..."
+                        placeholder="Digite um valor..."
                         className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
                       />
                     ) : mapping.type === 'field' ? (
@@ -376,10 +383,10 @@ export function Step3Personalize({
                           <SelectValue
                             placeholder={
                               loadingFields
-                                ? 'Loading…'
+                                ? 'Carregando…'
                                 : customFields.length === 0
-                                  ? 'No custom fields'
-                                  : 'Select custom field…'
+                                  ? 'Nenhum campo personalizado'
+                                  : 'Selecione um campo personalizado…'
                             }
                           />
                         </SelectTrigger>

@@ -7,9 +7,17 @@
 //   createBroadcast()  — validate, resolve contacts, insert the
 //                        `broadcasts` row + `broadcast_recipients`
 //                        rows (status 'pending'), return a plan.
-//   deliverBroadcast() — send each recipient's template via Meta
-//                        (phone-variant retry), stamp each recipient
-//                        row + the aggregate counts, finalize status.
+//   deliverBroadcast() — send each recipient's message (phone-variant
+//                        retry), stamp each recipient row + the
+//                        aggregate counts, finalize status.
+//
+// Two content sources, gated by the account's provider (Meta requires
+// an approved template for business-initiated sends; uazapi has no
+// such pipeline — see provider-types.ts):
+//   - Meta:   templateName (+ templateLanguage) — existing path.
+//   - uazapi: bodyText (optionally mediaUrl/mediaKind) — free text,
+//             personalized via the same {{1}}/{{2}} positional
+//             convention templates already use (interpolateBodyText).
 //
 // Recipient rows carry `whatsapp_message_id`, so the inbound webhook's
 // status handler (which matches on that column) updates delivered/read
@@ -18,17 +26,22 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils';
+import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import {
+  resolveProviderConfig,
+  buildProvider,
+  sendWithPhoneRetry,
+  interpolateBodyText,
+  WhatsAppNotConfiguredError,
+} from '@/lib/whatsapp/send-core';
+import {
+  isMetaProvider,
+  type WhatsAppProvider,
+  type ProviderMediaKind,
+} from '@/lib/whatsapp/provider-types';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -45,14 +58,19 @@ export class BroadcastError extends Error {
 export interface BroadcastRecipientInput {
   /** E.164 phone. */
   to: string;
-  /** Positional body params for the template ({{1}}, {{2}}…). */
+  /** Positional body params for the template/free-text body ({{1}}, {{2}}…). */
   params?: string[];
 }
 
 export interface CreateBroadcastParams {
   name?: string | null;
-  templateName: string;
+  /** Meta path — required unless `bodyText` is set. */
+  templateName?: string | null;
   templateLanguage?: string | null;
+  /** uazapi path — required unless `templateName` is set. */
+  bodyText?: string | null;
+  mediaUrl?: string | null;
+  mediaKind?: ProviderMediaKind | null;
   recipients: BroadcastRecipientInput[];
 }
 
@@ -64,11 +82,15 @@ interface PlannedRecipient {
 
 export interface BroadcastPlan {
   broadcastId: string;
-  templateName: string;
-  templateLanguage: string;
-  phoneNumberId: string;
-  accessToken: string;
+  provider: WhatsAppProvider;
+  /** Meta path fields — set when this plan sends a template. */
+  templateName: string | null;
+  templateLanguage: string | null;
   templateRow: MessageTemplate | null;
+  /** uazapi path fields — set when this plan sends free text. */
+  bodyText: string | null;
+  mediaUrl: string | null;
+  mediaKind: ProviderMediaKind | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
   rejected: number;
@@ -88,11 +110,20 @@ export async function createBroadcast(
   auditUserId: string,
   params: CreateBroadcastParams
 ): Promise<BroadcastPlan> {
-  const { name, templateName, recipients } = params;
+  const { name, recipients } = params;
+  const templateName = params.templateName?.trim() || null;
   const templateLanguage = params.templateLanguage || 'en_US';
+  const bodyText = params.bodyText?.trim() || null;
 
-  if (!templateName) {
-    throw new BroadcastError('bad_request', "'template_name' is required", 400);
+  // Pure, provider-independent checks first — no DB call needed to
+  // reject a request that supplies no content source at all, or a
+  // malformed recipient list.
+  if (!templateName && !bodyText) {
+    throw new BroadcastError(
+      'bad_request',
+      "Either 'template_name' or 'body_text' is required",
+      400
+    );
   }
   if (!Array.isArray(recipients) || recipients.length === 0) {
     throw new BroadcastError(
@@ -110,38 +141,58 @@ export async function createBroadcast(
   }
 
   // Config (fail fast + provides the audit trail owner already resolved
-  // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // by the caller).
+  let providerConfig;
+  try {
+    providerConfig = await resolveProviderConfig(db, accountId);
+  } catch (err) {
+    if (err instanceof WhatsAppNotConfiguredError) {
+      throw new BroadcastError('whatsapp_not_configured', err.message, 400);
+    }
+    throw err;
   }
-  const accessToken = decrypt(config.access_token);
+  const provider = buildProvider(providerConfig);
+
+  // Each provider has exactly one valid content source — Meta requires
+  // an approved template (its own policy, not ours; see
+  // provider-types.ts), uazapi has no such pipeline so it takes free
+  // text instead. Reject the mismatched combination up front rather
+  // than letting deliverBroadcast discover it mid-fan-out.
+  if (providerConfig.provider === 'meta') {
+    if (!templateName) {
+      throw new BroadcastError('bad_request', "'template_name' is required", 400);
+    }
+  } else {
+    if (!bodyText) {
+      throw new BroadcastError(
+        'bad_request',
+        "'body_text' is required for broadcasts on this account's provider",
+        400
+      );
+    }
+  }
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
-  const { data: rawTemplateRow } = await db
-    .from('message_templates')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('name', templateName)
-    .eq('language', templateLanguage)
-    .maybeSingle();
-  if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
-    throw new BroadcastError(
-      'template_malformed',
-      'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
-      500
-    );
+  // Meta-only — uazapi's bodyText path has no local row to validate.
+  let templateRow: MessageTemplate | null = null;
+  if (templateName) {
+    const { data: rawTemplateRow } = await db
+      .from('message_templates')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('name', templateName)
+      .eq('language', templateLanguage)
+      .maybeSingle();
+    if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+      throw new BroadcastError(
+        'template_malformed',
+        'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
+        500
+      );
+    }
+    templateRow = (rawTemplateRow as MessageTemplate | null) ?? null;
   }
-  const templateRow = (rawTemplateRow as MessageTemplate | null) ?? null;
 
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.
@@ -198,9 +249,12 @@ export async function createBroadcast(
     .insert({
       account_id: accountId,
       user_id: auditUserId,
-      name: name || `API broadcast (${templateName})`,
+      name: name || `API broadcast (${templateName ?? 'texto livre'})`,
       template_name: templateName,
-      template_language: templateLanguage,
+      template_language: templateName ? templateLanguage : null,
+      body_text: bodyText,
+      media_url: params.mediaUrl?.trim() || null,
+      media_kind: params.mediaKind ?? null,
       status: 'sending',
       total_recipients: deduped.length,
     })
@@ -236,60 +290,78 @@ export async function createBroadcast(
 
   return {
     broadcastId: broadcast.id,
+    provider,
     templateName,
-    templateLanguage,
-    phoneNumberId: config.phone_number_id,
-    accessToken,
+    templateLanguage: templateName ? templateLanguage : null,
     templateRow,
+    bodyText,
+    mediaUrl: params.mediaUrl?.trim() || null,
+    mediaKind: params.mediaKind ?? null,
     planned,
     rejected,
   };
 }
 
 /**
- * Fan out a {@link BroadcastPlan}: send each recipient's template
+ * Fan out a {@link BroadcastPlan}: send each recipient's message
  * (phone-variant retry) and stamp its `broadcast_recipients` row.
  * Best-effort per recipient — one failure never aborts the rest.
  * Designed to run inside `after()`.
  *
  * The per-status count columns on `broadcasts` are owned by the DB
  * aggregate trigger (migrations 003/005): each recipient-row update
- * below advances them automatically, and later Meta delivery/read
- * webhooks keep advancing them. We therefore never write those columns
- * here — only the terminal `status` — otherwise a manual value would
- * race and clobber the trigger-maintained counts.
+ * below advances them automatically, and later delivery/read webhooks
+ * keep advancing them. We therefore never write those columns here —
+ * only the terminal `status` — otherwise a manual value would race
+ * and clobber the trigger-maintained counts.
  */
 export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
   let sentCount = 0;
+  const provider = plan.provider;
+  const useTemplate = plan.templateName !== null;
+
+  if (useTemplate && !isMetaProvider(provider)) {
+    // createBroadcast only builds a template-shaped plan for a Meta
+    // provider — this is an invariant check, not a reachable path.
+    throw new Error('deliverBroadcast: template plan built for a non-Meta provider');
+  }
 
   for (const recipient of plan.planned) {
-    const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
-    for (const variant of variants) {
-      try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
-          to: variant,
-          templateName: plan.templateName,
-          language: plan.templateLanguage,
-          template: plan.templateRow ?? undefined,
-          params: recipient.params,
-        });
-        sentMessageId = result.messageId;
-        lastError = null;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        lastError = message;
-        // Only a "recipient not allowed" error is worth another variant.
-        if (!isRecipientNotAllowedError(message)) break;
-      }
+    try {
+      const { result } = await sendWithPhoneRetry(recipient.phone, async (variant) => {
+        if (useTemplate && isMetaProvider(provider)) {
+          const r = await provider.sendTemplate({
+            to: variant,
+            templateName: plan.templateName!,
+            language: plan.templateLanguage!,
+            template: plan.templateRow ?? undefined,
+            params: recipient.params,
+          });
+          return r.messageId;
+        }
+        // Free-text path (uazapi, or any future non-template provider).
+        const text = interpolateBodyText(plan.bodyText ?? '', recipient.params);
+        if (plan.mediaUrl && plan.mediaKind) {
+          const r = await provider.sendMedia({
+            to: variant,
+            kind: plan.mediaKind,
+            link: plan.mediaUrl,
+            caption: text || undefined,
+          });
+          return r.messageId;
+        }
+        const r = await provider.sendText({ to: variant, text });
+        return r.messageId;
+      });
+      sentMessageId = result;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Erro desconhecido';
     }
 
     if (sentMessageId) {
@@ -308,7 +380,7 @@ export async function deliverBroadcast(
         .from('broadcast_recipients')
         .update({
           status: 'failed',
-          error_message: lastError || 'Unknown error',
+          error_message: lastError || 'Erro desconhecido',
         })
         .eq('id', recipient.recipientRowId);
     }

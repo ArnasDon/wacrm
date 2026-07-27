@@ -36,7 +36,8 @@ export type VariableMapping =
 
 interface BroadcastPayload {
   name: string;
-  template: MessageTemplate;
+  /** Meta path — an approved template. Omit for the free-text path. */
+  template?: MessageTemplate;
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
   /**
@@ -46,6 +47,15 @@ interface BroadcastPayload {
    * falls back to the template's stored URL only when this is empty.
    */
   headerMediaUrl?: string;
+  /**
+   * Free-text path (non-Meta providers, e.g. uazapi — no approved-
+   * template pipeline exists there). Personalization uses the same
+   * {{1}}/{{2}} positional convention as template params; `variables`
+   * above resolves them exactly the same way for both paths.
+   */
+  bodyText?: string;
+  mediaUrl?: string;
+  mediaKind?: 'image' | 'video' | 'document' | 'audio';
 }
 
 interface UseBroadcastSendingReturn {
@@ -353,15 +363,19 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       // ── Step 2: Create broadcast row ──────────────────────────────
       setProgress(10);
+      const useTemplate = Boolean(payload.template);
       const { data: broadcast, error: broadcastError } = await supabase
         .from('broadcasts')
         .insert({
           user_id: user.id,
           account_id: accountId,
           name: payload.name,
-          template_name: payload.template.name,
-          template_language: payload.template.language ?? 'en_US',
+          template_name: useTemplate ? payload.template!.name : null,
+          template_language: useTemplate ? (payload.template!.language ?? 'en_US') : null,
           template_variables: payload.variables,
+          body_text: useTemplate ? null : payload.bodyText,
+          media_url: useTemplate ? null : payload.mediaUrl,
+          media_kind: useTemplate ? null : payload.mediaKind,
           audience_filter: {
             type: payload.audience.type,
             tagIds: payload.audience.tagIds,
@@ -425,7 +439,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         .eq('broadcast_id', broadcast.id);
 
       if (recipientsFetchError || !recipients) {
-        throw new Error('Failed to fetch broadcast recipients');
+        throw new Error('Falha ao buscar os destinatários do disparo');
       }
 
       // One bulk fetch of custom values for every contact in this
@@ -444,8 +458,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       // Media-header templates (image/video/document) require a media
       // URL on every send. Collected in the personalize step and applied
       // to all recipients; falls back to the template's stored URL on the
-      // server when omitted.
-      const headerType = payload.template.header_type;
+      // server when omitted. Meta-only — the free-text path carries its
+      // media URL directly on the broadcast, not per-recipient.
+      const headerType = useTemplate ? payload.template!.header_type : null;
       const isMediaHeader =
         headerType === 'image' ||
         headerType === 'video' ||
@@ -479,15 +494,23 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
+              ...(useTemplate
+                ? {
+                    template_name: payload.template!.name,
+                    template_language: payload.template!.language ?? 'en_US',
+                  }
+                : {
+                    body_text: payload.bodyText,
+                    media_url: payload.mediaUrl,
+                    media_kind: payload.mediaKind,
+                  }),
             }),
           });
 
           const data = await res.json();
 
           if (!res.ok) {
-            throw new Error(data.error || 'Broadcast API request failed');
+            throw new Error(data.error || 'Falha na requisição da API de disparo');
           }
 
           const resultsByPhone = new Map<string, BroadcastApiResult>();
@@ -505,7 +528,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
                 .from('broadcast_recipients')
                 .update({
                   status: 'failed',
-                  error_message: 'No phone number on contact',
+                  error_message: 'Contato sem número de telefone',
                 })
                 .eq('id', recipient.id);
               continue;
@@ -527,7 +550,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
                 .from('broadcast_recipients')
                 .update({
                   status: 'failed',
-                  error_message: result.error ?? 'Unknown error',
+                  error_message: result.error ?? 'Erro desconhecido',
                 })
                 .eq('id', recipient.id);
             }
@@ -539,7 +562,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
               .from('broadcast_recipients')
               .update({
                 status: 'failed',
-                error_message: err instanceof Error ? err.message : 'Unknown error',
+                error_message: err instanceof Error ? err.message : 'Erro desconhecido',
               })
               .eq('id', recipient.id);
           }

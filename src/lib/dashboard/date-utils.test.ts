@@ -106,18 +106,23 @@ describe("lastNDayKeys", () => {
 
 describe("mondayIndex", () => {
   it("maps Monday → 0 and Sunday → 6", () => {
-    expect(mondayIndex(new Date("2026-05-18"))).toBe(0); // Mon
-    expect(mondayIndex(new Date("2026-05-19"))).toBe(1); // Tue
-    expect(mondayIndex(new Date("2026-05-23"))).toBe(5); // Sat
-    expect(mondayIndex(new Date("2026-05-24"))).toBe(6); // Sun
+    // Date-only ISO strings ("2026-05-18") parse as UTC midnight, which
+    // shifts to the previous local day in negative-UTC-offset zones and
+    // flips the expected weekday. Use a local-time string (matching the
+    // convention already used elsewhere in this file) so the test is
+    // timezone-independent, same as mondayIndex()'s own local-time contract.
+    expect(mondayIndex(new Date("2026-05-18T12:00:00"))).toBe(0); // Mon
+    expect(mondayIndex(new Date("2026-05-19T12:00:00"))).toBe(1); // Tue
+    expect(mondayIndex(new Date("2026-05-23T12:00:00"))).toBe(5); // Sat
+    expect(mondayIndex(new Date("2026-05-24T12:00:00"))).toBe(6); // Sun
   });
 
   it("aligns with DOW_SHORT_MON_FIRST labels", () => {
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-18"))]).toBe(
-      "Mon",
+    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-18T12:00:00"))]).toBe(
+      "Seg",
     );
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24"))]).toBe(
-      "Sun",
+    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24T12:00:00"))]).toBe(
+      "Dom",
     );
   });
 });

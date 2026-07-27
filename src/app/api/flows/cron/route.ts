@@ -5,6 +5,7 @@ import { parseFlowVersionGraph } from '@/lib/flows/versions'
 import { resumeDueFlowWaits } from '@/lib/flows/wait-runtime'
 import { resumeFlowApprovalResolutions } from '@/lib/flows/approval-runtime'
 import { drainDueFlowTriggerSchedules } from '@/lib/flows/trigger-scheduler'
+import { drainPendingFlowTriggerInvocations } from '@/lib/flows/trigger-invocation-worker'
 
 /**
  * Sweep abandoned active flow runs.
@@ -55,6 +56,9 @@ export async function GET(request: Request) {
   let triggerSchedulesClaimed = 0
   let triggerSchedulesEnqueued = 0
   let triggerSchedulesFailed = 0
+  let triggerInvocationsClaimed = 0
+  let triggerInvocationsStarted = 0
+  let triggerInvocationsFailed = 0
   try {
     resumed = (await resumeDueFlowWaits(admin, now)).resumed
   } catch (waitError) {
@@ -84,6 +88,22 @@ export async function GET(request: Request) {
       triggerScheduleError instanceof Error
         ? triggerScheduleError.message
         : triggerScheduleError,
+    )
+  }
+  try {
+    const triggerInvocationStats = await drainPendingFlowTriggerInvocations(
+      admin,
+      now,
+    )
+    triggerInvocationsClaimed = triggerInvocationStats.claimed
+    triggerInvocationsStarted = triggerInvocationStats.started
+    triggerInvocationsFailed = triggerInvocationStats.failed
+  } catch (triggerInvocationError) {
+    console.error(
+      '[flows-cron] trigger invocation drain failed:',
+      triggerInvocationError instanceof Error
+        ? triggerInvocationError.message
+        : triggerInvocationError,
     )
   }
   try {
@@ -133,6 +153,9 @@ export async function GET(request: Request) {
       triggerSchedulesClaimed,
       triggerSchedulesEnqueued,
       triggerSchedulesFailed,
+      triggerInvocationsClaimed,
+      triggerInvocationsStarted,
+      triggerInvocationsFailed,
     })
   }
 
@@ -212,5 +235,8 @@ export async function GET(request: Request) {
     triggerSchedulesClaimed,
     triggerSchedulesEnqueued,
     triggerSchedulesFailed,
+    triggerInvocationsClaimed,
+    triggerInvocationsStarted,
+    triggerInvocationsFailed,
   })
 }

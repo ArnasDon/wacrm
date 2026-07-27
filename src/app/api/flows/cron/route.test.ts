@@ -25,6 +25,11 @@ describe("flow timeout version pinning", () => {
     expect(source).toContain("triggerSchedulesEnqueued");
   });
 
+  it("drains queued trigger invocations from the durable queue", () => {
+    expect(source).toContain("drainPendingFlowTriggerInvocations");
+    expect(source).toContain("triggerInvocationsStarted");
+  });
+
   it("best-effort purges bounded expired debug sessions", () => {
     expect(source).toContain("purge_expired_flow_debug_sessions");
     expect(source).toContain("p_limit: 100");

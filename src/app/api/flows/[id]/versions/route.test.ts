@@ -8,6 +8,8 @@ const h = vi.hoisted(() => ({
   nodes: [] as Array<Record<string, unknown>>,
   ownerUserId: "user-1",
   publishError: null as { message: string } | null,
+  scheduleUpsert: vi.fn(),
+  scheduleUpdate: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -72,6 +74,12 @@ vi.mock("@/lib/flows/admin-client", () => ({
           }),
         };
       }
+      if (table === "flow_trigger_schedules") {
+        return {
+          upsert: h.scheduleUpsert,
+          update: h.scheduleUpdate,
+        };
+      }
       throw new Error(`unexpected admin table ${table}`);
     },
   }),
@@ -88,6 +96,12 @@ beforeEach(() => {
   h.history = [];
   h.ownerUserId = "user-1";
   h.publishError = null;
+  h.scheduleUpsert.mockResolvedValue({ error: null });
+  h.scheduleUpdate.mockReturnValue({
+    eq: () => ({
+      eq: () => Promise.resolve({ error: null }),
+    }),
+  });
   h.draft = {
     id: "flow-1",
     account_id: "account-1",
@@ -218,6 +232,56 @@ describe("flow versions API", () => {
       version: { id: "version-1", version: 1 },
       flow: { id: "flow-1" },
     });
+  });
+
+  it("registers the published time trigger schedule", async () => {
+    h.draft.trigger_type = "time";
+    h.draft.trigger_config = {
+      cron: "*/15 * * * *",
+      timezone: "America/Sao_Paulo",
+      misfire_policy: "fire_once",
+    };
+
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/versions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(201);
+    expect(h.scheduleUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account_id: "account-1",
+        flow_id: "flow-1",
+        flow_version_id: "version-1",
+        trigger_node_key: "trigger",
+        cron_expr: "*/15 * * * *",
+        timezone: "America/Sao_Paulo",
+        misfire_policy: "fire_once",
+        status: "active",
+        next_fire_at: expect.any(String),
+      }),
+      { onConflict: "flow_id,trigger_node_key" },
+    );
+  });
+
+  it("revokes active schedules when a non-time trigger is published", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/flows/flow-1/versions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      context,
+    );
+
+    expect(response.status).toBe(201);
+    expect(h.scheduleUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "revoked" }),
+    );
   });
 
   it("returns 409 when a concurrent save advances the draft revision", async () => {

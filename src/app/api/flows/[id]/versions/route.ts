@@ -4,9 +4,60 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { supabaseAdmin } from "@/lib/flows/admin-client";
 import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
 import { validateFlowForActivation } from "@/lib/flows/validate";
-import { buildFlowVersionGraph } from "@/lib/flows/versions";
+import {
+  buildFlowVersionGraph,
+  getFlowEntryTrigger,
+  type FlowVersionGraph,
+} from "@/lib/flows/versions";
 import { resolveSubFlowPinsForPublish } from "@/lib/flows/sub-flow-pins";
+import { nextCronOccurrence } from "@/lib/flows/trigger-scheduler";
 import { createClient } from "@/lib/supabase/server";
+
+function buildPublishedSchedule(
+  draft: FlowRow,
+  graph: FlowVersionGraph,
+  now: Date,
+):
+  | {
+      account_id: string;
+      flow_id: string;
+      trigger_node_key: string;
+      cron_expr: string;
+      timezone: string;
+      misfire_policy: "skip" | "fire_once";
+      status: "active";
+      next_fire_at: string;
+    }
+  | null {
+  const trigger = getFlowEntryTrigger(graph);
+  if (trigger.type !== "time") return null;
+  const cronExpr =
+    typeof trigger.config.cron === "string"
+      ? trigger.config.cron.trim()
+      : typeof trigger.config.schedule === "string"
+        ? trigger.config.schedule.trim()
+        : "";
+  if (!cronExpr) {
+    throw new Error("time trigger cron expression is required");
+  }
+  const timezone =
+    typeof trigger.config.timezone === "string" &&
+    trigger.config.timezone.trim()
+      ? trigger.config.timezone.trim()
+      : "UTC";
+  const misfirePolicy =
+    trigger.config.misfire_policy === "fire_once" ? "fire_once" : "skip";
+  return {
+    account_id: draft.account_id,
+    flow_id: draft.id,
+    trigger_node_key: trigger.node_key,
+    cron_expr: cronExpr,
+    timezone,
+    misfire_policy: misfirePolicy,
+    status: "active",
+    next_fire_at: nextCronOccurrence(cronExpr, timezone, now).toISOString(),
+  };
+}
 
 async function ownerContext(
   flowId: string,
@@ -146,6 +197,8 @@ export async function POST(
   }
 
   let graph;
+  let scheduleRegistration: ReturnType<typeof buildPublishedSchedule> = null;
+  const now = new Date();
   try {
     const pinnedNodes = await resolveSubFlowPinsForPublish(
       admin,
@@ -155,6 +208,7 @@ export async function POST(
       draft.variable_schema,
     );
     graph = buildFlowVersionGraph(draft, pinnedNodes);
+    scheduleRegistration = buildPublishedSchedule(draft, graph, now);
   } catch (error) {
     return NextResponse.json(
       {
@@ -183,6 +237,35 @@ export async function POST(
     return NextResponse.json({ error: publishError.message }, { status: 500 });
   }
   const version = Array.isArray(published) ? published[0] : published;
+  if (!version?.id) {
+    return NextResponse.json(
+      { error: "Published version was not returned" },
+      { status: 500 },
+    );
+  }
+  if (scheduleRegistration) {
+    const { error: scheduleError } = await admin
+      .from("flow_trigger_schedules")
+      .upsert(
+        {
+          ...scheduleRegistration,
+          flow_version_id: version.id,
+        },
+        { onConflict: "flow_id,trigger_node_key" },
+      );
+    if (scheduleError) {
+      return NextResponse.json({ error: scheduleError.message }, { status: 500 });
+    }
+  } else {
+    const { error: scheduleError } = await admin
+      .from("flow_trigger_schedules")
+      .update({ status: "revoked", updated_at: now.toISOString() })
+      .eq("flow_id", id)
+      .eq("status", "active");
+    if (scheduleError) {
+      return NextResponse.json({ error: scheduleError.message }, { status: 500 });
+    }
+  }
   const { data: updated, error: updatedError } = await admin
     .from("flows")
     .select("*")

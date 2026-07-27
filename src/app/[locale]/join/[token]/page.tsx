@@ -23,7 +23,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { Link } from '@/i18n/navigation';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
@@ -194,7 +194,9 @@ export default function JoinPage() {
       toast.success('Welcome to the team');
       // Full reload (not router.push) so AuthProvider re-fetches
       // the profile with the new account_id and account_role.
-      window.location.href = '/dashboard';
+      // Preserve current locale prefix.
+      const locale = window.location.pathname.split('/')[1];
+      window.location.href = `/${locale}/dashboard`;
     } catch (err) {
       console.error('[join] redeem error:', err);
       toast.error('Could not reach the server');

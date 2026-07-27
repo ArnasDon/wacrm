@@ -1,0 +1,87 @@
+{
+  "common": {
+    "loading": "Загрузка...",
+    "email": "Электронная почта",
+    "password": "Пароль",
+    "fullName": "Полное имя",
+    "confirmPassword": "Подтвердите пароль",
+    "user": "Пользователь",
+    "beta": "Бета",
+    "close": "Закрыть меню",
+    "open": "Открыть меню"
+  },
+  "nav": {
+    "dashboard": "Панель управления",
+    "inbox": "Входящие",
+    "contacts": "Контакты",
+    "pipelines": "Каналы",
+    "broadcasts": "Рассылки",
+    "automations": "Автоматизация",
+    "flows": "Процессы",
+    "settings": "Настройки"
+  },
+  "roles": {
+    "owner": "Владелец",
+    "admin": "Админ",
+    "agent": "Агент",
+    "viewer": "Наблюдатель"
+  },
+  "sidebar": {
+    "brand": "almaCRM для Шарапат",
+    "profile": "Профиль",
+    "signOut": "Выйти"
+  },
+  "header": {
+    "profile": "Профиль",
+    "settings": "Настройки",
+    "signOut": "Выйти",
+    "openAccountMenu": "Открыть меню аккаунта"
+  },
+  "auth": {
+    "login": {
+      "title": "С возвращением",
+      "titleInvite": "Войдите, чтобы принять",
+      "description": "Войдите в свой аккаунт",
+      "descriptionInvite": "Войдите, и мы перенаправим вас к приглашению.",
+      "emailPlaceholder": "you@example.com",
+      "passwordPlaceholder": "Введите пароль",
+      "forgotPassword": "Забыли пароль?",
+      "submit": "Войти",
+      "submitLoading": "Вход...",
+      "noAccount": "Нет аккаунта?",
+      "createAccount": "Создать аккаунт"
+    },
+    "signup": {
+      "title": "Создать аккаунт",
+      "titleInvite": "Создать аккаунт и присоединиться",
+      "description": "Начните с almaCRM для Шарапат",
+      "descriptionInvite": "Подтвердите электронную почту, затем примите приглашение, чтобы присоединиться к команде.",
+      "fullNamePlaceholder": "Иван Иванов",
+      "emailPlaceholder": "you@example.com",
+      "passwordPlaceholder": "Минимум 6 символов",
+      "confirmPasswordPlaceholder": "Повторите пароль",
+      "submit": "Создать аккаунт",
+      "submitLoading": "Создание аккаунта...",
+      "hasAccount": "Уже есть аккаунт?",
+      "signIn": "Войти",
+      "checkEmail": "Проверьте электронную почту",
+      "checkEmailDescription": "Мы отправили ссылку для подтверждения на {email}. Проверьте входящие и перейдите по ссылке для подтверждения аккаунта.",
+      "backToSignIn": "Вернуться к входу",
+      "errorPasswordMismatch": "Пароли не совпадают",
+      "errorPasswordLength": "Пароль должен содержать минимум 6 символов"
+    },
+    "forgotPassword": {
+      "title": "Сбросить пароль",
+      "description": "Введите электронную почту, и мы отправим ссылку для сброса",
+      "emailPlaceholder": "you@example.com",
+      "submit": "Отправить ссылку для сброса",
+      "submitLoading": "Отправка...",
+      "backToSignIn": "Вернуться к входу",
+      "checkEmail": "Проверьте электронную почту",
+      "checkEmailDescription": "Мы отправили ссылку для сброса пароля на {email}. Проверьте входящие."
+    }
+  },
+  "dashboard": {
+    "loading": "Загрузка..."
+  }
+}

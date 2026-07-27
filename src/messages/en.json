@@ -1,0 +1,87 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "email": "Email",
+    "password": "Password",
+    "fullName": "Full name",
+    "confirmPassword": "Confirm password",
+    "user": "User",
+    "beta": "Beta",
+    "close": "Close menu",
+    "open": "Open menu"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "inbox": "Inbox",
+    "contacts": "Contacts",
+    "pipelines": "Pipelines",
+    "broadcasts": "Broadcasts",
+    "automations": "Automations",
+    "flows": "Flows",
+    "settings": "Settings"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "agent": "Agent",
+    "viewer": "Viewer"
+  },
+  "sidebar": {
+    "brand": "almaCRM for Sharapat",
+    "profile": "Profile",
+    "signOut": "Sign out"
+  },
+  "header": {
+    "profile": "Profile",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "openAccountMenu": "Open account menu"
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "titleInvite": "Sign in to accept",
+      "description": "Sign in to your account",
+      "descriptionInvite": "Sign in and we'll take you to the invitation.",
+      "emailPlaceholder": "you@example.com",
+      "passwordPlaceholder": "Enter your password",
+      "forgotPassword": "Forgot password?",
+      "submit": "Sign in",
+      "submitLoading": "Signing in...",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create account"
+    },
+    "signup": {
+      "title": "Create account",
+      "titleInvite": "Create account & join",
+      "description": "Get started with almaCRM for Sharapat",
+      "descriptionInvite": "Verify your email, then accept the invitation to join your team.",
+      "fullNamePlaceholder": "John Doe",
+      "emailPlaceholder": "you@example.com",
+      "passwordPlaceholder": "At least 6 characters",
+      "confirmPasswordPlaceholder": "Repeat your password",
+      "submit": "Create account",
+      "submitLoading": "Creating account...",
+      "hasAccount": "Already have an account?",
+      "signIn": "Sign in",
+      "checkEmail": "Check your email",
+      "checkEmailDescription": "We've sent a confirmation link to {email}. Please check your inbox and click the link to verify your account.",
+      "backToSignIn": "Back to sign in",
+      "errorPasswordMismatch": "Passwords do not match",
+      "errorPasswordLength": "Password must be at least 6 characters"
+    },
+    "forgotPassword": {
+      "title": "Reset password",
+      "description": "Enter your email and we'll send you a reset link",
+      "emailPlaceholder": "you@example.com",
+      "submit": "Send reset link",
+      "submitLoading": "Sending...",
+      "backToSignIn": "Back to sign in",
+      "checkEmail": "Check your email",
+      "checkEmailDescription": "We've sent a password reset link to {email}. Please check your inbox."
+    }
+  },
+  "dashboard": {
+    "loading": "Loading..."
+  }
+}

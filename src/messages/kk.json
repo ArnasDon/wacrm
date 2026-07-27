@@ -1,0 +1,87 @@
+{
+  "common": {
+    "loading": "Жүктелуде...",
+    "email": "Электрондық пошта",
+    "password": "Құпия сөз",
+    "fullName": "Толық аты-жөні",
+    "confirmPassword": "Құпия сөзді растаңыз",
+    "user": "Пайдаланушы",
+    "beta": "Бета",
+    "close": "Мәзірді жабу",
+    "open": "Мәзірді ашу"
+  },
+  "nav": {
+    "dashboard": "Басқару тақтасы",
+    "inbox": "Кіріс",
+    "contacts": "Контактілер",
+    "pipelines": "Каналдар",
+    "broadcasts": "Хабарламалар",
+    "automations": "Автоматтандыру",
+    "flows": "Ағындар",
+    "settings": "Баптаулар"
+  },
+  "roles": {
+    "owner": "Иесі",
+    "admin": "Әкімші",
+    "agent": "Агент",
+    "viewer": "Көруші"
+  },
+  "sidebar": {
+    "brand": "almaCRM Sharapat үшін",
+    "profile": "Профиль",
+    "signOut": "Шығу"
+  },
+  "header": {
+    "profile": "Профиль",
+    "settings": "Баптаулар",
+    "signOut": "Шығу",
+    "openAccountMenu": "Тіркелгі мәзірін ашу"
+  },
+  "auth": {
+    "login": {
+      "title": "Қош келдіңіз",
+      "titleInvite": "Қабылдау үшін кіріңіз",
+      "description": "Тіркелгіңізге кіріңіз",
+      "descriptionInvite": "Кіріңіз, біз сізді шақыруға жетелейміз.",
+      "emailPlaceholder": "siz@мысал.қаз",
+      "passwordPlaceholder": "Құпия сөзді енгізіңіз",
+      "forgotPassword": "Құпия сөзді ұмыттыңыз ба?",
+      "submit": "Кіру",
+      "submitLoading": "Кіруде...",
+      "noAccount": "Тіркелгіңіз жоқ па?",
+      "createAccount": "Тіркелгі жасау"
+    },
+    "signup": {
+      "title": "Тіркелгі жасау",
+      "titleInvite": "Тіркелгі жасау және қосылу",
+      "description": "almaCRM Sharapat үшін бастаңыз",
+      "descriptionInvite": "Электрондық поштаңызды растаңыз, содан кейін командыңызға қосылу шақыруын қабылдаңыз.",
+      "fullNamePlaceholder": "Әкесінің аты",
+      "emailPlaceholder": "siz@мысал.қаз",
+      "passwordPlaceholder": "Кемінде 6 таңба",
+      "confirmPasswordPlaceholder": "Құпия сөзді қайталаңыз",
+      "submit": "Тіркелгі жасау",
+      "submitLoading": "Тіркелгі жасалуда...",
+      "hasAccount": "Тіркелгіңіз бар ма?",
+      "signIn": "Кіру",
+      "checkEmail": "Электрондық поштаны тексеріңіз",
+      "checkEmailDescription": "Біз {email} мекенжайына растау сілтемесін жібердік. Тіркелгіңізді растау үшін кіріс жәшігіңізді тексеріп, сілтемені басыңыз.",
+      "backToSignIn": "Кіруге оралу",
+      "errorPasswordMismatch": "Құпия сөздер сәйкес келмейді",
+      "errorPasswordLength": "Құпия сөз кемінде 6 таңбадан тұруы керек"
+    },
+    "forgotPassword": {
+      "title": "Құпия сөзді қалпына келтіру",
+      "description": "Электрондық поштаны енгізіңіз, біз сізге қалпына келтіру сілтемесін жібереміз",
+      "emailPlaceholder": "siz@мысал.қаз",
+      "submit": "Қалпына келтіру сілтемесін жіберу",
+      "submitLoading": "Жіберуде...",
+      "backToSignIn": "Кіруге оралу",
+      "checkEmail": "Электрондық поштаны тексеріңіз",
+      "checkEmailDescription": "Біз {email} мекенжайына құпия сөзді қалпына келтіру сілтемесін жібердік. Кіріс жәшігіңізді тексеріңіз."
+    }
+  },
+  "dashboard": {
+    "loading": "Жүктелуде..."
+  }
+}

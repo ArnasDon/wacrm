@@ -58,6 +58,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -76,10 +77,10 @@ import {
 } from "@/lib/flows/edges";
 import { autoLayout, shouldAutoLayout } from "@/lib/flows/layout";
 import {
-  NODE_META,
   NodeIconChip,
   nodeColors,
   summarizeNode,
+  useNodeTranslations,
   type BuilderNode,
   type NodeType,
 } from "./shared";
@@ -128,9 +129,11 @@ function slotColor(nodeType: NodeType, slotId: string, fallback: string) {
 }
 
 function FlowNodeCard({ data, selected }: NodeProps) {
+  const t = useTranslations("flows.editor");
+  const nt = useNodeTranslations();
   const { node, isEntry, isFlashed } = data as NodeData;
-  const meta = NODE_META[node.node_type];
   const c = nodeColors(node.node_type);
+  const nodeT = nt[node.node_type];
   const summary = summarizeNode(node);
   const slots = outgoingSlots(node);
   // Start nodes are entry-only; nothing ever targets them, so they
@@ -187,11 +190,11 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           className="truncate text-[10.5px] font-semibold uppercase tracking-wider"
           style={{ color: c.text }}
         >
-          {meta.label}
+          {nodeT.label}
         </span>
         {isEntry && (
           <span className="ml-auto rounded border border-border px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-            Entry
+            {t("entry")}
           </span>
         )}
       </div>
@@ -266,6 +269,7 @@ export function FlowCanvas() {
 }
 
 function FlowCanvasInner() {
+  const t = useTranslations("flows.editor");
   const {
     state,
     setState,
@@ -500,7 +504,7 @@ function FlowCanvasInner() {
   if (rfNodes.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-        <p>No nodes yet.</p>
+        <p>{t("noNodes")}</p>
         <CanvasAddNodeButton />
       </div>
     );
@@ -598,6 +602,8 @@ function NodeEditSheet({
   onDelete: () => void;
   onSetEntry: () => void;
 }) {
+  const t = useTranslations("flows.editor");
+  const nt = useNodeTranslations();
   // Sheet is controlled — opens when a node is selected, closes via
   // Esc / overlay / close button (all delegated to onClose).
   const open = node !== null;
@@ -608,8 +614,8 @@ function NodeEditSheet({
       </Sheet>
     );
   }
-  const meta = NODE_META[node.node_type];
   const c = nodeColors(node.node_type);
+  const nodeT = nt[node.node_type];
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
@@ -620,15 +626,15 @@ function NodeEditSheet({
           <NodeIconChip type={node.node_type} size={36} iconSize={18} />
           <div className="min-w-0 flex-1">
             <SheetTitle className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
-              <span style={{ color: c.text }}>{meta.label}</span>
+              <span style={{ color: c.text }}>{nodeT.label}</span>
               {isEntry && (
                 <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
-                  Entry
+                  {t("entry")}
                 </span>
               )}
             </SheetTitle>
             <SheetDescription className="mt-0.5 text-xs text-muted-foreground">
-              {meta.blurb}
+              {nodeT.blurb}
             </SheetDescription>
           </div>
           <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
@@ -648,7 +654,7 @@ function NodeEditSheet({
         <SheetFooter className="border-t border-border px-5 py-3 sm:flex-row sm:justify-between">
           {!isEntry ? (
             <Button variant="ghost" size="sm" onClick={onSetEntry}>
-              Set as entry
+              {t("setAsEntry")}
             </Button>
           ) : (
             <span />
@@ -660,7 +666,7 @@ function NodeEditSheet({
             className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete node
+            {t("deleteNode")}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -689,6 +695,8 @@ const ADD_NODE_TYPES: NodeType[] = [
 ];
 
 function CanvasAddNodeButton() {
+  const t = useTranslations("flows.editor");
+  const nt = useNodeTranslations();
   const reactFlow = useReactFlow();
   const { addNode, updateNodePosition } = useFlowEditor();
 
@@ -716,33 +724,33 @@ function CanvasAddNodeButton() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors hover:bg-primary-hover"
-        aria-label="Add node"
+        aria-label={t("addNode")}
       >
         <Plus className="h-4 w-4" />
-        Add node
+        {t("addNode")}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         className="w-[268px] border-border bg-popover p-1.5"
       >
         <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Add a step
+          {t("addStep")}
         </div>
-        {ADD_NODE_TYPES.map((t) => {
-          const meta = NODE_META[t];
+        {ADD_NODE_TYPES.map((type) => {
+          const nodeT = nt[type];
           return (
             <DropdownMenuItem
-              key={t}
-              onClick={() => handleAdd(t)}
+              key={type}
+              onClick={() => handleAdd(type)}
               className="gap-3 py-2"
             >
-              <NodeIconChip type={t} size={28} iconSize={16} className="rounded-md" />
+              <NodeIconChip type={type} size={28} iconSize={16} className="rounded-md" />
               <span className="flex flex-col">
                 <span className="text-[13px] font-semibold text-popover-foreground">
-                  {meta.label}
+                  {nodeT.label}
                 </span>
                 <span className="text-[11.5px] text-muted-foreground">
-                  {meta.blurb}
+                  {nodeT.blurb}
                 </span>
               </span>
             </DropdownMenuItem>

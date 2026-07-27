@@ -43,6 +43,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import {
@@ -237,6 +238,7 @@ export function FlowEditorProvider({
   children,
 }: ProviderProps) {
   const router = useRouter();
+  const t = useTranslations("flows.editor");
 
   const [state, setStateRaw] = useState<BuilderState>(() => ({
     name: initialFlow.name,
@@ -347,20 +349,20 @@ export function FlowEditorProvider({
         throw new Error(json.error ?? `Save failed: ${res.status}`);
       }
       setDirty(false);
-      toast.success("Saved.");
+      toast.success(t("saved"));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Save failed";
+      const msg = err instanceof Error ? err.message : t("saveFailed");
       toast.error(msg);
     } finally {
       setSaving(false);
     }
-  }, [initialFlow.id, state]);
+  }, [initialFlow.id, state, t]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
     async (next: BuilderState["status"]) => {
       if (next === "active" && !canActivate) {
-        toast.error("Fix the issues below before activating.");
+        toast.error(t("activateHint"));
         return;
       }
       setActivating(true);
@@ -383,25 +385,25 @@ export function FlowEditorProvider({
         setStateRaw((s) => ({ ...s, status: next }));
         toast.success(
           next === "active"
-            ? "Flow activated."
+            ? t("flowActivated")
             : next === "archived"
-              ? "Archived."
-              : "Saved as draft.",
+              ? t("archived")
+              : t("savedAsDraft"),
         );
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Status update failed";
+        const msg = err instanceof Error ? err.message : t("statusUpdateFailed");
         toast.error(msg);
       } finally {
         setActivating(false);
       }
     },
-    [canActivate, save, initialFlow.id],
+    [canActivate, save, initialFlow.id, t],
   );
 
   // ---- Delete ----
   const deleteFlow = useCallback(async () => {
     const yes = window.confirm(
-      `Delete "${state.name}"? Any active runs end immediately. This can't be undone.`,
+      t("deleteConfirm", { name: state.name }),
     );
     if (!yes) return;
     try {
@@ -411,10 +413,10 @@ export function FlowEditorProvider({
       if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
       router.push("/flows");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Delete failed";
+      const msg = err instanceof Error ? err.message : t("deleteFailed");
       toast.error(msg);
     }
-  }, [initialFlow.id, router, state.name]);
+  }, [initialFlow.id, router, state.name, t]);
 
   // ---- Node mutations ----
   const updateNode = useCallback(

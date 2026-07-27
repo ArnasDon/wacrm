@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { NODE_META, type BuilderNode } from "../shared";
 
@@ -75,6 +76,7 @@ export function NextNodeRow({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const t = useTranslations("flows.forms");
   return (
     <div>
       <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
@@ -83,7 +85,7 @@ export function NextNodeRow({
         nodes={allNodes}
         excludeKey={currentKey}
         onChange={(v) => onChange(v ?? "")}
-        placeholder="Pick a next node…"
+        placeholder={t("pickNextNode")}
       />
     </div>
   );
@@ -104,6 +106,7 @@ export function NodeKeySelect({
   placeholder?: string;
   className?: string;
 }) {
+  const t = useTranslations("common");
   const options = nodes.filter((n) => n.node_key !== excludeKey);
   return (
     <Select
@@ -114,7 +117,7 @@ export function NodeKeySelect({
         <SelectValue placeholder={placeholder ?? "—"} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="__none__">— None —</SelectItem>
+        <SelectItem value="__none__">{t("none")}</SelectItem>
         {options.map((n) => {
           const Icon = NODE_META[n.node_type].icon;
           return (

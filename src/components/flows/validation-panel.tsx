@@ -18,11 +18,13 @@
  */
 
 import { CircleAlert, CircleCheck } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { ValidationIssue } from "@/lib/flows/validate";
 import { useFlowEditor } from "./flow-editor-state";
 
 export function ValidationPanel() {
+  const t = useTranslations("flows.validation");
   const { issues, requestFlash } = useFlowEditor();
 
   if (issues.length === 0) {
@@ -32,7 +34,7 @@ export function ValidationPanel() {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-emerald-600/50 bg-background p-3 text-sm font-medium text-emerald-300">
         <CircleCheck className="h-4 w-4 shrink-0" />
-        No issues. Ready to activate.
+        {t("noIssues")}
       </div>
     );
   }
@@ -51,8 +53,10 @@ export function ValidationPanel() {
         ) : (
           <CircleAlert className="h-4 w-4 text-amber-400" />
         )}
-        <span>{errors.length} error{errors.length === 1 ? "" : "s"},{" "}
-        {warnings.length} warning{warnings.length === 1 ? "" : "s"}</span>
+        <span>
+          {errors.length === 1 ? t("errors", { count: errors.length }) : t("errors_plural", { count: errors.length })},{" "}
+          {warnings.length === 1 ? t("warnings", { count: warnings.length }) : t("warnings_plural", { count: warnings.length })}
+        </span>
       </div>
       <div className="flex flex-col gap-1">
         {issues.map((i, ix) => (
@@ -76,6 +80,7 @@ export function IssueLine({
   issue: ValidationIssue;
   onJump?: (key: string) => void;
 }) {
+  const t = useTranslations("flows.validation");
   const tone =
     issue.severity === "error" ? "text-red-300" : "text-amber-300";
   const iconTone =
@@ -106,7 +111,7 @@ export function IssueLine({
           "flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-muted/60",
           tone,
         )}
-        aria-label={`Jump to node ${issue.node_key}`}
+        aria-label={t("jumpToNode", { key: issue.node_key })}
       >
         {body}
       </button>

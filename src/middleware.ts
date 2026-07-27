@@ -1,10 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
-import createMiddleware from "next-intl/middleware";
 import { NextResponse, type NextRequest } from "next/server";
-import { routing } from "@/i18n/routing";
-
-// Create the next-intl locale detection middleware.
-const handleI18nRouting = createMiddleware(routing);
+import { locales, defaultLocale, type Locale } from "@/i18n/config";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -113,20 +109,30 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // --- i18n routing (locale detection + redirect) ---
-  // Run after auth checks so we don't interfere with auth redirects.
-  // This handles: missing locale → redirect to default, invalid locale → redirect.
-  const i18nResponse = handleI18nRouting(request);
+  // --- i18n routing (manual locale detection) ---
+  // Skip for API routes — they don't use locale-based routing.
+  const pathname = request.nextUrl.pathname;
+  const isApiRoute = pathname.startsWith("/api/");
 
-  // Merge any cookies from the i18n response (e.g. NEXT_LOCALE cookie)
-  if (i18nResponse) {
-    i18nResponse.cookies.getAll().forEach((cookie) => {
-      supabaseResponse.cookies.set(cookie);
-    });
-    // If i18n wants to redirect (e.g. missing locale), use that response
-    // but with Supabase cookies attached.
-    if (i18nResponse.status >= 300 && i18nResponse.status < 400) {
-      return withRefreshedCookies(i18nResponse);
+  if (!isApiRoute) {
+    const pathnameHasLocale = locales.some(
+      (locale) =>
+        pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
+    );
+
+    if (!pathnameHasLocale) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${defaultLocale}${pathname}`;
+      return withRefreshedCookies(NextResponse.redirect(url));
+    }
+
+    // Reject invalid locale prefixes (e.g. /xx/settings → /en/settings).
+    const locale = pathname.split("/")[1];
+    if (locale && !locales.includes(locale as Locale)) {
+      const rest = pathname.slice(3); // strip "/xx"
+      const url = request.nextUrl.clone();
+      url.pathname = `/${defaultLocale}${rest}`;
+      return withRefreshedCookies(NextResponse.redirect(url));
     }
   }
 

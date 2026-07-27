@@ -36,6 +36,7 @@ import { newContactCreatedTriggerDescriptor } from "../triggers/new-contact-crea
 import { newMessageReceivedTriggerDescriptor } from "../triggers/new-message-received";
 import { tagAddedTriggerDescriptor } from "../triggers/tag-added";
 import { timeBasedTriggerDescriptor } from "../triggers/time-based";
+import { webhookTriggerDescriptor } from "../triggers/webhook";
 import type { NodeDescriptor } from "./types";
 
 /**
@@ -82,6 +83,7 @@ export const FLOW_NODE_DESCRIPTORS = [
   interactiveReplyTriggerDescriptor,
   dealStageChangedTriggerDescriptor,
   manualTriggerDescriptor,
+  webhookTriggerDescriptor,
 ] as const;
 
 export type RegisteredNodeType = (typeof FLOW_NODE_DESCRIPTORS)[number]["id"];
@@ -148,7 +150,12 @@ export function isFlowRuntimeNodeType(nodeType: string): boolean {
 }
 
 export function getCompatibilityFlowTriggerDescriptor(
-  triggerType: "keyword" | "first_inbound_message" | "manual",
+  triggerType:
+    | "keyword"
+    | "first_inbound_message"
+    | "manual"
+    | "time"
+    | "webhook",
 ): NodeDescriptor | undefined {
   return compatibilityFlowTriggerByType.get(triggerType);
 }

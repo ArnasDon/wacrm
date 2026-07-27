@@ -8,6 +8,7 @@
 
 import type { ZodIssue } from "zod";
 import type { FlowVariableDeclaration } from "./runtime-primitives";
+import type { FlowTriggerType } from "./types";
 import { arePortTypesCompatible } from "./connection-validation";
 import { deriveCanvasEdges, type CanvasEdge } from "./edges";
 
@@ -30,7 +31,7 @@ export interface ValidationIssue {
 
 interface FlowInput {
   name: string;
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
+  trigger_type: FlowTriggerType;
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy?: {

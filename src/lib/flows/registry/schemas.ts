@@ -770,8 +770,19 @@ export const tagTriggerConfigSchema = z.looseObject({
 });
 
 export const timeTriggerConfigSchema = z.looseObject({
-  schedule: requiredText("A schedule is required."),
-  timezone: z.string().optional(),
+  cron: requiredText("A five-field cron expression is required.").optional(),
+  schedule: requiredText("A schedule is required.").optional(),
+  timezone: requiredText("A timezone is required.").default("UTC"),
+  misfire_policy: z.enum(["skip", "fire_once"]).default("skip"),
+  next_node_key: nextNodeKeySchema,
+}).refine((config) => Boolean(config.cron ?? config.schedule), {
+  message: "A five-field cron expression is required.",
+  path: ["cron"],
+});
+
+export const webhookTriggerConfigSchema = z.looseObject({
+  response_mode: z.enum(["async", "sync"]).default("async"),
+  endpoint_key: z.string().trim().min(1).optional(),
   next_node_key: nextNodeKeySchema,
 });
 

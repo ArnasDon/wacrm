@@ -27,7 +27,12 @@ interface CommonOptions<Id extends string> {
   configSchema: ZodType<Record<string, unknown>>;
   flowConfigSchema?: ZodType<Record<string, unknown>>;
   supportsFlowRuntime?: boolean;
-  compatibilityFlowTriggerType?: "keyword" | "first_inbound_message" | "manual";
+  compatibilityFlowTriggerType?:
+    | "keyword"
+    | "first_inbound_message"
+    | "manual"
+    | "time"
+    | "webhook";
   runtimeHook?: string;
   runtimeKind?: NodeRuntimeKind;
   supportsExecutionPolicy?: boolean;

@@ -60,9 +60,13 @@ import type {
   FlowFallbackPolicy,
   FlowNodeRow,
   FlowRow,
+  FlowTriggerType,
 } from "@/lib/flows/types";
 import type { FlowVariableDeclaration } from "@/lib/flows/runtime-primitives";
-import type { FlowVersionGraph } from "@/lib/flows/versions";
+import {
+  getFlowEntryTrigger,
+  type FlowVersionGraph,
+} from "@/lib/flows/versions";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 import { normalizeNodeErrorHandlingConfig } from "./forms/error-handling-options";
 
@@ -73,7 +77,7 @@ import { normalizeNodeErrorHandlingConfig } from "./forms/error-handling-options
 export interface BuilderState {
   name: string;
   description: string;
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
+  trigger_type: FlowTriggerType;
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
@@ -230,21 +234,42 @@ export function applyRestoredVersion(
   state: BuilderState,
   graph: FlowVersionGraph,
 ): BuilderState {
+  const legacyTrigger = (
+    graph as FlowVersionGraph & {
+      trigger?: {
+        type: BuilderState["trigger_type"];
+        config: Record<string, unknown>;
+      };
+    }
+  ).trigger;
+  const entryTrigger = legacyTrigger
+    ? {
+        type: legacyTrigger.type,
+        config: legacyTrigger.config,
+        next_node_key: graph.entry_node_key,
+        node_key: null,
+      }
+    : getFlowEntryTrigger(graph);
+  const { next_node_key: _nextNodeKey, ...triggerConfig } =
+    entryTrigger.config;
+
   return {
     ...state,
-    trigger_type: graph.trigger.type,
-    trigger_config: graph.trigger.config,
-    entry_node_id: graph.entry_node_key,
+    trigger_type: entryTrigger.type,
+    trigger_config: triggerConfig,
+    entry_node_id: entryTrigger.next_node_key,
     fallback_policy: graph.fallback_policy,
     variable_schema: graph.variable_schema,
-    nodes: graph.nodes.map((node) => ({
-      node_key: node.node_key,
-      node_type: (canonicalNodeType(node.node_type) ??
-        node.node_type) as NodeType,
-      config: node.config,
-      position_x: node.position_x,
-      position_y: node.position_y,
-    })),
+    nodes: graph.nodes
+      .filter((node) => node.node_key !== entryTrigger.node_key)
+      .map((node) => ({
+        node_key: node.node_key,
+        node_type: (canonicalNodeType(node.node_type) ??
+          node.node_type) as NodeType,
+        config: node.config,
+        position_x: node.position_x,
+        position_y: node.position_y,
+      })),
   };
 }
 

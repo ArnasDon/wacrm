@@ -217,7 +217,11 @@ export type FirstInboundTriggerConfig = Record<string, never>;
 export type FlowTriggerConfig =
   | { trigger_type: "keyword"; config: KeywordTriggerConfig }
   | { trigger_type: "first_inbound_message"; config: FirstInboundTriggerConfig }
-  | { trigger_type: "manual"; config: Record<string, never> };
+  | { trigger_type: "manual"; config: Record<string, never> }
+  | { trigger_type: "time"; config: Record<string, unknown> }
+  | { trigger_type: "webhook"; config: Record<string, unknown> };
+
+export type FlowTriggerType = FlowTriggerConfig["trigger_type"];
 
 // ============================================================
 // DB-row shapes (read by the engine via supabaseAdmin)
@@ -236,7 +240,7 @@ export interface FlowRow {
   status: "draft" | "active" | "archived";
   published_version_id: string | null;
   draft_revision: number;
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
+  trigger_type: FlowTriggerType;
   trigger_config:
     KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;

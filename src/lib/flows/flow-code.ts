@@ -15,6 +15,7 @@ import type {
   FlowFallbackPolicy,
   FlowNodeRow,
   FlowRow,
+  FlowTriggerType,
 } from "@/lib/flows/types";
 
 export const FLOW_CODE_LIMITS = {
@@ -61,7 +62,7 @@ export interface FlowCodeDocument {
   name: string;
   description: string | null;
   trigger: {
-    type: "keyword" | "first_inbound_message" | "manual";
+    type: FlowTriggerType;
     config: Record<string, unknown>;
   };
   fallback: FlowFallbackPolicy;
@@ -149,6 +150,16 @@ const TRIGGER_SHAPES = {
   },
   first_inbound_message: {},
   manual: {},
+  time: {
+    cron: true,
+    schedule: true,
+    timezone: true,
+    misfire_policy: true,
+  },
+  webhook: {
+    response_mode: true,
+    endpoint_key: true,
+  },
 } as const;
 
 export class FlowCodeError extends Error {

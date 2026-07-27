@@ -22,6 +22,8 @@ const triggerTypeSchema = z.enum([
   "keyword",
   "first_inbound_message",
   "manual",
+  "time",
+  "webhook",
 ]);
 
 const storedNodeSchema = z.strictObject({
@@ -105,7 +107,7 @@ const variableSchemaSchema = z
     });
   });
 
-const graphEnvelopeSchema = z.strictObject({
+const graphV1EnvelopeSchema = z.strictObject({
   schema_version: z.literal(1),
   trigger: z.strictObject({
     type: triggerTypeSchema,
@@ -123,6 +125,20 @@ const graphEnvelopeSchema = z.strictObject({
   nodes: z.array(storedNodeSchema).min(1),
 });
 
+const graphV2EnvelopeSchema = z.strictObject({
+  schema_version: z.literal(2),
+  entry_node_key: z.string().trim().min(1),
+  fallback_policy: z.strictObject({
+    on_unknown_reply: z.enum(["reprompt", "handoff", "ignore"]),
+    max_reprompts: z.number().int().nonnegative(),
+    on_timeout_hours: z.number().positive(),
+    on_exhaust: z.enum(["handoff", "end"]),
+    execution: commonExecutionPolicySchema.optional(),
+  }),
+  variable_schema: variableSchemaSchema.optional().default([]),
+  nodes: z.array(storedNodeSchema).min(2),
+});
+
 export interface FlowVersionGraphNode {
   node_key: string;
   node_type: RegisteredNodeType;
@@ -132,11 +148,7 @@ export interface FlowVersionGraphNode {
 }
 
 export interface FlowVersionGraph {
-  schema_version: 1;
-  trigger: {
-    type: FlowRow["trigger_type"];
-    config: Record<string, unknown>;
-  };
+  schema_version: 2;
   entry_node_key: string;
   fallback_policy: FlowFallbackPolicy;
   variable_schema: FlowVariableDeclaration[];
@@ -176,19 +188,33 @@ export function parseFlowVariableSchema(
 }
 
 export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
-  const parsed = graphEnvelopeSchema.safeParse(value);
+  const version =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as { schema_version?: unknown }).schema_version
+      : undefined;
+  const parsed =
+    version === 1
+      ? graphV1EnvelopeSchema.safeParse(value)
+      : graphV2EnvelopeSchema.safeParse(value);
   if (!parsed.success) {
     invalid(parsed.error.issues[0]?.message ?? "invalid snapshot envelope");
   }
-  const graph = parsed.data;
+  const graph =
+    parsed.data.schema_version === 1
+      ? normalizeV1Graph(parsed.data)
+      : parsed.data;
   const keys = new Set<string>();
+  const triggerNodes: typeof graph.nodes = [];
 
   for (const node of graph.nodes) {
     if (keys.has(node.node_key)) {
       invalid(`duplicate node key "${node.node_key}"`);
     }
     keys.add(node.node_key);
-    if (!isFlowRuntimeNodeType(node.node_type)) {
+    const descriptor = getNodeDescriptor(node.node_type);
+    if (descriptor?.runtimeKind === "trigger") {
+      triggerNodes.push(node);
+    } else if (!isFlowRuntimeNodeType(node.node_type)) {
       invalid(
         `node type "${node.node_type}" is not supported by the flow runtime`,
       );
@@ -196,6 +222,28 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
   }
   if (!keys.has(graph.entry_node_key)) {
     invalid(`entry node "${graph.entry_node_key}" does not exist`);
+  }
+  if (triggerNodes.length !== 1) {
+    invalid("schema v2 requires exactly one entry trigger node");
+  }
+  const triggerNode = triggerNodes[0];
+  if (graph.entry_node_key !== triggerNode.node_key) {
+    invalid("entry node must be the trigger node");
+  }
+  const triggerDescriptor = getNodeDescriptor(triggerNode.node_type);
+  if (
+    !triggerDescriptor?.compatibilityFlowTriggerType ||
+    !triggerDescriptor.configSchema.safeParse(triggerNode.config).success
+  ) {
+    invalid("entry trigger config is invalid");
+  }
+  const nextNodeKey = triggerNode.config.next_node_key;
+  if (
+    typeof nextNodeKey !== "string" ||
+    !keys.has(nextNodeKey) ||
+    nextNodeKey === triggerNode.node_key
+  ) {
+    invalid("entry trigger next_node_key must point to a runtime node");
   }
   if (
     graph.fallback_policy.execution?.on_error === "fail_branch" &&
@@ -207,20 +255,12 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
     );
   }
 
-  const triggerDescriptor = getCompatibilityFlowTriggerDescriptor(
-    graph.trigger.type,
-  );
-  const triggerResult = triggerDescriptor?.configSchema.safeParse({
-    ...graph.trigger.config,
-    next_node_key: graph.entry_node_key,
-  });
-  if (!triggerDescriptor || !triggerResult?.success) {
-    invalid("trigger config is invalid");
-  }
-
   for (const node of graph.nodes) {
     const descriptor = getNodeDescriptor(node.node_type);
-    const configResult = descriptor?.flowConfigSchema.safeParse(node.config);
+    const configResult =
+      descriptor?.runtimeKind === "trigger"
+        ? descriptor.configSchema.safeParse(node.config)
+        : descriptor?.flowConfigSchema.safeParse(node.config);
     if (!descriptor || !configResult?.success) {
       invalid(`config for node "${node.node_key}" is invalid`);
     }
@@ -253,10 +293,82 @@ export function parseFlowVersionGraph(value: unknown): FlowVersionGraph {
           `node "${node.node_key}" points to missing node "${edge.target}"`,
         );
       }
+      if (edge.target === triggerNode.node_key) {
+        invalid(
+          `entry trigger "${triggerNode.node_key}" cannot have an inbound edge`,
+        );
+      }
     }
   }
 
   return graph as FlowVersionGraph;
+}
+
+function normalizeV1Graph(
+  graph: z.infer<typeof graphV1EnvelopeSchema>,
+): z.infer<typeof graphV2EnvelopeSchema> {
+  const descriptor = getCompatibilityFlowTriggerDescriptor(graph.trigger.type);
+  if (!descriptor) invalid("trigger type is not supported");
+  const triggerKey = uniqueTriggerKey(
+    new Set(graph.nodes.map((node) => node.node_key)),
+  );
+  const entry = graph.nodes.find(
+    (node) => node.node_key === graph.entry_node_key,
+  );
+  return {
+    schema_version: 2,
+    entry_node_key: triggerKey,
+    fallback_policy: graph.fallback_policy,
+    variable_schema: graph.variable_schema,
+    nodes: [
+      {
+        node_key: triggerKey,
+        node_type: descriptor.id,
+        config: {
+          ...graph.trigger.config,
+          next_node_key: graph.entry_node_key,
+        },
+        position_x: (entry?.position_x ?? 0) - 320,
+        position_y: entry?.position_y ?? 0,
+      },
+      ...graph.nodes.map((node) => ({
+        ...node,
+        config: { ...node.config },
+      })),
+    ],
+  };
+}
+
+function uniqueTriggerKey(keys: ReadonlySet<string>): string {
+  if (!keys.has("trigger")) return "trigger";
+  let suffix = 2;
+  while (keys.has(`trigger_${suffix}`)) suffix += 1;
+  return `trigger_${suffix}`;
+}
+
+export function getFlowEntryTrigger(graph: FlowVersionGraph): {
+  node_key: string;
+  type: FlowRow["trigger_type"];
+  config: Record<string, unknown>;
+  next_node_key: string;
+} {
+  const node = graph.nodes.find(
+    (candidate) => candidate.node_key === graph.entry_node_key,
+  );
+  const descriptor = node ? getNodeDescriptor(node.node_type) : undefined;
+  if (
+    !node ||
+    !descriptor?.compatibilityFlowTriggerType ||
+    typeof node.config.next_node_key !== "string"
+  ) {
+    invalid("entry trigger is unavailable");
+  }
+  return {
+    node_key: node.node_key,
+    type: descriptor.compatibilityFlowTriggerType,
+    config: node.config,
+    next_node_key: node.config.next_node_key,
+  };
 }
 
 export function buildFlowVersionGraph(
@@ -282,21 +394,35 @@ export function buildFlowVersionGraph(
     invalid("variable schema is invalid");
   }
   return parseFlowVersionGraph({
-    schema_version: 1,
-    trigger: {
-      type: flow.trigger_type,
-      config: flow.trigger_config,
-    },
-    entry_node_key: flow.entry_node_id,
+    schema_version: 2,
+    entry_node_key: "trigger",
     fallback_policy: resolveFallbackPolicy(flow.fallback_policy),
     variable_schema: variableSchema,
-    nodes: nodes.map((node) => ({
-      node_key: node.node_key,
-      node_type: node.node_type,
-      config: node.config,
-      position_x: node.position_x ?? 0,
-      position_y: node.position_y ?? 0,
-    })),
+    nodes: [
+      {
+        node_key: "trigger",
+        node_type:
+          getCompatibilityFlowTriggerDescriptor(flow.trigger_type)?.id ??
+          "trigger_manual",
+        config: {
+          ...flow.trigger_config,
+          next_node_key: flow.entry_node_id,
+        },
+        position_x:
+          (nodes.find((node) => node.node_key === flow.entry_node_id)
+            ?.position_x ?? 0) - 320,
+        position_y:
+          nodes.find((node) => node.node_key === flow.entry_node_id)
+            ?.position_y ?? 0,
+      },
+      ...nodes.map((node) => ({
+        node_key: node.node_key,
+        node_type: node.node_type,
+        config: node.config,
+        position_x: node.position_x ?? 0,
+        position_y: node.position_y ?? 0,
+      })),
+    ],
   });
 }
 
@@ -318,10 +444,11 @@ export function matchesFlowVersionTrigger(
   isFirstInbound: boolean,
 ): boolean {
   if (message.kind !== "text") return false;
-  if (graph.trigger.type === "manual") return false;
-  if (graph.trigger.type === "first_inbound_message") return isFirstInbound;
+  const trigger = getFlowEntryTrigger(graph);
+  if (trigger.type === "manual" || trigger.type === "time" || trigger.type === "webhook") return false;
+  if (trigger.type === "first_inbound_message") return isFirstInbound;
 
-  const config = graph.trigger.config as unknown as KeywordTriggerConfig;
+  const config = trigger.config as unknown as KeywordTriggerConfig;
   if (!message.text || !config.keywords?.length) return false;
   const haystack = config.case_sensitive
     ? message.text

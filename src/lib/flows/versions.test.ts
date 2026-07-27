@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFlowVersionGraph,
+  getFlowEntryTrigger,
   matchesFlowVersionTrigger,
   parseFlowVersionGraph,
 } from "./versions";
@@ -54,22 +55,128 @@ const nodes = [
 ] as const;
 
 describe("flow version graph", () => {
+  it("publishes schema v2 with the trigger as the single entry node", () => {
+    const graph = buildFlowVersionGraph(draft, nodes);
+
+    expect(graph.schema_version).toBe(2);
+    expect(graph.entry_node_key).toBe("trigger");
+    expect(graph.nodes.filter((node) => node.node_type.startsWith("trigger_"))).toEqual([
+      expect.objectContaining({
+        node_key: "trigger",
+        node_type: "trigger_keyword_match",
+        config: expect.objectContaining({
+          keywords: ["support"],
+          next_node_key: "start",
+        }),
+      }),
+    ]);
+  });
+
+  it("normalizes a v1 snapshot in memory without changing the input object", () => {
+    const legacy = {
+      schema_version: 1,
+      trigger: { type: "manual", config: {} },
+      entry_node_key: "start",
+      fallback_policy: draft.fallback_policy,
+      nodes,
+    } as const;
+    const before = JSON.parse(JSON.stringify(legacy));
+
+    const normalized = parseFlowVersionGraph(legacy);
+
+    expect(normalized.schema_version).toBe(2);
+    expect(normalized.entry_node_key).toBe("trigger");
+    expect(normalized.nodes[0]).toEqual(
+      expect.objectContaining({
+        node_key: "trigger",
+        node_type: "trigger_manual",
+        config: { next_node_key: "start" },
+      }),
+    );
+    expect(legacy).toEqual(before);
+  });
+
+  it.each([
+    {
+      name: "more than one trigger",
+      nodes: [
+        {
+          node_key: "trigger",
+          node_type: "trigger_manual",
+          config: { next_node_key: "start" },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          node_key: "trigger_2",
+          node_type: "trigger_manual",
+          config: { next_node_key: "start" },
+          position_x: 0,
+          position_y: 0,
+        },
+        ...nodes,
+      ],
+    },
+    {
+      name: "an inbound edge to the trigger",
+      nodes: [
+        {
+          node_key: "trigger",
+          node_type: "trigger_manual",
+          config: { next_node_key: "start" },
+          position_x: 0,
+          position_y: 0,
+        },
+        {
+          ...nodes[0],
+          config: { next_node_key: "trigger" },
+        },
+        nodes[1],
+      ],
+    },
+  ])("rejects schema v2 with $name", ({ nodes: invalidNodes }) => {
+    expect(() =>
+      parseFlowVersionGraph({
+        schema_version: 2,
+        entry_node_key: "trigger",
+        fallback_policy: draft.fallback_policy,
+        nodes: invalidNodes,
+      }),
+    ).toThrow(/trigger|inbound/i);
+  });
+
   it("round-trips every runtime-authoritative draft field", () => {
     const graph = buildFlowVersionGraph(draft, nodes);
 
     expect(parseFlowVersionGraph(JSON.parse(JSON.stringify(graph)))).toEqual({
-      schema_version: 1,
-      trigger: {
-        type: "keyword",
-        config: {
-          keywords: ["support"],
-          match_type: "contains",
-        },
-      },
-      entry_node_key: "start",
+      schema_version: 2,
+      entry_node_key: "trigger",
       fallback_policy: draft.fallback_policy,
       variable_schema: draft.variable_schema,
-      nodes,
+      nodes: [
+        {
+          node_key: "trigger",
+          node_type: "trigger_keyword_match",
+          config: {
+            keywords: ["support"],
+            match_type: "contains",
+            next_node_key: "start",
+          },
+          position_x: -310,
+          position_y: 20,
+        },
+        ...nodes,
+      ],
+    });
+    expect(getFlowEntryTrigger(graph)).toEqual({
+      node_key: "trigger",
+      type: "keyword",
+      config: {
+        keywords: ["support"],
+        match_type: "contains",
+        next_node_key: "start",
+      },
+      next_node_key: "start",
     });
   });
 
@@ -276,7 +383,17 @@ describe("flow version graph", () => {
     expect(
       matchesFlowVersionTrigger(v2, { kind: "text", text: "sales" }, false),
     ).toBe(true);
-    expect(v1.nodes.map((node) => node.node_key)).toEqual(["start", "end"]);
-    expect(v2.nodes.map((node) => node.node_key)).toEqual(["start", "v2_end"]);
+    expect(v1.nodes.map((node) => node.node_key)).toEqual([
+      "trigger",
+      "start",
+      "end",
+    ]);
+    expect(getFlowEntryTrigger(v1).next_node_key).toBe("start");
+    expect(v2.nodes.map((node) => node.node_key)).toEqual([
+      "trigger",
+      "start",
+      "v2_end",
+    ]);
+    expect(getFlowEntryTrigger(v2).next_node_key).toBe("start");
   });
 });

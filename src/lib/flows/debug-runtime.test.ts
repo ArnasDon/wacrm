@@ -7,9 +7,12 @@ import {
   sanitizeDebugSession,
   sanitizeDebugValue,
 } from "./debug-runtime";
-import type { FlowVersionGraph } from "./versions";
+import {
+  parseFlowVersionGraph,
+  type FlowVersionGraph,
+} from "./versions";
 
-const graph: FlowVersionGraph = {
+const graph = parseFlowVersionGraph({
   schema_version: 1,
   trigger: { type: "manual", config: {} },
   entry_node_key: "source",
@@ -55,7 +58,7 @@ const graph: FlowVersionGraph = {
       position_y: 0,
     },
   ],
-};
+});
 
 describe("isolated flow debugger", () => {
   it("simulates a send without invoking an upstream node or side-effect adapter", async () => {

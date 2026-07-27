@@ -229,7 +229,12 @@ export interface NodeDescriptor<Id extends string = string> {
   supportsFlowRuntime: boolean;
   supportsExecutionPolicy: boolean;
   supportsDefaultValue: boolean;
-  compatibilityFlowTriggerType?: "keyword" | "first_inbound_message" | "manual";
+  compatibilityFlowTriggerType?:
+    | "keyword"
+    | "first_inbound_message"
+    | "manual"
+    | "time"
+    | "webhook";
   validate: (
     node: NodeLike,
     ctx: NodeValidationContext,

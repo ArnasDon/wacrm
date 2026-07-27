@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getNodeDescriptor } from "./registry";
 import { approvalConfigSchema } from "./registry/schemas";
 import { runIsolatedDebugNode } from "./debug-runtime";
+import { parseFlowVersionGraph } from "./versions";
 
 const validConfig = {
   title: "Review refund",
@@ -64,7 +65,7 @@ describe("approval node contract", () => {
 
   it("simulates both decision paths without requests or notifications", async () => {
     const result = await runIsolatedDebugNode({
-      graph: {
+      graph: parseFlowVersionGraph({
         schema_version: 1,
         trigger: { type: "manual", config: {} },
         entry_node_key: "approval",
@@ -84,8 +85,22 @@ describe("approval node contract", () => {
             position_x: 0,
             position_y: 0,
           },
+          {
+            node_key: "refund",
+            node_type: "end",
+            config: {},
+            position_x: 120,
+            position_y: -40,
+          },
+          {
+            node_key: "handoff",
+            node_type: "end",
+            config: {},
+            position_x: 120,
+            position_y: 40,
+          },
         ],
-      },
+      }),
       nodeKey: "approval",
       variables: {},
       savedOutputs: {},

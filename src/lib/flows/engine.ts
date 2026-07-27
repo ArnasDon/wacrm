@@ -80,6 +80,7 @@ import {
   sanitizeExecutionError,
 } from "./execution-policy";
 import {
+  getFlowEntryTrigger,
   matchesFlowVersionTrigger,
   parseFlowVersionGraph,
   versionGraphNodes,
@@ -3632,6 +3633,7 @@ async function startNewRun(
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
+  const entryTrigger = getFlowEntryTrigger(graph);
   let initialVars: Record<string, unknown>;
   try {
     initialVars = initializeFlowVariables(graph.variable_schema);
@@ -3663,7 +3665,7 @@ async function startNewRun(
       contact_id: input.contactId,
       conversation_id: input.conversationId,
       status: "active",
-      current_node_key: graph.entry_node_key,
+      current_node_key: entryTrigger.next_node_key,
       vars: initialVars,
     })
     .select("*")
@@ -3681,7 +3683,8 @@ async function startNewRun(
   await logEvent(db, run.id, "started", graph.entry_node_key, {
     flow_id: flow.id,
     flow_version_id: versionId,
-    trigger_type: graph.trigger.type,
+    trigger_type: entryTrigger.type,
+    trigger_node_key: entryTrigger.node_key,
     meta_message_id: input.message.meta_message_id,
   });
   // Bump the flow's execution counter — used by the builder UI to
@@ -3700,11 +3703,11 @@ async function startNewRun(
     console.error("[flows] execution_count rpc error:", incErr.message);
   }
 
-  // Run the advance loop starting from the entry node.
+  // Run the advance loop starting after the entry trigger node.
   const outcome = await advanceFromNodeKey(
     db,
     run,
-    graph.entry_node_key,
+    entryTrigger.next_node_key,
     nodes,
     graph.fallback_policy.execution,
   );

@@ -7,6 +7,7 @@ export const timeBasedTriggerDescriptor = createTriggerNodeDescriptor({
   category: "trigger",
   icon: "alarm-clock",
   configSchema: timeTriggerConfigSchema,
+  compatibilityFlowTriggerType: "time",
   ui: {
     color: "text-orange-400",
     blurb: "Starts on a configured schedule",

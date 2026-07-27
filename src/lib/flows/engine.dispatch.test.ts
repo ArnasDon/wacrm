@@ -35,9 +35,27 @@ vi.mock("./http-request", async (importOriginal) => {
 import { dispatchInboundToFlows } from "./engine";
 import { resumeDueFlowWaits } from "./wait-runtime";
 import type { FlowRunRow } from "./types";
-import type { FlowVersionGraph } from "./versions";
+import {
+  parseFlowVersionGraph,
+  type FlowVersionGraph,
+} from "./versions";
 
 type Row = Record<string, unknown>;
+
+function legacyGraph(value: unknown): FlowVersionGraph {
+  return parseFlowVersionGraph(value);
+}
+
+function setEntryTriggerNext(
+  flowGraph: FlowVersionGraph,
+  nextNodeKey: string,
+): void {
+  const trigger = flowGraph.nodes.find(
+    (node) => node.node_key === flowGraph.entry_node_key,
+  );
+  if (!trigger) throw new Error("test graph missing entry trigger");
+  trigger.config = { ...trigger.config, next_node_key: nextNodeKey };
+}
 
 interface ReceiptRow extends Row {
   id: string;
@@ -948,7 +966,7 @@ function graph(
       position_y: 0,
     });
   }
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: {
       type: "keyword",
@@ -963,11 +981,11 @@ function graph(
     },
     variable_schema: [],
     nodes,
-  };
+  });
 }
 
 function terminalGraph(entryNodeKey = "end"): FlowVersionGraph {
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: { type: "manual", config: {} },
     entry_node_key: entryNodeKey,
@@ -987,13 +1005,13 @@ function terminalGraph(entryNodeKey = "end"): FlowVersionGraph {
         position_y: 0,
       },
     ],
-  };
+  });
 }
 
 function failingChildGraph(
   entry: "input" | "wait" = "input",
 ): FlowVersionGraph {
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: { type: "manual", config: {} },
     entry_node_key: entry,
@@ -1052,7 +1070,7 @@ function failingChildGraph(
         position_y: 0,
       },
     ],
-  } as FlowVersionGraph;
+  });
 }
 
 function frame(
@@ -1105,7 +1123,7 @@ function pureChainGraph(
   options: { entryAtStart?: boolean; withEffect?: boolean } = {},
 ): FlowVersionGraph {
   const withEffect = options.withEffect ?? true;
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: {
       type: "keyword",
@@ -1203,7 +1221,7 @@ function pureChainGraph(
         position_y: 0,
       },
     ],
-  } as FlowVersionGraph;
+  });
 }
 
 function appendVariableGraph(
@@ -1214,7 +1232,7 @@ function appendVariableGraph(
     : options.entryAtSet
       ? "set"
       : "input";
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: {
       type: "keyword",
@@ -1273,13 +1291,13 @@ function appendVariableGraph(
         position_y: 0,
       },
     ],
-  } as FlowVersionGraph;
+  });
 }
 
 function policyRecoveryGraph(
   policy: "fail_branch" | "default_value",
 ): FlowVersionGraph {
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: {
       type: "keyword",
@@ -1342,14 +1360,14 @@ function policyRecoveryGraph(
         position_y: 0,
       },
     ],
-  } as FlowVersionGraph;
+  });
 }
 
 function effectCompletionGraph(
   effect: "http" | "zapi",
   options: { entryAtEffect?: boolean } = {},
 ): FlowVersionGraph {
-  return {
+  return legacyGraph({
     schema_version: 1,
     trigger: {
       type: "keyword",
@@ -1413,12 +1431,12 @@ function effectCompletionGraph(
         position_y: 0,
       },
     ],
-  } as FlowVersionGraph;
+  });
 }
 
 function waitEffectGraph(): FlowVersionGraph {
   const flowGraph = graph();
-  flowGraph.entry_node_key = "wait";
+  setEntryTriggerNext(flowGraph, "wait");
   flowGraph.nodes.unshift({
     node_key: "wait",
     node_type: "wait",
@@ -1543,7 +1561,7 @@ describe("public flow dispatcher recovery protocol", () => {
       }),
     );
     const childGraph = graph({ nextNode: "end" });
-    childGraph.entry_node_key = "child_input";
+    setEntryTriggerNext(childGraph, "child_input");
     const input = childGraph.nodes.find(
       (node) => node.node_key === "input",
     )!;

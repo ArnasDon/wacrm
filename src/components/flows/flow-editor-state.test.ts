@@ -11,7 +11,7 @@ import {
   versionControlsBehavior,
 } from "./flow-editor-state";
 import { validateFlowForActivation } from "@/lib/flows/validate";
-import type { FlowVersionGraph } from "@/lib/flows/versions";
+import { parseFlowVersionGraph } from "@/lib/flows/versions";
 import type { BuilderNode, NodeType } from "./shared";
 
 describe("uniqueNodeKey", () => {
@@ -217,7 +217,7 @@ describe("applyRestoredVersion", () => {
         { node_key: "draft_start", node_type: "end" as const, config: {} },
       ],
     };
-    const restored: FlowVersionGraph = {
+    const restored = parseFlowVersionGraph({
       schema_version: 1,
       trigger: { type: "manual", config: {} },
       entry_node_key: "restored_end",
@@ -244,7 +244,7 @@ describe("applyRestoredVersion", () => {
           position_y: 6,
         },
       ],
-    };
+    });
 
     expect(applyRestoredVersion(current, restored)).toEqual({
       ...current,
@@ -253,7 +253,65 @@ describe("applyRestoredVersion", () => {
       entry_node_id: "restored_end",
       fallback_policy: restored.fallback_policy,
       variable_schema: restored.variable_schema,
-      nodes: restored.nodes,
+      nodes: [restored.nodes[1]],
+    });
+  });
+
+  it("restores schema v2 from the entry trigger while keeping only executable nodes in the draft canvas", () => {
+    const current = {
+      name: "Current name",
+      description: "Current description",
+      status: "active" as const,
+      trigger_type: "keyword" as const,
+      trigger_config: { keywords: ["draft"] },
+      entry_node_id: "draft_start",
+      fallback_policy: {
+        on_unknown_reply: "handoff" as const,
+        max_reprompts: 5,
+        on_timeout_hours: 48,
+        on_exhaust: "handoff" as const,
+      },
+      variable_schema: [],
+      nodes: [
+        { node_key: "draft_start", node_type: "end" as const, config: {} },
+      ],
+    };
+    const restored = parseFlowVersionGraph({
+      schema_version: 2,
+      entry_node_key: "trigger",
+      fallback_policy: {
+        on_unknown_reply: "ignore",
+        max_reprompts: 0,
+        on_timeout_hours: 12,
+        on_exhaust: "end",
+      },
+      variable_schema: [],
+      nodes: [
+        {
+          node_key: "trigger",
+          node_type: "trigger_manual",
+          config: { next_node_key: "restored_end" },
+          position_x: -315,
+          position_y: 6,
+        },
+        {
+          node_key: "restored_end",
+          node_type: "end",
+          config: {},
+          position_x: 5,
+          position_y: 6,
+        },
+      ],
+    });
+
+    expect(applyRestoredVersion(current, restored)).toEqual({
+      ...current,
+      trigger_type: "manual",
+      trigger_config: {},
+      entry_node_id: "restored_end",
+      fallback_policy: restored.fallback_policy,
+      variable_schema: restored.variable_schema,
+      nodes: [restored.nodes[1]],
     });
   });
 

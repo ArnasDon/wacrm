@@ -445,6 +445,24 @@ function TriggerPanel({
   triggerIssues: ValidationIssue[];
   t: ReturnType<typeof useTranslations>;
 }) {
+  const setTriggerType = (value: BuilderState['trigger_type']) =>
+    setState((s) => ({
+      ...s,
+      trigger_type: value,
+      trigger_config:
+        value === 'keyword'
+          ? { keywords: [] }
+          : value === 'time'
+            ? {
+                cron: '*/15 * * * *',
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+                misfire_policy: 'skip',
+              }
+            : value === 'webhook'
+              ? { response_mode: 'async' }
+              : {},
+    }));
+
   return (
     <section className="border-border bg-card rounded-lg border p-4">
       <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
@@ -455,14 +473,7 @@ function TriggerPanel({
           </label>
           <Select
             value={state.trigger_type}
-            onValueChange={(v) =>
-              setState((s) => ({
-                ...s,
-                trigger_type: v as BuilderState['trigger_type'],
-                trigger_config:
-                  v === 'keyword' ? { keywords: [] } : v === 'manual' ? {} : {},
-              }))
-            }
+            onValueChange={(v) => setTriggerType(v as BuilderState['trigger_type'])}
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />
@@ -477,6 +488,8 @@ function TriggerPanel({
               <SelectItem value="manual">
                 {t('triggerManualTitle')}
               </SelectItem>
+              <SelectItem value="time">{t('triggerTimeTitle')}</SelectItem>
+              <SelectItem value="webhook">{t('triggerWebhookTitle')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -499,6 +512,116 @@ function TriggerPanel({
               }
               t={t}
             />
+          </div>
+        )}
+        {state.trigger_type === 'time' && (
+          <>
+            <div>
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {t('cronLabel')}
+              </label>
+              <Input
+                value={
+                  typeof state.trigger_config.cron === 'string'
+                    ? state.trigger_config.cron
+                    : ''
+                }
+                onChange={(event) =>
+                  setState((s) => ({
+                    ...s,
+                    trigger_config: {
+                      ...s.trigger_config,
+                      cron: event.target.value,
+                    },
+                  }))
+                }
+                placeholder="*/15 * * * *"
+                className="bg-muted font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {t('timezoneLabel')}
+              </label>
+              <Input
+                value={
+                  typeof state.trigger_config.timezone === 'string'
+                    ? state.trigger_config.timezone
+                    : 'UTC'
+                }
+                onChange={(event) =>
+                  setState((s) => ({
+                    ...s,
+                    trigger_config: {
+                      ...s.trigger_config,
+                      timezone: event.target.value,
+                    },
+                  }))
+                }
+                placeholder="UTC"
+                className="bg-muted"
+              />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {t('misfirePolicyLabel')}
+              </label>
+              <Select
+                value={
+                  typeof state.trigger_config.misfire_policy === 'string'
+                    ? state.trigger_config.misfire_policy
+                    : 'skip'
+                }
+                onValueChange={(value) =>
+                  setState((s) => ({
+                    ...s,
+                    trigger_config: {
+                      ...s.trigger_config,
+                      misfire_policy: value,
+                    },
+                  }))
+                }
+              >
+                <SelectTrigger className="bg-muted">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="skip">{t('misfireSkip')}</SelectItem>
+                  <SelectItem value="fire_once">{t('misfireFireOnce')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+        {state.trigger_type === 'webhook' && (
+          <div>
+            <label className="text-muted-foreground mb-1 block text-xs">
+              {t('webhookResponseModeLabel')}
+            </label>
+            <Select
+              value={
+                typeof state.trigger_config.response_mode === 'string'
+                  ? state.trigger_config.response_mode
+                  : 'async'
+              }
+              onValueChange={(value) =>
+                setState((s) => ({
+                  ...s,
+                  trigger_config: {
+                    ...s.trigger_config,
+                    response_mode: value,
+                  },
+                }))
+              }
+            >
+              <SelectTrigger className="bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="async">{t('webhookAsync')}</SelectItem>
+                <SelectItem value="sync">{t('webhookSync')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>

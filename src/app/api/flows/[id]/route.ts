@@ -8,6 +8,7 @@ import {
 } from '@/lib/flows/registry'
 import { parseFlowVariableSchema } from '@/lib/flows/versions'
 import type { FlowVariableDeclaration } from '@/lib/flows/runtime-primitives'
+import type { FlowTriggerType } from '@/lib/flows/types'
 import { validateControlPortMetadata } from '@/lib/flows/validate'
 
 /**
@@ -98,7 +99,7 @@ interface PutBody {
   expected_draft_revision?: number
   name?: string
   description?: string | null
-  trigger_type?: 'keyword' | 'first_inbound_message' | 'manual'
+  trigger_type?: FlowTriggerType
   trigger_config?: Record<string, unknown>
   entry_node_id?: string | null
   fallback_policy?: Record<string, unknown>

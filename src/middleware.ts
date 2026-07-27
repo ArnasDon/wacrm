@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
+import createMiddleware from "next-intl/middleware";
 import { NextResponse, type NextRequest } from "next/server";
-import { locales, defaultLocale, type Locale } from "@/i18n/config";
+import { routing } from "@/i18n/routing";
+import { locales, type Locale } from "@/i18n/config";
+
+const handleI18nRouting = createMiddleware(routing);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -109,39 +113,37 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // --- i18n routing (manual locale detection) ---
-  // Skip for API routes — they don't use locale-based routing.
-  const pathname = request.nextUrl.pathname;
-  const isApiRoute = pathname.startsWith("/api/");
+  // --- i18n routing via next-intl ---
+  // The next-intl middleware is REQUIRED — createNextIntlPlugin depends on
+  // the locale context it sets up (cookies / headers).  Without it,
+  // requestLocale in getRequestConfig is always undefined and messages
+  // always load in the default language.
+  const i18nResponse = handleI18nRouting(request);
 
-  if (!isApiRoute) {
-    const parts = pathname.split("/");
-    const firstSegment = parts[1] ?? "";
-
-    const isFirstLocale = locales.includes(firstSegment as Locale);
-
-    // No locale prefix → redirect to default locale.
-    if (!isFirstLocale) {
-      const url = request.nextUrl.clone();
-      url.pathname = `/${defaultLocale}${pathname}`;
-      return withRefreshedCookies(NextResponse.redirect(url));
+  if (i18nResponse) {
+    // Safety net: intercept any double-locale-prefix redirect the
+    // next-intl middleware might emit (e.g. /kk/kk/dashboard → /kk/dashboard).
+    if (i18nResponse.status >= 300 && i18nResponse.status < 400) {
+      const location = i18nResponse.headers.get("Location");
+      if (location) {
+        const locUrl = new URL(location, request.url);
+        const parts = locUrl.pathname.split("/");
+        if (
+          parts.length >= 4 &&
+          locales.includes(parts[1] as Locale) &&
+          locales.includes(parts[2] as Locale)
+        ) {
+          locUrl.pathname = `/${parts[1]}/${parts.slice(3).join("/")}`;
+          return withRefreshedCookies(
+            NextResponse.redirect(locUrl.toString(), i18nResponse.status),
+          );
+        }
+      }
     }
 
-    // Double locale prefix (e.g. /kk/kk/dashboard → /kk/dashboard).
-    const secondSegment = parts[2] ?? "";
-    if (locales.includes(secondSegment as Locale)) {
-      const url = request.nextUrl.clone();
-      url.pathname = `/${firstSegment}/${parts.slice(3).join("/")}`;
-      return withRefreshedCookies(NextResponse.redirect(url));
-    }
-
-    // Invalid locale prefix (e.g. /xx/settings → /en/settings).
-    if (!isFirstLocale) {
-      const rest = pathname.slice(3);
-      const url = request.nextUrl.clone();
-      url.pathname = `/${defaultLocale}${rest}`;
-      return withRefreshedCookies(NextResponse.redirect(url));
-    }
+    // Copy Supabase cookies onto the i18n response and return it
+    // (not supabaseResponse) so the locale context propagates.
+    return withRefreshedCookies(i18nResponse);
   }
 
   return supabaseResponse;

@@ -106,7 +106,7 @@ export default async function LocaleLayout({
         />
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">
-        <NextIntlClientProvider messages={messages}>
+        <NextIntlClientProvider locale={locale} messages={messages}>
           <ThemeProvider>
             <ErrorBoundary>{children}</ErrorBoundary>
             <ThemedToaster />

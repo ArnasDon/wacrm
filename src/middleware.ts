@@ -115,21 +115,29 @@ export async function middleware(request: NextRequest) {
   const isApiRoute = pathname.startsWith("/api/");
 
   if (!isApiRoute) {
-    const pathnameHasLocale = locales.some(
-      (locale) =>
-        pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
-    );
+    const parts = pathname.split("/");
+    const firstSegment = parts[1] ?? "";
 
-    if (!pathnameHasLocale) {
+    const isFirstLocale = locales.includes(firstSegment as Locale);
+
+    // No locale prefix → redirect to default locale.
+    if (!isFirstLocale) {
       const url = request.nextUrl.clone();
       url.pathname = `/${defaultLocale}${pathname}`;
       return withRefreshedCookies(NextResponse.redirect(url));
     }
 
-    // Reject invalid locale prefixes (e.g. /xx/settings → /en/settings).
-    const locale = pathname.split("/")[1];
-    if (locale && !locales.includes(locale as Locale)) {
-      const rest = pathname.slice(3); // strip "/xx"
+    // Double locale prefix (e.g. /kk/kk/dashboard → /kk/dashboard).
+    const secondSegment = parts[2] ?? "";
+    if (locales.includes(secondSegment as Locale)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${firstSegment}/${parts.slice(3).join("/")}`;
+      return withRefreshedCookies(NextResponse.redirect(url));
+    }
+
+    // Invalid locale prefix (e.g. /xx/settings → /en/settings).
+    if (!isFirstLocale) {
+      const rest = pathname.slice(3);
       const url = request.nextUrl.clone();
       url.pathname = `/${defaultLocale}${rest}`;
       return withRefreshedCookies(NextResponse.redirect(url));

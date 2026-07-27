@@ -18,7 +18,17 @@ export function LanguageSwitcher() {
   const pathname = usePathname();
 
   const handleLanguageChange = (newLocale: Locale) => {
-    router.replace(pathname, { locale: newLocale });
+    // Strip any leading locale prefix from usePathname() defensively —
+    // createNavigation's usePathname should already strip it, but if it
+    // doesn't, passing a locale-prefixed path to router.replace with a
+    // locale option would produce a double prefix (e.g. /kk/kk/dashboard).
+    const raw = pathname;
+    const stripped = locales.some(
+      (loc) => raw === `/${loc}` || raw.startsWith(`/${loc}/`),
+    )
+      ? raw.replace(/^\/[a-z]{2}/, "") || "/"
+      : raw;
+    router.replace(stripped, { locale: newLocale });
   };
 
   return (

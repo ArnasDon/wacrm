@@ -292,7 +292,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
-    window.location.href = "/login";
+    // Preserve current locale prefix so the login page renders in the
+    // same language the user had selected.
+    const parts = window.location.pathname.split("/");
+    const locale = parts[1] ?? "en";
+    window.location.href = `/${locale}/login`;
   }, []);
 
   const refreshProfile = useCallback(async () => {

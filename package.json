@@ -36,7 +36,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:status": "supabase migration list",
+    "db:push": "supabase db push",
+    "db:push:dry": "supabase db push --dry-run"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -71,6 +74,7 @@
     "eslint-config-next": "16.2.6",
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.0",
+    "supabase": "^2.109.1",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.10"

@@ -81,9 +81,9 @@ export type NodeCategory = 'messaging' | 'logic' | 'flow';
 
 /** Category labels + the order they render in the add-step menu. */
 export const NODE_CATEGORIES: { id: NodeCategory; label: string }[] = [
-  { id: 'messaging', label: 'Messaging' },
-  { id: 'logic', label: 'Logic & data' },
-  { id: 'flow', label: 'Flow control' },
+  { id: 'messaging', label: 'Mensagens' },
+  { id: 'logic', label: 'Lógica e dados' },
+  { id: 'flow', label: 'Controle de fluxo' },
 ];
 
 export const NODE_META: Record<
@@ -97,73 +97,73 @@ export const NODE_META: Record<
   }
 > = {
   start: {
-    label: 'Start',
+    label: 'Início',
     icon: PlayCircle,
     color: 'text-emerald-400',
-    blurb: 'Entry point of the flow',
+    blurb: 'Ponto de entrada do fluxo',
     category: 'flow',
   },
   send_message: {
-    label: 'Send message',
+    label: 'Enviar mensagem',
     icon: MessageCircle,
     color: 'text-sky-400',
-    blurb: 'Sends a WhatsApp text message',
+    blurb: 'Envia uma mensagem de texto do WhatsApp',
     category: 'messaging',
   },
   send_buttons: {
-    label: 'Send buttons',
+    label: 'Enviar botões',
     icon: ListChecks,
     color: 'text-primary',
-    blurb: 'Sends quick-reply buttons',
+    blurb: 'Envia botões de resposta rápida',
     category: 'messaging',
   },
   send_list: {
-    label: 'Send list',
+    label: 'Enviar lista',
     icon: ListPlus,
     color: 'text-indigo-400',
-    blurb: 'Sends a tappable list of options',
+    blurb: 'Envia uma lista de opções tocável',
     category: 'messaging',
   },
   send_media: {
-    label: 'Send media',
+    label: 'Enviar mídia',
     icon: Paperclip,
     color: 'text-cyan-400',
-    blurb: 'Sends an image, video, or document',
+    blurb: 'Envia uma imagem, vídeo ou documento',
     category: 'messaging',
   },
   collect_input: {
-    label: 'Collect input',
+    label: 'Coletar resposta',
     icon: Inbox,
     color: 'text-teal-400',
-    blurb: 'Asks a question, saves the reply',
+    blurb: 'Faz uma pergunta e salva a resposta',
     category: 'logic',
   },
   condition: {
-    label: 'If / else',
+    label: 'Se / senão',
     icon: GitFork,
     color: 'text-fuchsia-400',
-    blurb: 'Branches on a rule',
+    blurb: 'Ramifica com base em uma regra',
     category: 'logic',
   },
   set_tag: {
-    label: 'Tag contact',
+    label: 'Marcar contato',
     icon: Tag,
     color: 'text-pink-400',
-    blurb: 'Adds or removes a contact tag',
+    blurb: 'Adiciona ou remove uma tag do contato',
     category: 'logic',
   },
   handoff: {
-    label: 'Handoff to agent',
+    label: 'Transferir para agente',
     icon: UserPlus,
     color: 'text-amber-400',
-    blurb: 'Hands the conversation to a human',
+    blurb: 'Passa a conversa para um humano',
     category: 'flow',
   },
   end: {
-    label: 'End',
+    label: 'Fim',
     icon: Flag,
     color: 'text-muted-foreground',
-    blurb: 'Ends the flow',
+    blurb: 'Encerra o fluxo',
     category: 'flow',
   },
 };

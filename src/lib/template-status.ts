@@ -19,35 +19,35 @@ export const templateStatusConfig: Record<
   TemplateStatusDisplay
 > = {
   DRAFT: {
-    label: 'Draft',
+    label: 'Rascunho',
     classes: 'bg-slate-600/20 text-muted-foreground border-slate-600/30',
   },
   PENDING: {
-    label: 'Pending',
+    label: 'Pendente',
     classes: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
   },
   APPROVED: {
-    label: 'Approved',
+    label: 'Aprovado',
     classes: 'bg-primary/20 text-primary border-primary/30',
   },
   REJECTED: {
-    label: 'Rejected',
+    label: 'Rejeitado',
     classes: 'bg-red-600/20 text-red-400 border-red-600/30',
   },
   PAUSED: {
-    label: 'Paused',
+    label: 'Pausado',
     classes: 'bg-orange-600/20 text-orange-400 border-orange-600/30',
   },
   DISABLED: {
-    label: 'Disabled',
+    label: 'Desativado',
     classes: 'bg-red-900/30 text-red-500 border-red-900/40',
   },
   IN_APPEAL: {
-    label: 'In Appeal',
+    label: 'Em recurso',
     classes: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
   },
   PENDING_DELETION: {
-    label: 'Pending Deletion',
+    label: 'Exclusão pendente',
     classes: 'bg-slate-700/30 text-muted-foreground border-slate-700/40',
   },
 };

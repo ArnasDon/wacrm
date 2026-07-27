@@ -77,7 +77,7 @@ describe('validateInteractivePayload — buttons', () => {
         { id: 'dup', title: 'B' },
       ],
     })
-    expect(res).toEqual({ ok: false, error: 'Duplicate button id "dup".' })
+    expect(res).toEqual({ ok: false, error: 'Id de botão duplicado "dup".' })
   })
 
   it('rejects empty button id / title', () => {
@@ -136,7 +136,7 @@ describe('interactivePayloadPreviewText', () => {
     expect(interactivePayloadPreviewText({ ...validButtons, body: '  Hi  ' })).toBe('Hi')
   })
   it('falls back when body is blank', () => {
-    expect(interactivePayloadPreviewText({ ...validButtons, body: '   ' })).toBe('[buttons]')
-    expect(interactivePayloadPreviewText({ ...validList, body: '' })).toBe('[list]')
+    expect(interactivePayloadPreviewText({ ...validButtons, body: '   ' })).toBe('[botões]')
+    expect(interactivePayloadPreviewText({ ...validList, body: '' })).toBe('[lista]')
   })
 })

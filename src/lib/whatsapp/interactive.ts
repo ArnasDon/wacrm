@@ -89,12 +89,12 @@ function validateHeaderFooter(
 ): InteractiveValidation {
   if (header && header.length > INTERACTIVE_LIMITS.headerTextMaxLength) {
     return fail(
-      `Header exceeds the ${INTERACTIVE_LIMITS.headerTextMaxLength}-character limit.`,
+      `O cabeçalho excede o limite de ${INTERACTIVE_LIMITS.headerTextMaxLength} caracteres.`,
     )
   }
   if (footer && footer.length > INTERACTIVE_LIMITS.footerMaxLength) {
     return fail(
-      `Footer exceeds the ${INTERACTIVE_LIMITS.footerMaxLength}-character limit.`,
+      `O rodapé excede o limite de ${INTERACTIVE_LIMITS.footerMaxLength} caracteres.`,
     )
   }
   return ok()
@@ -113,16 +113,16 @@ export function validateInteractivePayload(
   payload: unknown,
 ): InteractiveValidation {
   if (!payload || typeof payload !== 'object') {
-    return fail('Interactive message payload is required.')
+    return fail('É necessário informar o conteúdo da mensagem interativa.')
   }
   const p = payload as Partial<InteractiveMessagePayload>
 
   if (typeof p.body !== 'string' || p.body.trim() === '') {
-    return fail('Interactive message body text is required.')
+    return fail('O texto da mensagem interativa é obrigatório.')
   }
   if (p.body.length > INTERACTIVE_LIMITS.bodyMaxLength) {
     return fail(
-      `Body text exceeds the ${INTERACTIVE_LIMITS.bodyMaxLength}-character limit.`,
+      `O texto excede o limite de ${INTERACTIVE_LIMITS.bodyMaxLength} caracteres.`,
     )
   }
   const hf = validateHeaderFooter(p.header, p.footer)
@@ -131,28 +131,28 @@ export function validateInteractivePayload(
   if (p.kind === 'buttons') {
     const buttons = (p as InteractiveButtonsPayload).buttons
     if (!Array.isArray(buttons) || buttons.length < 1) {
-      return fail('Add at least one reply button.')
+      return fail('Adicione ao menos um botão de resposta.')
     }
     if (buttons.length > INTERACTIVE_LIMITS.maxButtons) {
       return fail(
-        `A reply-button message allows at most ${INTERACTIVE_LIMITS.maxButtons} buttons.`,
+        `Uma mensagem com botões de resposta permite no máximo ${INTERACTIVE_LIMITS.maxButtons} botões.`,
       )
     }
     const seen = new Set<string>()
     for (const b of buttons) {
       if (!b || typeof b.id !== 'string' || b.id.trim() === '') {
-        return fail('Every button needs an id.')
+        return fail('Cada botão precisa de um id.')
       }
       if (seen.has(b.id)) {
-        return fail(`Duplicate button id "${b.id}".`)
+        return fail(`Id de botão duplicado "${b.id}".`)
       }
       seen.add(b.id)
       if (typeof b.title !== 'string' || b.title.trim() === '') {
-        return fail('Every button needs a label.')
+        return fail('Cada botão precisa de um rótulo.')
       }
       if (b.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
         return fail(
-          `Button label "${b.title}" exceeds the ${INTERACTIVE_LIMITS.buttonTitleMaxLength}-character limit.`,
+          `O rótulo do botão "${b.title}" excede o limite de ${INTERACTIVE_LIMITS.buttonTitleMaxLength} caracteres.`,
         )
       }
     }
@@ -165,42 +165,42 @@ export function validateInteractivePayload(
       typeof list.button_label !== 'string' ||
       list.button_label.trim() === ''
     ) {
-      return fail('The list needs a button label.')
+      return fail('A lista precisa de um rótulo de botão.')
     }
     if (list.button_label.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
       return fail(
-        `List button label exceeds the ${INTERACTIVE_LIMITS.buttonTitleMaxLength}-character limit.`,
+        `O rótulo do botão da lista excede o limite de ${INTERACTIVE_LIMITS.buttonTitleMaxLength} caracteres.`,
       )
     }
     if (!Array.isArray(list.sections) || list.sections.length < 1) {
-      return fail('Add at least one list section.')
+      return fail('Adicione ao menos uma seção à lista.')
     }
     if (list.sections.length > INTERACTIVE_LIMITS.maxListSections) {
       return fail(
-        `A list allows at most ${INTERACTIVE_LIMITS.maxListSections} sections.`,
+        `Uma lista permite no máximo ${INTERACTIVE_LIMITS.maxListSections} seções.`,
       )
     }
     const seen = new Set<string>()
     let total = 0
     for (const section of list.sections) {
       if (!section || !Array.isArray(section.rows)) {
-        return fail('Every list section needs rows.')
+        return fail('Cada seção da lista precisa de itens.')
       }
       for (const row of section.rows) {
         total++
         if (!row || typeof row.id !== 'string' || row.id.trim() === '') {
-          return fail('Every list row needs an id.')
+          return fail('Cada item da lista precisa de um id.')
         }
         if (seen.has(row.id)) {
-          return fail(`Duplicate list row id "${row.id}".`)
+          return fail(`Id de item de lista duplicado "${row.id}".`)
         }
         seen.add(row.id)
         if (typeof row.title !== 'string' || row.title.trim() === '') {
-          return fail('Every list row needs a title.')
+          return fail('Cada item da lista precisa de um título.')
         }
         if (row.title.length > INTERACTIVE_LIMITS.listRowTitleMaxLength) {
           return fail(
-            `List row title "${row.title}" exceeds the ${INTERACTIVE_LIMITS.listRowTitleMaxLength}-character limit.`,
+            `O título do item "${row.title}" excede o limite de ${INTERACTIVE_LIMITS.listRowTitleMaxLength} caracteres.`,
           )
         }
         if (
@@ -209,21 +209,21 @@ export function validateInteractivePayload(
             INTERACTIVE_LIMITS.listRowDescriptionMaxLength
         ) {
           return fail(
-            `List row description exceeds the ${INTERACTIVE_LIMITS.listRowDescriptionMaxLength}-character limit.`,
+            `A descrição do item excede o limite de ${INTERACTIVE_LIMITS.listRowDescriptionMaxLength} caracteres.`,
           )
         }
       }
     }
-    if (total < 1) return fail('Add at least one list row.')
+    if (total < 1) return fail('Adicione ao menos um item à lista.')
     if (total > INTERACTIVE_LIMITS.maxListRowsTotal) {
       return fail(
-        `A list allows at most ${INTERACTIVE_LIMITS.maxListRowsTotal} rows in total.`,
+        `Uma lista permite no máximo ${INTERACTIVE_LIMITS.maxListRowsTotal} itens no total.`,
       )
     }
     return ok()
   }
 
-  return fail('Interactive message must be reply buttons or a list.')
+  return fail('A mensagem interativa deve ser de botões de resposta ou lista.')
 }
 
 /**
@@ -235,5 +235,5 @@ export function interactivePayloadPreviewText(
 ): string {
   const body = payload.body?.trim()
   if (body) return body
-  return payload.kind === 'buttons' ? '[buttons]' : '[list]'
+  return payload.kind === 'buttons' ? '[botões]' : '[lista]'
 }

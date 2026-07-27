@@ -36,7 +36,7 @@ export function InteractivePreview({
         ) : null}
         <p className="whitespace-pre-wrap break-words text-sm">
           {payload.body || (
-            <span className="text-muted-foreground">Message body…</span>
+            <span className="text-muted-foreground">Texto da mensagem…</span>
           )}
         </p>
         {payload.footer ? (
@@ -56,7 +56,7 @@ export function InteractivePreview({
               className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary first:border-t-0"
             >
               <Reply className="h-3.5 w-3.5" />
-              <span className="truncate">{b.title || "Button"}</span>
+              <span className="truncate">{b.title || "Botão"}</span>
             </button>
           ))}
         </div>

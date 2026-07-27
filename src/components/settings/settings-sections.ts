@@ -48,22 +48,22 @@ export interface SectionMeta {
 }
 
 export const SECTION_META: Record<SettingsSection, SectionMeta> = {
-  overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
-  profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
-  security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
-  appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
+  overview: { id: 'overview', label: 'Visão geral', icon: LayoutGrid, group: 'top' },
+  profile: { id: 'profile', label: 'Seu perfil', icon: User, group: 'account' },
+  security: { id: 'security', label: 'Login e segurança', icon: Shield, group: 'account' },
+  appearance: { id: 'appearance', label: 'Aparência', icon: Palette, group: 'account' },
   whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
-  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
-  'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
-  fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
-  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
-  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
-  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
+  templates: { id: 'templates', label: 'Modelos', icon: FileText, group: 'workspace' },
+  'quick-replies': { id: 'quick-replies', label: 'Respostas rápidas', icon: Zap, group: 'workspace' },
+  fields: { id: 'fields', label: 'Campos e tags', icon: Tags, group: 'workspace' },
+  deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace' },
+  members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace' },
+  api: { id: 'api', label: 'Chaves de API', icon: KeyRound, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [
   { label: null, group: 'top' },
-  { label: 'Account', group: 'account' },
+  { label: 'Conta', group: 'account' },
   { label: 'Workspace', group: 'workspace' },
 ];
 

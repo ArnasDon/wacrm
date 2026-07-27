@@ -3,10 +3,24 @@
 //
 // One small provider-agnostic surface so the inbox draft route and the
 // inbound auto-reply bot both talk to `generateReply` without caring
-// whether the account is on OpenAI or Anthropic.
+// whether the account is on OpenAI, Anthropic or OpenRouter.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+/** Every provider the account may point its BYO key at. `openrouter` is
+ *  a gateway rather than a first-party lab: one key, and the `model`
+ *  field selects any model in its catalogue (`vendor/model-id`). */
+export const AI_PROVIDERS = ['openai', 'anthropic', 'openrouter'] as const
+
+export type AiProvider = (typeof AI_PROVIDERS)[number]
+
+/** Narrow untrusted input (request body, DB row) to a supported
+ *  provider. Keeps the API routes, the UI and the DB CHECK constraint
+ *  from drifting apart as providers are added. */
+export function isAiProvider(value: unknown): value is AiProvider {
+  return (
+    typeof value === 'string' && (AI_PROVIDERS as readonly string[]).includes(value)
+  )
+}
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by

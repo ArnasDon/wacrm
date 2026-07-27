@@ -26,8 +26,9 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
-import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
-import type { AiProvider } from '@/lib/ai/types';
+import { AI_PROVIDER_DEFAULT_MODEL, AI_DEFAULT_MODELS } from '@/lib/ai/defaults';
+import { AI_PROVIDERS, type AiProvider } from '@/lib/ai/types';
+import type { OpenRouterModelOption } from '@/app/api/ai/openrouter/models/route';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
@@ -41,12 +42,19 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  openrouter: 'OpenRouter (any model)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  openrouter: 'sk-or-v1-...',
 };
+
+// The <datalist> is a suggestion list, not a constraint — the Model
+// field stays free text so a brand-new OpenRouter id works the moment
+// it ships, before it shows up in the fetched catalogue.
+const OPENROUTER_MODELS_LIST_ID = 'openrouter-models';
 
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
@@ -75,6 +83,9 @@ export function AiConfig() {
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModelOption[]>(
+    [],
+  );
 
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
@@ -124,14 +135,34 @@ export function AiConfig() {
     void fetchAccountMembers().then(setMembers);
   }, [accountId, fetchConfig]);
 
+  // OpenRouter's catalogue backs the Model field's suggestion list.
+  // Fetched lazily (only once the provider is actually OpenRouter) and
+  // best-effort — on failure the list is empty and the field is still
+  // plain free text.
+  useEffect(() => {
+    if (provider !== 'openrouter' || openRouterModels.length > 0) return;
+    let cancelled = false;
+    void fetch('/api/ai/openrouter/models')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.models)) {
+          setOpenRouterModels(data.models);
+        }
+      })
+      .catch(() => {
+        /* Suggestions are optional — stay silent. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, openRouterModels.length]);
+
   // Swap the model default when the provider changes, unless the user
   // typed a custom model.
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
-      model.trim() === '';
+      AI_DEFAULT_MODELS.includes(model) || model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
@@ -277,10 +308,11 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
-                    <SelectItem value="anthropic">
-                      {PROVIDER_LABEL.anthropic}
-                    </SelectItem>
+                    {AI_PROVIDERS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PROVIDER_LABEL[p]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -293,7 +325,25 @@ export function AiConfig() {
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
                   disabled={disabled}
+                  list={
+                    provider === 'openrouter' ? OPENROUTER_MODELS_LIST_ID : undefined
+                  }
+                  autoComplete="off"
                 />
+                {provider === 'openrouter' && (
+                  <>
+                    <datalist id={OPENROUTER_MODELS_LIST_ID}>
+                      {openRouterModels.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </datalist>
+                    <p className="text-xs text-muted-foreground">
+                      {t('openRouterModelHint')}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 

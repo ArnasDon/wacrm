@@ -13,7 +13,17 @@ import type { AiProvider } from './types'
 export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
   openai: 'gpt-5.4-mini',
   anthropic: 'claude-haiku-4-5-20251001',
+  // OpenRouter addresses models as `vendor/model-id`; any id from its
+  // catalogue works here, so this is just a cheap, widely-available
+  // starting point.
+  openrouter: 'anthropic/claude-haiku-4.5',
 }
+
+/** The default models as a set, for "did the user type a custom model?"
+ *  checks in the settings form. */
+export const AI_DEFAULT_MODELS: readonly string[] = Object.values(
+  AI_PROVIDER_DEFAULT_MODEL,
+)
 
 /**
  * Sentinel the model is instructed to emit (in auto-reply mode) when it

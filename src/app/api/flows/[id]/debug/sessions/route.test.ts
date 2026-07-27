@@ -451,7 +451,13 @@ describe("flow debug session creation", () => {
       },
     });
     expect(h.rpcArgs.p_graph_snapshot).toMatchObject({
-      entry_node_key: "source-end",
+      entry_node_key: "trigger",
+      nodes: expect.arrayContaining([
+        expect.objectContaining({
+          node_key: "trigger",
+          config: expect.objectContaining({ next_node_key: "source-end" }),
+        }),
+      ]),
     });
     expect(h.sourceExecutionLimit).toBe(0);
     expect(h.rpcArgsByName.read_flow_debug_source_snapshot).toMatchObject({

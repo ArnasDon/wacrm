@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(cat *)",
+      "Bash(ls*)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(npm run typecheck*)",
+      "Bash(npm run lint*)",
+      "Bash(npm test*)",
+      "Bash(npm run test*)",
+      "Bash(npm run build*)",
+      "Bash(npm run dev*)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(git checkout *)",
+      "Bash(vercel link*)",
+      "Bash(vercel env ls*)",
+      "Bash(vercel deploy*)",
+      "Bash(vercel logs*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(vercel env add*)",
+      "Bash(vercel env rm*)"
+    ]
+  }
+}

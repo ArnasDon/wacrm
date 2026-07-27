@@ -302,6 +302,7 @@ export interface FlowRunRow {
   last_advanced_at: string;
   ended_at: string | null;
   end_reason: string | null;
+  trigger_invocation_id?: string | null;
 }
 
 export interface FlowVersionRow {

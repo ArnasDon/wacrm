@@ -42,6 +42,12 @@ describe('normalizeScopes', () => {
 });
 
 describe('hasScope', () => {
+  it('includes the flow execution capability', () => {
+    expect(isApiScope('flows:execute')).toBe(true);
+    expect(hasScope(['flows:execute'], 'flows:execute')).toBe(true);
+    expect(SCOPE_DESCRIPTIONS['flows:execute']).toMatch(/flow/i);
+  });
+
   it('is true when the scope is present', () => {
     expect(hasScope(['messages:send', 'contacts:read'], 'contacts:read')).toBe(
       true

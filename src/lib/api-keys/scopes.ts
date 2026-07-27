@@ -20,6 +20,7 @@ export const API_SCOPES = [
   'contacts:write',
   'conversations:read',
   'broadcasts:send',
+  'flows:execute',
   'webhooks:manage',
 ] as const;
 
@@ -33,6 +34,7 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   'contacts:write': 'Create and update contacts',
   'conversations:read': 'List and read conversations',
   'broadcasts:send': 'Launch broadcast campaigns',
+  'flows:execute': 'Start published flows manually',
   'webhooks:manage': 'Register and manage outbound event webhooks',
 };
 

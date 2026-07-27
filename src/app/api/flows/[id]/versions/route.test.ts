@@ -202,8 +202,15 @@ describe("flow versions API", () => {
         p_label: "Initial",
         p_expected_draft_revision: 7,
         p_graph: expect.objectContaining({
-          schema_version: 1,
-          entry_node_key: "start",
+          schema_version: 2,
+          entry_node_key: "trigger",
+          nodes: expect.arrayContaining([
+            expect.objectContaining({
+              node_key: "trigger",
+              node_type: "trigger_keyword_match",
+              config: expect.objectContaining({ next_node_key: "start" }),
+            }),
+          ]),
         }),
       }),
     );

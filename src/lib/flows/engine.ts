@@ -3633,10 +3633,72 @@ async function startNewRun(
   input: DispatchInboundInput,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
+  return startFlowRunFromTrigger({
+    db,
+    flow,
+    versionId,
+    graph,
+    nodes,
+    contactId: input.contactId,
+    conversationId: input.conversationId,
+    triggerPayload: {
+      meta_message_id: input.message.meta_message_id,
+      source: "inbound",
+    },
+  });
+}
+
+export interface StartFlowRunFromTriggerInput {
+  db: AdminClient;
+  flow: FlowRow;
+  versionId: string;
+  graph: FlowVersionGraph;
+  nodes: Map<string, FlowNodeRow>;
+  contactId?: string | null;
+  conversationId?: string | null;
+  variables?: Record<string, unknown>;
+  triggerInvocationId?: string | null;
+  triggerPayload?: Record<string, unknown>;
+}
+
+function initializeTriggerVariables(
+  graph: FlowVersionGraph,
+  overrides: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const values = initializeFlowVariables(graph.variable_schema);
+  const declarations = new Map(
+    graph.variable_schema.map((declaration) => [declaration.key, declaration]),
+  );
+  for (const [key, raw] of Object.entries(overrides ?? {})) {
+    const declaration = declarations.get(key);
+    if (!declaration) {
+      throw new Error(`variable "${key}" is not declared`);
+    }
+    const coerced = coerceDeclaredValue(declaration.type, raw);
+    if (!coerced.ok) {
+      throw new Error(`variable "${key}" ${coerced.reason}`);
+    }
+    values[key] = coerced.value;
+  }
+  return values;
+}
+
+export async function startFlowRunFromTrigger({
+  db,
+  flow,
+  versionId,
+  graph,
+  nodes,
+  contactId = null,
+  conversationId = null,
+  variables,
+  triggerInvocationId = null,
+  triggerPayload = {},
+}: StartFlowRunFromTriggerInput): Promise<DispatchInboundResult> {
   const entryTrigger = getFlowEntryTrigger(graph);
   let initialVars: Record<string, unknown>;
   try {
-    initialVars = initializeFlowVariables(graph.variable_schema);
+    initialVars = initializeTriggerVariables(graph, variables);
   } catch (error) {
     console.error(
       "[flows] required variable initialization failed:",
@@ -3662,8 +3724,9 @@ async function startNewRun(
       // Audit: preserves the flow's author on the run row for log
       // attribution.
       user_id: flow.user_id,
-      contact_id: input.contactId,
-      conversation_id: input.conversationId,
+      contact_id: contactId,
+      conversation_id: conversationId,
+      trigger_invocation_id: triggerInvocationId,
       status: "active",
       current_node_key: entryTrigger.next_node_key,
       vars: initialVars,
@@ -3685,7 +3748,7 @@ async function startNewRun(
     flow_version_id: versionId,
     trigger_type: entryTrigger.type,
     trigger_node_key: entryTrigger.node_key,
-    meta_message_id: input.message.meta_message_id,
+    ...triggerPayload,
   });
   // Bump the flow's execution counter — used by the builder UI to
   // surface "X runs since activation" on the flow card.

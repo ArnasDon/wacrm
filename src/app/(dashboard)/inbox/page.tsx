@@ -189,13 +189,23 @@ export default function InboxPage() {
         return;
       }
 
+      // `status` is the Meta-era generic column; uazapi accounts track
+      // their own connection state in `uazapi_status` instead (see
+      // migration 037) and never touch `status`, which stays at
+      // whatever it was set to on instance creation. Check whichever
+      // column matches the account's provider — mirrors the same
+      // branching already done in whatsapp-provider-panel.tsx.
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("provider, status, uazapi_status")
         .eq("account_id", accountId)
         .maybeSingle();
 
-      setWhatsappConnected(data?.status === "connected");
+      const connected =
+        data?.provider === "uazapi"
+          ? data?.uazapi_status === "connected"
+          : data?.status === "connected";
+      setWhatsappConnected(connected);
     };
 
     checkConnection();

@@ -20,6 +20,11 @@ describe("flow timeout version pinning", () => {
     expect(source).toContain("resumed");
   });
 
+  it("drains durable trigger schedules without request-lifetime background work", () => {
+    expect(source).toContain("drainDueFlowTriggerSchedules");
+    expect(source).toContain("triggerSchedulesEnqueued");
+  });
+
   it("best-effort purges bounded expired debug sessions", () => {
     expect(source).toContain("purge_expired_flow_debug_sessions");
     expect(source).toContain("p_limit: 100");

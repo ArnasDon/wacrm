@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { parseFlowVersionGraph } from '@/lib/flows/versions'
 import { resumeDueFlowWaits } from '@/lib/flows/wait-runtime'
 import { resumeFlowApprovalResolutions } from '@/lib/flows/approval-runtime'
+import { drainDueFlowTriggerSchedules } from '@/lib/flows/trigger-scheduler'
 
 /**
  * Sweep abandoned active flow runs.
@@ -51,6 +52,9 @@ export async function GET(request: Request) {
   const now = new Date()
   let resumed = 0
   let approvalsResumed = 0
+  let triggerSchedulesClaimed = 0
+  let triggerSchedulesEnqueued = 0
+  let triggerSchedulesFailed = 0
   try {
     resumed = (await resumeDueFlowWaits(admin, now)).resumed
   } catch (waitError) {
@@ -67,6 +71,19 @@ export async function GET(request: Request) {
     console.error(
       '[flows-cron] approval resume failed:',
       approvalError instanceof Error ? approvalError.message : approvalError,
+    )
+  }
+  try {
+    const triggerScheduleStats = await drainDueFlowTriggerSchedules(admin, now)
+    triggerSchedulesClaimed = triggerScheduleStats.claimed
+    triggerSchedulesEnqueued = triggerScheduleStats.enqueued
+    triggerSchedulesFailed = triggerScheduleStats.failed
+  } catch (triggerScheduleError) {
+    console.error(
+      '[flows-cron] trigger schedule drain failed:',
+      triggerScheduleError instanceof Error
+        ? triggerScheduleError.message
+        : triggerScheduleError,
     )
   }
   try {
@@ -109,7 +126,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   if (!runs?.length) {
-    return NextResponse.json({ swept: 0, resumed, approvalsResumed })
+    return NextResponse.json({
+      swept: 0,
+      resumed,
+      approvalsResumed,
+      triggerSchedulesClaimed,
+      triggerSchedulesEnqueued,
+      triggerSchedulesFailed,
+    })
   }
 
   type Row = {
@@ -181,5 +205,12 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ swept, resumed, approvalsResumed })
+  return NextResponse.json({
+    swept,
+    resumed,
+    approvalsResumed,
+    triggerSchedulesClaimed,
+    triggerSchedulesEnqueued,
+    triggerSchedulesFailed,
+  })
 }

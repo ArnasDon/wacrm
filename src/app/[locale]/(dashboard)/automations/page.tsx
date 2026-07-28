@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "@/i18n/navigation"
+import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
   Zap,
@@ -58,6 +59,7 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
 }
 
 export default function AutomationsPage() {
+  const t = useTranslations("automations")
   const router = useRouter()
   const canCreate = useCan("send-messages")
   const [automations, setAutomations] = useState<Automation[] | null>(null)
@@ -160,9 +162,9 @@ export default function AutomationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Automations</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Build workflows that react to WhatsApp® events automatically.
+            {t("description")}
           </p>
         </div>
         <GatedButton
@@ -178,7 +180,7 @@ export default function AutomationsPage() {
 
       {showTemplates && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Quick-start templates</h2>
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t("quickStartTemplates")}</h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             {TEMPLATE_ORDER.map((slug) => {
               const t = AUTOMATION_TEMPLATES[slug]
@@ -206,9 +208,9 @@ export default function AutomationsPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <Zap className="h-6 w-6 text-primary" />
           </div>
-          <p className="mt-3 text-sm font-medium text-foreground">No automations yet</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{t("noAutomations")}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Pick a template above or create one from scratch.
+            {t("noAutomationsHint")}
           </p>
         </div>
       ) : (

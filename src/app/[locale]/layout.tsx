@@ -89,13 +89,9 @@ export default async function LocaleLayout({
   return (
     <html
       lang={locale}
-      // Google Translate CORS failures corrupt the DOM and trigger
-      // React removeChild crashes. Blocking translation entirely
-      // prevents that incompatibility.
-      translate="no"
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`notranslate ${inter.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

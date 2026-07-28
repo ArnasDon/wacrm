@@ -1,0 +1,148 @@
+import { NextResponse } from 'next/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { requireRole, toErrorResponse } from '@/lib/auth/account';
+
+// Service-role client — needed once the org has seller accounts,
+// since the caller's own RLS-scoped client can only ever see the
+// linked accounts through the `accounts_org_select` policy
+// (migration 041), which is exactly what we want for a normal
+// request, but this GET already resolves the same rows the client
+// itself would see — using requireRole's own `supabase` is enough and
+// deliberately kept (no service role here) so this route can never
+// see MORE than the RLS policy already allows.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _adminClient: any = null;
+function supabaseAdmin() {
+  if (!_adminClient) {
+    _adminClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+  }
+  return _adminClient;
+}
+
+/**
+ * GET /api/organization
+ *
+ * Owner-only. Returns the caller's organization (as the store/owner
+ * account) if one exists, plus every linked account (the store itself
+ * + every seller account) for the consolidated-view picker. Returns
+ * `{ organization: null }` if the caller hasn't created one yet.
+ */
+export async function GET() {
+  try {
+    const { supabase, accountId } = await requireRole('owner');
+
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .select('id, name, owner_account_id, created_at')
+      .eq('owner_account_id', accountId)
+      .maybeSingle();
+
+    if (orgError) {
+      console.error('[organization] error loading organization:', orgError);
+      return NextResponse.json({ error: 'Failed to load organization' }, { status: 500 });
+    }
+
+    if (!org) {
+      return NextResponse.json({ organization: null, accounts: [] });
+    }
+
+    // RLS's accounts_org_select (migration 041) makes this return the
+    // store account + every linked seller account for the caller —
+    // never another organization's accounts, since is_organization_owner
+    // is scoped to the caller's own owner_account_id.
+    const { data: accounts, error: accountsError } = await supabase
+      .from('accounts')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true });
+
+    if (accountsError) {
+      console.error('[organization] error loading linked accounts:', accountsError);
+      return NextResponse.json({ error: 'Failed to load linked accounts' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      organization: org,
+      accounts: (accounts ?? []).map((a: { id: string; name: string }) => ({
+        id: a.id,
+        name: a.name,
+        isOwnerAccount: a.id === accountId,
+      })),
+    });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+const MAX_NAME_LEN = 120;
+
+/**
+ * POST /api/organization
+ *
+ * Owner-only. Creates the organization with the caller's own account
+ * as owner_account_id, and immediately links that same account to it
+ * (organization_id = the new org) so the store's own account shows up
+ * in the consolidated picker alongside its sellers. One organization
+ * per account — 409 if the caller already has one.
+ */
+export async function POST(request: Request) {
+  try {
+    const { supabase, accountId } = await requireRole('owner');
+
+    const body = await request.json().catch(() => ({}));
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+    if (!name) {
+      return NextResponse.json({ error: 'Organization name is required.' }, { status: 400 });
+    }
+    if (name.length > MAX_NAME_LEN) {
+      return NextResponse.json(
+        { error: `Name must be ${MAX_NAME_LEN} characters or fewer.` },
+        { status: 400 },
+      );
+    }
+
+    const { data: existing } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_account_id', accountId)
+      .maybeSingle();
+    if (existing) {
+      return NextResponse.json(
+        { error: 'This account already owns an organization.' },
+        { status: 409 },
+      );
+    }
+
+    const { data: org, error: insertError } = await supabase
+      .from('organizations')
+      .insert({ name, owner_account_id: accountId })
+      .select('id, name, owner_account_id, created_at')
+      .single();
+
+    if (insertError || !org) {
+      console.error('[organization] error creating organization:', insertError);
+      return NextResponse.json({ error: 'Failed to create organization' }, { status: 500 });
+    }
+
+    // Service role: the caller's own RLS-scoped client can UPDATE its
+    // own account row (accounts_update, migration 017, admin+), but
+    // using the admin client here removes any doubt about that policy
+    // covering this specific column for an owner-only route.
+    const { error: linkError } = await supabaseAdmin()
+      .from('accounts')
+      .update({ organization_id: org.id })
+      .eq('id', accountId);
+
+    if (linkError) {
+      console.error('[organization] error linking store account:', linkError);
+      return NextResponse.json({ error: 'Failed to link the store account' }, { status: 500 });
+    }
+
+    return NextResponse.json({ organization: org }, { status: 201 });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}

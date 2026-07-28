@@ -13,6 +13,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { OrganizationAccountSelect } from "@/components/organization/organization-account-select";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,11 @@ export default function InboxPage() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+  // Consolidated-view filter (migration 041 — organizations). Stays
+  // `null` (no-op, RLS-natural union) for anyone who isn't an
+  // organization owner — OrganizationAccountSelect renders nothing in
+  // that case, so this state is simply never touched.
+  const [accountFilter, setAccountFilter] = useState<string | null>(null);
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
@@ -579,16 +585,24 @@ export default function InboxPage() {
             thread can occupy the full width. Always visible on lg+. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex-none",
+            "flex h-full flex-1 flex-col lg:flex-none",
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >
+          {/* The inner OrganizationAccountSelect renders nothing for
+              anyone who isn't an organization owner with 2+ linked
+              accounts — this wrapper only ever takes up space when it
+              does. */}
+          <div className="flex shrink-0 justify-end border-b border-border px-3 py-2 empty:hidden">
+            <OrganizationAccountSelect value={accountFilter} onChange={setAccountFilter} />
+          </div>
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            accountFilter={accountFilter}
           />
         </div>
 

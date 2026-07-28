@@ -17,6 +17,7 @@ import { QuickRepliesManager } from '@/components/settings/quick-replies-manager
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
+import { OrganizationSettings } from '@/components/settings/organization-settings';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
@@ -26,7 +27,7 @@ import {
 export default function SettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, isOwner } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -42,14 +43,14 @@ export default function SettingsPage() {
   // Hide the section entirely for uazapi accounts rather than letting
   // them navigate into a screen that can create templates nothing can
   // ever send.
-  const [hiddenSections, setHiddenSections] = useState<SettingsSection[]>([]);
+  const [templatesHiddenByProvider, setTemplatesHiddenByProvider] = useState(false);
   useEffect(() => {
     (async () => {
       try {
         const res = await fetch('/api/whatsapp/provider');
         const data = await res.json();
         if (res.ok && data.provider === 'uazapi') {
-          setHiddenSections(['templates']);
+          setTemplatesHiddenByProvider(true);
         }
       } catch {
         // Fail open — worst case the Templates tab stays visible and
@@ -58,17 +59,29 @@ export default function SettingsPage() {
     })();
   }, []);
 
+  // Organization is a store-owner-only concept (migration 041) — a
+  // non-owner (or a viewer/agent/admin without the 'owner' role) never
+  // sees the section at all, same "hide, don't just 403" treatment as
+  // Templates for a uazapi account.
+  const hiddenSections: SettingsSection[] = useMemo(() => {
+    const hidden: SettingsSection[] = [];
+    if (templatesHiddenByProvider) hidden.push('templates');
+    if (!isOwner) hidden.push('organization');
+    return hidden;
+  }, [templatesHiddenByProvider, isOwner]);
+
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', next);
     router.replace(`/settings?${params.toString()}`, { scroll: false });
   };
 
-  // Direct-URL guard: if a uazapi account is deep-linked straight to
-  // ?tab=templates (an old bookmark, a stale link), bounce to Overview
-  // rather than rendering a section this account can't act on.
+  // Direct-URL guard: if a hidden section is deep-linked straight to
+  // (an old bookmark, a stale link — uazapi + templates, or a non-owner
+  // + organization), bounce to Overview rather than rendering a section
+  // this account can't act on.
   useEffect(() => {
-    if (section === 'templates' && hiddenSections.includes('templates')) {
+    if (hiddenSections.includes(section)) {
       go('overview');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,6 +109,7 @@ export default function SettingsPage() {
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
     members: <MembersTab />,
+    organization: <OrganizationSettings />,
     api: <ApiKeysSettings />,
   };
 

@@ -57,8 +57,31 @@ export interface Account {
   name: string;
   /** auth.users.id of the immutable owner. */
   owner_user_id: string;
+  /** Set when this account belongs to a multi-account organization (migration 041). */
+  organization_id?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * A store + its linked seller accounts (migration 041). Only ever
+ * resolved for the organization's owner_account_id's own 'owner' —
+ * see is_organization_owner() in 041_organizations.sql.
+ */
+export interface Organization {
+  id: string;
+  name: string;
+  owner_account_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One row in the consolidated-view account picker. */
+export interface OrganizationAccount {
+  id: string;
+  name: string;
+  /** True for the organization's own store account. */
+  isOwnerAccount: boolean;
 }
 
 /**

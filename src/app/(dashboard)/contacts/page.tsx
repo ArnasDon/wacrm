@@ -56,6 +56,7 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
+import { OrganizationAccountSelect } from '@/components/organization/organization-account-select';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 25;
@@ -77,6 +78,13 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  // Consolidated-view filter (migration 041 — organizations). Only
+  // applied on the plain (non-tag-filtered) path below — the tag
+  // filter goes through filter_contacts_by_tags (migration 025), a
+  // SECURITY DEFINER RPC that would need its own account_id parameter
+  // to support this too; left as a known gap for a follow-up rather
+  // than widening this round's scope into that function.
+  const [accountFilter, setAccountFilter] = useState<string | null>(null);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -164,6 +172,9 @@ export default function ContactsPage() {
         const like = `%${term}%`;
         query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
       }
+      if (accountFilter) {
+        query = query.eq('account_id', accountFilter);
+      }
 
       const { data, count: exactCount, error } = await query;
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
@@ -207,7 +218,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, tagsMap, t, accountFilter]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -350,6 +361,7 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <OrganizationAccountSelect value={accountFilter} onChange={setAccountFilter} />
           {canEditSettings && (
             <Button
               variant="outline"

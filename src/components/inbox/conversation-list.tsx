@@ -34,6 +34,14 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Consolidated-view filter (migration 041 — organizations): when set,
+   * scopes the fetch to exactly one account instead of the RLS-natural
+   * union of every account the caller can read (their own + every
+   * linked account, for an organization owner). `undefined`/`null`
+   * shows the union, unchanged from before this prop existed.
+   */
+  accountFilter?: string | null;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +60,7 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  accountFilter = null,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -95,10 +104,14 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
         .order("last_message_at", { ascending: false });
+      if (accountFilter) {
+        query = query.eq("account_id", accountFilter);
+      }
+      const { data, error } = await query;
 
       if (cancelled) return;
 
@@ -124,7 +137,7 @@ export function ConversationList({
     // `resyncToken` is included so the parent can force a refetch when
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
+  }, [resyncToken, accountFilter]);
 
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.

@@ -21,7 +21,15 @@
       "Bash(vercel link*)",
       "Bash(vercel env ls*)",
       "Bash(vercel deploy*)",
-      "Bash(vercel logs*)"
+      "Bash(vercel logs*)",
+      "Bash(node *)",
+      "Bash(node)",
+      "WebFetch(domain:developer.z-api.io)",
+      "WebFetch(domain:z-api.io)",
+      "WebFetch(domain:*.z-api.io)",
+      "WebSearch",
+      "Bash(curl -s https://developer.z-api.io/*)",
+      "Bash(curl https://developer.z-api.io/*)"
     ],
     "deny": [
       "Bash(git push*)",

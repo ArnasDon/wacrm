@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
@@ -31,14 +32,15 @@ export function CustomFieldsManager({
   open,
   onOpenChange,
 }: CustomFieldsManagerProps) {
+  const t = useTranslations('contacts.customFields');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-popover text-popover-foreground sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">Custom fields</DialogTitle>
+          <DialogTitle className="text-popover-foreground">{t('title')}</DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Define extra contact fields (e.g. ZIP code, lead source). They
-            appear on every contact and in the “Update Contact Field” automation
+            appear on every contact and in the &quot;Update Contact Field&quot; automation
             action.
           </DialogDescription>
         </DialogHeader>
@@ -55,6 +57,8 @@ export function CustomFieldsManager({
  * `custom_fields` RLS also rejects non-admin writes as defense in depth.
  */
 export function CustomFieldsPanel() {
+  const t = useTranslations('contacts.customFields');
+  const tCommon = useTranslations('common');
   const supabase = createClient();
   const { user, accountId } = useAuth();
 
@@ -184,7 +188,7 @@ export function CustomFieldsPanel() {
               void handleCreate();
             }
           }}
-          placeholder="New field name…"
+          placeholder={t('fieldName') + '…'}
           className="bg-muted text-foreground"
         />
         <Button
@@ -197,7 +201,7 @@ export function CustomFieldsPanel() {
           ) : (
             <Plus className="size-4" />
           )}
-          Add
+          {tCommon('add')}
         </Button>
       </div>
 
@@ -206,11 +210,11 @@ export function CustomFieldsPanel() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            Loading…
+            {tCommon('loading')}…
           </div>
         ) : fields.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No custom fields yet.
+            {t('noFields')}
           </p>
         ) : (
           <ul className="divide-y divide-border">

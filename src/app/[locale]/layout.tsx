@@ -102,12 +102,14 @@ export default async function LocaleLayout({
         />
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          <ThemeProvider>
-            <ErrorBoundary>{children}</ErrorBoundary>
-            <ThemedToaster />
-          </ThemeProvider>
-        </NextIntlClientProvider>
+        <div translate="no">
+          <NextIntlClientProvider locale={locale} messages={messages}>
+            <ThemeProvider>
+              <ErrorBoundary>{children}</ErrorBoundary>
+              <ThemedToaster />
+            </ThemeProvider>
+          </NextIntlClientProvider>
+        </div>
       </body>
     </html>
   );

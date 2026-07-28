@@ -1,43 +1,35 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git status*)",
-      "Bash(git diff*)",
-      "Bash(git log*)",
-      "Bash(git show*)",
-      "Bash(cat *)",
-      "Bash(ls*)",
-      "Bash(grep *)",
-      "Bash(find *)",
-      "Bash(npm run typecheck*)",
-      "Bash(npm run lint*)",
-      "Bash(npm test*)",
-      "Bash(npm run test*)",
-      "Bash(npm run build*)",
-      "Bash(npm run dev*)",
-      "Bash(git add *)",
-      "Bash(git commit*)",
-      "Bash(git checkout *)",
-      "Bash(vercel link*)",
-      "Bash(vercel env ls*)",
-      "Bash(vercel deploy*)",
-      "Bash(vercel logs*)",
-      "Bash(node *)",
-      "Bash(node)",
+      "Bash(*)",
       "WebFetch(domain:developer.z-api.io)",
       "WebFetch(domain:z-api.io)",
       "WebFetch(domain:*.z-api.io)",
+      "WebFetch(domain:*.uazapi.com)",
+      "WebFetch(domain:docs.uazapi.dev)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:vercel.com)",
       "WebSearch",
-      "Bash(curl -s https://developer.z-api.io/*)",
-      "Bash(curl https://developer.z-api.io/*)"
+      "Edit",
+      "Write",
+      "Read"
     ],
     "deny": [
       "Bash(git push*)",
-      "Bash(rm -rf *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf .*)",
       "Bash(git reset --hard*)",
       "Bash(git clean -f*)",
+      "Bash(git clean -d*)",
       "Bash(vercel env add*)",
-      "Bash(vercel env rm*)"
+      "Bash(vercel env rm*)",
+      "Bash(vercel remove*)",
+      "Bash(vercel project rm*)",
+      "Bash(supabase db reset*)",
+      "Bash(supabase projects delete*)",
+      "Bash(curl * -d *password*)",
+      "Bash(curl * -d *token*)"
     ]
   }
 }

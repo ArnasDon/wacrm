@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { getProfilePicture } from '@/lib/whatsapp/zapi-api'
 import {
   processInboundMessage,
   handleStatusUpdate,
@@ -190,6 +191,9 @@ export async function POST(
 interface ZapiConfigRow {
   account_id: string
   user_id: string
+  zapi_instance_id: string
+  zapi_token: string
+  zapi_client_token: string | null
 }
 
 async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent): Promise<void> {
@@ -244,6 +248,25 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
 
   const contentType = mapZapiEventToContentType(data)
 
+  // Z-API's received-message payload carries no profile photo of its
+  // own (unlike uazapi, whose "messages" event includes one inline) —
+  // a dedicated lookup call is needed. Best-effort: a missing/failed
+  // photo must never block message processing.
+  let contactAvatarUrl: string | null = null
+  try {
+    const token = decrypt(config.zapi_token)
+    const clientToken = config.zapi_client_token ? decrypt(config.zapi_client_token) : undefined
+    const photo = await getProfilePicture({
+      instanceId: config.zapi_instance_id,
+      token,
+      clientToken,
+      phone: data.phone,
+    })
+    contactAvatarUrl = photo.url
+  } catch (err) {
+    console.warn('[z-api webhook] getProfilePicture failed (non-fatal):', err)
+  }
+
   if (contentType === 'reaction') {
     if (!data.reaction?.referencedMessage?.messageId) return
     await processInboundMessage({
@@ -253,6 +276,7 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
       // profile name" field the way Meta's contacts[].profile.name
       // does — same fallback-to-phone convention as the uazapi route.
       contactName: data.phone,
+      contactAvatarUrl,
       message: {
         externalId: data.messageId,
         from: data.phone,
@@ -305,6 +329,7 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
     accountId: config.account_id,
     configOwnerUserId: config.user_id,
     contactName: data.phone,
+    contactAvatarUrl,
     message: {
       externalId: data.messageId,
       from: data.phone,

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getInstanceStatus,
   getQrCode,
+  getProfilePicture,
   disconnectInstance,
   configureWebhook,
   sendText,
@@ -80,6 +81,19 @@ describe("zapi-api", () => {
     vi.stubGlobal("fetch", okFetch({}));
     const empty = await getQrCode({ instanceId: INSTANCE_ID, token: TOKEN });
     expect(empty).toEqual({ qrCode: null });
+  });
+
+  it("getProfilePicture returns the photo link with the phone as a query param", async () => {
+    vi.stubGlobal("fetch", okFetch({ link: "https://pps.whatsapp.net/photo.jpg" }));
+    const result = await getProfilePicture({ instanceId: INSTANCE_ID, token: TOKEN, phone: "5511999999999" });
+    expect(result).toEqual({ url: "https://pps.whatsapp.net/photo.jpg" });
+    expect(captured?.url).toBe(`${BASE}/profile-picture?phone=5511999999999`);
+  });
+
+  it("getProfilePicture returns null instead of throwing on a non-2xx response (e.g. no photo set)", async () => {
+    vi.stubGlobal("fetch", okFetch({ error: "not found" }, 404));
+    const result = await getProfilePicture({ instanceId: INSTANCE_ID, token: TOKEN, phone: "5511999999999" });
+    expect(result).toEqual({ url: null });
   });
 
   it("disconnectInstance posts to /disconnect", async () => {

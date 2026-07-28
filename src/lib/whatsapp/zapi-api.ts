@@ -98,6 +98,30 @@ export async function getInstanceStatus(args: {
 }
 
 /**
+ * GET /profile-picture?phone=... — the contact's current WhatsApp
+ * profile photo URL. Confirmed via Z-API's own docs (developer.z-api.io
+ * /contacts/get-profile-picture) and a search-confirmed endpoint path,
+ * since the rendered docs page didn't spell out the literal path
+ * itself. Returns null on any non-2xx (e.g. contact has no photo, or
+ * privacy settings hide it) rather than throwing — a missing photo is
+ * an expected outcome here, not an error worth surfacing.
+ */
+export async function getProfilePicture(args: {
+  instanceId: string
+  token: string
+  clientToken?: string
+  phone: string
+}): Promise<{ url: string | null }> {
+  const response = await fetch(
+    `${baseUrl(args.instanceId, args.token)}/profile-picture?phone=${encodeURIComponent(args.phone)}`,
+    { headers: headers(args.clientToken) },
+  )
+  if (!response.ok) return { url: null }
+  const data = await response.json()
+  return { url: typeof data.link === 'string' && data.link ? data.link : null }
+}
+
+/**
  * GET /qr-code — QR code as a data URL (`data:image/png;base64,...`),
  * ready to render directly in an <img>. Returns null once already
  * connected or mid-Passkey-challenge (see file header) rather than

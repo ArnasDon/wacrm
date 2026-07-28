@@ -210,6 +210,88 @@ describe("processInboundMessage", () => {
     expect(h.state.aiReplyDispatched).toBe(true);
   });
 
+  it("saves the contact's avatar URL when the provider supplies one on a new contact", async () => {
+    await processInboundMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "Maria",
+      contactAvatarUrl: "https://pps.whatsapp.net/v/photo.jpg",
+      message: {
+        externalId: "wamid.AVATAR1",
+        from: "5511999999999",
+        timestampMs: 1700000000500,
+        contentType: "text",
+        text: "Oi",
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+      },
+    });
+
+    expect(h.state.inserted.contacts[0]).toMatchObject({
+      avatar_url: "https://pps.whatsapp.net/v/photo.jpg",
+    });
+  });
+
+  it("refreshes an existing contact's avatar URL when the provider supplies a new one", async () => {
+    h.state.existingContact = {
+      id: "contact-1",
+      phone: "5511999999999",
+      name: "Maria",
+      avatar_url: "https://old.example.com/photo.jpg",
+    };
+    h.state.existingConversation = { id: "conv-1", account_id: "acc-1", contact_id: "contact-1", unread_count: 0 };
+
+    await processInboundMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "Maria",
+      contactAvatarUrl: "https://new.example.com/photo.jpg",
+      message: {
+        externalId: "wamid.AVATAR2",
+        from: "5511999999999",
+        timestampMs: 1700000000600,
+        contentType: "text",
+        text: "Oi de novo",
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+      },
+    });
+
+    const contactUpdate = h.state.updated.find((u) => u.table === "contacts");
+    expect(contactUpdate?.payload).toMatchObject({ avatar_url: "https://new.example.com/photo.jpg" });
+  });
+
+  it("does not touch avatar_url when the provider supplies none (e.g. Meta)", async () => {
+    h.state.existingContact = {
+      id: "contact-1",
+      phone: "5511999999999",
+      name: "Maria",
+      avatar_url: "https://old.example.com/photo.jpg",
+    };
+    h.state.existingConversation = { id: "conv-1", account_id: "acc-1", contact_id: "contact-1", unread_count: 0 };
+
+    await processInboundMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "Maria",
+      message: {
+        externalId: "wamid.NOAVATAR",
+        from: "5511999999999",
+        timestampMs: 1700000000700,
+        contentType: "text",
+        text: "Sem foto",
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+      },
+    });
+
+    const contactUpdate = h.state.updated.find((u) => u.table === "contacts");
+    expect(contactUpdate).toBeUndefined();
+  });
+
   it("does not re-create a conversation for a known contact with an existing thread", async () => {
     h.state.existingContact = { id: "contact-1", phone: "5511999999999", name: "Maria" };
     h.state.existingConversation = { id: "conv-1", account_id: "acc-1", contact_id: "contact-1", unread_count: 2 };

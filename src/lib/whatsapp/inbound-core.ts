@@ -60,6 +60,7 @@ interface ContactRow {
   id: string
   phone: string
   name?: string | null
+  avatar_url?: string | null
   [key: string]: unknown
 }
 
@@ -75,6 +76,7 @@ async function findOrCreateContact(
   configOwnerUserId: string,
   phone: string,
   name: string,
+  avatarUrl?: string | null,
 ): Promise<ContactOutcome | null> {
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
@@ -85,11 +87,16 @@ async function findOrCreateContact(
   const existingContact = await findExistingContact(supabaseAdmin(), accountId, phone)
 
   if (existingContact) {
-    if (name && name !== existingContact.name) {
-      await supabaseAdmin()
-        .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existingContact.id)
+    const patch: Record<string, unknown> = {}
+    if (name && name !== existingContact.name) patch.name = name
+    // Refreshed opportunistically on every inbound message rather than
+    // via a separate polling job — profile photos change rarely enough
+    // that "update whenever we hear from this contact again" keeps it
+    // reasonably fresh without extra infrastructure.
+    if (avatarUrl && avatarUrl !== existingContact.avatar_url) patch.avatar_url = avatarUrl
+    if (Object.keys(patch).length > 0) {
+      patch.updated_at = new Date().toISOString()
+      await supabaseAdmin().from('contacts').update(patch).eq('id', existingContact.id)
     }
     return { contact: existingContact, wasCreated: false }
   }
@@ -105,6 +112,7 @@ async function findOrCreateContact(
       user_id: configOwnerUserId,
       phone,
       name: name || phone,
+      avatar_url: avatarUrl || null,
     })
     .select()
     .single()
@@ -303,6 +311,15 @@ export interface ProcessInboundMessageParams {
    *  audit owner for inserts that need a NOT NULL user_id FK. */
   configOwnerUserId: string
   contactName: string
+  /**
+   * Contact's WhatsApp profile photo URL, when the provider makes one
+   * available. Meta's Cloud API never does (no picture field on
+   * `contacts[].profile`, confirmed against its webhook docs); uazapi
+   * includes one on every inbound message already (no extra API call
+   * needed); Z-API requires a dedicated lookup call, done by its
+   * webhook route before calling this.
+   */
+  contactAvatarUrl?: string | null
   message: NormalizedInboundMessage
 }
 
@@ -316,10 +333,16 @@ export interface ProcessInboundMessageParams {
  * called.
  */
 export async function processInboundMessage(params: ProcessInboundMessageParams): Promise<void> {
-  const { accountId, configOwnerUserId, contactName, message } = params
+  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, message } = params
   const senderPhone = normalizePhone(message.from)
 
-  const contactOutcome = await findOrCreateContact(accountId, configOwnerUserId, senderPhone, contactName)
+  const contactOutcome = await findOrCreateContact(
+    accountId,
+    configOwnerUserId,
+    senderPhone,
+    contactName,
+    contactAvatarUrl,
+  )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 

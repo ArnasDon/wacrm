@@ -105,6 +105,14 @@ interface UazapiWebhookEvent {
   EventType: string
   instance?: { name?: string; status?: string }
   message?: Record<string, unknown>
+  /**
+   * Chat metadata uazapi includes alongside every "messages" event —
+   * `imagePreview` is a live, directly-fetchable URL to the contact's
+   * current WhatsApp profile photo thumbnail (confirmed present on a
+   * real payload; `image` was empty on that same payload, so
+   * `imagePreview` is used as the primary source below).
+   */
+  chat?: { image?: string; imagePreview?: string }
   [key: string]: unknown
 }
 
@@ -288,6 +296,7 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
 
   const senderPhone = stripJidSuffix(senderJid)
   const contentType = mapUazapiTypeToContentType(data.type, data.messageType)
+  const contactAvatarUrl = event.chat?.imagePreview || event.chat?.image || null
 
   if (contentType === 'reaction') {
     if (!data.reaction) return
@@ -295,6 +304,7 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
       contactName: senderPhone,
+      contactAvatarUrl,
       message: {
         externalId,
         from: senderPhone,
@@ -332,6 +342,7 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     // only overwrites an existing contact's name when a non-empty one
     // is supplied, so this never clobbers a name already on file.
     contactName: data.senderName || senderPhone,
+    contactAvatarUrl,
     message: {
       externalId,
       from: senderPhone,

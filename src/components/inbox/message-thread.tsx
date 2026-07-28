@@ -43,10 +43,8 @@ import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import {
   MessageComposer,
-  CHAT_MEDIA_BUCKET,
   type SendMediaPayload,
 } from "./message-composer";
-import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
@@ -176,6 +174,15 @@ export function MessageThread({
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // One resend closure per in-flight optimistic bubble, keyed by its
+  // tempId — lets the "Try again" link redo the exact same send
+  // in-place (flips status back to "sending" on the same bubble)
+  // instead of creating a brand-new one alongside the failed bubble.
+  const pendingSendsRef = useRef<Map<string, () => Promise<void>>>(new Map());
+  const handleRetrySend = useCallback((tempId: string) => {
+    const retry = pendingSendsRef.current.get(tempId);
+    if (retry) void retry();
+  }, []);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
@@ -450,6 +457,47 @@ export function MessageThread({
       if (!conversation) return;
 
       const tempId = `temp-${Date.now()}`;
+      const conversationId = conversation.id;
+
+      // Registered under tempId so the "Try again" link (message-bubble.tsx)
+      // can redo this exact attempt in place — same bubble, status flips
+      // sending → sent/failed again — instead of spawning a new one.
+      const attemptSend = async () => {
+        onUpdateMessage(tempId, { status: "sending" });
+        try {
+          const res = await fetch("/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message_type: "text",
+              content_text: text,
+              reply_to_message_id: replyToId,
+            }),
+          });
+
+          const payload = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const reason = payload?.error || `HTTP ${res.status}`;
+            console.error("Failed to send message:", reason);
+            toast.error(`Failed to send: ${reason}`);
+            onUpdateMessage(tempId, { status: "failed" });
+            return;
+          }
+
+          // Success — the realtime INSERT event will replace the temp bubble
+          // with the real DB row. If realtime hasn't arrived yet, at least
+          // flip status to 'sent' so the UI stops showing "sending".
+          onUpdateMessage(tempId, { status: "sent" });
+          pendingSendsRef.current.delete(tempId);
+        } catch (err) {
+          console.error("Failed to send message:", err);
+          const reason = err instanceof Error ? err.message : "network error";
+          toast.error(`Failed to send: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+        }
+      };
 
       // Optimistic update — shows the message immediately with "sending" status
       const optimisticMsg: Message = {
@@ -464,40 +512,8 @@ export function MessageThread({
       };
       onNewMessage(optimisticMsg);
       setReplyTo(null);
-
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "text",
-            content_text: text,
-            reply_to_message_id: replyToId,
-          }),
-        });
-
-        const payload = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = payload?.error || `HTTP ${res.status}`;
-          console.error("Failed to send message:", reason);
-          toast.error(`Failed to send: ${reason}`);
-          // Mark the optimistic bubble as failed so the user sees what happened
-          onUpdateMessage(tempId, { status: "failed" });
-          return;
-        }
-
-        // Success — the realtime INSERT event will replace the temp bubble
-        // with the real DB row. If realtime hasn't arrived yet, at least
-        // flip status to 'sent' so the UI stops showing "sending".
-        onUpdateMessage(tempId, { status: "sent" });
-      } catch (err) {
-        console.error("Failed to send message:", err);
-        const reason = err instanceof Error ? err.message : "network error";
-        toast.error(`Failed to send: ${reason}`);
-        onUpdateMessage(tempId, { status: "failed" });
-      }
+      pendingSendsRef.current.set(tempId, attemptSend);
+      await attemptSend();
     },
     [conversation, onNewMessage, onUpdateMessage]
   );
@@ -515,6 +531,49 @@ export function MessageThread({
           : payload.caption;
 
       const tempId = `temp-${Date.now()}`;
+      const conversationId = conversation.id;
+
+      // Note: on failure this deliberately does NOT delete the uploaded
+      // media object anymore — retrying (see message-bubble.tsx's "Try
+      // again" link) needs it to still exist. An orphaned object from a
+      // send the user never retries is an acceptable storage cost next
+      // to breaking retry outright.
+      const attemptSend = async () => {
+        onUpdateMessage(tempId, { status: "sending" });
+        try {
+          const res = await fetch("/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message_type: payload.kind,
+              media_url: payload.mediaUrl,
+              content_text: contentText,
+              filename: payload.filename,
+              reply_to_message_id: payload.replyToId,
+            }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const reason = data?.error || `HTTP ${res.status}`;
+            console.error("Failed to send media:", reason);
+            toast.error(`Failed to send: ${reason}`);
+            onUpdateMessage(tempId, { status: "failed" });
+            return;
+          }
+
+          onUpdateMessage(tempId, { status: "sent" });
+          pendingSendsRef.current.delete(tempId);
+        } catch (err) {
+          console.error("Failed to send media:", err);
+          const reason = err instanceof Error ? err.message : "network error";
+          toast.error(`Failed to send: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+        }
+      };
+
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversation.id,
@@ -528,42 +587,8 @@ export function MessageThread({
       };
       onNewMessage(optimisticMsg);
       setReplyTo(null);
-
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: payload.kind,
-            media_url: payload.mediaUrl,
-            content_text: contentText,
-            filename: payload.filename,
-            reply_to_message_id: payload.replyToId,
-          }),
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = data?.error || `HTTP ${res.status}`;
-          console.error("Failed to send media:", reason);
-          toast.error(`Failed to send: ${reason}`);
-          onUpdateMessage(tempId, { status: "failed" });
-          // The upload never reached the recipient — GC the orphaned
-          // object rather than leaving it in the public bucket forever.
-          void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
-          return;
-        }
-
-        onUpdateMessage(tempId, { status: "sent" });
-      } catch (err) {
-        console.error("Failed to send media:", err);
-        const reason = err instanceof Error ? err.message : "network error";
-        toast.error(`Failed to send: ${reason}`);
-        onUpdateMessage(tempId, { status: "failed" });
-        void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
-      }
+      pendingSendsRef.current.set(tempId, attemptSend);
+      await attemptSend();
     },
     [conversation, onNewMessage, onUpdateMessage],
   );
@@ -573,6 +598,42 @@ export function MessageThread({
       if (!conversation) return;
 
       const tempId = `temp-${Date.now()}`;
+      const conversationId = conversation.id;
+
+      const attemptSend = async () => {
+        onUpdateMessage(tempId, { status: "sending" });
+        try {
+          const res = await fetch("/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message_type: "interactive",
+              interactive_payload: payload,
+              reply_to_message_id: replyToId,
+            }),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const reason = data?.error || `HTTP ${res.status}`;
+            console.error("Failed to send interactive message:", reason);
+            toast.error(`Failed to send: ${reason}`);
+            onUpdateMessage(tempId, { status: "failed" });
+            return;
+          }
+
+          onUpdateMessage(tempId, { status: "sent" });
+          pendingSendsRef.current.delete(tempId);
+        } catch (err) {
+          console.error("Failed to send interactive message:", err);
+          const reason = err instanceof Error ? err.message : "network error";
+          toast.error(`Failed to send: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+        }
+      };
+
       // Optimistic bubble — renders the buttons/list immediately via the
       // interactive_payload, same as the persisted row will.
       const optimisticMsg: Message = {
@@ -587,36 +648,8 @@ export function MessageThread({
         reply_to_message_id: replyToId,
       };
       onNewMessage(optimisticMsg);
-
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "interactive",
-            interactive_payload: payload,
-            reply_to_message_id: replyToId,
-          }),
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = data?.error || `HTTP ${res.status}`;
-          console.error("Failed to send interactive message:", reason);
-          toast.error(`Failed to send: ${reason}`);
-          onUpdateMessage(tempId, { status: "failed" });
-          return;
-        }
-
-        onUpdateMessage(tempId, { status: "sent" });
-      } catch (err) {
-        console.error("Failed to send interactive message:", err);
-        const reason = err instanceof Error ? err.message : "network error";
-        toast.error(`Failed to send: ${reason}`);
-        onUpdateMessage(tempId, { status: "failed" });
-      }
+      pendingSendsRef.current.set(tempId, attemptSend);
+      await attemptSend();
     },
     [conversation, onNewMessage, onUpdateMessage],
   );
@@ -653,6 +686,52 @@ export function MessageThread({
 
       const renderedBody = renderTemplateBody(template.body_text, values.body);
       const tempId = `temp-${Date.now()}`;
+      const conversationId = conversation.id;
+
+      const attemptSend = async () => {
+        onUpdateMessage(tempId, { status: "sending" });
+        try {
+          const res = await fetch("/api/whatsapp/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              message_type: "template",
+              template_name: template.name,
+              template_language: template.language,
+              // Structured params drive the new send-builder path
+              // (header media + URL button substitution). Body values
+              // are mirrored under both shapes so the route can fall
+              // back if the template row isn't found locally.
+              template_message_params: {
+                body: values.body,
+                headerText: values.headerText,
+                buttonParams: values.buttonParams,
+              },
+              template_params: values.body,
+              content_text: renderedBody,
+            }),
+          });
+
+          const payload = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const reason = payload?.error || `HTTP ${res.status}`;
+            console.error("Failed to send template:", reason);
+            toast.error(`Failed to send template: ${reason}`);
+            onUpdateMessage(tempId, { status: "failed" });
+            return;
+          }
+
+          onUpdateMessage(tempId, { status: "sent" });
+          pendingSendsRef.current.delete(tempId);
+        } catch (err) {
+          console.error("Failed to send template:", err);
+          const reason = err instanceof Error ? err.message : "network error";
+          toast.error(`Failed to send template: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+        }
+      };
 
       const optimisticMsg: Message = {
         id: tempId,
@@ -665,47 +744,8 @@ export function MessageThread({
         created_at: new Date().toISOString(),
       };
       onNewMessage(optimisticMsg);
-
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "template",
-            template_name: template.name,
-            template_language: template.language,
-            // Structured params drive the new send-builder path
-            // (header media + URL button substitution). Body values
-            // are mirrored under both shapes so the route can fall
-            // back if the template row isn't found locally.
-            template_message_params: {
-              body: values.body,
-              headerText: values.headerText,
-              buttonParams: values.buttonParams,
-            },
-            template_params: values.body,
-            content_text: renderedBody,
-          }),
-        });
-
-        const payload = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = payload?.error || `HTTP ${res.status}`;
-          console.error("Failed to send template:", reason);
-          toast.error(`Failed to send template: ${reason}`);
-          onUpdateMessage(tempId, { status: "failed" });
-          return;
-        }
-
-        onUpdateMessage(tempId, { status: "sent" });
-      } catch (err) {
-        console.error("Failed to send template:", err);
-        const reason = err instanceof Error ? err.message : "network error";
-        toast.error(`Failed to send template: ${reason}`);
-        onUpdateMessage(tempId, { status: "failed" });
-      }
+      pendingSendsRef.current.set(tempId, attemptSend);
+      await attemptSend();
     },
     [conversation, onNewMessage, onUpdateMessage],
   );
@@ -1122,6 +1162,11 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          onRetry={
+                            msg.status === "failed"
+                              ? () => handleRetrySend(msg.id)
+                              : undefined
+                          }
                         />
                       </MessageActions>
                     );

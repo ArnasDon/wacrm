@@ -7,6 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // send + persistence path — no inbound message required to bootstrap a thread.
 // ---------------------------------------------------------------------------
 
+// send-message.ts defers its post-send bookkeeping (contact phone fixup,
+// conversation preview update, flow-run pause) to next/server's `after()` —
+// real in production (the route runs inside Next's actual request scope),
+// but `after()` throws "called outside a request scope" when a test invokes
+// POST() directly like this file does, since there's no such scope here.
+// Stub it to just run the callback immediately so the deferred writes still
+// happen (and stay assertable) without needing Next's real server plumbing.
+vi.mock('next/server', async () => {
+  const actual = await vi.importActual<typeof import('next/server')>('next/server')
+  return { ...actual, after: (cb: () => unknown) => void cb() }
+})
+
 // Records of what the route wrote, so we can assert the right rows landed.
 const conversationInserts: Array<Record<string, unknown>> = []
 const messageInserts: Array<Record<string, unknown>> = []

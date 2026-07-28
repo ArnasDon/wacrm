@@ -20,6 +20,7 @@
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { after } from 'next/server';
 
 import type { MediaKind } from '@/lib/whatsapp/meta-api';
 import {
@@ -369,6 +370,11 @@ export async function sendMessageToConversation(
   // variants if it rejects with "recipient not in allowed list";
   // persist a working variant back to the contact so the next send
   // goes straight through.
+  //
+  // TEMPORARY — timing instrumentation to measure real-world WhatsApp
+  // API latency (perceived-send-speed investigation). Remove once a
+  // representative sample has been captured from production logs.
+  const sendStartedAt = Date.now();
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
@@ -384,16 +390,9 @@ export async function sendMessageToConversation(
     console.error('[send-message] send failed for all variants:', message);
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
-
-  if (workingPhone !== sanitizedPhone) {
-    console.log(
-      `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
-    );
-    await db
-      .from('contacts')
-      .update({ phone: workingPhone })
-      .eq('id', contact.id);
-  }
+  console.log(
+    `[send-message] provider send took ${Date.now() - sendStartedAt}ms (provider=${provider.kind})`
+  );
 
   // Persist the sent message. Field names MUST match the messages
   // schema (see 001_initial_schema.sql).
@@ -430,42 +429,59 @@ export async function sendMessageToConversation(
     );
   }
 
-  const lastMessageText =
-    messageType === 'interactive'
-      ? interactivePayloadPreviewText(interactivePayload!)
-      : contentText || `[${messageType}]`;
-
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: lastMessageText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversationId);
-
-  // Pause any active Flow run for this contact — the agent stepping in
-  // is the strongest "yield, human is here" signal. Best-effort.
-  try {
-    const { error: pauseErr } = await supabaseAdmin()
-      .from('flow_runs')
-      .update({
-        status: 'paused_by_agent',
-        ended_at: new Date().toISOString(),
-        end_reason: 'agent_replied',
-      })
-      .eq('account_id', accountId)
-      .eq('contact_id', contact.id)
-      .eq('status', 'active');
-    if (pauseErr) {
-      console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+  // Everything below this point is bookkeeping that doesn't change
+  // what's returned to the caller — deferred to run after the response
+  // is already on the wire, same `after()` pattern the inbound webhook
+  // routes use, so the caller isn't stuck waiting on three more DB
+  // round-trips once the (already slow) WhatsApp API call is done.
+  after(async () => {
+    if (workingPhone !== sanitizedPhone) {
+      console.log(
+        `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
+      );
+      await db
+        .from('contacts')
+        .update({ phone: workingPhone })
+        .eq('id', contact.id);
     }
-  } catch (err) {
-    console.error(
-      '[flows] pause-on-agent-send threw:',
-      err instanceof Error ? err.message : err
-    );
-  }
+
+    const lastMessageText =
+      messageType === 'interactive'
+        ? interactivePayloadPreviewText(interactivePayload!)
+        : contentText || `[${messageType}]`;
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: lastMessageText,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+
+    // Pause any active Flow run for this contact — the agent stepping
+    // in is the strongest "yield, human is here" signal. Best-effort.
+    try {
+      const { error: pauseErr } = await supabaseAdmin()
+        .from('flow_runs')
+        .update({
+          status: 'paused_by_agent',
+          ended_at: new Date().toISOString(),
+          end_reason: 'agent_replied',
+        })
+        .eq('account_id', accountId)
+        .eq('contact_id', contact.id)
+        .eq('status', 'active');
+      if (pauseErr) {
+        console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
+      }
+    } catch (err) {
+      console.error(
+        '[flows] pause-on-agent-send threw:',
+        err instanceof Error ? err.message : err
+      );
+    }
+  });
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
 }

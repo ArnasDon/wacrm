@@ -216,7 +216,8 @@
       "interactiveReply": "[Resposta interativa]",
       "unsupported": "[Tipo de mensagem não suportado]",
       "aiBadge": "IA",
-      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA"
+      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
+      "retrySend": "Tentar novamente"
     },
     "actions": {
       "reply": "Responder",

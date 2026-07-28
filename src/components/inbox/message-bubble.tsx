@@ -28,6 +28,8 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Shown as a "Try again" link under a failed send — omit to hide it. */
+  onRetry?: () => void;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -264,6 +266,7 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  onRetry,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -281,10 +284,13 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          "relative rounded-2xl px-3 py-2 transition-opacity",
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
+          // Optimistic bubble, still in flight — dimmed until the send
+          // resolves to "sent" (or "failed").
+          message.status === "sending" && "opacity-60",
         )}
       >
         {reply && (
@@ -329,6 +335,15 @@ export function MessageBubble({
           {isAgent && <StatusIcon status={message.status} />}
         </div>
       </div>
+      {message.status === "failed" && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-0.5 text-[10px] font-medium text-red-400 underline decoration-dotted hover:text-red-300"
+        >
+          {t("retrySend")}
+        </button>
+      )}
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions
           reactions={reactions}

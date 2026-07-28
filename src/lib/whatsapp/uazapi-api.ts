@@ -74,7 +74,7 @@ export async function createInstance(
     body: JSON.stringify({ name: args.name }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const instanceId = data.instance?.id
@@ -94,7 +94,7 @@ export async function deleteInstance(args: { baseUrl: string; token: string }): 
   // A 404 means it's already gone on uazapi's side — treat as success,
   // mirroring meta-api.ts::deleteMessageTemplate's same convention.
   if (!response.ok && response.status !== 404) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
 }
 
@@ -128,7 +128,7 @@ export async function connectInstance(
     body: JSON.stringify(args.phone ? { phone: args.phone } : {}),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const instance = data.instance ?? {}
@@ -156,7 +156,7 @@ export async function getInstanceStatus(args: {
     headers: { token: args.token },
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const instance = data.instance ?? {}
@@ -176,7 +176,7 @@ export async function disconnectInstance(args: { baseUrl: string; token: string 
     headers: { token: args.token },
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
 }
 
@@ -210,7 +210,7 @@ export async function configureWebhook(args: {
     }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
 }
 
@@ -230,7 +230,7 @@ export async function sendText(args: {
     body: JSON.stringify({ number: args.number, text: args.text }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const messageId = data.messageid ?? data.id
@@ -261,7 +261,7 @@ export async function sendMedia(args: {
     }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const messageId = data.messageid ?? data.id
@@ -283,7 +283,7 @@ export async function sendReaction(args: {
     body: JSON.stringify({ number: args.number, text: args.emoji, id: args.targetMessageId }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   // The reaction endpoint's success payload doesn't guarantee a fresh
@@ -315,7 +315,7 @@ export async function downloadMessageMedia(args: {
     body: JSON.stringify({ id: args.messageId, return_link: true, return_base64: false }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   return { fileUrl: data.fileURL || null, mimetype: data.mimetype }
@@ -352,7 +352,7 @@ export async function sendMenu(args: {
     }),
   })
   if (!response.ok) {
-    await throwUazapiError(response, `uazapi API error: ${response.status}`)
+    await throwUazapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   const messageId = data.messageid ?? data.id

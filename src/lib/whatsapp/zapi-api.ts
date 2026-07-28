@@ -91,7 +91,7 @@ export async function getInstanceStatus(args: {
     headers: headers(args.clientToken),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   return { connected: Boolean(data.connected), detail: data.error }
@@ -113,7 +113,7 @@ export async function getQrCode(args: {
     headers: headers(args.clientToken),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   const data = await response.json()
   return { qrCode: typeof data.value === 'string' ? data.value : null }
@@ -130,7 +130,7 @@ export async function disconnectInstance(args: {
     headers: headers(args.clientToken),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
 }
 
@@ -159,7 +159,7 @@ export async function configureWebhook(args: {
     body: JSON.stringify({ value: args.url, notifySentByMe: false }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
 }
 
@@ -180,7 +180,7 @@ export async function sendText(args: {
     body: JSON.stringify({ phone: args.phone, message: args.message }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -206,7 +206,7 @@ export async function sendImage(args: {
     }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -231,7 +231,7 @@ export async function sendVideo(args: {
     }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -249,7 +249,7 @@ export async function sendAudio(args: {
     body: JSON.stringify({ phone: args.phone, audio: args.audio }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -284,7 +284,7 @@ export async function sendDocument(args: {
     },
   )
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -303,7 +303,7 @@ export async function sendReaction(args: {
     body: JSON.stringify({ phone: args.phone, reaction: args.reaction, messageId: args.messageId }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -322,7 +322,7 @@ export async function removeReaction(args: {
     body: JSON.stringify({ phone: args.phone, messageId: args.messageId }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -351,7 +351,7 @@ export async function sendButtonList(args: {
     }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }
@@ -387,7 +387,7 @@ export async function sendOptionList(args: {
     }),
   })
   if (!response.ok) {
-    await throwZapiError(response, `Z-API error: ${response.status}`)
+    await throwZapiError(response, `HTTP ${response.status}`)
   }
   return normalizeSendResult(await response.json())
 }

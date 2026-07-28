@@ -22,12 +22,29 @@ import {
 // against the URL leaking via logs/proxies) but is the standard
 // fallback when the provider gives us nothing to verify against.
 //
-// Payload-shape caveat: uazapi's OpenAPI spec doesn't publish a
-// concrete example of an inbound `messages` webhook event, so the
-// field mapping below is a best-effort reading of its documented
-// `Message` schema (shared across /message/find, /chat/find, etc.)
-// and its own outbound `type` vocabulary. Validate and adjust once
-// live payloads are observed against a real instance.
+// Payload shape: confirmed against a real free.uazapi.com instance
+// (captured via a temporary raw-payload log during debugging — see
+// commit history). uazapi's OpenAPI spec never published a concrete
+// example, and the real shape differs from what earlier best-effort
+// reading of its documented `Message` schema assumed in several ways:
+//   - The event-type field is `EventType` (capitalized), not `event`.
+//   - There is no `data` wrapper — a "messages" event's payload lives
+//     directly under `message`, and a "connection" event's status
+//     lives under `instance.status`.
+//   - `message.sender` is a WhatsApp "lid" (linked-id) on accounts
+//     using that newer identity system — NOT a phone number. The
+//     actual phone-number JID is `message.chatid` (and, when present,
+//     `message.sender_pn`), which is what's used for `from`/contact
+//     matching below.
+//   - `message.type` (uazapi's own simplified vocabulary: "text",
+//     "image", "video", "audio", "document", …) is a more reliable
+//     content-type signal than `message.messageType`, which carries
+//     Baileys-style proto names ("Conversation", "ImageMessage", …).
+// The `messages_update` (status) shape was NOT observed in the
+// payload that confirmed the above — its mapping still follows the
+// old best-effort assumption (nested under `message`, matching the
+// now-confirmed `messages` event's container) and may need another
+// round of verification against a real delivery/read receipt.
 // ============================================================
 
 export const maxDuration = 60
@@ -65,8 +82,14 @@ interface UazapiWebhookMessage {
   messageid?: string
   id?: string
   chatid?: string
+  /** WhatsApp "lid" (linked-id) — NOT a phone number on accounts using it. */
   sender?: string
+  /** Phone-number-JID form of the sender, when uazapi includes it. */
+  sender_pn?: string
   fromMe?: boolean
+  /** uazapi's own simplified type vocabulary ("text","image",…) — preferred. */
+  type?: string
+  /** Baileys-style proto type name ("Conversation","ImageMessage",…) — fallback. */
   messageType?: string
   text?: string
   content?: unknown
@@ -75,41 +98,59 @@ interface UazapiWebhookMessage {
   buttonOrListid?: string
   /** Present on reaction events — the target message's id. */
   reaction?: string
+  senderName?: string
 }
 
 interface UazapiWebhookEvent {
-  event: string
-  instance?: string
-  data: Record<string, unknown>
+  EventType: string
+  instance?: { name?: string; status?: string }
+  message?: Record<string, unknown>
+  [key: string]: unknown
 }
 
 /**
  * Best-effort mapping of uazapi's inbound message type onto the
  * shared NormalizedContentType vocabulary — see the file-level caveat.
+ * Checks the confirmed `type` field first (uazapi's own vocabulary,
+ * shared with its outbound `/send/media` `type` param), then falls
+ * back to the unconfirmed Baileys-style `messageType` names.
  */
-function mapUazapiTypeToContentType(messageType: string | undefined): NormalizedContentType {
-  switch (messageType) {
+function mapUazapiTypeToContentType(
+  type: string | undefined,
+  messageType: string | undefined,
+): NormalizedContentType {
+  switch (type) {
     case 'image':
-    case 'sticker':
       return 'image'
     case 'video':
-    case 'videoplay':
-    case 'ptv':
       return 'video'
     case 'document':
       return 'document'
     case 'audio':
     case 'ptt':
-    case 'myaudio':
       return 'audio'
     case 'location':
       return 'location'
-    case 'button':
-    case 'list':
-    case 'buttonsResponseMessage':
-    case 'listResponseMessage':
-      return 'interactive'
     case 'reaction':
+      return 'reaction'
+  }
+  switch (messageType) {
+    case 'ImageMessage':
+    case 'StickerMessage':
+      return 'image'
+    case 'VideoMessage':
+    case 'PtvMessage':
+      return 'video'
+    case 'DocumentMessage':
+      return 'document'
+    case 'AudioMessage':
+      return 'audio'
+    case 'LocationMessage':
+      return 'location'
+    case 'ButtonsResponseMessage':
+    case 'ListResponseMessage':
+      return 'interactive'
+    case 'ReactionMessage':
       return 'reaction'
     default:
       return 'text'
@@ -173,11 +214,6 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // TEMPORARY — capturing real uazapi payload shapes to verify the
-  // best-effort field mapping below (see file-header caveat). Remove
-  // once confirmed against a live inbound message.
-  console.log('[uazapi webhook] raw payload:', JSON.stringify(body))
-
   // Same reasoning as the Meta webhook: ack fast, do the work in
   // after() so a slow subscriber/dispatch chain can't trigger the
   // provider's own retry-on-timeout behavior and double-process.
@@ -199,28 +235,32 @@ interface UazapiConfigRow {
 }
 
 async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookEvent): Promise<void> {
-  if (event.event === 'connection') {
+  if (event.EventType === 'connection') {
     // Only the coarse status is trustworthy from the webhook payload
-    // alone (its exact shape isn't documented). The paired phone number
-    // is filled in by the Settings QR-pairing screen's own status
-    // poll (GET /api/uazapi/instance/status), which calls
-    // getInstanceStatus() and reads status.jid.user directly — no
-    // guessing required there.
-    const data = event.data as { status?: string }
-    if (data.status) {
+    // alone. The paired phone number is filled in by the Settings
+    // QR-pairing screen's own status poll (GET
+    // /api/uazapi/instance/status), which calls getInstanceStatus()
+    // and reads status.jid.user directly — no guessing needed there.
+    const status = event.instance?.status
+    if (status) {
       await supabaseAdmin()
         .from('whatsapp_config')
-        .update({ uazapi_status: data.status })
+        .update({ uazapi_status: status })
         .eq('account_id', config.account_id)
         .eq('provider', 'uazapi')
     }
     return
   }
 
-  if (event.event === 'messages_update') {
-    const data = event.data as { messageid?: string; id?: string; status?: string; messageTimestamp?: number }
-    const externalId = data.messageid ?? data.id
-    if (!externalId || !data.status) return
+  if (event.EventType === 'messages_update') {
+    // Unconfirmed shape — see file-header caveat. Assumed to nest
+    // under `message` the same way the now-confirmed `messages` event
+    // does.
+    const data = event.message as
+      | { messageid?: string; id?: string; status?: string; messageTimestamp?: number }
+      | undefined
+    const externalId = data?.messageid ?? data?.id
+    if (!externalId || !data?.status) return
     await handleStatusUpdate({
       externalId,
       status: mapUazapiStatusToNormalized(data.status),
@@ -229,20 +269,25 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     return
   }
 
-  if (event.event !== 'messages') return
+  if (event.EventType !== 'messages') return
 
-  const data = event.data as UazapiWebhookMessage
+  const data = event.message as UazapiWebhookMessage | undefined
+  if (!data) return
   // configureWebhook already sets excludeMessages: ['wasSentByApi'],
   // but `fromMe` is a second, cheap guard against ever processing an
   // agent's own outbound send as if a customer sent it.
   if (data.fromMe) return
 
   const externalId = data.messageid ?? data.id
-  const senderJid = data.sender ?? data.chatid
+  // `chatid`/`sender_pn` are the phone-number-JID forms; `sender` can
+  // be a WhatsApp "lid" (linked-id) instead of a phone number on
+  // accounts using that identity system — confirmed against a real
+  // payload, see file-header caveat.
+  const senderJid = data.chatid ?? data.sender_pn ?? data.sender
   if (!externalId || !senderJid) return
 
   const senderPhone = stripJidSuffix(senderJid)
-  const contentType = mapUazapiTypeToContentType(data.messageType)
+  const contentType = mapUazapiTypeToContentType(data.type, data.messageType)
 
   if (contentType === 'reaction') {
     if (!data.reaction) return
@@ -282,12 +327,11 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   await processInboundMessage({
     accountId: config.account_id,
     configOwnerUserId: config.user_id,
-    // uazapi's webhook Message shape carries no separate "contact
-    // profile name" field the way Meta's `contacts[].profile.name`
-    // does — fall back to the phone number. findOrCreateContact only
-    // overwrites an existing contact's name when a non-empty one is
-    // supplied, so this never clobbers a name already on file.
-    contactName: senderPhone,
+    // `senderName` is the WhatsApp profile name uazapi resolves for
+    // us — confirmed present on the real payload. findOrCreateContact
+    // only overwrites an existing contact's name when a non-empty one
+    // is supplied, so this never clobbers a name already on file.
+    contactName: data.senderName || senderPhone,
     message: {
       externalId,
       from: senderPhone,
@@ -295,7 +339,7 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
       contentType,
       text,
       mediaUrl,
-      interactiveReplyId: data.buttonOrListid ?? null,
+      interactiveReplyId: data.buttonOrListid || null,
       replyToExternalId: data.quoted || null,
     },
   })

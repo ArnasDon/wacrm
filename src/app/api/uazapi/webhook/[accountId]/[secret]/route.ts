@@ -173,6 +173,11 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // TEMPORARY — capturing real uazapi payload shapes to verify the
+  // best-effort field mapping below (see file-header caveat). Remove
+  // once confirmed against a live inbound message.
+  console.log('[uazapi webhook] raw payload:', JSON.stringify(body))
+
   // Same reasoning as the Meta webhook: ack fast, do the work in
   // after() so a slow subscriber/dispatch chain can't trigger the
   // provider's own retry-on-timeout behavior and double-process.

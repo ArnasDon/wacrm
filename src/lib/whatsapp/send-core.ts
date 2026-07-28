@@ -21,6 +21,7 @@ import {
 } from './phone-utils'
 import { MetaProvider } from './providers/meta-provider'
 import { UazapiProvider } from './providers/uazapi-provider'
+import { ZapiProvider } from './providers/zapi-provider'
 import type { WhatsAppProvider, ProviderConfig } from './provider-types'
 import { resolveUazapiPlatformCredentials } from './uazapi-platform-config'
 
@@ -88,6 +89,23 @@ export async function resolveProviderConfig(
     return { provider: 'uazapi', instanceId: config.uazapi_instance_id, token, baseUrl }
   }
 
+  if (config.provider === 'zapi') {
+    if (!config.zapi_instance_id || !config.zapi_token) {
+      throw new WhatsAppNotConfiguredError()
+    }
+    // zapi_token has no legacy CBC rows to upgrade — the column (and
+    // AES-256-GCM encryption of it) were introduced together, unlike
+    // access_token/uazapi_token which predate the GCM switch.
+    const token = decrypt(config.zapi_token)
+    const clientToken = config.zapi_client_token ? decrypt(config.zapi_client_token) : undefined
+    return {
+      provider: 'zapi',
+      instanceId: config.zapi_instance_id,
+      token,
+      clientToken,
+    }
+  }
+
   if (!config.phone_number_id || !config.access_token) {
     throw new WhatsAppNotConfiguredError()
   }
@@ -121,6 +139,9 @@ export function buildProvider(config: ProviderConfig): WhatsAppProvider {
   }
   if (config.provider === 'uazapi') {
     return new UazapiProvider(config)
+  }
+  if (config.provider === 'zapi') {
+    return new ZapiProvider(config)
   }
   throw new Error(`Unsupported WhatsApp provider: ${(config as ProviderConfig).provider}`)
 }

@@ -96,7 +96,7 @@ export interface SendInteractiveListArgs {
 }
 
 export interface WhatsAppProvider {
-  readonly kind: 'meta' | 'uazapi'
+  readonly kind: 'meta' | 'uazapi' | 'zapi'
   sendText(args: SendTextArgs): Promise<ProviderMessageResult>
   sendMedia(args: SendMediaArgs): Promise<ProviderMessageResult>
   sendReaction(args: SendReactionArgs): Promise<ProviderMessageResult>
@@ -146,3 +146,4 @@ export function isMetaProvider(
 export type ProviderConfig =
   | { provider: 'meta'; phoneNumberId: string; accessToken: string }
   | { provider: 'uazapi'; instanceId: string; token: string; baseUrl: string }
+  | { provider: 'zapi'; instanceId: string; token: string; clientToken?: string }

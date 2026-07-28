@@ -16,21 +16,23 @@ import {
 import { SettingsPanelHead } from './settings-panel-head';
 import { WhatsAppConfig } from './whatsapp-config';
 import { WhatsAppConfigUazapi } from './whatsapp-config-uazapi';
+import { WhatsAppConfigZapi } from './whatsapp-config-zapi';
 import { UazapiPlatformCredentialsForm } from './uazapi-platform-credentials-form';
 
-type Provider = 'meta' | 'uazapi' | null;
+type Provider = 'meta' | 'uazapi' | 'zapi' | null;
 
 /**
  * Top of the WhatsApp settings section. Resolves which provider (if
  * any) the account has configured and renders the matching UI:
- *   - no config yet  → the picker below
- *   - provider='meta'   → the existing WhatsAppConfig form, untouched
- *   - provider='uazapi' → the QR-pairing screen
+ *   - no config yet    → the picker below
+ *   - provider='meta'  → the existing WhatsAppConfig form, untouched
+ *   - provider='uazapi' → the uazapi QR-pairing screen
+ *   - provider='zapi'   → the Z-API credentials form + QR-pairing screen
  *
  * Switching providers always goes through an explicit disconnect
- * (WhatsAppConfigUazapi's own "switch" button, or the link rendered
+ * (each provider screen's own "switch" button, or the link rendered
  * next to the Meta form here) so the account never has two live
- * credential sets — see migration 037's mutual-exclusivity CHECK.
+ * credential sets — see migration 037/040's mutual-exclusivity CHECK.
  */
 export function WhatsAppProviderPanel() {
   const t = useTranslations('Settings.whatsappProvider');
@@ -137,10 +139,19 @@ export function WhatsAppProviderPanel() {
     );
   }
 
+  if (provider === 'zapi') {
+    return (
+      <div>
+        <WhatsAppConfigZapi onSwitchedProvider={loadProvider} />
+        {platformCredentialsSection}
+      </div>
+    );
+  }
+
   return (
     <div>
       <SettingsPanelHead title={t('pickerTitle')} description={t('pickerDesc')} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -173,6 +184,20 @@ export function WhatsAppProviderPanel() {
               ) : (
                 t('uazapiCardBtn')
               )}
+            </Button>
+          </CardContent>
+        </Card>
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <QrCode className="size-5" />
+              {t('zapiCardTitle')}
+            </CardTitle>
+            <CardDescription>{t('zapiCardDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="mt-auto">
+            <Button onClick={() => setProvider('zapi')} className="w-full">
+              {t('zapiCardBtn')}
             </Button>
           </CardContent>
         </Card>

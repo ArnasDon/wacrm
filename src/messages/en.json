@@ -182,9 +182,12 @@
   },
   "flows": {
     "title": "Flows",
-    "newFlow": "New Flow",
+    "description": "Build branching, button-driven WhatsApp conversations. Useful for menus, FAQs, and triage before a human steps in.",
+    "betaBadge": "Beta",
+    "newFlow": "New flow",
     "noFlows": "No flows yet",
-    "createFirstFlow": "Create your first flow to automate conversations.",
+    "createFirstFlowDescription": "Build your first conversation \u2014 a welcome menu, an order lookup, an FAQ bot. Customers tap buttons; the bot routes them to the right answer (or the right agent).",
+    "createFirstFlow": "Create your first flow",
     "searchPlaceholder": "Search flows...",
     "status": {
       "draft": "Draft",

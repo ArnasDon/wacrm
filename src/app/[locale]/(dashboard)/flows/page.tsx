@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
   Workflow,
@@ -82,6 +83,7 @@ const TEMPLATE_ICONS = {
 } as const;
 
 export default function FlowsPage() {
+  const t = useTranslations("flows");
   const router = useRouter();
   const canCreate = useCan("send-messages");
   const [flows, setFlows] = useState<FlowRow[]>([]);
@@ -204,14 +206,13 @@ export default function FlowsPage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-foreground">Flows</h1>
+            <h1 className="text-2xl font-semibold text-foreground">{t("title")}</h1>
             <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-              Beta
+              {t("betaBadge")}
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Build branching, button-driven WhatsApp conversations. Useful for
-            menus, FAQs, and triage before a human steps in.
+            {t("description")}
           </p>
         </div>
         <GatedButton
@@ -329,18 +330,17 @@ function EmptyState({
   onCreate: () => void;
   canCreate: boolean;
 }) {
+  const t = useTranslations("flows");
   return (
     <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 px-6 py-16 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
         <Workflow className="h-6 w-6 text-muted-foreground" />
       </div>
       <h2 className="mt-4 text-base font-medium text-foreground">
-        No flows yet
+        {t("noFlows")}
       </h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        Build your first conversation — a welcome menu, an order lookup, an FAQ
-        bot. Customers tap buttons; the bot routes them to the right answer (or
-        the right agent).
+        {t("createFirstFlowDescription")}
       </p>
       <GatedButton
         canAct={canCreate}
@@ -349,7 +349,7 @@ function EmptyState({
         className="mt-5"
       >
         <Plus className="h-4 w-4" />
-        Create your first flow
+        {t("createFirstFlow")}
       </GatedButton>
     </div>
   );

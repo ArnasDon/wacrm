@@ -875,6 +875,23 @@
   },
   "settings": {
     "title": "Settings",
+    "description": "Everything in one place \u2014 your account and your workspace. Pick a section to manage it.",
+    "rail": {
+      "account": "Account",
+      "workspace": "Workspace"
+    },
+    "sections": {
+      "overview": "Overview",
+      "profile": "Your profile",
+      "security": "Login & security",
+      "appearance": "Appearance",
+      "whatsapp": "WhatsApp",
+      "templates": "Templates",
+      "fields": "Fields & tags",
+      "deals": "Deals & currency",
+      "members": "Team members",
+      "api": "API keys"
+    },
     "groups": {
       "general": "General",
       "team": "Team",

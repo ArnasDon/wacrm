@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import {
@@ -31,6 +32,7 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const t = useTranslations('settings');
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -57,14 +59,17 @@ export function SettingsRail({
         const items = SETTINGS_SECTIONS.filter(
           (s) => SECTION_META[s].group === group,
         );
+        const groupLabel = label
+          ? t(`rail.${group}` as 'rail.account' | 'rail.workspace')
+          : null;
         return (
           <div
             key={group}
             className="flex shrink-0 gap-1 lg:flex-col lg:gap-0.5"
           >
-            {label ? (
+            {groupLabel ? (
               <div className="hidden px-3 pt-3.5 pb-1.5 text-[11px] font-semibold tracking-[0.09em] text-muted-foreground uppercase lg:block">
-                {label}
+                {groupLabel}
               </div>
             ) : null}
             {items.map((s) => {
@@ -87,7 +92,7 @@ export function SettingsRail({
                   )}
                 >
                   <Icon className="size-4 shrink-0" />
-                  <span className="flex-1">{meta.label}</span>
+                  <span className="flex-1">{t(`sections.${s}` as `sections.${typeof s}`)}</span>
                   {hints?.[s] != null ? (
                     <span
                       className={cn(

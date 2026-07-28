@@ -49,36 +49,51 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function readInitialTheme(): ThemeId {
   if (typeof window === "undefined") return DEFAULT_THEME;
-  // Whatever the boot script applied is the truth. Fall back to
-  // localStorage / default if for some reason the attribute is missing
-  // (e.g. someone bypassed the boot script in a custom layout).
-  const fromAttr = document.documentElement.dataset.theme;
-  if (isThemeId(fromAttr)) return fromAttr;
+  // Prioritise localStorage — the boot script sets it, but on
+  // client-side navigation (e.g. language switch) the server-rendered
+  // HTML may reset data-theme to the default before React hydrates.
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (isThemeId(stored)) return stored;
   } catch {
     // localStorage can throw in private-browsing / sandboxed contexts.
   }
+  const fromAttr = document.documentElement.dataset.theme;
+  if (isThemeId(fromAttr)) return fromAttr;
   return DEFAULT_THEME;
 }
 
 function readInitialMode(): Mode {
   if (typeof window === "undefined") return DEFAULT_MODE;
-  const fromAttr = document.documentElement.dataset.mode;
-  if (isMode(fromAttr)) return fromAttr;
+  // Prioritise localStorage — the boot script sets it, but on
+  // client-side navigation (e.g. language switch) the server-rendered
+  // HTML may reset data-mode to the default before React hydrates.
   try {
     const stored = localStorage.getItem(MODE_STORAGE_KEY);
     if (isMode(stored)) return stored;
   } catch {
     // localStorage can throw in private-browsing / sandboxed contexts.
   }
+  const fromAttr = document.documentElement.dataset.mode;
+  if (isMode(fromAttr)) return fromAttr;
   return DEFAULT_MODE;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>(readInitialTheme);
   const [mode, setModeState] = useState<Mode>(readInitialMode);
+
+  // On mount, sync the DOM attribute from the state we read from
+  // localStorage. This covers the case where client-side navigation
+  // reset data-mode/data-theme to the server default before React
+  // hydrated — we restore the correct values immediately.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.mode = mode;
+    }
+  }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);

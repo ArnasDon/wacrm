@@ -490,6 +490,8 @@
       "cancel": "Cancel",
       "save": "Save",
       "saving": "Saving...",
+      "editDescription": "Update the contact details below.",
+      "createDescription": "Fill in the details to create a new contact.",
       "contactCreated": "Contact created",
       "contactUpdated": "Contact updated",
       "failedToSave": "Failed to save contact"
@@ -508,6 +510,7 @@
     },
     "customFields": {
       "title": "Custom Fields",
+      "description": "Define extra contact fields (e.g. ZIP code, lead source). They appear on every contact and in the \"Update Contact Field\" automation action.",
       "addField": "Add Field",
       "editField": "Edit Field",
       "fieldName": "Field Name",

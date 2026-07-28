@@ -39,9 +39,7 @@ export function CustomFieldsManager({
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">{t('title')}</DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Define extra contact fields (e.g. ZIP code, lead source). They
-            appear on every contact and in the &quot;Update Contact Field&quot; automation
-            action.
+            {t('description')}
           </DialogDescription>
         </DialogHeader>
         <CustomFieldsPanel />

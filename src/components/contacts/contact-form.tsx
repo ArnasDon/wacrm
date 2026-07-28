@@ -233,8 +233,8 @@ export function ContactForm({
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {isEdit
-              ? 'Update the contact details below.'
-              : 'Fill in the details to create a new contact.'}
+              ? t('form.editDescription')
+              : t('form.createDescription')}
           </DialogDescription>
         </DialogHeader>
 

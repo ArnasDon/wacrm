@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from 'next-intl'
 import { GitBranch } from 'lucide-react'
 import type { PipelineDonutData } from '@/lib/dashboard/types'
 import { formatCurrencyShort } from '@/lib/currency'
@@ -14,12 +15,14 @@ interface PipelineDonutProps {
 }
 
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
+  const t = useTranslations('dashboard')
+
   return (
     <section className="flex h-full flex-col rounded-xl border border-border bg-card">
       <header className="border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">Pipeline Value</h2>
+        <h2 className="text-sm font-semibold text-foreground">{t('pipelineValue')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Open deals by stage
+          {t('openDealsByStage')}
         </p>
       </header>
 
@@ -29,8 +32,8 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
         ) : data.stages.length === 0 ? (
           <EmptyState
             icon={GitBranch}
-            title="No open deals yet"
-            hint="Create deals in Pipelines to see stage breakdowns here."
+            title={t('noOpenDealsYet')}
+            hint={t('noOpenDealsHint')}
           />
         ) : (
           <>
@@ -45,7 +48,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
                   />
                   <span className="flex-1 truncate text-muted-foreground">{s.name}</span>
                   <span className="text-muted-foreground tabular-nums">
-                    <span>{s.dealCount} deal{s.dealCount === 1 ? '' : 's'}</span>
+                    <span>{s.dealCount} {s.dealCount === 1 ? t('deal') : t('deals')}</span>
                   </span>
                   <span className="w-20 text-right text-muted-foreground tabular-nums">
                     {formatCurrencyShort(s.totalValue, currency)}

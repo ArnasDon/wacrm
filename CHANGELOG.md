@@ -9,6 +9,27 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+> **Migration required:** apply `supabase/migrations/037_ai_provider_openrouter.sql`
+> (widens the `provider` CHECK constraint on `ai_configs` and
+> `ai_usage_log` to accept `'openrouter'`). Widening a CHECK touches no
+> existing rows.
+
+### Added
+
+- **OpenRouter as an AI provider.** Settings → AI Agents → Setup now
+  offers OpenRouter alongside OpenAI and Anthropic. It's a gateway
+  rather than a single lab: one `sk-or-v1-…` key reaches its entire
+  catalogue, and the existing Model field picks which one by id
+  (`vendor/model-id`, e.g. `anthropic/claude-sonnet-4.5`). The field
+  stays free text — so a model works the day it ships — but now offers
+  the live catalogue as type-to-search suggestions. Drafts, the
+  auto-reply bot, the Playground and usage logging all work unchanged.
+  Embeddings for semantic knowledge-base search still go to OpenAI
+  directly (no other provider serves that endpoint), so on OpenRouter
+  the optional embeddings key must be a separate OpenAI key.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

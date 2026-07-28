@@ -128,6 +128,79 @@ describe('generateReply — OpenAI', () => {
   })
 })
 
+describe('generateReply — OpenRouter', () => {
+  it('posts the OpenAI wire format to the gateway with the account key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hola!' } }],
+        usage: { prompt_tokens: 11, completion_tokens: 3, total_tokens: 14 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({
+        provider: 'openrouter',
+        model: 'anthropic/claude-sonnet-4.5',
+        apiKey: 'sk-or-v1-x',
+      }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hola' }],
+    })
+
+    expect(res.text).toBe('Hola!')
+    expect(res.usage).toEqual({
+      promptTokens: 11,
+      completionTokens: 3,
+      totalTokens: 14,
+    })
+
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('openrouter.ai/api/v1/chat/completions')
+    expect(opts.headers.Authorization).toBe('Bearer sk-or-v1-x')
+    const body = JSON.parse(opts.body)
+    expect(body.model).toBe('anthropic/claude-sonnet-4.5')
+    expect(body.messages[0]).toEqual({ role: 'system', content: 'sys' })
+  })
+
+  it('surfaces an upstream error returned inside a 200 body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({ error: { message: 'No endpoints found', code: 404 } }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'openrouter', model: 'vendor/nope' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_error',
+      message: expect.stringContaining('No endpoints found'),
+    })
+  })
+
+  it('maps a 401 from the gateway to invalid_key', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(errResponse(401, { error: { message: 'No auth' } })),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'openrouter' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key', status: 401 })
+  })
+})
+
 describe('generateReply — Anthropic', () => {
   it('calls the messages endpoint with the version header and parses text blocks', async () => {
     const fetchMock = vi.fn().mockResolvedValue(

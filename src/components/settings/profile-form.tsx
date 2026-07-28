@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, Upload, Trash2, Mail, CircleAlert } from 'lucide-react';
 
@@ -25,12 +26,10 @@ const ALLOWED_MIME = new Set([
   'image/gif',
 ]);
 
-// Rough email shape check — the real validator is Supabase Auth, which
-// rejects anything malformed when we call updateUser({ email }). We
-// just want to stop obvious typos before making a network call.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ProfileForm() {
+  const t = useTranslations('settings.profile');
   const { user, profile, refreshProfile } = useAuth();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,14 +42,12 @@ export function ProfileForm() {
   const [saving, setSaving] = useState(false);
   const [emailChangePending, setEmailChangePending] = useState(false);
 
-  // Seed form state once the profile loads.
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
   }, [profile]);
 
-  // Cleanup object URLs to avoid leaks.
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -66,7 +63,7 @@ export function ProfileForm() {
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = ''; // reset so the same file can be re-picked
+    e.target.value = '';
     if (!file) return;
 
     if (!ALLOWED_MIME.has(file.type)) {
@@ -101,12 +98,12 @@ export function ProfileForm() {
 
     const trimmedName = fullName.trim();
     if (!trimmedName) {
-      toast.error('Display name is required');
+      toast.error(t('nameRequired'));
       return;
     }
     const trimmedEmail = email.trim();
     if (!EMAIL_RE.test(trimmedEmail)) {
-      toast.error('Enter a valid email address');
+      toast.error(t('invalidEmail'));
       return;
     }
 
@@ -114,7 +111,6 @@ export function ProfileForm() {
     try {
       let nextAvatarUrl: string | null = profile.avatar_url ?? null;
 
-      // Upload a newly-staged image, if any.
       if (pendingAvatar) {
         const ext =
           pendingAvatar.name.split('.').pop()?.toLowerCase() || 'png';
@@ -137,7 +133,6 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -149,19 +144,13 @@ export function ProfileForm() {
         throw new Error(`Save failed: ${updateError.message}`);
       }
 
-      // Email change goes through Supabase Auth, which emails a
-      // confirmation to both the old and new addresses. We don't
-      // touch profiles.email — Supabase will push the change there
-      // after the user clicks the link (handled by the handle_new_user
-      // trigger pattern in production deployments).
       let emailSent = false;
       if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: trimmedEmail,
         });
         if (emailError) {
-          // Partial success: name/avatar saved but email didn't.
-          toast.success('Profile saved');
+          toast.success(t('updated'));
           toast.error(`Email change failed: ${emailError.message}`);
           setSaving(false);
           await refreshProfile();
@@ -178,8 +167,8 @@ export function ProfileForm() {
 
       toast.success(
         emailSent
-          ? 'Profile saved — check your email to confirm the address change'
-          : 'Profile saved',
+          ? t('emailCheckInbox', { oldEmail: profile.email, newEmail: trimmedEmail })
+          : t('updated'),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -202,18 +191,17 @@ export function ProfileForm() {
         month: 'long',
         day: 'numeric',
       })
-    : '—';
+    : '\u2014';
 
   return (
     <section className="max-w-2xl animate-in fade-in-50 duration-200">
       <SettingsPanelHead
-        title="Your profile"
-        description="How you show up across the app. Your avatar and name appear in the header, sidebar, and anywhere your teammates see you."
+        title={t('title')}
+        description={t('description')}
       />
       <form onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardContent className="space-y-6">
-          {/* Avatar row */}
           <div className="flex flex-wrap items-center gap-5">
             <Avatar size="lg" className="size-16">
               {currentAvatar ? (
@@ -239,7 +227,7 @@ export function ProfileForm() {
                 disabled={saving}
               >
                 <Upload className="size-4" />
-                <span>{currentAvatar ? 'Change photo' : 'Upload photo'}</span>
+                <span>{currentAvatar ? t('changePhoto') : t('uploadPhoto')}</span>
               </Button>
               {currentAvatar && (
                 <Button
@@ -250,19 +238,18 @@ export function ProfileForm() {
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <Trash2 className="size-4" />
-                  Remove
+                  {t('remove')}
                 </Button>
               )}
               <p className="w-full text-xs text-muted-foreground">
-                PNG, JPG, WebP, or GIF. Up to 2 MB.
+                {t('avatarHint')}
               </p>
             </div>
           </div>
 
-          {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="profile-full-name" className="text-foreground">
-              Display name
+              {t('displayName')}
             </Label>
             <Input
               id="profile-full-name"
@@ -275,10 +262,9 @@ export function ProfileForm() {
             />
           </div>
 
-          {/* Email */}
           <div className="space-y-2">
             <Label htmlFor="profile-email" className="text-foreground">
-              Email
+              {t('email')}
             </Label>
             <Input
               id="profile-email"
@@ -291,35 +277,34 @@ export function ProfileForm() {
             {emailChangePending && (
               <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 <Mail className="mt-0.5 size-3.5 shrink-0" />
-                <span>
-                  Check the inbox for <strong>{profile?.email}</strong> and{' '}
-                  <strong>{email}</strong> — both need to confirm before the
-                  change takes effect.
-                </span>
+                <span
+                  dangerouslySetInnerHTML={{
+                    __html: t('emailCheckInbox', { oldEmail: profile?.email ?? '', newEmail: email }),
+                  }}
+                />
               </p>
             )}
           </div>
 
-          {/* Read-only block */}
           <div className="rounded-lg border border-border bg-muted p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Account details
+              {t('accountDetails')}
             </p>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-muted-foreground">Role</dt>
+                <dt className="text-muted-foreground">{t('role')}</dt>
                 <dd className="mt-0.5 font-mono text-foreground">
                   {profile?.role ?? 'user'}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Joined</dt>
+                <dt className="text-muted-foreground">{t('joined')}</dt>
                 <dd className="mt-0.5 text-foreground">{joined}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">User ID</dt>
+                <dt className="text-muted-foreground">{t('userId')}</dt>
                 <dd className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
-                  {user?.id ?? '—'}
+                  {user?.id ?? '\u2014'}
                 </dd>
               </div>
             </dl>
@@ -328,7 +313,7 @@ export function ProfileForm() {
           {!profile && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CircleAlert className="size-4" />
-              Loading your profile…
+              {t('loadingProfile')}
             </p>
           )}
 
@@ -340,10 +325,10 @@ export function ProfileForm() {
             {saving ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Saving…
+                {t('saving')}
               </>
             ) : (
-              'Save changes'
+              t('saveChanges')
             )}
           </Button>
         </div>

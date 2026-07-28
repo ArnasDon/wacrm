@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, LogOut } from 'lucide-react';
 
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 
 export function SessionsCard() {
+  const t = useTranslations('settings.sessions');
   const supabase = createClient();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -30,9 +32,6 @@ export function SessionsCard() {
   const onConfirm = async () => {
     setSigningOut(true);
     try {
-      // scope: 'global' revokes every refresh token for this user
-      // across all devices; the next auth-state change on this tab
-      // triggers the usual redirect.
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
         toast.error(`Sign-out failed: ${error.message}`);
@@ -53,11 +52,10 @@ export function SessionsCard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <LogOut className="size-4 text-primary" />
-            Active sessions
+            {t('title')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Sign out of every device where you&apos;re logged in — including
-            this one. Useful if you lost a laptop or shared your password.
+            {t('description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -67,7 +65,7 @@ export function SessionsCard() {
             onClick={() => setOpen(true)}
           >
             <LogOut className="size-4" />
-            Sign out of all devices
+            {t('signOutAll')}
           </Button>
         </CardContent>
       </Card>
@@ -75,11 +73,9 @@ export function SessionsCard() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Sign out everywhere?</DialogTitle>
+            <DialogTitle>{t('confirmTitle')}</DialogTitle>
             <DialogDescription>
-              Every device logged into this account will be signed out and
-              will need to log in again. You will be redirected to the login
-              page.
+              {t('confirmDescription')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -89,16 +85,16 @@ export function SessionsCard() {
               onClick={() => setOpen(false)}
               disabled={signingOut}
             >
-              Cancel
+              {t('cancel')}
             </Button>
             <Button type="button" onClick={onConfirm} disabled={signingOut}>
               {signingOut ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Signing out…
+                  {t('signingOut')}
                 </>
               ) : (
-                'Sign out everywhere'
+                t('signOut')
               )}
             </Button>
           </DialogFooter>

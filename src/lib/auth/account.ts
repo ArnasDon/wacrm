@@ -55,6 +55,21 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Thrown by `getCurrentAccount()` when the caller's account belongs
+ * to a platform-admin-suspended organization (migration 042). A
+ * `ForbiddenError` subtype so every existing `catch { toErrorResponse
+ * }` call site still 403s correctly without changes; the distinct
+ * `code` in the JSON body lets the client show "access suspended,
+ * contact support" instead of a generic permission error.
+ */
+export class OrganizationSuspendedError extends ForbiddenError {
+  constructor(message = "This organization has been suspended. Contact support.") {
+    super(message);
+    this.name = "OrganizationSuspendedError";
+  }
+}
+
+/**
  * Convert one of the typed errors above (or anything else) into a
  * `NextResponse`. Routes can do:
  *
@@ -67,6 +82,12 @@ export class ForbiddenError extends Error {
  * server internals out of the wire.
  */
 export function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof OrganizationSuspendedError) {
+    return NextResponse.json(
+      { error: err.message, code: "organization_suspended" },
+      { status: err.status },
+    );
+  }
   if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
@@ -135,6 +156,23 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     // migration that broadens the enum without updating TS would
     // hit this — surface it rather than silently widening.
     throw new ForbiddenError(`Unknown account role: ${data.account_role}`);
+  }
+
+  // Checked BEFORE the accounts lookup below: a suspended
+  // organization's accounts_select policy already hides the account
+  // row via RLS (is_account_member(), migration 042), which would
+  // otherwise surface as the generic "Profile is not linked to an
+  // account" error further down. my_account_suspended() bypasses RLS
+  // (SECURITY DEFINER) to give an honest, specific answer instead —
+  // and always resolves false for a platform admin, who must be able
+  // to sign in and investigate even a suspended organization.
+  const { data: suspended, error: suspendedErr } = await supabase.rpc(
+    "my_account_suspended",
+  );
+  if (suspendedErr) {
+    console.error("[getCurrentAccount] suspension check error:", suspendedErr);
+  } else if (suspended) {
+    throw new OrganizationSuspendedError();
   }
 
   // Load the account with a plain point lookup by id rather than an

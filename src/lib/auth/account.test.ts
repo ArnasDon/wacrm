@@ -22,6 +22,9 @@ function makeClient(opts: {
   user: { id: string } | null;
   userErr?: unknown;
   byTable: Record<string, { data: unknown; error: unknown }>;
+  /** my_account_suspended() RPC result — defaults to "not suspended"
+   *  so every pre-existing test keeps its original behavior. */
+  rpc?: { data: unknown; error: unknown };
 }) {
   const calls: BuilderCall[] = [];
 
@@ -57,6 +60,7 @@ function makeClient(opts: {
           }),
       },
       from,
+      rpc: () => Promise.resolve(opts.rpc ?? { data: false, error: null }),
     },
   };
 }
@@ -66,9 +70,12 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
 }));
 
-const { getCurrentAccount, UnauthorizedError, ForbiddenError } = await import(
-  "./account"
-);
+const {
+  getCurrentAccount,
+  UnauthorizedError,
+  ForbiddenError,
+  OrganizationSuspendedError,
+} = await import("./account");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -172,5 +179,71 @@ describe("getCurrentAccount", () => {
     await expect(getCurrentAccount()).rejects.toThrow(
       "Profile is not linked to an account",
     );
+  });
+
+  // Organization suspension (migration 042) — a platform admin
+  // suspending an organization must block every one of its member
+  // accounts, everywhere requireRole()/getCurrentAccount() gates a
+  // route. See also src/app/api/platform/organizations/[id]/status/route.test.ts
+  // for the admin-side toggle, and use-auth.tsx for the client-side
+  // equivalent (the dashboard shell's blocking screen).
+  it("throws OrganizationSuspendedError when my_account_suspended() reports true", async () => {
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: {
+          data: { account_id: "acct-suspended", account_role: "owner" },
+          error: null,
+        },
+        // Never reached — the suspension check short-circuits first.
+        accounts: { data: { id: "acct-suspended", name: "Suspended Store" }, error: null },
+      },
+      rpc: { data: true, error: null },
+    });
+    createClient.mockReturnValue(client);
+
+    const err = await getCurrentAccount().catch((e) => e);
+    expect(err).toBeInstanceOf(OrganizationSuspendedError);
+    expect(err.status).toBe(403);
+  });
+
+  it("resolves normally when my_account_suspended() reports false", async () => {
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: {
+          data: { account_id: "acct-1", account_role: "owner" },
+          error: null,
+        },
+        accounts: { data: { id: "acct-1", name: "Acme" }, error: null },
+      },
+      rpc: { data: false, error: null },
+    });
+    createClient.mockReturnValue(client);
+
+    const ctx = await getCurrentAccount();
+    expect(ctx.accountId).toBe("acct-1");
+  });
+
+  it("does not block on a suspension-check RPC error — logs and proceeds", async () => {
+    // A transient RPC failure must not turn into a false "suspended"
+    // — that would lock out every account on any my_account_suspended
+    // hiccup. Proceed normally (existing RLS on every other table is
+    // still the real enforcement backstop).
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: {
+          data: { account_id: "acct-1", account_role: "owner" },
+          error: null,
+        },
+        accounts: { data: { id: "acct-1", name: "Acme" }, error: null },
+      },
+      rpc: { data: null, error: { message: "function not found" } },
+    });
+    createClient.mockReturnValue(client);
+
+    const ctx = await getCurrentAccount();
+    expect(ctx.accountId).toBe("acct-1");
   });
 });

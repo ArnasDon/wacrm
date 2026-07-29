@@ -102,6 +102,15 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /**
+   * True once we've confirmed the caller's organization was suspended
+   * by a platform admin (migration 042). Always false for a platform
+   * admin themselves — see my_account_suspended()'s own comment.
+   * Null while unknown (profile not loaded yet); DashboardShell should
+   * treat null the same as false (don't block on an unresolved check)
+   * and only show the suspended screen once this is explicitly true.
+   */
+  suspended: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -115,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [suspended, setSuspended] = useState(false);
   const [loading, setLoading] = useState(true);
   // Tracked separately from `loading`. The session settles fast (one
   // local cookie read); the profile fetch crosses the network and
@@ -214,6 +224,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           account_role: accountRole,
         });
         setAccount(accountRow);
+
+        // Independent of the accounts/profiles reads above — a
+        // suspended member's accounts row is already hidden by RLS
+        // (migration 042's is_account_member gate), so this RPC
+        // bypasses that to give an honest, specific answer rather
+        // than data just silently disappearing.
+        const { data: isSuspended, error: suspendedErr } = await supabase.rpc(
+          "my_account_suspended",
+        );
+        if (suspendedErr) {
+          console.error("[AuthProvider] my_account_suspended error:", suspendedErr);
+        } else {
+          setSuspended(!!isSuspended);
+        }
       } else {
         lastFetchedUserIdRef.current = null;
       }
@@ -287,6 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastFetchedUserIdRef.current = null;
         setProfile(null);
         setAccount(null);
+        setSuspended(false);
         setProfileLoading(false);
       }
 
@@ -306,6 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
+    setSuspended(false);
     window.location.href = "/login";
   }, []);
 
@@ -344,6 +370,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
+        suspended,
         ...derived,
       }}
     >
@@ -383,6 +410,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      suspended: false,
     };
   }
   return ctx;

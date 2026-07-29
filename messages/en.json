@@ -14,6 +14,11 @@
     "noAccount": "Don't have an account?",
     "createAccount": "Create account"
   },
+  "AccountSuspended": {
+    "title": "Access suspended",
+    "description": "This organization's access has been suspended. Please contact support.",
+    "signOut": "Sign out"
+  },
   "Sidebar": {
     "title": "CRM Template for WhatsApp",
     "dashboard": "Dashboard",
@@ -1224,6 +1229,39 @@
       "allAccounts": "All accounts",
       "storeSuffix": " (Store)"
     }
+  },
+  "Platform": {
+    "pageTitle": "Platform panel",
+    "pageDesc": "Every store on this deployment.",
+    "loading": "Loading…",
+    "createStoreBtn": "Create new store",
+    "noOrganizations": "No stores yet.",
+    "storeNameLabel": "Store name",
+    "storeNamePlaceholder": "e.g. Silva Motors",
+    "ownerEmailLabel": "Owner email",
+    "ownerEmailPlaceholder": "owner@example.com",
+    "createButton": "Create store",
+    "creating": "Creating…",
+    "createdToast": "Store created — invite sent to {email}",
+    "createFailedToast": "Failed to create the store",
+    "serverUnreachableToast": "Could not reach the server",
+    "cancel": "Cancel",
+    "statusActive": "Active",
+    "statusSuspended": "Suspended",
+    "suspendButton": "Suspend",
+    "activateButton": "Reactivate",
+    "suspendConfirmTitle": "Suspend this store?",
+    "suspendConfirmDesc": "Every member of \"{name}\" will immediately lose access until you reactivate it.",
+    "activateConfirmTitle": "Reactivate this store?",
+    "activateConfirmDesc": "Every member of \"{name}\" will regain access immediately.",
+    "confirm": "Confirm",
+    "updating": "Updating…",
+    "statusUpdateFailedToast": "Failed to update the store's status",
+    "statusUpdatedToast": "Status updated",
+    "ownerLabel": "Owner",
+    "sellersCount": "{count} {count, plural, =1 {seller} other {sellers}}",
+    "createdOn": "Created {date}",
+    "signOut": "Sign out"
   },
   "Settings": {
     "pageTitle": "Settings",

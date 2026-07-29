@@ -98,6 +98,21 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 
+  it("redirects an unauth user off /painel-plataforma to /login", async () => {
+    mockUser = null;
+    refreshedCookies = [];
+
+    const res = await middleware(
+      new NextRequest("https://app.test/painel-plataforma"),
+    );
+
+    // Middleware only proves "signed in or not" here — whether the signed-in
+    // user is actually a platform admin is enforced separately by
+    // requirePlatformAdmin() in the page itself (404 for anyone else).
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
   it("passes through (no redirect) for a signed-in user on a protected page", async () => {
     mockUser = { id: "user-1" };
     refreshedCookies = [ROTATED];

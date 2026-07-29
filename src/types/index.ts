@@ -76,6 +76,21 @@ export interface Organization {
   updated_at: string;
 }
 
+/** 'suspended' blocks read+write access for every member account (migration 042). */
+export type OrganizationStatus = 'active' | 'suspended';
+
+/** One row in the platform admin panel's organization list (/painel-plataforma). */
+export interface PlatformOrganization {
+  id: string;
+  name: string;
+  status: OrganizationStatus;
+  createdAt: string;
+  /** The store owner's email — null if the auth lookup failed. */
+  ownerEmail: string | null;
+  /** Linked seller/sector accounts, excluding the store's own account. */
+  sellerCount: number;
+}
+
 /** One row in the consolidated-view account picker. */
 export interface OrganizationAccount {
   id: string;

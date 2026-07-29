@@ -14,6 +14,11 @@
     "noAccount": "Não tem uma conta?",
     "createAccount": "Criar conta"
   },
+  "AccountSuspended": {
+    "title": "Acesso suspenso",
+    "description": "O acesso desta organização foi suspenso. Entre em contato com o suporte.",
+    "signOut": "Sair"
+  },
   "Sidebar": {
     "title": "Modelo de CRM para WhatsApp",
     "dashboard": "Painel",
@@ -1224,6 +1229,39 @@
       "allAccounts": "Todas as contas",
       "storeSuffix": " (Loja)"
     }
+  },
+  "Platform": {
+    "pageTitle": "Painel da plataforma",
+    "pageDesc": "Todas as lojas cadastradas nesta plataforma.",
+    "loading": "Carregando…",
+    "createStoreBtn": "Criar loja nova",
+    "noOrganizations": "Nenhuma loja cadastrada ainda.",
+    "storeNameLabel": "Nome da loja",
+    "storeNamePlaceholder": "Ex: Loja de Veículos Silva",
+    "ownerEmailLabel": "E-mail do dono",
+    "ownerEmailPlaceholder": "dono@exemplo.com",
+    "createButton": "Criar loja",
+    "creating": "Criando…",
+    "createdToast": "Loja criada — convite enviado para {email}",
+    "createFailedToast": "Falha ao criar a loja",
+    "serverUnreachableToast": "Não foi possível conectar ao servidor",
+    "cancel": "Cancelar",
+    "statusActive": "Ativa",
+    "statusSuspended": "Suspensa",
+    "suspendButton": "Suspender",
+    "activateButton": "Reativar",
+    "suspendConfirmTitle": "Suspender esta loja?",
+    "suspendConfirmDesc": "Todos os membros de \"{name}\" perderão o acesso imediatamente, até você reativar.",
+    "activateConfirmTitle": "Reativar esta loja?",
+    "activateConfirmDesc": "Todos os membros de \"{name}\" recuperarão o acesso imediatamente.",
+    "confirm": "Confirmar",
+    "updating": "Atualizando…",
+    "statusUpdateFailedToast": "Falha ao atualizar o status da loja",
+    "statusUpdatedToast": "Status atualizado",
+    "ownerLabel": "Dono",
+    "sellersCount": "{count} {count, plural, =1 {vendedor} other {vendedores}}",
+    "createdOn": "Criada em {date}",
+    "signOut": "Sair"
   },
   "Settings": {
     "pageTitle": "Configurações",

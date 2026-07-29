@@ -89,11 +89,21 @@ export async function POST(request: Request) {
       )
     }
 
+    const csvStart = csvText.trim().slice(0, 200)
+    if (/^<!DOCTYPE html/i.test(csvStart) || /^<html/i.test(csvStart)) {
+      console.error('[preview] sheet returned HTML:', csvStart)
+      return NextResponse.json(
+        { error: 'The URL returned an HTML page, not CSV. Publish your sheet: File → Share → Publish to the web → select "Comma-separated values (.csv)".' },
+        { status: 422 },
+      )
+    }
+
     try {
       const parsed = parseSheetCsv(csvText, url)
       return NextResponse.json({ preview: parsed.preview, metadata: parsed.metadata })
     } catch (err) {
-      const message = err instanceof InventoryError ? err.message : 'Failed to parse sheet.'
+      const message = err instanceof InventoryError ? err.message : `Failed to parse sheet: ${err}`
+      console.error('[preview] parseSheetCsv error:', message)
       return NextResponse.json({ error: message }, { status: 422 })
     }
   } catch (err) {

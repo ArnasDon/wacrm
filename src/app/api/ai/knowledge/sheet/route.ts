@@ -56,6 +56,13 @@ export async function POST(request: Request) {
       )
     }
 
+    if (/^<!DOCTYPE html/i.test(csvText.trim()) || /^<html/i.test(csvText.trim())) {
+      return NextResponse.json(
+        { error: 'The URL returned an HTML page, not CSV. Publish your sheet: File → Share → Publish to the web → select "Comma-separated values (.csv)".' },
+        { status: 422 },
+      )
+    }
+
     const selectedColumns: string[] | undefined =
       Array.isArray(body?.selectedColumns) ? body.selectedColumns : undefined
 
@@ -64,6 +71,7 @@ export async function POST(request: Request) {
       parsed = parseSheetCsv(csvText, url, selectedColumns)
     } catch (err) {
       const message = err instanceof InventoryError ? err.message : 'Failed to parse sheet data.'
+      console.error('[ai/knowledge/sheet] parse error:', message)
       return NextResponse.json({ error: message }, { status: 422 })
     }
 

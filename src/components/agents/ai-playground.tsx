@@ -11,6 +11,17 @@ interface Turn {
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
+  /** assistant-only: how many KB chunks were retrieved for this turn. */
+  knowledgeCount?: number;
+}
+
+function isSpanish(text: string): boolean {
+  return /[¿¡áéíóúñü]|hola|gracias|por\s+favor|b[a-u]squeda/i.test(text)
+}
+
+function loadingLabel(input: string): string {
+  if (isSpanish(input)) return 'Buscando en la base de conocimiento…'
+  return 'Searching knowledge base…'
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -19,6 +30,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const loadingTextRef = useRef('Searching knowledge base…');
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [turns, sending]);
@@ -26,6 +39,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const send = async () => {
     const text = input.trim();
     if (!text || sending) return;
+
+    loadingTextRef.current = loadingLabel(text);
 
     const next: Turn[] = [...turns, { role: 'user', content: text }];
     setTurns(next);
@@ -61,6 +76,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
+          knowledgeCount:
+            typeof data.knowledge_count === 'number' ? data.knowledge_count : 0,
         },
       ]);
     } catch {
@@ -155,6 +172,13 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   Would hand off to a human here
                 </p>
               )}
+              {t.role === 'assistant' && !t.handoff && t.knowledgeCount !== undefined && (
+                <p className={cn('mt-1.5 flex items-center gap-1 text-xs', t.content && 'border-t border-border/50 pt-1.5', t.knowledgeCount > 0 ? 'text-muted-foreground' : 'text-destructive')}>
+                  {t.knowledgeCount > 0
+                    ? `📄 Found ${t.knowledgeCount} product(s)`
+                    : '📄 No matching products found'}
+                </p>
+              )}
             </div>
             {t.role === 'user' && (
               <UserCircle2 className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
@@ -165,7 +189,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         {sending && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Bot className="h-5 w-5 text-primary" />
-            <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
+            <Loader2 className="h-4 w-4 animate-spin" /> {loadingTextRef.current}
           </div>
         )}
       </div>

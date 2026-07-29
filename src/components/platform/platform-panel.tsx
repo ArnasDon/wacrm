@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Building2, Loader2, ShieldOff, Store, UserPlus } from 'lucide-react';
+import { Building2, ChevronRight, Loader2, Store, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -39,6 +39,7 @@ function fmtDate(iso: string): string {
 export function PlatformPanel() {
   const t = useTranslations('Platform');
   const { signOut } = useAuth();
+  const router = useRouter();
 
   const [organizations, setOrganizations] = useState<PlatformOrganization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,9 +48,6 @@ export function PlatformPanel() {
   const [storeName, setStoreName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [creating, setCreating] = useState(false);
-
-  const [statusTarget, setStatusTarget] = useState<PlatformOrganization | null>(null);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,31 +93,6 @@ export function PlatformPanel() {
     }
   }
 
-  async function handleConfirmStatus() {
-    if (!statusTarget) return;
-    const nextStatus = statusTarget.status === 'active' ? 'suspended' : 'active';
-    setUpdatingStatus(true);
-    try {
-      const res = await fetch(`/api/platform/organizations/${statusTarget.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || t('statusUpdateFailedToast'));
-        return;
-      }
-      toast.success(t('statusUpdatedToast'));
-      setStatusTarget(null);
-      await load();
-    } catch {
-      toast.error(t('serverUnreachableToast'));
-    } finally {
-      setUpdatingStatus(false);
-    }
-  }
-
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -157,42 +130,33 @@ export function PlatformPanel() {
           <CardContent className="p-0">
             <ul className="divide-y divide-border">
               {organizations.map((org) => (
-                <li
-                  key={org.id}
-                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-                      <Store className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {org.name}
-                        </span>
-                        <SettingsChip variant={org.status === 'active' ? 'ok' : 'warn'}>
-                          {org.status === 'active' ? t('statusActive') : t('statusSuspended')}
-                        </SettingsChip>
-                      </div>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {org.ownerEmail ? `${t('ownerLabel')}: ${org.ownerEmail} · ` : ''}
-                        {t('sellersCount', { count: org.sellerCount })} · {t('createdOn', { date: fmtDate(org.createdAt) })}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setStatusTarget(org)}
-                    className={
-                      org.status === 'active'
-                        ? 'border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200'
-                        : ''
-                    }
+                <li key={org.id}>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/painel-plataforma/lojas/${org.id}`)}
+                    className="flex w-full flex-col gap-3 px-4 py-3 text-left transition-colors hover:bg-card-2 sm:flex-row sm:items-center sm:gap-4"
                   >
-                    <ShieldOff className="size-4" />
-                    {org.status === 'active' ? t('suspendButton') : t('activateButton')}
-                  </Button>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+                        <Store className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {org.name}
+                          </span>
+                          <SettingsChip variant={org.status === 'active' ? 'ok' : 'warn'}>
+                            {org.status === 'active' ? t('statusActive') : t('statusSuspended')}
+                          </SettingsChip>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {org.ownerEmail ? `${t('ownerLabel')}: ${org.ownerEmail} · ` : ''}
+                          {t('sellersCount', { count: org.sellerCount })} · {t('createdOn', { date: fmtDate(org.createdAt) })}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -249,48 +213,6 @@ export function PlatformPanel() {
                 </>
               ) : (
                 t('createButton')
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={statusTarget !== null} onOpenChange={(open) => !open && setStatusTarget(null)}>
-        <DialogContent className="bg-popover border-border sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-popover-foreground">
-              {statusTarget?.status === 'active' ? t('suspendConfirmTitle') : t('activateConfirmTitle')}
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {statusTarget?.status === 'active'
-                ? t('suspendConfirmDesc', { name: statusTarget?.name ?? '' })
-                : t('activateConfirmDesc', { name: statusTarget?.name ?? '' })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-popover border-border">
-            <Button
-              variant="outline"
-              onClick={() => setStatusTarget(null)}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              onClick={handleConfirmStatus}
-              disabled={updatingStatus}
-              className={
-                statusTarget?.status === 'active'
-                  ? 'bg-red-600 hover:bg-red-600/90 text-white'
-                  : 'bg-primary hover:bg-primary/90 text-primary-foreground'
-              }
-            >
-              {updatingStatus ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  {t('updating')}
-                </>
-              ) : (
-                t('confirm')
               )}
             </Button>
           </DialogFooter>

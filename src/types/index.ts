@@ -91,6 +91,24 @@ export interface PlatformOrganization {
   sellerCount: number;
 }
 
+/** One account (owner or seller) as shown on the store-detail page (/painel-plataforma/lojas/[id]). */
+export interface PlatformAccountDetail {
+  accountId: string;
+  userId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  joinedAt: string;
+  inviteStatus: 'accepted' | 'pending';
+}
+
+/** GET /api/platform/organizations/[id] response. */
+export interface PlatformOrganizationDetail {
+  organization: { id: string; name: string; status: OrganizationStatus; createdAt: string };
+  owner: PlatformAccountDetail | null;
+  sellers: PlatformAccountDetail[];
+}
+
 /** One row in the consolidated-view account picker. */
 export interface OrganizationAccount {
   id: string;

@@ -50,12 +50,10 @@
     "@supabase/phoenix": "^0.4.5",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.107.0",
-    "@swc/core-win32-x64-msvc": "^1.15.46",
     "@xyflow/react": "^12.11.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "lightningcss-win32-x64-msvc": "^1.33.0",
     "lucide-react": "^1.22.0",
     "next": "^16.2.12",
     "next-intl": "^4.13.2",
@@ -81,6 +79,12 @@
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.10"
+  },
+  "optionalDependencies": {
+    "@swc/core-win32-x64-msvc": "^1.15.46",
+    "@swc/core-linux-x64-gnu": "^1.15.46",
+    "lightningcss-win32-x64-msvc": "^1.32.0",
+    "lightningcss-linux-x64-gnu": "^1.32.0"
   },
   "overrides": {
     "postcss": "^8.5.10",

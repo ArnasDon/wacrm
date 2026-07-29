@@ -1,6 +1,7 @@
 import {
   Building2,
   Coins,
+  CreditCard,
   FileText,
   KeyRound,
   LayoutGrid,
@@ -34,6 +35,7 @@ export const SETTINGS_SECTIONS = [
   'deals',
   'members',
   'organization',
+  'billing',
   'api',
 ] as const;
 
@@ -61,6 +63,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace' },
   organization: { id: 'organization', label: 'Organização', icon: Building2, group: 'workspace' },
+  billing: { id: 'billing', label: 'Faturamento', icon: CreditCard, group: 'workspace' },
   api: { id: 'api', label: 'Chaves de API', icon: KeyRound, group: 'workspace' },
 };
 

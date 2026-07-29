@@ -45,7 +45,7 @@ export async function GET() {
 
     const { data: orgs, error: orgsError } = await supabase
       .from('organizations')
-      .select('id, name, owner_account_id, created_at, status')
+      .select('id, name, owner_account_id, created_at, status, billing_status')
       .order('created_at', { ascending: false });
 
     if (orgsError) {
@@ -60,6 +60,7 @@ export async function GET() {
         owner_account_id: string;
         created_at: string;
         status: string;
+        billing_status: string;
       }) => {
         const { count } = await supabase
           .from('accounts')
@@ -89,6 +90,7 @@ export async function GET() {
           id: org.id,
           name: org.name,
           status: org.status,
+          billingStatus: org.billing_status,
           createdAt: org.created_at,
           ownerEmail,
           // Excludes the store's own account, same convention as the
@@ -202,6 +204,7 @@ export async function POST(request: Request) {
           id: org.id,
           name: org.name,
           status: org.status,
+          billingStatus: org.billing_status,
           createdAt: org.created_at,
           ownerEmail,
           sellerCount: 0,

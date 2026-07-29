@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SettingsChip } from '@/components/settings/settings-chip';
+import { BILLING_STATUS_LABEL, BILLING_STATUS_VARIANT } from '@/lib/billing/status';
 import type { PlatformAccountDetail, PlatformOrganizationDetail } from '@/types';
 
 function fmtDate(iso: string): string {
@@ -565,6 +566,10 @@ export function StoreDetailPanel({ organizationId }: { organizationId: string })
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <SettingsChip variant={data.organization.status === 'active' ? 'ok' : 'warn'}>
               {data.organization.status === 'active' ? 'Ativa' : 'Suspensa'}
+            </SettingsChip>
+            {/* Read-only — see src/lib/billing/README.md. Nothing acts on this yet. */}
+            <SettingsChip variant={BILLING_STATUS_VARIANT[data.organization.billingStatus]}>
+              {BILLING_STATUS_LABEL[data.organization.billingStatus]}
             </SettingsChip>
             <span>Criada em {fmtDate(data.organization.createdAt)}</span>
           </div>

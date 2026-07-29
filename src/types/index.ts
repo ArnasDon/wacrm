@@ -79,11 +79,20 @@ export interface Organization {
 /** 'suspended' blocks read+write access for every member account (migration 042). */
 export type OrganizationStatus = 'active' | 'suspended';
 
+/**
+ * Where Asaas billing (not wired up yet — see src/lib/billing/README.md)
+ * will report an organization's payment state. Purely informational
+ * today: nothing reads this to gate access. `organizations.status`
+ * above remains the only column that does that.
+ */
+export type BillingStatus = 'trial' | 'active' | 'past_due' | 'canceled';
+
 /** One row in the platform admin panel's organization list (/painel-plataforma). */
 export interface PlatformOrganization {
   id: string;
   name: string;
   status: OrganizationStatus;
+  billingStatus: BillingStatus;
   createdAt: string;
   /** The store owner's email — null if the auth lookup failed. */
   ownerEmail: string | null;
@@ -104,7 +113,13 @@ export interface PlatformAccountDetail {
 
 /** GET /api/platform/organizations/[id] response. */
 export interface PlatformOrganizationDetail {
-  organization: { id: string; name: string; status: OrganizationStatus; createdAt: string };
+  organization: {
+    id: string;
+    name: string;
+    status: OrganizationStatus;
+    billingStatus: BillingStatus;
+    createdAt: string;
+  };
   owner: PlatformAccountDetail | null;
   sellers: PlatformAccountDetail[];
 }

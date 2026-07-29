@@ -162,6 +162,7 @@ vi.mock('@supabase/supabase-js', () => ({
                     name: payload.name,
                     created_at: '2026-01-01T00:00:00Z',
                     status: 'active',
+                    billing_status: 'trial',
                   },
                   error: null,
                 })
@@ -206,8 +207,8 @@ describe('GET /api/platform/organizations', () => {
 
   it('lists organizations from multiple, completely unrelated stores in one response', async () => {
     h.organizations = [
-      { id: 'org-a', name: 'Loja A', owner_account_id: 'acc-a', created_at: '2026-01-01T00:00:00Z', status: 'active' },
-      { id: 'org-b', name: 'Loja B', owner_account_id: 'acc-b', created_at: '2026-02-01T00:00:00Z', status: 'suspended' },
+      { id: 'org-a', name: 'Loja A', owner_account_id: 'acc-a', created_at: '2026-01-01T00:00:00Z', status: 'active', billing_status: 'trial' },
+      { id: 'org-b', name: 'Loja B', owner_account_id: 'acc-b', created_at: '2026-02-01T00:00:00Z', status: 'suspended', billing_status: 'past_due' },
     ]
     // Loja A: 3 linked accounts total (store + 2 sellers). Loja B: just the store.
     h.accountsByOrg = { 'org-a': 3, 'org-b': 1 }
@@ -227,12 +228,14 @@ describe('GET /api/platform/organizations', () => {
     expect(lojaA).toMatchObject({
       name: 'Loja A',
       status: 'active',
+      billingStatus: 'trial',
       ownerEmail: 'dona@lojaa.com',
       sellerCount: 2, // 3 linked accounts minus the store's own
     })
     expect(lojaB).toMatchObject({
       name: 'Loja B',
       status: 'suspended',
+      billingStatus: 'past_due',
       ownerEmail: 'dono@lojab.com',
       sellerCount: 0,
     })
@@ -300,6 +303,7 @@ describe('POST /api/platform/organizations', () => {
       id: 'org-new-1',
       name: 'Loja Nova',
       status: 'active',
+      billingStatus: 'trial',
       ownerEmail: 'dono@example.com',
       sellerCount: 0,
     })

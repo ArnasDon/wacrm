@@ -31,6 +31,7 @@ export interface BootstrappedOrganization {
   id: string;
   name: string;
   status: string;
+  billing_status: string;
   created_at: string;
 }
 
@@ -59,7 +60,7 @@ export async function bootstrapStoreOrganization(
   const { data: org, error: orgError } = await admin
     .from("organizations")
     .insert({ name: storeName, owner_account_id: account.id })
-    .select("id, name, created_at, status")
+    .select("id, name, created_at, status, billing_status")
     .single();
 
   if (orgError || !org) {

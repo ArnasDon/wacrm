@@ -43,7 +43,12 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "groups": {
+      "service": "Atendimento",
+      "sales": "Vendas",
+      "automation": "Automação"
+    }
   },
   "Header": {
     "dashboard": "Painel",
@@ -1251,7 +1256,20 @@
     "ownerLabel": "Dono",
     "sellersCount": "{count} {count, plural, =1 {vendedor} other {vendedores}}",
     "createdOn": "Criada em {date}",
-    "signOut": "Sair"
+    "signOut": "Sair",
+    "searchPlaceholder": "Buscar por nome da loja ou e-mail do dono...",
+    "columnsLabel": "Colunas",
+    "colOwnerEmail": "E-mail do dono",
+    "colSellerCount": "Vendedores",
+    "colBillingStatus": "Cobrança",
+    "colCreatedAt": "Data de criação",
+    "tableStoreHeader": "Loja",
+    "selectAll": "Selecionar todas",
+    "selectedCount": "{count} selecionada(s)",
+    "bulkSuspend": "Suspender selecionadas",
+    "bulkActivate": "Reativar selecionadas",
+    "statusUpdateFailedToast": "Falha ao atualizar uma ou mais lojas",
+    "statusUpdatedToast": "Status atualizado"
   },
   "Settings": {
     "pageTitle": "Configurações",
@@ -1337,6 +1355,13 @@
       "inviteFailedToast": "Falha ao convidar o vendedor",
       "serverUnreachableToast": "Não foi possível conectar ao servidor",
       "cancel": "Cancelar"
+    },
+    "billing": {
+      "title": "Faturamento",
+      "description": "Sua assinatura e dados de pagamento.",
+      "comingSoonTitle": "Em breve",
+      "comingSoonDesc": "A cobrança automática está a caminho.",
+      "freeUntilThen": "Sua conta continua gratuita até lá — nada pra configurar por enquanto."
     },
     "invite": {
       "inviteCreated": "Convite criado",
@@ -1700,6 +1725,7 @@
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
       "organization": "Organização",
+      "billing": "Faturamento",
       "api": "Chaves de API"
     },
     "groups": {

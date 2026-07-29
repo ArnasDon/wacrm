@@ -43,7 +43,12 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "groups": {
+      "service": "Service",
+      "sales": "Sales",
+      "automation": "Automation"
+    }
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -1251,7 +1256,20 @@
     "ownerLabel": "Owner",
     "sellersCount": "{count} {count, plural, =1 {seller} other {sellers}}",
     "createdOn": "Created {date}",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "searchPlaceholder": "Search by store name or owner email...",
+    "columnsLabel": "Columns",
+    "colOwnerEmail": "Owner email",
+    "colSellerCount": "Sellers",
+    "colBillingStatus": "Billing",
+    "colCreatedAt": "Created date",
+    "tableStoreHeader": "Store",
+    "selectAll": "Select all",
+    "selectedCount": "{count} selected",
+    "bulkSuspend": "Suspend selected",
+    "bulkActivate": "Reactivate selected",
+    "statusUpdateFailedToast": "Failed to update one or more stores",
+    "statusUpdatedToast": "Status updated"
   },
   "Settings": {
     "pageTitle": "Settings",
@@ -1337,6 +1355,13 @@
       "inviteFailedToast": "Failed to invite the seller",
       "serverUnreachableToast": "Could not reach the server",
       "cancel": "Cancel"
+    },
+    "billing": {
+      "title": "Billing",
+      "description": "Your subscription and payment details.",
+      "comingSoonTitle": "Coming soon",
+      "comingSoonDesc": "Automatic billing is on its way.",
+      "freeUntilThen": "Your account stays free until then — nothing to set up right now."
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -1700,6 +1725,7 @@
       "deals": "Deals & currency",
       "members": "Team members",
       "organization": "Organization",
+      "billing": "Billing",
       "api": "API keys"
     },
     "groups": {

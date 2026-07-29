@@ -70,7 +70,7 @@ export async function GET(
 
     const { data: org, error: orgError } = await admin
       .from('organizations')
-      .select('id, name, status, created_at, owner_account_id')
+      .select('id, name, status, billing_status, created_at, owner_account_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -105,6 +105,7 @@ export async function GET(
         id: org.id,
         name: org.name,
         status: org.status,
+        billingStatus: org.billing_status,
         createdAt: org.created_at,
       },
       owner,
@@ -150,7 +151,7 @@ export async function PATCH(
       .from('organizations')
       .update({ name })
       .eq('id', id)
-      .select('id, name, status, created_at, owner_account_id')
+      .select('id, name, status, billing_status, created_at, owner_account_id')
       .maybeSingle();
 
     if (orgError) {
@@ -179,7 +180,13 @@ export async function PATCH(
     });
 
     return NextResponse.json({
-      organization: { id: org.id, name: org.name, status: org.status, createdAt: org.created_at },
+      organization: {
+        id: org.id,
+        name: org.name,
+        status: org.status,
+        billingStatus: org.billing_status,
+        createdAt: org.created_at,
+      },
     });
   } catch (err) {
     return toErrorResponse(err);

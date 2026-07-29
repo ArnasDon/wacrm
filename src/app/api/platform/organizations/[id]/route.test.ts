@@ -155,8 +155,8 @@ function params(id: string) {
 function resetState() {
   h.isPlatformAdmin = true
   h.organizations = [
-    { id: 'org-a', name: 'Loja A', status: 'active', created_at: '2026-01-01T00:00:00Z', owner_account_id: 'acc-a-store' },
-    { id: 'org-b', name: 'Loja B', status: 'active', created_at: '2026-02-01T00:00:00Z', owner_account_id: 'acc-b-store' },
+    { id: 'org-a', name: 'Loja A', status: 'active', billing_status: 'trial', created_at: '2026-01-01T00:00:00Z', owner_account_id: 'acc-a-store' },
+    { id: 'org-b', name: 'Loja B', status: 'active', billing_status: 'trial', created_at: '2026-02-01T00:00:00Z', owner_account_id: 'acc-b-store' },
   ]
   h.accounts = [
     { id: 'acc-a-store', name: 'Loja A', owner_user_id: 'user-a-store', organization_id: 'org-a', created_at: '2026-01-01T00:00:00Z' },
@@ -198,7 +198,7 @@ describe('GET /api/platform/organizations/[id]', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json.organization).toMatchObject({ id: 'org-a', name: 'Loja A' })
+    expect(json.organization).toMatchObject({ id: 'org-a', name: 'Loja A', billingStatus: 'trial' })
     expect(json.owner).toMatchObject({
       accountId: 'acc-a-store',
       name: 'Dona da Loja A',

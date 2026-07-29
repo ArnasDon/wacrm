@@ -18,6 +18,7 @@ import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel'
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { OrganizationSettings } from '@/components/settings/organization-settings';
+import { BillingSettings } from '@/components/settings/billing-settings';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
@@ -66,7 +67,7 @@ export default function SettingsPage() {
   const hiddenSections: SettingsSection[] = useMemo(() => {
     const hidden: SettingsSection[] = [];
     if (templatesHiddenByProvider) hidden.push('templates');
-    if (!isOwner) hidden.push('organization');
+    if (!isOwner) hidden.push('organization', 'billing');
     return hidden;
   }, [templatesHiddenByProvider, isOwner]);
 
@@ -110,6 +111,7 @@ export default function SettingsPage() {
     deals: <DealsSettings />,
     members: <MembersTab />,
     organization: <OrganizationSettings />,
+    billing: <BillingSettings />,
     api: <ApiKeysSettings />,
   };
 

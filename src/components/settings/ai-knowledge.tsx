@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen,
+  Upload, Link as LinkIcon, FileSpreadsheet, FileText,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,15 +18,342 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface DocSummary {
   id: string;
   title: string;
   updated_at: string;
+  type: string;
+  metadata: Record<string, unknown> | null;
 }
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
 type EditTarget = 'new' | string | null;
+
+// ---- Inventory uploader types ----//
+interface DetectedColumnMap {
+  sku: string | null;
+  name: string | null;
+  price: string | null;
+  stock: string | null;
+  category: string | null;
+}
+
+interface InventoryPreview {
+  sample: Record<string, string>[];
+  detected: DetectedColumnMap;
+}
+
+function InventoryUploader({
+  inventoryDocs,
+  canEdit,
+  onRefresh,
+}: {
+  inventoryDocs: DocSummary[];
+  canEdit: boolean;
+  onRefresh: () => Promise<void>;
+}) {
+  const t = useTranslations('Settings.aiKnowledge');
+  const [mode, setMode] = useState<'file' | 'sheet' | null>(null);
+  const [preview, setPreview] = useState<InventoryPreview | null>(null);
+  const [metadata, setMetadata] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState('');
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const invDoc = inventoryDocs[0];
+  const allColumns = preview?.sample.length
+    ? Object.keys(preview.sample[0])
+    : [];
+
+  // Reset selected columns whenever a new preview arrives.
+  useEffect(() => {
+    if (preview) setSelectedColumns(allColumns);
+  }, [preview]);
+
+  const sourceLabel = (src: string) => {
+    const map: Record<string, string> = {
+      csv: t('inventorySourceCsv'),
+      excel: t('inventorySourceExcel'),
+      sheet: t('inventorySourceSheet'),
+    };
+    return map[src] ?? src;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMode('file');
+    setLoading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/ai/knowledge/inventory/preview', { method: 'POST', body: fd })
+      .then(async (res) => {
+        const data = await res.json();
+        if (res.ok) {
+          setPreview(data.preview);
+          setMetadata(data.metadata);
+        } else {
+          toast.error(data.error ?? 'Preview failed.');
+          setMode(null);
+        }
+      })
+      .catch(() => { toast.error('Preview failed.'); setMode(null); })
+      .finally(() => setLoading(false));
+  };
+
+  const fetchSheetPreview = async () => {
+    if (!sheetUrl.trim()) return;
+    setMode('sheet');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/ai/knowledge/inventory/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sheetUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPreview(data.preview);
+        setMetadata(data.metadata);
+      } else {
+        toast.error(data.error ?? t('sheetFetchFailed'));
+        setMode(null);
+      }
+    } catch {
+      toast.error(t('sheetFetchFailed'));
+      setMode(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleColumn = (col: string) => {
+    setSelectedColumns((prev) =>
+      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col],
+    );
+  };
+
+  const confirmUpload = async () => {
+    setUploading(true);
+    try {
+      if (mode === 'file') {
+        const file = fileRef.current?.files?.[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('selectedColumns', JSON.stringify(selectedColumns));
+        const res = await fetch('/api/ai/knowledge/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.warning) toast.warning(data.warning);
+          else toast.success(t('uploadSuccess'));
+        } else {
+          toast.error(data.error ?? t('uploadFailed'));
+          return;
+        }
+      } else if (mode === 'sheet') {
+        const res = await fetch('/api/ai/knowledge/sheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: sheetUrl.trim(), selectedColumns }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.warning) toast.warning(data.warning);
+          else toast.success(t('uploadSuccess'));
+        } else {
+          toast.error(data.error ?? t('uploadFailed'));
+          return;
+        }
+      }
+      setPreview(null);
+      setMetadata(null);
+      setMode(null);
+      setSheetUrl('');
+      setSelectedColumns([]);
+      if (fileRef.current) fileRef.current.value = '';
+      await onRefresh();
+    } catch {
+      toast.error(t('uploadFailed'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deleteInventory = async () => {
+    try {
+      const res = await fetch('/api/ai/knowledge/inventory', { method: 'DELETE' });
+      if (res.ok) {
+        toast.success(t('inventoryDeleteSuccess'));
+        await onRefresh();
+      } else {
+        const data = await res.json();
+        toast.error(data.error ?? t('inventoryDeleteFailed'));
+      }
+    } catch {
+      toast.error(t('inventoryDeleteFailed'));
+    }
+  };
+
+  const detectedEntries: { key: keyof DetectedColumnMap; label: string }[] = [
+    { key: 'sku', label: t('detectedSku') },
+    { key: 'name', label: t('detectedName') },
+    { key: 'price', label: t('detectedPrice') },
+    { key: 'stock', label: t('detectedStock') },
+    { key: 'category', label: t('detectedCategory') },
+  ];
+
+  return (
+    <div className="rounded-md border border-border p-3 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <FileSpreadsheet className="h-4 w-4 text-primary" />
+        {t('inventoryHeading')}
+      </div>
+      <p className="text-xs text-muted-foreground">{t('inventoryDesc')}</p>
+
+      {invDoc && (
+        <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-xs">
+          <span>
+            {t('inventoryStatus', {
+              rows: (metadata as { rows?: number })?.rows ?? '?',
+              source: sourceLabel(
+                (invDoc.metadata as Record<string, string>)?.source ?? 'csv',
+              ),
+            })}
+          </span>
+          {canEdit && (
+            <Button variant="ghost" size="sm" className="h-7 text-destructive text-xs" onClick={deleteInventory}>
+              <Trash2 className="mr-1 h-3 w-3" /> {t('inventoryDelete')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {!invDoc && canEdit && !preview && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="text-xs">
+              <Upload className="mr-1 h-3 w-3" /> {t('uploadFile')}
+            </Button>
+            <span className="text-xs text-muted-foreground">{t('uploadFileHint')}</span>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder={t('sheetUrlPlaceholder')}
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              className="h-7 text-xs"
+            />
+            <Button variant="outline" size="sm" onClick={fetchSheetPreview} disabled={!sheetUrl.trim() || loading} className="text-xs shrink-0">
+              {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <LinkIcon className="mr-1 h-3 w-3" />}
+              {loading ? t('fetchingSheet') : t('fetchSheet')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Preview dialog */}
+      <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) { setPreview(null); setMetadata(null); setMode(null); setSelectedColumns([]); } }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('previewTitle')}</DialogTitle>
+            <DialogDescription>{t('previewDesc')}</DialogDescription>
+          </DialogHeader>
+
+          {preview && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {detectedEntries.map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-1">
+                    <span className="text-muted-foreground">{label}:</span>
+                    <span className={preview.detected[key] ? 'font-medium text-foreground' : 'text-destructive'}>
+                      {preview.detected[key] ?? t('notDetected')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Column checkboxes */}
+              {allColumns.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium mb-1">{t('selectColumns')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {allColumns.map((col) => (
+                      <label
+                        key={col}
+                        className="flex items-center gap-1 text-xs cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedColumns.includes(col)}
+                          onChange={() => toggleColumn(col)}
+                          className="h-3 w-3"
+                        />
+                        {col}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium mb-1">{t('sampleRows')}</p>
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        {preview.sample.length > 0 && Object.keys(preview.sample[0]).map((col) => (
+                          <th key={col} className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.sample.map((row, ri) => (
+                        <tr key={ri} className="border-t border-border">
+                          {Object.values(row).map((val, ci) => (
+                            <td key={ci} className="px-2 py-1 text-foreground whitespace-nowrap max-w-40 truncate">{val}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setPreview(null); setMetadata(null); setMode(null); setSelectedColumns([]); }} disabled={uploading}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={confirmUpload} disabled={uploading || selectedColumns.length === 0}>
+              {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('confirmUpload')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
 
 export function AiKnowledgeCard({
   accountId,
@@ -41,6 +371,8 @@ export function AiKnowledgeCard({
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const loadedAccountIdRef = useRef<string | null>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
@@ -137,6 +469,30 @@ export function AiKnowledgeCard({
       }
     } catch {
       toast.error(t('removeFailed'));
+    }
+  };
+
+  const uploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPdf(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/ai/knowledge/upload-pdf', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.warning) toast.warning(data.warning);
+        else toast.success(t('uploadPdfSuccess'));
+        await fetchDocs();
+      } else {
+        toast.error(data.error ?? t('uploadPdfFailed'));
+      }
+    } catch {
+      toast.error(t('uploadPdfFailed'));
+    } finally {
+      setUploadingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
     }
   };
 
@@ -255,9 +611,22 @@ export function AiKnowledgeCard({
             ) : (
               canEdit && (
                 <div className="flex items-center justify-between">
-                  <Button variant="outline" size="sm" onClick={openNew}>
-                    <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={openNew}>
+                      <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => pdfInputRef.current?.click()} disabled={uploadingPdf} className="text-xs">
+                      {uploadingPdf ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileText className="mr-1 h-4 w-4" />}
+                      {t('uploadPdf')}
+                    </Button>
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={uploadPdf}
+                    />
+                  </div>
                   {hasEmbeddingsKey && docs.length > 0 && (
                     <Button
                       variant="ghost"
@@ -278,6 +647,14 @@ export function AiKnowledgeCard({
               )
             )}
           </>
+        )}
+
+        {!loading && (
+          <InventoryUploader
+            inventoryDocs={docs.filter((d) => d.type === 'inventory')}
+            canEdit={canEdit}
+            onRefresh={fetchDocs}
+          />
         )}
       </CardContent>
     </Card>

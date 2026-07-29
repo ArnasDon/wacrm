@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   insertedOrgs: [] as Record<string, unknown>[],
   adminUpdates: [] as { table: string; payload: unknown; filters: [string, unknown][] }[],
   capturedAccountsFilter: null as [string, unknown] | null,
+  // auth.users lookups for email + invite status — keyed by owner_user_id.
+  authUsersByOwnerId: {} as Record<string, { email: string; last_sign_in_at: string | null }>,
 }))
 
 class FakeForbiddenError extends Error {
@@ -92,8 +94,10 @@ const fakeSupabase = {
   },
 }
 
-// The service-role ("admin") client — only used to link the store's
-// own account to its freshly-created organization.
+// The service-role ("admin") client — used to link the store's own
+// account to its freshly-created organization, and (GET only) to
+// resolve each linked account owner's email/invite-status from
+// auth.users, which no RLS policy ever exposes.
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from: (table: string) => ({
@@ -104,6 +108,15 @@ vi.mock('@supabase/supabase-js', () => ({
         },
       }),
     }),
+    auth: {
+      admin: {
+        getUserById: async (uid: string) => {
+          const user = h.authUsersByOwnerId[uid]
+          if (!user) return { data: { user: null }, error: null }
+          return { data: { user: { email: user.email, last_sign_in_at: user.last_sign_in_at } }, error: null }
+        },
+      },
+    },
   }),
 }))
 
@@ -118,6 +131,7 @@ function resetState() {
   h.insertedOrgs = []
   h.adminUpdates = []
   h.capturedAccountsFilter = null
+  h.authUsersByOwnerId = {}
 }
 
 describe('GET /api/organization', () => {
@@ -141,20 +155,49 @@ describe('GET /api/organization', () => {
   it('scopes the linked-accounts query to this organization only, never a bare unscoped select', async () => {
     h.existingOrg = { id: 'org-1', name: 'Loja X', owner_account_id: h.accountId }
     h.linkedAccounts = [
-      { id: 'acc-store-1', name: 'Loja X' },
-      { id: 'acc-seller-1', name: 'João' },
+      { id: 'acc-store-1', name: 'Loja X', owner_user_id: 'user-1', created_at: '2026-01-01T00:00:00Z' },
+      { id: 'acc-seller-1', name: 'João', owner_user_id: 'user-seller-1', created_at: '2026-01-05T00:00:00Z' },
     ]
+    h.authUsersByOwnerId = {
+      'user-1': { email: 'owner@loja.com', last_sign_in_at: '2026-01-01T00:05:00Z' },
+      'user-seller-1': { email: 'joao@loja.com', last_sign_in_at: null },
+    }
     const res = await GET()
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.organization.id).toBe('org-1')
     expect(json.accounts).toHaveLength(2)
-    expect(json.accounts.find((a: { id: string }) => a.id === 'acc-store-1').isOwnerAccount).toBe(true);
-    expect(json.accounts.find((a: { id: string }) => a.id === 'acc-seller-1').isOwnerAccount).toBe(false);
+    const store = json.accounts.find((a: { id: string }) => a.id === 'acc-store-1')
+    const seller = json.accounts.find((a: { id: string }) => a.id === 'acc-seller-1')
+    expect(store).toMatchObject({
+      isOwnerAccount: true,
+      email: 'owner@loja.com',
+      inviteStatus: 'accepted',
+      joinedAt: '2026-01-01T00:00:00Z',
+    })
+    // Never signed in yet → still pending, not "accepted".
+    expect(seller).toMatchObject({
+      isOwnerAccount: false,
+      email: 'joao@loja.com',
+      inviteStatus: 'pending',
+      joinedAt: '2026-01-05T00:00:00Z',
+    })
     // The critical isolation property: accounts are fetched filtered
     // by THIS organization's id, not an unscoped `select *` that would
     // rely on RLS alone to save us.
     expect(h.capturedAccountsFilter).toEqual(['organization_id', 'org-1']);
+  })
+
+  it("falls back to a null email without failing the request when the auth lookup errors", async () => {
+    h.existingOrg = { id: 'org-1', name: 'Loja X', owner_account_id: h.accountId }
+    h.linkedAccounts = [
+      { id: 'acc-store-1', name: 'Loja X', owner_user_id: 'user-unknown', created_at: '2026-01-01T00:00:00Z' },
+    ]
+    // No entry in authUsersByOwnerId for 'user-unknown' — getUserById resolves to a null user.
+    const res = await GET()
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.accounts[0]).toMatchObject({ email: null, inviteStatus: 'pending' })
   })
 })
 

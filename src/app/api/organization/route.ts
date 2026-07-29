@@ -55,7 +55,7 @@ export async function GET() {
     // is scoped to the caller's own owner_account_id.
     const { data: accounts, error: accountsError } = await supabase
       .from('accounts')
-      .select('id, name')
+      .select('id, name, owner_user_id, created_at')
       .eq('organization_id', org.id)
       .order('name', { ascending: true });
 
@@ -64,13 +64,49 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to load linked accounts' }, { status: 500 });
     }
 
+    // Email + invite status live in auth.users, which no RLS policy
+    // ever exposes (by design — see profiles_select in 001_initial_schema.sql,
+    // scoped to auth.uid() = user_id only). The admin client is the
+    // only way to read another account's owner here, same precedent as
+    // the invite flow itself (organization/sellers/route.ts). Each
+    // lookup is scoped to an owner_user_id this caller already proved
+    // access to via the RLS-scoped `accounts` query above — this can
+    // never leak a user outside the caller's own organization.
+    const accountRows = (accounts ?? []) as {
+      id: string;
+      name: string;
+      owner_user_id: string;
+      created_at: string;
+    }[];
+
+    const enrichedAccounts = await Promise.all(
+      accountRows.map(async (a) => {
+        let email: string | null = null;
+        let inviteStatus: 'accepted' | 'pending' = 'accepted';
+        try {
+          const { data: authUser } = await supabaseAdmin().auth.admin.getUserById(a.owner_user_id);
+          email = authUser?.user?.email ?? null;
+          // A seller who hasn't completed Supabase's invite flow (set
+          // their password) has never signed in — that's the one
+          // reliable "still pending" signal available from auth.users.
+          inviteStatus = authUser?.user?.last_sign_in_at ? 'accepted' : 'pending';
+        } catch (err) {
+          console.warn('[organization] getUserById failed for', a.id, err);
+        }
+        return {
+          id: a.id,
+          name: a.name,
+          isOwnerAccount: a.id === accountId,
+          email,
+          inviteStatus,
+          joinedAt: a.created_at,
+        };
+      }),
+    );
+
     return NextResponse.json({
       organization: org,
-      accounts: (accounts ?? []).map((a: { id: string; name: string }) => ({
-        id: a.id,
-        name: a.name,
-        isOwnerAccount: a.id === accountId,
-      })),
+      accounts: enrichedAccounts,
     });
   } catch (err) {
     return toErrorResponse(err);

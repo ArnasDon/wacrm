@@ -1218,6 +1218,13 @@
       "tagNone": "{mode} etiqueta (nenhuma escolhida)"
     }
   },
+  "Organization": {
+    "accountSelect": {
+      "filterByAccount": "Filtrar por conta",
+      "allAccounts": "Todas as contas",
+      "storeSuffix": " (Loja)"
+    }
+  },
   "Settings": {
     "pageTitle": "Configurações",
     "pageDesc": "Tudo em um só lugar — sua conta e seu espaço de trabalho. Escolha uma seção para gerenciá-la.",
@@ -1236,7 +1243,9 @@
       "fieldsCount": "{count} {count, plural, =1 {campo personalizado} other {campos personalizados}}",
       "appearance": "modo {mode} · destaque {theme}",
       "yourAccount": "Sua conta",
-      "loading": "Carregando…"
+      "loading": "Carregando…",
+      "noOrganization": "Nenhuma organização criada",
+      "sellersLinked": "{count} {count, plural, =1 {vendedor vinculado} other {vendedores vinculados}}"
     },
     "members": {
       "title": "Membros da equipe",
@@ -1268,6 +1277,38 @@
       "cancel": "Cancelar",
       "removing": "Removendo...",
       "removeBtn": "Remover membro"
+    },
+    "organization": {
+      "title": "Organização",
+      "description": "Gerencie as contas de vendedores vinculadas à sua loja.",
+      "descriptionWithName": "\"{name}\" — contas vinculadas abaixo. Você enxerga as conversas e contatos de todas elas a partir do seu login; cada conta de vendedor continua vendo só a própria.",
+      "createTitle": "Criar sua organização",
+      "createDesc": "Isso transforma sua conta atual na conta-mãe (\"loja\"). Depois, você pode criar contas de vendedores vinculadas a ela — cada uma funciona como um CRM próprio, mas você continua enxergando tudo daqui.",
+      "orgNameLabel": "Nome da organização",
+      "orgNamePlaceholder": "Ex: Loja de Veículos Silva",
+      "createButton": "Criar organização",
+      "creating": "Criando…",
+      "loading": "Carregando…",
+      "createdToast": "Organização criada",
+      "createFailedToast": "Falha ao criar a organização",
+      "linkedAccountsTitle": "Contas vinculadas",
+      "linkedAccountsDesc": "Leitura consolidada, nunca escrita em nome de outra conta — você só visualiza.",
+      "storeBadge": "Loja",
+      "statusAccepted": "Ativo",
+      "statusPending": "Convite pendente",
+      "joined": "Entrou em {date}",
+      "inviteSellerTitle": "Convidar novo vendedor",
+      "inviteSellerDesc": "Cria uma conta nova e independente para o vendedor, já vinculada à sua organização. Ele recebe um e-mail para definir a própria senha.",
+      "sellerNameLabel": "Nome do vendedor",
+      "sellerNamePlaceholder": "Ex: João Pereira",
+      "sellerEmailLabel": "E-mail do vendedor",
+      "sellerEmailPlaceholder": "joao@exemplo.com",
+      "inviteButton": "Convidar vendedor",
+      "sending": "Enviando convite…",
+      "invitedToast": "Convite enviado para {email}",
+      "inviteFailedToast": "Falha ao convidar o vendedor",
+      "serverUnreachableToast": "Não foi possível conectar ao servidor",
+      "cancel": "Cancelar"
     },
     "invite": {
       "inviteCreated": "Convite criado",
@@ -1630,6 +1671,7 @@
       "fields": "Campos e etiquetas",
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
+      "organization": "Organização",
       "api": "Chaves de API"
     },
     "groups": {

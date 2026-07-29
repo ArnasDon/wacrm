@@ -31,6 +31,11 @@ interface WhatsAppStatus {
   connected: boolean;
 }
 
+interface OrganizationSummary {
+  exists: boolean;
+  sellerCount: number;
+}
+
 export function SettingsOverview({
   onSelect,
   hiddenSections,
@@ -44,7 +49,7 @@ export function SettingsOverview({
    */
   hiddenSections?: SettingsSection[];
 }) {
-  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
+  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers, isOwner } =
     useAuth();
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
@@ -59,6 +64,11 @@ export function SettingsOverview({
   // from blanking the rest of the landing.
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
+  // Organization is owner-only (see settings/page.tsx's hiddenSections
+  // gating) — only fetch it when the caller could actually see the
+  // tile, so a non-owner never fires a request that just 403s.
+  const [organization, setOrganization] = useState<OrganizationSummary | null>(null);
+  const [organizationLoading, setOrganizationLoading] = useState(isOwner);
 
   useEffect(() => {
     if (!user || !accountId) return;
@@ -144,10 +154,34 @@ export function SettingsOverview({
       setWhatsappLoading(false);
     })();
 
+    // Organization summary — owner-only, independent of the counts above.
+    if (isOwner) {
+      (async () => {
+        setOrganizationLoading(true);
+        try {
+          const res = await fetch('/api/organization', { cache: 'no-store' });
+          const data = await res.json();
+          if (cancelled) return;
+          if (res.ok) {
+            setOrganization({
+              exists: !!data.organization,
+              sellerCount: Array.isArray(data.accounts)
+                ? data.accounts.filter((a: { isOwnerAccount: boolean }) => !a.isOwnerAccount).length
+                : 0,
+            });
+          }
+        } catch {
+          // Leave null — the tile falls back to the "not created" copy.
+        } finally {
+          if (!cancelled) setOrganizationLoading(false);
+        }
+      })();
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [user?.id, accountId, canManageMembers]);
+  }, [user?.id, accountId, canManageMembers, isOwner]);
 
   const displayName = profile?.full_name || profile?.email || t('yourAccount');
   const initial = (profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();
@@ -224,6 +258,14 @@ export function SettingsOverview({
       section: 'appearance',
       loading: false,
       subtitle: t('appearance', { mode: cap(mode), theme: themeName }),
+    },
+    {
+      section: 'organization',
+      loading: organizationLoading,
+      subtitle:
+        !organization?.exists
+          ? t('noOrganization')
+          : t('sellersLinked', { count: organization.sellerCount }),
     },
   ];
 

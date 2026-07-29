@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Building2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ export function OrganizationAccountSelect({
   value: string | null;
   onChange: (accountId: string | null) => void;
 }) {
+  const t = useTranslations('Organization.accountSelect');
   const [accounts, setAccounts] = useState<OrganizationAccount[]>([]);
 
   useEffect(() => {
@@ -56,16 +58,16 @@ export function OrganizationAccountSelect({
       value={value ?? ALL_ACCOUNTS}
       onValueChange={(v) => onChange(v === ALL_ACCOUNTS ? null : v)}
     >
-      <SelectTrigger className="w-[180px] gap-1.5" aria-label="Filtrar por conta">
+      <SelectTrigger className="w-[180px] gap-1.5" aria-label={t('filterByAccount')}>
         <Building2 className="size-4 text-muted-foreground" />
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL_ACCOUNTS}>Todas as contas</SelectItem>
+        <SelectItem value={ALL_ACCOUNTS}>{t('allAccounts')}</SelectItem>
         {accounts.map((acc) => (
           <SelectItem key={acc.id} value={acc.id}>
             {acc.name}
-            {acc.isOwnerAccount ? ' (Loja)' : ''}
+            {acc.isOwnerAccount ? t('storeSuffix') : ''}
           </SelectItem>
         ))}
       </SelectContent>

@@ -82,6 +82,12 @@ export interface OrganizationAccount {
   name: string;
   /** True for the organization's own store account. */
   isOwnerAccount: boolean;
+  /** The account owner's email — null if the auth lookup failed. */
+  email: string | null;
+  /** 'pending' until the invited seller has signed in at least once. */
+  inviteStatus: 'accepted' | 'pending';
+  /** When this account was linked to the organization. */
+  joinedAt: string;
 }
 
 /**

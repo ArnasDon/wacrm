@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Building2, Loader2, Store, UserPlus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +15,21 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { SettingsPanelHead } from './settings-panel-head';
+import { SettingsChip } from './settings-chip';
+import { InviteSellerDialog } from './invite-seller-dialog';
 import type { Organization, OrganizationAccount } from '@/types';
 
 interface OrgResponse {
   organization: Organization | null;
   accounts: OrganizationAccount[];
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 /**
@@ -34,16 +45,14 @@ interface OrgResponse {
  * this component does.
  */
 export function OrganizationSettings() {
+  const t = useTranslations('Settings.organization');
   const [loading, setLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [accounts, setAccounts] = useState<OrganizationAccount[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const [orgName, setOrgName] = useState('');
   const [creatingOrg, setCreatingOrg] = useState(false);
-
-  const [sellerName, setSellerName] = useState('');
-  const [sellerEmail, setSellerEmail] = useState('');
-  const [invitingSeller, setInvitingSeller] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,52 +84,25 @@ export function OrganizationSettings() {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'Failed to create organization');
+        toast.error(data.error || t('createFailedToast'));
         return;
       }
-      toast.success('Organization created');
+      toast.success(t('createdToast'));
       await load();
     } catch {
-      toast.error('Could not reach the server');
+      toast.error(t('serverUnreachableToast'));
     } finally {
       setCreatingOrg(false);
-    }
-  };
-
-  const handleInviteSeller = async () => {
-    setInvitingSeller(true);
-    try {
-      const res = await fetch('/api/organization/sellers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: sellerName, email: sellerEmail }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Failed to invite the seller');
-        return;
-      }
-      toast.success(`Invite sent to ${sellerEmail}`);
-      setSellerName('');
-      setSellerEmail('');
-      await load();
-    } catch {
-      toast.error('Could not reach the server');
-    } finally {
-      setInvitingSeller(false);
     }
   };
 
   if (loading) {
     return (
       <div>
-        <SettingsPanelHead
-          title="Organização"
-          description="Gerencie as contas de vendedores vinculadas à sua loja."
-        />
+        <SettingsPanelHead title={t('title')} description={t('description')} />
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
-          Carregando…
+          {t('loading')}
         </div>
       </div>
     );
@@ -129,28 +111,21 @@ export function OrganizationSettings() {
   if (!organization) {
     return (
       <div>
-        <SettingsPanelHead
-          title="Organização"
-          description="Gerencie as contas de vendedores vinculadas à sua loja."
-        />
+        <SettingsPanelHead title={t('title')} description={t('description')} />
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="size-5" />
-              Criar sua organização
+              {t('createTitle')}
             </CardTitle>
-            <CardDescription>
-              Isso transforma sua conta atual na conta-mãe (“loja”). Depois, você pode
-              criar contas de vendedores vinculadas a ela — cada uma funciona como um
-              CRM próprio, mas você continua enxergando tudo daqui.
-            </CardDescription>
+            <CardDescription>{t('createDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="org-name">Nome da organização</Label>
+              <Label htmlFor="org-name">{t('orgNameLabel')}</Label>
               <Input
                 id="org-name"
-                placeholder="Ex: Loja de Veículos Silva"
+                placeholder={t('orgNamePlaceholder')}
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
               />
@@ -163,10 +138,10 @@ export function OrganizationSettings() {
               {creatingOrg ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Criando…
+                  {t('creating')}
                 </>
               ) : (
-                'Criar organização'
+                t('createButton')
               )}
             </Button>
           </CardContent>
@@ -178,82 +153,65 @@ export function OrganizationSettings() {
   return (
     <div className="flex flex-col gap-6">
       <SettingsPanelHead
-        title="Organização"
-        description={`"${organization.name}" — contas vinculadas abaixo. Você enxerga as conversas e contatos de todas elas a partir do seu login; cada conta de vendedor continua vendo só a própria.`}
+        title={t('title')}
+        description={t('descriptionWithName', { name: organization.name })}
+        action={
+          <Button onClick={() => setInviteOpen(true)}>
+            <UserPlus className="size-4" />
+            {t('inviteSellerTitle')}
+          </Button>
+        }
       />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Contas vinculadas</CardTitle>
-          <CardDescription>
-            Leitura consolidada, nunca escrita em nome de outra conta — você só visualiza.
-          </CardDescription>
+          <CardTitle className="text-base">{t('linkedAccountsTitle')}</CardTitle>
+          <CardDescription>{t('linkedAccountsDesc')}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {accounts.map((acc) => (
-            <div
-              key={acc.id}
-              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
-            >
-              <Store className="size-4 text-muted-foreground" />
-              <span className="text-foreground">{acc.name}</span>
-              {acc.isOwnerAccount && (
-                <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                  Loja
-                </span>
-              )}
-            </div>
-          ))}
+        <CardContent className="p-0">
+          <ul className="divide-y divide-border">
+            {accounts.map((acc) => (
+              <li
+                key={acc.id}
+                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-full ${
+                      acc.isOwnerAccount
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300'
+                        : 'bg-primary-soft text-primary'
+                    }`}
+                  >
+                    <Store className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {acc.name}
+                      </span>
+                      {acc.isOwnerAccount && (
+                        <SettingsChip variant="owner">{t('storeBadge')}</SettingsChip>
+                      )}
+                      <SettingsChip variant={acc.inviteStatus === 'accepted' ? 'ok' : 'warn'}>
+                        {acc.inviteStatus === 'accepted' ? t('statusAccepted') : t('statusPending')}
+                      </SettingsChip>
+                    </div>
+                    {acc.email && (
+                      <p className="truncate text-xs text-muted-foreground">{acc.email}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground sm:text-right">
+                  {t('joined', { date: fmtDate(acc.joinedAt) })}
+                </div>
+              </li>
+            ))}
+          </ul>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UserPlus className="size-4" />
-            Convidar novo vendedor
-          </CardTitle>
-          <CardDescription>
-            Cria uma conta nova e independente para o vendedor, já vinculada à sua
-            organização. Ele recebe um e-mail para definir a própria senha.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="seller-name">Nome do vendedor</Label>
-            <Input
-              id="seller-name"
-              placeholder="Ex: João Pereira"
-              value={sellerName}
-              onChange={(e) => setSellerName(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="seller-email">E-mail do vendedor</Label>
-            <Input
-              id="seller-email"
-              type="email"
-              placeholder="joao@exemplo.com"
-              value={sellerEmail}
-              onChange={(e) => setSellerEmail(e.target.value)}
-            />
-          </div>
-          <Button
-            onClick={handleInviteSeller}
-            disabled={invitingSeller || !sellerName.trim() || !sellerEmail.trim()}
-            className="self-start"
-          >
-            {invitingSeller ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Enviando convite…
-              </>
-            ) : (
-              'Convidar vendedor'
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+      <InviteSellerDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={load} />
     </div>
   );
 }

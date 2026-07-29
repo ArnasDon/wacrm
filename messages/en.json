@@ -1218,6 +1218,13 @@
       "tagNone": "{mode} tag (none picked)"
     }
   },
+  "Organization": {
+    "accountSelect": {
+      "filterByAccount": "Filter by account",
+      "allAccounts": "All accounts",
+      "storeSuffix": " (Store)"
+    }
+  },
   "Settings": {
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
@@ -1236,7 +1243,9 @@
       "fieldsCount": "{count} custom {count, plural, =1 {field} other {fields}}",
       "appearance": "{mode} mode · {theme} accent",
       "yourAccount": "Your account",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "noOrganization": "No organization created yet",
+      "sellersLinked": "{count} {count, plural, =1 {seller} other {sellers}} linked"
     },
     "members": {
       "title": "Team members",
@@ -1268,6 +1277,38 @@
       "cancel": "Cancel",
       "removing": "Removing...",
       "removeBtn": "Remove member"
+    },
+    "organization": {
+      "title": "Organization",
+      "description": "Manage the seller accounts linked to your store.",
+      "descriptionWithName": "\"{name}\" — linked accounts below. You see conversations and contacts from all of them from your own login; each seller account still only sees its own.",
+      "createTitle": "Create your organization",
+      "createDesc": "This turns your current account into the parent (\"store\") account. Afterwards you can create seller accounts linked to it — each one works as its own independent CRM, but you keep seeing everything from here.",
+      "orgNameLabel": "Organization name",
+      "orgNamePlaceholder": "e.g. Silva Motors",
+      "createButton": "Create organization",
+      "creating": "Creating…",
+      "loading": "Loading…",
+      "createdToast": "Organization created",
+      "createFailedToast": "Failed to create the organization",
+      "linkedAccountsTitle": "Linked accounts",
+      "linkedAccountsDesc": "Read-only consolidated view — you never write on another account's behalf.",
+      "storeBadge": "Store",
+      "statusAccepted": "Active",
+      "statusPending": "Invite pending",
+      "joined": "Joined {date}",
+      "inviteSellerTitle": "Invite new seller",
+      "inviteSellerDesc": "Creates a new, independent account for the seller, already linked to your organization. They'll get an email to set their own password.",
+      "sellerNameLabel": "Seller name",
+      "sellerNamePlaceholder": "e.g. John Smith",
+      "sellerEmailLabel": "Seller email",
+      "sellerEmailPlaceholder": "john@example.com",
+      "inviteButton": "Invite seller",
+      "sending": "Sending invite…",
+      "invitedToast": "Invite sent to {email}",
+      "inviteFailedToast": "Failed to invite the seller",
+      "serverUnreachableToast": "Could not reach the server",
+      "cancel": "Cancel"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -1630,6 +1671,7 @@
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
+      "organization": "Organization",
       "api": "API keys"
     },
     "groups": {

@@ -370,11 +370,6 @@ export async function sendMessageToConversation(
   // variants if it rejects with "recipient not in allowed list";
   // persist a working variant back to the contact so the next send
   // goes straight through.
-  //
-  // TEMPORARY — timing instrumentation to measure real-world WhatsApp
-  // API latency (perceived-send-speed investigation). Remove once a
-  // representative sample has been captured from production logs.
-  const sendStartedAt = Date.now();
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
@@ -390,9 +385,6 @@ export async function sendMessageToConversation(
     console.error('[send-message] send failed for all variants:', message);
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
-  console.log(
-    `[send-message] provider send took ${Date.now() - sendStartedAt}ms (provider=${provider.kind})`
-  );
 
   // Persist the sent message. Field names MUST match the messages
   // schema (see 001_initial_schema.sql).

@@ -8,13 +8,7 @@ import { submitStoreSignup } from "@/lib/auth/store-signup-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { AuthShell, AUTH_INPUT_CLASS, AUTH_BUTTON_CLASS } from "@/components/auth/auth-shell";
 import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
 
 // `useSearchParams` opts the component out of static prerendering
@@ -122,180 +116,135 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
-          <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
-            </div>
-            <CardTitle className="text-xl text-foreground">
-              Verifique seu e-mail
-            </CardTitle>
-            <CardDescription className="text-muted-foreground">
-              Enviamos um link de confirmação para{" "}
-              <span className="text-foreground">{email}</span>. Verifique sua
-              caixa de entrada e clique no link para confirmar sua conta.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
-            >
-              <Button
-                variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                Voltar para o login
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+      <AuthShell
+        icon={<CheckCircle className="h-6 w-6" />}
+        title="Verifique seu e-mail"
+        description={<>Enviamos um link de confirmação para <span className="text-foreground">{email}</span>. Verifique sua caixa de entrada e clique no link para confirmar sua conta.</>}
+      >
+        <Link href={inviteToken ? `/login?invite=${encodeURIComponent(inviteToken)}` : "/login"}>
+          <Button variant="outline" className="h-11 w-full rounded-full border-border text-muted-foreground hover:bg-muted hover:text-foreground">
+            Voltar para o login
+          </Button>
+        </Link>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
+    <AuthShell
+      icon={inviteToken ? <UsersRound className="h-6 w-6" /> : <MessageSquare className="h-6 w-6" />}
+      title={inviteToken ? "Criar conta e entrar" : "Criar conta"}
+      description={
+        inviteToken
+          ? "Confirme seu e-mail e depois aceite o convite para entrar na sua equipe."
+          : "Crie a conta da sua loja e conecte seu WhatsApp em minutos"
+      }
+      footer={
+        <p>
+          Já tem uma conta?{" "}
+          <Link href={inviteToken ? `/login?invite=${encodeURIComponent(inviteToken)}` : "/login"}>
+            Entrar
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleSignup} className="flex flex-col gap-4">
+        {error && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {error}
           </div>
-          <CardTitle className="text-xl text-foreground">
-            {inviteToken ? "Criar conta e entrar" : "Criar conta"}
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            {inviteToken
-              ? "Confirme seu e-mail e depois aceite o convite para entrar na sua equipe."
-              : "Crie a conta da sua loja e conecte seu WhatsApp em minutos"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignup} className="flex flex-col gap-4">
-            {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
-              </div>
-            )}
+        )}
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="fullName" className="text-muted-foreground">
-                Nome completo
-              </Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="João da Silva"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="fullName" className="text-muted-foreground">
+            Nome completo
+          </Label>
+          <Input
+            id="fullName"
+            type="text"
+            placeholder="João da Silva"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+          />
+        </div>
 
-            {isStoreSignup && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="storeName" className="text-muted-foreground">
-                  Nome da loja ou negócio
-                </Label>
-                <Input
-                  id="storeName"
-                  type="text"
-                  placeholder="Ex: Loja de Veículos Silva"
-                  value={storeName}
-                  onChange={(e) => setStoreName(e.target.value)}
-                  required
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-                />
-              </div>
-            )}
+        {isStoreSignup && (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="storeName" className="text-muted-foreground">
+              Nome da loja ou negócio
+            </Label>
+            <Input
+              id="storeName"
+              type="text"
+              placeholder="Ex: Loja de Veículos Silva"
+              value={storeName}
+              onChange={(e) => setStoreName(e.target.value)}
+              required
+              className={AUTH_INPUT_CLASS}
+            />
+          </div>
+        )}
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-muted-foreground">
-                E-mail
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="voce@exemplo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="email" className="text-muted-foreground">
+            E-mail
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="voce@exemplo.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+          />
+        </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password" className="text-muted-foreground">
-                Senha
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="No mínimo 6 caracteres"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="password" className="text-muted-foreground">
+            Senha
+          </Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="No mínimo 6 caracteres"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+          />
+        </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="confirmPassword" className="text-muted-foreground">
-                Confirmar senha
-              </Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Repita sua senha"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
-              />
-            </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="confirmPassword" className="text-muted-foreground">
+            Confirmar senha
+          </Label>
+          <Input
+            id="confirmPassword"
+            type="password"
+            placeholder="Repita sua senha"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            className={AUTH_INPUT_CLASS}
+          />
+        </div>
 
-            {isStoreSignup && (
-              <p className="rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-                Sua conta é gratuita por enquanto. Assim que a cobrança da
-                plataforma entrar no ar, uma mensalidade passará a ser
-                exigida para manter o acesso — vamos avisar com
-                antecedência antes de cobrar qualquer coisa.
-              </p>
-            )}
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? "Criando conta..." : "Criar conta"}
-            </Button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Já tem uma conta?{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              Entrar
-            </Link>
+        {isStoreSignup && (
+          <p className="rounded-2xl border border-border bg-muted px-4 py-3 text-xs text-muted-foreground">
+            Sua conta é gratuita por enquanto. Assim que a cobrança da
+            plataforma entrar no ar, uma mensalidade passará a ser
+            exigida para manter o acesso — vamos avisar com
+            antecedência antes de cobrar qualquer coisa.
           </p>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+
+        <Button type="submit" disabled={loading} className={`mt-2 ${AUTH_BUTTON_CLASS}`}>
+          {loading ? "Criando conta..." : "Criar conta"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

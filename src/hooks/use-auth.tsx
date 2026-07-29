@@ -35,6 +35,8 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  /** Preferred UI locale, e.g. "en", "es", "ko". Defaults to "en". */
+  locale: string;
 }
 
 interface AccountSummary {
@@ -68,6 +70,8 @@ interface AuthContextValue {
    *  the settings form so header/sidebar reflect the change without a
    *  full page reload. */
   refreshProfile: () => Promise<void>;
+  /** Update the current user's preferred UI locale (DB + cookie). */
+  updateLocale: (locale: string) => Promise<void>;
 
   // ----------------------------------------------------------
   // Account-scoped context (added by the account-sharing series)
@@ -138,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, locale",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -212,6 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          locale: data.locale ?? "en",
         });
         setAccount(accountRow);
       } else {
@@ -314,6 +319,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchProfile(user.id);
   }, [user?.id, fetchProfile]);
 
+  const updateLocale = useCallback(async (locale: string) => {
+    if (!user?.id) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ locale })
+      .eq("user_id", user.id);
+    if (error) {
+      console.error("[AuthProvider] updateLocale error:", error.message);
+      return;
+    }
+    // Update local state immediately so the UI reflects the change
+    // without waiting for a full profile refetch.
+    setProfile((prev) => (prev ? { ...prev, locale } : prev));
+    // Also set a cookie so i18n/request.ts picks it up on next SSR.
+    document.cookie = `NEXT_LOCALE=${locale};path=/;max-age=31536000;SameSite=Lax`;
+  }, [user?.id]);
+
   // Derive the role booleans once per profile change rather than on
   // every consumer render. Cheap regardless, but the memo also gives
   // each derived value a stable identity for React.memo / useEffect
@@ -342,6 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileLoading,
         signOut,
         refreshProfile,
+        updateLocale,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         ...derived,
@@ -372,6 +396,7 @@ export function useAuth(): AuthContextValue {
         window.location.href = "/login";
       },
       refreshProfile: async () => {},
+      updateLocale: async () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,
       accountId: null,

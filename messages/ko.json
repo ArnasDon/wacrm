@@ -60,6 +60,9 @@
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
   },
+  "LanguageSwitcher": {
+    "switchTo": "{locale}(으)로 전환"
+  },
   "Dashboard": {
     "page": {
       "title": "대시보드",

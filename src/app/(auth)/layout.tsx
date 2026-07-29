@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 
 // Shared metadata for auth pages (login / signup / forgot-password).
 // None of these should be indexed — they'd compete with the marketing
@@ -20,5 +21,10 @@ export const metadata: Metadata = {
 };
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return children;
+  return (
+    <>
+      <LanguageSwitcher className="fixed right-4 top-4 z-50" />
+      {children}
+    </>
+  );
 }

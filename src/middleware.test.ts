@@ -98,7 +98,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 
-  it("redirects an unauth user off /painel-plataforma to /login", async () => {
+  it("redirects an unauth user off /painel-plataforma to the ADMIN login, not the normal CRM /login", async () => {
     mockUser = null;
     refreshedCookies = [];
 
@@ -110,7 +110,19 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     // user is actually a platform admin is enforced separately by
     // requirePlatformAdmin() in the page itself (404 for anyone else).
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/login");
+    const location = new URL(res.headers.get("location")!);
+    expect(location.pathname).toBe("/painel-plataforma/login");
+  });
+
+  it("leaves /painel-plataforma/login itself reachable while logged out (it's the entry point)", async () => {
+    mockUser = null;
+    refreshedCookies = [];
+
+    const res = await middleware(
+      new NextRequest("https://app.test/painel-plataforma/login"),
+    );
+
+    expect(res.headers.get("location")).toBeNull();
   });
 
   it("passes through (no redirect) for a signed-in user on a protected page", async () => {

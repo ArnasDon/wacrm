@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { requirePlatformAdmin } from '@/lib/auth/platform';
 import { toErrorResponse } from '@/lib/auth/account';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+import { bootstrapStoreOrganization, BootstrapOrganizationError } from '@/lib/organizations/bootstrap';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null;
@@ -178,44 +179,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: account, error: accountError } = await supabaseAdmin()
-      .from('accounts')
-      .update({ name: storeName })
-      .eq('id', profile.account_id)
-      .select('id, name')
-      .single();
-
-    if (accountError || !account) {
-      console.error('[platform/organizations] error renaming the new store account:', accountError);
+    let org
+    try {
+      org = await bootstrapStoreOrganization(supabaseAdmin(), profile.account_id, storeName);
+    } catch (err) {
+      const stage = err instanceof BootstrapOrganizationError ? err.stage : 'unknown';
+      console.error(`[platform/organizations] bootstrap failed at stage "${stage}":`, err);
+      const messageByStage: Record<string, string> = {
+        rename: 'Owner invited, but naming their account failed. Contact support.',
+        create: 'Owner invited, but creating their organization failed. Contact support.',
+        link: 'Organization created, but linking the store account failed. Contact support.',
+      };
       return NextResponse.json(
-        { error: 'Owner invited, but naming their account failed. Contact support.' },
-        { status: 500 },
-      );
-    }
-
-    const { data: org, error: orgError } = await supabaseAdmin()
-      .from('organizations')
-      .insert({ name: storeName, owner_account_id: account.id })
-      .select('id, name, created_at, status')
-      .single();
-
-    if (orgError || !org) {
-      console.error('[platform/organizations] error creating the organization:', orgError);
-      return NextResponse.json(
-        { error: 'Owner invited, but creating their organization failed. Contact support.' },
-        { status: 500 },
-      );
-    }
-
-    const { error: linkError } = await supabaseAdmin()
-      .from('accounts')
-      .update({ organization_id: org.id })
-      .eq('id', account.id);
-
-    if (linkError) {
-      console.error('[platform/organizations] error linking the store account:', linkError);
-      return NextResponse.json(
-        { error: 'Organization created, but linking the store account failed. Contact support.' },
+        { error: messageByStage[stage] ?? 'Owner invited, but setting up their store failed. Contact support.' },
         { status: 500 },
       );
     }

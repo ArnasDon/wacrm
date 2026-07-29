@@ -781,8 +781,16 @@ async function processMessage(
   // listens to only one trigger runs only when that trigger matches.
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+  // Awaited — not fire-and-forget. We're inside the route's `after()`
+  // block, which only keeps the function alive for promises it can see, so
+  // a detached dispatch can be frozen part-way through: the log row is
+  // inserted, then the steps never run. That is issue #301's failure mode
+  // recurring one level down, and it's what issue #409 reported as runs
+  // logging zero steps. `runAutomationsForTrigger` owns its own try/catch
+  // and never throws; the `.catch` is belt-and-braces so one trigger
+  // type's failure can't skip the rest of the loop.
   for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
+    await runAutomationsForTrigger({
       accountId,
       triggerType,
       contactId: contactRecord.id,

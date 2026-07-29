@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
     fromCalls: [] as string[],
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
+    logInserts: [] as Record<string, unknown>[],
     logUpdates: [] as Record<string, unknown>[],
   },
 }));
@@ -46,7 +47,10 @@ vi.mock("./admin-client", () => {
     }
     if (table === "automations") return { data: state.automations, error: null };
     if (table === "automation_logs") {
-      if (type === "insert") return { data: { id: "log1" }, error: null };
+      if (type === "insert") {
+        state.logInserts.push(ops.payload as Record<string, unknown>);
+        return { data: { id: "log1" }, error: null };
+      }
       if (type === "update") {
         state.logUpdates.push(ops.payload as Record<string, unknown>);
         return { data: null, error: null };
@@ -113,6 +117,7 @@ beforeEach(() => {
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
+  h.state.logInserts = [];
   h.state.logUpdates = [];
 });
 
@@ -167,6 +172,47 @@ describe("runAutomationsForTrigger — tenant isolation", () => {
     const filters = h.state.updateCalls[0].filters;
     expect(filters).toContainEqual(["eq", "id", "c1"]);
     expect(filters).toContainEqual(["eq", "account_id", ACCOUNT]);
+  });
+});
+
+describe("automation_logs — status is seeded pessimistically (issue #409)", () => {
+  it("writes the log row as 'failed' before any step runs", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    // The insert happens before execution, so a run killed mid-flight must
+    // not leave behind a row that claims it succeeded.
+    expect(h.state.logInserts).toHaveLength(1);
+    expect(h.state.logInserts[0]).toMatchObject({
+      status: "failed",
+      steps_executed: [],
+    });
+  });
+
+  it("still promotes the log to 'success' once the steps complete", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    // The seed is only a floor — the outermost scope still writes the real
+    // verdict, so a completed run reports success as it always did.
+    const withStatus = h.state.logUpdates.filter((u) => "status" in u);
+    expect(withStatus.at(-1)).toMatchObject({ status: "success" });
   });
 });
 

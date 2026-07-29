@@ -189,7 +189,15 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
       contact_id: input.contactId ?? null,
       trigger_event: input.triggerType,
       steps_executed: [],
-      status: 'success',
+      // Seeded pessimistically. The row is written BEFORE any step runs,
+      // and every terminal path below overwrites it (`appendResults` at
+      // the outermost scope, or `finalizeLog`). Seeding 'success' meant a
+      // run that died mid-flight — the process frozen, the pod recycled —
+      // left a permanent `status: 'success'` with `steps_executed: []`,
+      // indistinguishable from an automation that genuinely had nothing
+      // to do. 'failed' inverts that: the status only becomes success if
+      // execution actually reached the end. See issue #409.
+      status: 'failed',
     })
     .select()
     .single()

@@ -4,13 +4,11 @@ import { Languages } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslations } from "next-intl";
-import { useParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const LOCALES = [
   { code: "en", label: "English" },
   { code: "es", label: "Español" },
-  { code: "ko", label: "한국어" },
 ] as const;
 
 export function LanguageSwitcher({ className }: { className?: string }) {

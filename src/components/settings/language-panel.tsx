@@ -10,7 +10,6 @@ import { SettingsPanelHead } from "./settings-panel-head";
 const LOCALES = [
   { code: "en", label: "English", native: "English" },
   { code: "es", label: "Spanish", native: "Español" },
-  { code: "ko", label: "Korean", native: "한국어" },
 ] as const;
 
 export function LanguagePanel() {

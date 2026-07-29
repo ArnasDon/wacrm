@@ -1741,7 +1741,8 @@
       "uploadPdf": "Upload PDF",
       "uploadPdfSuccess": "PDF uploaded and indexed.",
       "uploadPdfFailed": "Failed to upload PDF.",
-      "uploadPdfHint": "PDF will be added as a regular document"
+      "uploadPdfHint": "PDF will be added as a regular document",
+      "selectAtLeastOne": "Select at least one column"
     }
   }
 }

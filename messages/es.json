@@ -1729,7 +1729,8 @@
       "uploadPdf": "Subir PDF",
       "uploadPdfSuccess": "PDF subido e indexado.",
       "uploadPdfFailed": "Error al subir el PDF.",
-      "uploadPdfHint": "El PDF se agregará como documento normal"
+      "uploadPdfHint": "El PDF se agregará como documento normal",
+      "selectAtLeastOne": "Selecciona al menos una columna"
     }
   }
 }

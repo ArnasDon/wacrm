@@ -272,42 +272,44 @@ function InventoryUploader({
 
       {/* Preview dialog */}
       <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) { setPreview(null); setMetadata(null); setMode(null); setSelectedColumns([]); } }}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('previewTitle')}</DialogTitle>
             <DialogDescription>{t('previewDesc')}</DialogDescription>
           </DialogHeader>
 
           {preview && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {detectedEntries.map(({ key, label }) => (
-                  <div key={key} className="flex items-center gap-1">
-                    <span className="text-muted-foreground">{label}:</span>
-                    <span className={preview.detected[key] ? 'font-medium text-foreground' : 'text-destructive'}>
-                      {preview.detected[key] ?? t('notDetected')}
-                    </span>
-                  </div>
-                ))}
+            <div className="space-y-3 overflow-y-auto flex-1 min-h-0">
+              <div className="max-h-28 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  {detectedEntries.map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-1">
+                      <span className="text-muted-foreground shrink-0">{label}:</span>
+                      <span className={preview.detected[key] ? 'font-medium text-foreground truncate' : 'text-destructive shrink-0'}>
+                        {preview.detected[key] ?? t('notDetected')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Column checkboxes */}
               {allColumns.length > 0 && (
                 <div>
                   <p className="text-xs font-medium mb-1">{t('selectColumns')}</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="max-h-36 overflow-y-auto flex flex-wrap gap-x-4 gap-y-1">
                     {allColumns.map((col) => (
                       <label
                         key={col}
-                        className="flex items-center gap-1 text-xs cursor-pointer"
+                        className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"
                       >
                         <input
                           type="checkbox"
                           checked={selectedColumns.includes(col)}
                           onChange={() => toggleColumn(col)}
-                          className="h-3 w-3"
+                          className="h-3 w-3 shrink-0"
                         />
-                        {col}
+                        <span className="truncate max-w-56">{col}</span>
                       </label>
                     ))}
                   </div>
@@ -317,24 +319,26 @@ function InventoryUploader({
               <div>
                 <p className="text-xs font-medium mb-1">{t('sampleRows')}</p>
                 <div className="overflow-x-auto rounded-md border border-border">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-muted/50">
-                        {preview.sample.length > 0 && Object.keys(preview.sample[0]).map((col) => (
-                          <th key={col} className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap">{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.sample.map((row, ri) => (
-                        <tr key={ri} className="border-t border-border">
-                          {Object.values(row).map((val, ci) => (
-                            <td key={ci} className="px-2 py-1 text-foreground whitespace-nowrap max-w-40 truncate">{val}</td>
+                  <div className="max-h-60 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted/50">
+                          {metadata && (metadata.columns as string[]).map((col) => (
+                            <th key={col} className="px-2 py-1 text-left font-medium text-muted-foreground whitespace-nowrap">{col}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {preview.sample.map((row, ri) => (
+                          <tr key={ri} className="border-t border-border">
+                            {metadata && (metadata.columns as string[]).map((col) => (
+                              <td key={col} className="px-2 py-1 text-foreground max-w-60 overflow-hidden text-ellipsis">{row[col] ?? ''}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
@@ -344,9 +348,9 @@ function InventoryUploader({
             <Button variant="ghost" onClick={() => { setPreview(null); setMetadata(null); setMode(null); setSelectedColumns([]); }} disabled={uploading}>
               {t('cancel')}
             </Button>
-            <Button onClick={confirmUpload} disabled={uploading || selectedColumns.length === 0}>
+            <Button onClick={confirmUpload} disabled={uploading}>
               {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('confirmUpload')}
+              {selectedColumns.length === 0 ? t('selectAtLeastOne') : t('confirmUpload')}
             </Button>
           </DialogFooter>
         </DialogContent>

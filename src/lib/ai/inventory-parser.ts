@@ -15,6 +15,7 @@ export interface InventoryMetadata {
   columns: string[]
   detected: DetectedColumnMap
   selectedColumns?: string[]
+  parseErrors?: string[]
 }
 
 export interface InventoryPreview {
@@ -31,11 +32,35 @@ export interface DetectedColumnMap {
 }
 
 const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
-  sku: ['sku', 'codigo', 'c\u00f3digo', 'code', 'id', 'ref', 'referencia', 'product_id'],
-  name: ['nombre', 'name', 'producto', 'product', 'descripcion', 'descripci\u00f3n', 'description', 'item', 'articulo', 'art\u00edculo'],
-  price: ['precio', 'price', 'cost', 'costo', 'valor', 'value', 'pvp', 'price_list', 'precio_venta'],
-  stock: ['stock', 'cantidad', 'quantity', 'inventario', 'inventory', 'existencia', 'existencias', 'qty', 'disponible'],
-  category: ['categoria', 'categor\u00eda', 'category', 'departamento', 'department', 'linea', 'l\u00ednea', 'grupo', 'group', 'familia'],
+  sku: [
+    'sku', 'codigo', 'c\u00f3digo', 'code', 'id', 'ref', 'referencia',
+    'product_id', 'codigo_item', 'item_code', 'articulo_id',
+  ],
+  name: [
+    'nombre', 'name', 'producto', 'product', 'descripcion',
+    'descripci\u00f3n', 'description', 'item', 'articulo',
+    'art\u00edculo', 'titulo', 't\u00edtulo', 'detalle',
+    'parte', 'pieza', 'product_name',
+  ],
+  price: [
+    'precio', 'price', 'cost', 'costo', 'valor', 'value', 'pvp',
+    'price_list', 'precio_venta', 'costo promedio', 'costo total',
+    'precio promedio', 'precio total', 'precio unitario',
+    'precio_compra', 'costo_unitario', 'costo_total',
+    'precio_lista', 'precio_venta_publico', 'precio_venta',
+    'precio_1', 'precio_2',
+  ],
+  stock: [
+    'stock', 'cantidad', 'quantity', 'inventario', 'inventory',
+    'existencia', 'existencias', 'qty', 'disponible', 'disponibles',
+    'uds', 'unidades', 'cant_existencia', 'cantidad_existencia',
+  ],
+  category: [
+    'categoria', 'categor\u00eda', 'category', 'departamento',
+    'department', 'linea', 'l\u00ednea', 'grupo', 'group',
+    'familia', 'tipo', 'clase', 'segmento', 'marca',
+    'subcategoria', 'subcategor\u00eda',
+  ],
 }
 
 export function parseInventoryFile(
@@ -54,11 +79,17 @@ export function parseSheetCsv(
   url: string,
   selectedColumns?: string[],
 ): ParsedInventory {
-  const result = Papa.parse<string[]>(csvText.trim(), { skipEmptyLines: true })
+  const clean = csvText.trim().replace(/^\uFEFF/, '')
+  const result = Papa.parse<string[]>(clean, { skipEmptyLines: true })
   if (result.errors.length > 0 && result.data.length === 0) {
     throw new InventoryError('Could not parse the Google Sheets CSV.')
   }
-  return buildInventory(result.data as string[][], { source: 'sheet', url }, selectedColumns)
+  return buildInventory(
+    result.data as string[][],
+    { source: 'sheet', url },
+    selectedColumns,
+    result.errors.filter((e) => e.type !== 'FieldMismatch').map((e) => e.message),
+  )
 }
 
 class InventoryError extends Error {
@@ -73,12 +104,18 @@ function parseCsv(
   meta: { source: 'csv'; filename: string },
   selectedColumns?: string[],
 ): ParsedInventory {
-  const text = new TextDecoder('utf-8').decode(buffer)
+  const raw = new TextDecoder('utf-8').decode(buffer)
+  const text = raw.replace(/^\uFEFF/, '')
   const result = Papa.parse<string[]>(text.trim(), { skipEmptyLines: true })
   if (result.errors.length > 0 && result.data.length === 0) {
     throw new InventoryError(`Failed to parse CSV: ${result.errors[0]?.message ?? 'unknown error'}`)
   }
-  return buildInventory(result.data as string[][], meta, selectedColumns)
+  return buildInventory(
+    result.data as string[][],
+    meta,
+    selectedColumns,
+    result.errors.filter((e) => e.type !== 'FieldMismatch').map((e) => e.message),
+  )
 }
 
 function parseExcel(
@@ -99,54 +136,60 @@ function buildInventory(
   rows: string[][],
   meta: { source: 'csv' | 'excel' | 'sheet'; filename?: string; url?: string },
   selectedColumns?: string[],
+  parseErrors?: string[],
 ): ParsedInventory {
   if (rows.length < 2) {
     throw new InventoryError('File must have a header row and at least one data row.')
   }
 
-  const header = rows[0].map((h) => h.trim().toLowerCase())
-  const detected = detectColumns(header)
+  // Keep original-case headers but lower-case for comparison.
+  const rawHeader = rows[0].map((h) => h.trim())
+  const headerLower = rawHeader.map((h) => h.toLowerCase())
+  const detected = detectColumns(headerLower)
 
   const dataRows = rows.slice(1).filter((r) => r.some((c) => c.trim().length > 0))
   if (dataRows.length === 0) {
     throw new InventoryError('No data rows found after the header.')
   }
 
-  // Resolve selectedColumns to column indices.
+  // Resolve selectedColumns to column indices (case-insensitive).
   let columnIndices: number[] | null = null
   if (selectedColumns && selectedColumns.length > 0) {
     const lowerSelected = selectedColumns.map((s) => s.trim().toLowerCase())
     columnIndices = []
-    for (let ci = 0; ci < header.length; ci++) {
-      if (lowerSelected.includes(header[ci])) {
+    for (let ci = 0; ci < headerLower.length; ci++) {
+      if (lowerSelected.includes(headerLower[ci])) {
         columnIndices.push(ci)
       }
     }
   }
 
   const lines: string[] = ['=== INVENTARIO ===']
-  const headerLabels = buildHeaderLabels(detected, header)
+  const headerLabels = buildHeaderLabels(detected, headerLower)
 
   for (const row of dataRows) {
     const parts: string[] = []
-    for (let ci = 0; ci < header.length; ci++) {
+    for (let ci = 0; ci < headerLower.length; ci++) {
       if (columnIndices !== null && !columnIndices.includes(ci)) continue
       const val = row[ci]?.trim() ?? ''
       if (val) {
-        const label = headerLabels[ci] ?? header[ci]
+        const label = headerLabels[ci] ?? rawHeader[ci]
         parts.push(`${label}: ${val}`)
       }
     }
     if (parts.length > 0) lines.push(parts.join(' | '))
   }
 
+  // Preview — use raw header keys so the user sees real column names.
   const sample: Record<string, string>[] = dataRows.slice(0, 5).map((row) => {
     const obj: Record<string, string> = {}
-    for (let ci = 0; ci < header.length; ci++) {
-      obj[header[ci]] = row[ci]?.trim() ?? ''
+    for (let ci = 0; ci < headerLower.length; ci++) {
+      obj[rawHeader[ci]] = row[ci]?.trim() ?? ''
     }
     return obj
   })
+
+  const trimmedErrors = parseErrors?.slice(0, 5)
 
   return {
     content: lines.join('\n'),
@@ -155,9 +198,10 @@ function buildInventory(
       filename: meta.filename,
       url: meta.url,
       rows: dataRows.length,
-      columns: header,
+      columns: rawHeader,
       detected,
       ...(columnIndices !== null ? { selectedColumns } : {}),
+      ...(trimmedErrors && trimmedErrors.length > 0 ? { parseErrors: trimmedErrors } : {}),
     },
     preview: { sample, detected },
   }

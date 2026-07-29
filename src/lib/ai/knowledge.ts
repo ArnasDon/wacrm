@@ -145,5 +145,9 @@ export async function retrieveKnowledge(
     }
   }
 
-  return Array.from(picked.values()).slice(0, k)
+  const results = Array.from(picked.values()).slice(0, k)
+  if (results.length === 0) {
+    console.log(`[ai knowledge] no chunks found for query "${query.slice(0, 80)}" (account ${accountId.slice(0, 8)}…)`)
+  }
+  return results
 }

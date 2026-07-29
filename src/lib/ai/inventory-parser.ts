@@ -1,6 +1,9 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 
+/** Maximum rows to include in the inventory content (prevents timeouts). */
+const MAX_INVENTORY_ROWS = 50_000
+
 export interface ParsedInventory {
   content: string
   metadata: InventoryMetadata
@@ -152,6 +155,10 @@ function buildInventory(
     throw new InventoryError('No data rows found after the header.')
   }
 
+  // Limit rows to prevent oversized content / Vercel timeouts.
+  const truncated = dataRows.length > MAX_INVENTORY_ROWS
+  if (truncated) dataRows.length = MAX_INVENTORY_ROWS
+
   // Resolve selectedColumns to column indices (case-insensitive).
   let columnIndices: number[] | null = null
   if (selectedColumns && selectedColumns.length > 0) {
@@ -192,12 +199,13 @@ function buildInventory(
   const trimmedErrors = parseErrors?.slice(0, 5)
 
   return {
-    content: lines.join('\n'),
+    content: lines.join('\n\n'),
     metadata: {
       source: meta.source,
       filename: meta.filename,
       url: meta.url,
       rows: dataRows.length,
+      ...(truncated ? { truncated: true } : {}),
       columns: rawHeader,
       detected,
       ...(columnIndices !== null ? { selectedColumns } : {}),

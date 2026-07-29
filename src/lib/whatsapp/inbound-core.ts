@@ -515,6 +515,111 @@ export async function processInboundMessage(params: ProcessInboundMessageParams)
   })
 }
 
+export interface MirrorAgentSentMessageParams {
+  accountId: string
+  configOwnerUserId: string
+  contactName: string
+  contactAvatarUrl?: string | null
+  message: NormalizedInboundMessage
+}
+
+/**
+ * Record a message the agent (store owner or seller) sent directly
+ * from their own phone — NOT through this CRM's send API. uazapi/
+ * Z-API's webhooks report these with `fromMe: true`, and their
+ * `chatid`/`phone` field still identifies the CUSTOMER (the chat
+ * partner), the same as an inbound message — direction doesn't change
+ * which conversation a message belongs to. Existing webhook routes
+ * used to just `return` on `fromMe`, which correctly avoided
+ * double-processing the CRM's OWN outbound sends (already covered by
+ * `excludeMessages`/`notifySentByMe` at webhook-registration time) but
+ * incorrectly discarded this legitimate case too, so a reply typed on
+ * the phone never showed up back in the CRM.
+ *
+ * Deliberately much thinner than processInboundMessage: this message
+ * was already delivered (by the phone, not by us), so there's nothing
+ * to send — just mirror it into `messages` with `sender_type: 'agent'`
+ * so the thread stays in sync. No automations/flows/AI-auto-reply
+ * (those react to the CUSTOMER, not the agent's own message) and no
+ * `first_inbound_message`/`new_contact_created` triggers for the same
+ * reason. `unread_count` resets to 0 — the human already answered
+ * from their phone, so there's nothing left pending in the CRM's own
+ * view of this thread.
+ */
+export async function mirrorAgentSentMessage(params: MirrorAgentSentMessageParams): Promise<void> {
+  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, message } = params
+  const contactPhone = normalizePhone(message.from)
+
+  const contactOutcome = await findOrCreateContact(
+    accountId,
+    configOwnerUserId,
+    contactPhone,
+    contactName,
+    contactAvatarUrl,
+  )
+  if (!contactOutcome) return
+  const contactRecord = contactOutcome.contact
+
+  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id)
+  if (!convResult) return
+  const conversation = convResult.conversation
+
+  if (convResult.created) {
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+    })
+  }
+
+  // Reactions the agent added from their phone aren't mirrored in this
+  // round — message_reactions.actor_type only distinguishes
+  // 'agent'/'customer' by WHO reacted, and every existing write path
+  // for an 'agent' reaction assumes it went through this CRM's own UI
+  // (actor_id would need to be a user_id, not a contact_id, unlike
+  // handleReaction()'s customer-shaped upsert). Narrow, documented gap
+  // rather than writing a row shaped for the wrong actor type.
+  if (message.contentType === 'reaction') return
+
+  let replyToInternalId: string | null = null
+  if (message.replyToExternalId) {
+    replyToInternalId = await lookupInternalIdByExternalId(message.replyToExternalId, conversation.id)
+  }
+
+  const contentType = ALLOWED_CONTENT_TYPES.has(message.contentType) ? message.contentType : 'text'
+
+  const { error: msgError } = await supabaseAdmin().from('messages').insert({
+    conversation_id: conversation.id,
+    sender_type: 'agent',
+    content_type: contentType,
+    content_text: message.text,
+    media_url: message.mediaUrl,
+    message_id: message.externalId,
+    status: 'sent',
+    created_at: new Date(message.timestampMs).toISOString(),
+    reply_to_message_id: replyToInternalId,
+    interactive_reply_id: message.interactiveReplyId,
+  })
+
+  if (msgError) {
+    console.error('[inbound-core] error inserting agent-mirrored message:', msgError)
+    return
+  }
+
+  const { error: convError } = await supabaseAdmin()
+    .from('conversations')
+    .update({
+      last_message_text: message.text || `[${message.contentType}]`,
+      last_message_at: new Date().toISOString(),
+      unread_count: 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+
+  if (convError) {
+    console.error('[inbound-core] error updating conversation for agent-mirrored message:', convError)
+  }
+}
+
 // ============================================================
 // Delivery/read status ladder — shared across providers.
 // ============================================================

@@ -143,7 +143,7 @@ vi.mock("@/lib/webhooks/deliver", () => ({
   },
 }));
 
-import { processInboundMessage, handleStatusUpdate } from "./inbound-core";
+import { processInboundMessage, mirrorAgentSentMessage, handleStatusUpdate } from "./inbound-core";
 
 function resetState() {
   h.state.existingContact = null;
@@ -390,6 +390,100 @@ describe("processInboundMessage", () => {
       actor_type: "customer",
       emoji: "👍",
     });
+  });
+});
+
+describe("mirrorAgentSentMessage", () => {
+  beforeEach(resetState);
+
+  it("records a message sent from the agent's own phone as sender_type 'agent', without re-sending it", async () => {
+    h.state.existingContact = { id: "contact-1", phone: "5511999999999", name: "Maria" };
+    h.state.existingConversation = { id: "conv-1", account_id: "acc-1", contact_id: "contact-1", unread_count: 3 };
+
+    await mirrorAgentSentMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "Maria",
+      message: {
+        externalId: "wamid.PHONE1",
+        from: "5511999999999",
+        timestampMs: 1700000004000,
+        contentType: "text",
+        text: "Já te atendi por aqui",
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+      },
+    });
+
+    // No customer-reaction/automation/flow/AI side effects — the agent
+    // already handled this from their phone.
+    expect(h.state.dispatchedAutomationTriggers).toEqual([]);
+    expect(h.state.aiReplyDispatched).toBe(false);
+
+    expect(h.state.inserted.messages).toHaveLength(1);
+    expect(h.state.inserted.messages[0]).toMatchObject({
+      sender_type: "agent",
+      content_type: "text",
+      content_text: "Já te atendi por aqui",
+      message_id: "wamid.PHONE1",
+      status: "sent",
+    });
+
+    // unread_count resets to 0 — the human already answered from their phone.
+    const convUpdate = h.state.updated.find((u) => u.table === "conversations");
+    expect(convUpdate?.payload).toMatchObject({ unread_count: 0 });
+  });
+
+  it("creates the contact + conversation when the agent messages a brand-new number from their phone", async () => {
+    await mirrorAgentSentMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "5511988887777",
+      message: {
+        externalId: "wamid.PHONE2",
+        from: "5511988887777",
+        timestampMs: 1700000005000,
+        contentType: "text",
+        text: "Oi, aqui é da loja",
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+      },
+    });
+
+    expect(h.state.inserted.contacts).toHaveLength(1);
+    expect(h.state.inserted.conversations).toHaveLength(1);
+    expect(h.state.dispatchedWebhookEvents.map((e) => e.eventType)).toContain("conversation.created");
+    // No relationship-trigger automations — those only fire for customer messages.
+    expect(h.state.dispatchedAutomationTriggers).not.toContain("new_contact_created");
+    expect(h.state.dispatchedAutomationTriggers).not.toContain("first_inbound_message");
+  });
+
+  it("skips reactions sent from the phone instead of writing a wrongly-shaped row", async () => {
+    h.state.existingContact = { id: "contact-1", phone: "5511999999999", name: "Maria" };
+    h.state.existingConversation = { id: "conv-1", account_id: "acc-1", contact_id: "contact-1", unread_count: 0 };
+    h.state.messagesTable.push({ id: "internal-msg-1", message_id: "wamid.TARGET", conversation_id: "conv-1" });
+
+    await mirrorAgentSentMessage({
+      accountId: "acc-1",
+      configOwnerUserId: "user-1",
+      contactName: "Maria",
+      message: {
+        externalId: "wamid.PHONEREACT",
+        from: "5511999999999",
+        timestampMs: 1700000006000,
+        contentType: "reaction",
+        text: null,
+        mediaUrl: null,
+        interactiveReplyId: null,
+        replyToExternalId: null,
+        reaction: { targetExternalId: "wamid.TARGET", emoji: "👍" },
+      },
+    });
+
+    expect(h.state.inserted.messages).toHaveLength(0);
+    expect(h.state.upserted).toHaveLength(0);
   });
 });
 

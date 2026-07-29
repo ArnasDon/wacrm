@@ -5,6 +5,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProfilePicture } from '@/lib/whatsapp/zapi-api'
 import {
   processInboundMessage,
+  mirrorAgentSentMessage,
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
@@ -240,10 +241,15 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
 
   const data = event as ZapiReceivedEvent
   // update-every-webhooks is registered with notifySentByMe: false,
-  // but `fromMe` is a second, cheap guard against ever processing an
-  // agent's own outbound send as if a customer sent it — same
-  // defense-in-depth the Meta/uazapi routes already apply.
-  if (data.fromMe) return
+  // which already keeps this CRM's own API-sent messages out of this
+  // webhook — so a `fromMe: true` event reaching here can only be a
+  // message sent directly from the linked phone's WhatsApp app, not a
+  // re-processing echo. `data.phone` still identifies the chat PARTNER
+  // (the customer) regardless of direction, per Z-API's webhook docs —
+  // reasoned from documentation, not yet confirmed against a live
+  // fromMe:true payload the way the uazapi route's mapping was (no
+  // active Z-API test instance available at implementation time). See
+  // mirrorAgentSentMessage's own comment for the full rationale.
   if (!data.messageId || !data.phone) return
 
   const contentType = mapZapiEventToContentType(data)
@@ -268,6 +274,9 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
   }
 
   if (contentType === 'reaction') {
+    // Agent reactions added from the phone aren't mirrored yet — see
+    // mirrorAgentSentMessage's own comment on that gap.
+    if (data.fromMe) return
     if (!data.reaction?.referencedMessage?.messageId) return
     await processInboundMessage({
       accountId: config.account_id,
@@ -325,20 +334,36 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
       break
   }
 
+  const normalizedMessage = {
+    externalId: data.messageId,
+    from: data.phone,
+    timestampMs: data.momment ?? Date.now(),
+    contentType,
+    text,
+    mediaUrl,
+    interactiveReplyId,
+    replyToExternalId: null,
+  }
+
+  // Sent from the agent's own phone, not through this CRM's API —
+  // mirror it into the thread instead of treating it as a customer
+  // message. See the `fromMe` comment above for why this can't loop.
+  if (data.fromMe) {
+    await mirrorAgentSentMessage({
+      accountId: config.account_id,
+      configOwnerUserId: config.user_id,
+      contactName: data.phone,
+      contactAvatarUrl,
+      message: normalizedMessage,
+    })
+    return
+  }
+
   await processInboundMessage({
     accountId: config.account_id,
     configOwnerUserId: config.user_id,
     contactName: data.phone,
     contactAvatarUrl,
-    message: {
-      externalId: data.messageId,
-      from: data.phone,
-      timestampMs: data.momment ?? Date.now(),
-      contentType,
-      text,
-      mediaUrl,
-      interactiveReplyId,
-      replyToExternalId: null,
-    },
+    message: normalizedMessage,
   })
 }

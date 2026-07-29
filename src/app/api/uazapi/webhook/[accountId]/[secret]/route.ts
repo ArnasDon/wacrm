@@ -6,6 +6,7 @@ import { downloadMessageMedia } from '@/lib/whatsapp/uazapi-api'
 import { resolveUazapiPlatformCredentials } from '@/lib/whatsapp/uazapi-platform-config'
 import {
   processInboundMessage,
+  mirrorAgentSentMessage,
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
@@ -281,33 +282,46 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
 
   const data = event.message as UazapiWebhookMessage | undefined
   if (!data) return
-  // configureWebhook already sets excludeMessages: ['wasSentByApi'],
-  // but `fromMe` is a second, cheap guard against ever processing an
-  // agent's own outbound send as if a customer sent it.
-  if (data.fromMe) return
+
+  // TEMPORARY — capturing a real fromMe:true payload sent directly
+  // from a phone (not via our own API, which configureWebhook's
+  // excludeMessages: ['wasSentByApi'] already filters out) to confirm
+  // the chatid-still-identifies-the-customer assumption the branch
+  // below relies on. Remove once confirmed against a live payload.
+  if (data.fromMe) {
+    console.log('[uazapi webhook] fromMe=true payload:', JSON.stringify(event))
+  }
 
   const externalId = data.messageid ?? data.id
   // `chatid`/`sender_pn` are the phone-number-JID forms; `sender` can
   // be a WhatsApp "lid" (linked-id) instead of a phone number on
   // accounts using that identity system — confirmed against a real
-  // payload, see file-header caveat.
-  const senderJid = data.chatid ?? data.sender_pn ?? data.sender
-  if (!externalId || !senderJid) return
+  // payload, see file-header caveat. `chatid` identifies the chat
+  // PARTNER (the customer) regardless of which side sent this
+  // particular message, so the same field is correct for both the
+  // customer-sent and agent-sent-from-phone (fromMe: true) branches
+  // below — unconfirmed for the fromMe:true case specifically pending
+  // the live-payload capture above.
+  const chatPhoneJid = data.chatid ?? data.sender_pn ?? data.sender
+  if (!externalId || !chatPhoneJid) return
 
-  const senderPhone = stripJidSuffix(senderJid)
+  const chatPhone = stripJidSuffix(chatPhoneJid)
   const contentType = mapUazapiTypeToContentType(data.type, data.messageType)
   const contactAvatarUrl = event.chat?.imagePreview || event.chat?.image || null
 
   if (contentType === 'reaction') {
+    // Agent reactions added from the phone aren't mirrored yet — see
+    // mirrorAgentSentMessage's own comment on that gap.
+    if (data.fromMe) return
     if (!data.reaction) return
     await processInboundMessage({
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
-      contactName: senderPhone,
+      contactName: chatPhone,
       contactAvatarUrl,
       message: {
         externalId,
-        from: senderPhone,
+        from: chatPhone,
         timestampMs: data.messageTimestamp ?? Date.now(),
         contentType: 'reaction',
         text: null,
@@ -333,6 +347,31 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   }
 
   const text = data.text ?? (typeof data.content === 'string' ? data.content : null)
+  const normalizedMessage = {
+    externalId,
+    from: chatPhone,
+    timestampMs: data.messageTimestamp ?? Date.now(),
+    contentType,
+    text,
+    mediaUrl,
+    interactiveReplyId: data.buttonOrListid || null,
+    replyToExternalId: data.quoted || null,
+  }
+
+  // Sent from the agent's own phone, not through this CRM's API
+  // (which configureWebhook's excludeMessages: ['wasSentByApi']
+  // already keeps out of this webhook entirely) — mirror it into the
+  // thread instead of treating it as a customer message.
+  if (data.fromMe) {
+    await mirrorAgentSentMessage({
+      accountId: config.account_id,
+      configOwnerUserId: config.user_id,
+      contactName: chatPhone,
+      contactAvatarUrl,
+      message: normalizedMessage,
+    })
+    return
+  }
 
   await processInboundMessage({
     accountId: config.account_id,
@@ -341,17 +380,8 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     // us — confirmed present on the real payload. findOrCreateContact
     // only overwrites an existing contact's name when a non-empty one
     // is supplied, so this never clobbers a name already on file.
-    contactName: data.senderName || senderPhone,
+    contactName: data.senderName || chatPhone,
     contactAvatarUrl,
-    message: {
-      externalId,
-      from: senderPhone,
-      timestampMs: data.messageTimestamp ?? Date.now(),
-      contentType,
-      text,
-      mediaUrl,
-      interactiveReplyId: data.buttonOrListid || null,
-      replyToExternalId: data.quoted || null,
-    },
+    message: normalizedMessage,
   })
 }

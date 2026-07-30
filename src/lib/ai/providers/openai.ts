@@ -25,7 +25,7 @@ interface OpenAiResponse {
  * in `generateReply`).
  */
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs } = args
+  const { apiKey, model, systemPrompt, messages, timeoutMs, temperature } = args
 
   let res: Response
   try {
@@ -42,6 +42,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
           ...mergeConsecutive(messages),
         ],
         max_completion_tokens: MAX_OUTPUT_TOKENS,
+        temperature,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })

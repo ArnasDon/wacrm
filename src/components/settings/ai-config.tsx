@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import {
   Card,
   CardContent,
@@ -26,7 +27,13 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
-import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
+import {
+  AI_PROVIDER_DEFAULT_MODEL,
+  GEMINI_SUGGESTED_MODELS,
+  DEFAULT_TEMPERATURE,
+  TEMPERATURE_MIN,
+  TEMPERATURE_MAX,
+} from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
@@ -41,12 +48,16 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  gemini: 'Google (Gemini)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  gemini: 'AIza...',
 };
+
+const GEMINI_MODEL_DATALIST_ID = 'gemini-model-suggestions';
 
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
@@ -61,6 +72,7 @@ export function AiConfig() {
   const [configured, setConfigured] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
   const [model, setModel] = useState(AI_PROVIDER_DEFAULT_MODEL.openai);
+  const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
   const [apiKey, setApiKey] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -95,6 +107,9 @@ export function AiConfig() {
         setConfigured(true);
         setProvider(data.provider);
         setModel(data.model);
+        setTemperature(
+          typeof data.temperature === 'number' ? data.temperature : DEFAULT_TEMPERATURE,
+        );
         setSystemPrompt(data.system_prompt ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
@@ -129,9 +144,7 @@ export function AiConfig() {
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
-      model.trim() === '';
+      Object.values(AI_PROVIDER_DEFAULT_MODEL).includes(model) || model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
@@ -144,6 +157,7 @@ export function AiConfig() {
   const buildBody = () => ({
     provider,
     model: model.trim(),
+    temperature,
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
@@ -162,6 +176,7 @@ export function AiConfig() {
         body: JSON.stringify({
           provider,
           model: model.trim(),
+          temperature,
           api_key: keyPayload(),
         }),
       });
@@ -217,6 +232,7 @@ export function AiConfig() {
         setKeyEdited(false);
         setIsActive(false);
         setAutoReplyEnabled(false);
+        setTemperature(DEFAULT_TEMPERATURE);
         setSystemPrompt('');
         setHandoffAgentId('');
       } else {
@@ -233,8 +249,7 @@ export function AiConfig() {
   if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loadFailed')} {/* Re-using label or a global one, wait, loading is better. Let's use useTranslations from overview or just hardcode Loading... actually I should add loading to aiConfig */}
-        {/* Wait, I didn't add loading to aiConfig. I'll just use loading. */}
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loading')}
       </div>
     );
   }
@@ -281,6 +296,7 @@ export function AiConfig() {
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
+                    <SelectItem value="gemini">{PROVIDER_LABEL.gemini}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -293,8 +309,35 @@ export function AiConfig() {
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
                   disabled={disabled}
+                  list={provider === 'gemini' ? GEMINI_MODEL_DATALIST_ID : undefined}
                 />
+                {provider === 'gemini' && (
+                  <datalist id={GEMINI_MODEL_DATALIST_ID}>
+                    {GEMINI_SUGGESTED_MODELS.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                )}
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="ai-temperature">{t('temperature')}</Label>
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {temperature.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                id="ai-temperature"
+                value={temperature}
+                onValueChange={setTemperature}
+                min={TEMPERATURE_MIN}
+                max={TEMPERATURE_MAX}
+                step={0.1}
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">{t('temperatureDesc')}</p>
             </div>
 
             <div className="space-y-2">

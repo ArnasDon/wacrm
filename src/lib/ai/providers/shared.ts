@@ -10,6 +10,8 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Sampling temperature, already clamped to [0, 1] by the caller. */
+  temperature: number
 }
 
 /**

@@ -6,7 +6,7 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by
@@ -17,6 +17,10 @@ export interface AiConfig {
   provider: AiProvider
   model: string
   apiKey: string
+  /** Sampling temperature, clamped to [0, 1] — the range valid across
+   *  all three providers (Anthropic caps at 1; OpenAI/Gemini allow up
+   *  to 2 but 0–1 is the useful range for an on-brand support bot). */
+  temperature: number
   systemPrompt: string | null
   isActive: boolean
   autoReplyEnabled: boolean

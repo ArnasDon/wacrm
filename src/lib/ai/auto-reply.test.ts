@@ -71,6 +71,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     provider: 'openai',
     model: 'gpt-test',
     apiKey: 'sk-test',
+    temperature: 1,
     systemPrompt: null,
     isActive: true,
     autoReplyEnabled: true,

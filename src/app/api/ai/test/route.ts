@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
+import { clampTemperature, DEFAULT_TEMPERATURE } from '@/lib/ai/defaults'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 /**
@@ -27,9 +28,9 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini') {
       return NextResponse.json(
-        { error: 'provider must be "openai" or "anthropic"' },
+        { error: 'provider must be "openai", "anthropic", or "gemini"' },
         { status: 400 },
       )
     }
@@ -37,6 +38,10 @@ export async function POST(request: Request) {
     if (!model) {
       return NextResponse.json({ error: 'model is required' }, { status: 400 })
     }
+    const temperature =
+      body.temperature === undefined
+        ? DEFAULT_TEMPERATURE
+        : clampTemperature(Number(body.temperature))
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
     let apiKeyPlain = rawKey
@@ -67,6 +72,7 @@ export async function POST(request: Request) {
         provider,
         model,
         apiKey: apiKeyPlain,
+        temperature,
         systemPrompt: null,
         isActive: true,
         autoReplyEnabled: false,

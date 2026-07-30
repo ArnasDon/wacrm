@@ -13,6 +13,33 @@ import type { AiProvider } from './types'
 export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
   openai: 'gpt-5.4-mini',
   anthropic: 'claude-haiku-4-5-20251001',
+  gemini: 'gemini-2.5-flash',
+}
+
+/** Current Gemini text-generation models, offered as suggestions (not a
+ *  hard allow-list — see the note above) in the settings model field. */
+export const GEMINI_SUGGESTED_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+] as const
+
+/**
+ * Sampling temperature: valid range shared across all three providers
+ * (Anthropic caps at 1; OpenAI/Gemini allow up to 2) and the default
+ * used when a config predates the `temperature` column — matches each
+ * provider's own implicit default when the param is omitted, so
+ * existing accounts behave identically until an admin changes it.
+ */
+export const TEMPERATURE_MIN = 0
+export const TEMPERATURE_MAX = 1
+export const DEFAULT_TEMPERATURE = 1
+
+export function clampTemperature(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_TEMPERATURE
+  return Math.min(TEMPERATURE_MAX, Math.max(TEMPERATURE_MIN, value))
 }
 
 /**

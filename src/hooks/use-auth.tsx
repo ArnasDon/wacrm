@@ -43,6 +43,11 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** White-label display name (migration 043). Null = use the generic
+   *  product name; see src/lib/branding/brand.ts. */
+  brand_name: string | null;
+  /** Public URL of the uploaded logo (migration 043), or null. */
+  logo_url: string | null;
 }
 
 interface AuthContextValue {
@@ -167,13 +172,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // account name lookup itself can't.
         let accountRow: AccountSummary | null = null;
         if (data.account_id) {
-          const { data: account, error: accountErr } = await supabase
-            .from("accounts")
-            // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
-            .eq("id", data.account_id)
-            .maybeSingle();
+          const loadAccount = (columns: string) =>
+            supabase
+              .from("accounts")
+              .select(columns)
+              .eq("id", data.account_id)
+              .maybeSingle();
+
+          // default_currency added in migration 021, brand_name /
+          // logo_url in 043; both narrowed below for older schemas.
+          let { data: account, error: accountErr } = await loadAccount(
+            "id, name, default_currency, brand_name, logo_url",
+          );
+
+          if (accountErr) {
+            // Asking for a column PostgREST does not know about yet
+            // (42703) is not a broken account — it is the window
+            // between deploying this code and the schema cache
+            // reloading after migration 043. Retry with the columns
+            // every released schema has, so the blast radius is a
+            // missing logo rather than losing `account` entirely:
+            // without it the sidebar strip disappears AND
+            // defaultCurrency silently falls back to USD, which
+            // reformats every amount in the app (issue #294).
+            const retry = await loadAccount("id, name, default_currency");
+            if (!retry.error) {
+              account = retry.data;
+              accountErr = null;
+            }
+          }
+
           if (accountErr) {
             console.error("[AuthProvider] fetchAccount error:", {
               message: accountErr.message,
@@ -182,10 +210,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               code: accountErr.code,
             });
           } else if (account) {
+            const row = account as unknown as Partial<AccountSummary> & {
+              id: string;
+              name: string;
+            };
             accountRow = {
-              id: account.id,
-              name: account.name,
-              default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              id: row.id,
+              name: row.name,
+              default_currency: row.default_currency ?? DEFAULT_CURRENCY,
+              brand_name: row.brand_name ?? null,
+              logo_url: row.logo_url ?? null,
             };
           }
         }

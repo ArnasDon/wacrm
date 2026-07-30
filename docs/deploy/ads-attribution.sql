@@ -3,7 +3,7 @@
 -- Migrations 037 through 042, in order.
 --
 -- GENERATED FILE — do not edit. Regenerate with:
---   ./scripts/deploy/bundle-migrations.sh
+--   ./scripts/deploy/bundle-migrations.sh docs/deploy/ads-attribution.sql 037 038 039 040 041 042
 --
 -- HOW TO APPLY
 --   1. Supabase Cloud -> SQL Editor -> New query.

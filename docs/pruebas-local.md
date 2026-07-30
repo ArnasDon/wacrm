@@ -282,6 +282,10 @@ todavía no existen.
    [`docs/deploy/ads-attribution.sql`](deploy/ads-attribution.sql). Es un solo
    archivo con las migraciones 037 a 042 en orden. Se puede re-ejecutar sin
    romper nada (verificado corriéndolo dos veces sobre la misma base).
+1bis. **En otra query, pegá [`docs/deploy/branding.sql`](deploy/branding.sql)**
+   (migración 043: marca por cuenta). Va en un archivo aparte a propósito —
+   son dos releases distintas, y juntarlas hace imposible saber cuál ya
+   aplicaste. También es idempotente.
 2. Merge de `feat/ads-attribution` a `main` en tu fork.
 3. Redeploy en Coolify.
 4. **Configuración → Cuentas publicitarias:** conectá Meta Ads siguiendo el paso a
@@ -293,10 +297,20 @@ todavía no existen.
    por lead cuadran con el Administrador de Anuncios de Meta (con tolerancia por
    zona horaria y ventana de atribución).
 
-Si en algún momento agregás más migraciones, el archivo se regenera con:
+5bis. **Configuración → Marca:** subí el logo del cliente y poné su nombre. Eso
+   reemplaza el cuadrado morado y "Plantilla CRM para WhatsApp" del menú lateral,
+   y también el título y el favicon de la pestaña. Es por cuenta, así que en una
+   instancia con varios clientes cada uno ve el suyo. Si lo dejás sin configurar,
+   todo sigue exactamente como antes.
+
+Si en algún momento agregás más migraciones, los archivos se regeneran con:
 
 ```bash
 cd ~/Proyectos/wacrm && ./scripts/deploy/bundle-migrations.sh
+```
+
+```bash
+cd ~/Proyectos/wacrm && TITLE="per-account branding (logo and name)" ./scripts/deploy/bundle-migrations.sh docs/deploy/branding.sql 043
 ```
 
 ---

@@ -117,12 +117,9 @@ const nextConfig: NextConfig = {
    *     chunk-hash drift self-heals within ~5 min with no user-
    *     visible latency.
    *
-   *   Note: dynamic dashboard routes (/inbox, /contacts, /pipelines,
-   *   /broadcasts, etc.) are server-rendered per request — Next.js
-   *   and Supabase auth already prevent them from being served
-   *   from a shared cache. The s-maxage here is a ceiling; Next.js
-   *   and auth middleware still set `private` / `no-store` for
-   *   per-user responses.
+   *   - Authenticated app routes — private, no-store. See the rule's
+   *     own comment below; this one is a correctness requirement, not
+   *     a tuning knob.
    *
    * Security headers are appended via a separate catch-all rule
    * below — Next.js merges headers from every matching rule, so
@@ -144,6 +141,45 @@ const nextConfig: NextConfig = {
               "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
           },
         ],
+      },
+      {
+        // Authenticated app HTML must never enter a shared cache.
+        //
+        // This overrides the blanket `public, s-maxage=300` above —
+        // later rules win, because Next assigns headers by key in array
+        // order (server/lib/router-utils/resolve-routes).
+        //
+        // An earlier version of the comment above claimed Next.js and
+        // the auth middleware already force `private` / `no-store` on
+        // per-user responses. Neither does. Next only applies its own
+        // cache-control when the header is not already set
+        // (server/send-payload.js: "If cache control is already set on
+        // the response we don't override it"), and src/middleware.ts
+        // never touches Cache-Control at all — so the rule above was
+        // winning on every dashboard page.
+        //
+        // That was harmless only while the dashboard shell rendered
+        // identically for everyone. It stopped being harmless when the
+        // account's brand name and logo moved into the server-rendered
+        // <head> (generateMetadata in src/app/(dashboard)/layout.tsx):
+        // a shared cache could then hand one customer another
+        // customer's branding for up to 5 minutes, and up to 24 h while
+        // revalidating. Do not relax this without moving branding back
+        // out of the server-rendered head.
+        //
+        // Written as a negative lookahead rather than a list of app
+        // routes so it fails closed: a new route is private until
+        // someone deliberately exempts it. The exempted paths are the
+        // genuinely public ones — auth screens, invite acceptance, and
+        // the tracked-link redirect.
+        //
+        // Verify this against a PRODUCTION build (`next build && next
+        // start`), never `next dev`. In dev, base-server.js overwrites
+        // Cache-Control with "no-cache, must-revalidate" on every page
+        // unconditionally (`if (this.dev)`), which hides this rule and
+        // makes it look like it never applied.
+        source: "/:path((?!_next/|api/|login|signup|forgot-password|join/|l/).+)",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
       },
       {
         // Security headers on every response, including /_next/static

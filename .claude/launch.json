@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "3100"],
       "port": 3100
+    },
+    {
+      "//": "Production build. Needed to check response headers: in dev, Next forcibly sets 'no-cache, must-revalidate' on every page (base-server.js, `if (this.dev)`), which masks the Cache-Control rules from next.config.ts.",
+      "name": "wacrm-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start", "--", "--port", "3200"],
+      "port": 3200
     }
   ]
 }

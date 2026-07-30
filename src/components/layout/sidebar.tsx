@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { resolveBrand } from "@/lib/branding/brand";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
@@ -121,18 +122,40 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
-  // Only surface the account-name strip when it actually carries
-  // information. A solo user's personal account is named after them
-  // (the 017 signup trigger seeds it from `full_name`), so showing it
-  // here would just duplicate the user name in the footer below. Once
-  // the account is renamed or the user joins a shared account, the
-  // name diverges and the strip becomes meaningful — that's the signal
-  // we gate on. Wait for the profile fetch to settle first, otherwise
-  // the strip flashes in once the row resolves (a layout jump).
-  const showAccountStrip =
+  // The account's own branding, falling back to the product name when
+  // this account hasn't configured any (migration 043).
+  const brand = resolveBrand(account, t("title"));
+
+  // Set when the logo URL fails to load, so we render the default mark
+  // instead of a broken image. Keyed off the URL so uploading a new
+  // logo after a failure gets a fresh attempt.
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [brand.logoUrl]);
+
+  // Only surface the account name in the footer strip when it actually
+  // carries information, which is now two separate conditions:
+  //
+  //   - A branded account already shows its name at the top of the
+  //     sidebar, so repeating it here is pure duplication in a 240px
+  //     column.
+  //   - A solo user's personal account is named after them (the 017
+  //     signup trigger seeds it from `full_name`), so it would just
+  //     duplicate the user name in the footer below.
+  //
+  // Wait for the profile fetch to settle first, otherwise the strip
+  // flashes in once the row resolves (a layout jump).
+  const showAccountName =
     !profileLoading &&
     !!account?.name &&
+    !brand.isCustom &&
     account.name !== profile?.full_name;
+
+  // Deliberately independent of the name. This chip is the only place
+  // a user can see their own role, and tying it to the name strip
+  // meant the owner of a solo account never saw theirs at all.
+  const showRoleChip = !profileLoading && !!accountRole;
 
   // Close the drawer when route changes — users opened it to navigate,
   // so once they pick a destination the drawer should get out of the way.
@@ -190,11 +213,26 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
+            {brand.logoUrl && !logoFailed ? (
+              // object-contain, not cover: a customer's logo is rarely
+              // square and cropping it is worse than letterboxing it.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={brand.logoUrl}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-lg object-contain"
+                // A logo deleted straight out of the bucket would
+                // otherwise leave a broken-image icon as the brand
+                // mark. Fall back to the default square instead.
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
+            <span className="truncate text-sm font-semibold text-foreground">
+              {brand.title}
             </span>
           </Link>
           <button
@@ -297,22 +335,26 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
         {/* User section */}
         <div className="shrink-0 border-t border-border p-3">
-          {/* Account name display — surfaced only when the account
-              name differs from the user's own name (see
-              `showAccountStrip`). For a default solo account the two
-              match, so we hide it to avoid duplicating the user name
-              below; for renamed or shared accounts it tells the user
-              which account they're acting in. */}
-          {showAccountStrip && account?.name ? (
+          {/* Account strip. The name and the role chip are gated
+              separately (see `showAccountName` / `showRoleChip`): the
+              name is hidden when it would duplicate the brand above or
+              the user's own name below, while the chip is the only
+              place a user can see their own role and so always shows.
+              The container appears when either half has something. */}
+          {showAccountName || showRoleChip ? (
             <div className="mb-2 flex items-center gap-2 px-3 text-xs text-muted-foreground">
-              <UsersRound className="size-3.5 shrink-0" />
-              {/* `title=` exposes the full name on hover when it
-                  gets truncated (long account names + narrow
-                  sidebars). Cheap a11y win. */}
-              <span className="truncate" title={account.name}>
-                {account.name}
-              </span>
-              {accountRole ? (
+              {showAccountName && account?.name ? (
+                <>
+                  <UsersRound className="size-3.5 shrink-0" />
+                  {/* `title=` exposes the full name on hover when it
+                      gets truncated (long account names + narrow
+                      sidebars). Cheap a11y win. */}
+                  <span className="truncate" title={account.name}>
+                    {account.name}
+                  </span>
+                </>
+              ) : null}
+              {showRoleChip && accountRole ? (
                 // Always render the chip — owners used to be
                 // invisible here, which made them indistinguishable
                 // from admins at a glance. Now everyone sees their
@@ -322,7 +364,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   const Icon = meta.icon;
                   return (
                     <span
-                      className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${meta.className}`}
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
+                        // Push right only when there's a name to sit
+                        // beside; alone it would float against the
+                        // edge with an unexplained gap to its left.
+                        showAccountName && "ml-auto",
+                        meta.className,
+                      )}
                     >
                       <Icon className="size-3" />
                       {t(meta.labelKey as string)}

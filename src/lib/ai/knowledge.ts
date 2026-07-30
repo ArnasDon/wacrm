@@ -91,20 +91,6 @@ export async function retrieveKnowledge(
   const query = queryText.trim()
   if (!query || k <= 0) return []
 
-  // Skip everything when the account has no knowledge base — otherwise
-  // every draft / auto-reply would pay for a query embedding + two RPCs
-  // just to get []. One cheap indexed COUNT (head, no rows) instead of a
-  // paid embeddings call on the hot path.
-  try {
-    const { count, error } = await db
-      .from('ai_knowledge_chunks')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-    if (error || !count) return []
-  } catch {
-    return []
-  }
-
   const picked = new Map<string, string>() // id → content, preserves order
 
   // Semantic path.

@@ -20,8 +20,8 @@ function isSpanish(text: string): boolean {
 }
 
 function loadingLabel(input: string): string {
-  if (isSpanish(input)) return 'Buscando en la base de conocimiento…'
-  return 'Searching knowledge base…'
+  if (isSpanish(input)) return 'Pensando…'
+  return 'Thinking…'
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -30,7 +30,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const loadingTextRef = useRef('Searching knowledge base…');
+  const loadingTextRef = useRef('Thinking…');
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });

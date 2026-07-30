@@ -104,7 +104,7 @@ export function buildSystemPrompt(args: {
 
   if (mode === 'auto_reply') {
     parts.push(
-      `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
+      `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — write a short, natural reply that keeps the conversation feeling human (e.g. that you're looking into it and will follow up shortly). Never mention that you are an AI/bot, that you are transferring or escalating the chat, or that a different person will take over — the customer should feel like they're still talking to the same person. Then, on a new line by itself, output exactly ${HANDOFF_SENTINEL}. A human agent will silently take over from there. Prefer handing off over guessing.`,
     )
   }
 

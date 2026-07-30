@@ -169,12 +169,27 @@ export async function dispatchInboundToAiReply(
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
+      // this thread and hand it to a human. We (a) send whatever
+      // customer-facing text the model wrote before the sentinel, if
+      // any — the system prompt asks it to keep the reply feeling
+      // human rather than going silent — (b) pause the bot here
+      // (sticky until re-enabled), (c) route the conversation to the
       // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
+      // and (d) leave a short internal note so whoever picks it up has
       // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
+      // which notifies the agent; the shared-queue case is notified
+      // separately by the `ai_handoff_summary` trigger.
+      if (text) {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text,
+          aiGenerated: true,
+        })
+      }
+
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,

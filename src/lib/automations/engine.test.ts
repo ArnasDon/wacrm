@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
     fromCalls: [] as string[],
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
+    logInserts: [] as Record<string, unknown>[],
+    logUpdates: [] as Record<string, unknown>[],
   },
 }));
 
@@ -45,8 +47,14 @@ vi.mock("./admin-client", () => {
     }
     if (table === "automations") return { data: state.automations, error: null };
     if (table === "automation_logs") {
-      if (type === "insert") return { data: { id: "log1" }, error: null };
-      if (type === "update") return { data: null, error: null };
+      if (type === "insert") {
+        state.logInserts.push(ops.payload as Record<string, unknown>);
+        return { data: { id: "log1" }, error: null };
+      }
+      if (type === "update") {
+        state.logUpdates.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: null };
+      }
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
     if (table === "automation_steps") return { data: state.steps, error: null };
@@ -109,6 +117,8 @@ beforeEach(() => {
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
+  h.state.logInserts = [];
+  h.state.logUpdates = [];
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -162,6 +172,47 @@ describe("runAutomationsForTrigger — tenant isolation", () => {
     const filters = h.state.updateCalls[0].filters;
     expect(filters).toContainEqual(["eq", "id", "c1"]);
     expect(filters).toContainEqual(["eq", "account_id", ACCOUNT]);
+  });
+});
+
+describe("automation_logs — status is seeded pessimistically (issue #409)", () => {
+  it("writes the log row as 'failed' before any step runs", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    // The insert happens before execution, so a run killed mid-flight must
+    // not leave behind a row that claims it succeeded.
+    expect(h.state.logInserts).toHaveLength(1);
+    expect(h.state.logInserts[0]).toMatchObject({
+      status: "failed",
+      steps_executed: [],
+    });
+  });
+
+  it("still promotes the log to 'success' once the steps complete", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    // The seed is only a floor — the outermost scope still writes the real
+    // verdict, so a completed run reports success as it always did.
+    const withStatus = h.state.logUpdates.filter((u) => "status" in u);
+    expect(withStatus.at(-1)).toMatchObject({ status: "success" });
   });
 });
 
@@ -334,5 +385,68 @@ describe("triggerMatches — interactive_reply", () => {
   it("does not match when no reply id is present or config is empty", () => {
     expect(triggerMatches(automation(["yes"]), {})).toBe(false);
     expect(triggerMatches(automation([]), { interactive_reply_id: "yes" })).toBe(false);
+  });
+});
+
+describe("triggerMatches — tag_added", () => {
+  function automation(tagId?: string): Automation {
+    return {
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      name: "tag follow-up",
+      trigger_type: "tag_added",
+      trigger_config: tagId ? { tag_id: tagId } : {},
+      is_active: true,
+      execution_count: 0,
+      created_at: "",
+      updated_at: "",
+    };
+  }
+
+  it("matches only the exact tag id", () => {
+    expect(triggerMatches(automation("tag-a"), { tag_id: "tag-a" })).toBe(true);
+    expect(triggerMatches(automation("tag-a"), { tag_id: "tag-ab" })).toBe(false);
+  });
+
+  it("fails closed when the config or event tag is missing", () => {
+    expect(triggerMatches(automation(), { tag_id: "tag-a" })).toBe(false);
+    expect(triggerMatches(automation("tag-a"), {})).toBe(false);
+    expect(triggerMatches(automation("tag-a"), undefined)).toBe(false);
+  });
+});
+
+describe("tag_added — conversation policy", () => {
+  it("records a clear failed step when the contact has no conversation", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [{
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      name: "tag outreach",
+      trigger_type: "tag_added",
+      trigger_config: { tag_id: "tag-a" },
+      is_active: true,
+    }];
+    h.state.steps = [{
+      id: "s1",
+      automation_id: "a1",
+      step_type: "send_message",
+      position: 0,
+      parent_step_id: null,
+      step_config: { text: "Hello" },
+    }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: "tag-a" },
+    });
+
+    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_message: "tag_added automation cannot send: contact has no existing conversation",
+    }));
   });
 });

@@ -14,6 +14,9 @@ const messageInserts: Array<Record<string, unknown>> = []
 // Toggles for the per-test scenario.
 let existingConversation: Record<string, unknown> | null = null
 let contactRow: Record<string, unknown> | null = null
+// The caller's role, as `requireRole` reads it off the profile. Sending
+// requires 'agent'; 'viewer' must be refused before anything reaches Meta.
+let callerRole: string = 'admin'
 // A conversation created during the request becomes retrievable by id —
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
@@ -35,7 +38,12 @@ function makeSupabaseMock() {
     const selectResult = () => {
       switch (table) {
         case 'profiles':
-          return { data: { account_id: 'acct-1' }, error: null }
+          return {
+            data: { account_id: 'acct-1', account_role: callerRole },
+            error: null,
+          }
+        case 'accounts':
+          return { data: { id: 'acct-1', name: 'Acme' }, error: null }
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':
@@ -179,6 +187,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     existingConversation = null
     createdConversation = null
     contactRow = CONTACT
+    callerRole = 'admin'
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })
@@ -257,5 +266,51 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /api/whatsapp/send — role enforcement', () => {
+  beforeEach(() => {
+    conversationInserts.length = 0
+    messageInserts.length = 0
+    existingConversation = {
+      id: 'conv-existing',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      contact: CONTACT,
+    }
+    createdConversation = null
+    contactRow = CONTACT
+    callerRole = 'admin'
+    supabaseMock = makeSupabaseMock()
+    sendTemplateMessage.mockClear()
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('refuses a viewer with 403 and never reaches Meta', async () => {
+    // A viewer is read-only (`canSendMessages`). The route used to resolve
+    // account_id straight off the profile with no role check: RLS blocked
+    // the message INSERT, but the send core calls Meta first, so the
+    // customer still received a real WhatsApp message that RLS could not
+    // un-send. The gate has to come before any outbound call.
+    callerRole = 'viewer'
+
+    const res = await postContactTemplate()
+
+    expect(res.status).toBe(403)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+    expect(messageInserts).toHaveLength(0)
+  })
+
+  it('allows an agent through', async () => {
+    callerRole = 'agent'
+
+    const res = await postContactTemplate()
+
+    expect(res.status).toBe(200)
+    expect(sendTemplateMessage).toHaveBeenCalledTimes(1)
   })
 })

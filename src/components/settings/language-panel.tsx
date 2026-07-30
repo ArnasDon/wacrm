@@ -20,7 +20,6 @@ export function LanguagePanel() {
   const handleChange = (code: string) => {
     if (code === current) return;
     updateLocale(code);
-    window.location.reload();
   };
 
   return (

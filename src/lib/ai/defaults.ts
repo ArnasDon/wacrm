@@ -53,6 +53,32 @@ export function aiContextMessageLimit(): number {
 }
 
 /**
+ * Current date and time formatted for the account's timezone, with a
+ * readable day-of-week so the LLM can reason about open/closed hours.
+ * Defaults to America/Santo_Domingo (AST/EST, UTC-4) when
+ * `BUSINESS_TIMEZONE` is not set.
+ */
+export function getSystemTimeContext(): string {
+  const tz = process.env.BUSINESS_TIMEZONE || 'America/Santo_Domingo'
+  try {
+    const now = new Date()
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    })
+    return `Current date and time: ${fmt.format(now)} (${tz})`
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Build the system prompt shared by draft + auto-reply. The account's
  * own `system_prompt` (business context / persona / tone) is appended
  * to a fixed scaffold so behaviour stays predictable regardless of what
@@ -64,8 +90,10 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** Current date/time context (for open/closed awareness). */
+  timeContext?: string
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, knowledge, timeContext } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -86,6 +114,10 @@ export function buildSystemPrompt(args: {
 
   if (userPrompt && userPrompt.trim()) {
     parts.push(`Business context and instructions:\n${userPrompt.trim()}`)
+  }
+
+  if (timeContext) {
+    parts.push(timeContext)
   }
 
   if (knowledge && knowledge.length > 0) {

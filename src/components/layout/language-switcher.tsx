@@ -19,7 +19,6 @@ export function LanguageSwitcher({ className }: { className?: string }) {
   const handleChange = (code: string) => {
     if (code === current) return;
     updateLocale(code);
-    window.location.reload();
   };
 
   return (

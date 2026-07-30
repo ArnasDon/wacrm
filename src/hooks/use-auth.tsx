@@ -319,7 +319,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchProfile(user.id);
   }, [user?.id, fetchProfile]);
 
-  const updateLocale = useCallback(async (locale: string) => {
+  const updateLocale = useCallback(async (locale: string, reload = true) => {
     if (!user?.id) return;
     const supabase = createClient();
     const { error } = await supabase
@@ -334,7 +334,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // without waiting for a full profile refetch.
     setProfile((prev) => (prev ? { ...prev, locale } : prev));
     // Also set a cookie so i18n/request.ts picks it up on next SSR.
-    document.cookie = `NEXT_LOCALE=${locale};path=/;max-age=31536000;SameSite=Lax`;
+    // Must include ;Secure on HTTPS (some mobile browsers reject it otherwise).
+    const secure = location.protocol === 'https:' ? ';Secure' : '';
+    document.cookie = `NEXT_LOCALE=${locale};path=/;max-age=31536000;SameSite=Lax${secure}`;
+    if (reload) {
+      // Small delay so the cookie flush finishes before navigation.
+      setTimeout(() => { location.href = location.href }, 50);
+    }
   }, [user?.id]);
 
   // Derive the role booleans once per profile change rather than on

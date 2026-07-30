@@ -18,6 +18,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -70,6 +71,57 @@ function InventoryUploader({
   const [sheetUrl, setSheetUrl] = useState('');
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!ext || !['csv', 'xlsx', 'xls'].includes(ext)) {
+      toast.error('Unsupported format. Please upload a CSV or Excel (.xlsx) file.');
+      return;
+    }
+    setMode('file');
+    setLoading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/ai/knowledge/inventory/preview', { method: 'POST', body: fd })
+      .then(async (res) => {
+        const data = await res.json();
+        if (res.ok) {
+          setPreview(data.preview);
+          setMetadata(data.metadata);
+        } else {
+          toast.error(data.error ?? 'Preview failed.');
+          setMode(null);
+        }
+      })
+      .catch(() => { toast.error('Preview failed.'); setMode(null); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false if we're leaving the dropzone itself (not a child)
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  }, []);
 
   const invDoc = inventoryDocs[0];
   const allColumns = preview?.sample.length
@@ -241,7 +293,21 @@ function InventoryUploader({
       )}
 
       {!invDoc && canEdit && !preview && (
-        <div className="space-y-2">
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          className={cn(
+            'space-y-2 rounded-lg border-2 border-dashed p-4 transition-colors',
+            isDragging
+              ? 'border-primary bg-primary/5'
+              : 'border-border/60 hover:border-primary/40',
+          )}
+        >
+          <p className="text-center text-xs text-muted-foreground">
+            {isDragging ? 'Drop your file here' : 'Drag & drop or click to upload'}
+          </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="text-xs">
               <Upload className="mr-1 h-3 w-3" /> {t('uploadFile')}

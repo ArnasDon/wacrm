@@ -24,6 +24,13 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-sheet:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
+    const { data: account } = await supabase
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = account?.default_currency ?? 'USD'
+
     const body = await request.json().catch(() => null)
     const url = typeof body?.url === 'string' ? body.url.trim() : ''
     if (!url) {
@@ -68,7 +75,7 @@ export async function POST(request: Request) {
 
     let parsed
     try {
-      parsed = parseSheetCsv(csvText, url, selectedColumns)
+      parsed = parseSheetCsv(csvText, url, selectedColumns, currency)
     } catch (err) {
       const message = err instanceof InventoryError ? err.message : 'Failed to parse sheet data.'
       console.error('[ai/knowledge/sheet] parse error:', message)

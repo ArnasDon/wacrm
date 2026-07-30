@@ -24,6 +24,13 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-upload:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
+    const { data: account } = await supabase
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = account?.default_currency ?? 'USD'
+
     const formData = await request.formData().catch(() => null)
     if (!formData) {
       return NextResponse.json({ error: 'Expected multipart/form-data.' }, { status: 400 })
@@ -55,7 +62,7 @@ export async function POST(request: Request) {
 
     let parsed
     try {
-      parsed = parseInventoryFile(buffer, filename, selectedColumns)
+      parsed = parseInventoryFile(buffer, filename, selectedColumns, currency)
     } catch (err) {
       const message = err instanceof InventoryError ? err.message : 'Failed to parse file.'
       return NextResponse.json({ error: message }, { status: 422 })

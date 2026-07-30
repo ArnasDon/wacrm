@@ -86,7 +86,7 @@ export async function retrieveKnowledge(
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   queryText: string,
-  k = 5,
+  k = 15,
 ): Promise<string[]> {
   const query = queryText.trim()
   if (!query || k <= 0) return []

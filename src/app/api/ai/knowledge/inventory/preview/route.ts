@@ -24,9 +24,16 @@ import {
  */
 export async function POST(request: Request) {
   try {
-    const { userId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
     const limit = checkRateLimit(`ai-inventory:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
+
+    const { data: account } = await supabase
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = account?.default_currency ?? 'USD'
 
     const contentType = request.headers.get('content-type') ?? ''
 
@@ -51,7 +58,7 @@ export async function POST(request: Request) {
 
       const buffer = await file.arrayBuffer()
       try {
-        const parsed = parseInventoryFile(buffer, file.name)
+        const parsed = parseInventoryFile(buffer, file.name, undefined, currency)
         return NextResponse.json({ preview: parsed.preview, metadata: parsed.metadata })
       } catch (err) {
         const message = err instanceof InventoryError ? err.message : 'Failed to parse file.'
@@ -99,7 +106,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      const parsed = parseSheetCsv(csvText, url)
+      const parsed = parseSheetCsv(csvText, url, undefined, currency)
       return NextResponse.json({ preview: parsed.preview, metadata: parsed.metadata })
     } catch (err) {
       const message = err instanceof InventoryError ? err.message : `Failed to parse sheet: ${err}`

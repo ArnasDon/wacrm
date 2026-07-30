@@ -32,6 +32,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
 
   const loadingTextRef = useRef('Thinking…');
 
+  const lastUserContent = turns.reduceRight<string>((_, t) => t.role === 'user' ? t.content : _, '');
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [turns, sending]);
@@ -169,7 +171,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   )}
                 >
                   <UserCircle2 className="h-3.5 w-3.5" />
-                  Would hand off to a human here
+                  {isSpanish(lastUserContent) ? 'Derivaría a un humano aquí' : 'Would hand off to a human here'}
                 </p>
               )}
               {t.role === 'assistant' && !t.handoff && t.knowledgeCount !== undefined && (

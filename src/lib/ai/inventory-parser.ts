@@ -1,5 +1,6 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
+import { formatCurrency } from '@/lib/currency'
 
 /** Maximum rows to include in the inventory content (prevents timeouts). */
 const MAX_INVENTORY_ROWS = 50_000
@@ -14,6 +15,7 @@ export interface InventoryMetadata {
   source: 'csv' | 'excel' | 'sheet'
   filename?: string
   url?: string
+  currency: string
   rows: number
   columns: string[]
   detected: DetectedColumnMap
@@ -70,10 +72,11 @@ export function parseInventoryFile(
   buffer: ArrayBuffer,
   filename: string,
   selectedColumns?: string[],
+  currency?: string,
 ): ParsedInventory {
   const ext = filename.toLowerCase().split('.').pop() ?? ''
-  if (ext === 'csv') return parseCsv(buffer, { source: 'csv', filename }, selectedColumns)
-  if (['xlsx', 'xls'].includes(ext)) return parseExcel(buffer, { source: 'excel', filename }, selectedColumns)
+  if (ext === 'csv') return parseCsv(buffer, { source: 'csv', filename }, selectedColumns, currency)
+  if (['xlsx', 'xls'].includes(ext)) return parseExcel(buffer, { source: 'excel', filename }, selectedColumns, currency)
   throw new InventoryError(`Unsupported format: .${ext}. Use CSV or Excel (.xlsx).`)
 }
 
@@ -81,6 +84,7 @@ export function parseSheetCsv(
   csvText: string,
   url: string,
   selectedColumns?: string[],
+  currency?: string,
 ): ParsedInventory {
   const clean = csvText.trim().replace(/^\uFEFF/, '')
   const result = Papa.parse<string[]>(clean, { skipEmptyLines: true })
@@ -92,6 +96,7 @@ export function parseSheetCsv(
     { source: 'sheet', url },
     selectedColumns,
     result.errors.filter((e) => e.type !== 'FieldMismatch').map((e) => e.message),
+    currency,
   )
 }
 
@@ -106,6 +111,7 @@ function parseCsv(
   buffer: ArrayBuffer,
   meta: { source: 'csv'; filename: string },
   selectedColumns?: string[],
+  currency?: string,
 ): ParsedInventory {
   const raw = new TextDecoder('utf-8').decode(buffer)
   const text = raw.replace(/^\uFEFF/, '')
@@ -118,6 +124,7 @@ function parseCsv(
     meta,
     selectedColumns,
     result.errors.filter((e) => e.type !== 'FieldMismatch').map((e) => e.message),
+    currency,
   )
 }
 
@@ -125,6 +132,7 @@ function parseExcel(
   buffer: ArrayBuffer,
   meta: { source: 'excel'; filename: string },
   selectedColumns?: string[],
+  currency?: string,
 ): ParsedInventory {
   const workbook = XLSX.read(buffer, { type: 'array' })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -132,7 +140,7 @@ function parseExcel(
   const data = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][]
   if (data.length < 2) throw new InventoryError('Excel file must have a header row and at least one data row.')
   const rows = data.map((r) => r.map((c) => String(c ?? '')))
-  return buildInventory(rows, meta, selectedColumns)
+  return buildInventory(rows, meta, selectedColumns, undefined, currency)
 }
 
 function buildInventory(
@@ -140,15 +148,22 @@ function buildInventory(
   meta: { source: 'csv' | 'excel' | 'sheet'; filename?: string; url?: string },
   selectedColumns?: string[],
   parseErrors?: string[],
+  currency?: string,
 ): ParsedInventory {
   if (rows.length < 2) {
     throw new InventoryError('File must have a header row and at least one data row.')
   }
 
+  const cur = currency || 'USD'
+
   // Keep original-case headers but lower-case for comparison.
   const rawHeader = rows[0].map((h) => h.trim())
   const headerLower = rawHeader.map((h) => h.toLowerCase())
   const detected = detectColumns(headerLower)
+
+  // Find detected column indices for price/stock formatting.
+  const priceColIdx = detected.price !== null ? headerLower.indexOf(detected.price) : -1
+  const stockColIdx = detected.stock !== null ? headerLower.indexOf(detected.stock) : -1
 
   const dataRows = rows.slice(1).filter((r) => r.some((c) => c.trim().length > 0))
   if (dataRows.length === 0) {
@@ -171,7 +186,7 @@ function buildInventory(
     }
   }
 
-  const lines: string[] = ['=== INVENTARIO ===']
+  const blocks: string[] = []
   const headerLabels = buildHeaderLabels(detected, headerLower)
 
   for (const row of dataRows) {
@@ -179,12 +194,27 @@ function buildInventory(
     for (let ci = 0; ci < headerLower.length; ci++) {
       if (columnIndices !== null && !columnIndices.includes(ci)) continue
       const val = row[ci]?.trim() ?? ''
-      if (val) {
-        const label = headerLabels[ci] ?? rawHeader[ci]
-        parts.push(`${label}: ${val}`)
+      if (!val) continue
+      const label = headerLabels[ci] ?? rawHeader[ci]
+
+      // Format price with currency symbol.
+      if (ci === priceColIdx) {
+        const parsed = parsePrice(val)
+        if (parsed !== null) {
+          parts.push(`${label}: ${formatCurrency(parsed, cur)}`)
+          continue
+        }
       }
+
+      // Append unit to stock.
+      if (ci === stockColIdx && isNumeric(val)) {
+        parts.push(`${label}: ${val} unidades`)
+        continue
+      }
+
+      parts.push(`${label}: ${val}`)
     }
-    if (parts.length > 0) lines.push(parts.join(' | '))
+    if (parts.length > 0) blocks.push(parts.join('\n'))
   }
 
   // Preview — use raw header keys so the user sees real column names.
@@ -199,11 +229,12 @@ function buildInventory(
   const trimmedErrors = parseErrors?.slice(0, 5)
 
   return {
-    content: lines.join('\n\n'),
+    content: blocks.join('\n\n'),
     metadata: {
       source: meta.source,
       filename: meta.filename,
       url: meta.url,
+      currency: cur,
       rows: dataRows.length,
       ...(truncated ? { truncated: true } : {}),
       columns: rawHeader,
@@ -213,6 +244,19 @@ function buildInventory(
     },
     preview: { sample, detected },
   }
+}
+
+function parsePrice(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.,\-]/g, '').trim()
+  if (!cleaned) return null
+  const num = Number(cleaned.replace(/,/g, ''))
+  return isFinite(num) ? Math.round(num) : null
+}
+
+function isNumeric(val: string): boolean {
+  const cleaned = val.replace(/[^0-9.,\-]/g, '').trim()
+  if (!cleaned) return false
+  return isFinite(Number(cleaned.replace(/,/g, '')))
 }
 
 function detectColumns(header: string[]): DetectedColumnMap {

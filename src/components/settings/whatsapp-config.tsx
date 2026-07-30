@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
 import {
   Accordion,
@@ -69,6 +70,14 @@ export function WhatsAppConfig() {
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
+
+  // Messaging-behavior toggles (migration 039) — saved independently
+  // via PATCH, no access token required.
+  const [messageBufferEnabled, setMessageBufferEnabled] = useState(false);
+  const [messageBufferSeconds, setMessageBufferSeconds] = useState(30);
+  const [typingIndicatorEnabled, setTypingIndicatorEnabled] = useState(false);
+  const [markReadEnabled, setMarkReadEnabled] = useState(false);
+  const [savingBehavior, setSavingBehavior] = useState(false);
 
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
@@ -121,6 +130,10 @@ export function WhatsAppConfig() {
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        setMessageBufferEnabled(Boolean(data.message_buffer_enabled));
+        setMessageBufferSeconds(data.message_buffer_seconds ?? 30);
+        setTypingIndicatorEnabled(Boolean(data.typing_indicator_enabled));
+        setMarkReadEnabled(Boolean(data.mark_read_enabled));
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -129,6 +142,10 @@ export function WhatsAppConfig() {
         setVerifyToken('');
         setPin('');
         setTokenEdited(false);
+        setMessageBufferEnabled(false);
+        setMessageBufferSeconds(30);
+        setTypingIndicatorEnabled(false);
+        setMarkReadEnabled(false);
       }
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
@@ -274,6 +291,33 @@ export function WhatsAppConfig() {
       toast.error('Failed to save configuration');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveMessagingBehavior() {
+    try {
+      setSavingBehavior(true);
+      const res = await fetch('/api/whatsapp/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_buffer_enabled: messageBufferEnabled,
+          message_buffer_seconds: messageBufferSeconds,
+          typing_indicator_enabled: typingIndicatorEnabled,
+          mark_read_enabled: markReadEnabled,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || t('behaviorSaveError'));
+        return;
+      }
+      toast.success(t('behaviorSaved'));
+    } catch (err) {
+      console.error('Save messaging behavior error:', err);
+      toast.error(t('behaviorSaveError'));
+    } finally {
+      setSavingBehavior(false);
     }
   }
 
@@ -680,6 +724,109 @@ export function WhatsAppConfig() {
                 </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Messaging behavior — buffer / typing indicator / mark-as-read.
+            Saved independently via PATCH, no access token needed. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-foreground">{t('messagingBehaviorTitle')}</CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t('messagingBehaviorDesc')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!config && (
+              <p className="text-xs text-muted-foreground">
+                {t('behaviorNeedsConfigFirst')}
+              </p>
+            )}
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('bufferEnabled')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('bufferEnabledDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={messageBufferEnabled}
+                onCheckedChange={setMessageBufferEnabled}
+                disabled={!config}
+              />
+            </div>
+
+            {messageBufferEnabled && (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label htmlFor="wa-buffer-seconds">{t('bufferSeconds')}</Label>
+                </div>
+                <Input
+                  id="wa-buffer-seconds"
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={messageBufferSeconds}
+                  onChange={(e) =>
+                    setMessageBufferSeconds(
+                      Math.min(300, Math.max(5, Number(e.target.value) || 5)),
+                    )
+                  }
+                  disabled={!config}
+                  className="w-24"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('typingIndicatorEnabled')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('typingIndicatorEnabledDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={typingIndicatorEnabled}
+                onCheckedChange={setTypingIndicatorEnabled}
+                disabled={!config}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('markReadEnabled')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('markReadEnabledDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={markReadEnabled}
+                onCheckedChange={setMarkReadEnabled}
+                disabled={!config}
+              />
+            </div>
+
+            <Button
+              onClick={handleSaveMessagingBehavior}
+              disabled={savingBehavior || !config}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {savingBehavior ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t('savingBehavior')}
+                </>
+              ) : (
+                t('saveBehavior')
+              )}
+            </Button>
           </CardContent>
         </Card>
 

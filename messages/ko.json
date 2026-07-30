@@ -1496,7 +1496,21 @@
       "step4_3": "위의 <strong class=\"text-foreground\">웹훅 콜백 URL</strong>을 붙여넣기",
       "step4_4": "여기서 설정한 것과 동일한 <strong class=\"text-foreground\">인증 토큰</strong>을 입력",
       "step4_5": "\"messages\" 웹훅 필드를 구독",
-      "metaDocs": "Meta WhatsApp API 문서"
+      "metaDocs": "Meta WhatsApp API 문서",
+      "messagingBehaviorTitle": "메시지 동작",
+      "messagingBehaviorDesc": "AI 에이전트가 WhatsApp에서 고객과 상호작용하는 방식을 제어합니다.",
+      "bufferEnabled": "응답 전 메시지 모아두기",
+      "bufferEnabledDesc": "고객의 메시지 하나하나에 답하는 대신, 마지막 메시지 이후 이 시간만큼 기다렸다가 답장을 생성합니다.",
+      "bufferSeconds": "대기 시간(초)",
+      "typingIndicatorEnabled": "응답 중 \"입력 중...\" 표시",
+      "typingIndicatorEnabledDesc": "에이전트가 답장을 생성하는 동안 고객에게 WhatsApp의 \"입력 중...\" 표시가 나타납니다.",
+      "markReadEnabled": "메시지를 읽음으로 표시",
+      "markReadEnabledDesc": "고객의 메시지가 도착하는 즉시 파란색 읽음 표시로 처리됩니다.",
+      "saveBehavior": "설정 저장",
+      "savingBehavior": "저장 중...",
+      "behaviorSaved": "설정이 저장되었습니다",
+      "behaviorSaveError": "설정을 저장하지 못했습니다",
+      "behaviorNeedsConfigFirst": "이 설정을 조정하기 전에 위에서 WhatsApp 구성을 먼저 저장하세요."
     },
     "sections": {
       "overview": "개요",

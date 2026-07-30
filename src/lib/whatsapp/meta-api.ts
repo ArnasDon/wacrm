@@ -704,6 +704,78 @@ export async function sendReactionMessage(
 }
 
 // ============================================================
+// Read receipts / typing indicator
+// ============================================================
+
+export interface MarkMessageReadArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's message_id of the inbound message to mark read. */
+  messageId: string
+}
+
+/**
+ * Mark an inbound message as read (blue double-check on the
+ * customer's side). Meta has no "online" presence concept for
+ * business accounts — this read receipt is the closest activity
+ * signal the Cloud API exposes.
+ */
+export async function markMessageAsRead(args: MarkMessageReadArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
+export interface SendTypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** The inbound message the typing bubble is shown in response to. */
+  messageId: string
+}
+
+/**
+ * Show the "escribiendo..." / "typing..." bubble on the customer's
+ * side. Lasts up to 25s or until the next outbound message, whichever
+ * comes first. Meta requires `status: "read"` in the SAME call as
+ * `typing_indicator` — there is no way to show typing without also
+ * marking the triggering message read as a side effect.
+ */
+export async function sendTypingIndicator(args: SendTypingIndicatorArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
+// ============================================================
 // Interactive (button replies + list messages)
 // ============================================================
 //

@@ -432,6 +432,82 @@ export async function POST(request: Request) {
 }
 
 /**
+ * PATCH /api/whatsapp/config
+ *
+ * Lightweight update for the messaging-behavior toggles only (message
+ * buffering, typing indicator, mark-as-read — migration 039). Kept
+ * separate from POST so flipping a switch never requires re-entering
+ * the access token or re-verifying credentials against Meta. Requires
+ * an existing row — the UI only shows this section once the account
+ * has already saved WhatsApp credentials via POST.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createClient()
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const accountId = await resolveAccountId(supabase, user.id)
+    if (!accountId) {
+      return NextResponse.json(
+        { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
+    const body = await request.json()
+    const {
+      message_buffer_enabled,
+      message_buffer_seconds,
+      typing_indicator_enabled,
+      mark_read_enabled,
+    } = body
+
+    let seconds = 30
+    if (message_buffer_seconds !== undefined) {
+      seconds = Number(message_buffer_seconds)
+      if (!Number.isFinite(seconds) || seconds < 5 || seconds > 300) {
+        return NextResponse.json(
+          { error: 'message_buffer_seconds must be a number between 5 and 300' },
+          { status: 400 },
+        )
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from('whatsapp_config')
+      .update({
+        message_buffer_enabled: Boolean(message_buffer_enabled),
+        message_buffer_seconds: seconds,
+        typing_indicator_enabled: Boolean(typing_indicator_enabled),
+        mark_read_enabled: Boolean(mark_read_enabled),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('account_id', accountId)
+
+    if (updateError) {
+      console.error('Error updating whatsapp_config messaging behavior:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to save messaging behavior settings' },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error in WhatsApp config PATCH:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
  * DELETE /api/whatsapp/config
  *
  * Removes the authenticated user's WhatsApp configuration row.

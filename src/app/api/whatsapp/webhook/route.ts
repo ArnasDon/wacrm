@@ -8,6 +8,8 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { scheduleAiReply } from '@/lib/ai/reply-buffer'
+import { markMessageAsRead } from '@/lib/whatsapp/meta-api'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -59,6 +61,15 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+}
+
+/** Per-account messaging-behavior toggles (Settings > WhatsApp). */
+interface WhatsappSettings {
+  phoneNumberId: string
+  markReadEnabled: boolean
+  typingIndicatorEnabled: boolean
+  messageBufferEnabled: boolean
+  messageBufferSeconds: number
 }
 
 interface WhatsAppWebhookEntry {
@@ -286,6 +297,18 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const decryptedAccessToken = decrypt(config.access_token)
 
+      // Messaging-behavior toggles (Settings > WhatsApp, migration 039).
+      // `config` is already a `select('*')` row so these columns are
+      // present once the migration lands; default to today's behavior
+      // (off) for pre-migration rows.
+      const whatsappSettings: WhatsappSettings = {
+        phoneNumberId: config.phone_number_id,
+        markReadEnabled: Boolean(config.mark_read_enabled),
+        typingIndicatorEnabled: Boolean(config.typing_indicator_enabled),
+        messageBufferEnabled: Boolean(config.message_buffer_enabled),
+        messageBufferSeconds: config.message_buffer_seconds ?? 30,
+      }
+
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
@@ -300,7 +323,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          whatsappSettings
         )
       }
     }
@@ -568,7 +592,8 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  whatsappSettings: WhatsappSettings
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -685,6 +710,26 @@ async function processMessage(
   if (msgError) {
     console.error('Error inserting message:', msgError)
     return
+  }
+
+  // Mark as read (blue double-check on the customer's side) — best
+  // effort, opt-in via Settings > WhatsApp. Meta has no "online"
+  // presence for business accounts; this is the closest activity
+  // signal the Cloud API exposes, so a failure here must never break
+  // the rest of inbound processing.
+  if (whatsappSettings.markReadEnabled) {
+    try {
+      await markMessageAsRead({
+        phoneNumberId: whatsappSettings.phoneNumberId,
+        accessToken,
+        messageId: message.id,
+      })
+    } catch (err) {
+      console.warn(
+        '[webhook] mark-as-read failed:',
+        err instanceof Error ? err.message : err
+      )
+    }
   }
 
   // Update conversation
@@ -806,16 +851,35 @@ async function processMessage(
 
   // AI auto-reply. Runs only for plain-text inbound the deterministic
   // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
+  // the account has enabled it. `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
+  //
+  // When message buffering is enabled (Settings > WhatsApp), this is
+  // handed to the in-process debounce (`scheduleAiReply`) instead of
+  // being awaited directly — a burst of rapid messages from the same
+  // customer collapses into one reply, `messageBufferSeconds` after the
+  // last message in the burst. Deliberately NOT awaited in that branch:
+  // the timer must outlive this `after()` callback (see reply-buffer.ts
+  // for why that's safe on this app's persistent-process deployment).
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    const dispatchArgs = {
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
-    })
+      phoneNumberId: whatsappSettings.phoneNumberId,
+      accessToken,
+      typingIndicatorEnabled: whatsappSettings.typingIndicatorEnabled,
+    }
+    if (whatsappSettings.messageBufferEnabled) {
+      scheduleAiReply(
+        conversation.id,
+        dispatchArgs,
+        whatsappSettings.messageBufferSeconds * 1000
+      )
+    } else {
+      await dispatchInboundToAiReply(dispatchArgs)
+    }
   }
 
   // message.received webhook (public API). Awaited — not fire-and-forget

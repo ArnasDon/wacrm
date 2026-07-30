@@ -285,6 +285,14 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** Debounce rapid inbound messages before the AI agent replies. */
+  message_buffer_enabled?: boolean;
+  /** Seconds to wait after the last inbound message before replying. 5-300. */
+  message_buffer_seconds?: number;
+  /** Show WhatsApp's "typing..." indicator while the AI agent composes a reply. */
+  typing_indicator_enabled?: boolean;
+  /** Mark inbound messages as read (blue double-check) as soon as they arrive. */
+  mark_read_enabled?: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

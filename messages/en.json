@@ -1496,7 +1496,21 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "messagingBehaviorTitle": "Messaging behavior",
+      "messagingBehaviorDesc": "Control how the AI agent interacts with your customers on WhatsApp.",
+      "bufferEnabled": "Group messages before replying",
+      "bufferEnabledDesc": "The agent waits this long after the customer's last message before generating a reply, instead of replying to each message individually.",
+      "bufferSeconds": "Wait seconds",
+      "typingIndicatorEnabled": "Show \"typing...\" while replying",
+      "typingIndicatorEnabledDesc": "The customer will see the \"typing...\" indicator on WhatsApp while the agent generates the reply.",
+      "markReadEnabled": "Mark messages as read",
+      "markReadEnabledDesc": "The customer's messages are marked with the blue double-check as soon as they arrive.",
+      "saveBehavior": "Save settings",
+      "savingBehavior": "Saving...",
+      "behaviorSaved": "Settings saved",
+      "behaviorSaveError": "Could not save settings",
+      "behaviorNeedsConfigFirst": "Save your WhatsApp configuration above before adjusting this."
     },
     "sections": {
       "overview": "Overview",

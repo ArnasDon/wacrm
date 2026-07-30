@@ -9,8 +9,9 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 
-interface DispatchArgs {
+export interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
   accountId: string
   conversationId: string
@@ -18,6 +19,12 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Meta phone_number_id — only needed when typingIndicatorEnabled. */
+  phoneNumberId?: string
+  /** Decrypted Meta access token — only needed when typingIndicatorEnabled. */
+  accessToken?: string
+  /** Show the "escribiendo..." bubble while this reply is generated. */
+  typingIndicatorEnabled?: boolean
 }
 
 /**
@@ -111,6 +118,34 @@ export async function dispatchInboundToAiReply(
       mode: 'auto_reply',
       knowledge,
     })
+
+    // Best-effort typing indicator. Meta ties it to the most recent
+    // inbound message from this customer — a failure here (e.g. a
+    // transient Meta error) must never block the actual reply.
+    if (args.typingIndicatorEnabled && args.phoneNumberId && args.accessToken) {
+      const { data: lastInbound } = await db
+        .from('messages')
+        .select('message_id')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (lastInbound?.message_id) {
+        try {
+          await sendTypingIndicator({
+            phoneNumberId: args.phoneNumberId,
+            accessToken: args.accessToken,
+            messageId: lastInbound.message_id,
+          })
+        } catch (err) {
+          console.warn(
+            '[ai auto-reply] typing indicator failed:',
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
+    }
 
     const { text, handoff, usage } = await generateReply({
       config,

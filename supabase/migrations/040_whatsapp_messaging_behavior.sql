@@ -1,5 +1,5 @@
 -- ============================================================
--- 039_whatsapp_messaging_behavior
+-- 040_whatsapp_messaging_behavior
 --
 -- Three opt-in behaviors for the AI auto-reply agent, configurable
 -- per-account from Settings > WhatsApp:

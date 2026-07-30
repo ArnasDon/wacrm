@@ -29,6 +29,9 @@ import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 export interface AutomationContext {
   /** Raw message text, for keyword_match + message_content conditions. */
   message_text?: string
+  content_type?: string
+  media_id?: string | null
+  order_data?: Record<string, unknown> | null
   /** Conversation the event belongs to, if any. */
   conversation_id?: string
   /** Arbitrary variables accumulated during execution. */
@@ -395,17 +398,17 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       // scrambles every template with ≥10 variables.
       const params = cfg.variables
         ? Object.keys(cfg.variables)
-            .sort((a, b) => {
-              const na = Number(a)
-              const nb = Number(b)
-              const aNum = Number.isFinite(na)
-              const bNum = Number.isFinite(nb)
-              if (aNum && bNum) return na - nb
-              if (aNum) return -1
-              if (bNum) return 1
-              return a.localeCompare(b)
-            })
-            .map((k) => String(cfg.variables![k]))
+          .sort((a, b) => {
+            const na = Number(a)
+            const nb = Number(b)
+            const aNum = Number.isFinite(na)
+            const bNum = Number.isFinite(nb)
+            if (aNum && bNum) return na - nb
+            if (aNum) return -1
+            if (bNum) return 1
+            return a.localeCompare(b)
+          })
+          .map((k) => String(cfg.variables![k]))
         : []
       const { whatsapp_message_id } = await engineSendTemplate({
         accountId: args.automation.account_id,
@@ -706,12 +709,20 @@ function interpolate(s: string, args: ExecuteArgs): string {
   console.log(JSON.stringify(args, null, 2))
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
+    if (ns === 'message' && prop === 'interactive_reply_id') return String(args.context.interactive_reply_id ?? '')
     if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
+    if (ns === 'message' && prop === 'type') return String(args.context.content_type ?? '')
+    if (ns === 'message' && prop === 'media_id') return String(args.context.media_id ?? '')
+    if (ns === 'message' && prop === 'order_data')
+      return args.context.order_data ? JSON.stringify(args.context.order_data) : ''
     if (ns === 'conversation' && prop === 'id') {
       return String(args.context.conversation_id ?? '')
     }
     if (ns === 'contact' && prop === 'id') {
       return String(args.contactId ?? '')
+    }
+    if (ns === 'account' && prop === 'id') {
+      return String(args.automation.account_id ?? '')
     }
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''

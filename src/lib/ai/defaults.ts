@@ -55,11 +55,20 @@ export const MAX_OUTPUT_TOKENS = 1024
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
+const DEFAULT_MAX_PROVIDER_ATTEMPTS = 3
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */
 export function aiRequestTimeoutMs(): number {
   const raw = Number(process.env.AI_REQUEST_TIMEOUT_MS)
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+/** Total attempts (including the first) for a transient provider failure
+ *  — timeout, network error, rate limit, or upstream 5xx. Mirrors n8n's
+ *  "Retry On Fail / Max Tries". Override with `AI_MAX_PROVIDER_ATTEMPTS`. */
+export function aiMaxProviderAttempts(): number {
+  const raw = Number(process.env.AI_MAX_PROVIDER_ATTEMPTS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_PROVIDER_ATTEMPTS
 }
 
 /** How many recent text messages to feed the model. Override with

@@ -278,3 +278,62 @@ describe('generateReply — Gemini', () => {
     ).rejects.toMatchObject({ code: 'empty_response' })
   })
 })
+
+describe('generateReply — retry on transient failure', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('retries a rate-limited call and succeeds once the provider recovers', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errResponse(429, { error: { message: 'slow down' } }))
+      .mockResolvedValueOnce(
+        okResponse({ choices: [{ message: { content: 'Sure — happy to help!' } }] }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const promise = generateReply({
+      config: config(),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+    await vi.runAllTimersAsync()
+
+    await expect(promise).resolves.toMatchObject({ text: 'Sure — happy to help!' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry a non-retryable error like an invalid key', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(errResponse(401, { error: { message: 'bad key' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      generateReply({
+        config: config(),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up after the max attempts and surfaces the last error', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(errResponse(500, { error: { message: 'upstream is down' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const promise = generateReply({
+      config: config(),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+    const assertion = expect(promise).rejects.toMatchObject({ code: 'provider_error' })
+    await vi.runAllTimersAsync()
+    await assertion
+
+    expect(fetchMock).toHaveBeenCalledTimes(3) // default AI_MAX_PROVIDER_ATTEMPTS
+  })
+})

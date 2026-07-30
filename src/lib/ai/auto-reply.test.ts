@@ -210,4 +210,21 @@ describe('dispatchInboundToAiReply — handoff', () => {
       assigned_agent_id: 'agent-7',
     })
   })
+
+  it('sends the model-written text to the customer before pausing, on handoff', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Let me look into that and get back to you.',
+      handoff: true,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        text: 'Let me look into that and get back to you.',
+        aiGenerated: true,
+      }),
+    )
+    expect(h.state.rpcCalls).toHaveLength(0) // no reply-slot claim on handoff
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
 })

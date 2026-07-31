@@ -1,18 +1,29 @@
 import { AiError, type ChatMessage, type ProviderResult } from '../types'
 import { MAX_OUTPUT_TOKENS } from '../defaults'
 import {
+  MAX_TOOL_ROUNDS,
   mergeConsecutive,
   normalizeUsage,
+  sumUsage,
   toNetworkError,
   type ProviderArgs,
 } from './shared'
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 
+interface GeminiPart {
+  text?: string
+  functionCall?: { name: string; id?: string; args?: Record<string, unknown> }
+  functionResponse?: { name: string; id?: string; response: { result: string } }
+}
+
+interface GeminiContent {
+  role: 'user' | 'model'
+  parts: GeminiPart[]
+}
+
 interface GeminiResponse {
-  candidates?: {
-    content?: { parts?: { text?: string }[] }
-  }[]
+  candidates?: { content?: { parts?: GeminiPart[] } }[]
   usageMetadata?: {
     promptTokenCount?: number
     candidatesTokenCount?: number
@@ -26,7 +37,7 @@ interface GeminiResponse {
  * and, like Anthropic, expects turns to alternate starting on `user` —
  * the system prompt is a separate top-level field, not a turn.
  */
-function toGeminiContents(messages: ChatMessage[]) {
+function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
   const merged = mergeConsecutive(messages)
   while (merged.length > 0 && merged[0].role === 'assistant') {
     merged.shift()
@@ -36,7 +47,7 @@ function toGeminiContents(messages: ChatMessage[]) {
       ? merged
       : [{ role: 'user' as const, content: '(The customer has not sent a message yet.)' }]
   return turns.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
+    role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
     parts: [{ text: m.content }],
   }))
 }
@@ -80,14 +91,15 @@ async function geminiHttpError(res: Response): Promise<AiError> {
   })
 }
 
-/**
- * Call Google's Gemini `generateContent` endpoint with the caller's own
- * key. Returns the raw assistant text + token usage (handoff parsing
- * happens in `generateReply`).
- */
-export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, temperature } = args
-
+async function callGemini(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  contents: GeminiContent[],
+  temperature: number,
+  timeoutMs: number,
+  tools: ProviderArgs['tools'],
+): Promise<GeminiResponse> {
   let res: Response
   try {
     res = await fetch(`${GEMINI_BASE_URL}/${encodeURIComponent(model)}:generateContent`, {
@@ -97,43 +109,101 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: toGeminiContents(messages),
+        contents,
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           maxOutputTokens: MAX_OUTPUT_TOKENS,
           temperature,
         },
+        ...(tools && tools.length > 0
+          ? {
+              tools: [
+                {
+                  function_declarations: tools.map((t) => ({
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.parameters,
+                  })),
+                },
+              ],
+            }
+          : {}),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
     throw toNetworkError(err)
   }
-
   if (!res.ok) {
     throw await geminiHttpError(res)
   }
+  return ((await res.json().catch(() => null)) as GeminiResponse | null) ?? {}
+}
 
-  const data = (await res.json().catch(() => null)) as GeminiResponse | null
-  const text = data?.candidates?.[0]?.content?.parts
-    ?.map((p) => p.text ?? '')
-    .join('')
-    .trim()
-  if (!text) {
-    // A prompt/response can be blocked by Gemini's safety filters with no
-    // candidates at all — surface that distinctly from a bare empty reply.
-    const blockReason = data?.promptFeedback?.blockReason
-    throw new AiError(
-      blockReason
-        ? `Gemini blocked the request (${blockReason}).`
-        : 'Gemini returned an empty response.',
-      { code: 'empty_response' },
+/**
+ * Call Google's Gemini `generateContent` endpoint with the caller's own
+ * key. Returns the raw assistant text + token usage (handoff parsing
+ * happens in `generateReply`).
+ *
+ * When `tools` are configured, runs an internal tool-calling loop
+ * (capped at `MAX_TOOL_ROUNDS`): a response containing `functionCall`
+ * parts is answered with a `functionResponse` turn per call, and the
+ * model is called again — until it returns text-only or the round cap
+ * is hit.
+ */
+export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
+  const { apiKey, model, systemPrompt, messages, timeoutMs, temperature, tools, executeTool } = args
+
+  const contents = toGeminiContents(messages)
+  let usage: ReturnType<typeof normalizeUsage> = null
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const data = await callGemini(apiKey, model, systemPrompt, contents, temperature, timeoutMs, tools)
+    usage = sumUsage(
+      usage,
+      normalizeUsage({
+        prompt: data?.usageMetadata?.promptTokenCount,
+        completion: data?.usageMetadata?.candidatesTokenCount,
+        total: data?.usageMetadata?.totalTokenCount,
+      }),
     )
+
+    const parts = data?.candidates?.[0]?.content?.parts ?? []
+    const functionCalls = parts.filter((p) => p.functionCall)
+
+    if (functionCalls.length > 0 && executeTool) {
+      contents.push({ role: 'model', parts })
+      const responseParts: GeminiPart[] = []
+      for (const part of functionCalls) {
+        const call = part.functionCall!
+        const result = await executeTool(call.name, call.args ?? {})
+        responseParts.push({
+          functionResponse: { name: call.name, id: call.id, response: { result } },
+        })
+      }
+      contents.push({ role: 'user', parts: responseParts })
+      continue
+    }
+
+    const text = parts
+      .map((p) => p.text ?? '')
+      .join('')
+      .trim()
+    if (!text) {
+      // A prompt/response can be blocked by Gemini's safety filters with no
+      // candidates at all — surface that distinctly from a bare empty reply.
+      const blockReason = data?.promptFeedback?.blockReason
+      throw new AiError(
+        blockReason
+          ? `Gemini blocked the request (${blockReason}).`
+          : 'Gemini returned an empty response.',
+        { code: 'empty_response' },
+      )
+    }
+    return { text, usage }
   }
-  const usage = normalizeUsage({
-    prompt: data?.usageMetadata?.promptTokenCount,
-    completion: data?.usageMetadata?.candidatesTokenCount,
-    total: data?.usageMetadata?.totalTokenCount,
+
+  throw new AiError('Gemini kept calling tools past the round limit.', {
+    code: 'tool_loop_exceeded',
   })
-  return { text, usage }
 }

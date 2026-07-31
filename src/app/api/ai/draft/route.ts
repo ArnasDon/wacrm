@@ -4,6 +4,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
+import { loadAiTools } from '@/lib/ai/load-tools'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
@@ -104,7 +105,15 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, usage } = await generateReply({ config, systemPrompt, messages })
+    const { definitions: tools, executeTool } = await loadAiTools(supabase, accountId)
+
+    const { text, usage } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+      tools,
+      executeTool,
+    })
 
     // Record spend on the account's BYO key. Best-effort + via the
     // service role (the log has no `authenticated` INSERT policy). This

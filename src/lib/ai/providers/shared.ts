@@ -1,4 +1,10 @@
-import { AiError, type AiUsage, type ChatMessage } from '../types'
+import {
+  AiError,
+  type AiUsage,
+  type ChatMessage,
+  type ExecuteTool,
+  type ToolDefinition,
+} from '../types'
 
 // ============================================================
 // Bits shared by the OpenAI + Anthropic adapters.
@@ -12,7 +18,18 @@ export interface ProviderArgs {
   timeoutMs: number
   /** Sampling temperature, already clamped to [0, 1] by the caller. */
   temperature: number
+  /** Tools the model may call (connected Google Sheets, migration 042).
+   *  Omitted/empty when the account has none configured — the adapter
+   *  then skips the `tools` field entirely, so behavior/cost for
+   *  accounts not using this feature is unchanged. */
+  tools?: ToolDefinition[]
+  /** Required when `tools` is non-empty; executes a tool call. */
+  executeTool?: ExecuteTool
 }
+
+/** Hard cap on provider round-trips within one `generateReply` call —
+ *  guards against a model that keeps calling tools indefinitely. */
+export const MAX_TOOL_ROUNDS = 3
 
 /**
  * Coerce a provider's usage block into our normalized `AiUsage`, tolerant
@@ -36,6 +53,18 @@ export function normalizeUsage(raw: {
     return null
   }
   return { promptTokens, completionTokens, totalTokens }
+}
+
+/** Sum usage across tool-calling rounds (each round is a separate
+ *  provider request and bills separately). Null + null stays null. */
+export function sumUsage(a: AiUsage | null, b: AiUsage | null): AiUsage | null {
+  if (!a) return b
+  if (!b) return a
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  }
 }
 
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */

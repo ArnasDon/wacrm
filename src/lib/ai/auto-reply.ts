@@ -7,6 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
+import { loadAiTools } from './load-tools'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
@@ -147,10 +148,14 @@ export async function dispatchInboundToAiReply(
       }
     }
 
+    const { definitions: tools, executeTool } = await loadAiTools(db, accountId)
+
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+      tools,
+      executeTool,
     })
 
     // Record token spend on the account's BYO key. Fire-and-forget so it

@@ -36,6 +36,18 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'ai_tools') {
+        // .select().eq('account_id').eq('is_active') → connected tools
+        // (loadAiTools). Empty by default — no test in this file
+        // configures any tools, so generateReply should see tools: [].
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          then: (resolve: (v: { data: unknown[]; error: null }) => void) =>
+            resolve({ data: [], error: null }),
+        }
+        return chain
+      }
       // conversations
       return {
         select: () => ({

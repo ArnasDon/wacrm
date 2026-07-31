@@ -8,6 +8,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { loadEmbeddingsKey } from '@/lib/ai/config'
 import { ingestDocument } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
+import { extractGoogleDocId, fetchGoogleDocText } from '@/lib/ai/google-docs'
 
 /**
  * GET /api/ai/knowledge
@@ -19,7 +20,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select('id, title, updated_at, source_type, source_url, last_synced_at')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -49,7 +50,29 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
-    const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    const sourceType = body?.source_type === 'google_doc' ? 'google_doc' : 'manual'
+    const sourceUrl = typeof body?.source_url === 'string' ? body.source_url.trim() : ''
+
+    let content = typeof body?.content === 'string' ? body.content.trim() : ''
+    let lastSyncedAt: string | null = null
+
+    if (sourceType === 'google_doc') {
+      const docId = extractGoogleDocId(sourceUrl)
+      if (!docId) {
+        return NextResponse.json(
+          { error: 'source_url no parece un link válido de Google Docs' },
+          { status: 400 },
+        )
+      }
+      try {
+        content = await fetchGoogleDocText(docId)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo leer el documento'
+        return NextResponse.json({ error: message }, { status: 400 })
+      }
+      lastSyncedAt = new Date().toISOString()
+    }
+
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
@@ -59,7 +82,15 @@ export async function POST(request: Request) {
 
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({
+        account_id: accountId,
+        created_by: userId,
+        title,
+        content,
+        source_type: sourceType,
+        source_url: sourceType === 'google_doc' ? sourceUrl : null,
+        last_synced_at: lastSyncedAt,
+      })
       .select('id')
       .single()
     if (error || !doc) {

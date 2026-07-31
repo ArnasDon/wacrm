@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
+import { AiToolsCard } from './ai-tools';
 import {
   AI_PROVIDER_DEFAULT_MODEL,
   GEMINI_SUGGESTED_MODELS,
@@ -538,6 +539,8 @@ export function AiConfig() {
               : hasStoredEmbeddingsKey
           }
         />
+
+        <AiToolsCard accountId={accountId} canEdit={canEdit} />
 
         <div className="flex items-center justify-between">
           {configured ? (

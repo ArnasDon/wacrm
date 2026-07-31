@@ -3,7 +3,9 @@ import {
   type AiConfig,
   type AiUsage,
   type ChatMessage,
+  type ExecuteTool,
   type GenerateResult,
+  type ToolDefinition,
 } from './types'
 import { HANDOFF_SENTINEL, aiMaxProviderAttempts, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
@@ -16,6 +18,11 @@ export interface GenerateArgs {
   systemPrompt: string
   /** Recent conversation turns, oldest first. */
   messages: ChatMessage[]
+  /** Connected tools (Google Sheets, migration 042) the model may call
+   *  mid-reply. Omit/empty for accounts with none configured. */
+  tools?: ToolDefinition[]
+  /** Required when `tools` is non-empty. */
+  executeTool?: ExecuteTool
 }
 
 /** Error codes worth retrying — transient upstream trouble, not a
@@ -54,7 +61,7 @@ async function withProviderRetry<T>(call: () => Promise<T>): Promise<T> {
  * (after exhausting retries for transient ones).
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, messages } = args
+  const { config, systemPrompt, messages, tools, executeTool } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
@@ -63,6 +70,8 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     messages,
     timeoutMs,
     temperature: config.temperature,
+    tools,
+    executeTool,
   }
 
   let result: { text: string; usage: AiUsage | null }

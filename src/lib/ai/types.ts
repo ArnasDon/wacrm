@@ -42,6 +42,30 @@ export interface ChatMessage {
 }
 
 /**
+ * A function the model can call mid-reply (migration 042 — connected
+ * Google Sheets). Translated into each provider's own wire format by
+ * its adapter (`providers/{openai,anthropic,gemini}.ts`); `parameters`
+ * is a JSON Schema object, the one shape all three accept.
+ */
+export interface ToolDefinition {
+  name: string
+  description: string
+  parameters: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required: string[]
+  }
+}
+
+/** Executes a tool call by name and returns its result as text —
+ *  never throws; failures are returned as a readable error string so
+ *  the model can tell the customer it couldn't look something up. */
+export type ExecuteTool = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<string>
+
+/**
  * Token counts for one provider call, normalized across OpenAI
  * (`prompt`/`completion`) and Anthropic (`input`/`output`). Null when
  * the provider didn't return usage. Logged to `ai_usage_log`.

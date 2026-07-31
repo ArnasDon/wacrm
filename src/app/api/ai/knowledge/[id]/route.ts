@@ -8,6 +8,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { loadEmbeddingsKey } from '@/lib/ai/config'
 import { ingestDocument } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
+import { extractGoogleDocId, fetchGoogleDocText } from '@/lib/ai/google-docs'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -20,7 +21,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at')
+      .select('id, title, content, updated_at, source_type, source_url, last_synced_at')
       .eq('account_id', accountId)
       .eq('id', id)
       .maybeSingle()
@@ -48,19 +49,43 @@ export async function PATCH(request: Request, { params }: Params) {
     const { id } = await params
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
-    const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    if (title === undefined && content === undefined) {
+    let content = typeof body?.content === 'string' ? body.content.trim() : undefined
+    const sourceUrl = typeof body?.source_url === 'string' ? body.source_url.trim() : undefined
+
+    if (title === undefined && content === undefined && sourceUrl === undefined) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
       return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 })
     }
-    if (content !== undefined && !content) {
+    if (content !== undefined && !content && sourceUrl === undefined) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string> = {}
+    const update: Record<string, string | null> = {}
     if (title !== undefined) update.title = title
+
+    // Re-pointing a Google Doc source: refetch its content server-side
+    // rather than trusting whatever the client sent.
+    if (sourceUrl !== undefined) {
+      const docId = extractGoogleDocId(sourceUrl)
+      if (!docId) {
+        return NextResponse.json(
+          { error: 'source_url no parece un link válido de Google Docs' },
+          { status: 400 },
+        )
+      }
+      try {
+        content = await fetchGoogleDocText(docId)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo leer el documento'
+        return NextResponse.json({ error: message }, { status: 400 })
+      }
+      update.source_type = 'google_doc'
+      update.source_url = sourceUrl
+      update.last_synced_at = new Date().toISOString()
+    }
+
     if (content !== undefined) update.content = content
 
     const { data: updated, error } = await supabase

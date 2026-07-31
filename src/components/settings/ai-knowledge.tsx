@@ -14,12 +14,24 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
+
+type SourceType = 'manual' | 'google_doc';
 
 interface DocSummary {
   id: string;
   title: string;
   updated_at: string;
+  source_type: SourceType;
+  source_url: string | null;
+  last_synced_at: string | null;
 }
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
@@ -39,8 +51,11 @@ export function AiKnowledgeCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [sourceType, setSourceType] = useState<SourceType>('manual');
+  const [sourceUrl, setSourceUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const loadedAccountIdRef = useRef<string | null>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
@@ -68,6 +83,8 @@ export function AiKnowledgeCard({
     setEditing('new');
     setTitle('');
     setContent('');
+    setSourceType('manual');
+    setSourceUrl('');
   };
 
   const openEdit = async (id: string) => {
@@ -81,6 +98,8 @@ export function AiKnowledgeCard({
       setEditing(id);
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
+      setSourceType(data.source_type === 'google_doc' ? 'google_doc' : 'manual');
+      setSourceUrl(data.source_url ?? '');
     } catch {
       toast.error(t('openFailed'));
     }
@@ -90,22 +109,39 @@ export function AiKnowledgeCard({
     setEditing(null);
     setTitle('');
     setContent('');
+    setSourceType('manual');
+    setSourceUrl('');
   };
 
   const save = async () => {
-    if (!title.trim() || !content.trim()) {
+    if (!title.trim()) {
+      toast.error(t('titleContentRequired'));
+      return;
+    }
+    if (sourceType === 'google_doc' && !sourceUrl.trim()) {
+      toast.error(t('sourceUrlRequired'));
+      return;
+    }
+    if (sourceType === 'manual' && !content.trim()) {
       toast.error(t('titleContentRequired'));
       return;
     }
     setSaving(true);
     try {
       const isNew = editing === 'new';
+      const payload: Record<string, unknown> = { title: title.trim() };
+      if (sourceType === 'google_doc') {
+        payload.source_type = 'google_doc';
+        payload.source_url = sourceUrl.trim();
+      } else {
+        payload.content = content.trim();
+      }
       const res = await fetch(
         isNew ? '/api/ai/knowledge' : `/api/ai/knowledge/${editing}`,
         {
           method: isNew ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+          body: JSON.stringify(payload),
         },
       );
       const data = await res.json();
@@ -122,6 +158,25 @@ export function AiKnowledgeCard({
       toast.error(t('saveFailed'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const syncNow = async (id: string) => {
+    setSyncingId(id);
+    try {
+      const res = await fetch(`/api/ai/knowledge/sync/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.warning) toast.warning(data.warning);
+        else toast.success(t('syncSuccess'));
+        await fetchDocs();
+      } else {
+        toast.error(data.error ?? t('syncFailed'));
+      }
+    } catch {
+      toast.error(t('syncFailed'));
+    } finally {
+      setSyncingId(null);
     }
   };
 
@@ -189,11 +244,38 @@ export function AiKnowledgeCard({
                     key={doc.id}
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
-                    <span className="min-w-0 truncate text-sm text-foreground">
-                      {doc.title}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-foreground">
+                        {doc.title}
+                      </span>
+                      {doc.source_type === 'google_doc' && (
+                        <span className="block text-xs text-muted-foreground">
+                          {doc.last_synced_at
+                            ? t('lastSynced', {
+                                date: new Date(doc.last_synced_at).toLocaleString(),
+                              })
+                            : t('neverSynced')}
+                        </span>
+                      )}
                     </span>
                     {canEdit && (
                       <span className="flex shrink-0 gap-1">
+                        {doc.source_type === 'google_doc' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => void syncNow(doc.id)}
+                            disabled={syncingId === doc.id}
+                            title={t('syncNow')}
+                          >
+                            {syncingId === doc.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -232,16 +314,49 @@ export function AiKnowledgeCard({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="kb-content">{t('editDocContent')}</Label>
-                  <Textarea
-                    id="kb-content"
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder={t('editDocContentPlaceholder')}
-                    rows={8}
+                  <Label htmlFor="kb-source-type">{t('sourceType')}</Label>
+                  <Select
+                    value={sourceType}
+                    onValueChange={(v) => setSourceType(v as SourceType)}
                     disabled={saving}
-                  />
+                  >
+                    <SelectTrigger id="kb-source-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">{t('sourceTypeManual')}</SelectItem>
+                      <SelectItem value="google_doc">{t('sourceTypeGoogleDoc')}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {sourceType === 'google_doc' ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="kb-source-url">{t('sourceUrl')}</Label>
+                    <Input
+                      id="kb-source-url"
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      placeholder={t('sourceUrlPlaceholder')}
+                      disabled={saving}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('sourceUrlHint')}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="kb-content">{t('editDocContent')}</Label>
+                    <Textarea
+                      id="kb-content"
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder={t('editDocContentPlaceholder')}
+                      rows={8}
+                      disabled={saving}
+                    />
+                  </div>
+                )}
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
                     {t('cancel')}

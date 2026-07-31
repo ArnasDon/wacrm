@@ -109,11 +109,15 @@ interface SidebarProps {
   /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
   open?: boolean;
   onClose?: () => void;
+  /** Instance branding (migration 043), fetched server-side by the
+   *  dashboard layout so there's no flash of the default logo/name. */
+  branding?: Branding;
 }
 
 import { useTranslations } from "next-intl";
+import type { Branding } from "@/lib/branding";
 
-export function Sidebar({ open = false, onClose }: SidebarProps) {
+export function Sidebar({ open = false, onClose, branding }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
@@ -188,11 +192,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+            {branding?.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+              <img
+                src={branding.logoUrl}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
             <span className="text-sm font-semibold text-foreground">
-              {t("title")}
+              {branding?.brandName || t("title")}
             </span>
           </Link>
           <button

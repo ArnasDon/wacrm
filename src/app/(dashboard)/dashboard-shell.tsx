@@ -6,12 +6,19 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import type { Branding } from "@/lib/branding";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
 // client components can't export Next's metadata object.
 
-function DashboardShellInner({ children }: { children: React.ReactNode }) {
+function DashboardShellInner({
+  children,
+  branding,
+}: {
+  children: React.ReactNode;
+  branding?: Branding;
+}) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -44,7 +51,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
-      <Sidebar open={sidebarOpen} onClose={closeSidebar} />
+      <Sidebar open={sidebarOpen} onClose={closeSidebar} branding={branding} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
         {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
@@ -54,10 +61,16 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  branding,
+}: {
+  children: React.ReactNode;
+  branding?: Branding;
+}) {
   return (
     <AuthProvider>
-      <DashboardShellInner>{children}</DashboardShellInner>
+      <DashboardShellInner branding={branding}>{children}</DashboardShellInner>
     </AuthProvider>
   );
 }

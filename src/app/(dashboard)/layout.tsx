@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DashboardShell } from "./dashboard-shell";
+import { getBranding } from "@/lib/branding";
 
 // Server layout whose only job is to declare "do not index" metadata
 // for the authed app. robots.ts already disallows these paths at the
@@ -19,10 +20,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <DashboardShell>{children}</DashboardShell>;
+  const branding = await getBranding();
+  return <DashboardShell branding={branding}>{children}</DashboardShell>;
 }

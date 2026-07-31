@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractGoogleSheetRef } from '@/lib/ai/tools/google-sheet'
-
-const NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
+import { slugifyToolName } from '@/lib/ai/tools/name'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -19,7 +18,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const { id } = await params
     const body = await request.json().catch(() => null)
-    const name = typeof body?.name === 'string' ? body.name.trim() : undefined
+    const rawName = typeof body?.name === 'string' ? body.name.trim() : undefined
+    const name = rawName !== undefined ? slugifyToolName(rawName) : undefined
     const description = typeof body?.description === 'string' ? body.description.trim() : undefined
     const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : undefined
     const isActive = typeof body?.is_active === 'boolean' ? body.is_active : undefined
@@ -32,9 +32,9 @@ export async function PATCH(request: Request, { params }: Params) {
     ) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
-    if (name !== undefined && !NAME_PATTERN.test(name)) {
+    if (name !== undefined && !name) {
       return NextResponse.json(
-        { error: 'name must be 1-64 characters, letters/numbers/underscore/hyphen only' },
+        { error: 'name must contain at least one letter or number' },
         { status: 400 },
       )
     }
@@ -73,7 +73,7 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, name })
   } catch (err) {
     return toErrorResponse(err)
   }

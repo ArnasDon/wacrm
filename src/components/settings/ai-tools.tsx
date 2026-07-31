@@ -106,7 +106,10 @@ export function AiToolsCard({
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(isNew ? t('saveSuccessNew') : t('saveSuccessUpdate'));
+        toast.success(
+          (isNew ? t('saveSuccessNew') : t('saveSuccessUpdate')) +
+            (data.name ? ` (${data.name})` : ''),
+        );
         cancelEdit();
         await fetchTools();
       } else {

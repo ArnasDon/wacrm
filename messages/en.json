@@ -1735,7 +1735,7 @@
       "noTools": "No connected tools yet.",
       "name": "Technical name",
       "namePlaceholder": "e.g. check_prices",
-      "nameHint": "Letters, numbers, underscores and hyphens only — this is the name the model uses internally.",
+      "nameHint": "Spaces and accents are fine — it's automatically converted into a valid identifier (e.g. \"Salto el León - Prices\" → \"salto_el_leon_prices\").",
       "descriptionField": "Description",
       "descriptionPlaceholder": "e.g. Current product prices and stock. Use it when the customer asks about price, availability, or SKU.",
       "descriptionHint": "This is what the model reads to decide WHEN to use this tool — be specific.",

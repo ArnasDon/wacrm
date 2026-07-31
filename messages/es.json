@@ -1735,7 +1735,7 @@
       "noTools": "Aún no hay herramientas conectadas.",
       "name": "Nombre técnico",
       "namePlaceholder": "p. ej. consultar_precios",
-      "nameHint": "Solo letras, números, guiones y guiones bajos — es el nombre que el modelo usa internamente.",
+      "nameHint": "Puedes escribirlo con espacios y tildes — se convierte automáticamente a un identificador válido (ej. \"Salto el León - Precios\" → \"salto_el_leon_precios\").",
       "descriptionField": "Descripción",
       "descriptionPlaceholder": "p. ej. Precios y stock actuales de productos. Úsala cuando el cliente pregunte por precio, disponibilidad o SKU.",
       "descriptionHint": "Esto es lo que el modelo lee para decidir CUÁNDO usar esta herramienta — sé específico.",

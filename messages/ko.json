@@ -1735,7 +1735,7 @@
       "noTools": "아직 연결된 도구가 없습니다.",
       "name": "기술 이름",
       "namePlaceholder": "예: 가격_조회",
-      "nameHint": "영문자, 숫자, 밑줄, 하이픈만 사용 — 모델이 내부적으로 사용하는 이름입니다.",
+      "nameHint": "띄어쓰기나 억양 부호를 사용해도 됩니다 — 영문·숫자 기반의 올바른 식별자로 자동 변환됩니다 (예: \"Salto el León - Precios\" → \"salto_el_leon_precios\"). 한글은 식별자에 포함되지 않으니 설명은 아래 '설명' 항목에 자세히 적어주세요.",
       "descriptionField": "설명",
       "descriptionPlaceholder": "예: 현재 제품 가격 및 재고. 고객이 가격, 재고 여부, SKU에 대해 물어볼 때 사용하세요.",
       "descriptionHint": "모델이 이 도구를 언제 사용할지 판단하는 근거입니다 — 구체적으로 작성하세요.",

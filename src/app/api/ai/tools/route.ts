@@ -2,10 +2,7 @@ import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractGoogleSheetRef } from '@/lib/ai/tools/google-sheet'
-
-/** Tool names become function names sent to the LLM providers — keep
- *  them to the charset every provider accepts. */
-const NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
+import { slugifyToolName } from '@/lib/ai/tools/name'
 
 /**
  * GET /api/ai/tools
@@ -42,19 +39,20 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)
-    const name = typeof body?.name === 'string' ? body.name.trim() : ''
+    const rawName = typeof body?.name === 'string' ? body.name.trim() : ''
+    const name = slugifyToolName(rawName)
     const description = typeof body?.description === 'string' ? body.description.trim() : ''
     const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : ''
 
-    if (!name || !description || !sheetUrl) {
+    if (!rawName || !description || !sheetUrl) {
       return NextResponse.json(
         { error: 'name, description and sheet_url are required' },
         { status: 400 },
       )
     }
-    if (!NAME_PATTERN.test(name)) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'name must be 1-64 characters, letters/numbers/underscore/hyphen only' },
+        { error: 'name must contain at least one letter or number' },
         { status: 400 },
       )
     }
@@ -89,7 +87,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to save tool' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, id: tool.id })
+    return NextResponse.json({ success: true, id: tool.id, name })
   } catch (err) {
     return toErrorResponse(err)
   }

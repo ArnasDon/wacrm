@@ -1,19 +1,26 @@
 /**
- * "Search a Google Sheet" tool — the executable behind an `ai_tools`
+ * "Read a Google Sheet" tool — the executable behind an `ai_tools`
  * row (migration 042). No OAuth: fetches the sheet's public CSV
  * export, which Google serves with no authentication as long as the
  * sheet is shared "Anyone with the link" (or published to the web).
  *
- * This is deliberately a generic row search, not a configurable
- * column-mapped lookup — the model passes a free-text `query` and
- * gets back whichever rows contain it in any column. Good enough for
- * "what's the price of X" / "status of order for phone Y" without
- * asking the user to map columns up front.
+ * Returns the WHOLE sheet (capped) rather than doing a row-level
+ * text match. Real-world pricing/schedule sheets are often laid out
+ * as a matrix with headers split across multiple rows (category name
+ * row, sub-label row, values row) — a naive "find the row containing
+ * the search term" misses the data entirely, since the number the
+ * customer wants usually isn't on the same row as its label. Small
+ * business reference sheets (prices, hours) are a few KB at most, so
+ * letting the model read the full table itself is both simpler and
+ * far more reliable than trying to out-guess every possible layout.
  */
 
 const FETCH_TIMEOUT_MS = 8_000
 const CACHE_TTL_MS = 60_000
-const MAX_RESULTS = 5
+/** Hard caps so one huge/misused sheet can't blow the request's token
+ *  budget — small business reference data comfortably fits under this. */
+const MAX_ROWS = 200
+const MAX_CHARS = 12_000
 
 /** Extract {sheetId, gid} from any Google Sheets URL the user might paste
  *  (a normal share link or a "Publish to web" link both contain the id). */
@@ -116,36 +123,15 @@ async function fetchSheetRows(
   return rows
 }
 
-/** Rows where any column's value contains `query` (case/accent-insensitive). */
-function searchSheet(
-  rows: Record<string, string>[],
-  query: string,
-  limit = MAX_RESULTS,
-): Record<string, string>[] {
-  const normalize = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-  const needle = normalize(query)
-  if (!needle) return []
-
-  const matches: Record<string, string>[] = []
-  for (const row of rows) {
-    const hit = Object.values(row).some((v) => normalize(v).includes(needle))
-    if (hit) {
-      matches.push(row)
-      if (matches.length >= limit) break
-    }
-  }
-  return matches
-}
-
 function formatRowsForModel(rows: Record<string, string>[]): string {
   if (rows.length === 0) {
-    return 'No se encontraron filas que coincidan con la búsqueda.'
+    return 'La planilla está vacía.'
   }
-  return rows
+
+  const rowsTruncated = rows.length > MAX_ROWS
+  const shown = rows.slice(0, MAX_ROWS)
+
+  let text = shown
     .map((row, i) =>
       `Fila ${i + 1}: ` +
       Object.entries(row)
@@ -153,24 +139,32 @@ function formatRowsForModel(rows: Record<string, string>[]): string {
         .join(', '),
     )
     .join('\n')
+
+  let charsTruncated = false
+  if (text.length > MAX_CHARS) {
+    text = text.slice(0, MAX_CHARS)
+    charsTruncated = true
+  }
+
+  if (rowsTruncated || charsTruncated) {
+    text += `\n\n[Planilla truncada — mostrando ${shown.length} de ${rows.length} filas.]`
+  }
+  return text
 }
 
 /**
- * Run the tool end-to-end for a given `ai_tools` row. Never throws —
- * any failure becomes a readable string returned AS the tool result,
- * so the model can tell the customer it couldn't look something up
- * right now instead of the whole reply breaking.
+ * Run the tool end-to-end for a given `ai_tools` row — fetches and
+ * returns the full sheet content (capped). Never throws — any failure
+ * becomes a readable string returned AS the tool result, so the model
+ * can tell the customer it couldn't look something up right now
+ * instead of the whole reply breaking.
  */
-export async function runGoogleSheetTool(
-  tool: { sheet_url: string },
-  query: string,
-): Promise<string> {
+export async function runGoogleSheetTool(tool: { sheet_url: string }): Promise<string> {
   try {
     const ref = extractGoogleSheetRef(tool.sheet_url)
     if (!ref) return 'Error: la URL de la planilla configurada no es válida.'
     const rows = await fetchSheetRows(ref.sheetId, ref.gid)
-    const matches = searchSheet(rows, query)
-    return formatRowsForModel(matches)
+    return formatRowsForModel(rows)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return `Error al consultar la planilla: ${message}`

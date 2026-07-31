@@ -12,8 +12,12 @@ interface AiToolRow {
  * Load an account's connected tools (Google Sheets, migration 042) as
  * a `{definitions, executeTool}` pair ready to hand to `generateReply`.
  *
- * Every tool takes a single `query: string` parameter — the model
- * decides what to search for; wacrm just runs the search. Accounts
+ * Each tool takes no arguments — calling it returns the sheet's full
+ * content (capped) rather than a filtered row search. Real pricing/
+ * schedule sheets are often laid out as a matrix with headers split
+ * across several rows, so a "find the row matching X" search misses
+ * the data half the time; handing the model the whole small sheet and
+ * letting it read the table itself is far more reliable. Accounts
  * with no active tools get `definitions: []`, and the provider
  * adapters skip the `tools` field entirely in that case (no behavior
  * or cost change for accounts not using this feature).
@@ -38,23 +42,13 @@ export async function loadAiTools(
   const definitions: ToolDefinition[] = rows.map((r) => ({
     name: r.name,
     description: r.description,
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'What to search for in this sheet (e.g. a product name, SKU, phone number, or order id).',
-        },
-      },
-      required: ['query'],
-    },
+    parameters: { type: 'object', properties: {}, required: [] },
   }))
 
-  const executeTool: ExecuteTool = async (name, args) => {
+  const executeTool: ExecuteTool = async (name) => {
     const tool = byName.get(name)
     if (!tool) return `Error: no existe la herramienta "${name}".`
-    const query = typeof args.query === 'string' ? args.query : ''
-    return runGoogleSheetTool(tool, query)
+    return runGoogleSheetTool(tool)
   }
 
   return { definitions, executeTool }

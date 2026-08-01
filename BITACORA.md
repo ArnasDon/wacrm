@@ -69,6 +69,21 @@ incluye los cambios que llegan del proyecto upstream (`ArnasDon/wacrm`) ni de
   el shell del dashboard. Incluye migración `043_app_branding.sql`.
   (`4a227d7` Logo)
 
+## 2026-08-01
+
+- **Herramientas de IA: conectar cualquier API.** Además de Google
+  Sheets, ahora una herramienta puede ser una API HTTP genérica
+  (ej. OpenWeatherMap, tipo de cambio, un endpoint interno). Se
+  configura URL/método/headers/body con placeholders `{parametro}` que
+  el modelo completa, y un `{API_KEY}` opcional que se reemplaza con la
+  clave guardada encriptada — nunca se muestra al modelo ni a la UI.
+  Incluye protección SSRF (misma guardia que usan los webhooks salientes
+  del proyecto) para que la URL configurada no pueda apuntar a
+  direcciones internas/privadas. Migración `044_ai_tools_generic_api.sql`.
+  (`src/lib/ai/tools/api.ts`, `src/lib/ai/tools/validate.ts`,
+  `src/lib/ai/load-tools.ts`, `src/app/api/ai/tools/*`,
+  `src/components/settings/ai-tools.tsx`)
+
 ---
 
 *Este archivo se actualiza a medida que se piden nuevos cambios. Para ver

@@ -2,13 +2,26 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { extractGoogleSheetRef } from '@/lib/ai/tools/google-sheet'
+import { isValidApiUrl, parseApiHeaders, parseApiParams } from '@/lib/ai/tools/validate'
 import { slugifyToolName } from '@/lib/ai/tools/name'
+import { encrypt } from '@/lib/whatsapp/encryption'
 
 type Params = { params: Promise<{ id: string }> }
 
 /**
- * PATCH /api/ai/tools/[id]  (admin+) — update any subset of
- * name/description/sheet_url/is_active.
+ * PATCH /api/ai/tools/[id]  (admin+)
+ *
+ * `is_active` can be toggled on its own. Sending `type` means a full
+ * save from the edit form — the matching required fields for that
+ * type must be present, and the other type's fields are cleared (so
+ * switching a tool from API back to Sheets doesn't leave a stale,
+ * unreachable API config lingering in the row).
+ *
+ * `api_key`: a non-empty string (re)encrypts and stores it, an
+ * explicit `null` clears it, and leaving it out of the body keeps
+ * whatever is already stored — same "don't overwrite a secret you
+ * didn't touch" convention as the account's embeddings key
+ * (`/api/ai/config`).
  */
 export async function PATCH(request: Request, { params }: Params) {
   try {
@@ -21,17 +34,9 @@ export async function PATCH(request: Request, { params }: Params) {
     const rawName = typeof body?.name === 'string' ? body.name.trim() : undefined
     const name = rawName !== undefined ? slugifyToolName(rawName) : undefined
     const description = typeof body?.description === 'string' ? body.description.trim() : undefined
-    const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : undefined
     const isActive = typeof body?.is_active === 'boolean' ? body.is_active : undefined
+    const type = body?.type === 'api' || body?.type === 'google_sheet' ? body.type : undefined
 
-    if (
-      name === undefined &&
-      description === undefined &&
-      sheetUrl === undefined &&
-      isActive === undefined
-    ) {
-      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
-    }
     if (name !== undefined && !name) {
       return NextResponse.json(
         { error: 'name must contain at least one letter or number' },
@@ -41,18 +46,58 @@ export async function PATCH(request: Request, { params }: Params) {
     if (description !== undefined && !description) {
       return NextResponse.json({ error: 'description cannot be empty' }, { status: 400 })
     }
-    if (sheetUrl !== undefined && !extractGoogleSheetRef(sheetUrl)) {
-      return NextResponse.json(
-        { error: 'sheet_url no parece un link válido de Google Sheets' },
-        { status: 400 },
-      )
-    }
 
-    const update: Record<string, string | boolean> = {}
+    const update: Record<string, unknown> = {}
     if (name !== undefined) update.name = name
     if (description !== undefined) update.description = description
-    if (sheetUrl !== undefined) update.sheet_url = sheetUrl
     if (isActive !== undefined) update.is_active = isActive
+
+    if (type === 'google_sheet') {
+      const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : ''
+      if (!sheetUrl || !extractGoogleSheetRef(sheetUrl)) {
+        return NextResponse.json(
+          { error: 'sheet_url no parece un link válido de Google Sheets' },
+          { status: 400 },
+        )
+      }
+      update.type = 'google_sheet'
+      update.sheet_url = sheetUrl
+      update.api_url = null
+      update.api_params = []
+      update.api_headers = {}
+      update.api_body = null
+      update.api_key_encrypted = null
+    } else if (type === 'api') {
+      const apiUrl = typeof body?.api_url === 'string' ? body.api_url.trim() : ''
+      if (!apiUrl || !isValidApiUrl(apiUrl)) {
+        return NextResponse.json(
+          { error: 'api_url debe ser una URL http(s) válida' },
+          { status: 400 },
+        )
+      }
+      const apiParams = parseApiParams(body?.api_params)
+      if (!apiParams.ok) return NextResponse.json({ error: apiParams.error }, { status: 400 })
+      const apiHeaders = parseApiHeaders(body?.api_headers)
+      if (!apiHeaders.ok) return NextResponse.json({ error: apiHeaders.error }, { status: 400 })
+
+      update.type = 'api'
+      update.sheet_url = null
+      update.api_url = apiUrl
+      update.api_method = body?.api_method === 'POST' ? 'POST' : 'GET'
+      update.api_params = apiParams.value
+      update.api_headers = apiHeaders.value
+      update.api_body = typeof body?.api_body === 'string' ? body.api_body.trim() || null : null
+
+      if (body?.api_key === null) {
+        update.api_key_encrypted = null
+      } else if (typeof body?.api_key === 'string' && body.api_key.trim()) {
+        update.api_key_encrypted = encrypt(body.api_key.trim())
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+    }
 
     const { data: updated, error } = await supabase
       .from('ai_tools')

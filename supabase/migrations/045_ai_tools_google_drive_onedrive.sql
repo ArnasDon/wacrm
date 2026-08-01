@@ -18,10 +18,14 @@
 
 ALTER TABLE ai_tools RENAME COLUMN sheet_url TO drive_url;
 
+-- Drop the constraint BEFORE the data migration below — 044 left it as
+-- CHECK (type IN ('google_sheet', 'api')), which would reject the
+-- UPDATE's 'google_drive' value if it were still in effect.
+ALTER TABLE ai_tools DROP CONSTRAINT IF EXISTS ai_tools_type_check;
+
 UPDATE ai_tools SET type = 'google_drive' WHERE type = 'google_sheet';
 
 ALTER TABLE ai_tools ALTER COLUMN type SET DEFAULT 'google_drive';
 
-ALTER TABLE ai_tools DROP CONSTRAINT IF EXISTS ai_tools_type_check;
 ALTER TABLE ai_tools
   ADD CONSTRAINT ai_tools_type_check CHECK (type IN ('google_drive', 'onedrive', 'api'));

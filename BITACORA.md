@@ -84,6 +84,27 @@ incluye los cambios que llegan del proyecto upstream (`ArnasDon/wacrm`) ni de
   `src/lib/ai/load-tools.ts`, `src/app/api/ai/tools/*`,
   `src/components/settings/ai-tools.tsx`)
 
+- **Herramientas de IA: "Google Sheets" pasa a ser "Google Drive" (Sheets +
+  Docs + Slides + archivos), y se agrega OneDrive.** La herramienta que
+  antes solo leía planillas ahora detecta el tipo de link que se pegue y
+  lee Sheets, Docs, Slides o un archivo de Drive (texto plano, o un
+  .docx/.xlsx/.pptx subido sin convertir), usando los endpoints públicos
+  de exportación de Google — sin librerías nuevas. Se agrega un tercer
+  tipo, "OneDrive", para links públicos de OneDrive/SharePoint
+  (`onedrive.live.com`, `1drv.ms`, `*.sharepoint.com`): como Microsoft no
+  tiene un endpoint anónimo de "exportar como texto", se descarga el
+  archivo original con el truco `?download=1` (siguiendo redirecciones
+  con la misma protección SSRF que ya usan los webhooks salientes) y se
+  extrae el texto a mano con un lector de ZIP/XML propio (sin librerías
+  de terceros) para .docx/.xlsx/.pptx — es best-effort, ya que Microsoft
+  no documenta ese comportamiento y algunos links de SharePoint
+  restringidos por organización pueden no funcionar. Migración
+  `045_ai_tools_google_drive_onedrive.sql` (renombra `sheet_url` a
+  `drive_url` y el tipo `google_sheet` a `google_drive`).
+  (`src/lib/ai/tools/google-drive.ts`, `google-drive-file.ts`,
+  `google-slides.ts`, `onedrive.ts`, `ooxml.ts`, `office-text.ts`,
+  `format-rows.ts`)
+
 ---
 
 *Este archivo se actualiza a medida que se piden nuevos cambios. Para ver

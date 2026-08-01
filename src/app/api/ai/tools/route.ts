@@ -1,17 +1,26 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { extractGoogleSheetRef } from '@/lib/ai/tools/google-sheet'
+import { isValidGoogleDriveUrl } from '@/lib/ai/tools/google-drive'
+import { isOneDriveUrl } from '@/lib/ai/tools/onedrive'
 import { isValidApiUrl, parseApiHeaders, parseApiParams } from '@/lib/ai/tools/validate'
 import { slugifyToolName } from '@/lib/ai/tools/name'
 import { encrypt } from '@/lib/whatsapp/encryption'
 
+type ToolType = 'google_drive' | 'onedrive' | 'api'
+
+function parseToolType(raw: unknown): ToolType {
+  if (raw === 'api') return 'api'
+  if (raw === 'onedrive') return 'onedrive'
+  return 'google_drive'
+}
+
 /**
  * GET /api/ai/tools
  *
- * List the account's connected tools — Google Sheets and generic APIs
- * (any member). `api_key_encrypted` is never selected; `has_api_key`
- * tells the UI whether one is stored without exposing it.
+ * List the account's connected tools — Google Drive, OneDrive and
+ * generic APIs (any member). `api_key_encrypted` is never selected;
+ * `has_api_key` tells the UI whether one is stored without exposing it.
  */
 export async function GET() {
   try {
@@ -19,7 +28,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('ai_tools')
       .select(
-        'id, name, description, type, sheet_url, api_url, api_method, api_params, api_headers, api_body, api_key_encrypted, is_active, updated_at',
+        'id, name, description, type, drive_url, api_url, api_method, api_params, api_headers, api_body, api_key_encrypted, is_active, updated_at',
       )
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
@@ -40,7 +49,8 @@ export async function GET() {
 /**
  * POST /api/ai/tools  (admin+)
  *
- * Connect a new tool the agent can call — a Google Sheet, or a
+ * Connect a new tool the agent can call — Google Drive (Sheets, Docs,
+ * Slides or a Drive file), a public OneDrive/SharePoint file, or a
  * generic HTTP API (migration 044, e.g. OpenWeatherMap or any other
  * API the account wants the agent to query).
  */
@@ -54,7 +64,7 @@ export async function POST(request: Request) {
     const rawName = typeof body?.name === 'string' ? body.name.trim() : ''
     const name = slugifyToolName(rawName)
     const description = typeof body?.description === 'string' ? body.description.trim() : ''
-    const type = body?.type === 'api' ? 'api' : 'google_sheet'
+    const type = parseToolType(body?.type)
 
     if (!rawName || !description) {
       return NextResponse.json({ error: 'name and description are required' }, { status: 400 })
@@ -74,15 +84,21 @@ export async function POST(request: Request) {
       type,
     }
 
-    if (type === 'google_sheet') {
-      const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : ''
-      if (!sheetUrl || !extractGoogleSheetRef(sheetUrl)) {
+    if (type === 'google_drive' || type === 'onedrive') {
+      const driveUrl = typeof body?.drive_url === 'string' ? body.drive_url.trim() : ''
+      const valid = type === 'google_drive' ? isValidGoogleDriveUrl(driveUrl) : isOneDriveUrl(driveUrl)
+      if (!driveUrl || !valid) {
         return NextResponse.json(
-          { error: 'sheet_url no parece un link válido de Google Sheets' },
+          {
+            error:
+              type === 'google_drive'
+                ? 'drive_url debe ser un link de Google Sheets, Docs, Slides o de un archivo de Drive'
+                : 'drive_url debe ser un link de OneDrive o SharePoint',
+          },
           { status: 400 },
         )
       }
-      insert.sheet_url = sheetUrl
+      insert.drive_url = driveUrl
     } else {
       const apiUrl = typeof body?.api_url === 'string' ? body.api_url.trim() : ''
       if (!apiUrl || !isValidApiUrl(apiUrl)) {

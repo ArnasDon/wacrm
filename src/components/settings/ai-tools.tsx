@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 
-type ToolType = 'google_sheet' | 'api';
+type ToolType = 'google_drive' | 'onedrive' | 'api';
 
 interface ApiParamRow {
   name: string;
@@ -43,7 +43,7 @@ interface ToolSummary {
   name: string;
   description: string;
   type: ToolType;
-  sheet_url: string | null;
+  drive_url: string | null;
   api_url: string | null;
   api_method: 'GET' | 'POST';
   api_params: ApiParamRow[];
@@ -72,8 +72,8 @@ export function AiToolsCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState<ToolType>('google_sheet');
-  const [sheetUrl, setSheetUrl] = useState('');
+  const [type, setType] = useState<ToolType>('google_drive');
+  const [driveUrl, setDriveUrl] = useState('');
   const [apiUrl, setApiUrl] = useState('');
   const [apiMethod, setApiMethod] = useState<'GET' | 'POST'>('GET');
   const [apiParams, setApiParams] = useState<ApiParamRow[]>([]);
@@ -110,8 +110,8 @@ export function AiToolsCard({
   const resetFields = () => {
     setName('');
     setDescription('');
-    setType('google_sheet');
-    setSheetUrl('');
+    setType('google_drive');
+    setDriveUrl('');
     setApiUrl('');
     setApiMethod('GET');
     setApiParams([]);
@@ -133,7 +133,7 @@ export function AiToolsCard({
     setName(tool.name);
     setDescription(tool.description);
     setType(tool.type);
-    setSheetUrl(tool.sheet_url ?? '');
+    setDriveUrl(tool.drive_url ?? '');
     setApiUrl(tool.api_url ?? '');
     setApiMethod(tool.api_method === 'POST' ? 'POST' : 'GET');
     setApiParams(tool.api_params?.length ? tool.api_params : []);
@@ -169,7 +169,7 @@ export function AiToolsCard({
       toast.error(t('fieldsRequired'));
       return;
     }
-    if (type === 'google_sheet' && !sheetUrl.trim()) {
+    if ((type === 'google_drive' || type === 'onedrive') && !driveUrl.trim()) {
       toast.error(t('fieldsRequired'));
       return;
     }
@@ -186,8 +186,8 @@ export function AiToolsCard({
         description: description.trim(),
         type,
       };
-      if (type === 'google_sheet') {
-        payload.sheet_url = sheetUrl.trim();
+      if (type === 'google_drive' || type === 'onedrive') {
+        payload.drive_url = driveUrl.trim();
       } else {
         payload.api_url = apiUrl.trim();
         payload.api_method = apiMethod;
@@ -296,7 +296,11 @@ export function AiToolsCard({
                       <span className="flex items-center gap-2">
                         <span className="truncate text-sm text-foreground">{tool.name}</span>
                         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                          {tool.type === 'api' ? t('typeApi') : t('typeSheet')}
+                          {tool.type === 'api'
+                            ? t('typeApi')
+                            : tool.type === 'onedrive'
+                              ? t('typeOneDrive')
+                              : t('typeDrive')}
                         </span>
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
@@ -347,7 +351,8 @@ export function AiToolsCard({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="google_sheet">{t('typeSheet')}</SelectItem>
+                      <SelectItem value="google_drive">{t('typeDrive')}</SelectItem>
+                      <SelectItem value="onedrive">{t('typeOneDrive')}</SelectItem>
                       <SelectItem value="api">{t('typeApi')}</SelectItem>
                     </SelectContent>
                   </Select>
@@ -377,17 +382,21 @@ export function AiToolsCard({
                   <p className="text-xs text-muted-foreground">{t('descriptionHint')}</p>
                 </div>
 
-                {type === 'google_sheet' ? (
+                {type === 'google_drive' || type === 'onedrive' ? (
                   <div className="space-y-2">
-                    <Label htmlFor="tool-sheet-url">{t('sheetUrl')}</Label>
+                    <Label htmlFor="tool-drive-url">
+                      {type === 'onedrive' ? t('oneDriveUrl') : t('driveUrl')}
+                    </Label>
                     <Input
-                      id="tool-sheet-url"
-                      value={sheetUrl}
-                      onChange={(e) => setSheetUrl(e.target.value)}
-                      placeholder={t('sheetUrlPlaceholder')}
+                      id="tool-drive-url"
+                      value={driveUrl}
+                      onChange={(e) => setDriveUrl(e.target.value)}
+                      placeholder={type === 'onedrive' ? t('oneDriveUrlPlaceholder') : t('driveUrlPlaceholder')}
                       disabled={saving}
                     />
-                    <p className="text-xs text-muted-foreground">{t('sheetUrlHint')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {type === 'onedrive' ? t('oneDriveUrlHint') : t('driveUrlHint')}
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">

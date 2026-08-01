@@ -1,13 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ExecuteTool, ToolDefinition } from './types'
-import { runGoogleSheetTool } from './tools/google-sheet'
+import { runGoogleDriveTool } from './tools/google-drive'
+import { runOneDriveTool } from './tools/onedrive'
 import { runApiTool, type ApiToolParam } from './tools/api'
 
 interface AiToolRow {
   name: string
   description: string
-  type: 'google_sheet' | 'api'
-  sheet_url: string | null
+  type: 'google_drive' | 'onedrive' | 'api'
+  drive_url: string | null
   api_url: string | null
   api_method: string
   api_params: ApiToolParam[]
@@ -17,18 +18,20 @@ interface AiToolRow {
 }
 
 /**
- * Load an account's connected tools — Google Sheets (migration 042)
- * and generic HTTP APIs (migration 044) — as a `{definitions,
- * executeTool}` pair ready to hand to `generateReply`.
+ * Load an account's connected tools — Google Drive (migration 042/045:
+ * Sheets, Docs, Slides, or a generic Drive file), public OneDrive/
+ * SharePoint files (migration 045), and generic HTTP APIs (migration
+ * 044) — as a `{definitions, executeTool}` pair ready to hand to
+ * `generateReply`.
  *
- * A Google Sheets tool takes no arguments — calling it returns the
- * sheet's full content (capped) rather than a filtered row search.
+ * A Drive/OneDrive tool takes no arguments — calling it returns the
+ * resource's full content (capped) rather than a filtered search.
  * Real pricing/schedule sheets are often laid out as a matrix with
  * headers split across several rows, so a "find the row matching X"
  * search misses the data half the time; handing the model the whole
- * small sheet and letting it read the table itself is far more
- * reliable. An API tool's arguments come from its configured
- * `api_params` (e.g. a weather API's "city").
+ * small document and letting it read it itself is far more reliable.
+ * An API tool's arguments come from its configured `api_params` (e.g.
+ * a weather API's "city").
  *
  * Accounts with no active tools get `definitions: []`, and the
  * provider adapters skip the `tools` field entirely in that case (no
@@ -41,7 +44,7 @@ export async function loadAiTools(
   const { data, error } = await db
     .from('ai_tools')
     .select(
-      'name, description, type, sheet_url, api_url, api_method, api_params, api_headers, api_body, api_key_encrypted',
+      'name, description, type, drive_url, api_url, api_method, api_params, api_headers, api_body, api_key_encrypted',
     )
     .eq('account_id', accountId)
     .eq('is_active', true)
@@ -91,8 +94,9 @@ export async function loadAiTools(
         args,
       )
     }
-    if (!tool.sheet_url) return `Error: la herramienta "${name}" no tiene una planilla configurada.`
-    return runGoogleSheetTool({ sheet_url: tool.sheet_url })
+    if (!tool.drive_url) return `Error: la herramienta "${name}" no tiene un link configurado.`
+    if (tool.type === 'onedrive') return runOneDriveTool({ drive_url: tool.drive_url })
+    return runGoogleDriveTool({ drive_url: tool.drive_url })
   }
 
   return { definitions, executeTool }

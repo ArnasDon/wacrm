@@ -15,12 +15,10 @@
  * far more reliable than trying to out-guess every possible layout.
  */
 
+import { formatRowsForModel } from './format-rows'
+
 const FETCH_TIMEOUT_MS = 8_000
 const CACHE_TTL_MS = 60_000
-/** Hard caps so one huge/misused sheet can't blow the request's token
- *  budget — small business reference data comfortably fits under this. */
-const MAX_ROWS = 200
-const MAX_CHARS = 12_000
 
 /** Extract {sheetId, gid} from any Google Sheets URL the user might paste
  *  (a normal share link or a "Publish to web" link both contain the id). */
@@ -123,35 +121,6 @@ async function fetchSheetRows(
   return rows
 }
 
-function formatRowsForModel(rows: Record<string, string>[]): string {
-  if (rows.length === 0) {
-    return 'La planilla está vacía.'
-  }
-
-  const rowsTruncated = rows.length > MAX_ROWS
-  const shown = rows.slice(0, MAX_ROWS)
-
-  let text = shown
-    .map((row, i) =>
-      `Fila ${i + 1}: ` +
-      Object.entries(row)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(', '),
-    )
-    .join('\n')
-
-  let charsTruncated = false
-  if (text.length > MAX_CHARS) {
-    text = text.slice(0, MAX_CHARS)
-    charsTruncated = true
-  }
-
-  if (rowsTruncated || charsTruncated) {
-    text += `\n\n[Planilla truncada — mostrando ${shown.length} de ${rows.length} filas.]`
-  }
-  return text
-}
-
 /**
  * Run the tool end-to-end for a given `ai_tools` row — fetches and
  * returns the full sheet content (capped). Never throws — any failure
@@ -159,9 +128,9 @@ function formatRowsForModel(rows: Record<string, string>[]): string {
  * can tell the customer it couldn't look something up right now
  * instead of the whole reply breaking.
  */
-export async function runGoogleSheetTool(tool: { sheet_url: string }): Promise<string> {
+export async function runGoogleSheetTool(tool: { url: string }): Promise<string> {
   try {
-    const ref = extractGoogleSheetRef(tool.sheet_url)
+    const ref = extractGoogleSheetRef(tool.url)
     if (!ref) return 'Error: la URL de la planilla configurada no es válida.'
     const rows = await fetchSheetRows(ref.sheetId, ref.gid)
     return formatRowsForModel(rows)

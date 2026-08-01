@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { extractGoogleSheetRef } from '@/lib/ai/tools/google-sheet'
+import { isValidGoogleDriveUrl } from '@/lib/ai/tools/google-drive'
+import { isOneDriveUrl } from '@/lib/ai/tools/onedrive'
 import { isValidApiUrl, parseApiHeaders, parseApiParams } from '@/lib/ai/tools/validate'
 import { slugifyToolName } from '@/lib/ai/tools/name'
 import { encrypt } from '@/lib/whatsapp/encryption'
@@ -14,8 +15,8 @@ type Params = { params: Promise<{ id: string }> }
  * `is_active` can be toggled on its own. Sending `type` means a full
  * save from the edit form — the matching required fields for that
  * type must be present, and the other type's fields are cleared (so
- * switching a tool from API back to Sheets doesn't leave a stale,
- * unreachable API config lingering in the row).
+ * switching a tool from API back to Google Drive doesn't leave a
+ * stale, unreachable API config lingering in the row).
  *
  * `api_key`: a non-empty string (re)encrypts and stores it, an
  * explicit `null` clears it, and leaving it out of the body keeps
@@ -35,7 +36,10 @@ export async function PATCH(request: Request, { params }: Params) {
     const name = rawName !== undefined ? slugifyToolName(rawName) : undefined
     const description = typeof body?.description === 'string' ? body.description.trim() : undefined
     const isActive = typeof body?.is_active === 'boolean' ? body.is_active : undefined
-    const type = body?.type === 'api' || body?.type === 'google_sheet' ? body.type : undefined
+    const type =
+      body?.type === 'api' || body?.type === 'google_drive' || body?.type === 'onedrive'
+        ? body.type
+        : undefined
 
     if (name !== undefined && !name) {
       return NextResponse.json(
@@ -52,16 +56,22 @@ export async function PATCH(request: Request, { params }: Params) {
     if (description !== undefined) update.description = description
     if (isActive !== undefined) update.is_active = isActive
 
-    if (type === 'google_sheet') {
-      const sheetUrl = typeof body?.sheet_url === 'string' ? body.sheet_url.trim() : ''
-      if (!sheetUrl || !extractGoogleSheetRef(sheetUrl)) {
+    if (type === 'google_drive' || type === 'onedrive') {
+      const driveUrl = typeof body?.drive_url === 'string' ? body.drive_url.trim() : ''
+      const valid = type === 'google_drive' ? isValidGoogleDriveUrl(driveUrl) : isOneDriveUrl(driveUrl)
+      if (!driveUrl || !valid) {
         return NextResponse.json(
-          { error: 'sheet_url no parece un link válido de Google Sheets' },
+          {
+            error:
+              type === 'google_drive'
+                ? 'drive_url debe ser un link de Google Sheets, Docs, Slides o de un archivo de Drive'
+                : 'drive_url debe ser un link de OneDrive o SharePoint',
+          },
           { status: 400 },
         )
       }
-      update.type = 'google_sheet'
-      update.sheet_url = sheetUrl
+      update.type = type
+      update.drive_url = driveUrl
       update.api_url = null
       update.api_params = []
       update.api_headers = {}
@@ -81,7 +91,7 @@ export async function PATCH(request: Request, { params }: Params) {
       if (!apiHeaders.ok) return NextResponse.json({ error: apiHeaders.error }, { status: 400 })
 
       update.type = 'api'
-      update.sheet_url = null
+      update.drive_url = null
       update.api_url = apiUrl
       update.api_method = body?.api_method === 'POST' ? 'POST' : 'GET'
       update.api_params = apiParams.value

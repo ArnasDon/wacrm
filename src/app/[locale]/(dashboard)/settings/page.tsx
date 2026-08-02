@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { Suspense, useMemo, type ReactNode } from 'react';
 import { useRouter } from '@/i18n/navigation';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -14,6 +14,7 @@ import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { TemplateManager } from '@/components/settings/template-manager';
+import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
@@ -23,12 +24,28 @@ import {
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 
+// `useSearchParams` opts this page out of static prerendering unless it
+// sits under a Suspense boundary. Without one, the production build hits
+// the "missing Suspense with CSR bailout" error and the whole page bails
+// to client-side rendering — shipping a settings screen whose rail never
+// wires up its click handlers. You land on the section the URL carried
+// (the account-menu Settings link points at `?tab=whatsapp`) and can't
+// navigate away. Mirror the login/signup split: a thin wrapper supplies
+// the boundary; the inner component reads the query string.
 export default function SettingsPage() {
-  const t = useTranslations('settings');
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { defaultCurrency } = useAuth();
   const { mode } = useTheme();
+  const t = useTranslations('settings');
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
@@ -60,6 +77,7 @@ export default function SettingsPage() {
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
     templates: <TemplateManager />,
+    'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
     members: <MembersTab />,

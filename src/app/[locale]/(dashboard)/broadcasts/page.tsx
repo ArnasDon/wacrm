@@ -60,6 +60,7 @@ function RateCell({
 export default function BroadcastsPage() {
   const t = useTranslations('broadcasts');
   const router = useRouter();
+  const tStatus = useTranslations('broadcasts.status');
   const canCreate = useCan('send-messages');
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,7 @@ export default function BroadcastsPage() {
       if (fetchError) throw fetchError;
       setBroadcasts(data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load broadcasts');
+      setError(err instanceof Error ? err.message : t('errorLoad'));
     } finally {
       setLoading(false);
     }
@@ -272,7 +273,7 @@ export default function BroadcastsPage() {
                             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
                           </span>
                         )}
-                        {status.label}
+                        {tStatus(status.label)}
                       </span>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground sm:table-cell">

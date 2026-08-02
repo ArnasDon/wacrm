@@ -7,7 +7,10 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
+  Bell,
+  Bot,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -80,11 +83,13 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { href: "/inbox", labelKey: "nav.inbox", icon: MessageSquare },
+  { href: "/notifications", labelKey: "nav.notifications", icon: Bell },
   { href: "/contacts", labelKey: "nav.contacts", icon: Users },
   { href: "/pipelines", labelKey: "nav.pipelines", icon: GitBranch },
   { href: "/broadcasts", labelKey: "nav.broadcasts", icon: Radio },
   { href: "/automations", labelKey: "nav.automations", icon: Zap },
   { href: "/flows", labelKey: "nav.flows", icon: Workflow, beta: true },
+  { href: "/agents", labelKey: "nav.agents", icon: Bot },
 ];
 
 const bottomNavItems: NavItem[] = [
@@ -97,10 +102,19 @@ interface SidebarProps {
 }
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
-  const pathname = usePathname();
   const t = useTranslations();
+  const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
+  const unreadNotifications = useUnreadNotifications();
+  // Only surface the account-name strip when it actually carries
+  // information. A solo user's personal account is named after them
+  // (the 017 signup trigger seeds it from `full_name`), so showing it
+  // here would just duplicate the user name in the footer below. Once
+  // the account is renamed or the user joins a shared account, the
+  // name diverges and the strip becomes meaningful — that's the signal
+  // we gate on. Wait for the profile fetch to settle first, otherwise
+  // the strip flashes in once the row resolves (a layout jump).
   const showAccountStrip =
     !profileLoading &&
     !!account?.name &&
@@ -176,6 +190,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               const showUnreadDot =
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
 
+              // Unlike the inbox dot, the notifications count stays visible
+              // even while the page is active — it reflects unread state
+              // (cleared by marking notifications read), not "currently
+              // viewing this section".
+              const showNotificationBadge =
+                item.href === "/notifications" && unreadNotifications > 0;
+
               return (
                 <li key={item.href}>
                   <Link
@@ -191,7 +212,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     <span className="flex-1">{t(item.labelKey)}</span>
                     {item.beta && (
                       <span
-                        aria-label="Beta feature"
+                        aria-label={t("common.beta")}
                         className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
                       >
                         {t("common.beta")}
@@ -199,11 +220,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     )}
                     {showUnreadDot && (
                       <span
-                        aria-label={`${totalUnread} unread`}
+                        aria-label={t("sidebar.unreadConversations", {
+                          count: totalUnread,
+                        })}
                         className="relative flex h-2 w-2"
                       >
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                      </span>
+                    )}
+                    {showNotificationBadge && (
+                      <span
+                        aria-label={t("sidebar.unreadNotifications", {
+                          count: unreadNotifications,
+                        })}
+                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
+                      >
+                        {unreadNotifications > 9 ? "9+" : unreadNotifications}
                       </span>
                     )}
                   </Link>

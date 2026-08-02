@@ -80,6 +80,8 @@ function ImportPreviewTags({
   tagNames: string[];
   tagColorByKey: Map<string, string>;
 }) {
+  const t = useTranslations('contacts.importModal');
+
   if (tagNames.length === 0) {
     return <span className="text-muted-foreground">—</span>;
   }
@@ -99,7 +101,7 @@ function ImportPreviewTags({
               color,
               border: `1px solid ${color}${isKnown ? '55' : '30'}`,
             }}
-            title={isKnown ? name : `${name} (will be created on import)`}
+            title={isKnown ? name : t('willBeCreated', { name })}
           >
             <span
               className="size-1.5 shrink-0 rounded-full"
@@ -175,9 +177,7 @@ export function ImportModal({
     } = parseContactCsv(text);
 
     if (rows.length === 0) {
-      toast.error(
-        'No valid rows found. Ensure CSV has a "phone" column header.'
-      );
+      toast.error(t('toastNoValidRows'));
       setParsedRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
@@ -339,39 +339,31 @@ export function ImportModal({
           tagIdByKey
         );
       } catch {
-        toast.warning('Contacts imported, but some tag assignments failed.');
+        toast.warning(t('toastTagsWarning'));
       }
 
       setResult({ imported, skipped, failed, tagsAssigned });
       if (imported > 0) {
-        toast.success(
-          `${imported} contact${imported !== 1 ? 's' : ''} imported`
-        );
+        toast.success(t('toastImported', { count: imported }));
         onImported();
       }
       if (tagsAssigned > 0) {
-        toast.success(
-          `${tagsAssigned} tag assignment${tagsAssigned !== 1 ? 's' : ''} applied`
-        );
+        toast.success(t('toastTagsAssigned', { count: tagsAssigned }));
       }
       if (skippedNames.length > 0) {
         const sample = skippedNames.slice(0, 3).join(', ');
         const more =
           skippedNames.length > 3 ? ` (+${skippedNames.length - 3} more)` : '';
-        toast.info(
-          `Unknown tags skipped (create them in Settings first): ${sample}${more}`
-        );
+        toast.info(t('toastTagsSkipped', { sample, more }));
       }
       if (skipped > 0) {
-        toast.info(`${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`);
+        toast.info(t('toastSkipped', { count: skipped }));
       }
       if (failed > 0) {
-        toast.error(
-          `${failed} contact${failed !== 1 ? 's' : ''} failed to import`
-        );
+        toast.error(t('toastFailed', { count: failed }));
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Import failed';
+      const message = err instanceof Error ? err.message : t('toastError');
       toast.error(message);
     } finally {
       setImporting(false);
@@ -439,8 +431,7 @@ export function ImportModal({
                   {truncateFilename(file.name)}
                 </p>
                 <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''}{' '}
-                  ready
+                  {t('rowsReady', { count: parsedRows.length })}
                 </span>
               </>
             ) : (
@@ -472,15 +463,15 @@ export function ImportModal({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                  Preview · first {preview.length}
+                  {t('preview', { count: preview.length })}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
-                      <span>{tagStats.unique} tag{tagStats.unique !== 1 ? 's' : ''} ·{' '}
+                      {tagStats.unique} tag{tagStats.unique !== 1 ? 's' : ''} ·{' '}
                       {tagStats.rowsWithTags} contact
-                      {tagStats.rowsWithTags !== 1 ? 's' : ''}</span>
+                      {tagStats.rowsWithTags !== 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
@@ -492,22 +483,22 @@ export function ImportModal({
                     <thead>
                       <tr className="border-b border-border bg-background/60">
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Phone
+                          {t('columns.phone')}
                         </th>
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Name
+                          {t('columns.name')}
                         </th>
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Email
+                          {t('columns.email')}
                         </th>
                         {previewHasCompany && (
                           <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                            Company
+                            {t('columns.company')}
                           </th>
                         )}
                         {previewHasTags && (
                           <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                            Tags
+                            {t('columns.tags')}
                           </th>
                         )}
                       </tr>
@@ -562,8 +553,8 @@ export function ImportModal({
 
               {parsedRows.length > PREVIEW_LIMIT && (
                 <p className="text-center text-[11px] text-muted-foreground">
-                  <span>+ {parsedRows.length - PREVIEW_LIMIT} more row
-                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown</span>
+                  + {parsedRows.length - PREVIEW_LIMIT} more row
+                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown
                 </p>
               )}
             </div>
@@ -571,31 +562,31 @@ export function ImportModal({
 
           {result && (
             <div className="rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-medium text-popover-foreground">Import complete</p>
+              <p className="text-sm font-medium text-popover-foreground">{t('importComplete')}</p>
               <div className="mt-3 flex flex-wrap gap-3">
                 {result.imported > 0 && (
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
-                    <span>{result.imported} imported</span>
+                    {result.imported} imported
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-cyan-400">
                     <CheckCircle className="size-4 shrink-0" />
-                    <span>{result.tagsAssigned} tag
-                    {result.tagsAssigned !== 1 ? 's' : ''} assigned</span>
+                    {result.tagsAssigned} tag
+                    {result.tagsAssigned !== 1 ? 's' : ''} assigned
                   </div>
                 )}
                 {result.skipped > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-amber-400">
                     <AlertTriangle className="size-4 shrink-0" />
-                    <span>{result.skipped} skipped</span>
+                    {result.skipped} skipped
                   </div>
                 )}
                 {result.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-red-400">
                     <XCircle className="size-4 shrink-0" />
-                    <span>{result.failed} failed</span>
+                    {result.failed} failed
                   </div>
                 )}
               </div>
@@ -610,7 +601,7 @@ export function ImportModal({
             onClick={() => handleOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            <span>{result ? tCommon('close') : tCommon('cancel')}</span>
+            {result ? tCommon('close') : tCommon('cancel')}
           </Button>
           {!result && (
             <Button
@@ -620,7 +611,7 @@ export function ImportModal({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              <span>{t('importButton')} {parsedRows.length > 0 ? parsedRows.length : ''}</span>
+              {t('importButton')} {parsedRows.length > 0 ? parsedRows.length : ''}
             </Button>
           )}
         </DialogFooter>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { Suspense, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 
 import {
@@ -11,7 +11,18 @@ import {
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
 import type { AutomationStepType, AutomationTriggerType } from "@/types"
 
+// `useSearchParams` requires a Suspense boundary or the production build
+// bails to CSR and errors out. Thin wrapper supplies it; the inner
+// component reads the `?template=` query string.
 export default function NewAutomationPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewAutomationPageInner />
+    </Suspense>
+  )
+}
+
+function NewAutomationPageInner() {
   const params = useSearchParams()
   const template = params.get("template") as TemplateSlug | null
 

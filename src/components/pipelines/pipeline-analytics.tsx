@@ -101,36 +101,42 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
           label={t("totalDeals")}
           value={String(stats.totalCount)}
           tooltip={t("tooltipTotalDeals")}
+          t={t}
         />
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
           label={t("pipelineValue")}
           value={formatCurrency(stats.totalValue, defaultCurrency)}
           tooltip={t("tooltipPipelineValue")}
+          t={t}
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
           label={t("avgDealSize")}
           value={formatCurrency(stats.avgValue, defaultCurrency)}
           tooltip={t("tooltipAvgDealSize")}
+          t={t}
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
           label={t("weightedValue")}
           value={formatCurrency(stats.weightedValue, defaultCurrency)}
           tooltip={t("tooltipWeightedValue")}
+          t={t}
         />
         <Metric
           icon={<Trophy className="h-4 w-4 text-primary" />}
           label={t("wonThisMonth")}
           value={String(stats.wonThisMonth)}
           tooltip={t("tooltipWonThisMonth")}
+          t={t}
         />
         <Metric
           icon={<XCircle className="h-4 w-4 text-red-400" />}
           label={t("lostThisMonth")}
           value={String(stats.lostThisMonth)}
           tooltip={t("tooltipLostThisMonth")}
+          t={t}
         />
       </div>
     </TooltipProvider>
@@ -142,11 +148,14 @@ function Metric({
   label,
   value,
   tooltip,
+  t,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   tooltip: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
   return (
     <div className="rounded-lg bg-muted/50 p-3">

@@ -99,11 +99,11 @@ export function CustomFieldsPanel() {
     const name = newName.trim();
     if (!name) return;
     if (!accountId || !user) {
-      toast.error('Your profile is not linked to an account.');
+      toast.error(t('toastNoAccount'));
       return;
     }
     if (isDuplicate(name)) {
-      toast.error(`A field named "${name}" already exists.`);
+      toast.error(t('toastDuplicate', { name }));
       return;
     }
 
@@ -117,10 +117,10 @@ export function CustomFieldsPanel() {
     setCreating(false);
 
     if (error) {
-      toast.error('Could not create field. You may not have permission.');
+      toast.error(t('toastCreateFailed'));
       return;
     }
-    toast.success(`Created "${name}".`);
+    toast.success(t('toastCreated', { name }));
     setNewName('');
     await fetchFields();
   }
@@ -134,7 +134,7 @@ export function CustomFieldsPanel() {
     const name = nextName.trim();
     if (!name || name === field.field_name) return true;
     if (isDuplicate(name, field.id)) {
-      toast.error(`A field named "${name}" already exists.`);
+      toast.error(t('toastDuplicate', { name }));
       return false;
     }
     setBusyId(field.id);
@@ -144,7 +144,7 @@ export function CustomFieldsPanel() {
       .eq('id', field.id);
     setBusyId(null);
     if (error) {
-      toast.error('Could not rename field.');
+      toast.error(t('toastRenameFailed'));
       return false;
     }
     await fetchFields();
@@ -154,7 +154,7 @@ export function CustomFieldsPanel() {
   async function handleDelete(field: CustomField) {
     if (
       !window.confirm(
-        `Delete "${field.field_name}"? This also removes its stored value on every contact. This cannot be undone.`
+        t('deleteConfirm', { name: field.field_name })
       )
     ) {
       return;
@@ -166,10 +166,10 @@ export function CustomFieldsPanel() {
       .eq('id', field.id);
     setBusyId(null);
     if (error) {
-      toast.error('Could not delete field.');
+      toast.error(t('toastDeleteFailed'));
       return;
     }
-    toast.success(`Deleted "${field.field_name}".`);
+    toast.success(t('toastDeleted', { name: field.field_name }));
     await fetchFields();
   }
 
@@ -245,6 +245,7 @@ function FieldRow({
   onRename: (field: CustomField, name: string) => Promise<boolean>;
   onDelete: (field: CustomField) => void;
 }) {
+  const t = useTranslations('contacts.customFields');
   const [name, setName] = useState(field.field_name);
 
   async function commit() {
@@ -266,7 +267,7 @@ function FieldRow({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        aria-label={`Rename ${field.field_name}`}
+        aria-label={t('renameAria', { name: field.field_name })}
         className="focus:border-primary h-8 border-transparent bg-transparent text-foreground hover:border-border"
       />
       <Button
@@ -274,7 +275,7 @@ function FieldRow({
         size="icon-sm"
         disabled={busy}
         onClick={() => onDelete(field)}
-        title="Delete field"
+        title={t('deleteTitle')}
         className="shrink-0 text-muted-foreground hover:text-red-400"
       >
         {busy ? (

@@ -70,6 +70,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
 // them for a cleaner look.
 // ------------------------------------------------------------
 function Donut({ data, currency }: { data: PipelineDonutData; currency: string }) {
+  const t = useTranslations('dashboard')
   const size = 200
   const r = 80
   const ringWidth = 18
@@ -99,7 +100,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
 
   return (
     <div className="flex items-center justify-center">
-      <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label="Pipeline value by stage">
+      <svg viewBox={`0 0 ${size} ${size}`} className="h-48 w-48" role="img" aria-label={t('ariaLabel')}>
         {/* background ring */}
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--muted)" strokeWidth={ringWidth} />
         {segments.map((seg) => (
@@ -119,7 +120,7 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
           textAnchor="middle"
           className="fill-muted-foreground text-[11px]"
         >
-          Total
+          {t('total')}
         </text>
         <text
           x={cx}

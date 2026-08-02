@@ -42,7 +42,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load templates');
+        setError(err instanceof Error ? err.message : t('noTemplates'));
       } finally {
         setLoading(false);
       }

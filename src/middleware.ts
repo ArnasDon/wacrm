@@ -113,6 +113,20 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  // --- API routes must NEVER be locale-prefixed ---
+  // next-intl uses localePrefix "always" by default, so handing an
+  // /api/* path to handleI18nRouting makes it 307-redirect to
+  // /{locale}/api/... — which has no matching route handler and 404s
+  // with an HTML error page. The client then chokes on the HTML with
+  // "Unexpected token '<' ... is not valid JSON", and Meta's webhook
+  // verification (a bare GET to /api/whatsapp/webhook) fails because
+  // the challenge request gets redirected away from the handler.
+  // Skip i18n entirely for API routes and return the Supabase response
+  // (with any refreshed session cookies) directly.
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return supabaseResponse;
+  }
+
   // --- i18n routing via next-intl ---
   // The next-intl middleware is REQUIRED — createNextIntlPlugin depends on
   // the locale context it sets up (cookies / headers).  Without it,

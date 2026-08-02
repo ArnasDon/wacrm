@@ -1,4 +1,9 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import {
+  engineSendInteractiveButtons,
+  engineSendInteractiveList,
+} from '@/lib/flows/meta-send'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -51,6 +56,49 @@ export async function engineSendTemplate(
   args: SendTemplateArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   return sendViaMeta({ ...args, kind: 'template' })
+}
+
+interface SendInteractiveArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  payload: InteractiveMessagePayload
+}
+
+/**
+ * Send an interactive (reply-buttons or list) message from the
+ * automation engine.
+ *
+ * Delegates to the Flows interactive senders
+ * (`engineSendInteractiveButtons` / `engineSendInteractiveList`), which
+ * already own the account-scoped lookup, phone-variant retry, and the
+ * `messages` insert with `interactive_payload` + `sender_type='bot'`.
+ * Both engines want identical behaviour here, so there's one
+ * implementation rather than a second hand-rolled copy that could drift.
+ */
+export async function engineSendInteractive(
+  args: SendInteractiveArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const { payload, accountId, userId, conversationId, contactId } = args
+  const common = { accountId, userId, conversationId, contactId }
+  if (payload.kind === 'buttons') {
+    return engineSendInteractiveButtons({
+      ...common,
+      bodyText: payload.body,
+      headerText: payload.header,
+      footerText: payload.footer,
+      buttons: payload.buttons,
+    })
+  }
+  return engineSendInteractiveList({
+    ...common,
+    bodyText: payload.body,
+    buttonLabel: payload.button_label,
+    headerText: payload.header,
+    footerText: payload.footer,
+    sections: payload.sections,
+  })
 }
 
 type SendInput =

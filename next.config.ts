@@ -65,6 +65,34 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   /**
+   * Cross-origin dev access (Next.js 16).
+   *
+   * Next 16 blocks requests to dev-only resources (`/_next/*` internals,
+   * the HMR websocket, the dev overlay) unless the browser's Origin is
+   * the host the dev server booted on — `localhost` by default. Tunnels
+   * like ngrok serve the app from a public HTTPS host, so without
+   * allow-listing that host those dev requests come back 403: HMR stops
+   * working and the dev session degrades over the tunnel (issue #365).
+   *
+   * Wildcards match subdomains only (Next's CSRF matcher), so the
+   * randomised tunnel subdomain is covered. Add any other host via
+   * `ALLOWED_DEV_ORIGINS` (comma-separated). This key is dev-only and
+   * has no effect on a production build.
+   */
+  allowedDevOrigins: [
+    "*.ngrok-free.app",
+    "*.ngrok.app",
+    "*.ngrok.io",
+    "*.trycloudflare.com",
+    "*.loca.lt",
+    ...(process.env.ALLOWED_DEV_ORIGINS
+      ? process.env.ALLOWED_DEV_ORIGINS.split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : []),
+  ],
+
+  /**
    * Cache-Control policy.
    *
    * Why this exists:

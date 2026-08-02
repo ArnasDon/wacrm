@@ -233,7 +233,7 @@ export function PipelineSettings({
                 disabled={deleting}
                 className="bg-red-600 text-white hover:bg-red-700"
               >
-                <span>{deleting ? t("deleting") : t("deletePipeline")}</span>
+                {deleting ? t("deleting") : t("deletePipeline")}
               </Button>
             </div>
           </div>
@@ -277,6 +277,7 @@ export function PipelineSettings({
                           }}
                           onRemove={() => handleRemoveStage(stage.id)}
                           colors={STAGE_COLORS}
+                          t={t}
                         />
                       ))}
                     </div>
@@ -337,9 +338,8 @@ export function PipelineSettings({
 
             <DialogFooter className="border-border bg-popover/50">
               <Button
-                variant="destructive"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="mr-auto bg-red-600 hover:bg-red-700"
+                className="mr-auto bg-red-600 text-white hover:bg-red-700"
               >
                 {t("deletePipeline")}
               </Button>
@@ -355,7 +355,7 @@ export function PipelineSettings({
                 disabled={saving || !name.trim()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                <span>{saving ? t("saving") : t("saveChanges")}</span>
+                {saving ? t("saving") : t("saveChanges")}
               </Button>
             </DialogFooter>
           </>
@@ -371,14 +371,16 @@ function SortableStageRow({
   onColorChange,
   onRemove,
   colors,
+  t,
 }: {
   stage: PipelineStage;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
   onRemove: () => void;
   colors: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
-  const t = useTranslations("pipelines.settings");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: stage.id });
 
@@ -403,7 +405,7 @@ function SortableStageRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} />
+      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} t={t} />
       <Input
         value={stage.name}
         onChange={(e) => onNameChange(e.target.value)}
@@ -425,12 +427,14 @@ function ColorSwatch({
   value,
   onChange,
   colors,
+  t,
 }: {
   value: string;
   onChange: (v: string) => void;
   colors: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
-  const t = useTranslations("pipelines.settings");
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">

@@ -23,6 +23,7 @@ import { LanguageSwitcher } from "@/components/layout/language-switcher";
 const pageTitleKeys: Record<string, string> = {
   "/dashboard": "nav.dashboard",
   "/inbox": "nav.inbox",
+  "/notifications": "nav.notifications",
   "/contacts": "nav.contacts",
   "/pipelines": "nav.pipelines",
   "/broadcasts": "nav.broadcasts",
@@ -43,11 +44,10 @@ interface HeaderProps {
 }
 
 export function Header({ onOpenSidebar }: HeaderProps) {
+  const t = useTranslations();
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
-  const t = useTranslations();
   const titleKey = getPageTitleKey(pathname);
-  const title = t(titleKey);
 
   const initial =
     profile?.full_name?.charAt(0)?.toUpperCase() ??
@@ -66,7 +66,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           <Menu className="h-5 w-5" />
         </button>
         <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
-          {title}
+          {t(titleKey as string)}
         </h1>
       </div>
 

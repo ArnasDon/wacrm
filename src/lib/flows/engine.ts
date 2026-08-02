@@ -40,6 +40,8 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
+import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -708,18 +710,22 @@ async function advanceFromNodeKey(
       const cfg = node.config as unknown as SetTagNodeConfig;
       try {
         if (cfg.mode === "add") {
-          await db
-            .from("contact_tags")
-            .upsert(
-              { contact_id: run.contact_id!, tag_id: cfg.tag_id },
-              { onConflict: "contact_id,tag_id" },
-            );
+          await addContactTagAndDispatch({
+            db,
+            accountId: run.account_id,
+            contactId: run.contact_id!,
+            tagId: cfg.tag_id,
+            context: {
+              conversation_id: run.conversation_id ?? undefined,
+              vars: run.vars,
+            },
+          });
         } else {
-          await db
-            .from("contact_tags")
-            .delete()
-            .eq("contact_id", run.contact_id!)
-            .eq("tag_id", cfg.tag_id);
+          await removeContactTag(db, {
+            accountId: run.account_id,
+            contactId: run.contact_id!,
+            tagId: cfg.tag_id,
+          });
         }
       } catch (err) {
         // Non-fatal — log + advance. A tag-write failure shouldn't

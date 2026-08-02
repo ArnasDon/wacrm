@@ -677,7 +677,7 @@ function ConditionForm({
               onChange={(e) =>
                 onUpdateConfig({ subject_key: e.target.value })
               }
-              placeholder={subject === "var" ? "e.g. email" : "tag UUID"}
+              placeholder={subject === "var" ? t("varKeyPlaceholder") : t("tagUuidPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -807,7 +807,7 @@ function SetTagForm({
             <Input
               value={cfg.tag_id ?? ""}
               onChange={(e) => onUpdateConfig({ tag_id: e.target.value })}
-              placeholder="Tag UUID"
+              placeholder={t("tagUuidPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -1025,7 +1025,7 @@ function SendMediaForm({
           <Input
             value={cfg.filename ?? ""}
             onChange={(e) => onUpdateConfig({ filename: e.target.value })}
-            placeholder="invoice.pdf"
+            placeholder={t("filenamePlaceholder")}
             className="bg-muted text-xs"
           />
         </div>

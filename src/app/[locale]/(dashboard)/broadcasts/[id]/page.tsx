@@ -147,6 +147,7 @@ export default function BroadcastDetailPage() {
   const tDetail = useTranslations('broadcasts.detail');
   const params = useParams();
   const router = useRouter();
+  const tStatus = useTranslations('broadcasts.status');
   const broadcastId = params.id as string;
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
@@ -182,7 +183,7 @@ export default function BroadcastDetailPage() {
         if (recsError) throw recsError;
         setRecipients(recs ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load broadcast');
+        setError(err instanceof Error ? err.message : tDetail('notFound'));
       } finally {
         setLoading(false);
       }
@@ -202,14 +203,13 @@ export default function BroadcastDetailPage() {
   function handleExport() {
     if (!broadcast) return;
     const header = [
-      'Contact',
-      'Phone',
-      'Status',
-      'Sent At',
-      'Delivered At',
-      'Read At',
-      'Replied At',
-      'Error',
+      tDetail('contact'),
+      tDetail('phone'),
+      tDetail('status'),
+      tDetail('sent'),
+      tDetail('delivered'),
+      tDetail('read'),
+      tDetail('error'),
     ];
     const rows = recipients.map((r) => [
       r.contact?.name ?? '',
@@ -218,7 +218,6 @@ export default function BroadcastDetailPage() {
       r.sent_at ?? '',
       r.delivered_at ?? '',
       r.read_at ?? '',
-      r.replied_at ?? '',
       r.error_message ?? '',
     ]);
     const csv = toCsv([header, ...rows]);
@@ -257,7 +256,7 @@ export default function BroadcastDetailPage() {
   if (error || !broadcast) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400"><span>{error ?? tDetail('notFound')}</span></p>
+        <p className="text-sm text-red-400">{error ?? tDetail('notFound')}</p>
         <Button variant="outline" onClick={() => router.push('/broadcasts')}>
           {tDetail('backToBroadcasts')}
         </Button>
@@ -293,7 +292,7 @@ export default function BroadcastDetailPage() {
               <span
                 className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
               >
-                {status.label}
+                {tStatus(status.label)}
               </span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
@@ -328,7 +327,7 @@ export default function BroadcastDetailPage() {
               disabled={deleting}
               className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
             >
-              <span>{deleting ? tDetail('deleting') : tDetail('confirm')}</span>
+              {deleting ? tDetail('deleting') : tDetail('confirm')}
             </Button>
           </div>
         ) : (
@@ -443,7 +442,7 @@ export default function BroadcastDetailPage() {
                         : 'text-popover-foreground'
                     }
                   >
-                    {getRecipientStatus(s).label}
+                    {tStatus(getRecipientStatus(s).label)}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -499,7 +498,7 @@ export default function BroadcastDetailPage() {
                         <span
                           className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${rStatus.classes}`}
                         >
-                          {rStatus.label}
+                          {tStatus(rStatus.label)}
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">

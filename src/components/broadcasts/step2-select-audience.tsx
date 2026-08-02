@@ -253,7 +253,7 @@ export function Step2SelectAudience({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {audienceOptions.map((option) => {
+        {audienceOptions.map((option: { type: AudienceType; label: string; description: string; icon: typeof Users }) => {
           const isSelected = audience.type === option.type;
           const Icon = option.icon;
           return (
@@ -368,7 +368,7 @@ export function Step2SelectAudience({
                 }
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {OPERATOR_OPTIONS.map((op) => (
+                {OPERATOR_OPTIONS.map((op: { value: CustomFieldOperator; label: string }) => (
                   <option key={op.value} value={op.value}>
                     {op.label}
                   </option>

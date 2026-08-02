@@ -142,7 +142,11 @@ export default function DashboardPage() {
               icon={MessageSquare}
               delta={{
                 sign: metrics.activeConversations.previous,
-                label: deltaLabel(metrics.activeConversations.previous, t('noChangeNewTodayVsYesterday'), t('noChangeVsYesterday')),
+                label: deltaLabel(
+                  metrics.activeConversations.previous,
+                  t('noChangeNewTodayVsYesterday'),
+                  t('noChangeVsYesterday')
+                ),
               }}
             />
             <MetricCard

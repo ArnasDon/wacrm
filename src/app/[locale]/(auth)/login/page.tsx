@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Link, useRouter } from "@/i18n/navigation";
+import { Link } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,6 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -54,11 +53,18 @@ function LoginPageInner() {
       return;
     }
 
-    if (inviteToken) {
-      router.push(`/join/${encodeURIComponent(inviteToken)}`);
-    } else {
-      router.push("/dashboard");
-    }
+    // Full-page navigation (not router.push) so the browser issues a
+    // fresh top-level request that carries the just-written Supabase
+    // auth cookies to the middleware gating /dashboard. A soft
+    // client-side navigation can reach the protected route before the
+    // server observes the new session, so the middleware bounces it
+    // back to /login — which looks like the page "just refreshing"
+    // instead of signing in (issue #365). Mirrors the deliberate full
+    // reload the invite-accept flow already uses in join/[token].
+    const destination = inviteToken
+      ? `/join/${encodeURIComponent(inviteToken)}`
+      : "/dashboard";
+    window.location.href = destination;
   };
 
   return (

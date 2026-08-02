@@ -31,8 +31,8 @@ export function SettingsRail({
   onSelect: (section: SettingsSection) => void;
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
-  const activeRef = useRef<HTMLButtonElement>(null);
   const t = useTranslations('settings');
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   // When horizontal (mobile), keep the active chip in view. On desktop
   // the rail is a static column, so skip.
@@ -92,7 +92,9 @@ export function SettingsRail({
                   )}
                 >
                   <Icon className="size-4 shrink-0" />
-                  <span className="flex-1">{t(`sections.${s}` as `sections.${typeof s}`)}</span>
+                  <span className="flex-1">
+                    {t(`sections.${s}` as `sections.${typeof s}`)}
+                  </span>
                   {hints?.[s] != null ? (
                     <span
                       className={cn(

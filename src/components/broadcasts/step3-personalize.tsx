@@ -259,13 +259,7 @@ export function Step3Personalize({
             type="url"
             value={headerMediaUrl}
             onChange={(e) => onHeaderMediaUrlChange(e.target.value)}
-            placeholder={`https://example.com/header.${
-              mediaHeaderType === 'image'
-                ? 'jpg'
-                : mediaHeaderType === 'video'
-                  ? 'mp4'
-                  : 'pdf'
-            }`}
+            placeholder="https://example.com/image.jpg"
             className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
           />
           <p className="mt-1.5 text-xs text-muted-foreground">
@@ -343,7 +337,7 @@ export function Step3Personalize({
 
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      <span>{mapping.type === 'static' ? t('valueLabel') : t('fieldLabel')}</span>
+                      {mapping.type === 'static' ? t('valueLabel') : t('fieldLabel')}
                     </label>
                     {mapping.type === 'static' ? (
                       <Input

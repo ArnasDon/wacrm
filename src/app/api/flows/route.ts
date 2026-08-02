@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
 
@@ -45,6 +46,15 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // Creating a flow is a write — the RLS flows_insert policy requires
+  // `agent`, but this route inserts via the service-role client which
+  // bypasses RLS, so the role must be enforced here.
+  try {
+    await requireRole('agent')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+
   const guard = await requireUser()
   if (!guard.ok) {
     return NextResponse.json(guard.body, { status: guard.status })

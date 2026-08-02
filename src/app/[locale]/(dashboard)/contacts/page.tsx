@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -56,7 +57,6 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
-import { Checkbox } from '@/components/ui/checkbox';
 
 const PAGE_SIZE = 25;
 
@@ -146,7 +146,7 @@ export default function ContactsPage() {
       });
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
-        toast.error('Failed to load contacts');
+        toast.error(t('toastFailedLoad'));
         setLoading(false);
         return;
       }
@@ -168,7 +168,7 @@ export default function ContactsPage() {
       const { data, count: exactCount, error } = await query;
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
-        toast.error('Failed to load contacts');
+        toast.error(t('toastFailedLoad'));
         setLoading(false);
         return;
       }
@@ -207,7 +207,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap]);
+  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -259,9 +259,9 @@ export default function ContactsPage() {
       .eq('id', deleteTarget.id);
 
     if (error) {
-      toast.error('Failed to delete contact');
+      toast.error(t('toastFailedDelete'));
     } else {
-      toast.success('Contact deleted');
+      toast.success(t('toastDeleted'));
       fetchContacts();
     }
 
@@ -303,9 +303,9 @@ export default function ContactsPage() {
     const { error } = await supabase.from('contacts').delete().in('id', ids);
 
     if (error) {
-      toast.error('Failed to delete contacts');
+      toast.error(t('toastBulkFailedDelete'));
     } else {
-      toast.success(`${ids.length} contact${ids.length === 1 ? '' : 's'} deleted`);
+      toast.success(t('toastBulkDeleted', { count: ids.length }));
       setSelected(new Set());
       fetchContacts();
     }
@@ -572,7 +572,9 @@ export default function ContactsPage() {
                         : t('noContacts')}
                     </p>
                     {!hasActiveFilters && (
-                      <Button
+                      <GatedButton
+                        canAct={canEdit}
+                        gateReason="add or import contacts"
                         variant="outline"
                         size="sm"
                         onClick={openAddForm}
@@ -580,7 +582,7 @@ export default function ContactsPage() {
                       >
                         <Plus className="size-3.5" />
                         {t('addFirstContact')}
-                      </Button>
+                      </GatedButton>
                     )}
                   </div>
                 </TableCell>

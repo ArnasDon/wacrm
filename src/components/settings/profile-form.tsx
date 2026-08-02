@@ -67,14 +67,14 @@ export function ProfileForm() {
     if (!file) return;
 
     if (!ALLOWED_MIME.has(file.type)) {
-      toast.error('Unsupported image type', {
-        description: 'Use PNG, JPG, WebP, or GIF.',
+      toast.error(t('unsupportedImage'), {
+        description: t('unsupportedImageDesc'),
       });
       return;
     }
     if (file.size > MAX_AVATAR_BYTES) {
-      toast.error('Image is too large', {
-        description: 'Maximum 2 MB.',
+      toast.error(t('imageTooLarge'), {
+        description: t('imageTooLargeDesc'),
       });
       return;
     }
@@ -123,7 +123,7 @@ export function ProfileForm() {
             contentType: pendingAvatar.type,
           });
         if (uploadError) {
-          throw new Error(`Upload failed: ${uploadError.message}`);
+          throw new Error(t('uploadFailed', { message: uploadError.message }));
         }
         const {
           data: { publicUrl },
@@ -141,7 +141,7 @@ export function ProfileForm() {
         })
         .eq('user_id', user.id);
       if (updateError) {
-        throw new Error(`Save failed: ${updateError.message}`);
+        throw new Error(t('saveFailed', { message: updateError.message }));
       }
 
       let emailSent = false;
@@ -150,8 +150,9 @@ export function ProfileForm() {
           email: trimmedEmail,
         });
         if (emailError) {
+          // Partial success: name/avatar saved but email didn't.
           toast.success(t('updated'));
-          toast.error(`Email change failed: ${emailError.message}`);
+          toast.error(t('emailChangeFailed', { message: emailError.message }));
           setSaving(false);
           await refreshProfile();
           return;
@@ -167,7 +168,10 @@ export function ProfileForm() {
 
       toast.success(
         emailSent
-          ? t('emailCheckInbox', { oldEmail: profile.email, newEmail: trimmedEmail })
+          ? t('emailCheckInbox', {
+              oldEmail: profile.email,
+              newEmail: trimmedEmail,
+            })
           : t('updated'),
       );
     } catch (err) {
@@ -227,7 +231,7 @@ export function ProfileForm() {
                 disabled={saving}
               >
                 <Upload className="size-4" />
-                <span>{currentAvatar ? t('changePhoto') : t('uploadPhoto')}</span>
+                {currentAvatar ? t('changePhoto') : t('uploadPhoto')}
               </Button>
               {currentAvatar && (
                 <Button
@@ -277,11 +281,13 @@ export function ProfileForm() {
             {emailChangePending && (
               <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 <Mail className="mt-0.5 size-3.5 shrink-0" />
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: t('emailCheckInbox', { oldEmail: profile?.email ?? '', newEmail: email }),
-                  }}
-                />
+                <span>
+                  {t.rich('emailCheckInbox', {
+                    oldEmail: profile?.email || '',
+                    newEmail: email,
+                    strong: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+                  })}
+                </span>
               </p>
             )}
           </div>

@@ -28,11 +28,11 @@ import {
   Tag,
   UserPlus,
   Workflow,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { useTranslations } from "next-intl";
+import { useTranslations } from 'next-intl';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 // ============================================================
 // Node-type union — single source of truth for every place the UI
@@ -43,16 +43,16 @@ import { cn } from "@/lib/utils";
 // ============================================================
 
 export type NodeType =
-  | "start"
-  | "send_message"
-  | "send_buttons"
-  | "send_list"
-  | "send_media"
-  | "collect_input"
-  | "condition"
-  | "set_tag"
-  | "handoff"
-  | "end";
+  | 'start'
+  | 'send_message'
+  | 'send_buttons'
+  | 'send_list'
+  | 'send_media'
+  | 'collect_input'
+  | 'condition'
+  | 'set_tag'
+  | 'handoff'
+  | 'end';
 
 export interface BuilderNode {
   node_key: string;
@@ -69,89 +69,140 @@ export interface BuilderNode {
 // the user sees a node summary.
 // ============================================================
 
+// ------------------------------------------------------------
+// Node categories — buckets the add-step menu groups types under so
+// the picker stays scannable as the type list grows, and so a fork
+// adding its own node types has an obvious place to slot them.
+//
+// Note there's no "Events / Triggers" category: in wacrm a flow is
+// triggered by flow-level config (`trigger_type`), not by a node on
+// the canvas, so `start` is just the entry point under Flow control.
+// ------------------------------------------------------------
+
+export type NodeCategory = 'messaging' | 'logic' | 'flow';
+
+/** Category labels + the order they render in the add-step menu. */
+export const NODE_CATEGORIES: { id: NodeCategory; label: string }[] = [
+  { id: 'messaging', label: 'Messaging' },
+  { id: 'logic', label: 'Logic & data' },
+  { id: 'flow', label: 'Flow control' },
+];
+
 export const NODE_META: Record<
   NodeType,
-  { label: string; icon: typeof Workflow; color: string; blurb: string }
+  {
+    label: string;
+    icon: typeof Workflow;
+    color: string;
+    blurb: string;
+    category: NodeCategory;
+  }
 > = {
   start: {
-    label: "Start",
+    label: 'Start',
     icon: PlayCircle,
-    color: "text-emerald-400",
-    blurb: "Entry point of the flow",
+    color: 'text-emerald-400',
+    blurb: 'Entry point of the flow',
+    category: 'flow',
   },
   send_message: {
-    label: "Send message",
+    label: 'Send message',
     icon: MessageCircle,
-    color: "text-sky-400",
-    blurb: "Sends a WhatsApp text message",
+    color: 'text-sky-400',
+    blurb: 'Sends a WhatsApp text message',
+    category: 'messaging',
   },
   send_buttons: {
-    label: "Send buttons",
+    label: 'Send buttons',
     icon: ListChecks,
-    color: "text-primary",
-    blurb: "Sends quick-reply buttons",
+    color: 'text-primary',
+    blurb: 'Sends quick-reply buttons',
+    category: 'messaging',
   },
   send_list: {
-    label: "Send list",
+    label: 'Send list',
     icon: ListPlus,
-    color: "text-indigo-400",
-    blurb: "Sends a tappable list of options",
+    color: 'text-indigo-400',
+    blurb: 'Sends a tappable list of options',
+    category: 'messaging',
   },
   send_media: {
-    label: "Send media",
+    label: 'Send media',
     icon: Paperclip,
-    color: "text-cyan-400",
-    blurb: "Sends an image, video, or document",
+    color: 'text-cyan-400',
+    blurb: 'Sends an image, video, or document',
+    category: 'messaging',
   },
   collect_input: {
-    label: "Collect input",
+    label: 'Collect input',
     icon: Inbox,
-    color: "text-teal-400",
-    blurb: "Asks a question, saves the reply",
+    color: 'text-teal-400',
+    blurb: 'Asks a question, saves the reply',
+    category: 'logic',
   },
   condition: {
-    label: "If / else",
+    label: 'If / else',
     icon: GitFork,
-    color: "text-fuchsia-400",
-    blurb: "Branches on a rule",
+    color: 'text-fuchsia-400',
+    blurb: 'Branches on a rule',
+    category: 'logic',
   },
   set_tag: {
-    label: "Tag contact",
+    label: 'Tag contact',
     icon: Tag,
-    color: "text-pink-400",
-    blurb: "Adds or removes a contact tag",
+    color: 'text-pink-400',
+    blurb: 'Adds or removes a contact tag',
+    category: 'logic',
   },
   handoff: {
-    label: "Handoff to agent",
+    label: 'Handoff to agent',
     icon: UserPlus,
-    color: "text-amber-400",
-    blurb: "Hands the conversation to a human",
+    color: 'text-amber-400',
+    blurb: 'Hands the conversation to a human',
+    category: 'flow',
   },
   end: {
-    label: "End",
+    label: 'End',
     icon: Flag,
-    color: "text-muted-foreground",
-    blurb: "Ends the flow",
+    color: 'text-muted-foreground',
+    blurb: 'Ends the flow',
+    category: 'flow',
   },
 };
 
 export function useNodeTranslations() {
-  const t = useTranslations("flows.nodeTypes");
+  const t = useTranslations('flows.nodeTypes');
   return {
-    start: { label: t("start"), blurb: t("start_blurb") },
-    send_message: { label: t("send_message"), blurb: t("send_message_blurb") },
-    send_buttons: { label: t("send_buttons"), blurb: t("send_buttons_blurb") },
-    send_list: { label: t("send_list"), blurb: t("send_list_blurb") },
-    send_media: { label: t("send_media"), blurb: t("send_media_blurb") },
+    start: { label: t('start'), blurb: t('start_blurb') },
+    send_message: { label: t('send_message'), blurb: t('send_message_blurb') },
+    send_buttons: { label: t('send_buttons'), blurb: t('send_buttons_blurb') },
+    send_list: { label: t('send_list'), blurb: t('send_list_blurb') },
+    send_media: { label: t('send_media'), blurb: t('send_media_blurb') },
     collect_input: {
-      label: t("collect_input"),
-      blurb: t("collect_input_blurb"),
+      label: t('collect_input'),
+      blurb: t('collect_input_blurb'),
     },
-    condition: { label: t("condition"), blurb: t("condition_blurb") },
-    set_tag: { label: t("set_tag"), blurb: t("set_tag_blurb") },
-    handoff: { label: t("handoff"), blurb: t("handoff_blurb") },
-    end: { label: t("end"), blurb: t("end_blurb") },
+    condition: { label: t('condition'), blurb: t('condition_blurb') },
+    set_tag: { label: t('set_tag'), blurb: t('set_tag_blurb') },
+    handoff: { label: t('handoff'), blurb: t('handoff_blurb') },
+    end: { label: t('end'), blurb: t('end_blurb') },
   } as Record<NodeType, { label: string; blurb: string }>;
+}
+
+/**
+ * Bucket an ordered list of node types by category, preserving both
+ * the category order (NODE_CATEGORIES) and the within-category order
+ * of the input list. Empty categories are dropped. Used by both the
+ * canvas and list add-step menus so they stay in lockstep.
+ */
+export function groupNodeTypesByCategory(
+  types: NodeType[]
+): { id: NodeCategory; label: string; types: NodeType[] }[] {
+  return NODE_CATEGORIES.map(({ id, label }) => ({
+    id,
+    label,
+    types: types.filter((t) => NODE_META[t].category === id),
+  })).filter((group) => group.types.length > 0);
 }
 
 // ============================================================
@@ -233,8 +284,8 @@ export function NodeIconChip({
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-lg",
-        className,
+        'flex shrink-0 items-center justify-center rounded-lg',
+        className
       )}
       style={{ width: size, height: size, background: c.soft, color: c.solid }}
     >
@@ -257,8 +308,8 @@ export function slugify(s: string, fallback: string): string {
   const cleaned = s
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
   return cleaned || fallback;
 }
 
@@ -270,37 +321,42 @@ export function slugify(s: string, fallback: string): string {
 // ============================================================
 
 export function truncate(s: string, max = 80): string {
-  const clean = s.replace(/\s+/g, " ").trim();
+  const clean = s.replace(/\s+/g, ' ').trim();
   if (clean.length <= max) return clean;
-  return clean.slice(0, max - 1) + "…";
+  return clean.slice(0, max - 1) + '…';
 }
 
-export function summarizeNode(node: BuilderNode): string | null {
+export function summarizeNode(
+  node: BuilderNode,
+  t?: (key: string, values?: Record<string, string | number>) => string
+): string | null {
   const cfg = node.config;
   switch (node.node_type) {
-    case "start":
-    case "end":
+    case 'start':
+    case 'end':
       return null;
-    case "send_message": {
-      const text = typeof cfg.text === "string" ? cfg.text : "";
+    case 'send_message': {
+      const text = typeof cfg.text === 'string' ? cfg.text : '';
       return text.length > 0 ? truncate(text) : null;
     }
-    case "send_buttons": {
-      const text = typeof cfg.text === "string" ? cfg.text : "";
+    case 'send_buttons': {
+      const text = typeof cfg.text === 'string' ? cfg.text : '';
       const buttons = Array.isArray(cfg.buttons)
         ? (cfg.buttons as Array<Record<string, unknown>>)
         : [];
       const titles = buttons
-        .map((b) => (typeof b.title === "string" ? b.title : ""))
+        .map((b) => (typeof b.title === 'string' ? b.title : ''))
         .filter(Boolean)
-        .join(" / ");
+        .join(' / ');
       if (text.length > 0) {
-        return titles ? `${truncate(text, 40)} · ${truncate(titles, 35)}` : truncate(text);
+        return titles
+          ? `${truncate(text, 40)} · ${truncate(titles, 35)}`
+          : truncate(text);
       }
       return titles || null;
     }
-    case "send_list": {
-      const text = typeof cfg.text === "string" ? cfg.text : "";
+    case 'send_list': {
+      const text = typeof cfg.text === 'string' ? cfg.text : '';
       const sections = Array.isArray(cfg.sections)
         ? (cfg.sections as Array<Record<string, unknown>>)
         : [];
@@ -310,75 +366,83 @@ export function summarizeNode(node: BuilderNode): string | null {
       }, 0);
       if (text.length > 0) {
         return rowCount > 0
-          ? `${truncate(text, 50)} · ${rowCount} option${rowCount === 1 ? "" : "s"}`
+          ? `${truncate(text, 50)} · ${t ? t('options', { count: rowCount }) : `${rowCount} option${rowCount === 1 ? '' : 's'}`}`
           : truncate(text);
       }
       return rowCount > 0
-        ? `${rowCount} option${rowCount === 1 ? "" : "s"} across ${sections.length} section${sections.length === 1 ? "" : "s"}`
+        ? t
+          ? t('optionsAcrossSections', { rowCount, sectionCount: sections.length })
+          : `${rowCount} option${rowCount === 1 ? '' : 's'} across ${sections.length} section${sections.length === 1 ? '' : 's'}`
         : null;
     }
-    case "send_media": {
+    case 'send_media': {
       const mediaType =
-        typeof cfg.media_type === "string" ? cfg.media_type : "";
-      const filename = typeof cfg.filename === "string" ? cfg.filename : "";
-      const url = typeof cfg.media_url === "string" ? cfg.media_url : "";
-      const caption = typeof cfg.caption === "string" ? cfg.caption : "";
+        typeof cfg.media_type === 'string' ? cfg.media_type : '';
+      const filename = typeof cfg.filename === 'string' ? cfg.filename : '';
+      const url = typeof cfg.media_url === 'string' ? cfg.media_url : '';
+      const caption = typeof cfg.caption === 'string' ? cfg.caption : '';
       const label = mediaType
-        ? mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
-        : "Media";
-      if (!url) return `${label} (no file uploaded)`;
-      const name = filename || url.split("/").pop() || "file";
+        ? t ? t(mediaType) || (mediaType.charAt(0).toUpperCase() + mediaType.slice(1)) : mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
+        : t ? t('media') : 'Media';
+      if (!url) return t ? t('noFile', { label }) : `${label} (no file uploaded)`;
+      const name = filename || url.split('/').pop() || 'file';
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
         : `${label}: ${truncate(name, 60)}`;
     }
-    case "collect_input": {
-      const prompt = typeof cfg.prompt_text === "string" ? cfg.prompt_text : "";
-      const varKey = typeof cfg.var_key === "string" ? cfg.var_key : "";
+    case 'collect_input': {
+      const prompt = typeof cfg.prompt_text === 'string' ? cfg.prompt_text : '';
+      const varKey = typeof cfg.var_key === 'string' ? cfg.var_key : '';
       if (prompt.length > 0) {
-        return varKey ? `${truncate(prompt, 50)} → vars.${varKey}` : truncate(prompt);
+        return varKey
+          ? `${truncate(prompt, 50)} → vars.${varKey}`
+          : truncate(prompt);
       }
       return varKey ? `→ vars.${varKey}` : null;
     }
-    case "condition": {
+    case 'condition': {
       const subjectKey =
-        typeof cfg.subject_key === "string" ? cfg.subject_key : "";
+        typeof cfg.subject_key === 'string' ? cfg.subject_key : '';
       if (!subjectKey) return null;
       const subject =
-        cfg.subject === "tag"
-          ? "tag"
-          : cfg.subject === "contact_field"
-            ? "field"
-            : "var";
+        cfg.subject === 'tag'
+          ? 'tag'
+          : cfg.subject === 'contact_field'
+            ? 'field'
+            : 'var';
       const subjectStr =
-        subject === "tag" ? `has tag ${truncate(subjectKey, 24)}` : `${subject}.${subjectKey}`;
+        subject === 'tag'
+          ? t ? t('hasTag', { tag: truncate(subjectKey, 24) }) : `has tag ${truncate(subjectKey, 24)}`
+          : `${subject}.${subjectKey}`;
       const op =
-        cfg.operator === "equals"
-          ? "=="
-          : cfg.operator === "contains"
-            ? "contains"
-            : cfg.operator === "present"
-              ? "exists"
-              : cfg.operator === "absent"
-                ? "missing"
-                : "";
-      const value = typeof cfg.value === "string" ? cfg.value : "";
+        cfg.operator === 'equals'
+          ? '=='
+          : cfg.operator === 'contains'
+            ? t ? t('opContains') : 'contains'
+            : cfg.operator === 'present'
+              ? t ? t('opExists') : 'exists'
+              : cfg.operator === 'absent'
+                ? t ? t('opMissing') : 'missing'
+                : '';
+      const value = typeof cfg.value === 'string' ? cfg.value : '';
       const valStr =
-        (cfg.operator === "equals" || cfg.operator === "contains") && value
+        (cfg.operator === 'equals' || cfg.operator === 'contains') && value
           ? ` "${truncate(value, 20)}"`
-          : "";
-      return subject === "tag" ? subjectStr : `${subjectStr} ${op}${valStr}`;
+          : '';
+      return subject === 'tag' ? subjectStr : `${subjectStr} ${op}${valStr}`;
     }
-    case "set_tag": {
-      const mode = cfg.mode === "remove" ? "Remove" : "Add";
-      const tagId = typeof cfg.tag_id === "string" ? cfg.tag_id : "";
+    case 'set_tag': {
+      const mode = cfg.mode === 'remove' ? (t ? t('modeRemove') : 'Remove') : (t ? t('modeAdd') : 'Add');
+      const tagId = typeof cfg.tag_id === 'string' ? cfg.tag_id : '';
       // No tag name available without an async lookup here; show a
       // short prefix of the UUID so users can disambiguate between
       // multiple set_tag nodes at a glance.
-      return tagId ? `${mode} tag ${tagId.slice(0, 8)}…` : `${mode} tag (none picked)`;
+      return tagId
+        ? t ? t('tagPicked', { mode, tag: tagId.slice(0, 8) }) : `${mode} tag ${tagId.slice(0, 8)}…`
+        : t ? t('tagNone', { mode }) : `${mode} tag (none picked)`;
     }
-    case "handoff": {
-      const note = typeof cfg.note === "string" ? cfg.note : "";
+    case 'handoff': {
+      const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;
     }
   }

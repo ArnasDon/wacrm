@@ -62,7 +62,7 @@ export function PasswordForm() {
         password: next,
       });
       if (updateError) {
-        toast.error(`Password update failed: ${updateError.message}`);
+        toast.error(t('failedToUpdate'));
         return;
       }
 

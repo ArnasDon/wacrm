@@ -34,7 +34,7 @@ export function SessionsCard() {
     try {
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
-        toast.error(`Sign-out failed: ${error.message}`);
+        toast.error(t('signOutFailed', { message: error.message }));
         return;
       }
       window.location.href = '/login';

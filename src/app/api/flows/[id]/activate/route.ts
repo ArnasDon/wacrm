@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
 
@@ -22,6 +23,16 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
+
+  // Changing status (activate / draft / archive) is a write — the RLS
+  // flows_update policy requires `agent`, but the service-role client
+  // below bypasses RLS, so enforce the role here (a viewer passes the
+  // membership-only ownership check).
+  try {
+    await requireRole('agent')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
 
   const supabase = await createClient()
   const {

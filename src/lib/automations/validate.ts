@@ -1,4 +1,5 @@
 import type { AutomationTriggerType } from '@/types'
+import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 
 // ------------------------------------------------------------
 // Pre-flight config validation for automations about to be activated.
@@ -58,6 +59,16 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.text`, message: 'message text is required' })
       }
       break
+    case 'send_buttons':
+    case 'send_list': {
+      // The whole step_config IS the interactive payload; validate it
+      // against Meta's limits (same check the engine runs before send).
+      const result = validateInteractivePayload(c)
+      if (!result.ok) {
+        issues.push({ path: `${path}.interactive`, message: result.error })
+      }
+      break
+    }
     case 'send_template':
       if (!nonEmpty(c.template_name)) {
         issues.push({ path: `${path}.template_name`, message: 'template name is required' })
@@ -173,6 +184,19 @@ export function validateTriggerForActivation(
   } else if (triggerType === 'tag_added') {
     if (!nonEmpty(cfg.tag_id)) {
       issues.push({ path: 'trigger.tag_id', message: 'tag is required' })
+    }
+  } else if (triggerType === 'interactive_reply') {
+    const ids = cfg.reply_ids
+    if (!Array.isArray(ids) || ids.length === 0) {
+      issues.push({
+        path: 'trigger.reply_ids',
+        message: 'at least one reply id is required',
+      })
+    } else if (ids.some((v) => typeof v !== 'string' || v.trim() === '')) {
+      issues.push({
+        path: 'trigger.reply_ids',
+        message: 'reply ids cannot be empty strings',
+      })
     }
   }
 

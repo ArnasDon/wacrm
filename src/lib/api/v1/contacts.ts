@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
+import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 
 /** Row select that embeds the contact's tags for serialization. */
@@ -199,10 +200,19 @@ export async function setContactTags(
     if (error) throw new ContactError('Failed to update contact tags', 500);
   }
   if (toAdd.length > 0) {
-    const { error } = await db
-      .from('contact_tags')
-      .insert(toAdd.map((tag_id) => ({ contact_id: contactId, tag_id })));
-    if (error) throw new ContactError('Failed to update contact tags', 500);
+    for (const tagId of toAdd) {
+      try {
+        await addContactTagAndDispatch({
+          db,
+          accountId,
+          contactId,
+          tagId,
+        });
+      } catch (error) {
+        console.error('[api/v1/contacts] tag add failed:', error);
+        throw new ContactError('Failed to update contact tags', 500);
+      }
+    }
   }
 }
 

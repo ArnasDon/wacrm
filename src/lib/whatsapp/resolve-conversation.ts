@@ -138,16 +138,47 @@ export async function resolveConversationByPhone(
 
   // ---- conversation -------------------------------------------
   // One conversation per (account, contact) — same convention as the
-  // webhook.
-  const { data: conv } = await db
+  // webhook. Order oldest-first and take one row rather than
+  // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
+  // unique index (migration 036), we resolve to the canonical survivor
+  // instead of falling through and creating yet another (issue #363).
+  const conversationId = await findOrCreateConversationRow(
+    db,
+    accountId,
+    contactId,
+    ownerUserId
+  );
+
+  return { conversationId, contactId, contactCreated };
+}
+
+/**
+ * Find (oldest-first) or create the single conversation for
+ * `(accountId, contactId)`. Handles the unique-index race the same way
+ * the inbound webhook does: on a 23505 from a concurrent create,
+ * re-resolve the winning row rather than failing the send.
+ */
+async function findOrCreateConversationRow(
+  db: SupabaseClient,
+  accountId: string,
+  contactId: string,
+  ownerUserId: string
+): Promise<string> {
+  const { data: existing, error: findErr } = await db
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(1);
 
-  if (conv?.id) {
-    return { conversationId: conv.id, contactId, contactCreated };
+  if (findErr) {
+    console.error('[resolve-conversation] conversation lookup error:', findErr);
+    throw new SendMessageError('db_error', 'Failed to resolve conversation', 500);
+  }
+
+  if (existing && existing.length > 0) {
+    return existing[0].id;
   }
 
   const { data: newConv, error: convErr } = await db
@@ -161,13 +192,21 @@ export async function resolveConversationByPhone(
     .single();
 
   if (convErr || !newConv) {
+    if (isUniqueViolation(convErr)) {
+      const { data: raced } = await db
+        .from('conversations')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (raced && raced.length > 0) {
+        return raced[0].id;
+      }
+    }
     console.error('[resolve-conversation] conversation create error:', convErr);
-    throw new SendMessageError(
-      'db_error',
-      'Failed to create conversation',
-      500
-    );
+    throw new SendMessageError('db_error', 'Failed to create conversation', 500);
   }
 
-  return { conversationId: newConv.id, contactId, contactCreated };
+  return newConv.id;
 }

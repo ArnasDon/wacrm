@@ -1,4 +1,14 @@
 import type { AccountRole } from "@/lib/auth/roles";
+import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+
+export type {
+  InteractiveMessagePayload,
+  InteractiveButtonsPayload,
+  InteractiveListPayload,
+  InteractiveButton,
+  InteractiveListRow,
+  InteractiveListSection,
+} from "@/lib/whatsapp/interactive";
 
 export interface Profile {
   id: string;
@@ -159,6 +169,18 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /**
+   * AI auto-reply state for this thread (migration 029 + 033):
+   *  - `ai_autoreply_disabled` — the bot is paused here (a human took
+   *    over, or the model handed off). Sticky until re-enabled.
+   *  - `ai_reply_count` — how many times the bot has auto-replied,
+   *    checked against the account's per-conversation cap.
+   *  - `ai_handoff_summary` — short internal note the bot wrote when it
+   *    handed off, shown to whoever takes the thread over.
+   */
+  ai_autoreply_disabled?: boolean;
+  ai_reply_count?: number;
+  ai_handoff_summary?: string | null;
 }
 
 // ============================================================
@@ -216,6 +238,20 @@ export interface Message {
    * cue (renders with a "↩ button reply" affordance).
    */
   interactive_reply_id?: string;
+  /**
+   * Structured payload of an OUTBOUND interactive message (reply
+   * buttons or list) we sent. Lets the thread re-render the buttons /
+   * rows, not just the body text. Only set when `content_type ===
+   * 'interactive'` and `sender_type` is agent/bot. Migration 035.
+   */
+  interactive_payload?: InteractiveMessagePayload;
+  /**
+   * True when the AI auto-reply bot generated + sent this message (as
+   * opposed to a human agent or a deterministic Flow/automation send,
+   * which all share `sender_type='bot'`/`'agent'`). Drives the "AI"
+   * badge in the inbox. Migration 033.
+   */
+  ai_generated?: boolean;
 }
 
 export type ReactionActor = 'customer' | 'agent';
@@ -400,10 +436,15 @@ export type AutomationTriggerType =
   | 'new_contact_created'
   | 'conversation_assigned'
   | 'tag_added'
-  | 'time_based';
+  | 'time_based'
+  /** Customer tapped a reply button / list row whose id matches; lets
+   *  multi-step menus be chained across automations. */
+  | 'interactive_reply';
 
 export type AutomationStepType =
   | 'send_message'
+  | 'send_buttons'
+  | 'send_list'
   | 'send_template'
   | 'add_tag'
   | 'remove_tag'
@@ -433,16 +474,30 @@ export interface TimeBasedTriggerConfig {
   timezone?: string;
 }
 
+export interface InteractiveReplyTriggerConfig {
+  /** Button / list-row ids to match, exact. Any one matching fires. */
+  reply_ids: string[];
+}
+
 export type AutomationTriggerConfig =
   | Record<string, never>
   | KeywordMatchTriggerConfig
   | TagTriggerConfig
   | TimeBasedTriggerConfig
+  | InteractiveReplyTriggerConfig
   | Record<string, unknown>;
 
 export interface SendMessageStepConfig {
   text: string;
 }
+
+/**
+ * `send_buttons` / `send_list` step configs carry the full interactive
+ * payload (same shape stored on messages + quick replies). `kind` is
+ * implied by the step_type but kept on the payload for a uniform shape.
+ */
+export type SendButtonsStepConfig = InteractiveMessagePayload;
+export type SendListStepConfig = InteractiveMessagePayload;
 
 export interface SendTemplateStepConfig {
   template_name: string;
@@ -506,6 +561,8 @@ export interface SendWebhookStepConfig {
 
 export type AutomationStepConfig =
   | SendMessageStepConfig
+  | SendButtonsStepConfig
+  | SendListStepConfig
   | SendTemplateStepConfig
   | TagStepConfig
   | AssignConversationStepConfig
@@ -566,4 +623,26 @@ export interface AutomationLog {
   error_message?: string | null;
   created_at: string;
   contact?: Contact;
+}
+
+// ============================================================
+// Quick replies — reusable snippets (migration 035)
+// ============================================================
+
+export type QuickReplyKind = 'text' | 'interactive';
+
+export interface QuickReply {
+  id: string;
+  /** Account tenancy key — shared across all members of the account. */
+  account_id: string;
+  /** Author / audit only. */
+  user_id: string;
+  title: string;
+  kind: QuickReplyKind;
+  /** Set when `kind === 'text'`. */
+  content_text?: string | null;
+  /** Set when `kind === 'interactive'`. */
+  interactive_payload?: InteractiveMessagePayload | null;
+  created_at: string;
+  updated_at: string;
 }

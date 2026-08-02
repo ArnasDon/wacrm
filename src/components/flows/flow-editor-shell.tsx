@@ -35,6 +35,7 @@ import { ValidationPanel } from "./validation-panel";
 import { NODE_META, nodeColors, type NodeType } from "./shared";
 import { cn } from "@/lib/utils";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
+import { useTranslations } from "next-intl";
 
 /**
  * Below this viewport width we force list view and hide the toggle.
@@ -59,6 +60,8 @@ interface Props {
 }
 
 export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
+  const t = useTranslations("Flows.builder");
+
   // Read the persisted choice in the useState initializer. Safe even
   // though this is a client component because the parent page only
   // mounts us AFTER a client-side fetch resolves — there's no SSR
@@ -110,26 +113,26 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
                 active={effectiveView === "canvas"}
                 onClick={() => choose("canvas")}
                 icon={<GitFork className="h-3.5 w-3.5" />}
-                label="Canvas"
+                label={t("canvasView")}
               />
               <SegButton
                 active={effectiveView === "list"}
                 onClick={() => choose("list")}
                 icon={<List className="h-3.5 w-3.5" />}
-                label="List"
+                label={t("listView")}
               />
             </div>
             <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
-              {LEGEND_TYPES.map((t) => (
+              {LEGEND_TYPES.map((t_type) => (
                 <span
-                  key={t}
+                  key={t_type}
                   className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground"
                 >
                   <span
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: nodeColors(t).solid }}
+                    style={{ background: nodeColors(t_type).solid }}
                   />
-                  {NODE_META[t].label}
+                  {t(`nodes.${t_type}.label`)}
                 </span>
               ))}
             </div>

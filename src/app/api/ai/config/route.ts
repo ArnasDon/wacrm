@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -95,6 +95,25 @@ export async function POST(request: Request) {
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
 
+    // Handoff routing target for auto-reply. A non-empty string must be a
+    // member of this account (else the conversation would be assigned to a
+    // stranger); an empty string / null means "leave unassigned" (the
+    // shared queue). Absent → left unchanged on update below.
+    const rawHandoff =
+      typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
+    const handoffProvided = 'handoff_agent_id' in body
+    let handoffAgentId: string | null = null
+    if (rawHandoff) {
+      const { data: member } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('account_id', accountId)
+        .eq('user_id', rawHandoff)
+        .maybeSingle()
+      if (!member) return bad('handoff_agent_id must be a member of this account')
+      handoffAgentId = rawHandoff
+    }
+
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
 
     // Embeddings key (optional, for semantic KB search): a non-empty
@@ -146,6 +165,7 @@ export async function POST(request: Request) {
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
+          handoffAgentId: null,
           embeddingsApiKey: null,
         })
       } catch (err) {
@@ -186,6 +206,9 @@ export async function POST(request: Request) {
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
     }
+    // Only touch the handoff target when the form actually sent the field,
+    // so a partial save (e.g. flipping a toggle) doesn't wipe it.
+    if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {

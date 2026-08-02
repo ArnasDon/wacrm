@@ -50,6 +50,10 @@ clone or fork it to run your own CRM.
 - **Public REST API** (`/api/v1`) with scoped, revocable API keys —
   build your own automations on top of your CRM. See
   [docs/public-api.md](./docs/public-api.md).
+- **MCP server** — drive your CRM from Claude, Cursor, and other AI
+  assistants over the [Model Context Protocol](https://modelcontextprotocol.io).
+  Read-only by default, opt-in writes. See [docs/mcp.md](./docs/mcp.md)
+  (server in [`mcp-server/`](./mcp-server)).
 
 ## Why fork this?
 
@@ -85,6 +89,9 @@ npm run dev
 
 Open <http://localhost:3000>. You'll be redirected to `/login` (or
 `/dashboard` if already signed in).
+
+Prefer containers? See [docs/docker.md](./docs/docker.md) for the
+Dockerfile + Docker Compose setup.
 
 ## 🚀 Deploy on Hostinger (recommended)
 

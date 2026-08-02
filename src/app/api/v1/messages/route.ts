@@ -39,6 +39,7 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message';
+import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
 export async function POST(request: Request) {
   try {
@@ -79,11 +80,19 @@ export async function POST(request: Request) {
     // Validate the message shape BEFORE resolveConversationByPhone
     // finds-or-creates a contact + conversation, so a bad payload 400s
     // without leaving an orphan contact/conversation behind.
+    // Validated by `validateSendMessageParams` below; the cast just bridges
+    // the untyped JSON body to the send-core param type.
+    const interactivePayload =
+      body.interactive_payload && typeof body.interactive_payload === 'object'
+        ? (body.interactive_payload as InteractiveMessagePayload)
+        : null;
+
     validateSendMessageParams({
       messageType: type,
       contentText: typeof body.text === 'string' ? body.text : null,
       mediaUrl: typeof body.media_url === 'string' ? body.media_url : null,
       templateName: typeof template?.name === 'string' ? template.name : null,
+      interactivePayload,
     });
 
     // Find-or-create the conversation for this phone, then send. Both
@@ -110,6 +119,7 @@ export async function POST(request: Request) {
           typeof template?.language === 'string' ? template.language : null,
         templateParams,
         templateMessageParams,
+        interactivePayload,
         replyToMessageId:
           typeof body.reply_to_message_id === 'string'
             ? body.reply_to_message_id

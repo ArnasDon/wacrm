@@ -777,8 +777,16 @@ export async function sendInteractiveButtons(
       `Interactive button message requires 1-${INTERACTIVE_LIMITS.maxButtons} buttons (got ${buttons.length}).`
     )
   }
+  const seenButtonIds = new Set<string>()
   for (const btn of buttons) {
     if (!btn.id) throw new Error('Interactive button missing id.')
+    // Duplicate button ids make the tapped-button webhook ambiguous —
+    // Meta rejects them, and the pre-flight validator (interactive.ts)
+    // rejects them too, so guard here to keep the two paths in step.
+    if (seenButtonIds.has(btn.id)) {
+      throw new Error(`Interactive message has duplicate button id "${btn.id}".`)
+    }
+    seenButtonIds.add(btn.id)
     if (!btn.title) throw new Error(`Interactive button "${btn.id}" missing title.`)
     if (btn.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
       throw new Error(

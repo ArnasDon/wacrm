@@ -88,6 +88,48 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
     );
   });
 
+  it('requires a valid interactive payload for interactive messages', async () => {
+    // Missing payload entirely.
+    await expectSendError(
+      { ...base, messageType: 'interactive' },
+      400,
+      /payload is required/
+    );
+    // Too many buttons.
+    await expectSendError(
+      {
+        ...base,
+        messageType: 'interactive',
+        interactivePayload: {
+          kind: 'buttons',
+          body: 'Pick one',
+          buttons: [
+            { id: 'a', title: 'A' },
+            { id: 'b', title: 'B' },
+            { id: 'c', title: 'C' },
+            { id: 'd', title: 'D' },
+          ],
+        },
+      },
+      400,
+      /at most 3 buttons/
+    );
+    // Over-long button title.
+    await expectSendError(
+      {
+        ...base,
+        messageType: 'interactive',
+        interactivePayload: {
+          kind: 'buttons',
+          body: 'Pick one',
+          buttons: [{ id: 'a', title: 'x'.repeat(21) }],
+        },
+      },
+      400,
+      /20-character limit/
+    );
+  });
+
   it('allows a long "caption" on audio (audio carries none) — so it reaches the DB', async () => {
     // Audio is exempt from the caption cap, so validation passes and we
     // proceed to the conversation lookup — proven by the stub throwing.

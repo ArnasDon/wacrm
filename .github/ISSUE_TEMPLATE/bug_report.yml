@@ -58,7 +58,7 @@ body:
     attributes:
       label: Where is it running?
       options:
-        - Local dev (npm run dev)
+        - Local dev (pnpm dev)
         - Hostinger Managed Node.js
         - Hostinger VPS
         - Vercel

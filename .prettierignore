@@ -4,7 +4,7 @@ out
 build
 coverage
 next-env.d.ts
-package-lock.json
+pnpm-lock.yaml
 # Generated / vendored
 supabase/migrations
 public/opus

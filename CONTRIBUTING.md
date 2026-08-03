@@ -22,8 +22,8 @@ git clone https://github.com/<your-username>/wacrm.git
 cd wacrm
 
 cp .env.local.example .env.local   # fill in Supabase + Meta creds
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Full setup (Supabase migrations, WhatsApp Business API, deploy) lives in
@@ -84,7 +84,7 @@ If you do send a PR, the usual rules apply:
 
 - Branch off the latest `main` (don't push to a merged branch — commits
   end up orphaned).
-- Run `npm run typecheck` and `npm run format` locally first.
+- Run `pnpm typecheck` and `pnpm format` locally first.
 - Fill in the PR template, especially the **Test plan**.
 - One logical change per PR.
 - Commit-message first line is imperative + terse; the body explains
@@ -110,12 +110,12 @@ in your fork:
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Turbopack dev server on port 3000. |
-| `npm run build` | Production build. Next also runs its own typecheck here. |
-| `npm run typecheck` | `tsc --noEmit`. Fast TS-only pass. |
-| `npm run lint` | ESLint. |
-| `npm run format` | Prettier write. |
-| `npm run format:check` | Prettier in check-only mode. Useful in CI. |
+| `pnpm dev` | Turbopack dev server on port 3000. |
+| `pnpm build` | Production build. Next also runs its own typecheck here. |
+| `pnpm typecheck` | `tsc --noEmit`. Fast TS-only pass. |
+| `pnpm lint` | ESLint. |
+| `pnpm format` | Prettier write. |
+| `pnpm format:check` | Prettier in check-only mode. Useful in CI. |
 
 ## Licensing
 

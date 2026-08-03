@@ -2,6 +2,17 @@ version: 2
 updates:
   # Runtime + dev dependencies. Weekly on Mondays — keeps the noise
   # predictable and aligns with a normal review cycle.
+  #
+  # pnpm note: Dependabot supports pnpm versions up to v10 in stable
+  # form; pnpm v11 (used by this project, pinned via packageManager +
+  # pnpm/action-setup) is only in beta on Dependabot and may fail to
+  # parse the pnpm-11 multi-document lockfile on some runs. The
+  # package-ecosystem stays "npm" below because pnpm-lock.yaml is a
+  # superset of npm's manifest reading — Dependabot still watches
+  # package.json for version bumps. If Dependabot starts emitting
+  # "dependency_file_not_parseable" for the lockfile, switch this to:
+  #   package-ecosystem: pnpm
+  # once pnpm v11 lands in stable Dependabot support.
   - package-ecosystem: npm
     directory: "/"
     schedule:

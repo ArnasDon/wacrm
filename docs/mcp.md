@@ -25,8 +25,8 @@ other API call.
    {
      "mcpServers": {
        "wacrm": {
-         "command": "npx",
-         "args": ["-y", "wacrm-mcp"],
+         "command": "pnpm",
+         "args": ["dlx", "wacrm-mcp"],
          "env": {
            "WACRM_BASE_URL": "https://crm.example.com",
            "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"

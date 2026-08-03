@@ -1,0 +1,16 @@
+# pnpm 11+ reads settings from this file, not from the "pnpm" field in package.json
+# See https://pnpm.io/settings
+packages:
+  # Root package (the Next.js app) is always included.
+  # Explicitly include the mcp-server sub-project so pnpm installs its deps.
+  - 'mcp-server'
+
+allowBuilds:
+  # Next.js SWC compiler — required for next build/dev
+  '@swc/core': true
+  # Image processing (next/image) — required for production builds
+  sharp: true
+  # File watcher used by dev tooling
+  '@parcel/watcher': true
+  # Resolver used by eslint-import-resolver / tailwind tooling
+  unrs-resolver: true

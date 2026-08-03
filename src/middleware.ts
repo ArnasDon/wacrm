@@ -1,8 +1,8 @@
-import { createServerClient } from "@supabase/ssr";
-import createMiddleware from "next-intl/middleware";
-import { NextResponse, type NextRequest } from "next/server";
-import { routing } from "@/i18n/routing";
-import { locales, type Locale } from "@/i18n/config";
+import { createServerClient } from '@supabase/ssr';
+import createMiddleware from 'next-intl/middleware';
+import { NextResponse, type NextRequest } from 'next/server';
+import { routing } from '@/i18n/routing';
+import { locales, type Locale } from '@/i18n/config';
 
 const handleI18nRouting = createMiddleware(routing);
 
@@ -19,15 +19,15 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
+            request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            supabaseResponse.cookies.set(name, value, options)
           );
         },
       },
-    },
+    }
   );
 
   const {
@@ -50,7 +50,7 @@ export async function middleware(request: NextRequest) {
 
   // Also match bare /login, /signup, /forgot-password (no locale prefix)
   // so direct hits from old bookmarks still work.
-  const bareAuthPaths = ["/login", "/signup", "/forgot-password"];
+  const bareAuthPaths = ['/login', '/signup', '/forgot-password'];
   const isAuthPage =
     bareAuthPaths.includes(request.nextUrl.pathname) ||
     (authPageMatch && authPageMatch[1]);
@@ -59,45 +59,47 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     // Preserve the locale prefix if present
     const localeMatch = request.nextUrl.pathname.match(/^\/([a-z]{2})\//);
-    const localePrefix = localeMatch ? `/${localeMatch[1]}` : "";
+    const localePrefix = localeMatch ? `/${localeMatch[1]}` : '';
 
-    const inviteToken = request.nextUrl.searchParams.get("invite");
+    const inviteToken = request.nextUrl.searchParams.get('invite');
     if (
       inviteToken &&
-      (request.nextUrl.pathname.includes("/login") ||
-        request.nextUrl.pathname.includes("/signup"))
+      (request.nextUrl.pathname.includes('/login') ||
+        request.nextUrl.pathname.includes('/signup'))
     ) {
       url.pathname = `${localePrefix}/join/${encodeURIComponent(inviteToken)}`;
-      url.search = "";
+      url.search = '';
     } else {
       url.pathname = `${localePrefix}/dashboard`;
-      url.search = "";
+      url.search = '';
     }
     return withRefreshedCookies(NextResponse.redirect(url));
   }
 
   // --- Protected pages ---
   const protectedSegments = [
-    "dashboard",
-    "inbox",
-    "contacts",
-    "pipelines",
-    "broadcasts",
-    "automations",
-    "flows",
-    "settings",
+    'dashboard',
+    'inbox',
+    'notifications',
+    'contacts',
+    'pipelines',
+    'broadcasts',
+    'automations',
+    'flows',
+    'agents',
+    'settings',
   ];
   const isProtectedPage = protectedSegments.some(
     (segment) =>
       request.nextUrl.pathname.includes(`/${segment}`) ||
-      request.nextUrl.pathname === `/${segment}`,
+      request.nextUrl.pathname === `/${segment}`
   );
 
   if (!user && isProtectedPage) {
     const url = request.nextUrl.clone();
     // Try to preserve locale prefix
     const localeMatch = request.nextUrl.pathname.match(/^\/([a-z]{2})\//);
-    const localePrefix = localeMatch ? `/${localeMatch[1]}` : "";
+    const localePrefix = localeMatch ? `/${localeMatch[1]}` : '';
     url.pathname = `${localePrefix}/login`;
     return withRefreshedCookies(NextResponse.redirect(url));
   }
@@ -105,11 +107,11 @@ export async function middleware(request: NextRequest) {
   // --- API routes that need auth (not webhooks) ---
   if (
     !user &&
-    request.nextUrl.pathname.startsWith("/api/whatsapp/") &&
-    !request.nextUrl.pathname.includes("/webhook")
+    request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
+    !request.nextUrl.pathname.includes('/webhook')
   ) {
     return withRefreshedCookies(
-      NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     );
   }
 
@@ -123,7 +125,7 @@ export async function middleware(request: NextRequest) {
   // the challenge request gets redirected away from the handler.
   // Skip i18n entirely for API routes and return the Supabase response
   // (with any refreshed session cookies) directly.
-  if (request.nextUrl.pathname.startsWith("/api/")) {
+  if (request.nextUrl.pathname.startsWith('/api/')) {
     return supabaseResponse;
   }
 
@@ -138,18 +140,18 @@ export async function middleware(request: NextRequest) {
     // Safety net: intercept any double-locale-prefix redirect the
     // next-intl middleware might emit (e.g. /kk/kk/dashboard → /kk/dashboard).
     if (i18nResponse.status >= 300 && i18nResponse.status < 400) {
-      const location = i18nResponse.headers.get("Location");
+      const location = i18nResponse.headers.get('Location');
       if (location) {
         const locUrl = new URL(location, request.url);
-        const parts = locUrl.pathname.split("/");
+        const parts = locUrl.pathname.split('/');
         if (
           parts.length >= 4 &&
           locales.includes(parts[1] as Locale) &&
           locales.includes(parts[2] as Locale)
         ) {
-          locUrl.pathname = `/${parts[1]}/${parts.slice(3).join("/")}`;
+          locUrl.pathname = `/${parts[1]}/${parts.slice(3).join('/')}`;
           return withRefreshedCookies(
-            NextResponse.redirect(locUrl.toString(), i18nResponse.status),
+            NextResponse.redirect(locUrl.toString(), i18nResponse.status)
           );
         }
       }
@@ -166,6 +168,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Match all paths except static assets and API internals
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

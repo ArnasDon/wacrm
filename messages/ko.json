@@ -299,6 +299,9 @@
       "addContactBtn": "연락처 추가",
       "searchPlaceholder": "이름, 전화번호, 이메일로 검색...",
       "filterByTags": "태그로 필터링",
+      "filterModeAny": "태그 중 하나라도 일치",
+      "filterModeAll": "모든 태그 일치",
+      "noCategory": "카테고리 없음",
       "clearAll": "모두 지우기",
       "noTagsYet": "아직 태그가 없습니다.",
       "selectedCount": "{count}개 선택됨",
@@ -375,6 +378,7 @@
         "deals": "딜",
         "tags": "태그",
         "noTags": "태그 없음",
+        "noCategory": "카테고리 없음",
         "noDeals": "딜 없음",
         "addNotePlaceholder": "메모 추가..."
       },
@@ -410,7 +414,8 @@
       },
       "tagsTab": {
         "clickTagDesc": "태그를 클릭해 이 연락처에 추가하거나 제거하세요.",
-        "noTagsAvailable": "사용 가능한 태그가 없습니다. 설정에서 태그를 만드세요."
+        "noTagsAvailable": "사용 가능한 태그가 없습니다. 설정에서 태그를 만드세요.",
+        "noCategory": "카테고리 없음"
       },
       "sendTemplateBtn": "템플릿 보내기",
       "saveChangesBtn": "변경 사항 저장",
@@ -1311,6 +1316,8 @@
       "deleteAria": "{name} 삭제",
       "noTags": "아직 태그가 없습니다 — 아래에서 첫 태그를 만들어보세요.",
       "placeholder": "예: 뉴스레터",
+      "categoryPlaceholder": "카테고리 (선택)",
+      "noCategory": "카테고리 없음",
       "useColor": "{color} 사용",
       "addTag": "태그 추가",
       "deleteTag": "태그 삭제",

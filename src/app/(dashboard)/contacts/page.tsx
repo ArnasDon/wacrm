@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
+import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -75,8 +76,11 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  // Tag filter — contacts shown must have ANY of these tags (OR).
+  // Tag filter — contacts shown must have ANY or ALL of these tags,
+  // depending on tagFilterMode (see filter_contacts_by_tags vs.
+  // filter_contacts_by_all_tags, migrations 025 and 039).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagFilterMode, setTagFilterMode] = useState<'any' | 'all'>('any');
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -137,8 +141,12 @@ export default function ContactsPage() {
       // Tag filter active — resolve it server-side (join + distinct +
       // windowed total count + pagination) so a tag covering many
       // contacts can't silently truncate the result or overflow an IN
-      // clause. See migration 025_filter_contacts_by_tags.
-      const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
+      // clause. filter_contacts_by_tags matches ANY selected tag
+      // (migration 025); filter_contacts_by_all_tags requires ALL of
+      // them (migration 039) for combined qualification filtering.
+      const rpcName =
+        tagFilterMode === 'all' ? 'filter_contacts_by_all_tags' : 'filter_contacts_by_tags';
+      const { data, error } = await supabase.rpc(rpcName, {
         p_tag_ids: selectedTagIds,
         p_search: term || null,
         p_limit: PAGE_SIZE,
@@ -207,7 +215,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -336,6 +344,7 @@ export default function ContactsPage() {
 
   function clearTagFilters() {
     setSelectedTagIds([]);
+    setTagFilterMode('any');
     setPage(0);
   }
 
@@ -431,30 +440,57 @@ export default function ContactsPage() {
                   </button>
                 )}
               </div>
+              {selectedTagIds.length >= 2 && (
+                <div className="flex gap-1 px-3 py-2 border-b border-border">
+                  {(['any', 'all'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        setTagFilterMode(mode);
+                        setPage(0);
+                      }}
+                      className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                        tagFilterMode === mode
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                      }`}
+                    >
+                      {mode === 'any' ? t('filterModeAny') : t('filterModeAll')}
+                    </button>
+                  ))}
+                </div>
+              )}
               {allTags.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground text-center">
                   {t('noTagsYet')}
                 </p>
               ) : (
                 <div className="max-h-64 overflow-y-auto py-1">
-                  {allTags.map((tag) => (
-                    <label
-                      key={tag.id}
-                      className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
-                    >
-                      <Checkbox
-                        checked={selectedTagIds.includes(tag.id)}
-                        onCheckedChange={() => toggleTagFilter(tag.id)}
-                        aria-label={`Filter by ${tag.name}`}
-                      />
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span className="text-sm text-popover-foreground truncate">
-                        {tag.name}
-                      </span>
-                    </label>
+                  {groupTagsByCategory(allTags).map(([category, group]) => (
+                    <div key={category ?? '__none__'}>
+                      <p className="px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {category ?? t('noCategory')}
+                      </p>
+                      {group.map((tag) => (
+                        <label
+                          key={tag.id}
+                          className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
+                        >
+                          <Checkbox
+                            checked={selectedTagIds.includes(tag.id)}
+                            onCheckedChange={() => toggleTagFilter(tag.id)}
+                            aria-label={`Filter by ${tag.name}`}
+                          />
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          <span className="text-sm text-popover-foreground truncate">
+                            {tag.name}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
                   ))}
                 </div>
               )}

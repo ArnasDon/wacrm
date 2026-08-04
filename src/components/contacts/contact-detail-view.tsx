@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -548,29 +549,38 @@ export function ContactDetailView({
                       {t('tagsTab.noTagsAvailable')}
                     </p>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {allTags.map((tag) => {
-                        const selected = contactTagIds.includes(tag.id);
-                        return (
-                          <button
-                            key={tag.id}
-                            onClick={() => toggleTag(tag.id)}
-                            disabled={savingTags}
-                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                              selected
-                                ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
-                                : 'opacity-50 hover:opacity-80'
-                            }`}
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {selected && <Check className="size-3 mr-1" />}
-                            {tag.name}
-                          </button>
-                        );
-                      })}
+                    <div className="space-y-3">
+                      {groupTagsByCategory(allTags).map(([category, group]) => (
+                        <div key={category ?? '__none__'}>
+                          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {category ?? t('tagsTab.noCategory')}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.map((tag) => {
+                              const selected = contactTagIds.includes(tag.id);
+                              return (
+                                <button
+                                  key={tag.id}
+                                  onClick={() => toggleTag(tag.id)}
+                                  disabled={savingTags}
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                                    selected
+                                      ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
+                                      : 'opacity-50 hover:opacity-80'
+                                  }`}
+                                  style={{
+                                    backgroundColor: tag.color + '20',
+                                    color: tag.color,
+                                  }}
+                                >
+                                  {selected && <Check className="size-3 mr-1" />}
+                                  {tag.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

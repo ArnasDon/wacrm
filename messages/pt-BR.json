@@ -299,6 +299,9 @@
       "addContactBtn": "Adicionar contato",
       "searchPlaceholder": "Buscar por nome, telefone ou e-mail...",
       "filterByTags": "Filtrar por tags",
+      "filterModeAny": "Qualquer uma dessas tags",
+      "filterModeAll": "Todas essas tags",
+      "noCategory": "Sem categoria",
       "clearAll": "Limpar tudo",
       "noTagsYet": "Nenhuma tag ainda.",
       "selectedCount": "{count} selecionado(s)",
@@ -375,6 +378,7 @@
         "deals": "Negócios",
         "tags": "Tags",
       "noTags": "Nenhuma tag",
+      "noCategory": "Sem categoria",
       "noDeals": "Nenhum negócio",
       "addNotePlaceholder": "Adicionar uma nota..."
       },
@@ -410,7 +414,8 @@
       },
       "tagsTab": {
         "clickTagDesc": "Clique em uma tag para adicionar ou remover deste contato.",
-        "noTagsAvailable": "Nenhuma tag disponível. Crie tags em Configurações."
+        "noTagsAvailable": "Nenhuma tag disponível. Crie tags em Configurações.",
+        "noCategory": "Sem categoria"
       },
       "sendTemplateBtn": "Enviar template",
       "saveChangesBtn": "Salvar alterações",
@@ -1311,6 +1316,8 @@
       "deleteAria": "Excluir {name}",
       "noTags": "Nenhuma tag ainda — crie a primeira abaixo.",
       "placeholder": "ex: Newsletter",
+      "categoryPlaceholder": "Categoria (opcional)",
+      "noCategory": "Sem categoria",
       "useColor": "Usar {color}",
       "addTag": "Adicionar tag",
       "deleteTag": "Excluir tag",

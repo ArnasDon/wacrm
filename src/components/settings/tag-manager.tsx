@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import type { Tag } from '@/types';
+import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
 
 const PRESET_COLORS = [
   { name: 'red', value: '#ef4444' },
@@ -54,6 +55,7 @@ export function TagManager() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+  const [newTagCategory, setNewTagCategory] = useState('');
   const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[3].value);
 
   useEffect(() => {
@@ -105,12 +107,14 @@ export function TagManager() {
         account_id: accountId,
         name: newTagName.trim(),
         color: selectedColor,
+        category: newTagCategory.trim() || null,
       });
 
       if (error) throw error;
 
       toast.success(t('tagCreated'));
       setNewTagName('');
+      setNewTagCategory('');
       setSelectedColor(PRESET_COLORS[3].value);
       await fetchTags(user.id);
     } catch (err) {
@@ -169,31 +173,40 @@ export function TagManager() {
         ) : (
           <>
             {tags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
-                    style={{
-                      backgroundColor: `${tag.color}20`,
-                      color: tag.color,
-                      border: `1px solid ${tag.color}40`,
-                    }}
-                  >
-                    <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    {tag.name}
-                    <button
-                      type="button"
-                      onClick={() => confirmDelete(tag)}
-                      aria-label={t('deleteAria', { name: tag.name })}
-                      className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
+              <div className="space-y-3">
+                {groupTagsByCategory(tags).map(([category, group]) => (
+                  <div key={category ?? '__none__'}>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {category ?? t('noCategory')}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.map((tag) => (
+                        <span
+                          key={tag.id}
+                          className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+                          style={{
+                            backgroundColor: `${tag.color}20`,
+                            color: tag.color,
+                            border: `1px solid ${tag.color}40`,
+                          }}
+                        >
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                          <button
+                            type="button"
+                            onClick={() => confirmDelete(tag)}
+                            aria-label={t('deleteAria', { name: tag.name })}
+                            className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -213,8 +226,27 @@ export function TagManager() {
                 }}
                 disabled={saving}
                 maxLength={40}
-                className="min-w-[180px] flex-1"
+                className="min-w-[160px] flex-1"
               />
+              <Input
+                placeholder={t('categoryPlaceholder')}
+                value={newTagCategory}
+                onChange={(e) => setNewTagCategory(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate();
+                }}
+                disabled={saving}
+                maxLength={40}
+                list="tag-categories"
+                className="min-w-[160px] flex-1"
+              />
+              <datalist id="tag-categories">
+                {[...new Set(tags.map((tag) => tag.category).filter((c): c is string => !!c))]
+                  .sort()
+                  .map((category) => (
+                    <option key={category} value={category} />
+                  ))}
+              </datalist>
               <div className="flex gap-1.5">
                 {PRESET_COLORS.map((color) => (
                   <button

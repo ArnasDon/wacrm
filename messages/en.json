@@ -60,6 +60,21 @@
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
   },
+  "PushNotifications": {
+    "title": "Mobile notifications",
+    "description": "Get a push notification on this device when a new WhatsApp message arrives — works on iPhone once added to the Home Screen (Safari → Share → Add to Home Screen).",
+    "notSupported": "Your browser doesn't support push notifications.",
+    "permissionDenied": "Notification permission was denied. Enable it in your browser/device settings, then reload this page.",
+    "enableBtn": "Enable notifications",
+    "enabledBadge": "Enabled on this device",
+    "enabledToast": "Notifications enabled on this device.",
+    "disableBtn": "Disable on this device",
+    "disabledToast": "Notifications disabled on this device.",
+    "testBtn": "Send test notification",
+    "testSuccess": "Test notification sent — check this device.",
+    "testError": "Couldn't send the test notification.",
+    "genericError": "Something went wrong. Please try again."
+  },
   "Dashboard": {
     "page": {
       "title": "Dashboard",

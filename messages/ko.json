@@ -60,6 +60,21 @@
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
   },
+  "PushNotifications": {
+    "title": "모바일 알림",
+    "description": "새 WhatsApp 메시지가 도착하면 이 기기로 푸시 알림을 받으세요 — iPhone에서는 홈 화면에 추가한 후 작동합니다 (Safari → 공유 → 홈 화면에 추가).",
+    "notSupported": "이 브라우저는 푸시 알림을 지원하지 않습니다.",
+    "permissionDenied": "알림 권한이 거부되었습니다. 브라우저/기기 설정에서 활성화한 후 이 페이지를 새로고침하세요.",
+    "enableBtn": "알림 활성화",
+    "enabledBadge": "이 기기에서 활성화됨",
+    "enabledToast": "이 기기에서 알림이 활성화되었습니다.",
+    "disableBtn": "이 기기에서 비활성화",
+    "disabledToast": "이 기기에서 알림이 비활성화되었습니다.",
+    "testBtn": "테스트 알림 보내기",
+    "testSuccess": "테스트 알림을 보냈습니다 — 이 기기를 확인하세요.",
+    "testError": "테스트 알림을 보내지 못했습니다.",
+    "genericError": "문제가 발생했습니다. 다시 시도해 주세요."
+  },
   "Dashboard": {
     "page": {
       "title": "대시보드",

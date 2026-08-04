@@ -9,6 +9,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { sendPushToAccount } from '@/lib/push/send'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -701,6 +702,18 @@ async function processMessage(
   if (convError) {
     console.error('Error updating conversation:', convError)
   }
+
+  // Custom feature (not part of the upstream wacrm template): notify
+  // any device that's opted into mobile push (Settings → Appearance →
+  // "Notificações no celular"). Fire-and-forget — sendPushToAccount()
+  // never throws, so this can't block message processing, and a
+  // missing VAPID config (most installs) makes it a silent no-op.
+  void sendPushToAccount(accountId, {
+    title: contactName || senderPhone,
+    body: contentText || `[${message.type}]`,
+    url: `/inbox?conversation=${conversation.id}`,
+    tag: `wacrm-conversation-${conversation.id}`,
+  })
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate

@@ -32,6 +32,15 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [{ url: "/icon" }],
+    apple: [{ url: "/apple-icon" }],
+  },
+  // Makes "Add to Home Screen" on iOS Safari launch in standalone mode
+  // (no browser chrome) instead of opening as a plain bookmark tab —
+  // required for the PWA + Web Push notification flow to feel like an app.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "wacrm",
   },
   formatDetection: {
     email: false,

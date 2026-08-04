@@ -1,6 +1,6 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
-> Última atualização: **2026-08-04**, ao final da sessão de redesenho do Dashboard + módulos de Segmentos e Agenda + card "Leads Aguardando Classificação".
+> Última atualização: **2026-08-04**, ao final da sessão de localização pt-BR (Notificações/Automações) + rename Funil→Pipeline + remoção da faixa de métricas do Pipeline.
 > Este arquivo é o ponto de partida para qualquer sessão futura — leia antes de qualquer outra coisa.
 
 ## Estado atual
@@ -11,7 +11,7 @@
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok, 55 páginas estáticas geradas).
 - **Testes automatizados:** 651/654 passando. As 3 falhas são pré-existentes (`currency.test.ts`, dependente de ICU/locale da máquina) — ver "Problemas conhecidos".
-- Commit `74baf2d` já em produção (deploy automático confirmado, testado visualmente).
+- Commit `181540d` já em produção (deploy automático confirmado, testado visualmente: Notificações, builder de Automações incluindo templates/preview de etapas, tela e dialog de Pipeline).
 
 ## O que está funcionando
 
@@ -39,6 +39,20 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-04 (parte 5)** — localização pt-BR completa de Notificações/Automações, rename Funil→Pipeline, remoção da faixa de métricas do Pipeline:
+
+1. **Notificações** — a tela inteira nunca passava por `next-intl` (100% hardcoded em inglês). Criada a namespace `Notifications.page`, todo o texto traduzido, timestamps relativos agora usam o locale do date-fns (`src/lib/date-fns-locale.ts`, mapeando o locale do next-intl). A `migration 044` trocou o texto do trigger SQL `notify_conversation_assigned` (título/corpo da notificação, gerados no INSERT) para português — é conteúdo salvo como dado, não uma chave de tradução, então não dava para resolver só no front.
+2. **Automações** — auditoria completa de `automation-builder.tsx` (1740 linhas) encontrou ~10 pontos sem i18n: labels de config de gatilho, chrome do card de etapa ("Condition"/"Wait"/"Action", "Move up/down"), um `delete` que dependia de fallback em inglês, um label "Value" solto, e a função `previewFor()` (prévia de cada etapa) inteira sem tradução. `trigger-meta.ts` (`TRIGGER_META`/`formatRelative`) também tinha inglês hardcoded — agora reaproveita os labels já traduzidos do builder em vez de manter um segundo conjunto. `AUTOMATION_TEMPLATES` (os 4 templates de início rápido) virou português direto, incluindo o texto real das mensagens de WhatsApp e as palavras-chave do qualificador de leads (eram "pricing, quote, buy").
+3. **GatedButton** — o tooltip "Read-only — your role can't X" era hardcoded em inglês, usado por 16 botões em 6 arquivos (automações, transmissões, contatos, fluxos, pipeline, composer do inbox). Template e as 16 frases traduzidos.
+4. **Rename Funil→Pipeline** — só em `messages/pt-BR.json` (en/ko já usavam "Pipeline(s)"/equivalente correto): nav, tela de Pipeline, configurações de pipeline, filtro de pipeline no detalhe de transmissão, campos de pipeline no builder de automações, textos de config de negócios/moeda, descrição do manifest PWA.
+5. **Faixa de métricas do Pipeline removida** — `pipeline-analytics.tsx` deletado (único importador confirmado, sem estado compartilhado com o Kanban), import/JSX removidos de `pipelines/page.tsx`, bloco `Pipelines.analytics` removido das 3 mensagens de tradução. Seletor de pipeline, botões "Adicionar pipeline"/"Adicionar negócio" e o board intactos.
+
+Commit: `181540d`. Migration `044` aplicada manualmente em produção antes do deploy do código.
+
+**Validação:** `tsc --noEmit`, `eslint` (zero erros; warnings restantes são todos pré-existentes/não relacionados), `next build` (55 páginas) e `vitest run` (651/654, mesmas 3 falhas de `currency.test.ts`) limpos. Testado em produção: Notificações e o builder de Automações (abri o template "Qualificador de leads", conferi chrome de etapa, texto da mensagem, botão Excluir) 100% em português; tela e dialog "Gerenciar pipeline" sem nenhum "Funil" restante; tela de Pipeline abre direto nas colunas, sem a faixa de métricas.
+
+---
 
 **Sessão de 2026-08-04 (parte 4)** — card "Leads Aguardando Classificação" no lugar de "Agenda Hoje":
 

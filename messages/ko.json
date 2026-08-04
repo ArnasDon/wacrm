@@ -109,14 +109,24 @@
       "newAutomation": "새 자동화"
     },
     "agenda": {
-      "title": "오늘의 일정",
-      "description": "오늘 예정된 모든 유형의 일정입니다.",
+      "title": "주간 일정",
+      "description": "월요일부터 토요일까지, 모든 전화·방문·미팅·팔로우업입니다.",
       "newAppointment": "새 일정",
-      "empty": "오늘 예정된 일정이 없습니다.",
-      "allDay": "종일"
-    },
-    "emptyState": {
-      "title": "아직 데이터가 충분하지 않습니다"
+      "emptyDay": "예정된 일정 없음",
+      "allDay": "종일",
+      "noContactShort": "고객 없음",
+      "noPropertyShort": "매물 없음",
+      "connectGoogleCalendar": "Google 캘린더 연결",
+      "googleCalendarSoon": "출시 예정",
+      "weekdays": {
+        "monday": "월요일",
+        "tuesday": "화요일",
+        "wednesday": "수요일",
+        "thursday": "목요일",
+        "friday": "금요일",
+        "saturday": "토요일",
+        "sunday": "일요일"
+      }
     }
   },
   "Segments": {
@@ -153,6 +163,7 @@
   },
   "Appointments": {
     "noContact": "연락처 없음",
+    "noProperty": "매물 없음",
     "type": {
       "call": "전화",
       "visit": "방문",
@@ -167,12 +178,18 @@
       "description": "전화, 방문, 미팅, 제안 또는 팔로우업 일정을 등록하세요.",
       "titleLabel": "제목",
       "titlePlaceholder": "예: ...에게 다시 연락",
+      "contactLabel": "고객",
+      "propertyLabel": "매물",
+      "propertyNamePlaceholder": "예: Residencial Reserva",
+      "newProperty": "새 매물",
+      "add": "추가",
       "dateLabel": "날짜",
       "timeLabel": "시간",
       "typeLabel": "유형",
-      "contactLabel": "연락처",
       "descriptionLabel": "설명",
       "descriptionPlaceholder": "선택 사항 메모...",
+      "notesLabel": "메모",
+      "notesPlaceholder": "예: 고객이 먼저 전화로 확인해달라고 요청함...",
       "cancel": "취소",
       "save": "저장",
       "titleRequired": "일정 제목을 입력하세요.",
@@ -180,7 +197,27 @@
       "notAuthenticated": "로그인되어 있지 않습니다.",
       "toastCreated": "일정이 생성되었습니다.",
       "toastUpdated": "일정이 수정되었습니다.",
-      "toastSaveFailed": "일정을 저장하지 못했습니다."
+      "toastSaveFailed": "일정을 저장하지 못했습니다.",
+      "toastPropertyCreateFailed": "매물을 생성하지 못했습니다."
+    },
+    "detail": {
+      "client": "고객",
+      "phone": "전화번호",
+      "property": "매물",
+      "date": "날짜",
+      "time": "시간",
+      "allDay": "종일",
+      "descriptionLabel": "설명",
+      "notesLabel": "메모",
+      "createdAt": "생성일",
+      "updatedAt": "마지막 수정",
+      "edit": "편집",
+      "delete": "일정 삭제",
+      "deleteTitle": "일정 삭제",
+      "deleteConfirm": "\"{name}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+      "cancel": "취소",
+      "toastDeleted": "일정이 삭제되었습니다.",
+      "toastDeleteFailed": "일정을 삭제하지 못했습니다."
     }
   },
   "Inbox": {

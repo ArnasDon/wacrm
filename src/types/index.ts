@@ -163,24 +163,54 @@ export type AppointmentType =
 
 export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled';
 
-/** A scheduled item on the Agenda (migration 041). `scheduled_date`
- *  is YYYY-MM-DD, `scheduled_time` is HH:MM:SS or null for an
- *  all-day/unscheduled-time item. */
+/** Real estate listing an appointment can reference (migration 045).
+ *  Deliberately minimal — just enough to name/select a property from
+ *  the appointment form; not a full listings module. */
+export interface Property {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Not yet acted on — columns exist (migration 045) so a future sync
+ *  service can persist state without another migration, but nothing
+ *  in the app writes anything other than 'not_synced' today. See
+ *  src/lib/calendar/ for the (unimplemented) provider scaffolding. */
+export type AppointmentSyncStatus = 'not_synced' | 'synced' | 'error';
+
+/** A scheduled item on the Agenda (migration 041, extended 045).
+ *  `scheduled_date` is YYYY-MM-DD, `scheduled_time` is HH:MM:SS or
+ *  null for an all-day/unscheduled-time item. */
 export interface Appointment {
   id: string;
   account_id: string;
   user_id: string;
   contact_id: string | null;
+  property_id: string | null;
   title: string;
   description: string | null;
+  /** Free-text notes, distinct from `description` — e.g. "cliente
+   *  pediu para confirmar por telefone antes". */
+  notes: string | null;
   type: AppointmentType;
   scheduled_date: string;
   scheduled_time: string | null;
   status: AppointmentStatus;
+  /** Google Calendar sync placeholders (migration 045) — unused
+   *  until src/lib/calendar/'s GoogleCalendarProvider is actually
+   *  implemented. */
+  external_calendar_id: string | null;
+  sync_status: AppointmentSyncStatus;
+  last_synced_at: string | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contacts(name, phone)`. */
   contact?: Pick<Contact, 'id' | 'name' | 'phone'> | null;
+  /** Hydrated by queries that embed `properties(name)`. */
+  property?: Pick<Property, 'id' | 'name'> | null;
 }
 
 export interface CustomField {

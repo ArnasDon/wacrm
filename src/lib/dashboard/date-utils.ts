@@ -39,3 +39,27 @@ export function lastNDayKeys(n: number): string[] {
   }
   return keys
 }
+
+/**
+ * Which days the weekly agenda shows, as an offset from Monday
+ * (0 = Monday … 6 = Sunday). Sunday (6) is deliberately excluded for
+ * now — add it here to turn the column on later; getWeekDates below
+ * (and every caller that maps over its result) needs no other change.
+ */
+export const WEEK_DAY_OFFSETS = [0, 1, 2, 3, 4, 5] as const
+
+/**
+ * Local-day keys (YYYY-MM-DD) for WEEK_DAY_OFFSETS within the
+ * Monday-start calendar week containing `d`.
+ */
+export function getWeekDates(d: Date = new Date()): string[] {
+  const jsDow = d.getDay() // 0 = Sunday … 6 = Saturday
+  const mondayOffset = (jsDow + 6) % 7 // 0 = Monday … 6 = Sunday
+  const monday = startOfLocalDay(d)
+  monday.setDate(monday.getDate() - mondayOffset)
+  return WEEK_DAY_OFFSETS.map((offset) => {
+    const day = new Date(monday)
+    day.setDate(day.getDate() + offset)
+    return localDayKey(day)
+  })
+}

@@ -20,7 +20,7 @@ import type { FirstResponseMetric, LeadsTodayMetric } from '@/lib/dashboard/type
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
-import { AgendaToday } from '@/components/dashboard/agenda-today'
+import { AgendaWeek } from '@/components/dashboard/agenda-week'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 import { useTranslations } from 'next-intl'
@@ -145,7 +145,7 @@ export default function DashboardPage() {
       <QuickActions />
 
       {/* Agenda do dia */}
-      <AgendaToday />
+      <AgendaWeek />
     </div>
   )
 }

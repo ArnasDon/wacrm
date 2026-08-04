@@ -109,14 +109,24 @@
       "newAutomation": "Nova automação"
     },
     "agenda": {
-      "title": "Agenda do Dia",
-      "description": "Tudo que está agendado para hoje, de todos os tipos.",
+      "title": "Agenda da Semana",
+      "description": "De segunda a sábado, toda ligação, visita, reunião e follow-up.",
       "newAppointment": "Novo Compromisso",
-      "empty": "Nenhuma atividade agendada para hoje.",
-      "allDay": "Dia todo"
-    },
-    "emptyState": {
-      "title": "Ainda não há dados suficientes"
+      "emptyDay": "Nada agendado",
+      "allDay": "Dia todo",
+      "noContactShort": "Sem cliente",
+      "noPropertyShort": "Sem imóvel",
+      "connectGoogleCalendar": "Conectar Google Calendar",
+      "googleCalendarSoon": "Em breve",
+      "weekdays": {
+        "monday": "Segunda-feira",
+        "tuesday": "Terça-feira",
+        "wednesday": "Quarta-feira",
+        "thursday": "Quinta-feira",
+        "friday": "Sexta-feira",
+        "saturday": "Sábado",
+        "sunday": "Domingo"
+      }
     }
   },
   "Segments": {
@@ -153,6 +163,7 @@
   },
   "Appointments": {
     "noContact": "Sem contato",
+    "noProperty": "Sem imóvel",
     "type": {
       "call": "Ligação",
       "visit": "Visita",
@@ -167,12 +178,18 @@
       "description": "Agende uma ligação, visita, reunião, proposta ou follow-up.",
       "titleLabel": "Título",
       "titlePlaceholder": "ex.: Retornar para...",
+      "contactLabel": "Cliente",
+      "propertyLabel": "Imóvel",
+      "propertyNamePlaceholder": "ex.: Residencial Reserva",
+      "newProperty": "Novo imóvel",
+      "add": "Adicionar",
       "dateLabel": "Data",
       "timeLabel": "Horário",
       "typeLabel": "Tipo",
-      "contactLabel": "Contato",
       "descriptionLabel": "Descrição",
       "descriptionPlaceholder": "Observações opcionais...",
+      "notesLabel": "Observações",
+      "notesPlaceholder": "ex.: Cliente pediu para confirmar por telefone antes...",
       "cancel": "Cancelar",
       "save": "Salvar",
       "titleRequired": "Dê um título ao compromisso.",
@@ -180,7 +197,27 @@
       "notAuthenticated": "Você não está autenticado.",
       "toastCreated": "Compromisso criado.",
       "toastUpdated": "Compromisso atualizado.",
-      "toastSaveFailed": "Não foi possível salvar o compromisso."
+      "toastSaveFailed": "Não foi possível salvar o compromisso.",
+      "toastPropertyCreateFailed": "Não foi possível criar o imóvel."
+    },
+    "detail": {
+      "client": "Cliente",
+      "phone": "Telefone",
+      "property": "Imóvel",
+      "date": "Data",
+      "time": "Horário",
+      "allDay": "Dia todo",
+      "descriptionLabel": "Descrição",
+      "notesLabel": "Observações",
+      "createdAt": "Criado em",
+      "updatedAt": "Última atualização",
+      "edit": "Editar",
+      "delete": "Excluir compromisso",
+      "deleteTitle": "Excluir compromisso",
+      "deleteConfirm": "Excluir \"{name}\"? Essa ação não pode ser desfeita.",
+      "cancel": "Cancelar",
+      "toastDeleted": "Compromisso excluído.",
+      "toastDeleteFailed": "Não foi possível excluir o compromisso."
     }
   },
   "Inbox": {

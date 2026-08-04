@@ -109,14 +109,24 @@
       "newAutomation": "New Automation"
     },
     "agenda": {
-      "title": "Today's Schedule",
-      "description": "Everything scheduled for today, across every type.",
+      "title": "Weekly Schedule",
+      "description": "Monday through Saturday, every call, visit, meeting, and follow-up.",
       "newAppointment": "New Appointment",
-      "empty": "No activity scheduled for today.",
-      "allDay": "All day"
-    },
-    "emptyState": {
-      "title": "Not enough data yet"
+      "emptyDay": "Nothing scheduled",
+      "allDay": "All day",
+      "noContactShort": "No client",
+      "noPropertyShort": "No property",
+      "connectGoogleCalendar": "Connect Google Calendar",
+      "googleCalendarSoon": "Coming soon",
+      "weekdays": {
+        "monday": "Monday",
+        "tuesday": "Tuesday",
+        "wednesday": "Wednesday",
+        "thursday": "Thursday",
+        "friday": "Friday",
+        "saturday": "Saturday",
+        "sunday": "Sunday"
+      }
     }
   },
   "Segments": {
@@ -153,6 +163,7 @@
   },
   "Appointments": {
     "noContact": "No contact",
+    "noProperty": "No property",
     "type": {
       "call": "Call",
       "visit": "Visit",
@@ -167,12 +178,18 @@
       "description": "Schedule a call, visit, meeting, proposal, or follow-up.",
       "titleLabel": "Title",
       "titlePlaceholder": "e.g. Follow up with...",
+      "contactLabel": "Client",
+      "propertyLabel": "Property",
+      "propertyNamePlaceholder": "e.g. Residencial Reserva",
+      "newProperty": "New property",
+      "add": "Add",
       "dateLabel": "Date",
       "timeLabel": "Time",
       "typeLabel": "Type",
-      "contactLabel": "Contact",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Optional notes...",
+      "notesLabel": "Notes",
+      "notesPlaceholder": "e.g. Client asked to confirm by phone first...",
       "cancel": "Cancel",
       "save": "Save",
       "titleRequired": "Give the appointment a title.",
@@ -180,7 +197,27 @@
       "notAuthenticated": "You're not signed in.",
       "toastCreated": "Appointment created.",
       "toastUpdated": "Appointment updated.",
-      "toastSaveFailed": "Couldn't save the appointment."
+      "toastSaveFailed": "Couldn't save the appointment.",
+      "toastPropertyCreateFailed": "Couldn't create the property."
+    },
+    "detail": {
+      "client": "Client",
+      "phone": "Phone",
+      "property": "Property",
+      "date": "Date",
+      "time": "Time",
+      "allDay": "All day",
+      "descriptionLabel": "Description",
+      "notesLabel": "Notes",
+      "createdAt": "Created",
+      "updatedAt": "Last updated",
+      "edit": "Edit",
+      "delete": "Delete appointment",
+      "deleteTitle": "Delete appointment",
+      "deleteConfirm": "Delete \"{name}\"? This cannot be undone.",
+      "cancel": "Cancel",
+      "toastDeleted": "Appointment deleted.",
+      "toastDeleteFailed": "Couldn't delete the appointment."
     }
   },
   "Inbox": {

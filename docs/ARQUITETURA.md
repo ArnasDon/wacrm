@@ -27,7 +27,7 @@ wacrm/
 ├── public/
 │   └── sw.js                  # Service Worker (push + notificationclick)
 ├── supabase/
-│   └── migrations/            # 42 migrations SQL, numeradas e sequenciais (001 → 042)
+│   └── migrations/            # 43 migrations SQL, numeradas e sequenciais (001 → 043)
 └── src/
     ├── app/
     │   ├── (auth)/            # Login, signup, forgot-password
@@ -57,7 +57,7 @@ wacrm/
 - **Supabase Postgres**, projeto `qedptmrcvcbzhucoeznd`.
 - **Multi-tenant por `account_id`**: desde a migration `017_account_sharing.sql`, a maioria das tabelas tem `account_id` (não apenas `user_id`), permitindo múltiplos usuários por conta/imobiliária. `profiles.account_id` e `profiles.account_role` são `NOT NULL`.
 - **Row-Level Security (RLS)** em todas as tabelas de dados de usuário. Funções RPC usam `SECURITY INVOKER` por padrão (respeita RLS de quem chama) — só usa `SECURITY DEFINER` quando estritamente necessário.
-- **42 migrations** em `supabase/migrations/`, aplicadas manualmente via SQL Editor do Supabase (não há CI que rode migrations automaticamente neste fork).
+- **43 migrations** em `supabase/migrations/`, aplicadas manualmente via SQL Editor do Supabase (não há CI que rode migrations automaticamente neste fork).
 - Tabelas centrais: `contacts`, `tags` (+ `contact_tags` many-to-many), `custom_fields` (+ `contact_custom_values`), `conversations`, `messages`, `deals`, `pipelines`, `automations`, `flows`, `broadcasts`, `notifications`, `push_subscriptions`, `api_keys`, `webhook_endpoints`, `segments` (+ `segment_tags`), `appointments`.
 - **Tags:** desde a migration `039`, `tags` tem uma coluna `category` (texto livre, opcional) usada para agrupar tags na UI (ex.: "Bairro", "Faixa de valor"). Três funções RPC de filtro combinado por tags coexistem:
   - `filter_contacts_by_tags` (migration `025`) — contatos com **qualquer uma** das tags (OR).
@@ -66,6 +66,7 @@ wacrm/
 - **Segmentos** (migration `040`): `segments` (nome, conta) + `segment_tags` (many-to-many com `tags`). Um contato pertence ao segmento se tiver *todas* as tags associadas a ele. RLS no nível `admin` para escrita, igual a `tags`.
 - **Agenda/Compromissos** (migration `041`): tabela `appointments` (`contact_id` opcional, `type` enum: call/visit/meeting/proposal/follow_up/other, `scheduled_date`+`scheduled_time` separados, `status`). RLS no nível `agent` para escrita, igual a `deals`.
 - **Dashboard** (migration `042`): RPC `count_unanswered_conversations` — conta conversas (não fechadas) cuja mensagem mais recente foi enviada pelo cliente, usada pelo card "Leads Não Respondidos".
+- **Classificação de leads** (migration `043`): RPCs `count_unclassified_leads` (card "Leads Aguardando Classificação") e `list_unclassified_contacts` (filtro `?filter=unclassified` em Contatos). Um contato conta como "classificado" se tiver qualquer tag cuja `category` seja `'Finalidade'` — o nome dessa categoria é passado como parâmetro (`p_classification_category`, exportado do lado da app como `CLASSIFICATION_CATEGORY` em `src/lib/contacts/tag-categories.ts`), não uma lista de nomes de tag hardcoded, então uma nova tag de classificação não exige mudança de código.
 
 ## Integrações existentes
 

@@ -950,12 +950,26 @@ function KeywordMatchConfig({
         </label>
         <select
           value={config?.match_type ?? "contains"}
-          onChange={(e) => onChange({ ...config, match_type: e.target.value as "exact" | "contains" })}
+          onChange={(e) =>
+            onChange({
+              ...config,
+              match_type: e.target.value as "exact" | "contains" | "word",
+            })
+          }
           className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground focus:outline-none"
         >
           <option value="contains">{t("config.matchContains")}</option>
+          <option value="word">{t("config.matchWord")}</option>
           <option value="exact">{t("config.matchExact")}</option>
         </select>
+        {/* Only worth explaining for `word` — "contains" and "exact" read
+            for themselves, and this is the one that changes which messages
+            fire an automation in a way that isn't obvious. */}
+        {config?.match_type === "word" && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("config.matchWordHint")}
+          </p>
+        )}
       </div>
     </div>
   )

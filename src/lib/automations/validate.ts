@@ -171,10 +171,15 @@ export function validateTriggerForActivation(
     // value is invalid here. This keeps activation validation in step
     // with the engine and with the builder's "Contains" default — an
     // automation that shows the default in the UI must not be rejected.
-    if (cfg.match_type != null && cfg.match_type !== 'exact' && cfg.match_type !== 'contains') {
+    if (
+      cfg.match_type != null &&
+      cfg.match_type !== 'exact' &&
+      cfg.match_type !== 'contains' &&
+      cfg.match_type !== 'word'
+    ) {
       issues.push({
         path: 'trigger.match_type',
-        message: 'match type must be "exact" or "contains"',
+        message: 'match type must be "exact", "contains" or "word"',
       })
     }
   } else if (triggerType === 'time_based') {

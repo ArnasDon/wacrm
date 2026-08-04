@@ -75,6 +75,19 @@
     "testError": "Couldn't send the test notification.",
     "genericError": "Something went wrong. Please try again."
   },
+  "Notifications": {
+    "page": {
+      "title": "Notifications",
+      "subtitle": "Conversations other teammates assign to you show up here.",
+      "markAllRead": "Mark all as read",
+      "emptyTitle": "No notifications yet",
+      "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
+      "retry": "Retry",
+      "unreadAria": "Unread",
+      "toastMarkReadError": "Failed to mark notification as read",
+      "toastMarkAllError": "Failed to mark all as read"
+    }
+  },
   "Dashboard": {
     "page": {
       "title": "Dashboard",
@@ -622,21 +635,6 @@
       "toastFailedDeleteStage": "Failed to delete stage",
       "toastFailedDeletePipeline": "Failed to delete pipeline",
       "toastDeleted": "Pipeline deleted"
-    },
-    "analytics": {
-      "totalDeals": "Total Deals",
-      "totalDealsTooltip": "Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included.",
-      "pipelineValue": "Pipeline Value",
-      "pipelineValueTooltip": "Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost.",
-      "avgDealSize": "Avg Deal Size",
-      "avgDealSizeTooltip": "Pipeline Value divided by Total Deals — the average value of a single non-lost deal.",
-      "weightedValue": "Weighted Value",
-      "weightedValueTooltip": "Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded.",
-      "wonThisMonth": "Won This Month",
-      "wonThisMonthTooltip": "Deals marked as Won since the first day of the current month.",
-      "lostThisMonth": "Lost This Month",
-      "lostThisMonthTooltip": "Deals marked as Lost since the first day of the current month.",
-      "howCalculated": "How {label} is calculated"
     }
   },
   "Broadcasts": {
@@ -829,6 +827,7 @@
       "subtitle": "Build workflows that react to WhatsApp® events automatically.",
       "create": "Create Automation",
       "retry": "Retry",
+      "loadError": "Failed to load automations",
       "templatesTitle": "Quick-start templates",
       "emptyTitle": "No automations yet",
       "emptyDesc": "Pick a template above or create one from scratch.",
@@ -837,6 +836,8 @@
       "lastRun": "last {time}",
       "activate": "Activate",
       "deactivate": "Deactivate",
+      "activeAria": "Active",
+      "openMenuAria": "Open menu",
       "edit": "Edit",
       "duplicate": "Duplicate",
       "viewLogs": "View Logs",
@@ -852,6 +853,15 @@
         "updateError": "Failed to update",
         "duplicateError": "Failed to duplicate",
         "deleteError": "Failed to delete"
+      }
+    },
+    "common": {
+      "relative": {
+        "never": "never",
+        "justNow": "just now",
+        "minutesAgo": "{count}m ago",
+        "hoursAgo": "{count}h ago",
+        "daysAgo": "{count}d ago"
       }
     },
     "edit": {
@@ -941,6 +951,19 @@
       "saveDraft": "Save Draft",
       "untitled": "Untitled automation",
       "backToAutomations": "Back to automations",
+      "delete": "Delete",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "stepCategory": {
+        "condition": "Condition",
+        "wait": "Wait",
+        "action": "Action"
+      },
+      "previewNoText": "no text yet",
+      "previewNoBody": "no body yet",
+      "previewPickTemplate": "pick a template",
+      "previewNoUrl": "no url",
+      "previewWhen": "when {subject}",
       "toasts": {
         "saved": "Automation saved",
         "created": "Automation created",
@@ -1016,6 +1039,7 @@
           "time_of_day": "Time of day"
         },
         "operandLabel": "Operand",
+        "placeholderSchedule": "Cron expression or HH:mm",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "name / email / company",
         "placeholderTag": "tag id",

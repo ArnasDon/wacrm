@@ -62,6 +62,8 @@ export default function AutomationsPage() {
   const router = useRouter()
   const canCreate = useCan("send-messages")
   const t = useTranslations("Automations.list")
+  const tBuilder = useTranslations("Automations.builder")
+  const tCommon = useTranslations("Automations.common")
   const [automations, setAutomations] = useState<Automation[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Automation | null>(null)
@@ -77,7 +79,7 @@ export default function AutomationsPage() {
       if (fetchErr) throw fetchErr
       setAutomations((data ?? []) as Automation[])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load automations")
+      setError(err instanceof Error ? err.message : t("loadError"))
     }
   }
 
@@ -169,7 +171,7 @@ export default function AutomationsPage() {
         </div>
         <GatedButton
           canAct={canCreate}
-          gateReason="create automations"
+          gateReason="criar automações"
           onClick={() => router.push("/automations/new")}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
@@ -225,6 +227,8 @@ export default function AutomationsPage() {
               onLogs={() => router.push(`/automations/${a.id}/logs`)}
               onDelete={() => setPendingDelete(a)}
               t={t}
+              tBuilder={tBuilder}
+              tCommon={tCommon}
             />
           ))}
         </ul>
@@ -269,6 +273,8 @@ function AutomationCard({
   onLogs,
   onDelete,
   t,
+  tBuilder,
+  tCommon,
 }: {
   automation: Automation
   onToggle: (next: boolean) => void
@@ -277,8 +283,10 @@ function AutomationCard({
   onLogs: () => void
   onDelete: () => void
   t: ReturnType<typeof useTranslations>
+  tBuilder: ReturnType<typeof useTranslations>
+  tCommon: ReturnType<typeof useTranslations>
 }) {
-  const meta = triggerMeta(automation.trigger_type)
+  const meta = triggerMeta(automation.trigger_type, tBuilder)
   return (
     <li className="rounded-xl border border-border bg-card transition-colors hover:border-border">
       <div className="flex items-center gap-4 p-4">
@@ -299,7 +307,7 @@ function AutomationCard({
               {automation.name}
             </span>
             {automation.is_active && (
-              <span className="relative flex h-2 w-2" aria-label="active">
+              <span className="relative flex h-2 w-2" aria-label={t("activeAria")}>
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
               </span>
@@ -323,7 +331,7 @@ function AutomationCard({
                 : t("runsPlural", { count: automation.execution_count })}
             </span>
             <span aria-hidden>·</span>
-            <span>{t("lastRun", { time: formatRelative(automation.last_executed_at) })}</span>
+            <span>{t("lastRun", { time: formatRelative(automation.last_executed_at, tCommon) })}</span>
           </div>
         </button>
 
@@ -336,7 +344,7 @@ function AutomationCard({
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label="Open menu"
+              aria-label={t("openMenuAria")}
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted"
             >
               <MoreVertical className="h-4 w-4" />

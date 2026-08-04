@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "wacrm — CRM para WhatsApp",
     short_name: "wacrm",
-    description: "CRM para WhatsApp — caixa de entrada, funis e automações.",
+    description: "CRM para WhatsApp — caixa de entrada, pipelines e automações.",
     start_url: "/dashboard",
     display: "standalone",
     background_color: "#020617",

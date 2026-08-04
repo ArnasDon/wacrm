@@ -20,7 +20,7 @@
     "inbox": "Caixa de entrada",
     "notifications": "Notificações",
     "contacts": "Contatos",
-    "pipelines": "Funis",
+    "pipelines": "Pipeline",
     "broadcasts": "Transmissões",
     "automations": "Automações",
     "flows": "Fluxos",
@@ -45,7 +45,7 @@
     "inbox": "Caixa de entrada",
     "notifications": "Notificações",
     "contacts": "Contatos",
-    "pipelines": "Funis",
+    "pipelines": "Pipeline",
     "broadcasts": "Transmissões",
     "automations": "Automações",
     "settings": "Configurações",
@@ -74,6 +74,19 @@
     "testSuccess": "Notificação de teste enviada — confira este dispositivo.",
     "testError": "Não foi possível enviar a notificação de teste.",
     "genericError": "Algo deu errado. Tente novamente."
+  },
+  "Notifications": {
+    "page": {
+      "title": "Notificações",
+      "subtitle": "Conversas que outros atendentes atribuem a você aparecem aqui.",
+      "markAllRead": "Marcar tudo como lido",
+      "emptyTitle": "Nenhuma notificação ainda",
+      "emptyDesc": "Você verá um alerta aqui quando alguém atribuir uma conversa a você.",
+      "retry": "Tentar novamente",
+      "unreadAria": "Não lida",
+      "toastMarkReadError": "Falha ao marcar notificação como lida",
+      "toastMarkAllError": "Falha ao marcar tudo como lido"
+    }
   },
   "Dashboard": {
     "page": {
@@ -528,24 +541,24 @@
   },
   "Pipelines": {
     "page": {
-      "selectPipeline": "Selecionar funil",
-      "noPipelinesYet": "Nenhum funil ainda",
-      "managePipelines": "Gerenciar funis",
-      "addPipeline": "Adicionar funil",
+      "selectPipeline": "Selecionar pipeline",
+      "noPipelinesYet": "Nenhum pipeline ainda",
+      "managePipelines": "Gerenciar pipelines",
+      "addPipeline": "Adicionar pipeline",
       "addDeal": "Adicionar negócio",
-      "createToStartTracking": "Crie um funil para começar a acompanhar negócios",
-      "createPipeline": "Criar funil",
-      "newPipeline": "Novo funil",
-      "pipelineName": "Nome do funil",
+      "createToStartTracking": "Crie um pipeline para começar a acompanhar negócios",
+      "createPipeline": "Criar pipeline",
+      "newPipeline": "Novo pipeline",
+      "pipelineName": "Nome do pipeline",
       "pipelineNamePlaceholder": "ex: Vendas Corporativas",
       "defaultStagesDesc": "As etapas padrão (Novo Lead → Ganho) serão criadas automaticamente.",
       "cancel": "Cancelar",
       "creating": "Criando...",
-      "createPipelineBtn": "Criar funil",
-      "toastFailedLoadPipelines": "Falha ao carregar funis",
+      "createPipelineBtn": "Criar pipeline",
+      "toastFailedLoadPipelines": "Falha ao carregar pipelines",
       "toastFailedMoveDeal": "Falha ao mover negócio",
-      "toastFailedCreatePipeline": "Falha ao criar funil",
-      "toastPipelineCreated": "Funil criado",
+      "toastFailedCreatePipeline": "Falha ao criar pipeline",
+      "toastPipelineCreated": "Pipeline criado",
       "toastNotLinkedToAccount": "Seu perfil não está vinculado a uma conta."
     },
     "board": {
@@ -600,43 +613,28 @@
       "toastDeleted": "Negócio excluído"
     },
     "settings": {
-      "managePipeline": "Gerenciar funil",
-      "deletePipeline": "Excluir funil",
-      "deletePipelineDesc": "Isso vai arquivar todos os negócios deste funil. Essa ação não pode ser desfeita.",
+      "managePipeline": "Gerenciar pipeline",
+      "deletePipeline": "Excluir pipeline",
+      "deletePipelineDesc": "Isso vai arquivar todos os negócios deste pipeline. Essa ação não pode ser desfeita.",
       "cancel": "Cancelar",
       "deleting": "Excluindo...",
-      "deletePipelineBtn": "Excluir funil",
-      "pipelineName": "Nome do funil",
+      "deletePipelineBtn": "Excluir pipeline",
+      "pipelineName": "Nome do pipeline",
       "stages": "Etapas",
       "newStageNamePlaceholder": "Nome da nova etapa",
       "add": "Adicionar",
-      "createNewPipeline": "Criar um novo funil",
+      "createNewPipeline": "Criar um novo pipeline",
       "saving": "Salvando...",
       "saveChanges": "Salvar alterações",
       "dragToReorder": "Arraste para reordenar",
       "changeColor": "Mudar cor",
-      "toastFailedSave": "Falha ao salvar funil",
-      "toastSaved": "Funil salvo",
+      "toastFailedSave": "Falha ao salvar pipeline",
+      "toastSaved": "Pipeline salvo",
       "toastFailedAddStage": "Falha ao adicionar etapa",
       "toastMoveOrDeleteDeals": "Mova ou exclua os negócios desta etapa primeiro",
       "toastFailedDeleteStage": "Falha ao excluir etapa",
-      "toastFailedDeletePipeline": "Falha ao excluir funil",
-      "toastDeleted": "Funil excluído"
-    },
-    "analytics": {
-      "totalDeals": "Total de negócios",
-      "totalDealsTooltip": "Contagem de todos os negócios deste funil que não estão marcados como Perdido. Negócios ganhos ainda são incluídos.",
-      "pipelineValue": "Valor do funil",
-      "pipelineValueTooltip": "Soma dos valores de todos os negócios deste funil, excluindo os marcados como Perdido.",
-      "avgDealSize": "Ticket médio",
-      "avgDealSizeTooltip": "Valor do funil dividido pelo total de negócios — o valor médio de um negócio não perdido.",
-      "weightedValue": "Valor ponderado",
-      "weightedValueTooltip": "Receita esperada: o valor de cada negócio aberto × a probabilidade da etapa. Primeira etapa ≈ 10%, as etapas avançam até 90%, Ganho = 100%. Negócios perdidos são excluídos.",
-      "wonThisMonth": "Ganhos este mês",
-      "wonThisMonthTooltip": "Negócios marcados como Ganho desde o primeiro dia do mês atual.",
-      "lostThisMonth": "Perdidos este mês",
-      "lostThisMonthTooltip": "Negócios marcados como Perdido desde o primeiro dia do mês atual.",
-      "howCalculated": "Como {label} é calculado"
+      "toastFailedDeletePipeline": "Falha ao excluir pipeline",
+      "toastDeleted": "Pipeline excluído"
     }
   },
   "Broadcasts": {
@@ -682,7 +680,7 @@
       "delete": "Excluir",
       "cannotDeleteSending": "Não é possível excluir enquanto a transmissão está sendo enviada",
       "deleteHover": "Excluir esta transmissão",
-      "funnel": "Funil",
+      "funnel": "Pipeline",
       "recipientsHeader": "Destinatários ({filtered} de {total})",
       "recipientsHeaderAll": "Destinatários ({total})",
       "allStatuses": "Todos os status",
@@ -829,6 +827,7 @@
       "subtitle": "Crie fluxos que reagem automaticamente a eventos do WhatsApp®.",
       "create": "Criar automação",
       "retry": "Tentar novamente",
+      "loadError": "Falha ao carregar automações",
       "templatesTitle": "Templates de início rápido",
       "emptyTitle": "Nenhuma automação ainda",
       "emptyDesc": "Escolha um template acima ou crie uma do zero.",
@@ -837,6 +836,8 @@
       "lastRun": "última {time}",
       "activate": "Ativar",
       "deactivate": "Desativar",
+      "activeAria": "Ativo",
+      "openMenuAria": "Abrir menu",
       "edit": "Editar",
       "duplicate": "Duplicar",
       "viewLogs": "Ver registros",
@@ -852,6 +853,15 @@
         "updateError": "Falha ao atualizar",
         "duplicateError": "Falha ao duplicar",
         "deleteError": "Falha ao excluir"
+      }
+    },
+    "common": {
+      "relative": {
+        "never": "nunca",
+        "justNow": "agora mesmo",
+        "minutesAgo": "há {count}min",
+        "hoursAgo": "há {count}h",
+        "daysAgo": "há {count}d"
       }
     },
     "edit": {
@@ -941,6 +951,19 @@
       "saveDraft": "Salvar rascunho",
       "untitled": "Automação sem título",
       "backToAutomations": "Voltar às automações",
+      "delete": "Excluir",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "stepCategory": {
+        "condition": "Condição",
+        "wait": "Aguardar",
+        "action": "Ação"
+      },
+      "previewNoText": "sem texto ainda",
+      "previewNoBody": "sem conteúdo ainda",
+      "previewPickTemplate": "escolha um template",
+      "previewNoUrl": "sem URL",
+      "previewWhen": "quando {subject}",
       "toasts": {
         "saved": "Automação salva",
         "created": "Automação criada",
@@ -964,14 +987,14 @@
         "unknown": "{id} (atendente desconhecido)"
       },
       "pipelines": {
-        "pipelineLabel": "Funil",
-        "pipelineIdLabel": "ID do funil",
+        "pipelineLabel": "Pipeline",
+        "pipelineIdLabel": "ID do pipeline",
         "stageLabel": "Etapa",
         "stageIdLabel": "ID da etapa",
-        "selectPipeline": "Selecione um funil…",
+        "selectPipeline": "Selecione um pipeline…",
         "selectStage": "Selecione uma etapa…",
-        "selectPipelineFirst": "Selecione um funil primeiro…",
-        "unknownPipeline": "{id} (funil desconhecido)",
+        "selectPipelineFirst": "Selecione um pipeline primeiro…",
+        "unknownPipeline": "{id} (pipeline desconhecido)",
         "unknownStage": "{id} (etapa desconhecida)"
       },
       "templates": {
@@ -1016,6 +1039,7 @@
           "time_of_day": "Horário do dia"
         },
         "operandLabel": "Operando",
+        "placeholderSchedule": "Expressão cron ou HH:mm",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "nome / e-mail / empresa",
         "placeholderTag": "id da tag",
@@ -1674,9 +1698,9 @@
     },
     "deals": {
       "title": "Negócios e moeda",
-      "description": "A moeda usada para novos negócios e para os totais do funil e do painel.",
+      "description": "A moeda usada para novos negócios e para os totais do pipeline e do painel.",
       "defaultCurrency": "Moeda padrão",
-      "defaultCurrencyDesc": "Novos negócios usam esta moeda por padrão, e os totais do funil e do painel são exibidos nela. Negócios existentes mantêm a moeda com que foram salvos.",
+      "defaultCurrencyDesc": "Novos negócios usam esta moeda por padrão, e os totais do pipeline e do painel são exibidos nela. Negócios existentes mantêm a moeda com que foram salvos.",
       "currencyLabel": "Moeda",
       "adminOnlyHint": "Somente admins da conta podem alterar a moeda padrão.",
       "save": "Salvar",

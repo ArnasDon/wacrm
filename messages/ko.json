@@ -75,6 +75,19 @@
     "testError": "테스트 알림을 보내지 못했습니다.",
     "genericError": "문제가 발생했습니다. 다시 시도해 주세요."
   },
+  "Notifications": {
+    "page": {
+      "title": "알림",
+      "subtitle": "다른 팀원이 배정한 대화가 여기에 표시됩니다.",
+      "markAllRead": "모두 읽음으로 표시",
+      "emptyTitle": "아직 알림이 없습니다",
+      "emptyDesc": "누군가 대화를 배정하면 여기에 알림이 표시됩니다.",
+      "retry": "다시 시도",
+      "unreadAria": "읽지 않음",
+      "toastMarkReadError": "알림을 읽음으로 표시하지 못했습니다",
+      "toastMarkAllError": "모두 읽음으로 표시하지 못했습니다"
+    }
+  },
   "Dashboard": {
     "page": {
       "title": "대시보드",
@@ -622,21 +635,6 @@
       "toastFailedDeleteStage": "단계를 삭제하지 못했습니다",
       "toastFailedDeletePipeline": "파이프라인을 삭제하지 못했습니다",
       "toastDeleted": "파이프라인이 삭제되었습니다"
-    },
-    "analytics": {
-      "totalDeals": "전체 딜",
-      "totalDealsTooltip": "실패로 표시되지 않은, 이 파이프라인의 모든 딜 수입니다. 성사된 딜도 포함됩니다.",
-      "pipelineValue": "파이프라인 금액",
-      "pipelineValueTooltip": "실패로 표시된 딜을 제외한, 이 파이프라인 내 모든 딜 금액의 합계입니다.",
-      "avgDealSize": "평균 딜 규모",
-      "avgDealSizeTooltip": "파이프라인 금액을 전체 딜 수로 나눈 값 — 실패하지 않은 개별 딜의 평균 금액입니다.",
-      "weightedValue": "가중 금액",
-      "weightedValueTooltip": "예상 매출: 진행 중인 각 딜의 금액 × 단계별 성사 확률. 첫 단계는 약 10%, 이후 단계는 최대 90%까지 상승하며, 성사 시 100%입니다. 실패한 딜은 제외됩니다.",
-      "wonThisMonth": "이번 달 성사",
-      "wonThisMonthTooltip": "이번 달 1일 이후 성사로 표시된 딜입니다.",
-      "lostThisMonth": "이번 달 실패",
-      "lostThisMonthTooltip": "이번 달 1일 이후 실패로 표시된 딜입니다.",
-      "howCalculated": "{label} 계산 방법"
     }
   },
   "Broadcasts": {
@@ -829,6 +827,7 @@
       "subtitle": "WhatsApp® 이벤트에 자동으로 반응하는 워크플로를 만드세요.",
       "create": "자동화 만들기",
       "retry": "다시 시도",
+      "loadError": "자동화를 불러오지 못했습니다",
       "templatesTitle": "빠른 시작 템플릿",
       "emptyTitle": "아직 자동화가 없습니다",
       "emptyDesc": "위의 템플릿을 선택하거나 처음부터 새로 만드세요.",
@@ -837,6 +836,8 @@
       "lastRun": "마지막 실행 {time}",
       "activate": "활성화",
       "deactivate": "비활성화",
+      "activeAria": "활성",
+      "openMenuAria": "메뉴 열기",
       "edit": "수정",
       "duplicate": "복제",
       "viewLogs": "로그 보기",
@@ -852,6 +853,15 @@
         "updateError": "업데이트하지 못했습니다",
         "duplicateError": "복제하지 못했습니다",
         "deleteError": "삭제하지 못했습니다"
+      }
+    },
+    "common": {
+      "relative": {
+        "never": "없음",
+        "justNow": "방금",
+        "minutesAgo": "{count}분 전",
+        "hoursAgo": "{count}시간 전",
+        "daysAgo": "{count}일 전"
       }
     },
     "edit": {
@@ -941,6 +951,19 @@
       "saveDraft": "초안 저장",
       "untitled": "제목 없는 자동화",
       "backToAutomations": "자동화로 돌아가기",
+      "delete": "삭제",
+      "moveUp": "위로 이동",
+      "moveDown": "아래로 이동",
+      "stepCategory": {
+        "condition": "조건",
+        "wait": "대기",
+        "action": "동작"
+      },
+      "previewNoText": "아직 텍스트 없음",
+      "previewNoBody": "아직 내용 없음",
+      "previewPickTemplate": "템플릿을 선택하세요",
+      "previewNoUrl": "URL 없음",
+      "previewWhen": "{subject}일 때",
       "toasts": {
         "saved": "자동화가 저장되었습니다",
         "created": "자동화가 생성되었습니다",
@@ -1016,6 +1039,7 @@
           "time_of_day": "시간대"
         },
         "operandLabel": "피연산자",
+        "placeholderSchedule": "cron 표현식 또는 HH:mm",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "이름 / 이메일 / 회사",
         "placeholderTag": "태그 id",

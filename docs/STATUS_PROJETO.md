@@ -11,7 +11,7 @@
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 651/654 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado) — ver "Problemas conhecidos".
-- Commit `90eab2b` — código pronto localmente, será enviado (`git push`) e o deploy automático confirmado ao final desta sessão.
+- Commit `ef8f27f` — código pronto localmente, será enviado (`git push`) e o deploy automático confirmado ao final desta sessão.
 
 ## O que está funcionando
 
@@ -40,6 +40,16 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-04 (parte 7)** — horário de término no compromisso (migration `046`):
+
+`appointments` ganhou `scheduled_end_time` (TIME, opcional), espelhando o modelo início+fim do Google Calendar. Formulário de compromisso ganhou um segundo campo de horário ("Horário de término") ao lado do horário de início, com validação de que o fim precisa vir depois do início (e não pode existir sem um início definido). O modal de detalhe mostra o intervalo completo ("14:30 – 15:30") quando há término; **o card da grade semanal continua mostrando só o horário de início**, por pedido explícito — o objetivo era só ter os dois horários disponíveis para a preparação do Google Calendar, não adicionar uma segunda linha ao card. `mapAppointmentToCalendarEvent` (`src/lib/calendar/`) agora usa `scheduled_end_time` para preencher `CalendarEvent.endAt` quando presente, em vez de sempre `null`.
+
+Commit `ef8f27f`. Migration `046` aplicada manualmente em produção antes do deploy do código.
+
+**Validação:** `tsc`, `eslint` (zero erros/warnings nos arquivos tocados), `vitest run src/i18n/messages.test.ts` (paridade en/pt-BR/ko) e `next build` limpos.
+
+---
 
 **Sessão de 2026-08-04 (parte 6)** — Agenda do Dia → Agenda da Semana imobiliária + preparação para Google Calendar:
 

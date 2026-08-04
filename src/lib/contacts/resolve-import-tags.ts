@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 
@@ -19,7 +19,7 @@ export interface ResolveImportTagsResult {
  * auto-create missing tag definitions for admin+ callers.
  */
 export async function resolveImportTagIds(
-  supabase: SupabaseClient,
+  supabase: WacrmSupabaseClient,
   params: {
     accountId: string;
     userId: string;
@@ -105,7 +105,7 @@ export interface ContactTagAssignment {
  * exist without changing the returned count.
  */
 export async function assignImportedContactTags(
-  supabase: SupabaseClient,
+  supabase: WacrmSupabaseClient,
   assignments: ContactTagAssignment[],
   tagIdByKey: Map<string, string>
 ): Promise<number> {

@@ -86,7 +86,7 @@ export function usePresence(enabled = true): UsePresenceResult {
         "postgres_changes",
         {
           event: "*",
-          schema: "public",
+          schema: "wacrm",
           table: "member_presence",
           filter: `account_id=eq.${accountId}`,
         },

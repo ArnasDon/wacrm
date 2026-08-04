@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
 
 /**
@@ -33,7 +33,7 @@ export interface ExistingContact {
  * the small candidate set — the exact approach the webhook has used.
  */
 export async function findExistingContact(
-  db: SupabaseClient,
+  db: WacrmSupabaseClient,
   accountId: string,
   phone: string,
 ): Promise<ExistingContact | null> {

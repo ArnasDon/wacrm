@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 import { addContactTagIfAbsent } from './tag-write';
 
@@ -10,7 +10,7 @@ interface FakeOptions {
   insertError?: { code?: string; message: string } | null;
 }
 
-function fakeDb(options: FakeOptions = {}): SupabaseClient {
+function fakeDb(options: FakeOptions = {}): WacrmSupabaseClient {
   const contact =
     options.contact === undefined ? { id: 'contact-1' } : options.contact;
   const tag = options.tag === undefined ? { id: 'tag-1' } : options.tag;
@@ -48,7 +48,7 @@ function fakeDb(options: FakeOptions = {}): SupabaseClient {
       };
       return builder;
     },
-  } as unknown as SupabaseClient;
+  } as unknown as WacrmSupabaseClient;
 }
 
 const input = {

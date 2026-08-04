@@ -73,6 +73,7 @@ function SignupPageInner() {
       password,
       options: {
         data: {
+          app: 'wacrm',
           full_name: fullName,
         },
         ...(emailRedirectTo ? { emailRedirectTo } : {}),

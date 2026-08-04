@@ -27,7 +27,7 @@
  * warning so operators can investigate.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { normalizeStatus } from './template-status-normalize'
 
 const TEMPLATE_WEBHOOK_FIELDS = new Set([
@@ -75,10 +75,10 @@ export interface TemplateWebhookChange {
  */
 export async function handleTemplateWebhookChange(
   change: TemplateWebhookChange,
-  // SupabaseClient typed loosely — the webhook route lazy-initialises
+  // WacrmSupabaseClient typed loosely — the webhook route lazy-initialises
   // the admin client and exposes it as `any`. Type as the generic
-  // SupabaseClient here so this module is testable in isolation.
-  supabase: SupabaseClient,
+  // WacrmSupabaseClient here so this module is testable in isolation.
+  supabase: WacrmSupabaseClient,
 ): Promise<void> {
   switch (change.field) {
     case 'message_template_status_update':
@@ -103,7 +103,7 @@ export async function handleTemplateWebhookChange(
 
 async function handleStatusUpdate(
   value: TemplateStatusUpdateValue,
-  supabase: SupabaseClient,
+  supabase: WacrmSupabaseClient,
 ): Promise<void> {
   const metaTemplateId =
     value.message_template_id !== undefined
@@ -161,7 +161,7 @@ async function handleStatusUpdate(
 
 async function handleQualityUpdate(
   value: TemplateQualityUpdateValue,
-  supabase: SupabaseClient,
+  supabase: WacrmSupabaseClient,
 ): Promise<void> {
   const metaTemplateId =
     value.message_template_id !== undefined

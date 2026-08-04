@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import type { AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
@@ -25,7 +25,7 @@ interface MatchRow {
  * failed embed never leaves half-indexed rows.
  */
 export async function ingestDocument(
-  db: SupabaseClient,
+  db: WacrmSupabaseClient,
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   documentId: string,
@@ -82,7 +82,7 @@ export async function ingestDocument(
  * zero results and never throws into the draft / auto-reply path.
  */
 export async function retrieveKnowledge(
-  db: SupabaseClient,
+  db: WacrmSupabaseClient,
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   queryText: string,

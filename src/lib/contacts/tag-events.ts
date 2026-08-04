@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 import {
   runAutomationsForTrigger,
@@ -10,7 +10,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
 export { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
 
 interface AddContactTagAndDispatchInput {
-  db: SupabaseClient;
+  db: WacrmSupabaseClient;
   accountId: string;
   contactId: string;
   tagId: string;

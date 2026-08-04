@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import {
   dedupeByPhone,
   findExistingContact,
@@ -67,15 +67,15 @@ describe("dedupeByPhone", () => {
 });
 
 describe("findExistingContact", () => {
-  // Minimal SupabaseClient stub: resolves the .from().select().eq().like()
+  // Minimal WacrmSupabaseClient stub: resolves the .from().select().eq().like()
   // chain to a fixed candidate set.
-  function stubDb(rows: Array<{ id: string; phone: string }>): SupabaseClient {
+  function stubDb(rows: Array<{ id: string; phone: string }>): WacrmSupabaseClient {
     const builder = {
       select: () => builder,
       eq: () => builder,
       like: () => Promise.resolve({ data: rows, error: null }),
     };
-    return { from: () => builder } as unknown as SupabaseClient;
+    return { from: () => builder } as unknown as WacrmSupabaseClient;
   }
 
   it("returns a trunk-variant match via phonesMatch", async () => {

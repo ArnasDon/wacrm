@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 import { resolveConversationByPhone } from './resolve-conversation';
 import { SendMessageError } from './send-message';
@@ -29,7 +29,7 @@ interface Script {
   insertConversationError?: { code?: string } | null;
 }
 
-function makeDb(script: Script): SupabaseClient {
+function makeDb(script: Script): WacrmSupabaseClient {
   let table = '';
   let mode: 'select' | 'insert' | 'update' = 'select';
   let likeCalls = 0;
@@ -106,7 +106,7 @@ function makeDb(script: Script): SupabaseClient {
       mode = 'select';
       return builder;
     },
-  } as unknown as SupabaseClient;
+  } as unknown as WacrmSupabaseClient;
 }
 
 describe('resolveConversationByPhone', () => {
@@ -115,7 +115,7 @@ describe('resolveConversationByPhone', () => {
       from() {
         throw new Error('should not query');
       },
-    } as unknown as SupabaseClient;
+    } as unknown as WacrmSupabaseClient;
     await expect(
       resolveConversationByPhone(db, 'acct', 'not-a-phone')
     ).rejects.toBeInstanceOf(SendMessageError);

@@ -20,7 +20,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { buildSignatureHeader } from '@/lib/webhooks/sign';
@@ -44,7 +44,7 @@ interface EndpointRow {
  * subscribed to it. Never throws.
  */
 export async function dispatchWebhookEvent(
-  db: SupabaseClient,
+  db: WacrmSupabaseClient,
   accountId: string,
   event: WebhookEvent,
   data: unknown
@@ -84,7 +84,7 @@ export async function dispatchWebhookEvent(
 }
 
 async function deliverOne(
-  db: SupabaseClient,
+  db: WacrmSupabaseClient,
   row: EndpointRow,
   event: WebhookEvent,
   payload: string,
@@ -142,7 +142,7 @@ async function deliverOne(
   }
 }
 
-async function recordFailure(db: SupabaseClient, row: EndpointRow): Promise<void> {
+async function recordFailure(db: WacrmSupabaseClient, row: EndpointRow): Promise<void> {
   // Atomic increment (+ auto-disable at the threshold) via a SQL
   // function — a read-modify-write here would lose increments when two
   // deliveries to the same endpoint run concurrently (e.g.

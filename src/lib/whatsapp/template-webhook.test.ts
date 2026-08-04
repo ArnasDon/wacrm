@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -53,7 +53,7 @@ function makeSupabaseStub(
     },
   };
 
-  return { stub: stub as unknown as SupabaseClient, calls };
+  return { stub: stub as unknown as WacrmSupabaseClient, calls };
 }
 
 describe('isTemplateWebhookField', () => {

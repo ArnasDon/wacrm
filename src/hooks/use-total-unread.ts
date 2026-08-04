@@ -46,7 +46,7 @@ export function useTotalUnread(): number {
       .channel("total-unread-realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "conversations" },
+        { event: "*", schema: "wacrm", table: "conversations" },
         (payload) => {
           const map = countsRef.current;
           if (payload.eventType === "DELETE") {

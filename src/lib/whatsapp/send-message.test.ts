@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 
 import {
   sendMessageToConversation,
@@ -9,12 +9,12 @@ import {
 
 // A db that explodes if touched — these tests cover the param
 // validation that MUST short-circuit before any query runs.
-function noDb(): SupabaseClient {
+function noDb(): WacrmSupabaseClient {
   return {
     from() {
       throw new Error('db should not be queried for invalid params');
     },
-  } as unknown as SupabaseClient;
+  } as unknown as WacrmSupabaseClient;
 }
 
 async function expectSendError(
@@ -136,7 +136,7 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
     const spy = vi.fn(() => {
       throw new Error('reached DB');
     });
-    const db = { from: spy } as unknown as SupabaseClient;
+    const db = { from: spy } as unknown as WacrmSupabaseClient;
     await expect(
       sendMessageToConversation(db, 'acct-1', {
         ...base,

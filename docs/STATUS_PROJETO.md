@@ -1,6 +1,6 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
-> Última atualização: **2026-08-04**, ao final da sessão de localização pt-BR (Notificações/Automações) + rename Funil→Pipeline + remoção da faixa de métricas do Pipeline.
+> Última atualização: **2026-08-04**, ao final da sessão que transformou a Agenda do Dia em Agenda da Semana imobiliária + preparação para Google Calendar.
 > Este arquivo é o ponto de partida para qualquer sessão futura — leia antes de qualquer outra coisa.
 
 ## Estado atual
@@ -9,9 +9,9 @@
 - **Repositório:** [ronaldomeira-alt/wacrm](https://github.com/ronaldomeira-alt/wacrm) (fork de [ArnasDon/wacrm](https://github.com/ArnasDon/wacrm), remote `upstream`).
 - **Banco:** Supabase, projeto `qedptmrcvcbzhucoeznd`, plano FREE. Migrations aplicadas manualmente via SQL Editor do Supabase (sem CLI/CI) — ver `docs/ARQUITETURA.md`.
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
-- **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok, 55 páginas estáticas geradas).
-- **Testes automatizados:** 651/654 passando. As 3 falhas são pré-existentes (`currency.test.ts`, dependente de ICU/locale da máquina) — ver "Problemas conhecidos".
-- Commit `181540d` já em produção (deploy automático confirmado, testado visualmente: Notificações, builder de Automações incluindo templates/preview de etapas, tela e dialog de Pipeline).
+- **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
+- **Testes automatizados:** mesma base de 651/654 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado) — ver "Problemas conhecidos".
+- Commit `90eab2b` — código pronto localmente, será enviado (`git push`) e o deploy automático confirmado ao final desta sessão.
 
 ## O que está funcionando
 
@@ -24,7 +24,8 @@
   - Botão "Novo negócio" na barra de ações rápidas virou **"Segmentos"**.
   - `MetricCard` agora suporta `href` (card inteiro clicável) e `tooltip` discreto no hover (requer `<TooltipProvider>` ancestral).
 - **Módulo de Segmentos (novo)** — listas de contatos salvas a partir de combinação de tags (semântica **AND**, igual ao filtro de Transmissões: contato precisa ter *todas* as tags do segmento). CRUD completo (criar/editar/excluir/contar) via dialog aberto pelo botão "Segmentos". Estruturado (`src/lib/segments/queries.ts`) para reuso futuro em Transmissões/Automações.
-- **Módulo de Agenda/Compromissos (novo)** — tabela `appointments` (tipos: Ligação, Visita, Reunião, Proposta, Follow-up, Outro), vinculável a um contato. Seção "Agenda do Dia" no Dashboard com lista do dia + botão "Novo Compromisso". CRUD de leitura/criação/edição pronto em `src/lib/appointments/queries.ts`; a UI do dashboard hoje só expõe criar (editar/excluir ainda não têm botão na lista — API já suporta, falta UI).
+- **Agenda da Semana (novo, era "Agenda do Dia")** — seção do Dashboard virou uma grade semanal (Segunda a Sábado, 6 colunas, cada dia com cor própria; Domingo propositalmente de fora mas já mapeado em `WEEK_DAY_OFFSETS`/traduções para entrar depois sem retrabalho). Cada compromisso mostra sempre client/horário/imóvel no card, sem precisar clicar; clique abre um modal com todos os campos (cliente, telefone, imóvel, data, hora, tipo, descrição, notas, criado em, atualizado em) e ações de Editar/Excluir (com confirmação). Tabela `appointments` ganhou `property_id` (nova tabela `properties`, minimalista) e `notes` (migration `045`). CRUD completo em `src/lib/appointments/queries.ts` e `src/lib/properties/queries.ts`; criação de imóvel pode ser feita inline no próprio formulário de compromisso.
+- **Preparação para Google Calendar (novo, ainda não funcional)** — `src/lib/calendar/` define a arquitetura (`CalendarProvider`, `GoogleCalendarProvider` stub, `CalendarSyncService`, `mapAppointmentToCalendarEvent`) e `appointments` ganhou as colunas `external_calendar_id`/`sync_status`/`last_synced_at` (migration `045`). Nada disso está ligado a UI/API real — é só a arquitetura pronta para quando a integração de verdade (OAuth + `googleapis`) for implementada. Botão "Conectar Google Calendar" já existe no cabeçalho da Agenda, desabilitado.
 - Filtro de contatos e de transmissões com alternância **"Qualquer uma dessas tags" (OR)** / **"Todas essas tags" (AND)**.
 - PWA + notificações push (Web Push/VAPID) — testado em iPhone real, funcionando.
 - Deploy contínuo: qualquer `git push origin main` dispara redeploy automático no Hostinger.
@@ -32,13 +33,29 @@
 ## O que está em desenvolvimento / pendente
 
 - **Conexão real do WhatsApp Cloud API** — bloqueada. Ver "Problemas conhecidos".
-- **Agenda — UI de editar/excluir compromisso** na lista do dashboard (o backend/lib já suporta `updateAppointment`/`deleteAppointment`, só falta o botão).
-- **Agenda — expansões futuras já mapeadas na arquitetura** (não implementadas): calendário mensal, lembretes/notificações, integração WhatsApp, integração Google Calendar.
+- **Google Calendar — sincronização real** (OAuth + `googleapis`) — só a arquitetura (`CalendarProvider`/`CalendarSyncService`/`GoogleCalendarProvider` stub) está pronta, ver `docs/ARQUITETURA.md`. Precisa de tabela `calendar_connections` (tokens por conta) e do fluxo de consentimento OAuth antes de o botão "Conectar Google Calendar" sair do estado desabilitado.
+- **Agenda — expansões futuras já mapeadas** (não implementadas): Domingo na grade semanal (arquitetura já suporta, só falta ligar), calendário mensal, lembretes/notificações, integração WhatsApp.
 - **Segmentos usados em Transmissões/Automações** — hoje é só um contador+lista; ainda não há um seletor de "usar este segmento" dentro do wizard de Transmissões (usaria `listSegmentsWithCounts` + o mesmo `matchAll` já implementado lá).
 - **Segmentação — etapa 6 do roadmap antigo** (badges de contagem por categoria, ex.: "12 leads em Bessa") — ainda não implementada.
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-04 (parte 6)** — Agenda do Dia → Agenda da Semana imobiliária + preparação para Google Calendar:
+
+1. **Migration `045`** — tabela `properties` (nova, `account_id`/`user_id`/`name`, RLS nível `agent`). `appointments` ganhou `property_id` (FK opcional, `ON DELETE SET NULL`), `notes`, e os 3 campos de preparação para sync: `external_calendar_id`, `sync_status` (enum textual `not_synced`/`synced`/`error`, default `not_synced`), `last_synced_at`. Aplicada manualmente via SQL Editor do Supabase, verificada por `information_schema.columns`.
+2. **Agenda da Semana** (`src/components/dashboard/agenda-week.tsx`, substitui `agenda-today.tsx` que foi deletado) — grade de 6 colunas (Segunda–Sábado), uma cor por dia (azul/verde/roxo/laranja/vermelho suave/amarelo, tons ajustados para o tema escuro), `overflow-x-auto` + `min-w-[1020px]` para funcionar tanto com as 6 colunas simultâneas no desktop quanto com scroll horizontal suave no mobile sem quebrar layout. Cada card mostra sempre nome do cliente, horário e nome do imóvel (com truncamento elegante) sem precisar clicar. `WEEK_DAY_OFFSETS` em `src/lib/dashboard/date-utils.ts` é a única lista que precisa ganhar mais um item (`6`) para acrescentar Domingo no futuro — todo o resto (cores, traduções, grid) já está preparado.
+3. **Modal de detalhe/edição** (`src/components/appointments/appointment-detail-sheet.tsx`, novo) — clique no card abre todos os campos (cliente, telefone, imóvel, data, hora, tipo, descrição, notas, criado em, atualizado em), com botões Editar (reabre o formulário de compromisso pré-preenchido) e Excluir (com diálogo de confirmação antes de apagar).
+4. **Formulário de compromisso** (`appointment-form-dialog.tsx`, reescrito) — novo campo Imóvel (select + criação inline de imóvel novo sem sair do formulário, mesmo padrão de "criar tag rápida" do gerenciador de tags) e novo campo Notas (separado de Descrição). Ordem dos campos: Cliente → Imóvel → Data/Hora → Tipo → Descrição → Notas.
+5. **Preparação para Google Calendar** (`src/lib/calendar/`, novo, deliberadamente não funcional) — `CalendarProvider` (interface), `GoogleCalendarProvider` (stub, todo método lança erro, `isConfigured()` sempre `false`, sem OAuth/sem chamada de API), `CalendarSyncService` (orquestraria criar/atualizar + gravar `sync_status`), `mapAppointmentToCalendarEvent`. Botão "Conectar Google Calendar" já existe no cabeçalho da Agenda, desabilitado com tooltip explicando que ainda não está pronto.
+6. **Traduções** (`en`/`pt-BR`/`ko`) — namespace `Dashboard.agenda` reescrito para o contexto semanal (`weekdays.monday`...`saturday`, e `sunday` já incluído mas não usado ainda), namespace novo `Appointments.detail` para o modal, novas chaves de imóvel/notas em `Appointments.form`. Bloco órfão `Dashboard.emptyState` removido (só existia para o componente `empty-state.tsx`, também deletado por falta de uso).
+7. **Documentação** — `docs/ARQUITETURA.md` atualizado (contagem de migrations, árvore de `lib/`, bullets dedicados para Agenda/Imóveis/preparação Google Calendar na seção de banco de dados).
+
+Commit `90eab2b`. Migration `045` aplicada manualmente em produção antes do deploy do código, mesmo fluxo das sessões anteriores.
+
+**Validação:** `tsc --noEmit`, `eslint` (zero erros/warnings nos arquivos tocados, incluindo dois ajustes pontuais: um `eslint-disable` desnecessário removido em `agenda-week.tsx`, e 3 comentários `eslint-disable-next-line` adicionados em `google-calendar-provider.ts` para os parâmetros não usados dos stubs), `vitest run` (mesma base 651/654, incluindo paridade de traduções) e `next build` limpos.
+
+---
 
 **Sessão de 2026-08-04 (parte 5)** — localização pt-BR completa de Notificações/Automações, rename Funil→Pipeline, remoção da faixa de métricas do Pipeline:
 
@@ -73,7 +90,7 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 Na ordem de prioridade sugerida:
 
 1. Decidir o próximo passo do WhatsApp: contatar suporte do Kommo pedindo verificação do Solution Provider, **ou** aceitar o bloqueio e seguir sem WhatsApp real por enquanto.
-2. UI de editar/excluir compromisso na Agenda do Dia (backend já pronto).
+2. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 3. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
 4. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 

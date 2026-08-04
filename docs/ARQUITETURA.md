@@ -27,7 +27,7 @@ wacrm/
 ├── public/
 │   └── sw.js                  # Service Worker (push + notificationclick)
 ├── supabase/
-│   └── migrations/            # 43 migrations SQL, numeradas e sequenciais (001 → 043)
+│   └── migrations/            # 45 migrations SQL, numeradas e sequenciais (001 → 045)
 └── src/
     ├── app/
     │   ├── (auth)/            # Login, signup, forgot-password
@@ -45,6 +45,10 @@ wacrm/
     ├── i18n/                   # Config do next-intl + teste de paridade de mensagens
     ├── lib/                    # Lógica de domínio, organizada por área
     │   ├── contacts/           # tag-api, tag-categories, dedupe, parse-contact-csv, ...
+    │   ├── appointments/, properties/  # Agenda da Semana (compromissos + imóveis)
+    │   ├── calendar/           # Preparação para Google Calendar — CalendarProvider,
+    │   │                       #   GoogleCalendarProvider (stub, não implementado),
+    │   │                       #   CalendarSyncService, mapAppointmentToCalendarEvent
     │   ├── push/                # admin-client, send (sendPushToAccount)
     │   ├── whatsapp/            # Cliente da Meta Cloud API
     │   ├── automations/, flows/, dashboard/, account/, ai/, webhooks/, storage/, api-keys/
@@ -57,14 +61,16 @@ wacrm/
 - **Supabase Postgres**, projeto `qedptmrcvcbzhucoeznd`.
 - **Multi-tenant por `account_id`**: desde a migration `017_account_sharing.sql`, a maioria das tabelas tem `account_id` (não apenas `user_id`), permitindo múltiplos usuários por conta/imobiliária. `profiles.account_id` e `profiles.account_role` são `NOT NULL`.
 - **Row-Level Security (RLS)** em todas as tabelas de dados de usuário. Funções RPC usam `SECURITY INVOKER` por padrão (respeita RLS de quem chama) — só usa `SECURITY DEFINER` quando estritamente necessário.
-- **43 migrations** em `supabase/migrations/`, aplicadas manualmente via SQL Editor do Supabase (não há CI que rode migrations automaticamente neste fork).
-- Tabelas centrais: `contacts`, `tags` (+ `contact_tags` many-to-many), `custom_fields` (+ `contact_custom_values`), `conversations`, `messages`, `deals`, `pipelines`, `automations`, `flows`, `broadcasts`, `notifications`, `push_subscriptions`, `api_keys`, `webhook_endpoints`, `segments` (+ `segment_tags`), `appointments`.
+- **45 migrations** em `supabase/migrations/`, aplicadas manualmente via SQL Editor do Supabase (não há CI que rode migrations automaticamente neste fork).
+- Tabelas centrais: `contacts`, `tags` (+ `contact_tags` many-to-many), `custom_fields` (+ `contact_custom_values`), `conversations`, `messages`, `deals`, `pipelines`, `automations`, `flows`, `broadcasts`, `notifications`, `push_subscriptions`, `api_keys`, `webhook_endpoints`, `segments` (+ `segment_tags`), `appointments`, `properties`.
 - **Tags:** desde a migration `039`, `tags` tem uma coluna `category` (texto livre, opcional) usada para agrupar tags na UI (ex.: "Bairro", "Faixa de valor"). Três funções RPC de filtro combinado por tags coexistem:
   - `filter_contacts_by_tags` (migration `025`) — contatos com **qualquer uma** das tags (OR).
   - `filter_contacts_by_all_tags` (migration `039`) — contatos com **todas** as tags (AND). Implementada como função irmã em vez de sobrecarregar a mesma função, porque o PostgREST não resolve bem overloads de RPC por nome.
   - `list_segments_with_counts` (migration `040`) — mesma semântica AND de `filter_contacts_by_all_tags`, mas por segmento salvo (`segments`/`segment_tags`) em vez de uma seleção de tags ad-hoc; devolve a contagem de contatos por segmento em uma única chamada.
 - **Segmentos** (migration `040`): `segments` (nome, conta) + `segment_tags` (many-to-many com `tags`). Um contato pertence ao segmento se tiver *todas* as tags associadas a ele. RLS no nível `admin` para escrita, igual a `tags`.
-- **Agenda/Compromissos** (migration `041`): tabela `appointments` (`contact_id` opcional, `type` enum: call/visit/meeting/proposal/follow_up/other, `scheduled_date`+`scheduled_time` separados, `status`). RLS no nível `agent` para escrita, igual a `deals`.
+- **Agenda/Compromissos** (migration `041`, estendida na `045`): tabela `appointments` (`contact_id` opcional, `property_id` opcional, `notes` livre — distinto de `description` —, `type` enum: call/visit/meeting/proposal/follow_up/other, `scheduled_date`+`scheduled_time` separados, `status`). RLS no nível `agent` para escrita, igual a `deals`. A UI (formulário de compromisso) exige cliente e imóvel antes de salvar, mas o schema mantém as duas colunas `NULL`able de propósito — ver comentário na migration.
+- **Imóveis** (migration `045`): tabela `properties` minimalista (`account_id`, `name`) — só o suficiente para vincular um compromisso a um imóvel pelo nome; não é um módulo de listagens completo. RLS no nível `agent`, igual a `appointments`/`deals` (qualquer atendente pode cadastrar um imóvel rapidamente ao agendar uma visita).
+- **Preparação para Google Calendar** (migration `045` + `src/lib/calendar/`): colunas `external_calendar_id`, `sync_status` (`not_synced`/`synced`/`error`, default `not_synced`) e `last_synced_at` em `appointments`, todas opcionais/com default — nenhuma automaticamente preenchida hoje. `src/lib/calendar/` define a interface `CalendarProvider`, `mapAppointmentToCalendarEvent` (Appointment → forma genérica de evento) e `CalendarSyncService` (orquestra criar/atualizar + persistir o status); `GoogleCalendarProvider` é um stub que lança erro em todo método — **sem OAuth, sem chamada à API do Google**. Nada disso está ligado à UI ainda; o botão "Conectar Google Calendar" no cabeçalho da Agenda da Semana fica desabilitado até essa integração ser implementada de verdade (precisa de OAuth + armazenamento de token por conta, provavelmente uma tabela `calendar_connections` nova).
 - **Dashboard** (migration `042`): RPC `count_unanswered_conversations` — conta conversas (não fechadas) cuja mensagem mais recente foi enviada pelo cliente, usada pelo card "Leads Não Respondidos".
 - **Classificação de leads** (migration `043`): RPCs `count_unclassified_leads` (card "Leads Aguardando Classificação") e `list_unclassified_contacts` (filtro `?filter=unclassified` em Contatos). Um contato conta como "classificado" se tiver qualquer tag cuja `category` seja `'Finalidade'` — o nome dessa categoria é passado como parâmetro (`p_classification_category`, exportado do lado da app como `CLASSIFICATION_CATEGORY` em `src/lib/contacts/tag-categories.ts`), não uma lista de nomes de tag hardcoded, então uma nova tag de classificação não exige mudança de código.
 

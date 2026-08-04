@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
-import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
+import { CLASSIFICATION_CATEGORY, groupTagsByCategory } from '@/lib/contacts/tag-categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -50,6 +51,7 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Tags,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -65,11 +67,38 @@ interface ContactWithTags extends Contact {
   tags?: Tag[];
 }
 
+// `useSearchParams` (the `?filter=unclassified` drill-through below)
+// requires a Suspense boundary or the production build bails to CSR
+// and errors out — same pattern as inbox/page.tsx. Thin wrapper
+// supplies it; the inner component holds all the contacts state.
 export default function ContactsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactsPageInner />
+    </Suspense>
+  );
+}
+
+function ContactsPageInner() {
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Drill-through from the dashboard's "Leads Aguardando Classificação"
+  // card (?filter=unclassified) — a distinct mode from the tag-based
+  // filter below (positive "has these tags" selection can't express
+  // "has none of the classification tags"), resolved server-side by
+  // list_unclassified_contacts (migration 043). The URL is the source
+  // of truth so the link is shareable/bookmarkable and survives a
+  // refresh; no local "active filter" state to fall out of sync.
+  const isUnclassifiedFilter = searchParams.get('filter') === 'unclassified';
+
+  function clearUnclassifiedFilter() {
+    router.push('/contacts');
+  }
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,7 +166,27 @@ export default function ContactsPage() {
     let contactRows: Contact[];
     let count: number;
 
-    if (selectedTagIds.length > 0) {
+    if (isUnclassifiedFilter) {
+      // Special drill-through mode from the dashboard card — takes
+      // priority over any manual tag selection (see toggleTagFilter,
+      // which clears this URL param the moment the user picks a tag,
+      // so the two modes never actually run at once).
+      const { data, error } = await supabase.rpc('list_unclassified_contacts', {
+        p_classification_category: CLASSIFICATION_CATEGORY,
+        p_search: term || null,
+        p_limit: PAGE_SIZE,
+        p_offset: from,
+      });
+      if (seq !== fetchSeq.current) return; // superseded by a newer fetch
+      if (error) {
+        toast.error(t('toastFailedLoad'));
+        setLoading(false);
+        return;
+      }
+      const rows = (data ?? []) as { contact: Contact; total_count: number }[];
+      contactRows = rows.map((r) => r.contact);
+      count = rows.length > 0 ? Number(rows[0].total_count) : 0;
+    } else if (selectedTagIds.length > 0) {
       // Tag filter active — resolve it server-side (join + distinct +
       // windowed total count + pagination) so a tag covering many
       // contacts can't silently truncate the result or overflow an IN
@@ -215,7 +264,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, isUnclassifiedFilter, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -334,6 +383,10 @@ export default function ContactsPage() {
   const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
 
   function toggleTagFilter(tagId: string) {
+    // A manual tag pick is a positive "has this tag" selection, which
+    // can't compose with the "has none of the classification tags"
+    // drill-through mode — picking a tag exits that mode.
+    if (isUnclassifiedFilter) clearUnclassifiedFilter();
     setSelectedTagIds((prev) =>
       prev.includes(tagId)
         ? prev.filter((id) => id !== tagId)
@@ -390,6 +443,21 @@ export default function ContactsPage() {
           </GatedButton>
         </div>
       </div>
+
+      {/* Unclassified drill-through banner (?filter=unclassified) */}
+      {isUnclassifiedFilter && (
+        <div className="flex items-center gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+          <Tags className="size-4 shrink-0" />
+          <span className="flex-1">{t('unclassifiedFilterBanner')}</span>
+          <button
+            onClick={clearUnclassifiedFilter}
+            aria-label={t('clearAll')}
+            className="rounded-full p-0.5 hover:bg-amber-500/20"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Search + tag filter */}
       <div className="space-y-2">

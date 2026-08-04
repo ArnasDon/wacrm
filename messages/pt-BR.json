@@ -85,10 +85,9 @@
       "awaitingService": "Aguardando atendimento",
       "avgFirstResponse": "Tempo Médio",
       "target": "Meta: {minutes}min",
-      "appointmentsToday": "Agenda Hoje",
-      "noAppointments": "Nenhum compromisso",
-      "appointmentsCount": "{count} {count, plural, =1 {compromisso} other {compromissos}}",
-      "nextAt": "Próximo: {time}"
+      "unclassifiedLeads": "Leads Aguardando Classificação",
+      "needsCategorization": "Necessitam categorização",
+      "unclassifiedLeadsTooltip": "Contatos que ainda não foram classificados como Moradia ou Investimento."
     },
     "quickActions": {
       "newContact": "Novo contato",
@@ -334,6 +333,7 @@
       "filterModeAll": "Todas essas tags",
       "noCategory": "Sem categoria",
       "clearAll": "Limpar tudo",
+      "unclassifiedFilterBanner": "Exibindo contatos ainda não classificados como Moradia ou Investimento.",
       "noTagsYet": "Nenhuma tag ainda.",
       "selectedCount": "{count} selecionado(s)",
       "clearSelection": "Limpar",

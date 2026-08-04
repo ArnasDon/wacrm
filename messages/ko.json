@@ -85,10 +85,9 @@
       "awaitingService": "응대 대기 중",
       "avgFirstResponse": "평균 첫 응답 시간",
       "target": "목표: {minutes}분",
-      "appointmentsToday": "오늘의 일정",
-      "noAppointments": "예정된 일정 없음",
-      "appointmentsCount": "일정 {count}건",
-      "nextAt": "다음: {time}"
+      "unclassifiedLeads": "분류 대기 중인 리드",
+      "needsCategorization": "분류가 필요합니다",
+      "unclassifiedLeadsTooltip": "아직 Moradia 또는 Investimento로 분류되지 않은 연락처입니다."
     },
     "quickActions": {
       "newContact": "새 연락처",
@@ -334,6 +333,7 @@
       "filterModeAll": "모든 태그 일치",
       "noCategory": "카테고리 없음",
       "clearAll": "모두 지우기",
+      "unclassifiedFilterBanner": "아직 Moradia 또는 Investimento로 분류되지 않은 연락처를 표시하고 있습니다.",
       "noTagsYet": "아직 태그가 없습니다.",
       "selectedCount": "{count}개 선택됨",
       "clearSelection": "지우기",

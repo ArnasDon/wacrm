@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { daysAgoStart, startOfLocalDay } from './date-utils'
+import { CLASSIFICATION_CATEGORY } from '@/lib/contacts/tag-categories'
 import type { FirstResponseMetric, LeadsTodayMetric } from './types'
 
 // ------------------------------------------------------------
@@ -85,4 +86,20 @@ export async function loadFirstResponseAvg(db: DB): Promise<FirstResponseMetric>
   if (diffsMin.length === 0) return { avgMinutes: null, sampleCount: 0 }
   const avgMinutes = diffsMin.reduce((a, b) => a + b, 0) / diffsMin.length
   return { avgMinutes, sampleCount: diffsMin.length }
+}
+
+// --- Card 4: Leads Aguardando Classificação ------------------------------
+
+/**
+ * A lead counts as unclassified when it has a started conversation
+ * but no tag under CLASSIFICATION_CATEGORY (migration 043). Category
+ * membership, not a hardcoded tag-name list, so adding a new
+ * classification tag later needs no code change here.
+ */
+export async function loadUnclassifiedLeadsCount(db: DB): Promise<number> {
+  const { data, error } = await db.rpc('count_unclassified_leads', {
+    p_classification_category: CLASSIFICATION_CATEGORY,
+  })
+  if (error) throw error
+  return (data as number) ?? 0
 }

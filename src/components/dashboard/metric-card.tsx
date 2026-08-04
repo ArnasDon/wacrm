@@ -1,14 +1,17 @@
+import Link from 'next/link'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-export type MetricCardTint = 'purple' | 'orange' | 'blue' | 'green'
+export type MetricCardTint = 'purple' | 'orange' | 'blue' | 'green' | 'amber'
 
 const TINT_ICON_CLASSES: Record<MetricCardTint, string> = {
   purple: 'bg-primary/10 text-primary',
   orange: 'bg-orange-500/10 text-orange-500',
   blue: 'bg-blue-500/10 text-blue-500',
   green: 'bg-emerald-500/10 text-emerald-500',
+  amber: 'bg-amber-500/10 text-amber-500',
 }
 
 const TINT_HIGHLIGHT_CLASSES: Record<MetricCardTint, string> = {
@@ -16,6 +19,7 @@ const TINT_HIGHLIGHT_CLASSES: Record<MetricCardTint, string> = {
   orange: 'border-orange-500/40 bg-orange-500/5',
   blue: 'border-blue-500/40 bg-blue-500/5',
   green: 'border-emerald-500/40 bg-emerald-500/5',
+  amber: 'border-amber-500/40 bg-amber-500/5',
 }
 
 interface MetricCardProps {
@@ -42,6 +46,14 @@ interface MetricCardProps {
   }
   /** Used instead of `delta` when the metric has a static subtitle. */
   subtitle?: string
+  /** Makes the whole card a link — e.g. drilling into a filtered list. */
+  href?: string
+  /**
+   * Discreet hover tooltip explaining how the metric is computed.
+   * Requires an ancestor `<TooltipProvider>` (base-ui) — wrap the
+   * card grid, not each card individually.
+   */
+  tooltip?: string
 }
 
 export function MetricCard({
@@ -52,14 +64,17 @@ export function MetricCard({
   highlighted,
   delta,
   subtitle,
+  href,
+  tooltip,
 }: MetricCardProps) {
-  return (
-    <div
-      className={cn(
-        'rounded-xl border border-border bg-card p-5',
-        highlighted && tint && TINT_HIGHLIGHT_CLASSES[tint],
-      )}
-    >
+  const cardClassName = cn(
+    'block rounded-xl border border-border bg-card p-5',
+    href && 'transition-colors hover:border-muted-foreground/40',
+    highlighted && tint && TINT_HIGHLIGHT_CLASSES[tint],
+  )
+
+  const body = (
+    <>
       <div className="flex items-start justify-between">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
         <div
@@ -77,7 +92,30 @@ export function MetricCard({
       {delta ? <DeltaRow sign={delta.sign} label={delta.label} /> : subtitle ? (
         <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
       ) : null}
-    </div>
+    </>
+  )
+
+  if (!tooltip) {
+    return href ? (
+      <Link href={href} className={cardClassName}>
+        {body}
+      </Link>
+    ) : (
+      <div className={cardClassName}>{body}</div>
+    )
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={href ? <Link href={href} className={cardClassName} /> : <div className={cardClassName} />}
+      >
+        {body}
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-left">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

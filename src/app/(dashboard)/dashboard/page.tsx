@@ -6,23 +6,22 @@ import {
   UserPlus,
   MessageCircleWarning,
   Clock,
-  Calendar,
+  Tags,
 } from 'lucide-react'
 
 import {
   loadFirstResponseAvg,
   loadLeadsToday,
   loadUnansweredCount,
+  loadUnclassifiedLeadsCount,
 } from '@/lib/dashboard/queries'
 import type { FirstResponseMetric, LeadsTodayMetric } from '@/lib/dashboard/types'
-import { listAppointmentsByDate } from '@/lib/appointments/queries'
-import { localDayKey } from '@/lib/dashboard/date-utils'
-import type { Appointment } from '@/types'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { AgendaToday } from '@/components/dashboard/agenda-today'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 import { useTranslations } from 'next-intl'
 
@@ -38,12 +37,11 @@ export default function DashboardPage() {
   const [firstResponse, setFirstResponse] = useState<FirstResponseMetric | null>(null)
   const [firstResponseLoading, setFirstResponseLoading] = useState(true)
 
-  const [appointmentsToday, setAppointmentsToday] = useState<Appointment[] | null>(null)
-  const [appointmentsLoading, setAppointmentsLoading] = useState(true)
+  const [unclassified, setUnclassified] = useState<number | null>(null)
+  const [unclassifiedLoading, setUnclassifiedLoading] = useState(true)
 
   const loadAll = useCallback(() => {
     const db = createClient()
-    const todayKey = localDayKey(new Date())
 
     // Each card fetches and fails independently — a slow or broken
     // query never blocks the other three skeletons from resolving.
@@ -62,17 +60,15 @@ export default function DashboardPage() {
       .catch((err) => console.error('[dashboard] first response failed:', err))
       .finally(() => setFirstResponseLoading(false))
 
-    void listAppointmentsByDate(db, todayKey)
-      .then(setAppointmentsToday)
-      .catch((err) => console.error('[dashboard] appointments card failed:', err))
-      .finally(() => setAppointmentsLoading(false))
+    void loadUnclassifiedLeadsCount(db)
+      .then(setUnclassified)
+      .catch((err) => console.error('[dashboard] unclassified leads failed:', err))
+      .finally(() => setUnclassifiedLoading(false))
   }, [])
 
   useEffect(() => {
     loadAll()
   }, [loadAll])
-
-  const nextAppointment = appointmentsToday?.[0]
 
   return (
     <div className="space-y-5">
@@ -83,71 +79,67 @@ export default function DashboardPage() {
       </div>
 
       {/* 4 KPI cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        {leadsLoading || !leadsToday ? (
-          <SkeletonCard />
-        ) : (
-          <MetricCard
-            title={t('leadsToday')}
-            value={leadsToday.current.toLocaleString()}
-            icon={UserPlus}
-            tint="purple"
-            delta={{
-              sign: leadsToday.current - leadsToday.previous,
-              label: t('vsYesterday', { value: leadsDeltaValue(leadsToday) }),
-            }}
-          />
-        )}
+      <TooltipProvider>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {leadsLoading || !leadsToday ? (
+            <SkeletonCard />
+          ) : (
+            <MetricCard
+              title={t('leadsToday')}
+              value={leadsToday.current.toLocaleString()}
+              icon={UserPlus}
+              tint="purple"
+              delta={{
+                sign: leadsToday.current - leadsToday.previous,
+                label: t('vsYesterday', { value: leadsDeltaValue(leadsToday) }),
+              }}
+            />
+          )}
 
-        {unansweredLoading || unanswered === null ? (
-          <SkeletonCard />
-        ) : (
-          <MetricCard
-            title={t('unansweredLeads')}
-            value={unanswered.toLocaleString()}
-            icon={MessageCircleWarning}
-            tint="orange"
-            highlighted
-            subtitle={t('awaitingService')}
-          />
-        )}
+          {unansweredLoading || unanswered === null ? (
+            <SkeletonCard />
+          ) : (
+            <MetricCard
+              title={t('unansweredLeads')}
+              value={unanswered.toLocaleString()}
+              icon={MessageCircleWarning}
+              tint="orange"
+              highlighted
+              subtitle={t('awaitingService')}
+            />
+          )}
 
-        {firstResponseLoading || !firstResponse ? (
-          <SkeletonCard />
-        ) : (
-          <MetricCard
-            title={t('avgFirstResponse')}
-            value={
-              firstResponse.avgMinutes === null
-                ? '—'
-                : formatMinutesSeconds(firstResponse.avgMinutes)
-            }
-            icon={Clock}
-            tint="blue"
-            subtitle={t('target', { minutes: 5 })}
-          />
-        )}
+          {firstResponseLoading || !firstResponse ? (
+            <SkeletonCard />
+          ) : (
+            <MetricCard
+              title={t('avgFirstResponse')}
+              value={
+                firstResponse.avgMinutes === null
+                  ? '—'
+                  : formatMinutesSeconds(firstResponse.avgMinutes)
+              }
+              icon={Clock}
+              tint="blue"
+              subtitle={t('target', { minutes: 5 })}
+            />
+          )}
 
-        {appointmentsLoading || appointmentsToday === null ? (
-          <SkeletonCard />
-        ) : (
-          <MetricCard
-            title={t('appointmentsToday')}
-            value={
-              appointmentsToday.length === 0
-                ? t('noAppointments')
-                : t('appointmentsCount', { count: appointmentsToday.length })
-            }
-            icon={Calendar}
-            tint="green"
-            subtitle={
-              nextAppointment?.scheduled_time
-                ? t('nextAt', { time: nextAppointment.scheduled_time.slice(0, 5) })
-                : undefined
-            }
-          />
-        )}
-      </div>
+          {unclassifiedLoading || unclassified === null ? (
+            <SkeletonCard />
+          ) : (
+            <MetricCard
+              title={t('unclassifiedLeads')}
+              value={unclassified.toLocaleString()}
+              icon={Tags}
+              tint="amber"
+              subtitle={t('needsCategorization')}
+              href="/contacts?filter=unclassified"
+              tooltip={t('unclassifiedLeadsTooltip')}
+            />
+          )}
+        </div>
+      </TooltipProvider>
 
       {/* Quick actions */}
       <QuickActions />

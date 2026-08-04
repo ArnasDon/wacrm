@@ -85,10 +85,9 @@
       "awaitingService": "Awaiting service",
       "avgFirstResponse": "Avg. First Response",
       "target": "Target: {minutes}min",
-      "appointmentsToday": "Today's Agenda",
-      "noAppointments": "No appointments",
-      "appointmentsCount": "{count} {count, plural, =1 {appointment} other {appointments}}",
-      "nextAt": "Next: {time}"
+      "unclassifiedLeads": "Leads Awaiting Classification",
+      "needsCategorization": "Needs categorization",
+      "unclassifiedLeadsTooltip": "Contacts not yet classified as Moradia or Investimento."
     },
     "quickActions": {
       "newContact": "New Contact",
@@ -334,6 +333,7 @@
       "filterModeAll": "All of these tags",
       "noCategory": "No category",
       "clearAll": "Clear all",
+      "unclassifiedFilterBanner": "Showing contacts not yet classified as Moradia or Investimento.",
       "noTagsYet": "No tags yet.",
       "selectedCount": "{count} selected",
       "clearSelection": "Clear",

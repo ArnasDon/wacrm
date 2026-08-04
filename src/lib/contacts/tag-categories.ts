@@ -1,5 +1,16 @@
 import type { Tag } from '@/types';
 
+/**
+ * Category whose tags represent a contact's primary classification
+ * (today: "Moradia" / "Investimento", migration 039's seed). A
+ * contact counts as "classified" once it carries ANY tag in this
+ * category — driving the "Leads Aguardando Classificação" dashboard
+ * card and its Contacts-list filter (migration 043) by category
+ * membership rather than a hardcoded tag-name list, so adding a new
+ * classification tag later needs no code change.
+ */
+export const CLASSIFICATION_CATEGORY = 'Finalidade';
+
 // Sort priority for the real-estate qualification categories (migration
 // 039) so they always group in the order a broker fills them out; any
 // other category a user adds falls after these, alphabetically.

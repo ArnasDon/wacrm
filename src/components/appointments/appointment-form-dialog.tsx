@@ -58,6 +58,7 @@ export function AppointmentFormDialog({
   const [propertyId, setPropertyId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [type, setType] = useState<AppointmentType>('call');
   const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
@@ -79,6 +80,7 @@ export function AppointmentFormDialog({
       setPropertyId(appointment.property_id ?? '');
       setDate(appointment.scheduled_date);
       setTime(appointment.scheduled_time?.slice(0, 5) ?? '');
+      setEndTime(appointment.scheduled_end_time?.slice(0, 5) ?? '');
       setType(appointment.type);
       setDescription(appointment.description ?? '');
       setNotes(appointment.notes ?? '');
@@ -88,6 +90,7 @@ export function AppointmentFormDialog({
       setPropertyId('');
       setDate(defaultDate ?? localDayKey(new Date()));
       setTime('');
+      setEndTime('');
       setType('call');
       setDescription('');
       setNotes('');
@@ -134,6 +137,14 @@ export function AppointmentFormDialog({
       toast.error(t('dateRequired'));
       return;
     }
+    if (endTime && !time) {
+      toast.error(t('endTimeNeedsStart'));
+      return;
+    }
+    if (endTime && time && endTime <= time) {
+      toast.error(t('endTimeBeforeStart'));
+      return;
+    }
     if (!user || !accountId) {
       toast.error(t('notAuthenticated'));
       return;
@@ -150,6 +161,7 @@ export function AppointmentFormDialog({
         type,
         scheduledDate: date,
         scheduledTime: time || null,
+        scheduledEndTime: endTime || null,
         contactId: contactId || null,
         propertyId: propertyId || null,
       };
@@ -273,22 +285,32 @@ export function AppointmentFormDialog({
             )}
           </div>
 
+          <div className="grid gap-2">
+            <label className="text-sm font-medium text-foreground">{t('dateLabel')}</label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={saving}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-foreground">{t('dateLabel')}</label>
-              <Input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                disabled={saving}
-              />
-            </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium text-foreground">{t('timeLabel')}</label>
               <Input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
+                disabled={saving}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-foreground">{t('endTimeLabel')}</label>
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
                 disabled={saving}
               />
             </div>

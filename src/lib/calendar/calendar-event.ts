@@ -9,8 +9,9 @@ export interface CalendarEvent {
   /** ISO 8601 local instant (no timezone suffix — the account's own
    *  timezone is assumed, same as everywhere else in the app). */
   startAt: string;
-  /** Null until the agenda has a real duration model; providers
-   *  should default a reasonable length (e.g. 1h) when absent. */
+  /** Set when the appointment has an end time (migration 046); null
+   *  for all-day events or ones with only a start — providers should
+   *  default a reasonable length (e.g. 1h) when absent. */
   endAt: string | null;
   allDay: boolean;
 }

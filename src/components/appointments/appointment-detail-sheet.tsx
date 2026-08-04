@@ -80,10 +80,7 @@ export function AppointmentDetailSheet({
             )}
             <DetailRow label={t('property')} value={appointment.property?.name || tAppt('noProperty')} />
             <DetailRow label={t('date')} value={formatDateLabel(appointment.scheduled_date, locale)} />
-            <DetailRow
-              label={t('time')}
-              value={appointment.scheduled_time ? appointment.scheduled_time.slice(0, 5) : t('allDay')}
-            />
+            <DetailRow label={t('time')} value={formatTimeRangeLabel(appointment, t('allDay'))} />
             {appointment.description && (
               <DetailRow label={t('descriptionLabel')} value={appointment.description} multiline />
             )}
@@ -153,6 +150,13 @@ function DetailRow({
       <dd className={`mt-0.5 text-foreground ${multiline ? 'whitespace-pre-wrap' : ''}`}>{value}</dd>
     </div>
   );
+}
+
+function formatTimeRangeLabel(appointment: Appointment, allDayLabel: string): string {
+  if (!appointment.scheduled_time) return allDayLabel;
+  const start = appointment.scheduled_time.slice(0, 5);
+  if (!appointment.scheduled_end_time) return start;
+  return `${start} – ${appointment.scheduled_end_time.slice(0, 5)}`;
 }
 
 function formatDateLabel(dateKey: string, locale: string): string {

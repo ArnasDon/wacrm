@@ -198,6 +198,10 @@ export interface Appointment {
   type: AppointmentType;
   scheduled_date: string;
   scheduled_time: string | null;
+  /** End of the appointment window, same day as scheduled_time (HH:MM:SS
+   *  or null — migration 046). Not shown on the weekly agenda card, only
+   *  in the detail view and in the Google Calendar event mapping. */
+  scheduled_end_time: string | null;
   status: AppointmentStatus;
   /** Google Calendar sync placeholders (migration 045) — unused
    *  until src/lib/calendar/'s GoogleCalendarProvider is actually

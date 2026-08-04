@@ -58,6 +58,7 @@ export interface SaveAppointmentInput {
   type: AppointmentType;
   scheduledDate: string;
   scheduledTime: string | null;
+  scheduledEndTime: string | null;
   contactId: string | null;
   propertyId: string | null;
 }
@@ -72,6 +73,7 @@ export async function createAppointment(db: DB, input: SaveAppointmentInput): Pr
     type: input.type,
     scheduled_date: input.scheduledDate,
     scheduled_time: input.scheduledTime,
+    scheduled_end_time: input.scheduledEndTime,
     contact_id: input.contactId,
     property_id: input.propertyId,
   });
@@ -92,6 +94,7 @@ export async function updateAppointment(
       type: input.type,
       scheduled_date: input.scheduledDate,
       scheduled_time: input.scheduledTime,
+      scheduled_end_time: input.scheduledEndTime,
       contact_id: input.contactId,
       property_id: input.propertyId,
     })

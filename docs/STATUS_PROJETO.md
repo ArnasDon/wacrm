@@ -1,6 +1,6 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
-> Última atualização: **2026-08-04**, ao final da sessão de implementação do módulo de segmentação imobiliária.
+> Última atualização: **2026-08-04**, ao final da sessão de segmentação imobiliária — etapa 5 (filtro AND em Transmissões).
 > Este arquivo é o ponto de partida para qualquer sessão futura — leia antes de qualquer outra coisa.
 
 ## Estado atual
@@ -11,6 +11,7 @@
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok, 55 páginas estáticas geradas).
 - **Testes automatizados:** 651/656 passando. As 5 falhas são pré-existentes e não relacionadas a este projeto de segmentação — ver "Problemas conhecidos" abaixo.
+- Commit `61d094c` já em produção (deploy automático confirmado).
 
 ## O que está funcionando
 
@@ -28,31 +29,30 @@
 ## O que está em desenvolvimento / pendente
 
 - **Conexão real do WhatsApp Cloud API** — bloqueada. Ver "Problemas conhecidos".
-- **Segmentação — etapas 5 e 6 do roadmap** (explicitamente adiadas pelo usuário nesta sessão):
-  - Etapa 5: filtro combinado (AND) também nas Transmissões (`step2-select-audience.tsx` hoje só faz OR).
-  - Etapa 6: badges de contagem por categoria (ex.: "12 leads em Bessa").
+- **Segmentação — etapa 6 do roadmap** (badges de contagem por categoria, ex.: "12 leads em Bessa") — ainda não implementada, sem RPC pronta.
 - Módulo de Follow-up/Tarefas — só foi analisado (infra reaproveitável identificada: tabela `notifications`, push, padrão de cron), nada implementado ainda.
 
 ## Última alteração realizada
 
-**Sessão de 2026-08-04** — módulo de segmentação imobiliária, etapas 1 a 4 do roadmap aprovado:
+**Sessão de 2026-08-04 (parte 2)** — segmentação imobiliária, etapa 5 do roadmap (filtro AND em Transmissões):
 
-1. Migration `039_tags_category_and_all_filter.sql` — coluna `tags.category` + função `filter_contacts_by_all_tags` (RPC).
-2. Seed de 35 tags de segmentação na conta de produção.
-3. `tag-manager.tsx` (Configurações → Campos e tags) — criação de tag com categoria + lista agrupada.
-4. `contact-detail-view.tsx` (aba Tags do contato) — seletor de tags agrupado por categoria.
-5. `contacts/page.tsx` (lista de Contatos) — filtro por tags agrupado + alternância Qualquer/Todas.
-6. Traduções novas em `en.json` / `pt-BR.json` / `ko.json` (paridade validada por teste).
+1. `step2-select-audience.tsx` — alternância Qualquer/Todas + tags agrupadas por categoria (mesmo padrão de Contatos), reaproveitando `filter_contacts_by_all_tags` e `groupTagsByCategory`. Aplicado tanto na estimativa de alcance quanto na resolução real da audiência.
+2. `use-broadcast-sending.ts` (`resolveAudience`) — mesmo filtro AND aplicado na resolução real dos destinatários no momento do envio (não só na estimativa), via `filter_contacts_by_all_tags` com `p_limit` alto (100000) já que a RPC é paginada.
+3. `step4-schedule-send.tsx` — estimativa de alcance no resumo final também respeita `matchAll`.
+4. `broadcasts/new/page.tsx` — `matchAll` propagado no estado do wizard, no payload de envio e no `audience_filter` salvo (rascunho e broadcast real).
+5. Traduções novas (`filterModeAny`/`filterModeAll`/`noCategory` em `Broadcasts.wizard.selectAudience`) em `en.json` / `pt-BR.json` / `ko.json`.
 
-Commits: `6dca0a4` (banco) e `c27f807` (UI). Ambos já em produção.
+Commit: `61d094c`. Já em produção.
+
+**Validação:** `tsc --noEmit` limpo, `eslint` limpo, `next build` ok (55 páginas), `vitest run` 651/656 (mesmos 5 falhando pré-existentes, nada novo quebrou). Regressão confirmada em produção: o filtro AND/OR de Contatos (mesma RPC/helper compartilhados) continua funcionando pós-deploy. **Não foi possível testar visualmente a etapa 2 do wizard de Transmissões em produção** — não há nenhum template de WhatsApp com status `APPROVED` na conta (mesmo bloqueio do WhatsApp Cloud API), e o wizard não deixa passar da etapa 1 sem um template aprovado. Não criei um template falso em produção para contornar isso — se quiser essa validação visual completa, ou o WhatsApp é desbloqueado, ou criamos um template de teste descartável sob confirmação.
 
 ## Próxima tarefa recomendada
 
 Na ordem de prioridade sugerida (ver `ROADMAP.md` para detalhes):
 
-1. Decidir o próximo passo do WhatsApp: contatar suporte do Kommo pedindo verificação do Solution Provider, **ou** aceitar o bloqueio e seguir sem WhatsApp real por enquanto.
-2. Se o usuário quiser continuar evoluindo a segmentação: etapa 5 (filtro AND em Transmissões) é a mais barata e de maior valor imediato.
-3. Caso contrário: iniciar o módulo de Follow-up/Tarefas (já analisado, plano pronto).
+1. Decidir o próximo passo do WhatsApp: contatar suporte do Kommo pedindo verificação do Solution Provider, **ou** aceitar o bloqueio e seguir sem WhatsApp real por enquanto. Isso também destrava o teste visual completo do wizard de Transmissões (etapa 5 já está no código, só falta um template aprovado para exercitar via UI).
+2. Etapa 6 do roadmap (badges de contagem por categoria) é a continuação natural da segmentação.
+3. Alternativamente: iniciar o módulo de Follow-up/Tarefas (já analisado, plano pronto).
 
 ## Pendências e problemas conhecidos
 

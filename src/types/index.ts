@@ -130,6 +130,59 @@ export interface ContactTag {
   tag_id: string;
 }
 
+/** A saved tag combination (migration 040) — the raw `segments` row.
+ *  Its tags live in the `segment_tags` join table; see
+ *  `SegmentSummary` for the read model that carries `tag_ids`. */
+export interface Segment {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Read model returned by the `list_segments_with_counts` RPC — a
+ *  segment plus the tag ids it's built from and how many contacts
+ *  currently match (AND semantics: every tag in `tag_ids`). */
+export interface SegmentSummary {
+  id: string;
+  name: string;
+  tag_ids: string[];
+  contact_count: number;
+  created_at: string;
+}
+
+export type AppointmentType =
+  | 'call'
+  | 'visit'
+  | 'meeting'
+  | 'proposal'
+  | 'follow_up'
+  | 'other';
+
+export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled';
+
+/** A scheduled item on the Agenda (migration 041). `scheduled_date`
+ *  is YYYY-MM-DD, `scheduled_time` is HH:MM:SS or null for an
+ *  all-day/unscheduled-time item. */
+export interface Appointment {
+  id: string;
+  account_id: string;
+  user_id: string;
+  contact_id: string | null;
+  title: string;
+  description: string | null;
+  type: AppointmentType;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  status: AppointmentStatus;
+  created_at: string;
+  updated_at: string;
+  /** Hydrated by queries that embed `contacts(name, phone)`. */
+  contact?: Pick<Contact, 'id' | 'name' | 'phone'> | null;
+}
+
 export interface CustomField {
   id: string;
   user_id: string;

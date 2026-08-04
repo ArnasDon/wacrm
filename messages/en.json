@@ -78,66 +78,97 @@
   "Dashboard": {
     "page": {
       "title": "Dashboard",
-      "description": "Live analytics across conversations, contacts, deals, broadcasts, and automations.",
-      "activeConversations": "Active Conversations",
-      "newContactsToday": "New Contacts Today",
-      "openDealsValue": "Open Deals Value",
-      "messagesSentToday": "Messages Sent Today",
-      "newTodayVsYesterday": "new today vs yesterday",
-      "vsYesterday": "vs yesterday",
-      "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
-      "noChange": "No change {suffix}"
+      "description": "Your operational hub for service, productivity, and follow-ups.",
+      "leadsToday": "Leads Today",
+      "vsYesterday": "{value} vs yesterday",
+      "unansweredLeads": "Unanswered Leads",
+      "awaitingService": "Awaiting service",
+      "avgFirstResponse": "Avg. First Response",
+      "target": "Target: {minutes}min",
+      "appointmentsToday": "Today's Agenda",
+      "noAppointments": "No appointments",
+      "appointmentsCount": "{count} {count, plural, =1 {appointment} other {appointments}}",
+      "nextAt": "Next: {time}"
     },
     "quickActions": {
       "newContact": "New Contact",
-      "newDeal": "New Deal",
+      "segments": "Segments",
       "newBroadcast": "New Broadcast",
       "newAutomation": "New Automation"
     },
-    "activityFeed": {
-      "title": "Recent Activity",
-      "viewAll": "View all →",
-      "noActivity": "No activity yet",
-      "noActivityHint": "Activity from messages, deals, broadcasts, and automations will appear here.",
-      "showingOf": "Showing {visible} of {totalLoaded}{plus}",
-      "show": "Show",
-      "timeS": "{sec}s ago",
-      "timeM": "{min}m ago",
-      "timeH": "{hr}h ago",
-      "timeD": "{day}d ago"
-    },
-    "conversationsChart": {
-      "title": "Conversations Over Time",
-      "description": "Daily message volume by direction",
-      "days": "{count} days",
-      "noActivity": "No message activity in this range",
-      "noActivityHint": "Send or receive messages to start populating this chart.",
-      "incoming": "Incoming",
-      "outgoing": "Outgoing",
-      "tooltipIncoming": "{count} incoming",
-      "tooltipOutgoing": "{count} outgoing",
-      "ariaLabel": "Conversations per day"
-    },
-    "pipelineDonut": {
-      "title": "Pipeline Value",
-      "description": "Open deals by stage",
-      "noOpenDeals": "No open deals yet",
-      "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
-      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}",
-      "total": "Total",
-      "ariaLabel": "Pipeline value by stage"
-    },
-    "responseTimeChart": {
-      "title": "Average First Response Time",
-      "description": "Minutes to reply to a customer's first unreplied message, by weekday",
-      "target": "target {minutes}m",
-      "thisWeek": "This week:",
-      "lastWeek": "Last week:",
-      "noReplies": "No replies recorded yet",
-      "noRepliesHint": "This chart fills in as you reply to customer messages."
+    "agenda": {
+      "title": "Today's Schedule",
+      "description": "Everything scheduled for today, across every type.",
+      "newAppointment": "New Appointment",
+      "empty": "No activity scheduled for today.",
+      "allDay": "All day"
     },
     "emptyState": {
       "title": "Not enough data yet"
+    }
+  },
+  "Segments": {
+    "title": "Segments",
+    "description": "Saved tag combinations you can reuse as a live contact list.",
+    "newTitle": "New Segment",
+    "editTitle": "Edit Segment",
+    "formDescription": "A segment includes every contact that carries all of the selected tags.",
+    "newSegment": "New Segment",
+    "noSegments": "No segments yet. Create one from your existing tags.",
+    "contactCount": "{count} {count, plural, =1 {contact} other {contacts}}",
+    "segmentName": "Segment name",
+    "segmentNamePlaceholder": "e.g. Investors João Pessoa",
+    "includedTags": "Included tags",
+    "noTagsFound": "No tags found. Create tags in Settings first.",
+    "noCategory": "No category",
+    "back": "Back",
+    "save": "Save",
+    "close": "Close",
+    "editAria": "Edit {name}",
+    "deleteAria": "Delete {name}",
+    "deleteTitle": "Delete segment",
+    "deleteConfirm": "Delete the segment \"{name}\"? This does not delete any contacts or tags.",
+    "cancel": "Cancel",
+    "nameRequired": "Give the segment a name.",
+    "tagsRequired": "Select at least one tag.",
+    "notAuthenticated": "You're not signed in.",
+    "toastLoadFailed": "Failed to load segments.",
+    "toastCreated": "Segment created.",
+    "toastUpdated": "Segment updated.",
+    "toastSaveFailed": "Couldn't save the segment.",
+    "toastDeleted": "Segment deleted.",
+    "toastDeleteFailed": "Couldn't delete the segment."
+  },
+  "Appointments": {
+    "noContact": "No contact",
+    "type": {
+      "call": "Call",
+      "visit": "Visit",
+      "meeting": "Meeting",
+      "proposal": "Proposal",
+      "follow_up": "Follow-up",
+      "other": "Other"
+    },
+    "form": {
+      "newTitle": "New Appointment",
+      "editTitle": "Edit Appointment",
+      "description": "Schedule a call, visit, meeting, proposal, or follow-up.",
+      "titleLabel": "Title",
+      "titlePlaceholder": "e.g. Follow up with...",
+      "dateLabel": "Date",
+      "timeLabel": "Time",
+      "typeLabel": "Type",
+      "contactLabel": "Contact",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Optional notes...",
+      "cancel": "Cancel",
+      "save": "Save",
+      "titleRequired": "Give the appointment a title.",
+      "dateRequired": "Pick a date.",
+      "notAuthenticated": "You're not signed in.",
+      "toastCreated": "Appointment created.",
+      "toastUpdated": "Appointment updated.",
+      "toastSaveFailed": "Couldn't save the appointment."
     }
   },
   "Inbox": {

@@ -78,66 +78,97 @@
   "Dashboard": {
     "page": {
       "title": "Painel",
-      "description": "Análises em tempo real de conversas, contatos, negócios, transmissões e automações.",
-      "activeConversations": "Conversas ativas",
-      "newContactsToday": "Novos contatos hoje",
-      "openDealsValue": "Valor em negócios abertos",
-      "messagesSentToday": "Mensagens enviadas hoje",
-      "newTodayVsYesterday": "novos hoje vs. ontem",
-      "vsYesterday": "vs. ontem",
-      "openDeals": "{count} {count, plural, =1 {negócio aberto} other {negócios abertos}}",
-      "noChange": "Sem alteração {suffix}"
+      "description": "Sua central operacional de atendimento, produtividade e agenda.",
+      "leadsToday": "Leads Hoje",
+      "vsYesterday": "{value} vs ontem",
+      "unansweredLeads": "Leads Não Respondidos",
+      "awaitingService": "Aguardando atendimento",
+      "avgFirstResponse": "Tempo Médio",
+      "target": "Meta: {minutes}min",
+      "appointmentsToday": "Agenda Hoje",
+      "noAppointments": "Nenhum compromisso",
+      "appointmentsCount": "{count} {count, plural, =1 {compromisso} other {compromissos}}",
+      "nextAt": "Próximo: {time}"
     },
     "quickActions": {
       "newContact": "Novo contato",
-      "newDeal": "Novo negócio",
+      "segments": "Segmentos",
       "newBroadcast": "Nova transmissão",
       "newAutomation": "Nova automação"
     },
-    "activityFeed": {
-      "title": "Atividade recente",
-      "viewAll": "Ver tudo →",
-      "noActivity": "Nenhuma atividade ainda",
-      "noActivityHint": "Atividades de mensagens, negócios, transmissões e automações vão aparecer aqui.",
-      "showingOf": "Mostrando {visible} de {totalLoaded}{plus}",
-      "show": "Mostrar",
-      "timeS": "há {sec}s",
-      "timeM": "há {min}min",
-      "timeH": "há {hr}h",
-      "timeD": "há {day}d"
-    },
-    "conversationsChart": {
-      "title": "Conversas ao longo do tempo",
-      "description": "Volume diário de mensagens por direção",
-      "days": "{count} dias",
-      "noActivity": "Nenhuma atividade de mensagens nesse período",
-      "noActivityHint": "Envie ou receba mensagens para começar a preencher este gráfico.",
-      "incoming": "Recebidas",
-      "outgoing": "Enviadas",
-      "tooltipIncoming": "{count} recebidas",
-      "tooltipOutgoing": "{count} enviadas",
-      "ariaLabel": "Conversas por dia"
-    },
-    "pipelineDonut": {
-      "title": "Valor do funil",
-      "description": "Negócios abertos por etapa",
-      "noOpenDeals": "Nenhum negócio aberto ainda",
-      "noOpenDealsHint": "Crie negócios em Funis para ver a divisão por etapa aqui.",
-      "dealCount": "{count} {count, plural, =1 {negócio} other {negócios}}",
-      "total": "Total",
-      "ariaLabel": "Valor do funil por etapa"
-    },
-    "responseTimeChart": {
-      "title": "Tempo médio de primeira resposta",
-      "description": "Minutos para responder à primeira mensagem não respondida do cliente, por dia da semana",
-      "target": "meta {minutes}min",
-      "thisWeek": "Esta semana:",
-      "lastWeek": "Semana passada:",
-      "noReplies": "Nenhuma resposta registrada ainda",
-      "noRepliesHint": "Este gráfico se preenche conforme você responde às mensagens dos clientes."
+    "agenda": {
+      "title": "Agenda do Dia",
+      "description": "Tudo que está agendado para hoje, de todos os tipos.",
+      "newAppointment": "Novo Compromisso",
+      "empty": "Nenhuma atividade agendada para hoje.",
+      "allDay": "Dia todo"
     },
     "emptyState": {
       "title": "Ainda não há dados suficientes"
+    }
+  },
+  "Segments": {
+    "title": "Segmentos",
+    "description": "Combinações de tags salvas que você pode reutilizar como uma lista de contatos viva.",
+    "newTitle": "Novo Segmento",
+    "editTitle": "Editar Segmento",
+    "formDescription": "Um segmento inclui todo contato que possuir todas as tags selecionadas.",
+    "newSegment": "Novo Segmento",
+    "noSegments": "Nenhum segmento ainda. Crie um a partir das suas tags existentes.",
+    "contactCount": "{count} {count, plural, =1 {contato} other {contatos}}",
+    "segmentName": "Nome do segmento",
+    "segmentNamePlaceholder": "ex.: Investidores João Pessoa",
+    "includedTags": "Tags incluídas",
+    "noTagsFound": "Nenhuma tag encontrada. Crie tags em Configurações primeiro.",
+    "noCategory": "Sem categoria",
+    "back": "Voltar",
+    "save": "Salvar",
+    "close": "Fechar",
+    "editAria": "Editar {name}",
+    "deleteAria": "Excluir {name}",
+    "deleteTitle": "Excluir segmento",
+    "deleteConfirm": "Excluir o segmento \"{name}\"? Isso não apaga nenhum contato ou tag.",
+    "cancel": "Cancelar",
+    "nameRequired": "Dê um nome ao segmento.",
+    "tagsRequired": "Selecione pelo menos uma tag.",
+    "notAuthenticated": "Você não está autenticado.",
+    "toastLoadFailed": "Falha ao carregar os segmentos.",
+    "toastCreated": "Segmento criado.",
+    "toastUpdated": "Segmento atualizado.",
+    "toastSaveFailed": "Não foi possível salvar o segmento.",
+    "toastDeleted": "Segmento excluído.",
+    "toastDeleteFailed": "Não foi possível excluir o segmento."
+  },
+  "Appointments": {
+    "noContact": "Sem contato",
+    "type": {
+      "call": "Ligação",
+      "visit": "Visita",
+      "meeting": "Reunião",
+      "proposal": "Proposta",
+      "follow_up": "Follow-up",
+      "other": "Outro"
+    },
+    "form": {
+      "newTitle": "Novo Compromisso",
+      "editTitle": "Editar Compromisso",
+      "description": "Agende uma ligação, visita, reunião, proposta ou follow-up.",
+      "titleLabel": "Título",
+      "titlePlaceholder": "ex.: Retornar para...",
+      "dateLabel": "Data",
+      "timeLabel": "Horário",
+      "typeLabel": "Tipo",
+      "contactLabel": "Contato",
+      "descriptionLabel": "Descrição",
+      "descriptionPlaceholder": "Observações opcionais...",
+      "cancel": "Cancelar",
+      "save": "Salvar",
+      "titleRequired": "Dê um título ao compromisso.",
+      "dateRequired": "Escolha uma data.",
+      "notAuthenticated": "Você não está autenticado.",
+      "toastCreated": "Compromisso criado.",
+      "toastUpdated": "Compromisso atualizado.",
+      "toastSaveFailed": "Não foi possível salvar o compromisso."
     }
   },
   "Inbox": {

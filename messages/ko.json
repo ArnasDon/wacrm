@@ -78,66 +78,97 @@
   "Dashboard": {
     "page": {
       "title": "대시보드",
-      "description": "대화, 연락처, 딜, 브로드캐스트, 자동화 전반의 실시간 분석입니다.",
-      "activeConversations": "진행 중인 대화",
-      "newContactsToday": "오늘의 신규 연락처",
-      "openDealsValue": "진행 중인 딜 금액",
-      "messagesSentToday": "오늘 보낸 메시지",
-      "newTodayVsYesterday": "어제 대비 신규",
-      "vsYesterday": "어제 대비",
-      "openDeals": "진행 중인 딜 {count}건",
-      "noChange": "변동 없음 {suffix}"
+      "description": "상담, 생산성, 일정을 위한 운영 허브입니다.",
+      "leadsToday": "오늘의 리드",
+      "vsYesterday": "어제 대비 {value}",
+      "unansweredLeads": "미응답 리드",
+      "awaitingService": "응대 대기 중",
+      "avgFirstResponse": "평균 첫 응답 시간",
+      "target": "목표: {minutes}분",
+      "appointmentsToday": "오늘의 일정",
+      "noAppointments": "예정된 일정 없음",
+      "appointmentsCount": "일정 {count}건",
+      "nextAt": "다음: {time}"
     },
     "quickActions": {
       "newContact": "새 연락처",
-      "newDeal": "새 딜",
+      "segments": "세그먼트",
       "newBroadcast": "새 브로드캐스트",
       "newAutomation": "새 자동화"
     },
-    "activityFeed": {
-      "title": "최근 활동",
-      "viewAll": "전체 보기 →",
-      "noActivity": "아직 활동이 없습니다",
-      "noActivityHint": "메시지, 딜, 브로드캐스트, 자동화 관련 활동이 여기에 표시됩니다.",
-      "showingOf": "{totalLoaded}개 중 {visible}개 표시{plus}",
-      "show": "표시",
-      "timeS": "{sec}초 전",
-      "timeM": "{min}분 전",
-      "timeH": "{hr}시간 전",
-      "timeD": "{day}일 전"
-    },
-    "conversationsChart": {
-      "title": "기간별 대화 추이",
-      "description": "방향별 일일 메시지 볼륨",
-      "days": "{count}일",
-      "noActivity": "이 기간에는 메시지 활동이 없습니다",
-      "noActivityHint": "메시지를 주고받으면 이 차트가 채워지기 시작합니다.",
-      "incoming": "수신",
-      "outgoing": "발신",
-      "tooltipIncoming": "수신 {count}건",
-      "tooltipOutgoing": "발신 {count}건",
-      "ariaLabel": "일별 대화 수"
-    },
-    "pipelineDonut": {
-      "title": "파이프라인 금액",
-      "description": "단계별 진행 중인 딜",
-      "noOpenDeals": "아직 진행 중인 딜이 없습니다",
-      "noOpenDealsHint": "파이프라인에서 딜을 만들면 단계별 분포를 여기서 확인할 수 있습니다.",
-      "dealCount": "딜 {count}건",
-      "total": "합계",
-      "ariaLabel": "단계별 파이프라인 금액"
-    },
-    "responseTimeChart": {
-      "title": "평균 첫 응답 시간",
-      "description": "요일별, 고객의 첫 미응답 메시지에 답변하기까지 걸린 시간(분)",
-      "target": "목표 {minutes}분",
-      "thisWeek": "이번 주:",
-      "lastWeek": "지난 주:",
-      "noReplies": "아직 기록된 응답이 없습니다",
-      "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다."
+    "agenda": {
+      "title": "오늘의 일정",
+      "description": "오늘 예정된 모든 유형의 일정입니다.",
+      "newAppointment": "새 일정",
+      "empty": "오늘 예정된 일정이 없습니다.",
+      "allDay": "종일"
     },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
+    }
+  },
+  "Segments": {
+    "title": "세그먼트",
+    "description": "저장된 태그 조합을 실시간 연락처 목록으로 재사용할 수 있습니다.",
+    "newTitle": "새 세그먼트",
+    "editTitle": "세그먼트 편집",
+    "formDescription": "세그먼트에는 선택한 태그를 모두 가진 연락처가 포함됩니다.",
+    "newSegment": "새 세그먼트",
+    "noSegments": "아직 세그먼트가 없습니다. 기존 태그로 하나 만들어 보세요.",
+    "contactCount": "연락처 {count}명",
+    "segmentName": "세그먼트 이름",
+    "segmentNamePlaceholder": "예: 조앙페소아 투자자",
+    "includedTags": "포함된 태그",
+    "noTagsFound": "태그를 찾을 수 없습니다. 먼저 설정에서 태그를 만드세요.",
+    "noCategory": "카테고리 없음",
+    "back": "뒤로",
+    "save": "저장",
+    "close": "닫기",
+    "editAria": "{name} 편집",
+    "deleteAria": "{name} 삭제",
+    "deleteTitle": "세그먼트 삭제",
+    "deleteConfirm": "세그먼트 \"{name}\"을(를) 삭제하시겠습니까? 연락처나 태그는 삭제되지 않습니다.",
+    "cancel": "취소",
+    "nameRequired": "세그먼트 이름을 입력하세요.",
+    "tagsRequired": "태그를 하나 이상 선택하세요.",
+    "notAuthenticated": "로그인되어 있지 않습니다.",
+    "toastLoadFailed": "세그먼트를 불러오지 못했습니다.",
+    "toastCreated": "세그먼트가 생성되었습니다.",
+    "toastUpdated": "세그먼트가 수정되었습니다.",
+    "toastSaveFailed": "세그먼트를 저장하지 못했습니다.",
+    "toastDeleted": "세그먼트가 삭제되었습니다.",
+    "toastDeleteFailed": "세그먼트를 삭제하지 못했습니다."
+  },
+  "Appointments": {
+    "noContact": "연락처 없음",
+    "type": {
+      "call": "전화",
+      "visit": "방문",
+      "meeting": "미팅",
+      "proposal": "제안",
+      "follow_up": "팔로우업",
+      "other": "기타"
+    },
+    "form": {
+      "newTitle": "새 일정",
+      "editTitle": "일정 편집",
+      "description": "전화, 방문, 미팅, 제안 또는 팔로우업 일정을 등록하세요.",
+      "titleLabel": "제목",
+      "titlePlaceholder": "예: ...에게 다시 연락",
+      "dateLabel": "날짜",
+      "timeLabel": "시간",
+      "typeLabel": "유형",
+      "contactLabel": "연락처",
+      "descriptionLabel": "설명",
+      "descriptionPlaceholder": "선택 사항 메모...",
+      "cancel": "취소",
+      "save": "저장",
+      "titleRequired": "일정 제목을 입력하세요.",
+      "dateRequired": "날짜를 선택하세요.",
+      "notAuthenticated": "로그인되어 있지 않습니다.",
+      "toastCreated": "일정이 생성되었습니다.",
+      "toastUpdated": "일정이 수정되었습니다.",
+      "toastSaveFailed": "일정을 저장하지 못했습니다."
     }
   },
   "Inbox": {

@@ -20,8 +20,16 @@ import { useTranslations } from 'next-intl';
 interface AudienceConfig {
   type: string;
   tagIds?: string[];
+  matchAll?: boolean;
   csvContacts?: { phone: string; name?: string }[];
 }
+
+/**
+ * filter_contacts_by_all_tags is paginated (built for the Contacts list
+ * view); here we just need every matching id for the estimate, so page
+ * it with a limit far above any realistic account size.
+ */
+const MATCH_ALL_TAGS_LIMIT = 100000;
 
 interface Step4Props {
   name: string;
@@ -63,13 +71,23 @@ export function Step4ScheduleSend({
             .select('*', { count: 'exact', head: true });
           setEstimatedReach(count ?? 0);
         } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
-          const { data: contactTags } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', audience.tagIds);
+          if (audience.matchAll && audience.tagIds.length > 1) {
+            const { data } = await supabase.rpc('filter_contacts_by_all_tags', {
+              p_tag_ids: audience.tagIds,
+              p_search: null,
+              p_limit: MATCH_ALL_TAGS_LIMIT,
+              p_offset: 0,
+            });
+            setEstimatedReach(((data ?? []) as unknown[]).length);
+          } else {
+            const { data: contactTags } = await supabase
+              .from('contact_tags')
+              .select('contact_id')
+              .in('tag_id', audience.tagIds);
 
-          const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-          setEstimatedReach(uniqueIds.size);
+            const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
+            setEstimatedReach(uniqueIds.size);
+          }
         } else if (audience.type === 'csv' && audience.csvContacts) {
           setEstimatedReach(audience.csvContacts.length);
         } else {

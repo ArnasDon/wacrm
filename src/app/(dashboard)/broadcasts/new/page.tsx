@@ -32,6 +32,7 @@ export default function NewBroadcastPage() {
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
     tagIds?: string[];
+    matchAll?: boolean;
     customField?: {
       fieldId: string;
       operator: 'is' | 'is_not' | 'contains';
@@ -56,6 +57,7 @@ export default function NewBroadcastPage() {
         audience: {
           type: audience.type,
           tagIds: audience.tagIds,
+          matchAll: audience.matchAll,
           customField: audience.customField,
           csvContacts: audience.csvContacts,
           excludeTagIds: audience.excludeTagIds,
@@ -111,6 +113,7 @@ export default function NewBroadcastPage() {
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
+        matchAll: audience.matchAll,
       },
       status: 'draft',
       total_recipients: 0,

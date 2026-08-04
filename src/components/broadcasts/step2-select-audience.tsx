@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
+import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
 import { Button } from '@/components/ui/button';
 import {
   Users,
@@ -28,10 +29,19 @@ interface CustomFieldFilter {
 interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
+  /** AND (every tag) vs. the default OR (any tag) — mirrors Contacts. */
+  matchAll?: boolean;
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   excludeTagIds?: string[];
 }
+
+/**
+ * filter_contacts_by_all_tags is paginated (built for the Contacts list
+ * view); here we just need every matching id for the estimate, so page
+ * it with a limit far above any realistic account size.
+ */
+const MATCH_ALL_TAGS_LIMIT = 100000;
 
 interface Step2Props {
   audience: AudienceConfig;
@@ -142,11 +152,23 @@ export function Step2SelectAudience({
         audience.tagIds &&
         audience.tagIds.length > 0
       ) {
-        const { data } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.tagIds);
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
+        if (audience.matchAll && audience.tagIds.length > 1) {
+          const { data } = await supabase.rpc('filter_contacts_by_all_tags', {
+            p_tag_ids: audience.tagIds,
+            p_search: null,
+            p_limit: MATCH_ALL_TAGS_LIMIT,
+            p_offset: 0,
+          });
+          baseIds = new Set(
+            ((data ?? []) as { contact: { id: string } }[]).map((r) => r.contact.id),
+          );
+        } else {
+          const { data } = await supabase
+            .from('contact_tags')
+            .select('contact_id')
+            .in('tag_id', audience.tagIds);
+          baseIds = new Set((data ?? []).map((r) => r.contact_id));
+        }
       } else if (
         audience.type === 'custom_field' &&
         audience.customField?.fieldId &&
@@ -204,6 +226,7 @@ export function Step2SelectAudience({
   }, [
     audience.type,
     audience.tagIds,
+    audience.matchAll,
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
@@ -307,7 +330,28 @@ export function Step2SelectAudience({
 
       {audience.type === 'tags' && (
         <div className="rounded-xl border border-border bg-card/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">{t('selectAudience.selectTags')}</p>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-foreground">{t('selectAudience.selectTags')}</p>
+            {(audience.tagIds?.length ?? 0) >= 2 && (
+              <div className="flex gap-1">
+                {(['any', 'all'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => onUpdate({ ...audience, matchAll: mode === 'all' })}
+                    className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                      (audience.matchAll ?? false) === (mode === 'all')
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    {mode === 'any'
+                      ? t('selectAudience.filterModeAny')
+                      : t('selectAudience.filterModeAll')}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {loadingTags ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : tags.length === 0 ? (
@@ -315,27 +359,36 @@ export function Step2SelectAudience({
               {t('selectAudience.noTagsFound')}
             </p>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => {
-                const isSelected = audience.tagIds?.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    onClick={() => toggleTag(tag.id)}
-                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                      isSelected
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border bg-muted text-muted-foreground hover:border-border'
-                    }`}
-                  >
-                    <span
-                      className="mr-1.5 h-2 w-2 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    {tag.name}
-                  </button>
-                );
-              })}
+            <div className="space-y-3">
+              {groupTagsByCategory(tags).map(([category, group]) => (
+                <div key={category ?? '__none__'}>
+                  <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {category ?? t('selectAudience.noCategory')}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.map((tag) => {
+                      const isSelected = audience.tagIds?.includes(tag.id);
+                      return (
+                        <button
+                          key={tag.id}
+                          onClick={() => toggleTag(tag.id)}
+                          className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                            isSelected
+                              ? 'border-primary/30 bg-primary/10 text-primary'
+                              : 'border-border bg-muted text-muted-foreground hover:border-border'
+                          }`}
+                        >
+                          <span
+                            className="mr-1.5 h-2 w-2 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

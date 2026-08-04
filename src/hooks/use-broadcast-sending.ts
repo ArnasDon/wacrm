@@ -16,6 +16,12 @@ export interface CustomFieldFilter {
 export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv';
   tagIds?: string[];
+  /**
+   * When true and tagIds has 2+ entries, a contact must carry EVERY tag
+   * (AND, via filter_contacts_by_all_tags) rather than ANY of them (OR,
+   * the default) — same toggle as the Contacts list (migration 039).
+   */
+  matchAll?: boolean;
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
@@ -64,6 +70,14 @@ const SEND_BATCH_DELAY_MS = 1000;
 
 /** `broadcast_recipients` inserts are independent of the send rate. */
 const INSERT_BATCH_SIZE = 200;
+
+/**
+ * filter_contacts_by_all_tags is paginated (built for the Contacts list
+ * view); broadcast sending needs every match in one shot, so we page it
+ * with a limit far above any realistic account size instead of adding a
+ * second unpaginated RPC.
+ */
+const MATCH_ALL_TAGS_LIMIT = 100000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -166,24 +180,35 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       audience.tagIds &&
       audience.tagIds.length > 0
     ) {
-      const { data: contactTags, error: tagError } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.tagIds);
-
-      if (tagError)
-        throw new Error(`Failed to fetch contact tags: ${tagError.message}`);
-
-      if (contactTags && contactTags.length > 0) {
-        const uniqueContactIds = [
-          ...new Set(contactTags.map((ct) => ct.contact_id)),
-        ];
-        const { data, error } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('id', uniqueContactIds);
+      if (audience.matchAll && audience.tagIds.length > 1) {
+        const { data, error } = await supabase.rpc('filter_contacts_by_all_tags', {
+          p_tag_ids: audience.tagIds,
+          p_search: null,
+          p_limit: MATCH_ALL_TAGS_LIMIT,
+          p_offset: 0,
+        });
         if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-        contacts = data ?? [];
+        contacts = ((data ?? []) as { contact: Contact }[]).map((r) => r.contact);
+      } else {
+        const { data: contactTags, error: tagError } = await supabase
+          .from('contact_tags')
+          .select('contact_id')
+          .in('tag_id', audience.tagIds);
+
+        if (tagError)
+          throw new Error(`Failed to fetch contact tags: ${tagError.message}`);
+
+        if (contactTags && contactTags.length > 0) {
+          const uniqueContactIds = [
+            ...new Set(contactTags.map((ct) => ct.contact_id)),
+          ];
+          const { data, error } = await supabase
+            .from('contacts')
+            .select('*')
+            .in('id', uniqueContactIds);
+          if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
+          contacts = data ?? [];
+        }
       }
     } else if (audience.type === 'custom_field' && audience.customField) {
       contacts = await resolveCustomFieldAudience(supabase, audience.customField);
@@ -365,6 +390,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           audience_filter: {
             type: payload.audience.type,
             tagIds: payload.audience.tagIds,
+            matchAll: payload.audience.matchAll,
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
           },

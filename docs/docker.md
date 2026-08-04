@@ -1,10 +1,13 @@
 # Running with Docker
 
-The repo ships a multi-stage `Dockerfile` (Next.js standalone output,
-runs as a non-root user) and a `docker-compose.yml` with a single
-`app` service. Supabase is external — point the app at your hosted
-(or self-hosted) Supabase project via env vars; no database container
-is included.
+The repo ships a multi-stage `docker/Dockerfile` (Next.js standalone
+output, runs as a non-root user) and a `docker/docker-compose.yml`
+with a single `app` service. Both live under `docker/` rather than
+the repo root — a root-level `Dockerfile` was tripping some Node.js
+PaaS auto-detectors (e.g. Hostinger's Git-import flow) into treating
+this as a container-only deploy instead of a plain Node.js app.
+Supabase is external — point the app at your hosted (or self-hosted)
+Supabase project via env vars; no database container is included.
 
 ## Quick start
 
@@ -19,7 +22,7 @@ is included.
    keeps its config in `.env.local`):
 
    ```bash
-   docker compose --env-file .env.local up --build -d
+   docker compose -f docker/docker-compose.yml --env-file .env.local up --build -d
    ```
 
 3. The app is served on [http://localhost:3000](http://localhost:3000)
@@ -36,7 +39,7 @@ is included.
 - `NEXT_PUBLIC_*` variables are **inlined into the client bundle at
   build time**. They are passed as Docker build args by
   `docker-compose.yml`. If you change any of them, rebuild:
-  `docker compose --env-file .env.local up --build -d`.
+  `docker compose -f docker/docker-compose.yml --env-file .env.local up --build -d`.
 - Everything else (`SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`,
   `META_APP_SECRET`, …) is read at **runtime** from `.env.local` via
   `env_file` and is never baked into the image — safe to change with
@@ -46,6 +49,7 @@ is included.
 
 ```bash
 docker build \
+  -f docker/Dockerfile \
   --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key \
   -t wacrm .

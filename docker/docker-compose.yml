@@ -3,7 +3,12 @@ name: wacrm
 services:
   app:
     build:
-      context: .
+      # This file lives in docker/ but the Next.js source (package.json,
+      # src/, etc.) is at the repo root — the build context must point
+      # one level up. The Dockerfile itself is found automatically
+      # (docker/Dockerfile, same directory as this file).
+      context: ..
+      dockerfile: docker/Dockerfile
       # NEXT_PUBLIC_* vars are inlined at build time — forward them
       # from .env.local as build args. Changing any of them requires
       # a rebuild (docker compose up --build).
@@ -15,7 +20,7 @@ services:
     # Runtime (server-only) secrets come from .env.local; they are
     # never baked into the image.
     env_file:
-      - .env.local
+      - ../.env.local
     # The server always listens on 3000 inside the container. Pinned
     # here because `environment` wins over `env_file`, so a stray PORT
     # in .env.local can't desync the app from the mapping and the

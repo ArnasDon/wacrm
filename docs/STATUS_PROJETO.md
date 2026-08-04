@@ -1,6 +1,6 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
-> Última atualização: **2026-08-04**, ao final da sessão que transformou a Agenda do Dia em Agenda da Semana imobiliária + preparação para Google Calendar.
+> Última atualização: **2026-08-04**, ao final da sessão de configuração da conexão real do WhatsApp Cloud API (credenciais + webhook em produção).
 > Este arquivo é o ponto de partida para qualquer sessão futura — leia antes de qualquer outra coisa.
 
 ## Estado atual
@@ -29,10 +29,11 @@
 - Filtro de contatos e de transmissões com alternância **"Qualquer uma dessas tags" (OR)** / **"Todas essas tags" (AND)**.
 - PWA + notificações push (Web Push/VAPID) — testado em iPhone real, funcionando.
 - Deploy contínuo: qualquer `git push origin main` dispara redeploy automático no Hostinger.
+- **WhatsApp Cloud API (conectado)** — `whatsapp_config` da conta preenchido via Configurações → WhatsApp: Phone Number ID `1207064782494592`, WABA ID `1025664539956537`, token de acesso permanente (System User "Token do Ronaldo", escopos `whatsapp_business_messaging`/`whatsapp_business_management`/`whatsapp_business_manage_events`, sem expiração). "Credenciais válidas" confirmado pela Meta. Webhook (`https://crmronaldomeira.com/api/whatsapp/webhook`) configurado e verificado no app Meta "App Ronaldo Developer" (ID `1005583732099441`), campos `messages` e `message_template_status_update` assinados. `META_APP_ID` e `META_APP_SECRET` adicionados às variáveis de ambiente de produção (Hostinger). **Bug de falso negativo corrigido** (ver "Última alteração realizada"): esta conta é do tipo SMB (provisionada via WhatsApp Business App / coexistência, herdada de quando o Kommo geria o número) — a Meta rejeita `/register` estruturalmente para esse tipo de conta ("Register endpoint is not available for SMB businesses"), e o wacrm tratava isso como falha bloqueante mesmo com as outras duas checagens reais (metadados do telefone + WABA inscrito no app) passando. `registerPhoneNumber()` agora reconhece essa mensagem específica da Meta como sucesso terminal, igual já fazia com "already registered". Falta apenas confirmar com uma mensagem real de entrada.
 
 ## O que está em desenvolvimento / pendente
 
-- **Conexão real do WhatsApp Cloud API** — bloqueada. Ver "Problemas conhecidos".
+- **Conexão real do WhatsApp Cloud API** — credenciais, webhook e o bug de falso negativo do "não registrado" (conta SMB) resolvidos. Falta só confirmar com uma mensagem de entrada real. Ver "Última alteração realizada".
 - **Google Calendar — sincronização real** (OAuth + `googleapis`) — só a arquitetura (`CalendarProvider`/`CalendarSyncService`/`GoogleCalendarProvider` stub) está pronta, ver `docs/ARQUITETURA.md`. Precisa de tabela `calendar_connections` (tokens por conta) e do fluxo de consentimento OAuth antes de o botão "Conectar Google Calendar" sair do estado desabilitado.
 - **Agenda — expansões futuras já mapeadas** (não implementadas): Domingo na grade semanal (arquitetura já suporta, só falta ligar), calendário mensal, lembretes/notificações, integração WhatsApp.
 - **Segmentos usados em Transmissões/Automações** — hoje é só um contador+lista; ainda não há um seletor de "usar este segmento" dentro do wizard de Transmissões (usaria `listSegmentsWithCounts` + o mesmo `matchAll` já implementado lá).
@@ -40,6 +41,37 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-04 (parte 9)** — causa raiz do "Não registrado" investigada e corrigida:
+
+Depois da parte 8, faltava `META_APP_SECRET` e o PIN de duas etapas. `META_APP_SECRET` foi adicionado às variáveis de ambiente de produção (usuário revelou a chave na Meta com a própria senha, colou no clipboard, e o valor foi colado direto no Hostinger sem nunca passar em texto pela conversa). Ao tentar salvar um PIN novo (a conta não tinha PIN configurado — decisão do usuário: PIN gerado aleatoriamente), a Meta rejeitou com **"Register endpoint is not available for SMB businesses."**
+
+**Investigação:** consultado `GET /api/whatsapp/config/verify-registration` (endpoint de diagnóstico já existente, faz 2 chamadas reais à Graph API) — resultado: `phone_metadata_ok: true`, `waba_subscribed_to_app: true` (ambos confirmados via chamada real à Meta), mas `locally_marked_registered: false` porque essa flag só é preenchida por uma chamada `/register` bem-sucedida — e `/register` é estruturalmente indisponível para contas do tipo **SMB** (contas provisionadas via WhatsApp Business App / Embedded Signup em coexistência, comum quando o número já foi gerido por um BSP como o Kommo). **Causa raiz: falso negativo na lógica do wacrm**, não um problema real de conectividade — a Meta nunca vai aceitar `/register` para essa conta, então a flag `registered_at` nunca seria preenchida sob a lógica antiga, independente de a integração estar funcionando de verdade.
+
+**Correção aplicada** — `src/lib/whatsapp/meta-api.ts`: `registerPhoneNumber()` agora reconhece a mensagem "not available for SMB businesses" e retorna sucesso terminal (`smbNotApplicable: true`) em vez de lançar erro — mesmo padrão já usado para "already registered". Isso faz `registered_at` ser preenchido normalmente em `src/app/api/whatsapp/config/route.ts` (nenhuma mudança necessária ali além de um comentário explicativo), o que por sua vez faz `locally_marked_registered` (e portanto `live`) ficar `true` em `verify-registration/route.ts` — sem precisar tocar nesse arquivo nem na UI. Teste novo em `registration.test.ts` cobrindo esse caso.
+
+Nenhuma migration. Commit com o código + docs desta parte.
+
+**Validação:** `tsc`, `eslint` (zero erros/warnings), `vitest run` (652/655 — mesmas 3 falhas pré-existentes de `currency.test.ts` + 1 teste novo passando), `next build` limpos. **Pendente confirmar com uma mensagem de WhatsApp real** (pedido ao usuário, aguardando).
+
+---
+
+**Sessão de 2026-08-04 (parte 8)** — conexão real do WhatsApp Cloud API (config + webhook):
+
+Trabalho todo feito em produção diretamente (Meta Business Manager, Meta for Developers, Hostinger, Settings do wacrm), sem alteração de código — a integração já estava 100% implementada (`src/lib/whatsapp/`, `src/app/api/whatsapp/*`), só faltava configurar as credenciais reais.
+
+1. **`whatsapp_config`** — salvo via Configurações → WhatsApp do wacrm: Phone Number ID `1207064782494592`, WABA ID `1025664539956537`, token de acesso permanente gerado a partir do System User "Token do Ronaldo" (Business Settings → Usuários do sistema → Gerar token → app "App Ronaldo Developer" → sem expiração → escopos `whatsapp_business_messaging`, `whatsapp_business_management`, `whatsapp_business_manage_events`), e um verify_token gerado localmente (hex aleatório, nunca exposto em texto na conversa). Meta confirmou "Credenciais válidas" ao salvar.
+2. **Webhook Meta** — no app "App Ronaldo Developer" (`developers.facebook.com/apps/1005583732099441`), use case "Conectar no WhatsApp" → Etapa 2 → Configurar webhooks: URL de callback `https://crmronaldomeira.com/api/whatsapp/webhook` + o mesmo verify_token, "Verificar e salvar" confirmou com sucesso (checkmark verde). Campos `messages` e `message_template_status_update` assinados manualmente na lista de "Campos do webhook" (estavam todos desmarcados por padrão).
+3. **`META_APP_ID`** (`1005583732099441`) adicionado às variáveis de ambiente de produção no painel da Hostinger (`crmronaldomeira.com` → Variáveis de ambiente → Aplicar mudanças, redeploy automático). Precisava para submissão de templates com header de imagem.
+4. **Kommo** — confirmado nesta sessão (ver tarefa anterior) que não havia mais nenhum vínculo do Kommo no Meta Business Manager para remover; a antiga restrição "Conta com restrição" também não aparece mais em nenhuma tela verificada da Meta.
+
+**O que ficou faltando (não é código, são duas ações que só o usuário pode/deve fazer — ver "Pendências e problemas conhecidos" para o passo a passo):** `META_APP_SECRET` em produção (precisa da senha da Meta do usuário para revelar) e o PIN de verificação em duas etapas do número (para completar o `/register` e a Meta parar de rotear eventos de entrada para o app errado).
+
+Nenhuma migration nesta parte — nenhuma mudança de schema ou código, só configuração externa.
+
+**Validação:** tela de Configurações → WhatsApp do wacrm mostra "Credenciais válidas — Seu token de acesso autentica com a Meta"; painel da Meta mostra "Configurar webhooks ✅" e "Registre seu número de telefone do WhatsApp ✅"; ainda mostra "Não registrado — a Meta não vai entregar eventos" (aguardando o PIN, item acima).
+
+---
 
 **Sessão de 2026-08-04 (parte 7)** — horário de término no compromisso (migration `046`):
 
@@ -99,14 +131,15 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. Decidir o próximo passo do WhatsApp: contatar suporte do Kommo pedindo verificação do Solution Provider, **ou** aceitar o bloqueio e seguir sem WhatsApp real por enquanto.
+1. Confirmar a conexão do WhatsApp com um teste real: enviar uma mensagem de um número externo para `+55 83 92004-6142` e confirmar que ela aparece na Caixa de Entrada do wacrm.
 2. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 3. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
 4. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 
-- **WhatsApp bloqueado no Meta:** o WABA está restrito porque o "Solution Provider" vinculado (o próprio Kommo, registrado como parceiro técnico com acesso total) nunca completou a verificação de negócio da Meta. Revisão solicitada em 2026-07-28, ainda pendente na última checagem (2026-07-30), sem e-mail de resposta da Meta. Decisão tomada: **não remover o Kommo como parceiro** antes de tentar contato com o suporte deles — essa mensagem ainda não foi redigida. Isso também é o motivo de o wizard de Transmissões não conseguir ser testado visualmente ponta a ponta (nenhum template `APPROVED`).
+- **WhatsApp — falta só a confirmação com uma mensagem real.** `META_APP_SECRET` e `META_APP_ID` já estão em produção; PIN de duas etapas configurado; o bug de falso negativo do "Não registrado" (contas SMB, ver "Última alteração realizada" parte 9) foi corrigido no código. Nenhum item pendente que dependa do usuário além de mandar uma mensagem de teste para `+55 83 92004-6142` e eu confirmar que ela chega na Caixa de Entrada.
+  - Não removido o Kommo como parceiro do Meta Business Manager nesta sessão — já não havia nada a remover, ver [[project_kommo_whatsapp_restriction]] na memória: Kommo já aparecia desconectado (aba "Removidos" de Apps conectados) antes desta sessão começar, e a antiga restrição "Conta com restrição" não aparece mais em nenhuma tela do Meta Business Manager verificada.
 - **3 testes falhando, não relacionados a esta sessão:**
   - `src/lib/currency.test.ts` (3 testes) — depende do `Intl.NumberFormat` do Node/ICU instalado na máquina; formatação de locale diverge do esperado neste ambiente Windows local.
 - **Testes pendentes de confirmação manual pelo usuário:**

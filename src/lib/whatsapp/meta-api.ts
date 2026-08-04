@@ -110,6 +110,19 @@ export interface RegisterPhoneNumberResult {
    * caller's POV, surfaced separately for logging clarity.
    */
   alreadyRegistered: boolean
+  /**
+   * True when Meta rejected /register with "not available for SMB
+   * businesses" — a structural rejection for WhatsApp Business
+   * Accounts provisioned via the WhatsApp Business App / Embedded
+   * Signup coexistence flow (common when a number was previously
+   * managed by a BSP like Kommo), not a transient error. These
+   * accounts have no 2FA-PIN /register step at all; the WABA→app
+   * subscription (subscribeWabaToApp, called right after this) is
+   * the only "registration" that exists for them. Treated as a
+   * successful, terminal outcome so the UI doesn't show a "not
+   * registered" false negative that no retry could ever resolve.
+   */
+  smbNotApplicable: boolean
 }
 
 /**
@@ -135,7 +148,7 @@ export async function registerPhoneNumber(
   })
 
   if (response.ok) {
-    return { success: true, alreadyRegistered: false }
+    return { success: true, alreadyRegistered: false, smbNotApplicable: false }
   }
 
   // Meta returns an error envelope with a code. Code 133005 + the
@@ -150,7 +163,13 @@ export async function registerPhoneNumber(
   }
   const message = data.error?.message ?? `Meta API error: ${response.status}`
   if (/already.*registered/i.test(message)) {
-    return { success: true, alreadyRegistered: true }
+    return { success: true, alreadyRegistered: true, smbNotApplicable: false }
+  }
+  // "Register endpoint is not available for SMB businesses." — Meta's
+  // literal wording for WABAs that don't support /register at all
+  // (see the smbNotApplicable doc comment above). Not an error.
+  if (/not available for smb/i.test(message)) {
+    return { success: true, alreadyRegistered: false, smbNotApplicable: true }
   }
   throw new Error(message)
 }

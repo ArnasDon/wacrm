@@ -311,6 +311,12 @@ export async function POST(request: Request) {
         registrationSkipped = true
       } else {
         try {
+          // registerPhoneNumber() itself treats a "not available for
+          // SMB businesses" rejection as a successful, terminal
+          // outcome (see its doc comment) — those WABAs (common when
+          // the number was previously managed by a BSP) have no
+          // /register step at all, so this line reaches registeredAt
+          // for them too instead of throwing.
           await registerPhoneNumber({
             phoneNumberId: phone_number_id,
             accessToken: access_token,

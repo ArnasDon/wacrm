@@ -35,7 +35,11 @@ describe('registerPhoneNumber', () => {
       accessToken: 'tok',
       pin: '123456',
     });
-    expect(result).toEqual({ success: true, alreadyRegistered: false });
+    expect(result).toEqual({
+      success: true,
+      alreadyRegistered: false,
+      smbNotApplicable: false,
+    });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toContain('/PNID_123/register');
     expect(init.method).toBe('POST');
@@ -64,7 +68,38 @@ describe('registerPhoneNumber', () => {
       accessToken: 'tok',
       pin: '123456',
     });
-    expect(result).toEqual({ success: true, alreadyRegistered: true });
+    expect(result).toEqual({
+      success: true,
+      alreadyRegistered: true,
+      smbNotApplicable: false,
+    });
+  });
+
+  it('treats "not available for SMB businesses" as a successful terminal state, not an error', async () => {
+    // Real production case (2026-08-04): a WABA provisioned via the
+    // WhatsApp Business App / Embedded Signup coexistence flow (e.g.
+    // previously managed by a BSP like Kommo) has no /register step
+    // at all — Meta rejects the call structurally, every time, for
+    // every PIN. Treating this as a failure would show a permanent
+    // "not registered" false negative with no possible fix via retry.
+    fetchMock.mockResolvedValueOnce(
+      errorResponse(400, {
+        error: {
+          message: 'Register endpoint is not available for SMB businesses.',
+          code: 100,
+        },
+      }),
+    );
+    const result = await registerPhoneNumber({
+      phoneNumberId: 'PNID_123',
+      accessToken: 'tok',
+      pin: '123456',
+    });
+    expect(result).toEqual({
+      success: true,
+      alreadyRegistered: false,
+      smbNotApplicable: true,
+    });
   });
 
   it("surfaces Meta's PIN-required error verbatim so the UI can show it", async () => {

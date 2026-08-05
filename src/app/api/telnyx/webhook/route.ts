@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/telnyx/admin-client'
 import { verifyTelnyxWebhook } from '@/lib/telnyx/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { buildMediaPath } from '@/lib/storage/upload-media'
 
 // ============================================================
 // Telnyx webhook (Fase 1). Sin auth (firma Ed25519 ANTES de DB).
@@ -28,6 +29,7 @@ interface Payload {
   call_status?: string
   from?: unknown
   to?: unknown
+  recording_urls?: { mp3?: string; wav?: string } | unknown
   [k: string]: unknown
 }
 
@@ -80,7 +82,8 @@ export async function POST(req: NextRequest) {
     else if (eventType === 'call.answered') await onCallAnswered(admin, accountId, p)
     else if (eventType === 'call.hangup') await onCallHangup(admin, accountId, p)
     else if (eventType === 'message.received') await onMessageReceived(admin, accountId, p)
-    // Otros eventos (call.machine.*, recording.*) se ignoran en Fase 1.
+    else if (eventType === 'call.recording.saved') await onRecordingSaved(admin, accountId, p)
+    // Otros eventos (call.machine.*, etc.) se ignoran.
   } catch (err) {
     console.error('[telnyx:webhook] handler error:', eventType, err)
   }
@@ -233,6 +236,76 @@ async function dispatchMissed(admin: Admin, accountId: string, callId: string, p
 }
 
 /** Colgar la leg opuesta está out of scope en Fase 1 (ver onCallHangup). */
+
+// ------------------------------------------------------------
+// Grabaciones (Fase 2, DAD §2.4 / call.recording.saved)
+// Descarga el mp3 de la URL temporal de Telnyx, lo sube al bucket
+// privado `call-recordings` (service-role, sin RLS de cliente) con el
+// path account-scoped de `buildMediaPath`, y guarda en `calls`:
+//   recording_storage_path = path en storage
+//   recording_url          = URL del proxy autenticado
+//                            GET /api/telnyx/recordings/[callId]
+// ------------------------------------------------------------
+
+async function onRecordingSaved(admin: Admin, accountId: string, p: Payload) {
+  const urls = p.recording_urls as { mp3?: string } | undefined
+  const mp3 = urls?.mp3
+  if (!mp3) {
+    console.warn('[telnyx:webhook] call.recording.saved sin mp3, ignorado')
+    return
+  }
+
+  // Matchear la fila de calls por leg/session/control id (el payload de
+  // Telnyx no trae el id de nuestra fila).
+  const legId = p.call_leg_id ?? null
+  const sessionId = p.call_session_id ?? null
+  const ctrlId = p.call_control_id ?? null
+
+  const lookup = legId
+    ? { col: 'telnyx_call_leg_id' as const, val: legId }
+    : sessionId
+      ? { col: 'telnyx_call_session_id' as const, val: sessionId }
+      : ctrlId
+        ? { col: 'telnyx_call_control_id' as const, val: ctrlId }
+        : null
+  if (!lookup) return
+
+  const { data: callRow } = await admin
+    .from('calls')
+    .select('id')
+    .eq(lookup.col, lookup.val)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!callRow?.id) {
+    console.warn('[telnyx:webhook] call.recording.saved sin fila calls, ignorado')
+    return
+  }
+
+  // Descargar el mp3 (URL temporal firmada de Telnyx).
+  const res = await fetch(mp3, { cache: 'no-store' })
+  if (!res.ok) {
+    console.error('[telnyx:webhook] descarga de grabación falló:', res.status)
+    return
+  }
+  const buffer = Buffer.from(await res.arrayBuffer())
+
+  const path = buildMediaPath(accountId, 'recording.mp3')
+  const { error: upErr } = await admin.storage
+    .from('call-recordings')
+    .upload(path, buffer, { contentType: 'audio/mpeg', upsert: false })
+
+  if (upErr) {
+    console.error('[telnyx:webhook] upload grabación falló:', upErr.message)
+    return
+  }
+
+  const proxyUrl = `/api/telnyx/recordings/${callRow.id}`
+  await admin
+    .from('calls')
+    .update({ recording_storage_path: path, recording_url: proxyUrl })
+    .eq('id', callRow.id)
+    .eq('account_id', accountId)
+}
 
 // ------------------------------------------------------------
 // SMS inbound (channel='sms', migración 041)

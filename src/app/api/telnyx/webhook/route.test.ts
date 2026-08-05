@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Tests para el webhook Telnyx (Fase 1): bookkeeping de calls, dispatch de
@@ -22,6 +22,8 @@ const config = { account_id: 'acct-1', call_control_app_id: 'ccapp-1', default_f
 const contacts: Record<string, unknown>[] = []
 const conversations: Record<string, unknown>[] = []
 const messages: Record<string, unknown>[] = []
+// Grabaciones subidas a storage en call.recording.saved.
+const uploadedRecordings: { path: string; body: Buffer }[] = []
 
 function eqOf(eqs: [string, unknown][], col: string) {
   const hit = eqs.find(([c]) => c === col)
@@ -71,12 +73,24 @@ function makeAdminMock() {
         if (insertMode) return { data: { id: 'call-1' }, error: null }
         if (update) {
           const ctrl = eqOf(eqs, 'telnyx_call_control_id')
-          const row = callsByCtrl.get(ctrl ?? '')
-          if (row) Object.assign(row, update)
+          const id = eqOf(eqs, 'id')
+          if (id) {
+            const row = [...callsByCtrl.values()].find((r) => r.id === id)
+            if (row) Object.assign(row, update)
+          } else if (ctrl) {
+            const row = callsByCtrl.get(ctrl)
+            if (row) Object.assign(row, update)
+          }
           return { data: null, error: null }
         }
         const ctrl = eqOf(eqs, 'telnyx_call_control_id')
-        return { data: callsByCtrl.get(ctrl ?? '') ?? null, error: null }
+        const leg = eqOf(eqs, 'telnyx_call_leg_id')
+        if (ctrl) return { data: callsByCtrl.get(ctrl) ?? null, error: null }
+        if (leg) {
+          const hit = [...callsByCtrl.values()].find((r) => r.telnyx_call_leg_id === leg)
+          return { data: hit ?? null, error: null }
+        }
+        return { data: null, error: null }
       }
       // --- contacts / conversations / messages ---
       if (table === 'contacts') {
@@ -108,6 +122,14 @@ function makeAdminMock() {
   }
   return {
     from: vi.fn((table: string) => builder(table)),
+    storage: {
+      from: vi.fn(() => ({
+        upload: vi.fn(async (path: string, body: Buffer, _opts?: unknown) => {
+          uploadedRecordings.push({ path, body })
+          return { data: { path }, error: null }
+        }),
+      })),
+    },
   }
 }
 
@@ -132,8 +154,21 @@ beforeEach(() => {
   contacts.length = 0
   conversations.length = 0
   messages.length = 0
+  uploadedRecordings.length = 0
   adminMock = makeAdminMock()
   runAutomationsForTrigger.mockClear()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    })),
+  )
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('POST /api/telnyx/webhook', () => {
@@ -202,5 +237,46 @@ describe('POST /api/telnyx/webhook', () => {
     expect((messages[0].metadata as { telnyx_message_id?: string })?.telnyx_message_id).toBe('msg-remote-1')
     expect(conversations.length).toBeGreaterThan(0)
     expect(runAutomationsForTrigger).not.toHaveBeenCalled()
+  })
+
+  it('call.recording.saved: descarga mp3, sube a call-recordings y guarda proxy URL', async () => {
+    // Fila calls existente (leg id para matchear).
+    callsByCtrl.set('ctrl-rec', {
+      id: 'call-rec-1',
+      account_id: 'acct-1',
+      telnyx_call_control_id: 'ctrl-rec',
+      telnyx_call_leg_id: 'leg-rec-1',
+      direction: 'inbound',
+    })
+
+    await postWebhook('call.recording.saved', {
+      call_leg_id: 'leg-rec-1',
+      call_session_id: 'sess-rec-1',
+      connection_id: 'ccapp-1',
+      recording_urls: { mp3: 'https://telnyx.example/rec.mp3' },
+    })
+
+    expect(uploadedRecordings).toHaveLength(1)
+    const up = uploadedRecordings[0]
+    expect(up.path).toMatch(/^account-acct-1\/\d+-recording\.mp3$/)
+    // La fila quedó con recording_storage_path + recording_url = proxy.
+    const row = callsByCtrl.get('ctrl-rec')
+    expect(row?.recording_storage_path).toBe(up.path)
+    expect(row?.recording_url).toBe('/api/telnyx/recordings/call-rec-1')
+  })
+
+  it('call.recording.saved sin mp3: no sube nada ni rompe', async () => {
+    callsByCtrl.set('ctrl-rec2', {
+      id: 'call-rec-2',
+      account_id: 'acct-1',
+      telnyx_call_control_id: 'ctrl-rec2',
+      telnyx_call_leg_id: 'leg-rec-2',
+    })
+    await postWebhook('call.recording.saved', {
+      call_leg_id: 'leg-rec-2',
+      connection_id: 'ccapp-1',
+      recording_urls: {},
+    })
+    expect(uploadedRecordings).toHaveLength(0)
   })
 })

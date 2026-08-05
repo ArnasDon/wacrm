@@ -49,10 +49,22 @@ export interface PhoneNumber {
   line_type?: string | null
 }
 
+export interface TelephonyCredential {
+  id: string
+  sip_username?: string | null
+  sip_password?: string | null
+}
+
 export interface TelnyxClient {
   dial(input: DialInput): Promise<DialResult>
   sendSms(input: SendSmsInput): Promise<{ id: string }>
   listPhoneNumbers(): Promise<PhoneNumber[]>
+  /** Crea una Telephony Credential para una conexión SIP (WebRTC). */
+  createTelephonyCredential(input: { connectionId: string; name: string }): Promise<TelephonyCredential>
+  /** GET /v2/telephony_credentials/{id} — sip_username/sip_password. */
+  getTelephonyCredential(credentialId: string): Promise<TelephonyCredential>
+  /** POST /v2/telephony_credentials/{id}/token — JWT login_token (24h). */
+  createWebrtcToken(credentialId: string): Promise<{ token: string }>
 }
 
 export function createTelnyxClient(apiKey: string): TelnyxClient {
@@ -119,6 +131,30 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
     async listPhoneNumbers() {
       const data = await request<PhoneNumber[]>("/phone_numbers")
       return data
+    },
+
+    async createTelephonyCredential({ connectionId, name }) {
+      type Raw = { id: string; sip_username?: string | null; sip_password?: string | null }
+      const data = await request<Raw>("/telephony_credentials", {
+        method: "POST",
+        body: JSON.stringify({ connection_id: connectionId, name }),
+      })
+      return { id: data.id, sip_username: data.sip_username, sip_password: data.sip_password }
+    },
+
+    async getTelephonyCredential(credentialId) {
+      type Raw = { id: string; sip_username?: string | null; sip_password?: string | null }
+      const data = await request<Raw>(`/telephony_credentials/${credentialId}`)
+      return { id: data.id, sip_username: data.sip_username, sip_password: data.sip_password }
+    },
+
+    async createWebrtcToken(credentialId) {
+      // Verificado context7: POST /v2/telephony_credentials/{id}/token → { data: { token } }
+      const data = await request<{ token: string }>(`/telephony_credentials/${credentialId}/token`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      })
+      return { token: data.token }
     },
   }
 }
@@ -202,4 +238,42 @@ export async function loadTelnyxDialConfig(accountId: string): Promise<TelnyxDia
     connectionId: data.call_control_app_id ?? "",
     fromNumber: data.default_from_number,
   }
+}
+
+/**
+ * Asegura que el account tenga una Telephony Credential para el
+ * softphone WebRTC (Fase 2). Si `telnyx_config.telephony_credential_id`
+ * no existe, crea una asociada a la Call Control App (migración 044) y
+ * persiste el id — la próxima llamada la reutiliza. Devuelve el id.
+ *
+ * Verificado context7: POST /v2/telephony_credentials { connection_id, name }.
+ */
+export async function ensureWebrtcCredential(accountId: string): Promise<string> {
+  const admin = supabaseAdmin()
+  const { data, error } = await admin
+    .from("telnyx_config")
+    .select("api_key_encrypted, call_control_app_id, telephony_credential_id")
+    .eq("account_id", accountId)
+    .maybeSingle()
+
+  if (error || !data) {
+    throw new TelnyxApiError("Telnyx config not found for account")
+  }
+  if (data.telephony_credential_id) return data.telephony_credential_id
+  if (!data.call_control_app_id) {
+    throw new TelnyxApiError("Call Control App not configured for account")
+  }
+
+  const client = createTelnyxClient(decrypt(data.api_key_encrypted))
+  const created = await client.createTelephonyCredential({
+    connectionId: data.call_control_app_id,
+    name: `wacrm-${accountId.slice(0, 8)}`,
+  })
+
+  await admin
+    .from("telnyx_config")
+    .update({ telephony_credential_id: created.id })
+    .eq("account_id", accountId)
+
+  return created.id
 }

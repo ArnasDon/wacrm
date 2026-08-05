@@ -42,3 +42,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Astro landing package (workspace): deps + generated build output.
+# The static build result (public/landing/) IS committed so `next build`
+# serves it without needing an astro build step on the host.
+landing/node_modules/
+landing/.astro/
+landing/dist/

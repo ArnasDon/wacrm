@@ -1,0 +1,49 @@
+---
+// index.astro — home de la landing (DAD §3.5 machote).
+// Secciones: Hero, SocialProof, Especialidades, CómoFunciona, Video,
+// FAQ, Form, Footer. god.js hace page_view + beacons automáticamente.
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/sections/Hero.astro";
+import SocialProof from "../components/sections/SocialProof.astro";
+import Specialties from "../components/sections/Specialties.astro";
+import HowItWorks from "../components/sections/HowItWorks.astro";
+import YouTubeLite from "../components/YouTubeLite.astro";
+import Faq from "../components/sections/Faq.astro";
+import About from "../components/sections/About.astro";
+import LeadForm from "../components/LeadForm.astro";
+import Footer from "../components/sections/Footer.astro";
+import "../scripts/wa-ref";
+---
+
+<BaseLayout vitals>
+  <main>
+    <Hero />
+    <SocialProof />
+    <Specialties />
+    <HowItWorks />
+
+    <section id="video" class="mx-auto max-w-6xl px-6 py-16">
+      <h2 class="text-center text-3xl font-bold text-slate-900">Lo que dicen nuestros pacientes</h2>
+      <div class="mt-8">
+        <YouTubeLite />
+      </div>
+    </section>
+
+    <About />
+
+    <Faq />
+
+    <section id="form" class="bg-slate-50 py-16">
+      <div class="mx-auto max-w-6xl px-6">
+        <h2 class="text-center text-3xl font-bold text-slate-900">Empieza hoy</h2>
+        <p class="mx-auto mt-3 max-w-xl text-center text-slate-600">
+          Déjanos tus datos y te contactamos por WhatsApp.
+        </p>
+        <div class="mt-8">
+          <LeadForm />
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>

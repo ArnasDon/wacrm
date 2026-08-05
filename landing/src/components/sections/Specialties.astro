@@ -1,0 +1,24 @@
+---
+// Specialties — grid de servicios con micro-CTA WhatsApp (DAD §3.5).
+// Cada micro-CTA dispara whatsapp_click (beacon de god.js).
+import WhatsAppCta from "../WhatsAppCta.astro";
+import { specialties } from "../../data/site";
+---
+
+<section id="servicios" class="mx-auto max-w-6xl px-6 py-16">
+  <h2 class="text-center text-3xl font-bold text-slate-900">Especialidades</h2>
+  <p class="mx-auto mt-3 max-w-xl text-center text-slate-600">
+    Tratamientos basados en evidencia, con plan personalizado y seguimiento.
+  </p>
+  <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+    {specialties.map((s) => (
+      <div class="flex flex-col rounded-2xl border border-slate-200 p-6 transition-shadow hover:shadow-md">
+        <h3 class="text-lg font-semibold text-slate-900">{s.name}</h3>
+        <p class="mt-2 flex-1 text-sm text-slate-600">{s.desc}</p>
+        <div class="mt-4">
+          <WhatsAppCta label="Consultar" variant="outline" class="w-full px-4 py-2 text-xs" />
+        </div>
+      </div>
+    ))}
+  </div>
+</section>

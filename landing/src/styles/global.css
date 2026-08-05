@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Landing — estilos base (DAD §3). Tailwind v4 via plugin Vite. */
+@theme {
+  --color-brand: #2563eb;
+  --color-brand-dark: #1d4ed8;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+}

@@ -1,0 +1,19 @@
+---
+// Faq — <details> nativo, cero JS (INP-friendly, DAD §3.5).
+import { site } from "../../data/site";
+---
+
+<section id="faq" class="mx-auto max-w-3xl px-6 py-16">
+  <h2 class="text-center text-3xl font-bold text-slate-900">Preguntas frecuentes</h2>
+  <div class="mt-8 space-y-3">
+    {site.faq.map((item) => (
+      <details class="group rounded-2xl border border-slate-200 bg-white p-4">
+        <summary class="flex cursor-pointer items-center justify-between font-semibold text-slate-900">
+          {item.q}
+          <span class="text-slate-400 transition-transform group-open:rotate-45">+</span>
+        </summary>
+        <p class="mt-2 text-sm text-slate-600">{item.a}</p>
+      </details>
+    ))}
+  </div>
+</section>

@@ -1,0 +1,22 @@
+---
+// SocialProof — testimonios, rating, cifras (DAD §3.5). Datos de ejemplo:
+// reemplazar por los reales de la clínica cuando existan.
+const stats = [
+  { value: "+500", label: "pacientes atendidos" },
+  { value: "4.9★", label: "calificación promedio" },
+  { value: "95%", label: "recomiendan el servicio" },
+];
+---
+
+<section class="bg-slate-50 py-14">
+  <div class="mx-auto max-w-6xl px-6">
+    <div class="grid gap-8 md:grid-cols-3">
+      {stats.map((s) => (
+        <div class="rounded-2xl bg-white p-6 text-center shadow-sm">
+          <div class="text-3xl font-bold text-emerald-600">{s.value}</div>
+          <div class="mt-1 text-sm text-slate-600">{s.label}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

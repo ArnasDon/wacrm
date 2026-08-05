@@ -1,0 +1,41 @@
+---
+// Hero — propuesta en 1 frase + CTA WhatsApp (ref_code) + CTA a form.
+// Tracking: page_view (god.js) + whatsapp_click (beacon).
+import WhatsAppCta from "../WhatsAppCta.astro";
+import { site } from "../../data/site";
+---
+
+<section class="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2 md:py-24">
+  <div>
+    <p class="mb-3 inline-block rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+      Valoración sin costo
+    </p>
+    <h1 class="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
+      Recupera tu bienestar con atención que sí te escucha
+    </h1>
+    <p class="mt-4 text-lg text-slate-600">
+      En {site.clinicName} combinamos diagnóstico personalizado y tratamiento a tu medida.
+      Escríbenos por WhatsApp y agenda tu valoración hoy.
+    </p>
+    <div class="mt-8 flex flex-wrap gap-4">
+      <WhatsAppCta label="Escríbenos por WhatsApp" variant="primary" />
+      <a
+        href="#form"
+        class="inline-flex items-center justify-center rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-600 hover:text-emerald-700"
+      >
+        Quiero más información
+      </a>
+    </div>
+    <div class="mt-6 flex items-center gap-2 text-sm text-slate-500">
+      <span aria-hidden="true" class="text-amber-500">★★★★★</span>
+      Respondemos en menos de 24 h
+    </div>
+  </div>
+  <div class="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 p-10 text-center">
+    <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-white text-4xl shadow">
+      💬
+    </div>
+    <h2 class="mt-4 text-xl font-semibold text-slate-900">Tu primer paso es un mensaje</h2>
+    <p class="mt-2 text-slate-600">Sin filas, sin esperas. Coordina directo por WhatsApp.</p>
+  </div>
+</section>

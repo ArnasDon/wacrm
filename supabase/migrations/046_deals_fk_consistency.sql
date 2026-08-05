@@ -11,13 +11,13 @@
 -- ============================================================
 
 ALTER TABLE public.deals
-  DROP CONSTRAINT deals_conversation_id_fkey,
+  DROP CONSTRAINT IF EXISTS deals_conversation_id_fkey,
   ADD CONSTRAINT deals_conversation_id_fkey
     FOREIGN KEY (conversation_id) REFERENCES public.conversations(id)
     ON DELETE SET NULL;
 
 ALTER TABLE public.deals
-  DROP CONSTRAINT deals_stage_id_fkey,
+  DROP CONSTRAINT IF EXISTS deals_stage_id_fkey,
   ADD CONSTRAINT deals_stage_id_fkey
     FOREIGN KEY (stage_id) REFERENCES public.pipeline_stages(id)
     ON DELETE CASCADE;

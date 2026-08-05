@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { contactText } from '@/lib/automations/engine'
 import { createResendClient, loadEmailConfig } from '@/lib/email/send'
+import { supabaseAdmin } from '@/lib/telnyx/admin-client'
 import type { VariableMapping } from '@/hooks/use-broadcast-sending'
 
 // ============================================================
@@ -76,6 +77,21 @@ export async function POST(req: NextRequest) {
     const { apiKey, fromEmail, replyTo } = await loadEmailConfig(ctx.accountId)
     const client = createResendClient(apiKey)
     const { id } = await client.send(fromEmail, replyTo, { to, subject, html })
+
+    // Persistir en email_sends (DAD §7.7 — Item 13): snapshot html para el
+    // visor + resend_message_id para el webhook. service_role (mismo patrón
+    // que el motor de automatizaciones; RLS del browser no inserta directo).
+    await supabaseAdmin().from('email_sends').insert({
+      account_id: ctx.accountId,
+      contact_id: typeof body.contactId === 'string' ? body.contactId : null,
+      automation_id: null,
+      template_name: templateName,
+      recipient: to,
+      subject,
+      html,
+      status: 'sent',
+      resend_message_id: id,
+    })
 
     return NextResponse.json({ ok: true, resendMessageId: id })
   } catch (err) {

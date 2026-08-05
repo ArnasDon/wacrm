@@ -212,6 +212,11 @@ export function validateTriggerForActivation(
     // No config required (Telnyx Fase 1). The trigger fires server-side
     // from the webhook on call.hangup when the agent's leg doesn't answer
     // (§3.4); intent is documented here so the no-op is auditable.
+  } else if (triggerType === 'message_read') {
+    // No config required (DAD §8.3 — decision `mensaje_leido`). The
+    // trigger fires server-side from the WhatsApp webhook when a status
+    // update with `read` arrives for an outbound message; there is no
+    // user-editable payload, so activation requires nothing.
   }
 
   return issues

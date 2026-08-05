@@ -53,6 +53,17 @@ vi.mock('@/lib/email/send', () => ({
   })),
 }))
 
+// Item 13: el route persiste en email_sends con service_role. Mock del
+// cliente admin para no tocar la DB real en tests.
+const insertEmailSend = vi.fn(async (row: Record<string, unknown>) => ({ error: null, data: null }))
+vi.mock('@/lib/telnyx/admin-client', () => ({
+  supabaseAdmin: () => ({
+    from: () => ({
+      insert: insertEmailSend,
+    }),
+  }),
+}))
+
 import { POST } from './route'
 
 function post(body: unknown) {
@@ -70,6 +81,7 @@ beforeEach(() => {
   templateRow = { subject: 'Hola {{name}}', body_html: '<h1>{{name}}</h1>' }
   supabaseMock = makeSupabaseMock()
   send.mockClear()
+  insertEmailSend.mockClear()
 })
 
 describe('POST /api/email/send', () => {
@@ -84,6 +96,18 @@ describe('POST /api/email/send', () => {
     expect(input.to).toBe('ana@acme.com')
     expect(input.subject).toBe('Hola Ana')
     expect(input.html).toBe('<h1>Ana</h1>')
+    // Item 13: el envío persiste en email_sends (snapshot + contact_id).
+    expect(insertEmailSend).toHaveBeenCalledTimes(1)
+    expect(insertEmailSend.mock.calls[0][0]).toMatchObject({
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      template_name: 'welcome',
+      recipient: 'ana@acme.com',
+      subject: 'Hola Ana',
+      html: '<h1>Ana</h1>',
+      status: 'sent',
+      resend_message_id: 'resend-1',
+    })
   })
 
   it('404 cuando el contacto no es del account', async () => {

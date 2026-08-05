@@ -233,12 +233,57 @@ export default function PipelinesPage() {
         p_expected_version: deal?.version ?? null,
       });
       const result = data as
-        | { ok: boolean; code?: string; version?: number; priority?: string }
+        | {
+            ok: boolean;
+            code?: string;
+            version?: number;
+            priority?: string;
+            missing?: string[];
+            hint?: string;
+          }
         | null;
       if (error || !result?.ok) {
         if (result?.code === "VERSION_CONFLICT") {
           // Otro agente ya movió este deal — nunca pisar su cambio.
           toast.error(t("toastMoveConflict"));
+        } else if (result?.code === "GUARDS_MISSING") {
+          // Checklist de evidencia faltante (DAD §7.1 — Item 5). La RPC es
+          // no-bloqueante con override + razón; aquí ofrecemos avanzar con
+          // la razón (el estado del deal en memoria ya se movió optimista).
+          const missing = (result.missing ?? []).map((m) => m.replace(/_/g, " "));
+          const reason = window.prompt(
+            `${t("toastGuardsMissing")} (${missing.join(", ")}) — ${t("toastGuardsOverrideHint")}`,
+          );
+          if (reason) {
+            const override = await supabase.rpc("transition_deal", {
+              p_deal_id: dealId,
+              p_to_stage_id: newStageId,
+              p_triggered_by: "agent",
+              p_expected_version: deal?.version ?? null,
+              p_override_reason: reason,
+            });
+            const overrideResult = override.data as
+              | { ok: boolean; code?: string; version?: number; priority?: string }
+              | null;
+            if (!override.error && overrideResult?.ok) {
+              setDeals((prev) =>
+                prev.map((d) =>
+                  d.id === dealId
+                    ? {
+                        ...d,
+                        stage_id: newStageId,
+                        version: overrideResult.version ?? d.version,
+                        priority: (overrideResult.priority as Deal["priority"]) ?? d.priority,
+                      }
+                    : d,
+                ),
+              );
+              toast.success(t("toastMoveDealOverride"));
+              return;
+            }
+          }
+          refreshDeals();
+          toast.error(t("toastFailedMoveDeal"));
         } else {
           toast.error(t("toastFailedMoveDeal"));
         }

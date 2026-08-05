@@ -22,6 +22,7 @@ import type {
   Contact,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
+import { checkFrequencyOrEnqueue } from './queue'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
@@ -467,10 +468,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const { apiKey, fromEmail, replyTo } = await loadEmailConfig(args.automation.account_id)
       const subject = interpolate(contactText(template.subject, cfg.variables, contact), args)
       const html = interpolate(contactText(template.body_html, cfg.variables, contact), args)
-      await createResendClient(apiKey).send(fromEmail, replyTo, {
+      const { id: resendMessageId } = await createResendClient(apiKey).send(fromEmail, replyTo, {
         to: contact.email,
         subject,
         html,
+      })
+      // Persistir en email_sends (DAD §7.7 — Item 13 del plan §13): el webhook de
+      // Resend actualiza status/contadores por resend_message_id (048).
+      await db.from('email_sends').insert({
+        account_id: args.automation.account_id,
+        contact_id: args.contactId,
+        automation_id: args.automation.id,
+        template_name: cfg.template,
+        recipient: contact.email,
+        subject,
+        html,
+        status: 'sent',
+        resend_message_id: resendMessageId,
       })
       return `email sent via Resend (${cfg.template})`
     }
@@ -481,6 +495,21 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const text = interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
+
+      // Fase 2 Mautic P1.4 — anti-spam: si el contact agotó la cuota
+      // diaria, el texto se encola (re-agendado) en vez de enviarse.
+      const freq = await checkFrequencyOrEnqueue({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        payload: {
+          step_type: 'send_message',
+          text,
+          conversation_id: conversationId,
+          user_id: args.automation.user_id,
+        },
+      })
+      if (freq.queued) return `queued (${freq.reason})`
+
       const { whatsapp_message_id } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -534,6 +563,24 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
             })
             .map((k) => String(cfg.variables![k]))
         : []
+
+      // Fase 2 Mautic P1.4 — anti-spam: las plantillas son el canal de
+      // marketing (repetible vs 1 sola vez); si el contact agotó la
+      // cuota diaria, se encola en vez de enviarse.
+      const freq = await checkFrequencyOrEnqueue({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        payload: {
+          step_type: 'send_template',
+          template_name: cfg.template_name,
+          language: cfg.language,
+          params,
+          conversation_id: conversationId,
+          user_id: args.automation.user_id,
+        },
+      })
+      if (freq.queued) return `template queued (${freq.reason})`
+
       const { whatsapp_message_id } = await engineSendTemplate({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,

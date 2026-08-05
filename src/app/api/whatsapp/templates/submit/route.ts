@@ -37,8 +37,7 @@ function buildUpsertRow(
     // not-null constraint.
     account_id: accountId,
     // Original author — kept as audit only. The unique index is
-    // still on (user_id, name, language) — see the upsert helper
-    // for the cross-teammate dedup follow-up.
+    // on (account_id, name, language) since migration 051.
     user_id: userId,
     name: payload.name,
     category: payload.category,
@@ -65,14 +64,12 @@ async function upsertTemplateRow(
   supabase: SupabaseClient,
   row: ReturnType<typeof buildUpsertRow>,
 ) {
-  // TODO(account-sharing): conflict target is still scoped to
-  // user_id. Once a follow-up migration drops the legacy unique
-  // index on (user_id, name, language) and adds (account_id,
-  // name, language), switch `onConflict` here so two teammates
-  // can't shadow each other's same-named template.
+  // Conflict target scoped to account (migration 051). Two teammates
+  // in the same account can't shadow each other's same-named template;
+  // `user_id` stays as audit-only.
   return supabase
     .from('message_templates')
-    .upsert(row, { onConflict: 'user_id,name,language' })
+    .upsert(row, { onConflict: 'account_id,name,language' })
     .select()
     .single()
 }

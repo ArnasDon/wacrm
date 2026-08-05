@@ -246,10 +246,40 @@ export function DealForm({
       p_expected_version: deal.version ?? null,
     });
     const result = data as
-      | { ok: boolean; code?: string; version?: number }
+      | { ok: boolean; code?: string; version?: number; missing?: string[]; hint?: string }
       | null;
     setStatusAction(null);
     if (error || !result?.ok) {
+      if (result?.code === "GUARDS_MISSING") {
+        // Checklist de evidencia faltante (DAD §7.1 — Item 5): no-bloqueante
+        // con override + razón. La razón queda auditada en state_changed.
+        const missing = (result.missing ?? []).map((m) => m.replace(/_/g, " "));
+        const reason = window.prompt(
+          `${t("toastGuardsMissing")} (${missing.join(", ")}) — ${t("toastGuardsOverrideHint")}`,
+        );
+        if (reason) {
+          const override = await supabase.rpc("transition_deal", {
+            p_deal_id: deal.id,
+            p_to_stage_id: deal.stage_id,
+            p_new_status: status,
+            p_triggered_by: "agent",
+            p_expected_version: deal.version ?? null,
+            p_override_reason: reason,
+          });
+          const overrideResult = override.data as
+            | { ok: boolean; code?: string; version?: number }
+            | null;
+          if (!override.error && overrideResult?.ok) {
+            toast.success(t("toastStatusOverride"));
+            onOpenChange(false);
+            onSaved();
+            return;
+          }
+        }
+        toast.error(t("toastFailedStatus"));
+        onSaved();
+        return;
+      }
       toast.error(
         result?.code === "VERSION_CONFLICT"
           ? t("toastStatusConflict")

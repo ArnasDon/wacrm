@@ -18,6 +18,12 @@ export const site = {
   whatsappText: "Hola, vengo del sitio web y me gustaría más información.",
   /** ID de video testimonial (YouTube, facade on-demand) */
   videoId: "guJLfqTFfIw",
+  /** Indexación SEO. Mientras los placeholders de arriba (clinicName,
+   *  whatsappNumber, baseUrl) sigan siendo TODOs del fork, la landing
+   *  se sirve con noindex + robots.txt Disallow (ver BaseLayout.astro
+   *  y landing/public/robots.txt). Poner en true SOLO cuando el fork
+   *  se despliegue con datos reales. */
+  indexable: false,
   /** Preguntas frecuentes (FAQ con <details> nativo, cero JS) */
   faq: [
     {

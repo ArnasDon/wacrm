@@ -516,7 +516,11 @@ export type AutomationTriggerType =
   | 'interactive_reply'
   /** Inbound forwarded call the agent didn't answer (Telnyx, Fase 1):
    *  dispatched server-side by the webhook on call.hangup (§3.4). */
-  | 'missed_call';
+  | 'missed_call'
+  /** Customer read an outbound WhatsApp message (check azul, DAD §8.3 —
+   *  decision `mensaje_leido`). Dispatched by the webhook on status
+   *  update `read`; matches on the outbound message. */
+  | 'message_read';
 
 export type AutomationStepType =
   | 'send_message'

@@ -6,18 +6,18 @@
 // Dedup hard por event_id (columna UNIQUE en tracking_events).
 // ============================================================
 
-import { z } from "zod";
+import { z } from 'zod';
 
 /** Tipos aceptados por la API (reducido v8, DAD §4) */
 export const EVENT_TYPES = [
-  "form_submit",
-  "ctwa_lead",
-  "page_view",
-  "whatsapp_click",
-  "phone_click",
-  "scroll_depth",
-  "utm_recorded",
-  "identity_merged",
+  'form_submit',
+  'ctwa_lead',
+  'page_view',
+  'whatsapp_click',
+  'phone_click',
+  'scroll_depth',
+  'utm_recorded',
+  'identity_merged',
 ] as const;
 
 export type TrackEventType = (typeof EVENT_TYPES)[number];
@@ -56,8 +56,42 @@ export const attributionInputSchema = z.object({
   visitor_id: z.string().optional(),
 });
 
-/** Payload libre pero acotado (el server no guarda lo que no entiende) */
-export const payloadSchema = z.record(z.string(), z.unknown()).optional();
+/** Payload acotado: valores JSON simples, tamaño y número de claves limitados
+ *  (antes: z.record(z.string(), z.unknown()) sin tope → DoS de almacenamiento
+ *  con jsonb ilimitado desde endpoints anónimos). */
+const MAX_PAYLOAD_KEYS = 24;
+const MAX_PAYLOAD_KEY_LEN = 64;
+const MAX_PAYLOAD_VALUE_LEN = 2000;
+const MAX_PAYLOAD_SERIALIZED = 16_384; // 16 KB — holgado para form_submit, inútil para abuso
+
+const payloadValueSchema = z.union([
+  z.string().max(MAX_PAYLOAD_VALUE_LEN),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+
+export const payloadSchema = z
+  .record(z.string().max(MAX_PAYLOAD_KEY_LEN), payloadValueSchema)
+  .refine((v) => JSON.stringify(v).length <= MAX_PAYLOAD_SERIALIZED, {
+    message: `payload exceeds ${MAX_PAYLOAD_SERIALIZED} bytes`,
+  })
+  .refine((v) => Object.keys(v).length <= MAX_PAYLOAD_KEYS, {
+    message: `payload exceeds ${MAX_PAYLOAD_KEYS} keys`,
+  })
+  .optional();
+
+/**
+ * Teléfono en formato E.164 (`+5215512345678`) o dígitos nacionales
+ * (`5215512345678`) — el ingest normaliza ambos. Rechaza basura
+ * (letras, <7 dígitos, >15 dígitos) antes de que cree un lead.
+ */
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{6,14}$|^\d{7,15}$/, {
+    message: 'phone must be E.164 (e.g. +5215512345678) or national digits',
+  });
 
 export const trackEventSchema = z.object({
   event_id: z.string().min(6).max(128),
@@ -72,7 +106,7 @@ export type TrackEventInput = z.infer<typeof trackEventSchema>;
 
 /** Beacon GET anónimo (/api/track) — clicks WhatsApp/tel + scroll */
 export const beaconSchema = z.object({
-  type: z.enum(["whatsapp", "phone", "scroll"]),
+  type: z.enum(['whatsapp', 'phone', 'scroll']),
   ref: z.string().optional(),
   landing: z.string().optional(),
   event_id: z.string().optional(),

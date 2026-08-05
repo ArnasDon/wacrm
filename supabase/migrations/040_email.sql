@@ -49,6 +49,7 @@ CREATE POLICY email_config_update ON email_config FOR UPDATE
 
 -- delete: none — config is revoked in place, never hard-deleted.
 
+DROP TRIGGER IF EXISTS set_updated_at ON email_config;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON email_config
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -83,5 +84,6 @@ CREATE POLICY email_templates_update ON email_templates FOR UPDATE
   USING (is_account_member(account_id, 'owner'))
   WITH CHECK (is_account_member(account_id, 'owner'));
 
+DROP TRIGGER IF EXISTS set_updated_at ON email_templates;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON email_templates
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

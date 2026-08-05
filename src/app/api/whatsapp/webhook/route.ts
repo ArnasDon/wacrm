@@ -13,6 +13,7 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { dispatchConversion, loadCapiCreds } from '@/lib/analytics/meta-capi'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -59,6 +60,24 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Click-to-WhatsApp referral (DAD §8.1 — Item 16). Meta lo incluye SOLO
+   * en el primer mensaje entrante que origina un click en un anuncio CTWA.
+   * `ctwa_clid` es el click id one-shot: si no lo capturamos aquí, se
+   * pierde para siempre (guardrail 10). One message per inbound payload
+   * can carry it — it's the ad click, not the message id.
+   */
+  referral?: {
+    source_url?: string
+    source_type?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    image_url?: string
+    video_url?: string
+    thumbnail_url?: string
+    ctwa_clid?: string
+  }
 }
 
 interface WhatsAppWebhookEntry {
@@ -414,7 +433,7 @@ async function handleStatusUpdate(status: {
   //    the owning account for delivery.
   const { data: msgRow } = await supabaseAdmin()
     .from('messages')
-    .select('conversation_id, conversations(account_id)')
+    .select('conversation_id, contact_id, conversations(account_id)')
     .eq('message_id', status.id)
     .limit(1)
     .maybeSingle()
@@ -423,6 +442,19 @@ async function handleStatusUpdate(status: {
     const conv = msgRow.conversations as { account_id: string } | null
     const accountId = conv?.account_id
     if (accountId) {
+      // 3a) Trigger de automatización `message_read` (DAD §8.3 — decision
+      //     `mensaje_leido`). Solo el check azul real (status=read) lo
+      //     dispara; delivered/sent no. Fire-and-forget: el engine nunca
+      //     lanza, y un fallo aquí no debe retrasar el fan-out de abajo.
+      if (status.status === 'read' && msgRow.contact_id) {
+        await runAutomationsForTrigger({
+          accountId,
+          triggerType: 'message_read',
+          contactId: msgRow.contact_id,
+          context: { conversation_id: msgRow.conversation_id },
+        })
+      }
+
       await dispatchWebhookEvent(
         supabaseAdmin(),
         accountId,
@@ -557,6 +589,81 @@ async function handleReaction(
   }
 }
 
+async function captureCtwaAttribution(
+  accountId: string,
+  contact: ContactRow,
+  referral: NonNullable<WhatsAppMessage['referral']>
+) {
+  const clid = referral.ctwa_clid
+  if (!clid) return
+
+  try {
+    // Idempotencia: si el contacto ya tiene este clid, no hacemos nada
+    // (replay de Meta con el mismo referral no debe duplicar el evento).
+    const existing = contact.attribution as
+      | { click_ids?: { ctwa_clid?: string }; channel?: string }
+      | null
+      | undefined
+    if (existing?.click_ids?.ctwa_clid === clid) return
+
+    // Persistir el clid en contacts.attribution (merge, no pisamos los
+    // click_ids del landing: fbclid/gclid/utm...). El canal se conserva
+    // si ya había uno (ej: facebook por fbclid del landing); si no,
+    // ctwa — el reporting de Ads lo agrupa por click_id, no por canal.
+    const mergedAttribution = {
+      ...(existing ?? {}),
+      click_ids: { ...(existing?.click_ids ?? {}), ctwa_clid: clid },
+      channel: existing?.channel ?? 'ctwa',
+      last_touch: Date.now(),
+    }
+
+    const { error: attrError } = await supabaseAdmin()
+      .from('contacts')
+      .update({ attribution: mergedAttribution, updated_at: new Date().toISOString() })
+      .eq('id', contact.id)
+    if (attrError) {
+      console.error('[webhook] ctwa attribution update failed:', attrError.message)
+      return
+    }
+
+    // Evento ctwa_lead en el timeline — event_id determinístico (clid) para
+    // que el dedup UNIQUE de tracking_events absorba replays de Meta.
+    const { error: evtError } = await supabaseAdmin().from('tracking_events').insert({
+      account_id: accountId,
+      event_type: 'ctwa_lead',
+      attribution: { click_ids: { ctwa_clid: clid } },
+      event_id: `ctwa_${clid}`,
+      payload: {
+        contact_id: contact.id,
+        source_url: referral.source_url ?? null,
+        source_type: referral.source_type ?? null,
+      },
+    })
+    if (evtError) {
+      console.error('[webhook] ctwa_lead event insert failed:', evtError.message)
+      return
+    }
+
+    // Reportar a la Meta Conversions API (Item 16 — CAPI). Fail-open: si
+    // no hay credenciales o falla, el lead ya está atribuido localmente.
+    const creds = loadCapiCreds()
+    if (creds) {
+      const { ok, reason } = await dispatchConversion(
+        {
+          event_name: 'LeadSubmitted',
+          event_time: Math.floor(Date.now() / 1000),
+          ctwa_clid: clid,
+        },
+        creds,
+      )
+      if (!ok) console.warn(`[webhook] CAPI LeadSubmitted failed: ${reason}`)
+    }
+  } catch (err) {
+    // Nunca romper el procesado del mensaje por un fallo de atribución.
+    console.error('[webhook] ctwa attribution error:', err)
+  }
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
@@ -582,6 +689,15 @@ async function processMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  // Click-to-WhatsApp attribution (DAD §8.1 — Item 16). If Meta included a
+  // referral on this inbound message, capture the ctwa_clid NOW — it only
+  // arrives on the first message of an ad click and is gone if skipped
+  // (guardrail 10). Idempotent: the tracking_events insert dedups by
+  // event_id, and we skip the CAPI report if the clid is already stored.
+  if (message.referral?.ctwa_clid) {
+    await captureCtwaAttribution(accountId, contactRecord, message.referral)
+  }
 
   // Find or create conversation
   const convResult = await findOrCreateConversation(

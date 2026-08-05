@@ -49,6 +49,30 @@ export function createResendClient(apiKey: string) {
 }
 
 /**
+ * Verifica la firma Svix de un webhook de Resend (fail-closed).
+ * Lanza `EmailError` si faltan headers o la firma es inválida.
+ * API verificada en context7 (resend): `resend.webhooks.verify({
+ *   payload, headers: { id, timestamp, signature }, webhookSecret })`.
+ * El método `webhooks.verify` es criptografía local (no llama a la red),
+ * por lo que la API key del SDK es irrelevante aquí — usamos un placeholder.
+ */
+export async function verifyResendWebhook(
+  rawBody: string,
+  headers: { id: string | null; timestamp: string | null; signature: string | null },
+  webhookSecret: string,
+) {
+  if (!headers.id || !headers.timestamp || !headers.signature) {
+    throw new EmailError("Missing svix headers (svix-id/svix-timestamp/svix-signature)")
+  }
+  const resend = new Resend("reuse_webhook_verify_only")
+  return resend.webhooks.verify({
+    payload: rawBody,
+    headers: { id: headers.id, timestamp: headers.timestamp, signature: headers.signature },
+    webhookSecret,
+  })
+}
+
+/**
  * Carga y desencripta la config de email del account desde `email_config`.
  * Cliente service-role (same rationale que loadTelnyxApiKey).
  */

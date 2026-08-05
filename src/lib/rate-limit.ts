@@ -59,7 +59,7 @@ function sweepExpired(now: number) {
 
 export function checkRateLimit(
   key: string,
-  { limit, windowMs }: RateLimitOptions,
+  { limit, windowMs }: RateLimitOptions
 ): RateLimitResult {
   const now = Date.now();
 
@@ -73,7 +73,12 @@ export function checkRateLimit(
 
   if (!entry || entry.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
+    return {
+      success: true,
+      remaining: limit - 1,
+      reset: now + windowMs,
+      limit,
+    };
   }
 
   if (entry.count >= limit) {
@@ -94,7 +99,10 @@ export function checkRateLimit(
  * draft-ietf-httpapi-ratelimit-headers). Callers just `return` this.
  */
 export function rateLimitResponse(result: RateLimitResult): NextResponse {
-  const retryAfterSec = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
+  const retryAfterSec = Math.max(
+    1,
+    Math.ceil((result.reset - Date.now()) / 1000)
+  );
   return NextResponse.json(
     {
       error: 'Rate limit exceeded',
@@ -108,7 +116,7 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
         'X-RateLimit-Remaining': String(result.remaining),
         'X-RateLimit-Reset': String(Math.ceil(result.reset / 1000)),
       },
-    },
+    }
   );
 }
 
@@ -167,6 +175,20 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Anonymous tracking ingest (`/api/events`, `/api/track`), per-IP.
+   *  A real visitor fires a handful of beacons per session (page_view,
+   *  a couple of clicks, one form_submit); 120/min per IP is an order
+   *  of magnitude above that while still pinching the bot/lead-farm
+   *  abuse that was creating unlimited fake leads with the service-role
+   *  client. Single-instance deploy assumption applies (see top of file). */
+  trackingPublic: { limit: 120, windowMs: 60_000 },
+  /** Form submissions specifically (`/api/events` with form_submit),
+   *  per-IP. Tighter than the beacon bucket: each hit creates a lead
+   *  via findOrCreateContact, so the abuse surface is "spam the
+   *  pipeline with fake leads + fire WhatsApp automations." 10/min per
+   *  IP is comfortably above one human filling the form and re-submitting
+   *  after a validation fix. */
+  trackingFormSubmit: { limit: 10, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

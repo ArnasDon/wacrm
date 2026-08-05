@@ -72,15 +72,14 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonth = (d: Deal) => {
-      const ts = d.updated_at ?? d.created_at;
-      return ts ? new Date(ts) >= monthStart : false;
-    };
+    // Fechas reales de cierre/pérdida (DAD §7.6, 047:30-31): won_at/lost_at,
+    // ya no el proxy updated_at (el updated_at se toca por cualquier edit).
+    const inMonth = (ts?: string | null) => (ts ? new Date(ts) >= monthStart : false);
     const wonThisMonth = deals.filter(
-      (d) => d.status === "won" && thisMonth(d),
+      (d) => d.status === "won" && inMonth(d.won_at),
     ).length;
     const lostThisMonth = deals.filter(
-      (d) => d.status === "lost" && thisMonth(d),
+      (d) => d.status === "lost" && inMonth(d.lost_at),
     ).length;
 
     return {

@@ -43,6 +43,10 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Missed Call',
     pillClass: 'border-red-500/30 bg-red-500/10 text-red-300',
   },
+  message_read: {
+    label: 'Message Read',
+    pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  },
 }
 
 export function triggerMeta(t: AutomationTriggerType | string): TriggerMeta {

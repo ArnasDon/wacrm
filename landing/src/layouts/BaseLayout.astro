@@ -18,6 +18,10 @@ const {
   description = "Diagnóstico y tratamiento personalizado. Escríbenos por WhatsApp y agenda tu valoración.",
   vitals = false,
 } = Astro.props;
+
+// Noindex mientras site.ts conserve placeholders (fork plantilla — la
+// landing no es una clínica real todavía). Ver landing/public/robots.txt.
+const indexable = site.indexable;
 ---
 
 <!doctype html>
@@ -28,6 +32,18 @@ const {
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.ico" />
+    {
+      !indexable && (
+        <meta name="robots" content="noindex, nofollow" />
+      )
+    }
+    <link rel="canonical" href={`${site.baseUrl}${site.landingBase}/`} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.clinicName} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={`${site.baseUrl}${site.landingBase}/`} />
+    <meta name="twitter:card" content="summary" />
     <script is:inline define:vars={{ siteUrl: site.baseUrl }}>
       window.__WACRM_SITE_URL__ = siteUrl;
     </script>

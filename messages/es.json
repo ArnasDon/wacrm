@@ -500,6 +500,7 @@
       "createPipelineBtn": "Crear pipeline",
       "toastFailedLoadPipelines": "No se pudieron cargar los pipelines",
       "toastFailedMoveDeal": "No se pudo mover el trato",
+      "toastMoveConflict": "Otro usuario movió este trato. Se recargó el tablero con el estado actual.",
       "toastFailedCreatePipeline": "No se pudo crear el pipeline",
       "toastPipelineCreated": "Pipeline creado",
       "toastNotLinkedToAccount": "Tu perfil no está vinculado a una cuenta."
@@ -549,6 +550,7 @@
       "toastUpdated": "Trato actualizado",
       "toastCreated": "Trato creado",
       "toastFailedStatus": "No se pudo actualizar el estado del trato",
+      "toastStatusConflict": "Otro usuario modificó este trato. Se recargó el estado actual.",
       "toastMarkedWon": "Marcado como ganado",
       "toastMarkedLost": "Marcado como perdido",
       "toastReopened": "Trato reabierto",

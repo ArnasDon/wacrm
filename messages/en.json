@@ -500,6 +500,7 @@
       "createPipelineBtn": "Create Pipeline",
       "toastFailedLoadPipelines": "Failed to load pipelines",
       "toastFailedMoveDeal": "Failed to move deal",
+      "toastMoveConflict": "Another user moved this deal. The board was reloaded with the current state.",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
       "toastNotLinkedToAccount": "Your profile is not linked to an account."
@@ -549,6 +550,7 @@
       "toastUpdated": "Deal updated",
       "toastCreated": "Deal created",
       "toastFailedStatus": "Failed to update deal status",
+      "toastStatusConflict": "Another user modified this deal. The current state was reloaded.",
       "toastMarkedWon": "Marked as won",
       "toastMarkedLost": "Marked as lost",
       "toastReopened": "Deal reopened",

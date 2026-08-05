@@ -109,6 +109,10 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /** Atribución DOM por cookie cross-session 90d (DAD §2): {utm, click_ids
+   *  (incl. ctwa_clid), channel, medium, landing_slug, ref_code, first_seen,
+   *  last_touch, event_id, consent}. Poblado por el server/eventos. */
+  attribution?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
@@ -388,6 +392,23 @@ export interface PipelineStage {
 
 export type DealStatus = 'open' | 'won' | 'lost';
 
+export type DealPriority = 'top' | 'warm' | 'tibio' | 'cold';
+
+/** 5 dimensiones de scoring (DAD §7.2). Valores fijos; el frontend solo
+ *  envía las claves que cambia — el merge parcial lo hace set_deal_tags. */
+export interface DealTags {
+  /** 0-3: qué tan explícita es la intención de compra */
+  intencion?: number;
+  /** 0-3: responde, contestó llamadas (2 = call answered). Auto-set por trigger */
+  respuesta?: number;
+  /** 0-2: documentos requeridos enviados (2 = recibido). Auto-set por trigger */
+  documentos?: number;
+  /** 0-2: urgencia declarada por el cliente */
+  urgencia?: number;
+  /** 1-3: tamaño del deal (1 bajo, 2 medio, 3 alto) */
+  valor?: number;
+}
+
 export interface Deal {
   id: string;
   user_id: string;
@@ -406,6 +427,18 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Suma de tags (máx 13). Recalculado por RPC/trigger — no editable a mano */
+  score?: number;
+  /** 5 dimensiones, valores fijos (DAD §7.2) */
+  tags?: DealTags;
+  /** Derivada: cold si lost, top si urgencia=2 y score>=9, warm>=7, tibio>=4 */
+  priority?: DealPriority;
+  /** Optimistic locking: cada transición atómica lo incrementa (409 en conflicto) */
+  version?: number;
+  /** Fecha real de cierre — reporting, sin proxy de updated_at */
+  won_at?: string;
+  /** Fecha real de pérdida — reporting de perdidos */
+  lost_at?: string;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

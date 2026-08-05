@@ -444,6 +444,12 @@ export interface Deal {
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+  /** Hidratado por queries que embeben la conversación ligada (última
+   *  interacción — DAD §7.4). Ausente si el deal no la tiene. */
+  conversation?: {
+    last_message_at?: string | null;
+    last_message_text?: string | null;
+  };
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';

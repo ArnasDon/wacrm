@@ -1,8 +1,9 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, X, Mail, MessageSquare } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { formatRelative } from "@/lib/automations/trigger-meta";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -30,6 +31,16 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
+
+  // Última interacción (DAD §7.4): conversations.last_message_at +
+  // last_message_text — info para el SDR, nunca score numérico.
+  const lastTouch = deal.conversation?.last_message_at
+    ? formatRelative(deal.conversation.last_message_at)
+    : null;
+  const lastText = deal.conversation?.last_message_text;
+  const email = deal.contact?.email;
+  const phone = deal.contact?.phone;
+  const waLink = phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : null;
 
   return (
     <button
@@ -79,6 +90,41 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         </span>
         <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
       </div>
+
+      {/* Email + teléfono (info de contacto, no score) */}
+      {(email || phone) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          {email && (
+            <a
+              href={`mailto:${email}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex max-w-[9rem] items-center gap-1 truncate hover:text-foreground"
+            >
+              <Mail className="h-3 w-3 shrink-0" />
+              <span className="truncate">{email}</span>
+            </a>
+          )}
+          {waLink && (
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 hover:text-foreground"
+            >
+              <MessageSquare className="h-3 w-3 shrink-0" />
+              {phone}
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Última interacción */}
+      {lastTouch && (
+        <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
+          {t("lastTouch")}: {lastText ? lastText : lastTouch}
+        </p>
+      )}
 
       <div className="mt-2 flex items-center justify-between">
         <span className="text-sm font-bold text-primary">

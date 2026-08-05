@@ -65,3 +65,64 @@ export interface ActivityItem {
   /** Optional deep-link for the whole row (not all items have a target). */
   href?: string
 }
+
+// --- 6. Cola de Hoy (DAD §7.4) -----------------------------------------
+
+/** Contacto denormalizado para la tarjeta de la cola. */
+export interface TodayQueueContact {
+  id: string
+  name: string | null
+  phone: string
+  email: string | null
+}
+
+/** Última interacción del deal — vive en conversations (YA existe). */
+export interface TodayQueueConversation {
+  last_message_at: string | null
+  last_message_text: string | null
+}
+
+/** Deal ya normalizado (PostgREST embebe 1:1 como array; aquí nunca es array).
+ *  Es lo que consumen los componentes. */
+export interface TodayQueueDeal {
+  id: string
+  title: string
+  value: number | null
+  currency: string | null
+  status: string | null
+  /** NO se muestra numéricamente (DAD §7.4: "nada de score numérico"),
+   *  pero la query lo trae para derivar chips/secciones. */
+  score: number | null
+  priority: string | null
+  tags: {
+    intencion?: number
+    respuesta?: number
+    documentos?: number
+    urgencia?: number
+    valor?: number
+  } | null
+  expected_close_date: string | null
+  contact: TodayQueueContact | null
+  conversation: TodayQueueConversation | null
+}
+
+/** Forma cruda que devuelve PostgREST (relaciones anidadas como array 1:1).
+ *  Solo existe como entrada de `partitionTodayQueue`. */
+export type TodayQueueDealRaw = Omit<TodayQueueDeal, 'contact' | 'conversation'> & {
+  contact: TodayQueueContact | TodayQueueContact[] | null
+  conversation: TodayQueueConversation | TodayQueueConversation[] | null
+}
+
+export type TodayQueueSectionKey = 'hot' | 'docs' | 'nurture'
+
+export interface TodayQueueSection {
+  key: TodayQueueSectionKey
+  deals: TodayQueueDeal[]
+}
+
+export interface TodayQueueData {
+  /** 🔥 urgencia=2 · ⏳ documentos!=2 · 💤 resto. Ya ordenado dentro de cada
+   *  sección (prioridad desc, luego último contacto más reciente). */
+  sections: TodayQueueSection[]
+  total: number
+}

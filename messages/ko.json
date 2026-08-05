@@ -75,6 +75,25 @@
       "openDeals": "진행 중인 딜 {count}건",
       "noChange": "변동 없음 {suffix}"
     },
+    "todayQueue": {
+      "title": "오늘의 대기열",
+      "description": "오늘 전화할 상대, 기다리는 상대, 육성할 상대.",
+      "hot": "🔥 30일 미만",
+      "docs": "⏳ 문서 대기",
+      "nurture": "💤 육성",
+      "none": "대기 없음",
+      "empty": "오늘 열린 딜이 없습니다",
+      "call": "전화",
+      "answered": "응답함",
+      "noAnswer": "무응답",
+      "lastTouch": "마지막 상호작용",
+      "value": "가치",
+      "sendMessage": "메시지",
+      "callFailed": "전화를 시작하지 못했습니다",
+      "markFailed": "결과를 기록하지 못했습니다",
+      "markedAnswered": "응답함 — 기록됨",
+      "markedNoAnswer": "무응답 — 기록됨"
+    },
     "quickActions": {
       "newContact": "새 연락처",
       "newDeal": "새 딜",
@@ -512,7 +531,8 @@
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
-      "lost": "실패"
+      "lost": "실패",
+      "lastTouch": "마지막 상호작용"
     },
     "form": {
       "editDeal": "딜 수정",

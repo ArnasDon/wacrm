@@ -27,6 +27,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  MetaApiError,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import {
@@ -426,7 +427,18 @@ export async function sendMessageToConversation(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
+    if (err instanceof MetaApiError) {
+      console.error('[send-message] Meta send failed for all variants:', {
+        message: err.message,
+        httpStatus: err.httpStatus,
+        code: err.code,
+        errorSubcode: err.errorSubcode,
+        type: err.type,
+        fbtraceId: err.fbtraceId,
+      });
+    } else {
+      console.error('[send-message] Meta send failed for all variants:', message);
+    }
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
 

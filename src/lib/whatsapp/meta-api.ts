@@ -24,18 +24,76 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    type?: string
+    fbtrace_id?: string
+  }
 }
 
-async function throwMetaError(response: Response, fallback: string): Promise<never> {
+/**
+ * Carries Meta's full error envelope (code / error_subcode / type /
+ * fbtrace_id) instead of collapsing it to a message string. Callers that
+ * only `catch (err) { err.message }` still work — `Error.message` is set
+ * — but anything that needs to log or branch on the structured fields
+ * (see send-message.ts's failure log) can access them directly.
+ */
+export class MetaApiError extends Error {
+  readonly httpStatus: number
+  readonly code?: number
+  readonly errorSubcode?: number
+  readonly type?: string
+  readonly fbtraceId?: string
+  constructor(
+    message: string,
+    opts: {
+      httpStatus: number
+      code?: number
+      errorSubcode?: number
+      type?: string
+      fbtraceId?: string
+    },
+  ) {
+    super(message)
+    this.name = 'MetaApiError'
+    this.httpStatus = opts.httpStatus
+    this.code = opts.code
+    this.errorSubcode = opts.errorSubcode
+    this.type = opts.type
+    this.fbtraceId = opts.fbtraceId
+  }
+}
+
+async function throwMetaError(
+  response: Response,
+  fallback: string,
+  requestContext?: { url: string; body?: unknown },
+): Promise<never> {
   let message = fallback
+  let raw: MetaErrorResponse = {}
+  let rawText = ''
   try {
-    const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    rawText = await response.text()
+    raw = JSON.parse(rawText) as MetaErrorResponse
+    if (raw.error?.message) message = raw.error.message
   } catch {
     // response body wasn't JSON — keep the fallback
   }
-  throw new Error(message)
+  console.error('[meta-api] request failed', {
+    url: requestContext?.url,
+    requestBody: requestContext?.body,
+    httpStatus: response.status,
+    responseBody: rawText || raw,
+  })
+  throw new MetaApiError(message, {
+    httpStatus: response.status,
+    code: raw.error?.code,
+    errorSubcode: raw.error?.error_subcode,
+    type: raw.error?.type,
+    fbtraceId: raw.error?.fbtrace_id,
+  })
 }
 
 // ============================================================
@@ -263,6 +321,7 @@ export async function sendTextMessage(
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
   }
+  console.log('[meta-api] sendTextMessage → POST', url, JSON.stringify(body))
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -272,9 +331,14 @@ export async function sendTextMessage(
     body: JSON.stringify(body),
   })
   if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
+    await throwMetaError(response, `Meta API error: ${response.status}`, { url, body })
   }
   const data = await response.json()
+  console.log(
+    '[meta-api] sendTextMessage ← ',
+    response.status,
+    JSON.stringify(data),
+  )
   return { messageId: data.messages[0].id }
 }
 

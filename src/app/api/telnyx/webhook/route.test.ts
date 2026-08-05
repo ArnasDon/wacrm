@@ -110,7 +110,15 @@ function makeAdminMock() {
         return { data: hit ?? null, error: null }
       }
       if (table === 'messages') {
-        return { data: { id: 'msg-1' }, error: null }
+        if (insertMode) return { data: { id: 'msg-1' }, error: null }
+        const tmid = eqOf(eqs, 'metadata->telnyx_message_id')
+        if (tmid) {
+          const hit = messages.find(
+            (m) => (m.metadata as Record<string, unknown> | undefined)?.telnyx_message_id === tmid,
+          )
+          return { data: hit ?? null, error: null }
+        }
+        return { data: null, error: null }
       }
       return { data: null, error: null }
     }
@@ -237,6 +245,20 @@ describe('POST /api/telnyx/webhook', () => {
     expect((messages[0].metadata as { telnyx_message_id?: string })?.telnyx_message_id).toBe('msg-remote-1')
     expect(conversations.length).toBeGreaterThan(0)
     expect(runAutomationsForTrigger).not.toHaveBeenCalled()
+  })
+
+  it('dedupe SMS inbound: reentrega con el mismo telnyx_message_id no duplica', async () => {
+    const payload = {
+      id: 'msg-remote-dup',
+      from: { phone_number: '+15554445555' },
+      to: { phone_number: '+15550000001' },
+      text: 'Dup',
+    }
+    await postWebhook('message.received', payload)
+    await postWebhook('message.received', payload)
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ content_text: 'Dup', channel: 'sms' })
   })
 
   it('call.recording.saved: descarga mp3, sube a call-recordings y guarda proxy URL', async () => {

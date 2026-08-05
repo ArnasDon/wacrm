@@ -334,6 +334,17 @@ async function onMessageReceived(admin: Admin, accountId: string, p: Payload) {
   const text = (p.text as string) ?? ''
   const telnyxMsgId = (p.id as string) ?? (p.message_id as string) ?? `${from}:${Date.now()}`
 
+  // Dedupe (DAD §3.2): Telnyx puede reentregar el mismo evento; un telnyx_message_id
+  // ya persistido no debe duplicar el mensaje en el inbox del cliente.
+  if (telnyxMsgId) {
+    const { data: existing } = await admin
+      .from('messages')
+      .select('id')
+      .eq('metadata->telnyx_message_id', telnyxMsgId)
+      .maybeSingle()
+    if (existing) return
+  }
+
   const { error } = await admin.from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',

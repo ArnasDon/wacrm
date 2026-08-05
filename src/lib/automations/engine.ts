@@ -12,11 +12,14 @@ import type {
   SendListStepConfig,
   SendTemplateStepConfig,
   SendWebhookStepConfig,
+  SendSmsStepConfig,
+  SendEmailStepConfig,
   TagStepConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
   CreateDealStepConfig,
   AssignConversationStepConfig,
+  Contact,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
@@ -24,6 +27,10 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { createTelnyxClient, loadTelnyxSendConfig } from '@/lib/telnyx/api'
+import { createResendClient, loadEmailConfig } from '@/lib/email/send'
+import { resolveVariables, type VariableMapping } from '@/hooks/use-broadcast-sending'
 
 // ------------------------------------------------------------
 // Public API
@@ -42,6 +49,13 @@ export interface AutomationContext {
   agent_id?: string
   /** Button / list-row id the customer tapped, for interactive_reply. */
   interactive_reply_id?: string
+  /** Missed-call dispatch (Telnyx Fase 1, trigger `missed_call`). */
+  call_id?: string
+  call_direction?: 'inbound' | 'outbound'
+  /** user_busy | no_answer | normal | ... (del leg del agente). */
+  call_hangup_cause?: string
+  /** E.164 del que llamó, para el texto del seguimiento. */
+  missed_call_number?: string
 }
 
 export interface DispatchInput {
@@ -355,10 +369,112 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 }
 
+async function getContactForSend(
+  db: ReturnType<typeof supabaseAdmin>,
+  contactId: string,
+): Promise<Pick<Contact, 'name' | 'email' | 'phone' | 'company'> | null> {
+  const { data } = await db
+    .from('contacts')
+    .select('name, email, phone, company')
+    .eq('id', contactId)
+    .maybeSingle()
+  return (data as Pick<Contact, 'name' | 'email' | 'phone' | 'company'> | null) ?? null
+}
+
+/**
+ * Interpola `{{ field }}` del contacto en `text`, reusando `resolveVariables`
+ * (broadcasts) como ÚNICA fuente de campos — no se copia lógica ni se inventa
+ * una tercera sintaxis de plantillas (§9.3.1). `{{ vars.* }}` / `{{ message.text }}`
+ * los resuelve `interpolate` después.
+ */
+export function contactText(
+  text: string,
+  variables: Record<string, VariableMapping> | undefined,
+  contact: Pick<Contact, 'name' | 'email' | 'phone' | 'company'> | null,
+): string {
+  const map = new Map<string, string>()
+  // Campos integrados siempre disponibles (`{{name}}`, `{{phone}}`, `{{email}}`,
+  // `{{company}}`) — ÚNICA fuente de campos, sin mapa de variables obligatorio.
+  const fields: Record<string, string> = {
+    name: contact?.name ?? '',
+    phone: contact?.phone ?? '',
+    email: contact?.email ?? '',
+    company: contact?.company ?? '',
+  }
+  for (const k of Object.keys(fields)) map.set(k, fields[k])
+
+  if (variables && Object.keys(variables).length > 0) {
+    const resolved = resolveVariables(variables, contact as Contact, undefined)
+    const keys = Object.keys(variables).sort((a, b) => {
+      const na = Number(a)
+      const nb = Number(b)
+      const aNum = Number.isFinite(na)
+      const bNum = Number.isFinite(nb)
+      if (aNum && bNum) return na - nb
+      if (aNum) return -1
+      if (bNum) return 1
+      return a.localeCompare(b)
+    })
+    keys.forEach((k, i) => map.set(String(k), resolved[i] ?? ''))
+  }
+
+  return text.replace(/\{\{\s*([\w]+)\s*\}\}/g, (_, k) => map.get(String(k)) ?? '')
+}
+
 async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {
   const db = supabaseAdmin()
 
   switch (step.step_type) {
+    case 'send_sms': {
+      const cfg = step.step_config as SendSmsStepConfig
+      if (!args.contactId) throw new Error('send_sms needs a contact')
+      const contact = await getContactForSend(db, args.contactId)
+      // Telnyx exige E.164 (+país), por eso re-normalizamos: `normalizePhone`
+      // deja solo dígitos y aquí se garantiza el prefijo '+'. Misma premisa
+      // que el JOIN por `phone_normalized` (022): el número del contacto
+      // lleva código de país.
+      const to = contact?.phone ? `+${normalizePhone(contact.phone)}` : null
+      if (!to) throw new Error('send_sms needs a contact with a phone')
+      const telnyx = await loadTelnyxSendConfig(args.automation.account_id)
+      if (!telnyx.messagingProfileId) {
+        throw new Error('send_sms needs messaging_profile_id (Settings › Telnyx › SMS)')
+      }
+      const text = interpolate(contactText(cfg.text, cfg.variables, contact), args)
+      if (!text.trim()) throw new Error('send_sms has empty text')
+      await createTelnyxClient(telnyx.apiKey).sendSms({
+        from: telnyx.fromNumber,
+        to,
+        text,
+        messagingProfileId: telnyx.messagingProfileId,
+      })
+      return 'sms sent via Telnyx'
+    }
+
+    case 'send_email': {
+      const cfg = step.step_config as SendEmailStepConfig
+      if (!args.contactId) throw new Error('send_email needs a contact')
+      const contact = await getContactForSend(db, args.contactId)
+      if (!contact?.email) throw new Error('send_email needs a contact with an email')
+      if (!cfg.template) throw new Error('send_email needs a template name')
+      const { data: tpl } = await db
+        .from('email_templates')
+        .select('subject, body_html')
+        .eq('account_id', args.automation.account_id)
+        .eq('name', cfg.template)
+        .maybeSingle()
+      const template = tpl as { subject: string; body_html: string } | null
+      if (!template) throw new Error(`send_email: template "${cfg.template}" not found`)
+      const { apiKey, fromEmail, replyTo } = await loadEmailConfig(args.automation.account_id)
+      const subject = interpolate(contactText(template.subject, cfg.variables, contact), args)
+      const html = interpolate(contactText(template.body_html, cfg.variables, contact), args)
+      await createResendClient(apiKey).send(fromEmail, replyTo, {
+        to: contact.email,
+        subject,
+        html,
+      })
+      return `email sent via Resend (${cfg.template})`
+    }
+
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
       if (!args.contactId) throw new Error('send_message needs a contact')

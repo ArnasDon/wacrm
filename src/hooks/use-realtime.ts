@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Message, Conversation } from "@/types";
+import type { Message, Conversation, Call } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 interface RealtimeEvent<T> {
@@ -15,6 +15,7 @@ interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
   onConversationEvent?: (event: RealtimeEvent<Conversation>) => void;
+  onCallEvent?: (event: RealtimeEvent<Call>) => void;
   enabled?: boolean;
 }
 
@@ -22,6 +23,7 @@ export function useRealtime({
   channelName,
   onMessageEvent,
   onConversationEvent,
+  onCallEvent,
   enabled = true,
 }: UseRealtimeOptions) {
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -34,9 +36,11 @@ export function useRealtime({
   // callbacks, which always run after the render that updates it.
   const onMessageRef = useRef(onMessageEvent);
   const onConversationRef = useRef(onConversationEvent);
+  const onCallRef = useRef(onCallEvent);
   useEffect(() => {
     onMessageRef.current = onMessageEvent;
     onConversationRef.current = onConversationEvent;
+    onCallRef.current = onCallEvent;
   });
 
   useEffect(() => {
@@ -65,6 +69,20 @@ export function useRealtime({
             eventType: payload.eventType as RealtimeEvent<Conversation>["eventType"],
             new: payload.new as Conversation,
             old: payload.old as Partial<Conversation>,
+          });
+        }
+      )
+      // Canal 'calls' (aditivo, Telnyx Fase 1). La tabla `calls` se
+      // añadió a supabase_realtime en la migración 042; el motor de
+      // llamadas y/o la UI escucha estos eventos.
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "calls" },
+        (payload) => {
+          onCallRef.current?.({
+            eventType: payload.eventType as RealtimeEvent<Call>["eventType"],
+            new: payload.new as Call,
+            old: payload.old as Partial<Call>,
           });
         }
       )

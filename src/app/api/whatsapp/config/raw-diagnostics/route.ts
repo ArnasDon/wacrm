@@ -75,3 +75,82 @@ export async function GET() {
     },
   })
 }
+
+/**
+ * POST { action: 'request_code' | 'verify_code', code?, code_method?, language? }
+ *
+ * Drives the two missing steps (2 and 3) of Meta's official 4-step
+ * registration flow — the ones that never ran for this ON_PREMISE-stuck
+ * number, hence code_verification_status: NOT_VERIFIED. Same auth/token
+ * plumbing as GET above. Temporary, same cleanup note applies.
+ */
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const accountId = profile?.account_id as string | undefined
+  if (!accountId) {
+    return NextResponse.json({ error: 'No account' }, { status: 400 })
+  }
+
+  const { data: config } = await supabase
+    .from('whatsapp_config')
+    .select('*')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!config) {
+    return NextResponse.json({ error: 'No config' }, { status: 400 })
+  }
+
+  const accessToken = decrypt(config.access_token)
+  const V = 'v23.0'
+  const body = await request.json().catch(() => ({}))
+
+  async function rawPost(path: string) {
+    const url = `https://graph.facebook.com/${V}/${path}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const text = await res.text()
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = text
+    }
+    return { url, httpStatus: res.status, body: parsed }
+  }
+
+  if (body.action === 'request_code') {
+    const codeMethod = body.code_method === 'VOICE' ? 'VOICE' : 'SMS'
+    const language = body.language || 'pt_BR'
+    const result = await rawPost(
+      `${config.phone_number_id}/request_code?code_method=${codeMethod}&language=${language}`,
+    )
+    return NextResponse.json(result)
+  }
+
+  if (body.action === 'verify_code') {
+    if (!body.code) {
+      return NextResponse.json({ error: 'code is required' }, { status: 400 })
+    }
+    const result = await rawPost(
+      `${config.phone_number_id}/verify_code?code=${encodeURIComponent(body.code)}`,
+    )
+    return NextResponse.json(result)
+  }
+
+  return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+}

@@ -70,6 +70,9 @@ export function buildSystemPrompt(args: {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
     )
+    parts.push(
+      'Source attribution rule: when an excerpt identifies both a discovery source and a source to cite, cite only the source marked "Fonte a citar". The discovery source is internal provenance and must not be presented as the origin of the fact. Prefer an official primary source; otherwise cite the agency or newsroom responsible for the original reporting. Do not invent or infer a different source.',
+    )
   }
 
   if (userPrompt && userPrompt.trim()) {

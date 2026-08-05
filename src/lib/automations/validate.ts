@@ -143,6 +143,16 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.url`, message: 'webhook URL is not a valid URL' })
       }
       break
+    case 'send_sms':
+      if (!nonEmpty(c.text)) {
+        issues.push({ path: `${path}.text`, message: 'SMS text is required' })
+      }
+      break
+    case 'send_email':
+      if (!nonEmpty(c.template)) {
+        issues.push({ path: `${path}.template`, message: 'email template name is required' })
+      }
+      break
     case 'close_conversation':
       // No config required.
       break
@@ -198,6 +208,10 @@ export function validateTriggerForActivation(
         message: 'reply ids cannot be empty strings',
       })
     }
+  } else if (triggerType === 'missed_call') {
+    // No config required (Telnyx Fase 1). The trigger fires server-side
+    // from the webhook on call.hangup when the agent's leg doesn't answer
+    // (§3.4); intent is documented here so the no-op is auditable.
   }
 
   return issues

@@ -1,5 +1,6 @@
 import type { AccountRole } from "@/lib/auth/roles";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+import type { VariableMapping } from "@/hooks/use-broadcast-sending";
 
 export type {
   InteractiveMessagePayload,
@@ -156,6 +157,40 @@ export interface ContactNote {
 }
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
+
+// ============================================================
+// Calls (migration 039 — voz Telnyx, Fase 1)
+// ============================================================
+
+export type CallDirection = 'inbound' | 'outbound';
+export type CallStatus = 'initiated' | 'ringing' | 'answered' | 'ended' | 'failed';
+export type CallDisposition = 'completed' | 'missed';
+
+export interface Call {
+  id: string;
+  account_id: string;
+  contact_id?: string | null;
+  direction: CallDirection;
+  status: CallStatus;
+  /** E.164 */
+  from_number: string;
+  /** E.164 */
+  to_number: string;
+  initiated_at: string;
+  answered_at?: string | null;
+  ended_at?: string | null;
+  /** Calculado: ended_at - answered_at */
+  duration_sec?: number | null;
+  /** user_busy, normal, etc. (de Telnyx) */
+  hangup_cause?: string | null;
+  disposition?: CallDisposition | null;
+  /** URL firmada (Storage call-recordings) */
+  recording_url?: string | null;
+  telnyx_call_control_id?: string | null;
+  telnyx_call_leg_id?: string | null;
+  telnyx_call_session_id?: string | null;
+  created_at: string;
+}
 
 export interface Conversation {
   id: string;
@@ -439,7 +474,10 @@ export type AutomationTriggerType =
   | 'time_based'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
-  | 'interactive_reply';
+  | 'interactive_reply'
+  /** Inbound forwarded call the agent didn't answer (Telnyx, Fase 1):
+   *  dispatched server-side by the webhook on call.hangup (§3.4). */
+  | 'missed_call';
 
 export type AutomationStepType =
   | 'send_message'
@@ -454,7 +492,9 @@ export type AutomationStepType =
   | 'wait'
   | 'condition'
   | 'send_webhook'
-  | 'close_conversation';
+  | 'close_conversation'
+  | 'send_sms'
+  | 'send_email';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -559,6 +599,26 @@ export interface SendWebhookStepConfig {
   body_template?: string;
 }
 
+/**
+ * SMS saliente vía Telnyx (Fase 1). `text` soporta `{{ field }}` /
+ * `{{ vars.* }}`; `variables` reusa el mismo `VariableMapping` de
+ * broadcasts (resuelto con `resolveVariables`, UNA fuente de campos).
+ */
+export interface SendSmsStepConfig {
+  text: string;
+  variables?: Record<string, VariableMapping>;
+}
+
+/**
+ * Email saliente vía Resend (Fase 1). `template` es el `name` en
+ * `email_templates` (040) cuyo subject/body_html se interpolan;
+ * `variables` igual que `send_sms`.
+ */
+export interface SendEmailStepConfig {
+  template: string;
+  variables?: Record<string, VariableMapping>;
+}
+
 export type AutomationStepConfig =
   | SendMessageStepConfig
   | SendButtonsStepConfig
@@ -571,6 +631,8 @@ export type AutomationStepConfig =
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig
+  | SendSmsStepConfig
+  | SendEmailStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 

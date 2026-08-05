@@ -3,14 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useRealtime } from "@/hooks/use-realtime";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, Call } from "@/types";
 import {
   Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
@@ -25,6 +28,13 @@ interface ContactSidebarProps {
   contact: Contact | null;
 }
 
+/** mm:ss a partir de segundos (duración de llamada). */
+function formatDuration(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = Math.round(totalSec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
@@ -34,16 +44,19 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [calls, setCalls] = useState<Call[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [calling, setCalling] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags and recent calls in parallel
+    const [dealsRes, notesRes, tagsRes, callsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -58,6 +71,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      // Historial real de llamadas (Fase 1): iniciadas por el webhook
+      // Telnyx, contact_id resuelto server-side (migración 039).
+      supabase
+        .from("calls")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .order("initiated_at", { ascending: false })
+        .limit(5),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
@@ -71,6 +92,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    if (callsRes.data) setCalls(callsRes.data);
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -79,6 +101,40 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  // Realtime 'calls' (canal aditivo, migración 042): la llamada entrante o
+  // saliente del webhook Telnyx aparece en la lista sin recargar la página.
+  useRealtime({
+    channelName: `calls-${contact?.id ?? "none"}`,
+    enabled: !!contact,
+    onCallEvent: (event) => {
+      const row = event.new;
+      if (!row || row.contact_id !== contact?.id) return;
+      setCalls((prev) => {
+        const others = prev.filter((c) => c.id !== row.id);
+        return [row, ...others].slice(0, 5);
+      });
+    },
+  });
+
+  const handleCall = useCallback(async () => {
+    if (!contact || calling) return;
+    setCalling(true);
+    setCallError(null);
+    try {
+      const res = await fetch("/api/telnyx/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: contact.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? "call failed");
+    } catch (e) {
+      setCallError(e instanceof Error ? e.message : "call failed");
+    } finally {
+      setCalling(false);
+    }
+  }, [contact, calling]);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -170,12 +226,74 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               )}
             </button>
 
+            {/* Botón Llamar (Fase 1): forward nativo Telnyx vía /api/telnyx/call */}
+            <button
+              onClick={handleCall}
+              disabled={calling || !contact.phone}
+              className={cn(
+                "flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "bg-primary text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              <Phone className="h-4 w-4" />
+              {calling ? tSidebar("calling") : tSidebar("call")}
+            </button>
+            {callError && (
+              <p className="px-1 text-xs text-destructive">{callError}</p>
+            )}
+
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <span className="truncate">{contact.email}</span>
               </div>
             )}
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Recent Calls */}
+          <div>
+            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <PhoneMissed className="h-3 w-3" />
+              {tSidebar("calls")}
+            </div>
+            <div className="mt-2 space-y-2">
+              {calls.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noCalls")}</p>
+              ) : (
+                calls.map((call) => {
+                  const Icon = call.direction === "inbound" ? PhoneIncoming : PhoneOutgoing;
+                  return (
+                    <div key={call.id} className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
+                      <Icon
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0",
+                          call.disposition === "missed" ? "text-destructive" : "text-muted-foreground",
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-xs font-medium text-foreground">
+                            {call.direction === "inbound" ? call.from_number : call.to_number}
+                          </span>
+                          {call.disposition === "missed" && (
+                            <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                              {tSidebar("missed")}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {format(new Date(call.initiated_at), "MMM d, HH:mm")}
+                          {call.duration_sec ? ` · ${formatDuration(call.duration_sec)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           {/* Divider */}

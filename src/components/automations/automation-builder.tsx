@@ -17,6 +17,8 @@ import {
   Trash2,
   GripVertical,
   MessageSquare,
+  Smartphone,
+  Mail,
   FileText,
   Tag,
   TagIcon,
@@ -99,6 +101,8 @@ interface StepMeta {
 
 const STEP_META: Record<AutomationStepType, StepMeta> = {
   send_message: { label: "send_message", icon: MessageSquare, border: "border-l-primary" },
+  send_sms: { label: "send_sms", icon: Smartphone, border: "border-l-primary" },
+  send_email: { label: "send_email", icon: Mail, border: "border-l-primary" },
   send_buttons: { label: "send_buttons", icon: MousePointerClick, border: "border-l-primary" },
   send_list: { label: "send_list", icon: List, border: "border-l-primary" },
   send_template: { label: "send_template", icon: FileText, border: "border-l-primary" },
@@ -127,6 +131,8 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "condition",
   "send_webhook",
   "close_conversation",
+  "send_sms",
+  "send_email",
 ]
 
 const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
@@ -138,6 +144,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "conversation_assigned" },
   { value: "tag_added" },
   { value: "time_based" },
+  { value: "missed_call" },
 ]
 
 function cid(): string {
@@ -1480,6 +1487,29 @@ function StepEditor({
           </FieldBlock>
         </>
       )
+    case "send_sms":
+      return (
+        <FieldBlock label="SMS text">
+          <Textarea
+            value={(cfg.text as string) ?? ""}
+            onChange={(e) => set({ text: e.target.value })}
+            placeholder={t("config.placeholderMessageText")}
+            className="min-h-24 bg-muted text-foreground"
+          />
+        </FieldBlock>
+      )
+    case "send_email":
+      // name en `email_templates` (migración 040); se trae de Settings › Email.
+      return (
+        <FieldBlock label="Email template name">
+          <Input
+            value={(cfg.template as string) ?? ""}
+            onChange={(e) => set({ template: e.target.value })}
+            placeholder="missed_call"
+            className="bg-muted text-foreground"
+          />
+        </FieldBlock>
+      )
     case "close_conversation":
       return (
         <p className="text-xs text-muted-foreground">
@@ -1510,6 +1540,10 @@ function previewFor(step: BuilderStep): string {
   switch (step.step_type) {
     case "send_message":
       return (step.step_config.text as string) || "no text yet"
+    case "send_sms":
+      return (step.step_config.text as string) || "no sms text yet"
+    case "send_email":
+      return (step.step_config.template as string) || "pick an email template"
     case "send_buttons":
     case "send_list":
       return interactivePayloadPreviewText(asInteractive(step.step_config)) || "no body yet"

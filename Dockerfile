@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------
 # Stage 1 — install dependencies (cached until package*.json change)
 # ---------------------------------------------------------------
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
@@ -17,7 +17,7 @@ RUN corepack enable && pnpm install --frozen-lockfile
 # key, ENCRYPTION_KEY, META_APP_SECRET, ...) are read at runtime and
 # must NOT be baked into the image.
 # ---------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -32,12 +32,12 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_APP_LOCALE=$NEXT_PUBLIC_APP_LOCALE \
     NEXT_TELEMETRY_DISABLED=1
 
-RUN pnpm run build
+RUN corepack enable && pnpm run build
 
 # ---------------------------------------------------------------
 # Stage 3 — minimal runtime (standalone output)
 # ---------------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

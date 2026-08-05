@@ -12,9 +12,6 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TelnyxConfig } from '@/components/settings/telnyx-config';
-import { EmailConfig } from '@/components/settings/email-config';
-import { EmailTemplatesManager } from '@/components/settings/email-templates-manager';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -78,9 +75,6 @@ function SettingsPageInner() {
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
-    telnyx: <TelnyxConfig />,
-    email: <EmailConfig />,
-    'email-templates': <EmailTemplatesManager />,
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,

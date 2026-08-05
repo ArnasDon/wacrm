@@ -14,7 +14,9 @@ import {
   GitBranch,
   LayoutDashboard,
   LogOut,
+  Mail,
   MessageSquare,
+  Phone,
   Radio,
   Settings,
   Shield,
@@ -99,6 +101,8 @@ const navItems: NavItem[] = [
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/calls", labelKey: "calls", icon: Phone },
+  { href: "/email", labelKey: "email", icon: Mail },
 ];
 
 const bottomNavItems = [

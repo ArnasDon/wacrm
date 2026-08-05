@@ -8,6 +8,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
+import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 function bad(message: string) {
@@ -23,12 +24,11 @@ function bad(message: string) {
  */
 export async function GET() {
   try {
-    const { supabase, accountId } = await getCurrentAccount()
+    const { accountId } = await getCurrentAccount()
+    const db = supabaseAdmin()
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('ai_configs')
-      // `api_key` is selected only to derive `has_key` — it is stripped
-      // out below and never returned to the client.
       .select(
         'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
       )
@@ -44,8 +44,7 @@ export async function GET() {
     }
 
     if (!data) return NextResponse.json({ configured: false })
-    // The keys are selected only to derive the has_* flags; neither is
-    // returned to the client.
+
     const { api_key, embeddings_api_key, ...safe } = data
     return NextResponse.json({
       configured: true,
@@ -62,14 +61,13 @@ export async function GET() {
  * POST /api/ai/config  (admin+)
  *
  * Upsert the account's AI config. Validates the key with the provider
- * before persisting (mirrors the WhatsApp config verifying with Meta
- * first), then stores the key AES-256-GCM-encrypted. When `api_key` is
- * omitted the existing stored key is reused (the form sends it only
- * when the user re-enters it).
+ * before persisting, then stores the key AES-256-GCM-encrypted. When
+ * `api_key` is omitted the existing stored key is reused.
  */
 export async function POST(request: Request) {
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
+    const db = supabaseAdmin()
 
     const limit = checkRateLimit(`ai-config:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
@@ -81,6 +79,7 @@ export async function POST(request: Request) {
     if (provider !== 'openai' && provider !== 'anthropic') {
       return bad('provider must be "openai" or "anthropic"')
     }
+
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
 
@@ -95,14 +94,11 @@ export async function POST(request: Request) {
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
 
-    // Handoff routing target for auto-reply. A non-empty string must be a
-    // member of this account (else the conversation would be assigned to a
-    // stranger); an empty string / null means "leave unassigned" (the
-    // shared queue). Absent → left unchanged on update below.
     const rawHandoff =
       typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
     const handoffProvided = 'handoff_agent_id' in body
     let handoffAgentId: string | null = null
+
     if (rawHandoff) {
       const { data: member } = await supabase
         .from('profiles')
@@ -110,27 +106,31 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
         .eq('user_id', rawHandoff)
         .maybeSingle()
+
       if (!member) return bad('handoff_agent_id must be a member of this account')
       handoffAgentId = rawHandoff
     }
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
-
-    // Embeddings key (optional, for semantic KB search): a non-empty
-    // string sets/replaces it; an explicit null clears it; absent leaves
-    // it unchanged. The form only sends it when the admin edits it.
     const rawEmbeddingsKey =
       typeof body.embeddings_api_key === 'string'
         ? body.embeddings_api_key.trim()
         : ''
     const clearEmbeddingsKey = body.embeddings_api_key === null
 
-    // Reuse the stored key when the form didn't send a fresh one.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await db
       .from('ai_configs')
       .select('id, provider, model, api_key')
       .eq('account_id', accountId)
       .maybeSingle()
+
+    if (existingError) {
+      console.error('[ai/config POST] existing config fetch error:', existingError)
+      return NextResponse.json(
+        { error: 'Failed to load existing AI configuration' },
+        { status: 500 },
+      )
+    }
 
     let apiKeyPlain: string
     if (rawKey) {
@@ -145,10 +145,6 @@ export async function POST(request: Request) {
       return bad('api_key is required')
     }
 
-    // Only spend a provider round-trip when the credentials that affect
-    // reachability actually changed. A save that just flips a toggle or
-    // edits the system prompt on an existing, already-validated config
-    // skips the call — no wasted token/latency on the account's key.
     const credentialsChanged =
       !existing ||
       rawKey !== '' ||
@@ -180,8 +176,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Validate a new embeddings key before storing (a cheap 1-input
-    // embed), same "verify before save" discipline as the chat key.
     if (rawEmbeddingsKey) {
       try {
         await embedTexts(rawEmbeddingsKey, ['ping'])
@@ -197,7 +191,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const encryptedKey = rawKey ? encrypt(rawKey) : null
     const shared: Record<string, unknown> = {
       provider,
       model,
@@ -206,9 +199,9 @@ export async function POST(request: Request) {
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
     }
-    // Only touch the handoff target when the form actually sent the field,
-    // so a partial save (e.g. flipping a toggle) doesn't wipe it.
+
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
+
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {
@@ -216,26 +209,31 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
-      const { error: upErr } = await supabase
+      const updatePayload: Record<string, unknown> = { ...shared }
+      if (rawKey) updatePayload.api_key = encrypt(rawKey)
+
+      const { error: updateError } = await db
         .from('ai_configs')
-        .update(encryptedKey ? { ...shared, api_key: encryptedKey } : shared)
+        .update(updatePayload)
         .eq('account_id', accountId)
-      if (upErr) {
-        console.error('[ai/config POST] update error:', upErr)
+
+      if (updateError) {
+        console.error('[ai/config POST] update error:', updateError)
         return NextResponse.json(
           { error: 'Failed to save AI configuration' },
           { status: 500 },
         )
       }
     } else {
-      const { error: insErr } = await supabase.from('ai_configs').insert({
+      const { error: insertError } = await db.from('ai_configs').insert({
         account_id: accountId,
         created_by: userId,
-        api_key: encryptedKey, // guaranteed non-null: rawKey required when no existing row
+        api_key: encrypt(rawKey),
         ...shared,
       })
-      if (insErr) {
-        console.error('[ai/config POST] insert error:', insErr)
+
+      if (insertError) {
+        console.error('[ai/config POST] insert error:', insertError)
         return NextResponse.json(
           { error: 'Failed to save AI configuration' },
           { status: 500 },
@@ -251,17 +249,17 @@ export async function POST(request: Request) {
 
 /**
  * DELETE /api/ai/config  (admin+)
- *
- * Removes the account's AI config (turns everything off and forgets the
- * key). Also used to recover from a corrupted encrypted key.
  */
 export async function DELETE() {
   try {
-    const { supabase, accountId } = await requireRole('admin')
-    const { error } = await supabase
+    const { accountId } = await requireRole('admin')
+    const db = supabaseAdmin()
+
+    const { error } = await db
       .from('ai_configs')
       .delete()
       .eq('account_id', accountId)
+
     if (error) {
       console.error('[ai/config DELETE] error:', error)
       return NextResponse.json(
@@ -269,6 +267,7 @@ export async function DELETE() {
         { status: 500 },
       )
     }
+
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

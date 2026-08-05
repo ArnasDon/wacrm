@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored minified opus-recorder encoder worker (served statically).
     "public/opus/**",
+    // Astro landing: generated types and build output (linted by the
+    // landing package's own tooling, not the Next.js app rules).
+    "landing/.astro/**",
+    "landing/dist/**",
   ]),
 ]);
 

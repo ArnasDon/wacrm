@@ -1,0 +1,24 @@
+---
+// Footer — tel:, WhatsApp, dirección, legal (DAD §3.5). El tel: dispara
+// phone_click (beacon). El enlace al About se agrega cuando exista la
+// sección (decisión: About como sección de la landing).
+import WhatsAppCta from "../WhatsAppCta.astro";
+import { site } from "../../data/site";
+---
+
+<footer class="border-t border-slate-200 bg-white">
+  <div class="mx-auto flex max-w-6xl flex-col items-center gap-4 px-6 py-10 text-center">
+    <div class="text-lg font-bold text-slate-900">{site.clinicName}</div>
+    <div class="flex flex-wrap items-center justify-center gap-4 text-sm text-slate-600">
+      <a href={`tel:+${site.whatsappNumber}`} class="hover:text-emerald-700">
+        Tel: +{site.whatsappNumber}
+      </a>
+      <span aria-hidden="true">·</span>
+      <span>WhatsApp: +{site.whatsappNumber}</span>
+    </div>
+    <WhatsAppCta label="Agendar por WhatsApp" variant="outline" class="mt-2" />
+    <div class="mt-4 text-xs text-slate-400">
+      © {new Date().getFullYear()} {site.clinicName}. Todos los derechos reservados.
+    </div>
+  </div>
+</footer>

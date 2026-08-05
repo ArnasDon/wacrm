@@ -1,0 +1,35 @@
+---
+// HowItWorks — 3 pasos (contacto → diagnóstico → cita). DAD §3.5.
+const steps = [
+  {
+    n: "01",
+    title: "Contacto",
+    desc: "Escríbenos por WhatsApp o deja tus datos en el formulario.",
+  },
+  {
+    n: "02",
+    title: "Diagnóstico",
+    desc: "Valoración personalizada para entender tu caso a fondo.",
+  },
+  {
+    n: "03",
+    title: "Cita",
+    desc: "Agenda el horario que mejor te convenga y empieza tu plan.",
+  },
+];
+---
+
+<section id="como-funciona" class="bg-slate-50 py-16">
+  <div class="mx-auto max-w-6xl px-6">
+    <h2 class="text-center text-3xl font-bold text-slate-900">Cómo funciona</h2>
+    <div class="mt-10 grid gap-6 md:grid-cols-3">
+      {steps.map((s) => (
+        <div class="rounded-2xl bg-white p-6 shadow-sm">
+          <div class="text-sm font-bold text-emerald-600">{s.n}</div>
+          <h3 class="mt-2 text-lg font-semibold text-slate-900">{s.title}</h3>
+          <p class="mt-2 text-sm text-slate-600">{s.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

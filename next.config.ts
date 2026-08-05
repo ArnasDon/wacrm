@@ -159,6 +159,32 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  /**
+   * Landing estática (Astro, DAD §3.1).
+   *
+   * `pnpm --filter landing build` copia `landing/dist/` a `public/landing/`
+   * (los assets hash se emiten bajo `/landing/_astro/*` por el `base:
+   * '/landing'` de astro.config.mjs). El redirect de la raíz a /dashboard
+   * se quita: la raíz sirve la landing (home del Revenue Engine).
+   *
+   * beforeFiles: gana al filesystem (page.tsx) → `/` muestra la landing.
+   * La URL limpia `/landing` (sin trailing slash) → index.html, evitando
+   * el redirect 308 de Next para directorios estáticos.
+   */
+  async rewrites() {
+    return {
+      beforeFiles: [
+        // Raíz = landing (antes redirigía a /dashboard)
+        { source: "/", destination: "/landing/index.html" },
+      ],
+      afterFiles: [
+        // URLs limpias → index.html (sin redirect 308)
+        { source: "/landing", destination: "/landing/index.html" },
+        { source: "/landing/thank-you", destination: "/landing/thank-you/index.html" },
+      ],
+    };
+  },
 };
 
 export default withNextIntl(nextConfig);

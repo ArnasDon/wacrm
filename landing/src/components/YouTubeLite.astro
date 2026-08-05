@@ -1,0 +1,23 @@
+---
+// YouTubeLite — facade on-demand (DAD §3.3, opción A): el iframe se
+// inyecta SOLO al clic (~3 KB vs ~540 KB del player). Import del web
+// component en <script> de Astro → se bundlea desde 'self' (CSP ok).
+// El iframe usa youtube-nocookie (privacy) — CSP frame-src pendiente
+// de añadir cuando se enforce (DAD §9.13).
+import { site } from "../data/site";
+
+interface Props {
+  /** Texto del playlabel (accesibilidad) */
+  playlabel?: string;
+}
+
+const { playlabel = "Ver video testimonial" } = Astro.props;
+---
+
+<div class="mx-auto max-w-3xl overflow-hidden rounded-2xl shadow-lg">
+  <lite-youtube videoid={site.videoId} playlabel={playlabel} nocookie></lite-youtube>
+</div>
+
+<script>
+  import "@justinribeiro/lite-youtube";
+</script>

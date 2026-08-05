@@ -171,6 +171,27 @@ export function DealForm({
     };
 
     if (deal) {
+      // Cambio de stage = transición atómica → transition_deal primero
+      // (DAD §7.1: guard_rules + optimistic locking). Los demás campos son
+      // datos planos y siguen por update directo.
+      if (stageId !== deal.stage_id) {
+        const { data, error } = await supabase.rpc("transition_deal", {
+          p_deal_id: deal.id,
+          p_to_stage_id: stageId,
+          p_triggered_by: "agent",
+          p_expected_version: deal.version ?? null,
+        });
+        const result = data as { ok: boolean; code?: string } | null;
+        if (error || !result?.ok) {
+          toast.error(
+            result?.code === "VERSION_CONFLICT"
+              ? t("toastStatusConflict")
+              : t("toastFailedSave"),
+          );
+          setSaving(false);
+          return;
+        }
+      }
       const { error } = await supabase
         .from("deals")
         .update(payload)
@@ -214,13 +235,27 @@ export function DealForm({
   async function handleStatusChange(status: DealStatus) {
     if (!deal) return;
     setStatusAction(status);
-    const { error } = await supabase
-      .from("deals")
-      .update({ status })
-      .eq("id", deal.id);
+    // transition_deal es la ÚNICA vía de cambio de estado (DAD §7.1):
+    // fija won_at/lost_at, prioridad derivada, y emite state_changed.
+    // El update directo de status está prohibido.
+    const { data, error } = await supabase.rpc("transition_deal", {
+      p_deal_id: deal.id,
+      p_to_stage_id: deal.stage_id,
+      p_new_status: status,
+      p_triggered_by: "agent",
+      p_expected_version: deal.version ?? null,
+    });
+    const result = data as
+      | { ok: boolean; code?: string; version?: number }
+      | null;
     setStatusAction(null);
-    if (error) {
-      toast.error(t("toastFailedStatus"));
+    if (error || !result?.ok) {
+      toast.error(
+        result?.code === "VERSION_CONFLICT"
+          ? t("toastStatusConflict")
+          : t("toastFailedStatus"),
+      );
+      onSaved();
       return;
     }
     toast.success(

@@ -75,6 +75,25 @@
       "openDeals": "{count} {count, plural, =1 {trato abierto} other {tratos abiertos}}",
       "noChange": "Sin cambios {suffix}"
     },
+    "todayQueue": {
+      "title": "Cola de Hoy",
+      "description": "A quién llamar hoy, quién te espera y a quién nutrir.",
+      "hot": "🔥 Menos de 30 días",
+      "docs": "⏳ Esperando docs",
+      "nurture": "💤 Nurturing",
+      "none": "Nada pendiente aquí",
+      "empty": "No hay tratos abiertos hoy",
+      "call": "Llamar",
+      "answered": "Contestó",
+      "noAnswer": "No contestó",
+      "lastTouch": "Última interacción",
+      "value": "Valor",
+      "sendMessage": "Enviar",
+      "callFailed": "No se pudo iniciar la llamada",
+      "markFailed": "No se pudo registrar el resultado",
+      "markedAnswered": "Contestó — registrado",
+      "markedNoAnswer": "No contestó — registrado"
+    },
     "quickActions": {
       "newContact": "Nuevo contacto",
       "newDeal": "Nuevo trato",
@@ -500,6 +519,7 @@
       "createPipelineBtn": "Crear pipeline",
       "toastFailedLoadPipelines": "No se pudieron cargar los pipelines",
       "toastFailedMoveDeal": "No se pudo mover el trato",
+      "toastMoveConflict": "Otro usuario movió este trato. Se recargó el tablero con el estado actual.",
       "toastFailedCreatePipeline": "No se pudo crear el pipeline",
       "toastPipelineCreated": "Pipeline creado",
       "toastNotLinkedToAccount": "Tu perfil no está vinculado a una cuenta."
@@ -511,7 +531,8 @@
     "card": {
       "noContact": "Sin contacto",
       "won": "Ganado",
-      "lost": "Perdido"
+      "lost": "Perdido",
+      "lastTouch": "Última interacción"
     },
     "form": {
       "editDeal": "Editar trato",
@@ -549,6 +570,7 @@
       "toastUpdated": "Trato actualizado",
       "toastCreated": "Trato creado",
       "toastFailedStatus": "No se pudo actualizar el estado del trato",
+      "toastStatusConflict": "Otro usuario modificó este trato. Se recargó el estado actual.",
       "toastMarkedWon": "Marcado como ganado",
       "toastMarkedLost": "Marcado como perdido",
       "toastReopened": "Trato reabierto",

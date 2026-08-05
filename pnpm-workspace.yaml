@@ -4,6 +4,8 @@ packages:
   # Root package (the Next.js app) is always included.
   # Explicitly include the mcp-server sub-project so pnpm installs its deps.
   - 'mcp-server'
+  # Astro landing (DAD §3) — build: `pnpm --filter landing build`.
+  - 'landing'
 
 allowBuilds:
   # Next.js SWC compiler — required for next build/dev
@@ -14,3 +16,5 @@ allowBuilds:
   '@parcel/watcher': true
   # Resolver used by eslint-import-resolver / tailwind tooling
   unrs-resolver: true
+  # esbuild — native binary used by Vite/Astro (landing package)
+  esbuild: true

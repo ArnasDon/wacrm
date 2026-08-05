@@ -15,6 +15,9 @@ import type {
   PipelineStageSlice,
   ResponseTimeBucket,
   ResponseTimeSummary,
+  TodayQueueData,
+  TodayQueueDeal,
+  TodayQueueDealRaw,
 } from './types'
 
 // ------------------------------------------------------------
@@ -395,4 +398,97 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   return items
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit)
+}
+
+// --- 6. Cola de Hoy (DAD §7.4) -----------------------------------------
+
+/**
+ * Deals abiertos con su contacto y la última interacción. La partición en
+ * 🔥⏳💤 se hace acá (lógica pura, testeable), no en el componente:
+ *   - 🔥 hot     — urgencia=2 (menos de 30 días)
+ *   - ⏳ docs    — documentos != 2 (esperando docs)
+ *   - 💤 nurture — el resto
+ * Dentro de cada sección: prioridad desc (top > warm > tibio > cold), y como
+ * tie-break la última interacción más reciente. No se muestra score numérico.
+ */
+const SECTION_PRIORITY_ORDER: Record<string, number> = {
+  top: 3,
+  warm: 2,
+  tibio: 1,
+  cold: 0,
+}
+
+export async function loadTodayQueue(db: DB): Promise<TodayQueueData> {
+  const { data, error } = await db
+    .from('deals')
+    .select(
+      'id, title, value, currency, status, score, priority, tags, expected_close_date, ' +
+        'contact:contacts(id, name, phone, email), ' +
+        'conversation:conversations!deals_conversation_id_fkey(last_message_at, last_message_text)',
+    )
+    .eq('status', 'open')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  const rows = (data ?? []) as unknown as TodayQueueDealRaw[]
+  return partitionTodayQueue(rows)
+}
+
+/**
+ * Lógica pura de la Cola de Hoy (DAD §7.4) — sin I/O, testeable:
+ *   - 🔥 hot     — urgencia=2 (menos de 30 días)
+ *   - ⏳ docs    — documentos != 2 (esperando docs)
+ *   - 💤 nurture — el resto
+ * Dentro de cada sección: prioridad desc (top > warm > tibio > cold), y como
+ * tie-break la última interacción más reciente (conversations.last_message_at).
+ * Recibe filas crudas de PostgREST (relaciones como array 1:1) y las normaliza.
+ */
+export function partitionTodayQueue(rows: TodayQueueDealRaw[]): TodayQueueData {
+  // PostgREST devuelve las relaciones anidadas como arrays aunque sean 1:1.
+  const normalize = (d: TodayQueueDealRaw): TodayQueueDeal => ({
+    ...d,
+    contact: Array.isArray(d.contact) ? d.contact[0] ?? null : d.contact,
+    conversation: Array.isArray(d.conversation)
+      ? d.conversation[0] ?? null
+      : d.conversation,
+  })
+
+  const hot: TodayQueueDeal[] = []
+  const docs: TodayQueueDeal[] = []
+  const nurture: TodayQueueDeal[] = []
+
+  for (const raw of rows) {
+    const row = normalize(raw)
+    // Sin tags (deal sin puntuar aún) → nurturing: "el resto" (§7.4).
+    // Solo los deals con urgencia=2 van a 🔥; solo los puntuados con
+    // documentos != 2 esperan docs. El resto nutre.
+    if (!row.tags) {
+      nurture.push(row)
+      continue
+    }
+    const urgencia = row.tags.urgencia ?? 0
+    const documentos = row.tags.documentos ?? 0
+    if (urgencia === 2) hot.push(row)
+    else if (documentos !== 2) docs.push(row)
+    else nurture.push(row)
+  }
+
+  const sortSection = (section: TodayQueueDeal[]): TodayQueueDeal[] =>
+    [...section].sort(
+      (a, b) =>
+        (SECTION_PRIORITY_ORDER[b.priority ?? ''] ?? -1) -
+          (SECTION_PRIORITY_ORDER[a.priority ?? ''] ?? -1) ||
+        (b.conversation?.last_message_at ?? '').localeCompare(
+          a.conversation?.last_message_at ?? '',
+        ) ||
+        a.id.localeCompare(b.id), // tie-break determinista
+    )
+
+  const sections = [
+    { key: 'hot' as const, deals: sortSection(hot) },
+    { key: 'docs' as const, deals: sortSection(docs) },
+    { key: 'nurture' as const, deals: sortSection(nurture) },
+  ]
+
+  return { sections, total: rows.length }
 }

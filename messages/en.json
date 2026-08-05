@@ -75,6 +75,25 @@
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
       "noChange": "No change {suffix}"
     },
+    "todayQueue": {
+      "title": "Today's Queue",
+      "description": "Who to call today, who's waiting on you, and who to nurture.",
+      "hot": "🔥 Under 30 days",
+      "docs": "⏳ Waiting on docs",
+      "nurture": "💤 Nurturing",
+      "none": "Nothing pending here",
+      "empty": "No open deals today",
+      "call": "Call",
+      "answered": "Answered",
+      "noAnswer": "No answer",
+      "lastTouch": "Last interaction",
+      "value": "Value",
+      "sendMessage": "Message",
+      "callFailed": "Could not start the call",
+      "markFailed": "Could not record the result",
+      "markedAnswered": "Answered — recorded",
+      "markedNoAnswer": "No answer — recorded"
+    },
     "quickActions": {
       "newContact": "New Contact",
       "newDeal": "New Deal",
@@ -500,6 +519,7 @@
       "createPipelineBtn": "Create Pipeline",
       "toastFailedLoadPipelines": "Failed to load pipelines",
       "toastFailedMoveDeal": "Failed to move deal",
+      "toastMoveConflict": "Another user moved this deal. The board was reloaded with the current state.",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
       "toastNotLinkedToAccount": "Your profile is not linked to an account."
@@ -511,7 +531,8 @@
     "card": {
       "noContact": "No contact",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "lastTouch": "Last interaction"
     },
     "form": {
       "editDeal": "Edit Deal",
@@ -549,6 +570,7 @@
       "toastUpdated": "Deal updated",
       "toastCreated": "Deal created",
       "toastFailedStatus": "Failed to update deal status",
+      "toastStatusConflict": "Another user modified this deal. The current state was reloaded.",
       "toastMarkedWon": "Marked as won",
       "toastMarkedLost": "Marked as lost",
       "toastReopened": "Deal reopened",

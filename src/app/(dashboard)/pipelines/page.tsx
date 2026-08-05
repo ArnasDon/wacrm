@@ -101,10 +101,13 @@ export default function PipelinesPage() {
     async (pipelineId: string) => {
       const { data } = await supabase
         .from("deals")
-        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .select(
+          "*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*), " +
+            "conversation:conversations!deals_conversation_id_fkey(last_message_at, last_message_text)",
+        )
         .eq("pipeline_id", pipelineId)
         .order("created_at", { ascending: false });
-      return (data ?? []) as Deal[];
+      return (data ?? []) as unknown as Deal[];
     },
     [supabase],
   );
@@ -216,20 +219,47 @@ export default function PipelinesPage() {
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
+      const deal = deals.find((d) => d.id === dealId);
       // Optimistic update — board already animated; just persist.
       setDeals((prev) =>
         prev.map((d) => (d.id === dealId ? { ...d, stage_id: newStageId } : d)),
       );
-      const { error } = await supabase
-        .from("deals")
-        .update({ stage_id: newStageId })
-        .eq("id", dealId);
-      if (error) {
-        toast.error(t("toastFailedMoveDeal"));
+      // transition_deal es la ÚNICA vía de movimiento (DAD §7.1): guard_rules +
+      // optimistic locking (version). El update directo de stage está prohibido.
+      const { data, error } = await supabase.rpc("transition_deal", {
+        p_deal_id: dealId,
+        p_to_stage_id: newStageId,
+        p_triggered_by: "agent",
+        p_expected_version: deal?.version ?? null,
+      });
+      const result = data as
+        | { ok: boolean; code?: string; version?: number; priority?: string }
+        | null;
+      if (error || !result?.ok) {
+        if (result?.code === "VERSION_CONFLICT") {
+          // Otro agente ya movió este deal — nunca pisar su cambio.
+          toast.error(t("toastMoveConflict"));
+        } else {
+          toast.error(t("toastFailedMoveDeal"));
+        }
         refreshDeals();
+        return;
       }
+      // Reconciliar versión/prioridad que devolvió la transición atómica.
+      setDeals((prev) =>
+        prev.map((d) =>
+          d.id === dealId
+            ? {
+                ...d,
+                stage_id: newStageId,
+                version: result.version ?? d.version,
+                priority: (result.priority as Deal["priority"]) ?? d.priority,
+              }
+            : d,
+        ),
+      );
     },
-    [supabase, refreshDeals, t],
+    [supabase, refreshDeals, t, deals],
   );
 
   const handleAddDeal = useCallback(

@@ -1,0 +1,47 @@
+---
+// thank-you.astro — confirmación del lead (DAD §3.2).
+// Detecta ?lead=1 y re-emite form_submit con el MISMO event_id
+// (idempotente por UNIQUE) — cubre el caso de navegación que pierde
+// la primera emisión. PII solo viaja en el POST original, nunca en la URL.
+import BaseLayout from "../layouts/BaseLayout.astro";
+import WhatsAppCta from "../components/WhatsAppCta.astro";
+import { site } from "../data/site";
+---
+
+<BaseLayout title="Gracias — te contactamos pronto">
+  <main class="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center px-6 py-20 text-center">
+    <div class="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-4xl">
+      ✅
+    </div>
+    <h1 class="mt-6 text-3xl font-bold text-slate-900">¡Gracias!</h1>
+    <p class="mt-3 text-slate-600">
+      Recibimos tu solicitud. Te contactaremos por WhatsApp en menos de 24 h.
+    </p>
+    <div class="mt-8">
+      <WhatsAppCta label="¿Prefieres hablar ahora?" variant="primary" />
+    </div>
+    <a href={`${site.landingBase}/`} class="mt-6 text-sm text-slate-500 hover:text-emerald-700">
+      Volver al inicio
+    </a>
+  </main>
+
+  <script>
+    // Re-emisión idempotente del form_submit (DAD §3.2): mismo event_id → UNIQUE → DO NOTHING.
+    const params = new URLSearchParams(location.search);
+    if (params.get("lead") === "1") {
+      const event_id = params.get("event_id") ?? "";
+      fetch(`${location.origin}/api/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: event_id || `thank_${Date.now().toString(36)}`,
+          event_type: "form_submit",
+          attribution: { landing_slug: "thank-you" },
+          landing_slug: "thank-you",
+          payload: {},
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+  </script>
+</BaseLayout>

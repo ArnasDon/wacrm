@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Astro landing is a separate workspace package with its own toolchain
+    // (astro build + generated types); the Next app's tsc must not include it.
+    "landing"
+  ]
 }

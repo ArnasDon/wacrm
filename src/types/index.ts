@@ -378,6 +378,18 @@ export interface Deal {
   assignee?: Profile;
 }
 
+export interface ChatwootDealLink {
+  id: string;
+  account_id: string;
+  deal_id: string;
+  chatwoot_account_id: number;
+  chatwoot_contact_id: number;
+  chatwoot_conversation_id: number;
+  contact_snapshot: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 

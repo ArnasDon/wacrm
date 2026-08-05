@@ -63,6 +63,18 @@ const SECURITY_HEADERS = [
   },
 ] as const;
 
+const EMBEDDED_SECURITY_HEADERS = [
+  ...SECURITY_HEADERS.filter(
+    (header) =>
+      header.key !== "X-Frame-Options" &&
+      header.key !== "Content-Security-Policy-Report-Only",
+  ),
+  {
+    key: "Content-Security-Policy",
+    value: `frame-ancestors ${process.env.CHATWOOT_DASHBOARD_ORIGIN ?? "'none'"}`,
+  },
+] as const;
+
 const nextConfig: NextConfig = {
   // Emit a self-contained server bundle (.next/standalone) so the
   // Docker image can run without node_modules or the Next CLI.
@@ -151,10 +163,16 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Security headers on every response, including /_next/static
+        // Dashboard Apps are loaded in a Chatwoot iframe and therefore need
+        // their own allow-list instead of the default anti-framing policy.
+        source: "/embedded/:path*",
+        headers: [...EMBEDDED_SECURITY_HEADERS],
+      },
+      {
+        // Security headers on every non-embedded response, including /_next/static
         // assets (nosniff matters there) and /api/* (HSTS + referrer-
         // policy don't hurt).
-        source: "/:path*",
+        source: "/:path((?!embedded).*)",
         headers: [...SECURITY_HEADERS],
       },
     ];

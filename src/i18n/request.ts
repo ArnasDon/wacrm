@@ -9,6 +9,24 @@ function isSupportedLocale(value: string | undefined): value is AppLocale {
   return SUPPORTED_LOCALES.includes(value as AppLocale);
 }
 
+async function loadMessages(locale: AppLocale) {
+  if (locale === 'pt') {
+    const [core, operations, settings] = await Promise.all([
+      import('../../messages/pt/core.json'),
+      import('../../messages/pt/operations.json'),
+      import('../../messages/pt/settings.json'),
+    ]);
+
+    return {
+      ...core.default,
+      ...operations.default,
+      ...settings.default,
+    };
+  }
+
+  return (await import(`../../messages/${locale}.json`)).default;
+}
+
 export default getRequestConfig(async () => {
   const cookieStore = await cookies();
   const cookieLocale = cookieStore.get(LOCALE_COOKIE)?.value;
@@ -21,9 +39,9 @@ export default getRequestConfig(async () => {
 
   let messages;
   try {
-    messages = (await import(`../../messages/${locale}.json`)).default;
+    messages = await loadMessages(locale);
   } catch {
-    messages = (await import('../../messages/en.json')).default;
+    messages = await loadMessages('en');
   }
 
   return {

@@ -19,14 +19,18 @@ import {
 import { ModeToggle } from "@/components/layout/mode-toggle";
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "dashboard",
-  "/inbox": "inbox",
-  "/notifications": "notifications",
-  "/contacts": "contacts",
-  "/pipelines": "pipelines",
-  "/broadcasts": "broadcasts",
-  "/automations": "automations",
-  "/settings": "settings",
+  "/dashboard": "Dashboard",
+  "/inbox": "Inbox",
+  "/notifications": "Notifications",
+  "/contacts": "Contacts",
+  "/pipelines": "Pipelines",
+  "/broadcasts": "Broadcasts",
+  "/automations": "Automations",
+  "/produits": "Produits",
+  "/commandes": "Commandes",
+  "/services": "Services",
+  "/reservations": "Réservations",
+  "/settings": "Settings",
 };
 
 function getPageTitleKey(pathname: string): string {
@@ -77,70 +81,70 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <ModeToggle />
 
         <DropdownMenu>
-        <DropdownMenuTrigger
-          className="flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-muted/70 focus:bg-muted/70 focus:outline-none data-popup-open:bg-muted/70 sm:gap-3 sm:pl-1 sm:pr-3"
-          aria-label={t("openAccountMenu")}
-        >
-          <Avatar className="size-8">
-            {profile?.avatar_url ? (
-              <AvatarImage
-                src={profile.avatar_url}
-                alt={profile.full_name ?? t("defaultAvatar")}
-              />
-            ) : null}
-            <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
-              {initial}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden text-sm font-medium text-foreground sm:inline">
-            {profile?.full_name ?? t("defaultUser")}
-          </span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          sideOffset={6}
-          className="min-w-56 bg-popover text-popover-foreground ring-border"
-        >
-          <div className="px-2 py-1.5">
-            <p className="truncate text-sm font-medium text-foreground">
+          <DropdownMenuTrigger
+            className="flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-muted/70 focus:bg-muted/70 focus:outline-none data-popup-open:bg-muted/70 sm:gap-3 sm:pl-1 sm:pr-3"
+            aria-label={t("openAccountMenu")}
+          >
+            <Avatar className="size-8">
+              {profile?.avatar_url ? (
+                <AvatarImage
+                  src={profile.avatar_url}
+                  alt={profile.full_name ?? t("defaultAvatar")}
+                />
+              ) : null}
+              <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                {initial}
+              </AvatarFallback>
+            </Avatar>
+            <span className="hidden text-sm font-medium text-foreground sm:inline">
               {profile?.full_name ?? t("defaultUser")}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {profile?.email ?? ""}
-            </p>
-          </div>
-          <DropdownMenuSeparator className="bg-border" />
-          <DropdownMenuItem
-            render={
-              <Link
-                href="/settings?tab=profile"
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
-              />
-            }
+            </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            sideOffset={6}
+            className="min-w-56 bg-popover text-popover-foreground ring-border"
           >
-            <User className="size-4" />
-            {t("menuProfile")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            render={
-              <Link
-                href="/settings?tab=whatsapp"
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
-              />
-            }
-          >
-            <SettingsIcon className="size-4" />
-            {t("menuSettings")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator className="bg-border" />
-          <DropdownMenuItem
-            onClick={signOut}
-            className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
-          >
-            <LogOut className="size-4" />
-            {t("menuSignOut")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
+            <div className="px-2 py-1.5">
+              <p className="truncate text-sm font-medium text-foreground">
+                {profile?.full_name ?? t("defaultUser")}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {profile?.email ?? ""}
+              </p>
+            </div>
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem
+              render={
+                <Link
+                  href="/settings?tab=profile"
+                  className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                />
+              }
+            >
+              <User className="size-4" />
+              {t("menuProfile")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              render={
+                <Link
+                  href="/settings?tab=whatsapp"
+                  className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                />
+              }
+            >
+              <SettingsIcon className="size-4" />
+              {t("menuSettings")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem
+              onClick={signOut}
+              className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+            >
+              <LogOut className="size-4" />
+              {t("menuSignOut")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </header>

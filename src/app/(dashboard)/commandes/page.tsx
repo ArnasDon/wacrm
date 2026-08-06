@@ -65,23 +65,22 @@ interface RawItem {
 
 /** Flat display row after normalisation */
 interface DisplayRow {
-  item_id: string
   order_id: string
   contact_name: string | null
-  title: string | null
-  item_price: number
-  quantity: number
+  products: string
   total: number
   created_at: string | null
+  status: string | null
 }
 
-/** Items grouped by order_id for rowspan rendering */
+/** Orders grouped by order_id for rendering */
 interface OrderGroup {
   order_id: string
   contact_name: string | null
   created_at: string | null
   status: string | null
   grand_total: number
+  productSummary: string
   rows: DisplayRow[]
 }
 
@@ -158,17 +157,6 @@ function groupByOrder(items: RawItem[]): OrderGroup[] {
     const price = getDisplayPrice(item)
     const total = qty * price
 
-    const row: DisplayRow = {
-      item_id: item.id,
-      order_id: item.order_id,
-      contact_name: item.orders?.contact_name ?? null,
-      title: item.produits?.title ?? null,
-      item_price: price,
-      quantity: qty,
-      total,
-      created_at: item.orders?.created_at ?? null,
-    }
-
     if (!map.has(item.order_id)) {
       map.set(item.order_id, {
         order_id: item.order_id,
@@ -176,15 +164,32 @@ function groupByOrder(items: RawItem[]): OrderGroup[] {
         created_at: item.orders?.created_at ?? null,
         status: item.orders?.status ?? null,
         grand_total: 0,
+        productSummary: '',
         rows: [],
       })
     }
+
     const group = map.get(item.order_id)!
     group.grand_total += total
-    group.rows.push(row)
+
+    const title = item.produits?.title ?? 'Produit inconnu'
+    const productEntry = `${title}(${qty})`
+    group.productSummary = group.productSummary ? `${group.productSummary}, ${productEntry}` : productEntry
   }
 
-  return Array.from(map.values())
+  return Array.from(map.values()).map((group) => ({
+    ...group,
+    rows: [
+      {
+        order_id: group.order_id,
+        contact_name: group.contact_name,
+        products: group.productSummary,
+        total: group.grand_total,
+        created_at: group.created_at,
+        status: group.status,
+      },
+    ],
+  }))
 }
 
 function fmtCurrency(val: number) {
@@ -410,10 +415,12 @@ export default function CommandesPage() {
 
     setDeleting(true)
     try {
-      const { error } = await supabase.from('order_items').delete().eq('id', deleteTarget.id)
-      if (error) throw error
+      const { error: itemError } = await supabase.from('order_items').delete().eq('order_id', deleteTarget.order_id)
+      if (itemError) throw itemError
 
-      await supabase.from('orders').delete().eq('id', deleteTarget.order_id)
+      const { error: orderError } = await supabase.from('orders').delete().eq('id', deleteTarget.order_id)
+      if (orderError) throw orderError
+
       toast.success('Commande supprimée')
       setDeleteTarget(null)
       fetchCommandes()
@@ -446,9 +453,6 @@ export default function CommandesPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Commandes</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Détail des articles commandés par client.
-          </p>
         </div>
         <Button onClick={openCreateModal} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -472,13 +476,10 @@ export default function CommandesPage() {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="text-foreground font-medium">Order ID</TableHead>
+              <TableHead className="text-foreground font-medium">ID</TableHead>
               <TableHead className="text-foreground font-medium">Contact</TableHead>
               <TableHead className="text-foreground font-medium">Produit</TableHead>
-              <TableHead className="text-right text-foreground font-medium">Prix unit.</TableHead>
-              <TableHead className="text-right text-foreground font-medium">Quantité</TableHead>
               <TableHead className="text-right text-foreground font-medium">Total</TableHead>
-              <TableHead className="text-right font-semibold text-foreground">Grand total</TableHead>
               <TableHead className="text-foreground font-medium">Statut</TableHead>
               <TableHead className="text-foreground font-medium">Date</TableHead>
             </TableRow>
@@ -504,109 +505,66 @@ export default function CommandesPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              groups.flatMap((group) =>
-                group.rows.map((row, rowIdx) => {
-                  const isFirst = rowIdx === 0
-                  const span = group.rows.length
+              groups.map((group) => {
+                const row = group.rows[0]
+                if (!row) return null
 
-                  return (
-                    <TableRow
-                      key={row.item_id}
-                      className={
-                        // Subtle top border between order groups
-                        isFirst && groups.indexOf(group) > 0
-                          ? 'border-t-2 border-border'
-                          : undefined
-                      }
-                    >
-                      {/* order_id — show on every row for readability */}
-                      <TableCell className="font-mono text-xs text-foreground/90">
-                        <div className="flex items-center justify-between gap-2">
-                          <span title={row.order_id}>{shortId(row.order_id)}</span>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <button
-                                  type="button"
-                                  className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                                />
-                              }
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-36 bg-popover text-popover-foreground ring-border">
-                              <DropdownMenuItem onClick={() => openEditModal({ id: row.item_id, order_id: row.order_id, item_price: row.item_price, quantity: row.quantity, produits: null, orders: { contact_name: row.contact_name, created_at: group.created_at, status: group.status } } as RawItem)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Modifier
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => setDeleteTarget({ id: row.item_id, order_id: row.order_id, item_price: row.item_price, quantity: row.quantity, produits: null, orders: { contact_name: row.contact_name, created_at: group.created_at, status: group.status } } as RawItem)} className="text-red-400 focus:text-red-400">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Supprimer
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </TableCell>
+                return (
+                  <TableRow key={group.order_id} className="hover:bg-muted/40">
+                    <TableCell className="font-mono text-xs text-foreground/90">
+                      <span title={row.order_id}>{shortId(row.order_id)}</span>
+                    </TableCell>
 
-                      {/* contact_name — same for all rows in the group */}
-                      <TableCell className="font-medium text-foreground">
+                    <TableCell className="font-medium text-foreground" title={row.contact_name || undefined}>
+                      <div className="break-words whitespace-normal">
                         {row.contact_name || '—'}
-                      </TableCell>
+                      </div>
+                    </TableCell>
 
-                      {/* title — per item */}
-                      <TableCell className="max-w-[180px] truncate text-foreground/90">
-                        {row.title || '—'}
-                      </TableCell>
+                    <TableCell className="max-w-[260px] break-words whitespace-normal text-foreground/90" title={row.products || undefined}>
+                      {row.products || '—'}
+                    </TableCell>
 
-                      {/* item_price — per item */}
-                      <TableCell className="text-right tabular-nums text-foreground/90">
-                        {fmtCurrency(row.item_price)}
-                      </TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold text-foreground">
+                      {fmtCurrency(row.total)}
+                    </TableCell>
 
-                      {/* quantity — per item */}
-                      <TableCell className="text-right tabular-nums text-foreground/90">
-                        {row.quantity.toLocaleString('fr-FR')}
-                      </TableCell>
+                    <TableCell className="align-middle capitalize">
+                      {getStatusBadge(row.status)}
+                    </TableCell>
 
-                      {/* total = qty × price — per item */}
-                      <TableCell className="text-right tabular-nums text-foreground/90">
-                        {fmtCurrency(row.total)}
-                      </TableCell>
+                    <TableCell className="align-middle text-foreground font-medium">
+                      {fmtDate(row.created_at)}
+                    </TableCell>
 
-                      {/* grand_total — merged cell (rowSpan), first row only */}
-                      {isFirst && (
-                        <TableCell
-                          rowSpan={span}
-                          className="text-right tabular-nums align-middle font-semibold text-foreground bg-muted/30"
+                    <TableCell className="w-12 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            />
+                          }
                         >
-                          {fmtCurrency(group.grand_total)}
-                        </TableCell>
-                      )}
-
-                      {/* status — merged cell (rowSpan), first row only */}
-                      {isFirst && (
-                        <TableCell
-                          rowSpan={span}
-                          className="align-middle bg-muted/30 capitalize"
-                        >
-                          {getStatusBadge(group.status)}
-                        </TableCell>
-                      )}
-
-                      {/* created_at — merged cell (rowSpan), first row only */}
-                      {isFirst && (
-                        <TableCell
-                          rowSpan={span}
-                          className="align-middle text-foreground font-medium bg-muted/30"
-                        >
-                          {fmtDate(group.created_at)}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  )
-                })
-              )
+                          <MoreHorizontal className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-36 bg-popover text-popover-foreground ring-border">
+                          <DropdownMenuItem onClick={() => openEditModal({ id: row.order_id, order_id: row.order_id, item_price: 0, quantity: 1, produits: null, orders: { contact_name: row.contact_name, created_at: row.created_at, status: row.status } } as RawItem)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Modifier
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setDeleteTarget({ id: row.order_id, order_id: row.order_id, item_price: 0, quantity: 1, produits: null, orders: { contact_name: row.contact_name, created_at: row.created_at, status: row.status } } as RawItem)} className="text-red-400 focus:text-red-400">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

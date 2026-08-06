@@ -2,44 +2,70 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// Locale dictionaries are hand-maintained. English is the source of
-// truth (src/i18n/request.ts falls back to en.json only when a whole
-// locale file is missing — there is no per-key fallback), so a key
-// that lands in en.json and not in a translation renders as a raw
-// keypath for users on that locale. This guards the parity.
-
 const MESSAGES_DIR = join(process.cwd(), 'messages');
 const SOURCE_LOCALE = 'en';
-const TRANSLATED_LOCALES = ['ko'];
+const JSON_TRANSLATED_LOCALES = ['ko'];
 
-function loadKeys(locale: string): Set<string> {
-  const raw = readFileSync(join(MESSAGES_DIR, `${locale}.json`), 'utf8');
+function flattenKeys(node: unknown): Set<string> {
   const out = new Set<string>();
-  const walk = (node: unknown, path: string) => {
-    if (node && typeof node === 'object' && !Array.isArray(node)) {
-      for (const [k, v] of Object.entries(node)) {
-        walk(v, path ? `${path}.${k}` : k);
+  const walk = (value: unknown, path: string) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        walk(child, path ? `${path}.${key}` : key);
       }
       return;
     }
     out.add(path);
   };
-  walk(JSON.parse(raw), '');
+  walk(node, '');
   return out;
 }
 
-describe('message catalogue parity', () => {
-  const source = loadKeys(SOURCE_LOCALE);
+function loadJson(locale: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(join(MESSAGES_DIR, `${locale}.json`), 'utf8'),
+  ) as Record<string, unknown>;
+}
 
-  it.each(TRANSLATED_LOCALES)('%s.json covers every en.json key', (locale) => {
-    const translated = loadKeys(locale);
-    const missing = [...source].filter((k) => !translated.has(k)).sort();
-    expect(missing, `${locale}.json is missing these keys`).toEqual([]);
+function loadPortuguese(): Record<string, unknown> {
+  const parts = ['core', 'operations', 'settings'].map((name) =>
+    JSON.parse(
+      readFileSync(join(MESSAGES_DIR, 'pt', `${name}.json`), 'utf8'),
+    ) as Record<string, unknown>,
+  );
+  return Object.assign({}, ...parts);
+}
+
+describe('message catalogue parity', () => {
+  const source = flattenKeys(loadJson(SOURCE_LOCALE));
+
+  it.each(JSON_TRANSLATED_LOCALES)(
+    '%s.json covers every en.json key',
+    (locale) => {
+      const translated = flattenKeys(loadJson(locale));
+      const missing = [...source].filter((key) => !translated.has(key)).sort();
+      expect(missing, `${locale}.json is missing these keys`).toEqual([]);
+    },
+  );
+
+  it.each(JSON_TRANSLATED_LOCALES)(
+    '%s.json has no orphaned keys',
+    (locale) => {
+      const translated = flattenKeys(loadJson(locale));
+      const orphaned = [...translated].filter((key) => !source.has(key)).sort();
+      expect(orphaned, `${locale}.json has keys absent from en.json`).toEqual([]);
+    },
+  );
+
+  it('Portuguese catalogue covers every English key', () => {
+    const translated = flattenKeys(loadPortuguese());
+    const missing = [...source].filter((key) => !translated.has(key)).sort();
+    expect(missing, 'Portuguese catalogue is missing these keys').toEqual([]);
   });
 
-  it.each(TRANSLATED_LOCALES)('%s.json has no orphaned keys', (locale) => {
-    const translated = loadKeys(locale);
-    const orphaned = [...translated].filter((k) => !source.has(k)).sort();
-    expect(orphaned, `${locale}.json has keys absent from en.json`).toEqual([]);
+  it('Portuguese catalogue has no orphaned keys', () => {
+    const translated = flattenKeys(loadPortuguese());
+    const orphaned = [...translated].filter((key) => !source.has(key)).sort();
+    expect(orphaned, 'Portuguese catalogue has keys absent from en.json').toEqual([]);
   });
 });

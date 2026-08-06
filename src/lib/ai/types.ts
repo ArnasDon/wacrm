@@ -5,9 +5,10 @@
 export type AiProvider = 'openai' | 'anthropic'
 
 export interface AiConfig {
-  /** Stable identity of this AI configuration. External knowledge-source
-   * settings are attached to this id, rather than being global. */
-  agentId: string
+  /** Stable identity of a persisted AI configuration. It is optional for
+   * short-lived validation objects that are never allowed to query external
+   * knowledge sources. */
+  agentId?: string
   provider: AiProvider
   model: string
   apiKey: string

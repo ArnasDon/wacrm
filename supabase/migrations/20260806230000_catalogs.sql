@@ -46,10 +46,38 @@ create index if not exists catalog_products_source_idx
 alter table wacrm.catalog_sources enable row level security;
 alter table wacrm.catalog_products enable row level security;
 
+drop policy if exists "catalog_sources_account_members" on wacrm.catalog_sources;
 create policy "catalog_sources_account_members" on wacrm.catalog_sources
-  for all using (wacrm.is_account_member(account_id))
-  with check (wacrm.is_account_member(account_id));
+  for all
+  using (
+    exists (
+      select 1 from wacrm.profiles
+      where profiles.user_id = auth.uid()
+        and profiles.account_id = catalog_sources.account_id
+    )
+  )
+  with check (
+    exists (
+      select 1 from wacrm.profiles
+      where profiles.user_id = auth.uid()
+        and profiles.account_id = catalog_sources.account_id
+    )
+  );
 
+drop policy if exists "catalog_products_account_members" on wacrm.catalog_products;
 create policy "catalog_products_account_members" on wacrm.catalog_products
-  for all using (wacrm.is_account_member(account_id))
-  with check (wacrm.is_account_member(account_id));
+  for all
+  using (
+    exists (
+      select 1 from wacrm.profiles
+      where profiles.user_id = auth.uid()
+        and profiles.account_id = catalog_products.account_id
+    )
+  )
+  with check (
+    exists (
+      select 1 from wacrm.profiles
+      where profiles.user_id = auth.uid()
+        and profiles.account_id = catalog_products.account_id
+    )
+  );

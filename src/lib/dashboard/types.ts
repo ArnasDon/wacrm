@@ -90,6 +90,8 @@ export interface TodayQueueDeal {
   value: number | null
   currency: string | null
   status: string | null
+  stage_id?: string | null
+  pipeline_id?: string | null
   /** NO se muestra numéricamente (DAD §7.4: "nada de score numérico"),
    *  pero la query lo trae para derivar chips/secciones. */
   score: number | null
@@ -102,8 +104,11 @@ export interface TodayQueueDeal {
     valor?: number
   } | null
   expected_close_date: string | null
+  assignee?: { id: string; full_name: string | null } | null
   contact: TodayQueueContact | null
   conversation: TodayQueueConversation | null
+  /** Última automatización ejecutada para este contacto o null. */
+  lastAutomation?: { name: string; trigger_event: string } | null
 }
 
 /** Forma cruda que devuelve PostgREST (relaciones anidadas como array 1:1).

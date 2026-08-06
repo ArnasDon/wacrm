@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { loadActivity, loadTodayQueue } from '@/lib/dashboard/queries'
-import type { ActivityItem, TodayQueueData } from '@/lib/dashboard/types'
+import type { ActivityItem, TodayQueueData, TodayQueueDeal } from '@/lib/dashboard/types'
+import type { Deal, PipelineStage } from '@/types'
 
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 import { TodayQueue } from '@/components/dashboard/today-queue'
+import { DealForm } from '@/components/pipelines/deal-form'
 
 import { useTranslations } from 'next-intl'
 
@@ -19,6 +21,13 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+
+  // Editor de deals (DealSheet) — mismo flujo que el pipeline: clic en la
+  // card de la cola abre la ventana lateral edit deal.
+  const [dealFormOpen, setDealFormOpen] = useState(false)
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null)
+  const [stages, setStages] = useState<PipelineStage[]>([])
+  const [pipelineId, setPipelineId] = useState('')
 
   const loadAll = useCallback(() => {
     const db = createClient()
@@ -38,9 +47,45 @@ export default function DashboardPage() {
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
+
+    // Stages + pipeline del editor de deals (lista completa del primer
+    // pipeline, como en /pipelines).
+    void (async () => {
+      try {
+        const db2 = createClient()
+        const p = await db2
+          .from('pipelines')
+          .select('id')
+          .order('created_at')
+          .limit(1)
+          .maybeSingle()
+        if (!p.data) return
+        setPipelineId(p.data.id)
+        const s = await db2
+          .from('pipeline_stages')
+          .select('id, name, color, pipeline_id, position')
+          .eq('pipeline_id', p.data.id)
+          .order('position')
+        setStages((s.data ?? []) as PipelineStage[])
+      } catch (err) {
+        console.error('[dashboard] deal form stages failed:', err)
+      }
+    })()
   }, [])
 
   useEffect(() => {
+    loadAll()
+  }, [loadAll])
+
+  // La card de la cola trae TodayQueueDeal (shape reducido); lo armamos
+  // como Deal mínimo para abrir el DealSheet con los datos que trae.
+  const handleEditDeal = useCallback((qd: TodayQueueDeal) => {
+    const d = qd as unknown as Deal
+    setEditingDeal(d)
+    setDealFormOpen(true)
+  }, [])
+
+  const handleSaved = useCallback(() => {
     loadAll()
   }, [loadAll])
 
@@ -57,13 +102,27 @@ export default function DashboardPage() {
       {/* Cola de Hoy — la vista principal (DAD §7.4). Reemplaza el bloque
           MetricCards/charts del overview: el SDR ve "por llamar hoy",
           "esperando cliente" y "nurturing", no 12 columnas. */}
-      <TodayQueue data={queue} loading={queueLoading} />
+      <TodayQueue
+        data={queue}
+        loading={queueLoading}
+        onEditDeal={handleEditDeal}
+      />
 
       {/* Quick actions */}
       <QuickActions />
 
       {/* Activity feed (timeline) — se mantiene debajo de la cola */}
       <ActivityFeed items={activity} loading={activityLoading} />
+
+      {/* Editor de deal (DealSheet) desde la cola de hoy */}
+      <DealForm
+        open={dealFormOpen}
+        onOpenChange={setDealFormOpen}
+        deal={editingDeal}
+        pipelineId={pipelineId}
+        stages={stages}
+        onSaved={handleSaved}
+      />
     </div>
   )
 }

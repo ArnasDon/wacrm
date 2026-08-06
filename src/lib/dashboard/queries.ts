@@ -272,7 +272,9 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   // Pull ~10 from each source (plenty of headroom after merge-sort),
   // then interleave by timestamp. The individual per-table limits
   // keep the payload small; the final limit is enforced after sort.
-  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
+  // state_changed (tracking_events) es el historial de won/lost emitido
+  // por transition_deal — sin esto el feed solo refleja el estado actual.
+  const [msgs, contacts, deals, broadcasts, autoLogs, stateChanges] = await Promise.all([
     db
       .from('messages')
       .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
@@ -286,7 +288,7 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
       .limit(10),
     db
       .from('deals')
-      .select('id, title, updated_at, stage:pipeline_stages(name)')
+      .select('id, title, updated_at, status, stage:pipeline_stages(name)')
       .order('updated_at', { ascending: false })
       .limit(10),
     db
@@ -297,6 +299,12 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     db
       .from('automation_logs')
       .select('id, trigger_event, status, created_at, automation:automations(name), contact:contacts(name, phone)')
+      .order('created_at', { ascending: false })
+      .limit(10),
+    db
+      .from('tracking_events')
+      .select('id, event_type, payload, created_at')
+      .eq('event_type', 'state_changed')
       .order('created_at', { ascending: false })
       .limit(10),
   ])
@@ -395,6 +403,50 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     })
   }
 
+  // Mapa deal_id → título para dar contexto a los state_changed (cuyo
+  // payload solo trae deal_id — verificado en DB).
+  const dealTitleById = new Map<string, string>()
+  for (const d of (deals.data ?? []) as unknown as Array<{
+    id: string
+    title: string
+  }>) {
+    dealTitleById.set(d.id, d.title)
+  }
+
+  for (const sc of (stateChanges.data ?? []) as unknown as Array<{
+    id: string
+    payload:
+      | {
+          deal_id?: string
+          to_status?: string
+          from_status?: string
+        }
+      | null
+    created_at: string
+  }>) {
+    const p = sc.payload
+    const status = p?.to_status
+    if (status && status !== 'open') {
+      const title = p?.deal_id ? dealTitleById.get(p.deal_id) : undefined
+      const base = title ? `Deal "${title}"` : 'Deal'
+      const label =
+        status === 'won'
+          ? `${base} marked as won`
+          : status === 'lost'
+            ? `${base} marked as lost`
+            : null
+      if (label) {
+        items.push({
+          id: `state-${sc.id}`,
+          kind: 'deal',
+          text: label,
+          at: sc.created_at,
+          href: '/pipelines',
+        })
+      }
+    }
+  }
+
   return items
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit)
@@ -423,6 +475,8 @@ export async function loadTodayQueue(db: DB): Promise<TodayQueueData> {
     .from('deals')
     .select(
       'id, title, value, currency, status, score, priority, tags, expected_close_date, ' +
+        'stage_id, pipeline_id, ' +
+        'assignee:profiles!deals_assigned_to_fkey(id, full_name), ' +
         'contact:contacts(id, name, phone, email), ' +
         'conversation:conversations!deals_conversation_id_fkey(last_message_at, last_message_text)',
     )
@@ -431,7 +485,53 @@ export async function loadTodayQueue(db: DB): Promise<TodayQueueData> {
   if (error) throw error
 
   const rows = (data ?? []) as unknown as TodayQueueDealRaw[]
-  return partitionTodayQueue(rows)
+
+  // Última automatización ejecutada por contacto (DAD §3.x — la cola muestra
+  // el email/secuencia que ya se envió, no score numérico). Un fetch por
+  // contact_id en la lista (LOOP con valores acotados) para no inflar el pluck.
+  const contactIds = [
+    ...new Set(
+      rows
+        .map((d) =>
+          Array.isArray(d.contact) ? d.contact[0]?.id : d.contact?.id,
+        )
+        .filter((id): id is string => !!id),
+    ),
+  ]
+  const automationByName = new Map<string, string>()
+  if (contactIds.length > 0) {
+    const { data: autoRes, error: autoErr } = await db
+      .from('automation_logs')
+      .select('contact_id, status, created_at, automation:automations(name)')
+      .in('contact_id', contactIds)
+      .in('status', ['completed', 'running'])
+      .order('created_at', { ascending: false })
+    if (!autoErr && autoRes) {
+      for (const a of autoRes as unknown as Array<{
+        contact_id: string
+        automation: { name: string }[] | { name: string } | null
+      }>) {
+        const name = Array.isArray(a.automation)
+          ? a.automation[0]?.name
+          : a.automation?.name
+        if (name && !automationByName.has(a.contact_id))
+          automationByName.set(a.contact_id, name)
+      }
+    }
+  }
+
+  const withAutomation = rows.map((r) => {
+    const contactId = Array.isArray(r.contact)
+      ? r.contact[0]?.id
+      : r.contact?.id
+    const autoName = contactId ? automationByName.get(contactId) : undefined
+    return {
+      ...r,
+      lastAutomation: autoName ? { name: autoName, trigger_event: '' } : null,
+    }
+  })
+
+  return partitionTodayQueue(withAutomation as unknown as TodayQueueDealRaw[])
 }
 
 /**

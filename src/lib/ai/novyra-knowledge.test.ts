@@ -7,6 +7,8 @@ afterEach(() => {
   delete process.env.NOVYRA_SUPABASE_ANON_KEY
   delete process.env.NOVYRA_CRM_USER_EMAIL
   delete process.env.NOVYRA_CRM_USER_PASSWORD
+  delete process.env.NOVYRA_AGENT_CODE
+  delete process.env.NOVYRA_COUNTRY_CODE
 })
 
 describe('retrieveNovyraKnowledge', () => {
@@ -22,6 +24,9 @@ describe('retrieveNovyraKnowledge', () => {
     process.env.NOVYRA_SUPABASE_ANON_KEY = 'anon'
     process.env.NOVYRA_CRM_USER_EMAIL = 'crm@example.com'
     process.env.NOVYRA_CRM_USER_PASSWORD = 'secret'
+    process.env.NOVYRA_AGENT_CODE = 'novura-news-whatsapp'
+    process.env.NOVYRA_COUNTRY_CODE = 'MZ'
+
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({

@@ -48,6 +48,20 @@ vi.mock('@/lib/telnyx/api', () => ({
       this.status = status
     }
   },
+  reputationScore: (r: {
+    spam_risk?: string | null
+    maturity_score?: number | null
+    connection_score?: number | null
+    engagement_score?: number | null
+  } | null) => {
+    if (!r) return null
+    if (r.spam_risk === 'high') return 20
+    const scores = [r.maturity_score, r.connection_score, r.engagement_score].filter(
+      (s): s is number => typeof s === 'number',
+    )
+    if (scores.length === 0) return null
+    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+  },
 }))
 
 import { POST } from './route'
@@ -116,10 +130,10 @@ describe('POST /api/telnyx/numbers/buy', () => {
   })
 
   it('billing_group_id opcional se pasa al pedido', async () => {
-    const res = await post({ number: '+15556667777', billing_group_id: 'bg-9' })
+    const res = await post({ number: '+15556667777', billing_group_id: '3f6a2e9c-8d14-4b7a-9c2e-1a0b5f6d7e8f' })
     expect(res.status).toBe(200)
     expect(createNumberOrder).toHaveBeenCalledWith(
-      expect.objectContaining({ billingGroupId: 'bg-9' }),
+      expect.objectContaining({ billingGroupId: '3f6a2e9c-8d14-4b7a-9c2e-1a0b5f6d7e8f' }),
     )
   })
 

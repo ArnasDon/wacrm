@@ -214,7 +214,11 @@ describe("createTelnyxClient", () => {
     })
   })
 
-  it("listPhoneNumbers: sigue meta.next hasta agotar páginas", async () => {
+  it("listPhoneNumbers: pagina con page[number] siguiendo meta.total_pages", async () => {
+    // Contrato real de Telnyx: GET /v2/phone_numbers recibe page[number]/
+    // page[size] y responde meta: { total_pages, page_number, ... }.
+    // (Antes el test mockeaba meta.next, que la API real nunca envía,
+    // por eso el bug de paginación rota pasó como verde.)
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -222,7 +226,7 @@ describe("createTelnyxClient", () => {
         status: 200,
         json: async () => ({
           data: [{ id: "n1", phone_number: "+15550000001" }],
-          meta: { next: "/phone_numbers?page[after]=n1" },
+          meta: { total_pages: 2, page_number: 1 },
         }),
       })
       .mockResolvedValueOnce({
@@ -230,7 +234,7 @@ describe("createTelnyxClient", () => {
         status: 200,
         json: async () => ({
           data: [{ id: "n2", phone_number: "+15550000002" }],
-          meta: { next: null },
+          meta: { total_pages: 2, page_number: 2 },
         }),
       })
     vi.stubGlobal("fetch", fetchMock)
@@ -241,7 +245,11 @@ describe("createTelnyxClient", () => {
     expect(result).toHaveLength(2)
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const [firstUrl] = fetchMock.mock.calls[0]
-    expect(firstUrl).toBe("https://api.telnyx.com/v2/phone_numbers")
+    expect(firstUrl).toBe(
+      "https://api.telnyx.com/v2/phone_numbers?page[size]=100&page[number]=1",
+    )
+    const [secondUrl] = fetchMock.mock.calls[1]
+    expect(secondUrl).toContain("page[number]=2")
   })
 })
 

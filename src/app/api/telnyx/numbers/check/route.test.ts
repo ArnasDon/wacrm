@@ -28,6 +28,20 @@ const getReputation = vi.fn(async (_n: string) => {
 vi.mock('@/lib/telnyx/api', () => ({
   createTelnyxClient: vi.fn(() => ({ lookupNumber, getReputation })),
   loadTelnyxApiKey: vi.fn(async () => 'key-1'),
+  reputationScore: (r: {
+    spam_risk?: string | null
+    maturity_score?: number | null
+    connection_score?: number | null
+    engagement_score?: number | null
+  } | null) => {
+    if (!r) return null
+    if (r.spam_risk === 'high') return 20
+    const scores = [r.maturity_score, r.connection_score, r.engagement_score].filter(
+      (s): s is number => typeof s === 'number',
+    )
+    if (scores.length === 0) return null
+    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+  },
 }))
 
 import { POST } from './route'

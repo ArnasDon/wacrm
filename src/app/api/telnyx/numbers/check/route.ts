@@ -4,9 +4,9 @@ import { normalizePhone, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import {
   createTelnyxClient,
   loadTelnyxApiKey,
+  reputationScore,
   TelnyxApiError,
   type NumberLookupResult,
-  type ReputationResult,
 } from '@/lib/telnyx/api'
 
 // ============================================================
@@ -19,9 +19,10 @@ import {
 //   - GET /v2/reputation/phone_numbers/{number} → { data: { reputation_data } }
 //     (el '+' del E.164 va URL-encoded como %2B en el path)
 //
-// Score de reputación (0-100): compuesto defensivo. Si Telnyx devuelve
+// Score de reputación (0-100): compuesto defensivo via reputationScore()
+// (helper compartido con /numbers/buy — si Telnyx devuelve
 // reputation_data, se promedian los scores reales; spam_risk 'high' fuerza
-// score bajo. DAD §3: score < 60 → bloqueo de compra. Sin datos de
+// score bajo). DAD §3: score < 60 → bloqueo de compra. Sin datos de
 // reputación → score null (no bloquea; falta monitoreo en Telnyx).
 // ============================================================
 
@@ -32,17 +33,6 @@ function carrierName(carrier: NumberLookupResult['carrier']): string | null {
     return carrier.name
   }
   return null
-}
-
-/** Score 0-100 defensivo desde reputation_data + spam_risk. */
-function reputationScore(r: ReputationResult | null): number | null {
-  if (!r) return null
-  if (r.spam_risk === 'high') return 20
-  const scores = [r.maturity_score, r.connection_score, r.engagement_score].filter(
-    (s): s is number => typeof s === 'number',
-  )
-  if (scores.length === 0) return null
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
 }
 
 export async function POST(req: NextRequest) {
@@ -96,6 +86,16 @@ export async function POST(req: NextRequest) {
           : undefined,
     })
   } catch (err) {
+    // Telnyx no configurado para la cuenta → 404 descriptivo, no un 500
+    // genérico. Chequeo por mensaje (no instanceof) porque el error puede
+    // cruzar límites de módulo/mock y perderse la instancia de la clase.
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('config not found')) {
+      return NextResponse.json(
+        { error: 'Telnyx is not configured for this account' },
+        { status: 404 },
+      )
+    }
     return toErrorResponse(err)
   }
 }

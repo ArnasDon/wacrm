@@ -53,6 +53,14 @@ function makeAdminMock() {
       if (table === 'messages') messages.push(payload)
       return b
     })
+    // Upsert (dedup de call.initiated): mismo comportamiento que insert para
+    // el mock — insertMode hace que el terminal devuelva la fila creada.
+    b.upsert = vi.fn((payload: Record<string, unknown>) => {
+      insertMode = true
+      const ctrl = (payload.telnyx_call_control_id as string) ?? 'new'
+      if (table === 'calls') callsByCtrl.set(ctrl, { ...payload })
+      return b
+    })
     b.update = vi.fn((payload: Record<string, unknown>) => {
       update = payload
       return b
@@ -277,7 +285,7 @@ describe('POST /api/telnyx/webhook', () => {
       call_leg_id: 'leg-rec-1',
       call_session_id: 'sess-rec-1',
       connection_id: 'ccapp-1',
-      recording_urls: { mp3: 'https://telnyx.example/rec.mp3' },
+      recording_urls: { mp3: 'https://media-cdn.telnyx.com/rec.mp3' },
     })
 
     expect(uploadedRecordings).toHaveLength(1)

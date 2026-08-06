@@ -37,9 +37,10 @@ curl -H "Authorization: Bearer TU_API_KEY" https://api.telnyx.com/v2/public_key
 ## Fase 1 — En Mission Control (dashboard de Telnyx)
 
 > La compra de números y la creación de la Call Control App / Messaging Profile
-> van por el dashboard — es la source of truth (`telnyx-config.tsx:22-24`;
-> `numbers/buy/route.ts` devuelve 501 a propósito: "number purchase is done from
-> the Telnyx dashboard"). El WACRM no los crea automáticamente.
+> van por el dashboard — es la source of truth (`telnyx-config.tsx:22-24`).
+> WACRM también puede comprar números vía API: `POST /api/telnyx/numbers/buy`
+> (`buy/route.ts` → `POST /v2/number_orders`, con gate de reputación score<60).
+> La compra inicial desde WACRM requiere `telnyx_config` con API key.
 
 1. **Comprar/portar el número** → Numbers → Buy. (No se compra desde WACRM.)
 2. **Crear un Messaging Profile** (Messaging → Profiles) y **asignarle el número**
@@ -178,12 +179,16 @@ seguimiento automático*.
    El test simulaba `to` como objeto (shape que la API nunca envía), por eso
    pasaba sin detectarlo. Fix: rama `Array.isArray` en `numStr()` + tests con
    shape real. Ver `git diff` de este commit.
-2. `numbers/check` es un stub (`score: 100` fijo) — la reputación del número
-   no está conectada a la API aún (documentado en DAD §3, Fase 1).
-3. `numbers/buy` = 501 intencional — compra solo desde el dashboard.
-4. `listPhoneNumbers` sin paginación (`api.ts:131-134`) — irrelevante para
-   single-account con 1-3 números (P3).
-5. `sendSms` envía `from` + `messaging_profile_id` juntos — aceptado por la
+ 2. ~~`numbers/check` es un stub (`score: 100` fijo)~~ — **resuelto**: `check/route.ts`
+    consulta `number_lookup` + `reputation` reales y calcula score defensivo
+    (spam_risk 'high' → 20; promedio de maturity/connection/engagement; `blocked`
+    si score < 60). DAD §3 implementado.
+ 3. ~~`numbers/buy` = 501 intencional~~ — **resuelto**: `buy/route.ts` compra vía
+    `POST /v2/number_orders` con el mismo gate score<60 que check y
+    `customer_reference` `wacrm-{accountId[:8]}`.
+ 4. ~~`listPhoneNumbers` sin paginación~~ — **resuelto**: pagina con
+    `page[number]`/`page[size]` siguiendo `meta.total_pages` (max 3 páginas).
+ 5. `sendSms` envía `from` + `messaging_profile_id` juntos — aceptado por la
    API (el profile es requerido solo para number pool / alphanumeric sender),
    pero conviene validar con un envío real de prueba (P3).
 6. `use-telnyx.ts:246-254`: el timeout de 15 s se limpia justo tras

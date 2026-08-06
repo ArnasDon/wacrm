@@ -66,6 +66,23 @@ export interface ReputationResult {
   engagement_score?: number | null
 }
 
+/**
+ * Score 0-100 defensivo desde reputation_data + spam_risk.
+ * Compartido entre /numbers/check y /numbers/buy para que el gate de
+ * compra (DAD §3: score < 60 → bloquea) NUNCA diverja entre rutas.
+ * - spam_risk 'high' → 20 (fuerza bloqueo).
+ * - Sin reputation_data o sin scores → null (no bloquea; falta monitoreo).
+ */
+export function reputationScore(r: ReputationResult | null): number | null {
+  if (!r) return null
+  if (r.spam_risk === 'high') return 20
+  const scores = [r.maturity_score, r.connection_score, r.engagement_score].filter(
+    (s): s is number => typeof s === 'number',
+  )
+  if (scores.length === 0) return null
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+}
+
 export interface NumberOrderInput {
   phoneNumber: string
   connectionId?: string
@@ -171,24 +188,28 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
     },
 
     async listPhoneNumbers() {
-      // Paginación: la API devuelve { data, meta: { next, total_count } }.
-      // Se siguen los `next` (hasta 3 saltos, límite defensivo) para no
-      // truncar la lista si algún día hay más de una página de números.
+      // Paginación real de Telnyx: GET /v2/phone_numbers acepta query
+      // params page[number]/page[size], y el response meta es
+      // { total_pages, total_results, page_number, page_size } — NO hay
+      // campo meta.next (verificado en developers.telnyx.com). Antes se
+      // leía json.meta?.next (siempre null) → solo se traía la página 1.
       const all: PhoneNumber[] = []
-      let nextPath: string | null = "/phone_numbers"
-      let hops = 0
-      const MAX_HOPS = 3
-      while (nextPath && hops < MAX_HOPS) {
-        hops += 1
-        // Anotación explícita: rompe el ciclo de inferencia
-        // (nextPath → path → json → nextPath) que TS detecta en el loop.
-        const path: string = nextPath
+      const PAGE_SIZE = 100
+      let page = 1
+      let totalPages: number | null = null
+      // Límite defensivo: nunca más de 3 requests (300 números).
+      const MAX_PAGES = 3
+      while (page <= (totalPages ?? MAX_PAGES) && page <= MAX_PAGES) {
         const json = await requestRaw<{
           data?: PhoneNumber[] | null
-          meta?: { next?: string | null } | null
-        }>(path)
+          meta?: {
+            total_pages?: number | null
+            page_number?: number | null
+          } | null
+        }>(`/phone_numbers?page[size]=${PAGE_SIZE}&page[number]=${page}`)
         all.push(...(json.data ?? []))
-        nextPath = json.meta?.next ?? null
+        totalPages = json.meta?.total_pages ?? null
+        page += 1
       }
       return all
     },

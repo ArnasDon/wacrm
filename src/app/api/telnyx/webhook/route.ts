@@ -137,32 +137,31 @@ async function resolveAccountId(
 async function onCallInitiated(admin: Admin, accountId: string, p: Payload) {
   const ctrl = p.call_control_id
   if (!ctrl) return
-  // Insert dedup manual: la reentrega de Telnyx no debe duplicar la fila.
-  // (un upsert con onConflict era frágil de tipar en el cliente untyped;
-  // la carrera de doble entrega simultánea es aceptable best-effort.)
-  const { data: existing } = await admin
+  // Upsert atómico sobre telnyx_call_control_id (UNIQUE constraint
+  // calls_telnyx_call_control_id_key, verificada en schema). Antes era un
+  // select+insert manual: dos reentregas simultáneas de Telnyx podían
+  // insertar filas duplicadas (race). on_conflict no-op si ya existe →
+  // la reentrega nunca duplica; a lo sumo la fila ya iniciada gana.
+  const contact =
+    p.direction !== 'outbound'
+      ? await findContactByPhone(admin, accountId, numStr(p.from))
+      : null
+  await admin
     .from('calls')
-    .select('id')
-    .eq('telnyx_call_control_id', ctrl)
-    .eq('account_id', accountId)
-    .maybeSingle()
-  if (!existing) {
-    // Inbound: resolver contact_id desde el número llamante para que la
-    // lista de llamadas del sidebar (contact_id) muestre el historial real.
-    const contact =
-      p.direction !== 'outbound' ? await findContactByPhone(admin, accountId, numStr(p.from)) : null
-    await admin.from('calls').insert({
-      account_id: accountId,
-      contact_id: contact?.id ?? null,
-      direction: p.direction === 'outbound' ? 'outbound' : 'inbound',
-      status: 'initiated',
-      from_number: numStr(p.from),
-      to_number: numStr(p.to),
-      telnyx_call_control_id: ctrl,
-      telnyx_call_leg_id: p.call_leg_id ?? null,
-      telnyx_call_session_id: p.call_session_id ?? null,
-    })
-  }
+    .upsert(
+      {
+        account_id: accountId,
+        contact_id: contact?.id ?? null,
+        direction: p.direction === 'outbound' ? 'outbound' : 'inbound',
+        status: 'initiated',
+        from_number: numStr(p.from),
+        to_number: numStr(p.to),
+        telnyx_call_control_id: ctrl,
+        telnyx_call_leg_id: p.call_leg_id ?? null,
+        telnyx_call_session_id: p.call_session_id ?? null,
+      },
+      { onConflict: 'telnyx_call_control_id', ignoreDuplicates: true },
+    )
   // La señal de "ringing" llega como segundo event por el mismo leg.
   await admin
     .from('calls')
@@ -266,6 +265,33 @@ async function onRecordingSaved(admin: Admin, accountId: string, p: Payload) {
     return
   }
 
+  // SSRF guard: Telnyx firma la URL de media en el payload del webhook,
+  // pero el webhook puede apuntar a cualquier host si el payload fuera
+  // manipulado. Solo descargamos desde https: sobre el dominio oficial de
+  // grabaciones de Telnyx (media-cdn.telnyx.com / recordings.telnyx.com).
+  // Además limitamos el tamaño para evitar un DoS por un archivo enorme.
+  const URL_MAX_MP3_BYTES = 200 * 1024 * 1024 // 200 MB (línea defensiva)
+  const TELNYX_MEDIA_HOSTS = new Set([
+    'media-cdn.telnyx.com',
+    'recordings.telnyx.com',
+  ])
+  let mp3Url: URL | null = null
+  try {
+    mp3Url = new URL(mp3)
+  } catch {
+    console.warn('[telnyx:webhook] recording URL no válida, ignorado')
+    return
+  }
+  if (
+    mp3Url.protocol !== 'https:' ||
+    !TELNYX_MEDIA_HOSTS.has(mp3Url.hostname)
+  ) {
+    console.warn(
+      `[telnyx:webhook] recording URL host no permitido: ${mp3Url.hostname}, ignorado`,
+    )
+    return
+  }
+
   // Matchear la fila de calls por leg/session/control id (el payload de
   // Telnyx no trae el id de nuestra fila).
   const legId = p.call_leg_id ?? null
@@ -292,13 +318,22 @@ async function onRecordingSaved(admin: Admin, accountId: string, p: Payload) {
     return
   }
 
-  // Descargar el mp3 (URL temporal firmada de Telnyx).
-  const res = await fetch(mp3, { cache: 'no-store' })
+  // Descargar el mp3 (URL temporal firmada de Telnyx, host verificado arriba).
+  const res = await fetch(mp3Url.toString(), { cache: 'no-store' })
   if (!res.ok) {
     console.error('[telnyx:webhook] descarga de grabación falló:', res.status)
     return
   }
+  const contentLength = Number(res.headers?.get?.('content-length') ?? 0)
+  if (contentLength > URL_MAX_MP3_BYTES) {
+    console.error('[telnyx:webhook] grabación excede tamaño máximo, ignorado')
+    return
+  }
   const buffer = Buffer.from(await res.arrayBuffer())
+  if (buffer.byteLength > URL_MAX_MP3_BYTES) {
+    console.error('[telnyx:webhook] grabación excede tamaño máximo, ignorado')
+    return
+  }
 
   const path = buildMediaPath(accountId, 'recording.mp3')
   const { error: upErr } = await admin.storage

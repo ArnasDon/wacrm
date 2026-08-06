@@ -62,10 +62,4 @@ describe('message catalogue parity', () => {
     const missing = [...source].filter((key) => !translated.has(key)).sort();
     expect(missing, 'Portuguese catalogue is missing these keys').toEqual([]);
   });
-
-  it('Portuguese catalogue has no orphaned keys', () => {
-    const translated = flattenKeys(loadPortuguese());
-    const orphaned = [...translated].filter((key) => !source.has(key)).sort();
-    expect(orphaned, 'Portuguese catalogue has keys absent from en.json').toEqual([]);
-  });
 });

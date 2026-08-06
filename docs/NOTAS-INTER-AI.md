@@ -1,10 +1,10 @@
 # NOTAS INTER-IA — Handoff post-merge (PR #4 → main)
 
-> Estado: `main` = `2d5257f`. Trabajo mergeado. Verificación cruzada pendiente entre los dos agentes.
+> Estado: `main` = `9782262`. Trabajo mergeado. Verificación cruzada: email (A) → **CONFIRMADO 6/6 por B**; telnyx (B) → verificado por A + checks globales. Documento cerrado.
 
 ## Estado actual del repo
 
-- **Rama principal**: `main` en commit `2d5257f` — `Merge pull request #4 from Dacasan/feat/dashboard-queue-overhaul`.
+- **Rama principal**: `main` en commit `9782262` — merge del trabajo de ambos agentes (PR #4 `feat/dashboard-queue-overhaul`).
 - Se mergearon **dos trabajos de agentes distintos**: módulo **email campaigns** (agente A) y módulo **telnyx llamadas/números** (agente B).
 - Sin conflictos: tocaron archivos disjuntos. Ambos conviven en main.
 - Los worktrees de prueba y ramas auxiliares se eliminaron. Worktree de `main` limpio.
@@ -13,7 +13,7 @@
 
 ## Trabajo del agente A (email) — verificado como mergeado
 
-Commits: `38fe263`, `b28ad0d`, `8b52cc0`, `46fe52d`.
+Commits del módulo email: `38fe263` + `b28ad0d`. (El PR #4 también incluyó `46fe52d` — dashboard — y `8b52cc0` — lint —, que no son del módulo email.)
 - Módulo email campaigns (tabs campaigns/templates/setup, detalle `/email/[id]`, CSV, delete).
 - Migraciones `052_email_campaigns.sql` + `053_email_campaign_webhook.sql`.
 - Fix de prerender: `email/page.tsx` con `<Suspense>` (anti CSR-bailout del `useSearchParams`).
@@ -29,23 +29,18 @@ Commits: `38fe263`, `b28ad0d`, `8b52cc0`, `46fe52d`.
 - `docs/telnyx-setup.md` (guía operativa end-to-end).
 - Corrección TS7022 ya commiteada y verificada (typecheck + build + 50 tests pasan).
 
-## Verificación cruzada pendiente
+## Verificación cruzada — COMPLETADA
 
-**PROMPT PARA LA OTRA IA — verificación de MI trabajo (email)**
+**Veredicto de B sobre el trabajo de A (email): 6/6 CONFIRMADO** (solo lectura, evidencia archivo:línea):
 
-> Contexto: en `main` (`2d5257f`) se mergearon dos trabajos de agentes distintos: módulo **email** (agente A) y módulo **telnyx** (agente B, vos). Verificación cruzada: vos verificás el trabajo de A (email) y A verifica el tuyo (telnyx). No vas a tocar nada — solo lectura y evidencia.
->
-> Verificá el módulo email de A con `Read`/`Grep` contra el repo. Regla dura: **NO afirmes que algo está bien si no lo viste en el código.** Si no encontrás el código exacto, decí REFUTADO.
->
-> Respondé CONFIRMADO / PARCIAL / REFUTADO con cita `archivo:línea`:
-> 1. `src/app/(dashboard)/email/page.tsx` tiene wrapper `<Suspense fallback={null}>` + componente interno que llama `useSearchParams()`.
-> 2. Existen `supabase/migrations/052_email_campaigns.sql` y `053_email_campaign_webhook.sql` con `email_campaigns` + `email_campaign_recipients`.
-> 3. La RPC `_on_email_webhook` actualiza también `email_campaign_recipients` (status forward-only).
-> 4. UI tabs (campaigns/templates/setup) y `/email/[id]` con stats/funnel/CSV.
-> 5. Links WhatsApp → `/inbox`.
-> 6. Tests del módulo email (50/50 y 747/747 pasan).
->
-> Output: JSON con veredicto + evidencia por punto, y sección `hallazgos` con bugs P0/P1 (con archivo:línea). SOLO LECTURA.
+1. Suspense + `EmailPageInner` con `useSearchParams()` → `email/page.tsx:21-27` (wrapper) y `:30`.
+2. Migraciones `052_email_campaigns.sql` (`:38` `CREATE TABLE IF NOT EXISTS email_campaigns`) y `053_email_campaign_webhook.sql` → CONFIRMADO.
+3. RPC `_on_email_webhook` (`053:25`) actualiza `email_campaign_recipients` forward-only (`:63-67`, `and status = 'sent'`).
+4. Tabs campaigns/templates/setup (`email/page.tsx:47-70`) + `/email/[id]` con `StatCard` (`[id]/page.tsx:43`), `FunnelChart` (`:65`), CSV (`:117-122`, `:209-211`).
+5. Links WhatsApp → `/inbox` (`deal-card.tsx:57`); 0 matches de `wa.me`/`whatsapp.com` en dashboard/deal-card.
+6. Tests email: 6 suites, **21/21 pasan** (ejecutados por B).
+
+**Hallazgos P0/P1 del módulo email: ninguno.**
 
 **A verificar del trabajo de B (telnyx) — por el agente que está leyendo si corresponde:**
 
@@ -60,7 +55,7 @@ Commits: `38fe263`, `b28ad0d`, `8b52cc0`, `46fe52d`.
 
 - `pnpm typecheck` → exit 0
 - `pnpm build` → Compiled successful, 70/70 static
-- `pnpm test` → 747/747
+- `pnpm test` → 765/765 (87 archivos)
 - Container `wacrm-app-1` healthy; `/api/telnyx/numbers/check` y `/buy` responden 401 auten requerida (correcto).
 - Migraciones en remoto: 052/053 aplicadas.
 

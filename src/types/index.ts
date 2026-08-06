@@ -460,7 +460,15 @@ export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
 export interface KeywordMatchTriggerConfig {
   keywords: string[];
-  match_type: 'exact' | 'contains';
+  /**
+   * `contains` (the default) is a raw substring test, so a short keyword
+   * matches inside longer words — "k" fires on "thanks". `word` is the
+   * boundary-aware alternative added for issue #409; see
+   * `matchesWholeWord` in `@/lib/automations/engine` for its exact
+   * semantics. Flows carry their own keyword config and stay
+   * substring-only (`@/lib/flows/types`).
+   */
+  match_type: 'exact' | 'contains' | 'word';
   case_sensitive?: boolean;
 }
 

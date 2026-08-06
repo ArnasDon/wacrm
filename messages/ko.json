@@ -216,7 +216,25 @@
       "interactiveReply": "[인터랙티브 응답]",
       "unsupported": "[지원되지 않는 메시지 형식]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함"
+      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
+      "download": "다운로드",
+      "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
+      "viewImage": "이미지 보기",
+      "expandVideo": "동영상 확대",
+      "imageAlt": "공유된 이미지"
+    },
+    "mediaViewer": {
+      "counter": "{total}개 중 {index}번째",
+      "previous": "이전",
+      "next": "다음",
+      "zoomIn": "실제 크기로 보기",
+      "zoomOut": "화면에 맞추기",
+      "openOriginal": "원본 열기",
+      "download": "다운로드",
+      "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
+      "failed": "이 첨부파일은 더 이상 사용할 수 없습니다",
+      "imageAlt": "공유된 이미지",
+      "you": "나"
     },
     "actions": {
       "reply": "답장",
@@ -972,6 +990,8 @@
         "placeholderBody": "{\"id\": \"{{ contact.id }}\"}",
         "matchType": "일치 유형",
         "matchContains": "포함",
+        "matchWord": "단어 단위 일치",
+        "matchWordHint": "키워드가 독립된 단어일 때만 일치하므로 \"k\"가 \"thanks\"에서 실행되지 않습니다. 공백으로 단어를 구분하는 언어의 짧은 키워드에 적합하며, 공백 없이 표기하는 언어에는 \"포함\"을 사용하세요.",
         "matchExact": "정확히 일치",
         "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
       }

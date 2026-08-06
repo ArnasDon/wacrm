@@ -27,6 +27,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "packageManager": "npm@10.9.9",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -50,13 +51,13 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.27.0",
+    "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
     "opus-recorder": "^8.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.9.2",
+    "recharts": "^3.10.1",
     "shadcn": "^4.11.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
@@ -77,10 +78,13 @@
   },
   "overrides": {
     "postcss": "^8.5.10",
-    "ip-address": "^10.1.1",
-    "fast-uri": "^3.1.2",
-    "hono": "^4.12.25",
+    "ip-address": "^10.3.1",
+    "fast-uri": "^3.1.5",
+    "hono": "^4.12.34",
     "js-yaml": "^4.2.0",
-    "@babel/core": "^7.29.6"
+    "@babel/core": "^7.29.6",
+    "sharp": "^0.35.3",
+    "brace-expansion@^1.0.0": "^1.1.18",
+    "brace-expansion@^5.0.0": "^5.0.9"
   }
 }

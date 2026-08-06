@@ -249,6 +249,18 @@ describe("validateTriggerForActivation", () => {
     ).toEqual([]);
   });
 
+  it("accepts the word match_type (issue #409)", () => {
+    // Activation validation has to stay in step with the engine and the
+    // builder's dropdown — an automation the UI can save must not be
+    // rejected on activation.
+    expect(
+      validateTriggerForActivation("keyword_match", {
+        keywords: ["hi"],
+        match_type: "word",
+      }),
+    ).toEqual([]);
+  });
+
   it("requires schedule on time_based triggers", () => {
     expect(validateTriggerForActivation("time_based", {})).toEqual([
       { path: "trigger.schedule", message: "schedule is required" },

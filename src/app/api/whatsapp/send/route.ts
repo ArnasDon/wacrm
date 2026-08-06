@@ -12,6 +12,8 @@ import {
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
 
+const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000
+
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
 // `conversation_id` (inbox) or a `contact_id` (Contact detail →
@@ -19,8 +21,8 @@ import {
 // → send → persist → pause flows) lives in the shared
 // `sendMessageToConversation` core, which the public `/api/v1/messages`
 // endpoint reuses. This route is a thin adapter: resolve the
-// conversation, delegate, then map `SendMessageError` back onto the
-// dashboard's internal `{ error }` shape.
+// conversation, enforce Meta's customer-service window, delegate, then map
+// `SendMessageError` back onto the dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
   try {
     // Requires the 'agent' role, matching both `canSendMessages` and the
@@ -148,6 +150,54 @@ export async function POST(request: Request) {
       )
     }
 
+    // Meta only accepts free-form text, media and interactive messages while
+    // the 24-hour customer-service window is open. Approved templates are
+    // the only business-initiated message type allowed outside that window.
+    if (message_type !== 'template') {
+      const { data: lastCustomerMessage, error: windowError } = await supabase
+        .from('messages')
+        .select('created_at')
+        .eq('conversation_id', conversationId)
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (windowError) {
+        console.error('Failed to check WhatsApp service window:', windowError)
+        return NextResponse.json(
+          { error: 'Failed to verify the WhatsApp service window' },
+          { status: 500 }
+        )
+      }
+
+      const lastCustomerMessageAt = lastCustomerMessage?.created_at
+        ? new Date(lastCustomerMessage.created_at).getTime()
+        : null
+      const windowExpiresAt = lastCustomerMessageAt
+        ? lastCustomerMessageAt + CUSTOMER_SERVICE_WINDOW_MS
+        : null
+      const windowOpen =
+        windowExpiresAt !== null &&
+        Number.isFinite(windowExpiresAt) &&
+        Date.now() < windowExpiresAt
+
+      if (!windowOpen) {
+        return NextResponse.json(
+          {
+            error:
+              'The 24-hour WhatsApp customer-service window is closed. Send an approved template and wait for the customer to reply before sending a free-form message.',
+            code: 'customer_service_window_closed',
+            requires_template: true,
+            window_expires_at: windowExpiresAt
+              ? new Date(windowExpiresAt).toISOString()
+              : null,
+          },
+          { status: 409 }
+        )
+      }
+    }
+
     // Delegate to the shared send core (validates, sends to Meta with
     // phone-variant retry, persists, pauses active flow runs). Its
     // `SendMessageError` carries a machine code + HTTP status; the
@@ -175,7 +225,7 @@ export async function POST(request: Request) {
     } catch (err) {
       if (err instanceof SendMessageError) {
         return NextResponse.json(
-          { error: err.message },
+          { error: err.message, code: err.code },
           { status: err.status }
         )
       }

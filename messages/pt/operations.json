@@ -1,0 +1,434 @@
+{
+  "Automations": {
+    "list": {
+      "title": "Automações",
+      "subtitle": "Crie processos que reagem automaticamente a eventos do WhatsApp®.",
+      "create": "Criar automação",
+      "retry": "Tentar novamente",
+      "templatesTitle": "Modelos de início rápido",
+      "emptyTitle": "Ainda não há automações",
+      "emptyDesc": "Escolha um modelo acima ou crie uma automação de raiz.",
+      "runs": "{count} execução",
+      "runsPlural": "{count} execuções",
+      "lastRun": "última {time}",
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "edit": "Editar",
+      "duplicate": "Duplicar",
+      "viewLogs": "Ver registos",
+      "delete": "Eliminar",
+      "cancel": "Cancelar",
+      "deleteTitle": "Eliminar automação",
+      "deleteDesc": "Isto removerá definitivamente {name} e o seu histórico de execução. A acção não pode ser anulada.",
+      "toasts": {
+        "activated": "Automação activada",
+        "paused": "Automação suspensa",
+        "duplicated": "Automação duplicada",
+        "deleted": "Automação eliminada",
+        "updateError": "Não foi possível actualizar",
+        "duplicateError": "Não foi possível duplicar",
+        "deleteError": "Não foi possível eliminar"
+      }
+    },
+    "edit": {
+      "loading": "A carregar...",
+      "loadError": "Não foi possível carregar ({status})",
+      "back": "Voltar às automações"
+    },
+    "logs": {
+      "title": "Registos de execução",
+      "loadError": "Não foi possível carregar os registos",
+      "emptyTitle": "Ainda não há execuções",
+      "emptyDesc": "Active esta automação para ver as execuções aqui.",
+      "unknownContact": "Contacto desconhecido",
+      "step": "{count} passo",
+      "stepPlural": "{count} passos",
+      "noSteps": "Não foram registados passos.",
+      "status": {
+        "success": "sucesso",
+        "partial": "parcial",
+        "failed": "falhou"
+      },
+      "back": "Voltar",
+      "backAria": "Voltar"
+    },
+    "builder": {
+      "steps": {
+        "send_message": "Enviar mensagem",
+        "send_buttons": "Enviar botões",
+        "send_list": "Enviar lista",
+        "send_template": "Enviar modelo",
+        "add_tag": "Adicionar etiqueta",
+        "remove_tag": "Remover etiqueta",
+        "assign_conversation": "Atribuir conversa",
+        "update_contact_field": "Actualizar campo do contacto",
+        "create_deal": "Criar negócio",
+        "wait": "Aguardar",
+        "condition": "Condição (Se/Senão)",
+        "send_webhook": "Enviar webhook",
+        "close_conversation": "Encerrar conversa"
+      },
+      "triggers": {
+        "new_message_received": {
+          "label": "Nova mensagem recebida",
+          "hint": "Qualquer mensagem recebida"
+        },
+        "first_inbound_message": {
+          "label": "Primeira mensagem do contacto",
+          "hint": "Primeira vez que este contacto envia uma mensagem, incluindo contactos adicionados manualmente"
+        },
+        "keyword_match": {
+          "label": "Correspondência de palavra-chave",
+          "hint": "A mensagem contém determinadas palavras-chave"
+        },
+        "interactive_reply": {
+          "label": "Resposta de botão ou lista",
+          "hint": "O cliente toca num botão ou numa linha de lista cujo identificador corresponde; permite encadear menus entre automações"
+        },
+        "new_contact_created": {
+          "label": "Novo contacto criado",
+          "hint": "Quando um contacto é criado automaticamente a partir de uma mensagem recebida"
+        },
+        "conversation_assigned": {
+          "label": "Conversa atribuída",
+          "hint": "Quando uma conversa é atribuída a um agente"
+        },
+        "tag_added": {
+          "label": "Etiqueta adicionada",
+          "hint": "Quando uma etiqueta é adicionada a um contacto"
+        },
+        "time_based": {
+          "label": "Baseado no tempo",
+          "hint": "Segundo um horário recorrente"
+        }
+      },
+      "trigger": "Disparador",
+      "triggerType": "Tipo de disparador",
+      "keywords": "Palavras-chave",
+      "keywordsHint": "Lista separada por vírgulas, por exemplo: olá, ajuda, comprar",
+      "replyIds": "Identificadores de resposta",
+      "replyIdsHint": "sim, nao, mais_informacoes",
+      "replyIdsHelp": "Identificadores exactos, separados por vírgulas, dos botões ou linhas da lista. Utilize os mesmos identificadores definidos no passo Enviar botões ou Enviar lista.",
+      "schedule": "Horário",
+      "scheduleHint": "Expressão cron, por exemplo: 0 9 * * 1-5",
+      "active": "Activa",
+      "activeAria": "Activa",
+      "save": "Guardar",
+      "saveDraft": "Guardar rascunho",
+      "untitled": "Automação sem título",
+      "backToAutomations": "Voltar às automações",
+      "toasts": {
+        "saved": "Automação guardada",
+        "created": "Automação criada",
+        "saveFailed": "Não foi possível guardar"
+      },
+      "tags": {
+        "select": "Seleccionar etiqueta…",
+        "placeholder": "Identificador da etiqueta",
+        "unknown": "{id} (etiqueta desconhecida)"
+      },
+      "fields": {
+        "name": "Nome",
+        "email": "E-mail",
+        "company": "Empresa",
+        "customFields": "Campos personalizados",
+        "unknown": "{id} (campo desconhecido)"
+      },
+      "agents": {
+        "select": "Seleccionar agente…",
+        "placeholder": "Identificador do agente",
+        "unknown": "{id} (agente desconhecido)"
+      },
+      "pipelines": {
+        "pipelineLabel": "Funil",
+        "pipelineIdLabel": "Identificador do funil",
+        "stageLabel": "Etapa",
+        "stageIdLabel": "Identificador da etapa",
+        "selectPipeline": "Seleccionar funil…",
+        "selectStage": "Seleccionar etapa…",
+        "selectPipelineFirst": "Seleccione primeiro um funil…",
+        "unknownPipeline": "{id} (funil desconhecido)",
+        "unknownStage": "{id} (etapa desconhecida)"
+      },
+      "templates": {
+        "templateLabel": "Modelo",
+        "templateNameLabel": "Nome do modelo",
+        "languageLabel": "Idioma",
+        "select": "Seleccionar modelo…",
+        "unknown": "{name} ({lang}) — não consta da lista de aprovados",
+        "unknownLang": "desconhecido"
+      },
+      "branches": {
+        "yes": "Sim",
+        "no": "Não"
+      },
+      "addStep": "Adicionar passo",
+      "config": {
+        "messageText": "Texto da mensagem",
+        "placeholderMessageText": "Olá! Obrigado por entrar em contacto…",
+        "tagLabel": "Etiqueta",
+        "modeLabel": "Modo",
+        "modes": {
+          "round_robin": "Distribuição rotativa",
+          "specific": "Agente específico"
+        },
+        "agentLabel": "Agente",
+        "fieldLabel": "Campo",
+        "valueLabel": "Valor",
+        "placeholderValue": "Texto ou {{ vars.x }} / {{ message.text }}",
+        "titleLabel": "Título",
+        "amountLabel": "Montante",
+        "unitLabel": "Unidade",
+        "units": {
+          "minutes": "Minutos",
+          "hours": "Horas",
+          "days": "Dias"
+        },
+        "subjectLabel": "Assunto",
+        "subjects": {
+          "tag_presence": "Presença de etiqueta",
+          "contact_field": "Campo do contacto",
+          "message_content": "Conteúdo da mensagem",
+          "time_of_day": "Hora do dia"
+        },
+        "operandLabel": "Operando",
+        "placeholderTime": "HH:mm-HH:mm",
+        "placeholderContact": "nome / e-mail / empresa",
+        "placeholderTag": "identificador da etiqueta",
+        "urlLabel": "URL",
+        "headersLabel": "Cabeçalhos",
+        "placeholderHeaders": "{\"Authorization\": \"Bearer ...\"}",
+        "bodyTemplateLabel": "Modelo do corpo",
+        "placeholderBody": "{\"id\": \"{{ contact.id }}\"}",
+        "matchType": "Tipo de correspondência",
+        "matchContains": "Contém",
+        "matchWord": "Palavra completa",
+        "matchWordHint": "Corresponde à palavra-chave apenas quando surge isolada, para que, por exemplo, “k” não seja activado em “obrigado”. É indicado para palavras curtas em idiomas separados por espaços; utilize Contém para idiomas escritos sem espaços.",
+        "matchExact": "Exacta",
+        "closeConversationHint": "Define o estado da conversa como \"encerrada\". Não é necessária configuração."
+      }
+    }
+  },
+  "Flows": {
+    "list": {
+      "title": "Fluxos",
+      "beta": "Beta",
+      "description": "Crie conversas ramificadas no WhatsApp, orientadas por botões. Útil para menus, perguntas frequentes e triagem antes da intervenção humana.",
+      "newFlow": "Novo fluxo",
+      "statusDraft": "Rascunho",
+      "statusActive": "Activo",
+      "statusArchived": "Arquivado",
+      "loadError": "Não foi possível carregar os fluxos.",
+      "createError": "Não foi possível criar o fluxo.",
+      "cloneError": "Não foi possível duplicar",
+      "deleteConfirm": "Eliminar \"{name}\"? Todas as execuções activas terminarão imediatamente.",
+      "deleteSuccess": "Fluxo eliminado.",
+      "deleteError": "Não foi possível eliminar o fluxo.",
+      "emptyTitle": "Ainda não há fluxos",
+      "emptyDesc": "Crie a primeira conversa: um menu de boas-vindas, consulta de encomendas ou perguntas frequentes. Os clientes tocam nos botões e o sistema encaminha-os para a resposta ou agente adequado.",
+      "createFirst": "Criar o primeiro fluxo",
+      "createTitle": "Criar novo fluxo",
+      "createDesc": "Comece com um modelo ou crie de raiz.",
+      "startTemplate": "Começar com um modelo",
+      "nodeCount": "{count} {count, plural, =1 {nó} other {nós}}",
+      "startBlank": "Ou começar vazio",
+      "placeholderName": "por exemplo, Menu de boas-vindas",
+      "cancel": "Cancelar",
+      "createBlank": "Criar fluxo vazio",
+      "runCount": "{count} {count, plural, =1 {execução} other {execuções}}",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "triggerKeywordNone": "Activado por palavra-chave (nenhuma definida)",
+      "triggerKeyword": "Activado por: {keywords}",
+      "triggerFirstInbound": "Activado na primeira mensagem recebida de um contacto",
+      "triggerManual": "Activação manual"
+    },
+    "edit": {
+      "notFound": "Fluxo não encontrado.",
+      "backToFlows": "← Voltar aos fluxos",
+      "loadError": "Não foi possível carregar o fluxo."
+    },
+    "logs": {
+      "title": "Execuções",
+      "description": "As 50 execuções mais recentes deste fluxo. Expanda uma linha para ver o registo de cada passo do motor.",
+      "emptyState": "Ainda não há execuções. Active o fluxo a partir de um número pessoal do WhatsApp para o ver aqui.",
+      "loadError": "Não foi possível carregar as execuções.",
+      "unknownContact": "Contacto desconhecido",
+      "atNode": "no nó {node}",
+      "started": "Iniciada {time}",
+      "reprompts": "{count} novas solicitações",
+      "ranFor": "executada durante {duration}",
+      "capturedVars": "Variáveis recolhidas ({count})",
+      "noEvents": "Não foram registados eventos nesta execução.",
+      "statusActive": "Activa",
+      "statusCompleted": "Concluída",
+      "statusHandedOff": "Transferida",
+      "statusTimedOut": "Tempo esgotado",
+      "statusPaused": "Suspensa pelo agente",
+      "statusFailed": "Falhou"
+    },
+    "builder": {
+      "triggerTitle": "Disparador",
+      "whenLabel": "Quando…",
+      "triggerKeywordTitle": "Uma mensagem contém uma palavra-chave",
+      "triggerFirstInboundTitle": "Primeira mensagem recebida do cliente",
+      "triggerManualTitle": "Apenas manual, sem activação automática",
+      "keywordsLabel": "Palavras-chave separadas por vírgulas",
+      "keywordsPlaceholder": "apoio, ajuda, olá",
+      "entryNodeTitle": "Nó de entrada:",
+      "entryNodePlaceholder": "Escolher o primeiro nó…",
+      "nodesTitle": "Nós ({count})",
+      "nodesEmpty": "Adicione um nó <strong>Início</strong>, depois um nó <strong>Enviar botões</strong> e, por fim, uma <strong>Transferência</strong>. Esta é a estrutura de um menu de boas-vindas.",
+      "addNode": "Adicionar nó",
+      "setAsEntry": "Definir como entrada",
+      "removeNode": "Remover nó",
+      "showAdvanced": "Mostrar opções avançadas",
+      "hideAdvanced": "Ocultar opções avançadas",
+      "nodeKeyLabel": "Chave do nó, identificador interno que deve permanecer estável para análise",
+      "replyIdsHint": "Os identificadores de resposta de cada opção são apresentados acima. São devolvidos pelo WhatsApp quando o cliente toca; normalmente não precisa de os alterar.",
+      "badgeEntry": "Entrada",
+      "noNodesYet": "Ainda não há nós.",
+      "deleteNode": "Eliminar nó",
+      "canvasView": "Tela",
+      "listView": "Lista",
+      "noNodeSelected": "Nenhum nó seleccionado",
+      "noNodeDesc": "Seleccione um nó na tela para editar a sua configuração.",
+      "form": {
+        "advancesTo": "Avança para",
+        "textToCustomer": "Texto enviado ao cliente",
+        "promptToCustomer": "Pergunta enviada ao cliente",
+        "varKeyLabel": "Chave da variável, guardada em flow_runs.vars; letras, números e sublinhado",
+        "varKeyPlaceholder": "por exemplo, nome, email, empresa",
+        "varKeyHelp": "Utilize-a em perguntas seguintes e notas de transferência com",
+        "advanceAfterCapture": "Depois de recolher, avançar para",
+        "internalNote": "Nota interna para o agente que assumir",
+        "endNodeHelp": "Nó terminal. Quando o motor chega a este nó, a execução é marcada como concluída. Não requer configuração.",
+        "bodyText": "Texto do corpo",
+        "footerText": "Rodapé opcional, até 60 caracteres",
+        "buttonsHelp": "Botões, entre 1 e 3; cada um encaminha para um nó seguinte diferente",
+        "optionTitlePlaceholder": "Título visível, até 20 caracteres",
+        "nextNodePlaceholder": "Nó seguinte…",
+        "addButton": "Adicionar botão",
+        "buttonLabel": "Texto do botão que abre a lista, até 20 caracteres",
+        "rowsHelp": "Linhas, entre 1 e 10 no total das secções",
+        "sectionTitlePlaceholder": "Título da secção {count}, opcional",
+        "rowTitlePlaceholder": "Título da linha, até 24 caracteres",
+        "addRow": "Adicionar linha",
+        "addSection": "Adicionar secção",
+        "ifLabel": "Se",
+        "capturedVariable": "Variável recolhida",
+        "contactHasTag": "O contacto tem a etiqueta",
+        "contactField": "Campo do contacto",
+        "varName": "nome da variável",
+        "tagLabel": "Etiqueta",
+        "fieldLabel": "Campo",
+        "pickTag": "Escolher etiqueta…",
+        "pickField": "Escolher campo…",
+        "operatorLabel": "Operador",
+        "isPresent": "está presente",
+        "isAbsent": "está ausente",
+        "equals": "é igual a",
+        "contains": "contém",
+        "valueLabel": "Valor",
+        "ifTrueAdvance": "Se verdadeiro → avançar para",
+        "ifFalseAdvance": "Se falso → avançar para",
+        "actionLabel": "Acção",
+        "addTag": "Adicionar etiqueta",
+        "removeTag": "Remover etiqueta",
+        "tagUuidPlaceholder": "UUID da etiqueta",
+        "thenAdvanceTo": "Depois, avançar para",
+        "mediaTypeLabel": "Tipo de média",
+        "imageLabel": "Imagem, PNG, JPEG ou WebP",
+        "videoLabel": "Vídeo, MP4 ou 3GP",
+        "documentLabel": "Documento, PDF, Word, Excel, PowerPoint ou TXT",
+        "fileLabel": "Ficheiro",
+        "removeFile": "Remover ficheiro",
+        "uploading": "A carregar…",
+        "clickToUpload": "Clique para carregar, máximo 16 MB",
+        "captionLabel": "Legenda opcional, apresentada por baixo da média",
+        "filenameLabel": "Nome do ficheiro apresentado ao cliente, apenas para documentos",
+        "filenamePlaceholder": "factura.pdf",
+        "advanceAfterSending": "Depois de enviar, avançar para",
+        "pickNextNode": "Escolher nó seguinte…",
+        "none": "— Nenhum —"
+      },
+      "categories": {
+        "messaging": "Mensagens",
+        "logic": "Lógica e dados",
+        "flow": "Controlo do fluxo"
+      },
+      "nodes": {
+        "start": {
+          "label": "Início",
+          "blurb": "Ponto de entrada do fluxo"
+        },
+        "send_message": {
+          "label": "Enviar mensagem",
+          "blurb": "Envia uma mensagem de texto pelo WhatsApp"
+        },
+        "send_buttons": {
+          "label": "Enviar botões",
+          "blurb": "Envia botões de resposta rápida"
+        },
+        "send_list": {
+          "label": "Enviar lista",
+          "blurb": "Envia uma lista de opções seleccionável"
+        },
+        "send_media": {
+          "label": "Enviar média",
+          "blurb": "Envia uma imagem, vídeo ou documento"
+        },
+        "collect_input": {
+          "label": "Recolher resposta",
+          "blurb": "Faz uma pergunta e guarda a resposta"
+        },
+        "condition": {
+          "label": "Se / senão",
+          "blurb": "Cria ramificações com base numa regra"
+        },
+        "set_tag": {
+          "label": "Etiquetar contacto",
+          "blurb": "Adiciona ou remove uma etiqueta do contacto"
+        },
+        "handoff": {
+          "label": "Transferir para agente",
+          "blurb": "Entrega a conversa a uma pessoa"
+        },
+        "end": {
+          "label": "Fim",
+          "blurb": "Termina o fluxo"
+        }
+      }
+    },
+    "validation": {
+      "noIssues": "Sem problemas. Pronto para activar.",
+      "summary": "{errorCount} {errorCount, plural, =1 {erro} other {erros}}, {warningCount} {warningCount, plural, =1 {aviso} other {avisos}}",
+      "jumpToNode": "Ir para o nó {key}"
+    },
+    "editorState": {
+      "saved": "Guardado.",
+      "fixIssues": "Corrija os problemas abaixo antes de activar.",
+      "statusActivated": "Fluxo activado.",
+      "statusArchived": "Arquivado.",
+      "statusDraft": "Guardado como rascunho."
+    },
+    "summary": {
+      "options": "{count} {count, plural, =1 {opção} other {opções}}",
+      "optionsAcrossSections": "{rowCount} {rowCount, plural, =1 {opção} other {opções}} em {sectionCount} {sectionCount, plural, =1 {secção} other {secções}}",
+      "noFile": "{label} (nenhum ficheiro carregado)",
+      "media": "Média",
+      "image": "Imagem",
+      "video": "Vídeo",
+      "document": "Documento",
+      "audio": "Áudio",
+      "hasTag": "tem a etiqueta {tag}",
+      "opContains": "contém",
+      "opExists": "existe",
+      "opMissing": "em falta",
+      "modeAdd": "Adicionar",
+      "modeRemove": "Remover",
+      "tagPicked": "{mode} etiqueta {tag}…",
+      "tagNone": "{mode} etiqueta (nenhuma escolhida)"
+    }
+  }
+}

@@ -7,18 +7,14 @@ import { MODES, THEMES, type Mode, type ThemeId } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 import { SettingsPanelHead } from "./settings-panel-head";
+import { LanguageSelector } from "./language-selector";
 
 /**
- * Appearance panel — light/dark mode + accent-color picker.
+ * Appearance panel — language, light/dark mode + accent-color picker.
  *
- * Two independent controls: a mode toggle (light / dark) and the
- * accent grid. Either applies + persists immediately. No save button:
- * each change is a single attribute swap on <html>, there's nothing
- * to roll back.
- *
- * Persistence: localStorage only (device-scoped). The boot script in
- * layout.tsx replays both choices before first paint on subsequent
- * loads.
+ * Each choice applies and persists immediately. Theme choices are stored in
+ * localStorage; language is stored in a first-party cookie so the server can
+ * render the correct next-intl catalogue on the following request.
  */
 export function AppearancePanel() {
   const { theme, setTheme, mode, setMode } = useTheme();
@@ -31,7 +27,9 @@ export function AppearancePanel() {
         description={t("description")}
       />
 
-      <div className="space-y-4">
+      <LanguageSelector />
+
+      <div className="mt-8 space-y-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <SunMoon className="size-4 text-muted-foreground" />
           {t("mode")}

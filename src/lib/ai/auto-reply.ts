@@ -7,6 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
+import { createAutoReplyTools } from './tools'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -98,7 +99,9 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Ground the reply in the account's knowledge base (best-effort).
+    // Ground the first answer in the account's knowledge base (best-effort).
+    // The assistant also receives a read-only search tool so it can refine
+    // the query itself when the first retrieval is insufficient.
     const knowledge = await retrieveKnowledge(
       db,
       accountId,
@@ -111,11 +114,15 @@ export async function dispatchInboundToAiReply(
       mode: 'auto_reply',
       knowledge,
     })
+    const agentTools = createAutoReplyTools({ db, accountId, config })
 
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+      tools: config.provider === 'openai' ? agentTools.tools : undefined,
+      executeTool:
+        config.provider === 'openai' ? agentTools.executeTool : undefined,
     })
 
     // Record token spend on the account's BYO key. Fire-and-forget so it

@@ -37,6 +37,27 @@ export interface ChatMessage {
   content: string
 }
 
+/** JSON-schema function exposed to a model as an agent tool. */
+export interface AgentToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+/** One provider-requested tool invocation. */
+export interface AgentToolCall {
+  id: string
+  name: string
+  arguments: string
+}
+
+/**
+ * Server-side executor for model-requested tools. It must validate every
+ * argument and enforce tenancy/permissions; the model is never trusted as
+ * an authority to read or mutate CRM data directly.
+ */
+export type AgentToolExecutor = (call: AgentToolCall) => Promise<string>
+
 /**
  * Token counts for one provider call, normalized across OpenAI
  * (`prompt`/`completion`) and Anthropic (`input`/`output`). Null when

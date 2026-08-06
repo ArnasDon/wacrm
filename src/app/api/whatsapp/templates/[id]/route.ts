@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   deleteMessageTemplate,
@@ -56,29 +61,14 @@ export async function PATCH(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
-    // Resolve the caller's account_id so template + whatsapp_config
-    // lookups work for teammates who didn't author the row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // Templates are settings-class data: the message_templates
+    // update/delete RLS policies (migration 017) require 'admin', and
+    // editing pushes an external side effect to Meta (editMessageTemplate)
+    // that RLS cannot roll back. Resolving account_id off the profile
+    // only proved membership — require the role explicitly, mirroring
+    // the sibling /submit endpoint's guard (see its comment at :93-99).
+    const { supabase, accountId } = await requireRole('admin')
 
     let payload: TemplatePayload
     try {
@@ -219,6 +209,15 @@ export async function PATCH(
       dry_run: isDryRun(),
     })
   } catch (error) {
+    // Auth failures map to 401/403 — a viewer hitting PATCH should get
+    // 403 "requires the 'admin' role", not a 500. Handled before the
+    // generic branch below, which surfaces `error.message` as a 500.
+    if (
+      error instanceof UnauthorizedError ||
+      error instanceof ForbiddenError
+    ) {
+      return toErrorResponse(error)
+    }
     console.error('Error editing template:', error)
     return NextResponse.json(
       {
@@ -242,30 +241,12 @@ export async function DELETE(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Same account-scoping rationale as the PATCH handler above —
-    // teammates need to be able to operate on shared templates +
-    // the shared whatsapp_config.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // Same rationale as the PATCH handler: message_templates delete
+    // RLS (migration 017) requires 'admin', and deleting pushes an
+    // external side effect to Meta (deleteMessageTemplate) that RLS
+    // cannot roll back. Membership alone is not enough — require the
+    // role explicitly.
+    const { supabase, accountId } = await requireRole('admin')
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
@@ -318,6 +299,14 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, dry_run: isDryRun() })
   } catch (error) {
+    // Auth failures map to 401/403 — same rationale as the PATCH
+    // handler above.
+    if (
+      error instanceof UnauthorizedError ||
+      error instanceof ForbiddenError
+    ) {
+      return toErrorResponse(error)
+    }
     console.error('Error deleting template:', error)
     return NextResponse.json(
       {

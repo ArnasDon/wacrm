@@ -18,21 +18,15 @@ export async function ingestDocument(
   content: string,
 ): Promise<void> {
   const chunks = chunkText(content)
-  const { error: delErr } = await db
-    .from('ai_knowledge_chunks')
-    .delete()
-    .eq('document_id', documentId)
+  const { error: delErr } = await db.from('ai_knowledge_chunks').delete().eq('document_id', documentId)
   if (delErr) throw delErr
   if (chunks.length === 0) return
 
   let embeddings: number[][] | null = null
   let embedError: unknown = null
   if (config.embeddingsApiKey) {
-    try {
-      embeddings = await embedTexts(config.embeddingsApiKey, chunks)
-    } catch (err) {
-      embedError = err
-    }
+    try { embeddings = await embedTexts(config.embeddingsApiKey, chunks) }
+    catch (err) { embedError = err }
   }
 
   const rows = chunks.map((content, i) => ({
@@ -58,13 +52,13 @@ export async function retrieveKnowledge(
   if (!query || k <= 0) return []
 
   let externalKnowledge: string[] = []
-  try {
-    const enabled = await isNovyraEnabledForAgent(db, accountId, config.agentId)
-    if (enabled) externalKnowledge = await retrieveNovyraKnowledge(query, k)
-  } catch (error) {
-    // External knowledge is deliberately fail-safe: local instructions and
-    // the account knowledge base must continue to work if NOVYRA is down.
-    console.error('[ai knowledge] NOVYRA policy/retrieval failed; continuing:', error)
+  if (config.agentId) {
+    try {
+      const enabled = await isNovyraEnabledForAgent(db, accountId, config.agentId)
+      if (enabled) externalKnowledge = await retrieveNovyraKnowledge(query, k)
+    } catch (error) {
+      console.error('[ai knowledge] NOVYRA policy/retrieval failed; continuing:', error)
+    }
   }
 
   try {

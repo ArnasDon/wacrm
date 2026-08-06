@@ -2,6 +2,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import type { AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { retrieveNovyraKnowledge } from './novyra-knowledge'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -91,6 +92,8 @@ export async function retrieveKnowledge(
   const query = queryText.trim()
   if (!query || k <= 0) return []
 
+  const externalKnowledge = await retrieveNovyraKnowledge(query, k)
+
   // Skip everything when the account has no knowledge base — otherwise
   // every draft / auto-reply would pay for a query embedding + two RPCs
   // just to get []. One cheap indexed COUNT (head, no rows) instead of a
@@ -100,9 +103,9 @@ export async function retrieveKnowledge(
       .from('ai_knowledge_chunks')
       .select('id', { count: 'exact', head: true })
       .eq('account_id', accountId)
-    if (error || !count) return []
+    if (error || !count) return externalKnowledge.slice(0, k)
   } catch {
-    return []
+    return externalKnowledge.slice(0, k)
   }
 
   const picked = new Map<string, string>() // id → content, preserves order
@@ -145,5 +148,5 @@ export async function retrieveKnowledge(
     }
   }
 
-  return Array.from(picked.values()).slice(0, k)
+  return [...externalKnowledge, ...Array.from(picked.values())].slice(0, k)
 }

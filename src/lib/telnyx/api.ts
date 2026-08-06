@@ -49,6 +49,37 @@ export interface PhoneNumber {
   line_type?: string | null
 }
 
+export interface NumberLookupResult {
+  phone_number: string
+  national_format?: string | null
+  country_code?: string | null
+  carrier?: { name?: string | null } | string | null
+  line_type?: string | null
+}
+
+export interface ReputationResult {
+  phone_number?: string | null
+  spam_risk?: string | null
+  spam_category?: string | null
+  maturity_score?: number | null
+  connection_score?: number | null
+  engagement_score?: number | null
+}
+
+export interface NumberOrderInput {
+  phoneNumber: string
+  connectionId?: string
+  messagingProfileId?: string
+  billingGroupId?: string
+  customerReference?: string
+}
+
+export interface NumberOrderResult {
+  id?: string | null
+  status?: string | null
+  phoneNumbersCount?: number | null
+}
+
 export interface TelephonyCredential {
   id: string
   sip_username?: string | null
@@ -59,6 +90,12 @@ export interface TelnyxClient {
   dial(input: DialInput): Promise<DialResult>
   sendSms(input: SendSmsInput): Promise<{ id: string }>
   listPhoneNumbers(): Promise<PhoneNumber[]>
+  /** GET /v2/number_lookup/{number} — carrier/line_type de un número. */
+  lookupNumber(number: string): Promise<NumberLookupResult | null>
+  /** GET /v2/reputation/phone_numbers/{number} — spam_risk + scores (0-100). */
+  getReputation(number: string): Promise<ReputationResult | null>
+  /** POST /v2/number_orders — compra un número (requiere config de cuenta). */
+  createNumberOrder(input: NumberOrderInput): Promise<NumberOrderResult>
   /** Crea una Telephony Credential para una conexión SIP (WebRTC). */
   createTelephonyCredential(input: { connectionId: string; name: string }): Promise<TelephonyCredential>
   /** GET /v2/telephony_credentials/{id} — sip_username/sip_password. */
@@ -68,7 +105,8 @@ export interface TelnyxClient {
 }
 
 export function createTelnyxClient(apiKey: string): TelnyxClient {
-  async function request<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  /** Devuelve el JSON completo (data + meta) para poder paginar. */
+  async function requestRaw<T = unknown>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`${TELNYX_API_BASE}${path}`, {
       ...init,
       headers: {
@@ -86,7 +124,11 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
       )
     }
 
-    const json = (await res.json()) as { data: T }
+    return (await res.json()) as T
+  }
+
+  async function request<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+    const json = await requestRaw<{ data: T }>(path, init)
     return json.data as T
   }
 
@@ -129,8 +171,77 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
     },
 
     async listPhoneNumbers() {
-      const data = await request<PhoneNumber[]>("/phone_numbers")
+      // Paginación: la API devuelve { data, meta: { next, total_count } }.
+      // Se siguen los `next` (hasta 3 saltos, límite defensivo) para no
+      // truncar la lista si algún día hay más de una página de números.
+      const all: PhoneNumber[] = []
+      let nextPath: string | null = "/phone_numbers"
+      let hops = 0
+      const MAX_HOPS = 3
+      while (nextPath && hops < MAX_HOPS) {
+        hops += 1
+        // Anotación explícita: rompe el ciclo de inferencia
+        // (nextPath → path → json → nextPath) que TS detecta en el loop.
+        const path: string = nextPath
+        const json = await requestRaw<{
+          data?: PhoneNumber[] | null
+          meta?: { next?: string | null } | null
+        }>(path)
+        all.push(...(json.data ?? []))
+        nextPath = json.meta?.next ?? null
+      }
+      return all
+    },
+
+    async lookupNumber(number) {
+      // El '+' del E.164 debe URL-encoded (%2B) en el path (doc oficial).
+      const data = await request<NumberLookupResult | null>(
+        `/number_lookup/${encodeURIComponent(number)}`,
+      ).catch((err: TelnyxApiError) => {
+        // 4xx de lookup (número no rutiable / sin datos) → null, no rompe el check.
+        if (err.status && err.status >= 400 && err.status < 500) return null
+        throw err
+      })
       return data
+    },
+
+    async getReputation(number) {
+      // GET /v2/reputation/phone_numbers/{number}; el '+' debe ir como %2B.
+      const data = await request<{ reputation_data?: ReputationResult | null } | null>(
+        `/reputation/phone_numbers/${encodeURIComponent(number)}`,
+      ).catch((err: TelnyxApiError) => {
+        // Sin registro de reputación (404) → null; el check no debe romper.
+        if (err.status && err.status >= 400 && err.status < 500) return null
+        throw err
+      })
+      if (!data) return null
+      return data.reputation_data ?? null
+    },
+
+    async createNumberOrder({ phoneNumber, connectionId, messagingProfileId, billingGroupId, customerReference }) {
+      const body: Record<string, unknown> = {
+        phone_numbers: [{ phone_number: phoneNumber }],
+      }
+      if (connectionId) body.connection_id = connectionId
+      if (messagingProfileId) body.messaging_profile_id = messagingProfileId
+      if (billingGroupId) body.billing_group_id = billingGroupId
+      if (customerReference) body.customer_reference = customerReference
+
+      // La respuesta usa snake_case; se mapea a camelCase (mismo patrón que dial).
+      type Raw = {
+        id?: string | null
+        status?: string | null
+        phone_numbers_count?: number | null
+      }
+      const data = await request<Raw>("/number_orders", {
+        method: "POST",
+        body: JSON.stringify(body),
+      })
+      return {
+        id: data.id ?? null,
+        status: data.status ?? null,
+        phoneNumbersCount: data.phone_numbers_count ?? null,
+      }
     },
 
     async createTelephonyCredential({ connectionId, name }) {

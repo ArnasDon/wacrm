@@ -1,6 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { Deal, PipelineStage } from "@/types";
+import { useRouter } from "next/navigation";
 import { Calendar, Check, X, Mail, MessageSquare } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { formatRelative } from "@/lib/automations/trigger-meta";
@@ -11,6 +13,10 @@ interface DealCardProps {
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
   isOverlay?: boolean;
+  /** Chips extra (p. ej. 🔥⏳ de la cola) renderizados junto a won/lost. */
+  rightBadges?: ReactNode;
+  /** Slot para acciones de la cola (Llamar/WhatsApp/Contestó). */
+  footer?: ReactNode;
 }
 
 function formatDate(dateStr: string) {
@@ -27,8 +33,16 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({
+  deal,
+  stage,
+  onEdit,
+  isOverlay,
+  rightBadges,
+  footer,
+}: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const router = useRouter();
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
 
@@ -40,7 +54,7 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const lastText = deal.conversation?.last_message_text;
   const email = deal.contact?.email;
   const phone = deal.contact?.phone;
-  const waLink = phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : null;
+  const inboxHref = deal.conversation_id ? `/inbox?c=${deal.conversation_id}` : `/inbox`;
 
   return (
     <button
@@ -69,18 +83,21 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         <h4 className="flex-1 text-sm font-semibold leading-snug text-foreground break-words">
           {deal.title}
         </h4>
-        {deal.status === "won" && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
-            <Check className="h-3 w-3" />
-            {t("won")}
-          </span>
-        )}
-        {deal.status === "lost" && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-            <X className="h-3 w-3" />
-            {t("lost")}
-          </span>
-        )}
+        <span className="flex shrink-0 items-center gap-1">
+          {rightBadges}
+          {deal.status === "won" && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              <Check className="h-3 w-3" />
+              {t("won")}
+            </span>
+          )}
+          {deal.status === "lost" && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+              <X className="h-3 w-3" />
+              {t("lost")}
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Contact row */}
@@ -104,17 +121,18 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
               <span className="truncate">{email}</span>
             </a>
           )}
-          {waLink && (
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
+          {phone && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(inboxHref);
+              }}
               className="flex items-center gap-1 hover:text-foreground"
             >
               <MessageSquare className="h-3 w-3 shrink-0" />
               {phone}
-            </a>
+            </button>
           )}
         </div>
       )}
@@ -148,6 +166,8 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           </span>
         </div>
       )}
+
+      {footer}
     </button>
   );
 }

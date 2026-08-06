@@ -95,6 +95,154 @@ describe("createTelnyxClient", () => {
     await expect(client.listPhoneNumbers()).rejects.toBeInstanceOf(TelnyxApiError)
     await expect(client.listPhoneNumbers()).rejects.toMatchObject({ status: 403 })
   })
+
+  it("lookupNumber: GET /number_lookup/{number} con + URL-encoded (%2B)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          phone_number: "+15550001111",
+          carrier: { name: "Telnyx Wireless" },
+          line_type: "Wireless",
+        },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createTelnyxClient("test-key")
+    const result = await client.lookupNumber("+15550001111")
+
+    expect(result?.carrier).toEqual({ name: "Telnyx Wireless" })
+    expect(result?.line_type).toBe("Wireless")
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      "https://api.telnyx.com/v2/number_lookup/%2B15550001111",
+    )
+  })
+
+  it("lookupNumber: 4xx → null (no rompe el check)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () => "not found",
+      }),
+    )
+    const client = createTelnyxClient("test-key")
+    await expect(client.lookupNumber("+15550009999")).resolves.toBeNull()
+  })
+
+  it("getReputation: extrae reputation_data del response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          phone_number: "+15550001111",
+          reputation_data: {
+            spam_risk: "low",
+            maturity_score: 72,
+            connection_score: 80,
+            engagement_score: 64,
+          },
+        },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createTelnyxClient("test-key")
+    const result = await client.getReputation("+15550001111")
+
+    expect(result).toEqual({
+      spam_risk: "low",
+      maturity_score: 72,
+      connection_score: 80,
+      engagement_score: 64,
+    })
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      "https://api.telnyx.com/v2/reputation/phone_numbers/%2B15550001111",
+    )
+  })
+
+  it("getReputation: 404 → null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: async () => "not found",
+      }),
+    )
+    const client = createTelnyxClient("test-key")
+    await expect(client.getReputation("+15550009999")).resolves.toBeNull()
+  })
+
+  it("createNumberOrder: POST /number_orders con config opcional", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          id: "order-1",
+          status: "pending",
+          phone_numbers_count: 1,
+        },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createTelnyxClient("test-key")
+    const result = await client.createNumberOrder({
+      phoneNumber: "+15550004444",
+      connectionId: "conn-1",
+      messagingProfileId: "profile-1",
+      customerReference: "wacrm-acct1234",
+    })
+
+    expect(result).toEqual({ id: "order-1", status: "pending", phoneNumbersCount: 1 })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://api.telnyx.com/v2/number_orders")
+    expect(init.method).toBe("POST")
+    expect(JSON.parse(init.body)).toMatchObject({
+      phone_numbers: [{ phone_number: "+15550004444" }],
+      connection_id: "conn-1",
+      messaging_profile_id: "profile-1",
+      customer_reference: "wacrm-acct1234",
+    })
+  })
+
+  it("listPhoneNumbers: sigue meta.next hasta agotar páginas", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ id: "n1", phone_number: "+15550000001" }],
+          meta: { next: "/phone_numbers?page[after]=n1" },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ id: "n2", phone_number: "+15550000002" }],
+          meta: { next: null },
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const client = createTelnyxClient("test-key")
+    const result = await client.listPhoneNumbers()
+
+    expect(result).toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [firstUrl] = fetchMock.mock.calls[0]
+    expect(firstUrl).toBe("https://api.telnyx.com/v2/phone_numbers")
+  })
 })
 
 describe("loadTelnyxApiKey", () => {

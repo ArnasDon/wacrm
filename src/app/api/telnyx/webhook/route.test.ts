@@ -236,7 +236,8 @@ describe('POST /api/telnyx/webhook', () => {
     await postWebhook('message.received', {
       id: 'msg-remote-1',
       from: { phone_number: '+15553334444' },
-      to: { phone_number: '+15550000001' },
+      // Shape real de la API Telnyx: `to` es un ARRAY de destinatarios.
+      to: [{ phone_number: '+15550000001' }],
       text: 'Hola',
     })
 
@@ -251,7 +252,8 @@ describe('POST /api/telnyx/webhook', () => {
     const payload = {
       id: 'msg-remote-dup',
       from: { phone_number: '+15554445555' },
-      to: { phone_number: '+15550000001' },
+      // Shape real de la API Telnyx: `to` es un ARRAY de destinatarios.
+      to: [{ phone_number: '+15550000001' }],
       text: 'Dup',
     }
     await postWebhook('message.received', payload)

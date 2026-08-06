@@ -11,6 +11,7 @@ import {
   TemplatePicker,
   type TemplateSendValues,
 } from '@/components/inbox/template-picker';
+import { EmailTemplatePicker } from '@/components/email/email-template-picker';
 import {
   Sheet,
   SheetContent,
@@ -68,6 +69,10 @@ export function ContactDetailView({
   // find-or-creates the conversation, so no inbound message is required.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+
+  // Send email — lets the business email this contact using an email
+  // template. Sent via /api/email/send, which persists to email_sends.
+  const [emailPickerOpen, setEmailPickerOpen] = useState(false);
 
   // Details tab
   const [editName, setEditName] = useState('');
@@ -432,7 +437,7 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   onClick={() => setTemplatePickerOpen(true)}
@@ -446,6 +451,17 @@ export function ContactDetailView({
                   )}
                   {t('sendTemplateBtn')}
                 </Button>
+                {contact.email && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEmailPickerOpen(true)}
+                    className="border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Mail className="size-4" />
+                    {t('sendEmailBtn')}
+                  </Button>
+                )}
               </div>
             </SheetHeader>
 
@@ -753,6 +769,11 @@ export function ContactDetailView({
       open={templatePickerOpen}
       onOpenChange={setTemplatePickerOpen}
       onSelect={handleSendTemplate}
+    />
+    <EmailTemplatePicker
+      open={emailPickerOpen}
+      onOpenChange={setEmailPickerOpen}
+      contactId={contactId ?? ''}
     />
     </>
   );

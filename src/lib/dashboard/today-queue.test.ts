@@ -75,13 +75,13 @@ describe("partitionTodayQueue — 3 secciones 🔥⏳💤 (DAD §7.4)", () => {
         id: "old",
         priority: "top",
         tags: { urgencia: 0, documentos: 2 },
-        conversation: { last_message_at: "2026-05-01T10:00:00Z", last_message_text: null },
+        conversation: { id: "conv-old", last_message_at: "2026-05-01T10:00:00Z", last_message_text: null },
       }),
       deal({
         id: "new",
         priority: "top",
         tags: { urgencia: 0, documentos: 2 },
-        conversation: { last_message_at: "2026-05-05T10:00:00Z", last_message_text: "hola" },
+        conversation: { id: "conv-new", last_message_at: "2026-05-05T10:00:00Z", last_message_text: "hola" },
       }),
     ]);
     const nurture = sections.find((s) => s.key === "nurture")!;
@@ -94,7 +94,7 @@ describe("partitionTodayQueue — 3 secciones 🔥⏳💤 (DAD §7.4)", () => {
         id: "a",
         tags: { urgencia: 0, documentos: 2 },
         contact: [{ id: "c1", name: "Ana", phone: "+521", email: "a@x.com" }],
-        conversation: [{ last_message_at: "2026-05-05T10:00:00Z", last_message_text: "ok" }],
+        conversation: [{ id: "conv-a", last_message_at: "2026-05-05T10:00:00Z", last_message_text: "ok" }],
       }),
     ]);
     const nurture = sections.find((s) => s.key === "nurture")!;

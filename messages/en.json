@@ -90,6 +90,12 @@
       "lastTouch": "Last interaction",
       "value": "Value",
       "sendMessage": "Message",
+      "whatsapp": "WhatsApp",
+      "autoSent": "Automation sent",
+      "noAutomation": "none",
+      "chipHot": "High urgency — under 30 days",
+      "chipDocs": "Waiting on docs",
+      "chipGhost": "No response from customer",
       "callFailed": "Could not start the call",
       "markFailed": "Could not record the result",
       "markedAnswered": "Answered — recorded",
@@ -438,7 +444,16 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "sendEmailBtn": "Send email",
+      "emailPicker": {
+        "title": "Send email",
+        "subtitle": "Pick an email template to send to this contact.",
+        "empty": "No email templates yet. Create one in the Templates tab.",
+        "cancel": "Cancel",
+        "send": "Send",
+        "toastSent": "Email sent using {name}"
+      }
     },
     "importModal": {
       "title": "Import Contacts",
@@ -1790,6 +1805,14 @@
       "subject": "Subject",
       "bodyHtml": "Body (HTML)",
       "varsHint": "Placeholders: {{name}}, {{phone}}, {{email}}, {{company}} and {{vars.*}}.",
+      "editorTab": "Edit",
+      "previewTab": "Preview",
+      "insertVar": "Insert variable:",
+      "insertAria": "Insert {var} into body",
+      "previewFrame": "Template preview",
+      "previewSubjectFallback": "No subject",
+      "previewEmpty": "Write a body to preview it.",
+      "previewHint": "Preview of the HTML as the recipient will see it.",
       "save": "Save",
       "cancel": "Cancel",
       "saving": "Saving…",
@@ -1801,6 +1824,136 @@
       "deleteError": "Failed to delete template",
       "loadError": "Failed to load templates",
       "confirmDelete": "Delete template"
+    }
+  },
+  "EmailCampaigns": {
+    "page": {
+      "title": "Email Campaigns",
+      "subtitle": "Create and send email campaigns to your contacts.",
+      "newCampaign": "New Campaign",
+      "noCampaignsYet": "No campaigns yet",
+      "createFirst": "Create your first email campaign to get started.",
+      "table": {
+        "name": "Name",
+        "template": "Subject",
+        "recipients": "Recipients",
+        "delivery": "Delivered",
+        "open": "Opened",
+        "status": "Status",
+        "date": "Date"
+      },
+      "errorLoad": "Failed to load campaigns",
+      "retry": "Retry"
+    },
+    "status": {
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "sending": "Sending",
+      "sent": "Sent",
+      "failed": "Failed",
+      "pending": "Pending",
+      "delivered": "Delivered",
+      "opened": "Opened",
+      "clicked": "Clicked",
+      "bounced": "Bounced",
+      "unknown": "Unknown"
+    },
+    "new": {
+      "title": "New Email Campaign",
+      "subtitle": "Create and send an email campaign to your contacts.",
+      "steps": {
+        "template": "Template",
+        "audience": "Audience",
+        "personalize": "Personalize",
+        "send": "Send"
+      },
+      "toastGiveName": "Give the campaign a name before saving a draft.",
+      "toastNotSignedIn": "Not signed in.",
+      "toastNotLinked": "Your profile is not linked to an account.",
+      "toastFailedDraft": "Failed to save draft: {error}",
+      "toastDraftSaved": "Draft saved"
+    },
+    "wizard": {
+      "next": "Next",
+      "back": "Back",
+      "cancel": "Cancel",
+      "chooseTemplate": {
+        "title": "Choose a template",
+        "subtitle": "Pick the email template to send. You can edit templates in the Templates tab.",
+        "noTemplates": "No email templates yet",
+        "createFirst": "Create one in the Templates tab to start a campaign.",
+        "create": "Create template",
+        "errorLoad": "Failed to load templates"
+      },
+      "personalize": {
+        "title": "Preview",
+        "subtitle": "Review how the email will look. Contact fields are filled automatically.",
+        "preview": "Preview",
+        "previewSample": "sample contact",
+        "previewFrame": "Email preview",
+        "subject": "Subject"
+      },
+      "scheduleSend": {
+        "title": "Review & send",
+        "subtitle": "Name the campaign and confirm the audience before sending.",
+        "campaignName": "Campaign name",
+        "campaignNamePlaceholder": "e.g. March product update",
+        "summary": "Summary",
+        "template": "Template",
+        "audience": "Audience",
+        "estimatedReach": "Estimated reach",
+        "audienceAll": "All contacts",
+        "audienceTags": "Contacts with selected tags",
+        "audienceCsv": "CSV import",
+        "audienceField": "Custom field match",
+        "sending": "Sending…",
+        "saveDraft": "Save draft",
+        "sendNow": "Send now",
+        "confirmTitle": "Confirm campaign",
+        "confirmBody": "You are about to send this campaign to {reach} contacts using the {template} template. This action cannot be undone."
+      }
+    },
+    "detail": {
+      "back": "Back to campaigns",
+      "notFound": "Campaign not found",
+      "export": "Export CSV",
+      "bodyPreview": "Email preview",
+      "recipients": "Recipients",
+      "funnel": {
+        "sent": "Sent",
+        "delivered": "Delivered",
+        "opened": "Opened",
+        "clicked": "Clicked"
+      },
+      "stats": {
+        "total": "Recipients",
+        "sent": "Sent",
+        "delivered": "Delivered",
+        "opened": "Opened",
+        "failed": "Failed"
+      },
+      "table": {
+        "contact": "Contact",
+        "email": "Email",
+        "status": "Status",
+        "sent": "Sent at",
+        "delivered": "Delivered at",
+        "opened": "Opened at",
+        "clicked": "Clicked at",
+        "error": "Error",
+        "allStatuses": "All statuses"
+      },
+      "noRecipients": "No recipients for this campaign.",
+      "delete": {
+        "title": "Delete campaign",
+        "desc": "Permanently removes the campaign and its recipient history.",
+        "button": "Delete",
+        "confirmTitle": "Delete campaign?",
+        "confirmBody": "This will permanently delete the campaign and its recipients. This action cannot be undone.",
+        "confirm": "Delete"
+      },
+      "toastFailedDelete": "Failed to delete: {error}",
+      "toastDeleted": "Campaign deleted"
     }
   }
 }

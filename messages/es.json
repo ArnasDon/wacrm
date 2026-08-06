@@ -90,6 +90,12 @@
       "lastTouch": "Última interacción",
       "value": "Valor",
       "sendMessage": "Enviar",
+      "whatsapp": "WhatsApp",
+      "autoSent": "Automatización enviada",
+      "noAutomation": "ninguna",
+      "chipHot": "Urgencia alta — menos de 30 días",
+      "chipDocs": "Esperando documentos",
+      "chipGhost": "Sin respuesta del cliente",
       "callFailed": "No se pudo iniciar la llamada",
       "markFailed": "No se pudo registrar el resultado",
       "markedAnswered": "Contestó — registrado",
@@ -438,7 +444,16 @@
       "toastCustomFieldsSaved": "Campos personalizados guardados",
       "toastCustomFieldsFailed": "No se pudieron guardar los campos personalizados",
       "toastTemplateSent": "Plantilla \"{name}\" enviada",
-      "toastTemplateFailed": "No se pudo enviar la plantilla: {reason}"
+      "toastTemplateFailed": "No se pudo enviar la plantilla: {reason}",
+      "sendEmailBtn": "Enviar email",
+      "emailPicker": {
+        "title": "Enviar email",
+        "subtitle": "Elige una plantilla de email para enviar a este contacto.",
+        "empty": "Aún no hay plantillas de email. Crea una en la pestaña Plantillas.",
+        "cancel": "Cancelar",
+        "send": "Enviar",
+        "toastSent": "Email enviado usando {name}"
+      }
     },
     "importModal": {
       "title": "Importar contactos",
@@ -1790,6 +1805,14 @@
       "subject": "Asunto",
       "bodyHtml": "Cuerpo (HTML)",
       "varsHint": "Marcadores: {{name}}, {{phone}}, {{email}}, {{company}} y {{vars.*}}.",
+      "editorTab": "Editar",
+      "previewTab": "Vista previa",
+      "insertVar": "Insertar variable:",
+      "insertAria": "Insertar {var} en el cuerpo",
+      "previewFrame": "Vista previa del template",
+      "previewSubjectFallback": "Sin asunto",
+      "previewEmpty": "Escribe un cuerpo para previsualizarlo.",
+      "previewHint": "Vista previa del HTML tal como lo verá el cliente.",
       "save": "Guardar",
       "cancel": "Cancelar",
       "saving": "Guardando…",
@@ -1801,6 +1824,136 @@
       "deleteError": "No se pudo eliminar la plantilla",
       "loadError": "No se pudieron cargar las plantillas",
       "confirmDelete": "Eliminar plantilla"
+    }
+  },
+  "EmailCampaigns": {
+    "page": {
+      "title": "Campañas de email",
+      "subtitle": "Crea y envía campañas de email a tus contactos.",
+      "newCampaign": "Nueva campaña",
+      "noCampaignsYet": "Aún no hay campañas",
+      "createFirst": "Crea tu primera campaña de email para empezar.",
+      "table": {
+        "name": "Nombre",
+        "template": "Asunto",
+        "recipients": "Destinatarios",
+        "delivery": "Entregados",
+        "open": "Abiertos",
+        "status": "Estado",
+        "date": "Fecha"
+      },
+      "errorLoad": "Error al cargar las campañas",
+      "retry": "Reintentar"
+    },
+    "status": {
+      "draft": "Borrador",
+      "scheduled": "Programada",
+      "sending": "Enviando",
+      "sent": "Enviada",
+      "failed": "Fallida",
+      "pending": "Pendiente",
+      "delivered": "Entregado",
+      "opened": "Abierto",
+      "clicked": "Clickeado",
+      "bounced": "Rebotado",
+      "unknown": "Desconocido"
+    },
+    "new": {
+      "title": "Nueva campaña de email",
+      "subtitle": "Crea y envía una campaña de email a tus contactos.",
+      "steps": {
+        "template": "Plantilla",
+        "audience": "Audiencia",
+        "personalize": "Personalizar",
+        "send": "Enviar"
+      },
+      "toastGiveName": "Dale un nombre a la campaña antes de guardar el borrador.",
+      "toastNotSignedIn": "No has iniciado sesión.",
+      "toastNotLinked": "Tu perfil no está vinculado a una cuenta.",
+      "toastFailedDraft": "Error al guardar el borrador: {error}",
+      "toastDraftSaved": "Borrador guardado"
+    },
+    "wizard": {
+      "next": "Siguiente",
+      "back": "Atrás",
+      "cancel": "Cancelar",
+      "chooseTemplate": {
+        "title": "Elige una plantilla",
+        "subtitle": "Selecciona la plantilla de email a enviar. Puedes editar plantillas en la pestaña Plantillas.",
+        "noTemplates": "Aún no hay plantillas de email",
+        "createFirst": "Crea una en la pestaña Plantillas para iniciar una campaña.",
+        "create": "Crear plantilla",
+        "errorLoad": "Error al cargar las plantillas"
+      },
+      "personalize": {
+        "title": "Vista previa",
+        "subtitle": "Revisa cómo se verá el email. Los campos del contacto se rellenan automáticamente.",
+        "preview": "Vista previa",
+        "previewSample": "contacto de ejemplo",
+        "previewFrame": "Vista previa del email",
+        "subject": "Asunto"
+      },
+      "scheduleSend": {
+        "title": "Revisar y enviar",
+        "subtitle": "Nombra la campaña y confirma la audiencia antes de enviar.",
+        "campaignName": "Nombre de la campaña",
+        "campaignNamePlaceholder": "p. ej. Novedades de marzo",
+        "summary": "Resumen",
+        "template": "Plantilla",
+        "audience": "Audiencia",
+        "estimatedReach": "Alcance estimado",
+        "audienceAll": "Todos los contactos",
+        "audienceTags": "Contactos con las etiquetas seleccionadas",
+        "audienceCsv": "Importación CSV",
+        "audienceField": "Coincidencia de campo personalizado",
+        "sending": "Enviando…",
+        "saveDraft": "Guardar borrador",
+        "sendNow": "Enviar ahora",
+        "confirmTitle": "Confirmar campaña",
+        "confirmBody": "Estás a punto de enviar esta campaña a {reach} contactos usando la plantilla {template}. Esta acción no se puede deshacer."
+      }
+    },
+    "detail": {
+      "back": "Volver a campañas",
+      "notFound": "Campaña no encontrada",
+      "export": "Exportar CSV",
+      "bodyPreview": "Vista previa del email",
+      "recipients": "Destinatarios",
+      "funnel": {
+        "sent": "Enviados",
+        "delivered": "Entregados",
+        "opened": "Abiertos",
+        "clicked": "Clickeados"
+      },
+      "stats": {
+        "total": "Destinatarios",
+        "sent": "Enviados",
+        "delivered": "Entregados",
+        "opened": "Abiertos",
+        "failed": "Fallidos"
+      },
+      "table": {
+        "contact": "Contacto",
+        "email": "Email",
+        "status": "Estado",
+        "sent": "Enviado el",
+        "delivered": "Entregado el",
+        "opened": "Abierto el",
+        "clicked": "Clickeado el",
+        "error": "Error",
+        "allStatuses": "Todos los estados"
+      },
+      "noRecipients": "No hay destinatarios para esta campaña.",
+      "delete": {
+        "title": "Eliminar campaña",
+        "desc": "Elimina permanentemente la campaña y su historial de destinatarios.",
+        "button": "Eliminar",
+        "confirmTitle": "¿Eliminar campaña?",
+        "confirmBody": "Esto eliminará permanentemente la campaña y sus destinatarios. Esta acción no se puede deshacer.",
+        "confirm": "Eliminar"
+      },
+      "toastFailedDelete": "Error al eliminar: {error}",
+      "toastDeleted": "Campaña eliminada"
     }
   }
 }

@@ -6,9 +6,6 @@ import { FileText, Loader2, Plus, Trash2, Pencil } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Dialog,
@@ -18,6 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { EmailTemplateEditor } from './email-template-editor';
 import { SettingsPanelHead } from './settings-panel-head';
 
 interface EmailTemplateRow {
@@ -211,39 +209,15 @@ export function EmailTemplatesManager() {
               {t('dialogDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('name')}</Label>
-              <Input
-                value={form.name}
-                disabled={!!editingId}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="missed_call"
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-              />
-              <p className="text-xs text-muted-foreground">{t('nameHint')}</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('subject')}</Label>
-              <Input
-                value={form.subject}
-                onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
-                placeholder="Hola {{name}}, vimos tu llamada…"
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('bodyHtml')}</Label>
-              <Textarea
-                value={form.body_html}
-                onChange={(e) => setForm((f) => ({ ...f, body_html: e.target.value }))}
-                rows={12}
-                placeholder="<p>Hola {{name}}, …</p>"
-                className="bg-muted border-border font-mono text-xs text-foreground placeholder:text-muted-foreground"
-              />
-              <p className="text-xs text-muted-foreground">{t('varsHint')}</p>
-            </div>
-          </div>
+          <EmailTemplateEditor
+            name={form.name}
+            nameDisabled={!!editingId}
+            subject={form.subject}
+            bodyHtml={form.body_html}
+            onChange={(patch) =>
+              setForm((f) => ({ ...f, ...patch }))
+            }
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-border text-muted-foreground hover:text-foreground">
               {t('cancel')}

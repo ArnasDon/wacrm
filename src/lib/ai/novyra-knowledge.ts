@@ -24,8 +24,10 @@ function configuration() {
   const anonKey = process.env.NOVYRA_SUPABASE_ANON_KEY
   const email = process.env.NOVYRA_CRM_USER_EMAIL
   const password = process.env.NOVYRA_CRM_USER_PASSWORD
-  if (!url || !anonKey || !email || !password) return null
-  return { url, anonKey, email, password }
+  const agentCode = process.env.NOVYRA_AGENT_CODE
+  const countryCode = process.env.NOVYRA_COUNTRY_CODE
+  if (!url || !anonKey || !email || !password || !agentCode || !countryCode) return null
+  return { url, anonKey, email, password, agentCode, countryCode }
 }
 
 async function accessToken(config: NonNullable<ReturnType<typeof configuration>>) {
@@ -45,32 +47,55 @@ async function accessToken(config: NonNullable<ReturnType<typeof configuration>>
   return cachedSession.access_token
 }
 
-export async function retrieveNovyraKnowledge(query: string, k = 5): Promise<string[]> {
+async function searchNovyra(query: string, k: number): Promise<NovyraSearchRow[]> {
   const config = configuration()
-  if (!config || !query.trim() || k <= 0) return []
+  if (!config) throw new Error('NOVYRA server configuration is incomplete')
+
+  const token = await accessToken(config)
+  const response = await fetch(`${config.url}/rest/v1/rpc/search_knowledge_v1`, {
+    method: 'POST',
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Content-Profile': 'novyra_api',
+      'Accept-Profile': 'novyra_api',
+    },
+    body: JSON.stringify({
+      p_agent_code: config.agentCode,
+      p_query: query.trim(),
+      p_country_code: config.countryCode,
+      p_limit: Math.min(Math.max(k, 1), 10),
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new Error(`NOVYRA search failed (${response.status})`)
+  return (await response.json()) as NovyraSearchRow[]
+}
+
+export async function testNovyraKnowledgeConnection(): Promise<{
+  resultCount: number
+  message: string
+}> {
+  try {
+    const rows = await searchNovyra('Moçambique economia notícias', 1)
+    return {
+      resultCount: rows.length,
+      message: rows.length
+        ? `Ligação válida. Consulta concluída com ${rows.length} resultado.`
+        : 'Ligação válida. A consulta foi executada sem resultados.',
+    }
+  } catch (error) {
+    cachedSession = null
+    throw error
+  }
+}
+
+export async function retrieveNovyraKnowledge(query: string, k = 5): Promise<string[]> {
+  if (!query.trim() || k <= 0) return []
 
   try {
-    const token = await accessToken(config)
-    const response = await fetch(`${config.url}/rest/v1/rpc/search_knowledge_v1`, {
-      method: 'POST',
-      headers: {
-        apikey: config.anonKey,
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Content-Profile': 'novyra_api',
-        'Accept-Profile': 'novyra_api',
-      },
-      body: JSON.stringify({
-        p_agent_code: process.env.NOVYRA_AGENT_CODE || 'novura-news-whatsapp',
-        p_query: query.trim(),
-        p_country_code: process.env.NOVYRA_COUNTRY_CODE || 'MZ',
-        p_limit: Math.min(k, 10),
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
-    if (!response.ok) throw new Error(`NOVYRA search failed (${response.status})`)
-
-    const rows = (await response.json()) as NovyraSearchRow[]
+    const rows = await searchNovyra(query, k)
     return rows.map((row) =>
       [
         `Noticia: ${row.title}`,
@@ -88,4 +113,3 @@ export async function retrieveNovyraKnowledge(query: string, k = 5): Promise<str
     return []
   }
 }
-

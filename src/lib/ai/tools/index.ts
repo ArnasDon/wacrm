@@ -234,7 +234,7 @@ export function createAutoReplyTools(args: {
     dispatchPendingActions: async () => {
       let sent = 0
       for (const item of pendingProductSends.splice(0)) {
-        await engineSendMedia({
+        const result = await engineSendMedia({
           accountId,
           userId: configOwnerUserId,
           conversationId,
@@ -243,6 +243,21 @@ export function createAutoReplyTools(args: {
           link: item.imageUrl,
           caption: item.caption,
         })
+
+        // The shared flow media sender predates AI product cards and does
+        // not persist media_url/ai_generated. Enrich the exact row by Meta
+        // message id so the inbox can render the image and AI badge.
+        const { error: enrichError } = await db
+          .from('messages')
+          .update({ media_url: item.imageUrl, ai_generated: true })
+          .eq('conversation_id', conversationId)
+          .eq('message_id', result.whatsapp_message_id)
+        if (enrichError) {
+          console.warn(
+            '[ai send_product] media sent but inbox metadata update failed:',
+            enrichError.message,
+          )
+        }
         sent += 1
       }
       return sent

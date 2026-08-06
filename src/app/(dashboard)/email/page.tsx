@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { Mail, Settings2, FileText, Megaphone } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EmailConfig } from '@/components/settings/email-config';
@@ -11,7 +12,21 @@ type Tab = 'campaigns' | 'templates' | 'setup';
 
 const VALID_TABS: readonly Tab[] = ['campaigns', 'templates', 'setup'];
 
+// `useSearchParams` opts this page out of static prerendering unless it
+// sits under a Suspense boundary. Without one, the production build hits
+// the "missing Suspense with CSR bailout" error and the whole page bails
+// to client-side rendering — the same bug already fixed in settings
+// (settings/page.tsx). Mirror that pattern: a thin wrapper supplies the
+// boundary; the inner component reads the query string.
 export default function EmailPage() {
+  return (
+    <Suspense fallback={null}>
+      <EmailPageInner />
+    </Suspense>
+  );
+}
+
+function EmailPageInner() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab') as Tab | null;
   const activeTab: Tab =

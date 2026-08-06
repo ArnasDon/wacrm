@@ -42,4 +42,23 @@ describe('message catalogue parity', () => {
     const orphaned = [...translated].filter((k) => !source.has(k)).sort();
     expect(orphaned, `${locale}.json has keys absent from en.json`).toEqual([]);
   });
+
+  it('exposes the navigation labels used by the sidebar and header', () => {
+    const sourceLocale = JSON.parse(
+      readFileSync(join(MESSAGES_DIR, `${SOURCE_LOCALE}.json`), 'utf8'),
+    );
+
+    for (const locale of TRANSLATED_LOCALES) {
+      const translatedLocale = JSON.parse(
+        readFileSync(join(MESSAGES_DIR, `${locale}.json`), 'utf8'),
+      );
+
+      for (const key of ['produits', 'commandes', 'services', 'reservations']) {
+        expect(sourceLocale.Sidebar?.[key], `en.json should define Sidebar.${key}`).toBeDefined();
+        expect(translatedLocale.Sidebar?.[key], `${locale}.json should define Sidebar.${key}`).toBeDefined();
+        expect(sourceLocale.Header?.[key], `en.json should define Header.${key}`).toBeDefined();
+        expect(translatedLocale.Header?.[key], `${locale}.json should define Header.${key}`).toBeDefined();
+      }
+    }
+  });
 });

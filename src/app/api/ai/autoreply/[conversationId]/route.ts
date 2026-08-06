@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { supabaseAdmin } from '@/lib/ai/admin-client'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -21,12 +22,14 @@ type Params = { params: Promise<{ conversationId: string }> }
  *                     caller currently owns the thread, unassign it too so
  *                     the bot isn't blocked by the "human owns this" gate.
  *
- * Writes go through the RLS-scoped SSR client, so a conversation outside
- * the caller's account simply isn't found (404).
+ * Access is validated through the RLS-scoped SSR client. The final write
+ * uses the internal service-role client because the AI engine fields are
+ * protected by database triggers from direct authenticated-user updates.
  */
 export async function POST(request: Request, { params }: Params) {
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
+    const db = supabaseAdmin()
 
     // Reuse the send bucket: this is a cheap per-user inbox action and
     // toggling it in a tight loop has no legitimate use.
@@ -83,7 +86,7 @@ export async function POST(request: Request, { params }: Params) {
       update.ai_handoff_summary = null
     }
 
-    const { error: upErr } = await supabase
+    const { error: upErr } = await db
       .from('conversations')
       .update(update)
       .eq('id', conversationId)

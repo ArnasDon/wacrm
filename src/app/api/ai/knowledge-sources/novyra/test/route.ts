@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
+  getNovyraSource,
   NOVYRA_DEFAULT_AGENT_CODE,
   NOVYRA_DEFAULT_COUNTRY_CODE,
   NOVYRA_PROVIDER,
@@ -35,6 +36,7 @@ export async function POST() {
       )
     }
 
+    const existing = await getNovyraSource(supabase, accountId, agent.id)
     let status: 'success' | 'failed' = 'success'
     let message: string
     try {
@@ -51,7 +53,7 @@ export async function POST() {
         account_id: accountId,
         agent_id: agent.id,
         provider: NOVYRA_PROVIDER,
-        enabled: false,
+        enabled: existing.enabled,
         configuration: {
           agentCode: NOVYRA_DEFAULT_AGENT_CODE,
           countryCode: NOVYRA_DEFAULT_COUNTRY_CODE,
@@ -60,10 +62,7 @@ export async function POST() {
         last_test_message: message.slice(0, 1000),
         last_tested_at: testedAt,
       },
-      {
-        onConflict: 'agent_id,provider',
-        ignoreDuplicates: false,
-      },
+      { onConflict: 'agent_id,provider' },
     )
     if (saveError) throw saveError
 

@@ -500,6 +500,94 @@ export interface BroadcastRecipient {
 }
 
 // ============================================================
+// Email campaigns (migration 052) — mailing via Resend
+// ============================================================
+
+export type EmailCampaignStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'sending'
+  | 'sent'
+  | 'failed';
+
+export type EmailRecipientStatus =
+  | 'pending'
+  | 'sent'
+  | 'delivered'
+  | 'opened'
+  | 'clicked'
+  | 'bounced'
+  | 'failed';
+
+/**
+ * A mailing campaign (email). Espeja `Broadcast` (001) pero orientado a
+ * Resend y sobre `email_templates`. Guarda snapshot de subject/body_html
+ * para que el envío no dependa de ediciones posteriores del template.
+ * Conteos agregados mantenidos por el trigger de migración 052.
+ */
+export interface EmailCampaign {
+  id: string;
+  user_id: string;
+  account_id?: string | null;
+  name: string;
+  subject: string;
+  body_html: string;
+  template_id?: string | null;
+  template_variables?: Record<string, unknown>;
+  audience_filter?: Record<string, unknown>;
+  scheduled_at?: string | null;
+  status: EmailCampaignStatus;
+  total_recipients: number;
+  sent_count: number;
+  delivered_count: number;
+  opened_count: number;
+  clicked_count: number;
+  failed_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Una fila por destinatario de una campaña de email. Espejo de
+ * `BroadcastRecipient`. `resend_message_id` permite al webhook de Resend
+ * espejar delivered/opened/clicked/bounced sobre la fila (UNIQUE parcial).
+ */
+export interface EmailCampaignRecipient {
+  id: string;
+  email_campaign_id: string;
+  /** Nullable — ON DELETE SET NULL cuando se borra el contacto. */
+  contact_id: string | null;
+  status: EmailRecipientStatus;
+  resend_message_id?: string | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  opened_at?: string | null;
+  clicked_at?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  contact?: Contact;
+}
+
+// ============================================================
+// Email templates (migration 040)
+// ============================================================
+
+/**
+ * Template HTML completo (copy/paste) para email — tabla email_templates.
+ * Interpolación `{{ name }}`, `{{ email }}`, `{{ vars.* }}` resuelta en el
+ * envío (send_email / /api/email/send), no en el editor.
+ */
+export interface EmailTemplate {
+  id: string;
+  account_id: string;
+  name: string;
+  subject: string;
+  body_html: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================
 // Automations (migration 006)
 // ============================================================
 

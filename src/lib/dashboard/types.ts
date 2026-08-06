@@ -78,6 +78,7 @@ export interface TodayQueueContact {
 
 /** Última interacción del deal — vive en conversations (YA existe). */
 export interface TodayQueueConversation {
+  id: string | null
   last_message_at: string | null
   last_message_text: string | null
 }

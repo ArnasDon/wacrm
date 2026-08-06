@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { Deal, PipelineStage } from "@/types";
+import { useRouter } from "next/navigation";
 import { Calendar, Check, X, Mail, MessageSquare } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { formatRelative } from "@/lib/automations/trigger-meta";
@@ -41,6 +42,7 @@ export function DealCard({
   footer,
 }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const router = useRouter();
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
 
@@ -52,7 +54,7 @@ export function DealCard({
   const lastText = deal.conversation?.last_message_text;
   const email = deal.contact?.email;
   const phone = deal.contact?.phone;
-  const waLink = phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : null;
+  const inboxHref = deal.conversation_id ? `/inbox?c=${deal.conversation_id}` : `/inbox`;
 
   return (
     <button
@@ -119,17 +121,18 @@ export function DealCard({
               <span className="truncate">{email}</span>
             </a>
           )}
-          {waLink && (
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
+          {phone && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(inboxHref);
+              }}
               className="flex items-center gap-1 hover:text-foreground"
             >
               <MessageSquare className="h-3 w-3 shrink-0" />
               {phone}
-            </a>
+            </button>
           )}
         </div>
       )}

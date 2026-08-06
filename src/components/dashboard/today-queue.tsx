@@ -12,6 +12,7 @@
 // ============================================================
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Phone, Flame, Hourglass, Moon, MessageSquare, Send, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslations } from 'next-intl'
@@ -200,12 +201,15 @@ function QueueCard({
   }
 }) {
   const t = useTranslations('Dashboard.todayQueue')
+  const router = useRouter()
   const contact = Array.isArray(deal.contact) ? deal.contact[0] : deal.contact
   const chips = chipsFor(deal, t)
   const phone = contact?.phone ?? ''
-  const waLink = phone
-    ? `https://wa.me/${phone.replace(/\D/g, '')}`
-    : undefined
+  const convId =
+    (Array.isArray(deal.conversation) ? deal.conversation[0]?.id : deal.conversation?.id) ??
+    null
+  const inboxHref = convId ? `/inbox?c=${convId}` : '/inbox'
+  const hasWhatsApp = !!phone
 
   // Mapeo a la forma que DealCard espera (Deal) — la card es la misma
   // del pipeline (Opción A): monto, fecha, badges, clic → editar.
@@ -216,6 +220,7 @@ function QueueCard({
     stage_id: deal.stage_id ?? '',
     contact_id: contact?.id ?? null,
     contact: contact ?? null,
+    conversation_id: convId ?? undefined,
     value: deal.value ?? 0,
     currency: deal.currency ?? undefined,
     assignee: deal.assignee ?? undefined,
@@ -272,17 +277,19 @@ function QueueCard({
               <Phone className="h-3.5 w-3.5" />
               {labels.call}
             </Button>
-            {waLink ? (
-              <a
-                href={waLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex h-7 w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[0.8rem] font-medium text-emerald-600 transition-all outline-none hover:bg-emerald-500/20 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:text-emerald-400 [&_svg]:size-3.5"
+            {hasWhatsApp ? (
+              <Button
+                type="button"
+                size="sm"
+                className="w-full border-emerald-500/40 bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  router.push(inboxHref)
+                }}
               >
                 <MessageSquare className="size-3.5" />
                 {labels.whatsapp}
-              </a>
+              </Button>
             ) : (
               <Button
                 type="button"

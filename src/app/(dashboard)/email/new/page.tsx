@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
-import { MessageTemplate } from '@/types';
-import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
+import { EmailTemplate } from '@/types';
+import { Step1ChooseEmailTemplate } from '@/components/email/step1-choose-email-template';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
-import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
-import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
-import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { Step3EmailPreview } from '@/components/email/step3-email-preview';
+import { Step4EmailSend } from '@/components/email/step4-email-send';
+import { useEmailCampaignSending } from '@/hooks/use-email-campaign-sending';
 import { CampaignStepper, type CampaignStep } from '@/components/campaigns/campaign-stepper';
 import { useTranslations } from 'next-intl';
 
@@ -21,14 +21,14 @@ const steps: readonly CampaignStep[] = [
   { key: 'send', labelKey: 'send' },
 ] as const;
 
-export default function NewBroadcastPage() {
+export default function NewEmailCampaignPage() {
   const router = useRouter();
-  const t = useTranslations('Broadcasts.new');
+  const t = useTranslations('EmailCampaigns.new');
   const { accountId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { createAndSendCampaign, isProcessing, progress } = useEmailCampaignSending();
 
   const [currentStep, setCurrentStep] = useState(0);
-  const [template, setTemplate] = useState<MessageTemplate | null>(null);
+  const [template, setTemplate] = useState<EmailTemplate | null>(null);
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
     tagIds?: string[];
@@ -40,17 +40,13 @@ export default function NewBroadcastPage() {
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
   }>({ type: 'all' });
-  const [variables, setVariables] = useState<
-    Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
-  >({});
-  const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
 
   async function handleSend() {
     if (!template) return;
 
     try {
-      const broadcastId = await createAndSendBroadcast({
+      const campaignId = await createAndSendCampaign({
         name,
         template,
         audience: {
@@ -60,28 +56,16 @@ export default function NewBroadcastPage() {
           csvContacts: audience.csvContacts,
           excludeTagIds: audience.excludeTagIds,
         },
-        variables,
-        headerMediaUrl,
+        variables: {},
       });
-      router.push(`/broadcasts/${broadcastId}`);
+      router.push(`/email/${campaignId}`);
     } catch (err) {
-      // Previously swallowed with console.error — the wizard would
-      // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
-      console.error('Broadcast failed:', err);
+      const message = err instanceof Error ? err.message : 'Campaign failed';
+      console.error('Email campaign failed:', err);
       toast.error(message);
     }
   }
 
-  /**
-   * Writes a draft broadcast row — no recipients, no sending. The user
-   * can revisit it via the list page to finish the flow later. We
-   * don't persist the in-progress audience/variable config here
-   * because the current schema doesn't carry it past `audience_filter`
-   * and `template_variables`; those are enough for the user to
-   * recognize the draft but not to exactly round-trip into the wizard.
-   * A full resume-draft UX is a future polish.
-   */
   async function handleSaveDraft() {
     if (!template || !name.trim()) {
       toast.error(t('toastGiveName'));
@@ -101,23 +85,25 @@ export default function NewBroadcastPage() {
       return;
     }
 
-    const { error } = await supabase.from('broadcasts').insert({
+    const { error } = await supabase.from('email_campaigns').insert({
       user_id: user.id,
       account_id: accountId,
       name: name.trim(),
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
-      template_variables: variables,
+      subject: template.subject,
+      body_html: template.body_html,
+      template_id: template.id,
+      template_variables: {},
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
+        customField: audience.customField,
       },
       status: 'draft',
       total_recipients: 0,
       sent_count: 0,
       delivered_count: 0,
-      read_count: 0,
-      replied_count: 0,
+      opened_count: 0,
+      clicked_count: 0,
       failed_count: 0,
     });
 
@@ -126,7 +112,7 @@ export default function NewBroadcastPage() {
       return;
     }
     toast.success(t('toastDraftSaved'));
-    router.push('/broadcasts');
+    router.push('/email');
   }
 
   return (
@@ -134,9 +120,7 @@ export default function NewBroadcastPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('subtitle')}
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('subtitle')}</p>
       </div>
 
       {/* Step Indicator */}
@@ -152,11 +136,12 @@ export default function NewBroadcastPage() {
           }}
         >
           {currentStep === 0 && (
-            <Step1ChooseTemplate
+            <Step1ChooseEmailTemplate
               selectedTemplate={template}
               onSelect={setTemplate}
               onNext={() => setCurrentStep(1)}
-              onBack={() => router.push('/broadcasts')}
+              onBack={() => router.push('/email')}
+              onCreateTemplate={() => router.push('/email?tab=templates')}
             />
           )}
           {currentStep === 1 && (
@@ -168,18 +153,15 @@ export default function NewBroadcastPage() {
             />
           )}
           {currentStep === 2 && template && (
-            <Step3Personalize
+            <Step3EmailPreview
               template={template}
-              variables={variables}
-              onUpdate={setVariables}
-              headerMediaUrl={headerMediaUrl}
-              onHeaderMediaUrlChange={setHeaderMediaUrl}
+              variables={{}}
               onNext={() => setCurrentStep(3)}
               onBack={() => setCurrentStep(1)}
             />
           )}
           {currentStep === 3 && template && (
-            <Step4ScheduleSend
+            <Step4EmailSend
               name={name}
               onNameChange={setName}
               template={template}

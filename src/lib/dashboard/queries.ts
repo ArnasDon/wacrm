@@ -478,7 +478,7 @@ export async function loadTodayQueue(db: DB): Promise<TodayQueueData> {
         'stage_id, pipeline_id, ' +
         'assignee:profiles!deals_assigned_to_fkey(id, full_name), ' +
         'contact:contacts(id, name, phone, email), ' +
-        'conversation:conversations!deals_conversation_id_fkey(last_message_at, last_message_text)',
+        'conversation:conversations!deals_conversation_id_fkey(id, last_message_at, last_message_text)',
     )
     .eq('status', 'open')
     .order('created_at', { ascending: false })

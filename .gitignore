@@ -44,8 +44,13 @@ yarn-error.log*
 next-env.d.ts
 
 # Astro landing package (workspace): deps + generated build output.
-# The static build result (public/landing/) IS committed so `next build`
-# serves it without needing an astro build step on the host.
+# The pipeline `pnpm run build` compiles god.ts (public/god.js) and the
+# Astro landing (landing/dist → public/landing/) BEFORE `next build` on
+# every deploy (Hostinger Git-deploy, Docker, local) — same as ArnasDon/
+# wacrm, which never commits build output. So none of the generated
+# artifacts are tracked.
 landing/node_modules/
 landing/.astro/
 landing/dist/
+public/god.js
+public/landing/

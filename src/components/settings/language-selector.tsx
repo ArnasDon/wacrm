@@ -18,22 +18,16 @@ const OPTIONS = [
 type LocaleValue = (typeof OPTIONS)[number]["value"];
 
 const COPY: Record<LocaleValue, { title: string; description: string; active: string }> = {
-  en: {
-    title: "Language",
-    description: "Choose the language used throughout the application.",
-    active: "Active",
-  },
-  ko: {
-    title: "언어",
-    description: "애플리케이션 전체에서 사용할 언어를 선택하세요.",
-    active: "사용 중",
-  },
-  pt: {
-    title: "Idioma",
-    description: "Escolha o idioma utilizado em toda a aplicação.",
-    active: "Activo",
-  },
+  en: { title: "Language", description: "Choose the language used throughout the application.", active: "Active" },
+  ko: { title: "언어", description: "애플리케이션 전체에서 사용할 언어를 선택하세요.", active: "사용 중" },
+  pt: { title: "Idioma", description: "Escolha o idioma utilizado em toda a aplicação.", active: "Activo" },
 };
+
+function persistLocale(locale: LocaleValue) {
+  // This is an intentional browser side effect triggered by a user action.
+  // eslint-disable-next-line react-hooks/immutability
+  document.cookie = `${LOCALE_COOKIE}=${locale}; Path=/; Max-Age=${ONE_YEAR}; SameSite=Lax`;
+}
 
 export function LanguageSelector() {
   const currentLocale = useLocale() as LocaleValue;
@@ -43,7 +37,7 @@ export function LanguageSelector() {
   const selectLocale = (locale: LocaleValue) => {
     if (locale === currentLocale || changing) return;
     setChanging(locale);
-    document.cookie = `${LOCALE_COOKIE}=${locale}; Path=/; Max-Age=${ONE_YEAR}; SameSite=Lax`;
+    persistLocale(locale);
     window.location.reload();
   };
 
@@ -57,11 +51,7 @@ export function LanguageSelector() {
         <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
       </div>
 
-      <div
-        role="radiogroup"
-        aria-label={copy.title}
-        className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3"
-      >
+      <div role="radiogroup" aria-label={copy.title} className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
         {OPTIONS.map((option) => {
           const active = option.value === currentLocale;
           const loading = changing === option.value;
@@ -75,9 +65,7 @@ export function LanguageSelector() {
               onClick={() => selectLocale(option.value)}
               className={cn(
                 "flex items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors disabled:cursor-wait disabled:opacity-70",
-                active
-                  ? "border-primary/60 ring-2 ring-primary/40"
-                  : "border-border hover:bg-muted/40",
+                active ? "border-primary/60 ring-2 ring-primary/40" : "border-border hover:bg-muted/40",
               )}
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">

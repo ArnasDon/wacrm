@@ -33,9 +33,20 @@ interface Payload {
   [k: string]: unknown
 }
 
-/** Telnyx envía from/to como objetos `{ phone_number }` (a veces string). */
+/**
+ * Telnyx envía from/to como objetos `{ phone_number }` (a veces string),
+ * pero en `message.received` el campo `to` es un ARRAY de destinatarios
+ * `[{ phone_number }]` (doc oficial Message Object, verificado context7).
+ * Se maneja la rama array ANTES del objeto para no romper la tenancy por
+ * número (el SMS entrante se ignoraría si `to` cae a string vacío).
+ */
 function numStr(v: unknown): string {
   if (typeof v === 'string') return v
+  if (Array.isArray(v)) {
+    const first = v[0]
+    if (first === undefined) return ''
+    return numStr(first)
+  }
   if (v && typeof v === 'object') {
     const o = v as { phone_number?: unknown }
     if (typeof o.phone_number === 'string') return o.phone_number

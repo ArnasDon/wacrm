@@ -1,4 +1,10 @@
-import { AiError, type AiUsage, type ChatMessage } from '../types'
+import {
+  AiError,
+  type AgentToolDefinition,
+  type AgentToolExecutor,
+  type AiUsage,
+  type ChatMessage,
+} from '../types'
 
 // ============================================================
 // Bits shared by the OpenAI + Anthropic adapters.
@@ -10,6 +16,9 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Optional agent tools. Providers without tool support may ignore them. */
+  tools?: AgentToolDefinition[]
+  executeTool?: AgentToolExecutor
 }
 
 /**

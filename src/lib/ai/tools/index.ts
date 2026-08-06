@@ -1,4 +1,5 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
+import { searchCatalogues } from '@/lib/catalog/search'
 import { retrieveKnowledge } from '../knowledge'
 import type {
   AgentToolDefinition,
@@ -14,20 +15,35 @@ interface ToolSet {
 const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
   name: 'search_knowledge',
   description:
-    'Search the company knowledge base for products, services, prices, policies, catalogues or other factual information. Use this before saying that information is unavailable.',
+    'Search the company knowledge base for services, policies or factual information. Use this when the customer asks about the company and no structured catalogue search is needed.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      query: { type: 'string', description: 'A concise search query.' },
+      limit: { type: 'integer', minimum: 1, maximum: 5 },
+    },
+    required: ['query'],
+  },
+}
+
+const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
+  name: 'search_catalog',
+  description:
+    'Search all active product catalogues, including the quick internal catalogue and connected external website APIs. Returns real names, prices, photos, links and stock when available. Always use this before recommending a product or quoting a price.',
   parameters: {
     type: 'object',
     additionalProperties: false,
     properties: {
       query: {
         type: 'string',
-        description: 'A concise search query based on the customer request.',
+        description: 'Product name, category, colour, size or customer need.',
       },
       limit: {
         type: 'integer',
         minimum: 1,
         maximum: 5,
-        description: 'Maximum number of relevant excerpts to return.',
+        description: 'Maximum number of products to return.',
       },
     },
     required: ['query'],
@@ -47,13 +63,17 @@ function parseObject(raw: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-/**
- * Build the tools available to the inbound assistant for one tenant.
- *
- * This first milestone deliberately exposes only a read-only operation.
- * Future CRM mutations must be added as separate tools with explicit
- * validation, audit logging, idempotency and permission checks.
- */
+function parseSearchInput(input: Record<string, unknown>) {
+  const query = typeof input.query === 'string' ? input.query.trim() : ''
+  if (!query) throw new Error('query is required.')
+  if (query.length > 500) throw new Error('query is too long.')
+  const requestedLimit =
+    typeof input.limit === 'number' && Number.isFinite(input.limit)
+      ? Math.floor(input.limit)
+      : 5
+  return { query, limit: Math.min(5, Math.max(1, requestedLimit)) }
+}
+
 export function createAutoReplyTools(args: {
   db: WacrmSupabaseClient
   accountId: string
@@ -62,29 +82,42 @@ export function createAutoReplyTools(args: {
   const { db, accountId, config } = args
 
   const executeTool: AgentToolExecutor = async (call) => {
-    if (call.name !== SEARCH_KNOWLEDGE_TOOL.name) {
-      throw new Error(`Unknown or unavailable tool: ${call.name}`)
+    const input = parseObject(call.arguments)
+    const search = parseSearchInput(input)
+
+    if (call.name === SEARCH_KNOWLEDGE_TOOL.name) {
+      const matches = await retrieveKnowledge(
+        db,
+        accountId,
+        config,
+        search.query,
+        search.limit,
+      )
+      return JSON.stringify({
+        ok: true,
+        query: search.query,
+        matches,
+        found: matches.length > 0,
+      })
     }
 
-    const input = parseObject(call.arguments)
-    const query = typeof input.query === 'string' ? input.query.trim() : ''
-    if (!query) throw new Error('query is required.')
-    if (query.length > 500) throw new Error('query is too long.')
+    if (call.name === SEARCH_CATALOG_TOOL.name) {
+      const products = await searchCatalogues(db, accountId, search)
+      return JSON.stringify({
+        ok: true,
+        query: search.query,
+        products,
+        found: products.length > 0,
+        instruction:
+          'Only quote prices and availability returned here. Include the product photo or link when present.',
+      })
+    }
 
-    const requestedLimit =
-      typeof input.limit === 'number' && Number.isFinite(input.limit)
-        ? Math.floor(input.limit)
-        : 5
-    const limit = Math.min(5, Math.max(1, requestedLimit))
-    const matches = await retrieveKnowledge(db, accountId, config, query, limit)
-
-    return JSON.stringify({
-      ok: true,
-      query,
-      matches,
-      found: matches.length > 0,
-    })
+    throw new Error(`Unknown or unavailable tool: ${call.name}`)
   }
 
-  return { tools: [SEARCH_KNOWLEDGE_TOOL], executeTool }
+  return {
+    tools: [SEARCH_CATALOG_TOOL, SEARCH_KNOWLEDGE_TOOL],
+    executeTool,
+  }
 }

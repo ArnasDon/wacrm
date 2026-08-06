@@ -32,6 +32,10 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_APP_LOCALE=$NEXT_PUBLIC_APP_LOCALE \
     NEXT_TELEMETRY_DISABLED=1
 
+# La raíz orquesta el pipeline completo (DAD §3): build:god → landing
+# Astro (public/landing/) → next build. `--filter landing` usa deps del
+# workspace ya instaladas en el stage deps. Same command Git-deploy de
+# Hostinger corre en sus Web Apps Node — experiencia consistente.
 RUN corepack enable && pnpm run build
 
 # ---------------------------------------------------------------

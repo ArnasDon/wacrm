@@ -6,7 +6,10 @@ services:
       context: .
       # NEXT_PUBLIC_* vars are inlined at build time — forward them
       # from .env.local as build args. Changing any of them requires
-      # a rebuild (docker compose up --build).
+      # a rebuild: docker compose --env-file .env.local up --build.
+      # NOTE: compose only reads .env by default, NOT .env.local — the
+      # --env-file flag is required or the build fails with missing
+      # supabaseUrl. Runtime secrets still come from env_file below.
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}

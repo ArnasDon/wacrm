@@ -30,7 +30,7 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm run build:god && pnpm --filter landing build && next build",
     "build:god": "esbuild src/lib/analytics/god.ts --bundle --minify --target=es2019 --format=iife --outfile=public/god.js",
     "start": "next start",
     "lint": "eslint",

@@ -279,9 +279,6 @@
       "readOnlyPlaceholder": "읽기 전용 — 뷰어는 열람만 가능하고 답장할 수 없습니다",
       "sessionExpiredPlaceholder": "세션 만료 - 템플릿을 사용하세요",
       "readOnlyTitle": "읽기 전용 — 현재 역할로는 메시지를 보낼 수 없습니다",
-      "recording": "녹음 중… {current} / {max}",
-      "cancel": "취소",
-      "stopAndAttach": "중지하고 첨부",
       "attachMedia": "미디어 첨부",
       "photo": "사진",
       "video": "동영상",
@@ -289,7 +286,12 @@
       "voiceNote": "음성 메모",
       "sendTemplate": "템플릿 보내기",
       "addCaption": "캡션 추가…",
-      "removeAttachment": "첨부 파일 제거"
+      "removeAttachment": "첨부 파일 제거",
+      "recordingNotSupported": "이 브라우저에서는 음성 녹음을 지원하지 않습니다.",
+      "recordingPermissionDenied": "마이크 접근이 거부되었거나 사용할 수 없습니다.",
+      "recordingTooLong": "녹음이 너무 깁니다 (16MB 초과).",
+      "discardRecording": "녹음 삭제",
+      "sendRecording": "음성 메시지 보내기"
     },
     "bubble": {
       "photo": "사진",

@@ -228,3 +228,19 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+
+/* Tiny "audio capturing" equalizer bars — Inbox voice-note recorder
+   (message-composer.tsx). Needs to live in global CSS rather than a
+   component-scoped `<style jsx>` block: styled-jsx auto-renames
+   `@keyframes` to a scoped name, which would silently break the
+   Tailwind arbitrary-value class (`animate-[waveform_...]`) that
+   references this name literally from outside that style block. */
+@keyframes waveform {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+  }
+  50% {
+    transform: scaleY(1.4);
+  }
+}

@@ -279,9 +279,6 @@
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
       "sessionExpiredPlaceholder": "Session expired - use a template",
       "readOnlyTitle": "Read-only — your role can't send messages",
-      "recording": "Recording… {current} / {max}",
-      "cancel": "Cancel",
-      "stopAndAttach": "Stop and attach",
       "attachMedia": "Attach media",
       "photo": "Photo",
       "video": "Video",
@@ -289,7 +286,12 @@
       "voiceNote": "Voice note",
       "sendTemplate": "Send template",
       "addCaption": "Add a caption…",
-      "removeAttachment": "Remove attachment"
+      "removeAttachment": "Remove attachment",
+      "recordingNotSupported": "Voice recording isn't supported in this browser.",
+      "recordingPermissionDenied": "Microphone access denied or unavailable.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "discardRecording": "Discard recording",
+      "sendRecording": "Send voice message"
     },
     "bubble": {
       "photo": "Photo",

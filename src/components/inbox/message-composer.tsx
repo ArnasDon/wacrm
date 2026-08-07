@@ -15,7 +15,8 @@ import {
   Video,
   FileText,
   Mic,
-  Square,
+  Trash2,
+  Lock,
   X,
   Loader2,
 } from "lucide-react";
@@ -74,7 +75,9 @@ interface ReplyDraft {
 // Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
 // the file picker so unsupported files are rejected before upload rather
 // than failing with a confusing Storage error. Audio has no picker — it's
-// captured via the recorder.
+// captured via the recorder and, unlike the other kinds, never goes
+// through the staged-draft preview below (see the recording state
+// machine further down).
 const PICKER_ACCEPT: Record<"image" | "video" | "document", string> = {
   image: "image/png,image/jpeg,image/webp",
   video: "video/mp4,video/3gpp",
@@ -83,7 +86,7 @@ const PICKER_ACCEPT: Record<"image" | "video" | "document", string> = {
 };
 
 interface MediaDraft {
-  kind: ComposerMediaKind;
+  kind: Exclude<ComposerMediaKind, "audio">;
   mediaUrl: string;
   /** Storage path — used to GC the object if the draft is discarded. */
   path: string;
@@ -111,6 +114,12 @@ function formatDuration(seconds: number): string {
  *  Meta-accepted format means no server ffmpeg / transcode step. */
 const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 
+// Vertical drag distance (px) that arms "locked" (hands-free) recording —
+// same idea as WhatsApp's own slide-up-to-lock gesture.
+const LOCK_THRESHOLD_PX = 70;
+
+type MicPhase = "idle" | "recording" | "paused" | "sending";
+
 export function MessageComposer({
   sessionExpired,
   onSend,
@@ -126,7 +135,10 @@ export function MessageComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
-  // attachment; `busy` covers the upload/transcode window.
+  // image/video/document; `busy` covers the upload window. Voice notes
+  // never populate this — see the recording state machine below, which
+  // has its own inline discard/send bar instead of routing through the
+  // draft preview.
   const [draft, setDraft] = useState<MediaDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -146,13 +158,41 @@ export function MessageComposer({
     void deleteAccountMedia(CHAT_MEDIA_BUCKET, path).catch(() => {});
   }, []);
 
-  // Voice recording state. The recorder encodes Ogg/Opus in-browser
-  // (opus-recorder) so there's no server-side transcode.
-  const [recording, setRecording] = useState(false);
+  // ---- Voice recording ------------------------------------------------
+  //
+  // Press-and-hold, WhatsApp-style. State machine:
+  //   idle       → nothing recording, normal composer row shown.
+  //   recording  → mic is live (holding, or holding-then-locked); timer
+  //                ticking. `locked` (separate flag) tracks whether the
+  //                finger can be lifted without stopping the capture.
+  //   paused     → capture has stopped (released without locking, or hit
+  //                the max-duration cap) but the agent hasn't decided
+  //                trash vs send yet. Upload may still be in flight —
+  //                `pendingActionRef` queues whichever the agent picks so
+  //                it fires the moment the upload resolves instead of
+  //                needing its own loading UI.
+  //   sending    → agent tapped send while `locked` (recorder was still
+  //                running); stopping it, encoding, and uploading all
+  //                happen before the message actually goes out.
+  //
+  // The bar shown for all three non-idle phases is the same trash/timer/
+  // send layout — only the timer (ticking vs frozen) and the lock
+  // indicator differ.
+  const [micPhase, setMicPhase] = useState<MicPhase>("idle");
+  const [locked, setLocked] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const recorderRef = useRef<import("opus-recorder").default | null>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Set once the encoded+uploaded file is ready, so a Send/Trash tap that
+  // arrives after upload completes can act immediately.
+  const uploadedAudioRef = useRef<{ mediaUrl: string; path: string } | null>(null);
+  // Set when the agent decides trash/send *before* the upload (still in
+  // flight) resolves — finalizeRecording checks this once it lands.
+  const pendingActionRef = useRef<"discard" | "send" | null>(null);
+  const micButtonRef = useRef<HTMLButtonElement>(null);
+  const lockHintRef = useRef<HTMLDivElement>(null);
+  const gestureRef = useRef<{ startY: number } | null>(null);
 
   // Viewers (read-only role) can browse the inbox but never send.
   // For solo users this is always true — single-owner accounts pass
@@ -168,19 +208,6 @@ export function MessageComposer({
       timerRef.current = null;
     }
   }, []);
-
-  // Tear down any live recording + timer on unmount so a mid-record
-  // navigation doesn't leak the mic, and GC a staged-but-unsent
-  // attachment so it doesn't orphan in the bucket.
-  useEffect(() => {
-    return () => {
-      clearTimer();
-      cancelledRef.current = true;
-      // stop() releases the mic stream + audio context inside opus-recorder.
-      void recorderRef.current?.stop().catch(() => {});
-      removeStaged(draftRef.current?.path);
-    };
-  }, [clearTimer, removeStaged]);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -226,7 +253,7 @@ export function MessageComposer({
 
   // Upload a captured file to chat-media and stage it as a draft.
   const stageUpload = useCallback(
-    async (kind: ComposerMediaKind, file: File) => {
+    async (kind: Exclude<ComposerMediaKind, "audio">, file: File) => {
       // Per-kind ceiling mirrors Meta's caps (image 5 MB, etc.) so we
       // reject before upload rather than orphaning an object that Meta
       // would then refuse at send.
@@ -261,10 +288,10 @@ export function MessageComposer({
     [stageUpload],
   );
 
-  // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
-
-  // The encoded Ogg/Opus file from opus-recorder → upload as an audio
-  // draft. WhatsApp renders Ogg/Opus as a playable voice note.
+  // The encoded Ogg/Opus file from opus-recorder. WhatsApp renders Ogg/
+  // Opus as a playable voice note. Uploads it, then resolves whatever the
+  // agent already decided (discard/send) while the upload was in flight,
+  // or — the common case — just parks the result and waits for a tap.
   const finalizeRecording = useCallback(
     async (bytes: Uint8Array) => {
       // Uint8Array is a valid BlobPart at runtime; the cast sidesteps the
@@ -272,29 +299,64 @@ export function MessageComposer({
       const file = new File([bytes as unknown as BlobPart], `voice-${Date.now()}.ogg`, {
         type: "audio/ogg",
       });
-      if (file.size === 0) return; // cancelled / empty take
-      if (file.size > MEDIA_MAX_BYTES_BY_KIND.audio) {
-        toast.error("Recording is too long (over 16 MB).");
+      if (file.size === 0) {
+        // Cancelled / empty take — nothing to do.
+        pendingActionRef.current = null;
+        setMicPhase("idle");
+        setLocked(false);
         return;
       }
-      setBusy(true);
+      if (file.size > MEDIA_MAX_BYTES_BY_KIND.audio) {
+        toast.error(t("recordingTooLong"));
+        pendingActionRef.current = null;
+        setMicPhase("idle");
+        setLocked(false);
+        return;
+      }
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
-        removeStaged(draftRef.current?.path);
-        setDraft({ kind: "audio", mediaUrl: publicUrl, path, filename: file.name, caption: "" });
+
+        if (pendingActionRef.current === "discard") {
+          removeStaged(path);
+          pendingActionRef.current = null;
+          setMicPhase("idle");
+          setLocked(false);
+          return;
+        }
+        if (pendingActionRef.current === "send") {
+          onSendMedia({ kind: "audio", mediaUrl: publicUrl, path, replyToId: replyTo?.id });
+          pendingActionRef.current = null;
+          onClearReply?.();
+          setMicPhase("idle");
+          setLocked(false);
+          return;
+        }
+
+        // No decision yet — sit in "paused, ready" state; the trash/send
+        // handlers below read this ref directly once tapped.
+        uploadedAudioRef.current = { mediaUrl: publicUrl, path };
+        setMicPhase("paused");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed.");
-      } finally {
-        setBusy(false);
+        pendingActionRef.current = null;
+        setMicPhase("idle");
+        setLocked(false);
       }
     },
-    [removeStaged],
+    [onSendMedia, removeStaged, replyTo?.id, onClearReply, t],
   );
 
-  const startRecording = useCallback(async () => {
-    if (inputsDisabled || busy || recording) return;
+  // Actual mic/encoder setup — deliberately kept separate from the
+  // pointerdown handler below, which flips the UI to "recording"
+  // *before* awaiting any of this, so the bar appears instantly instead
+  // of waiting on getUserMedia + the encoder worker load. On failure
+  // this rolls the optimistic UI back.
+  const beginCapture = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
-      toast.error("Voice recording isn't supported in this browser.");
+      toast.error(t("recordingNotSupported"));
+      clearTimer();
+      setMicPhase("idle");
+      setLocked(false);
       return;
     }
     try {
@@ -315,38 +377,154 @@ export function MessageComposer({
       };
       recorderRef.current = recorder;
       await recorder.start();
-      setRecording(true);
-      setRecordSeconds(0);
-      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
     } catch {
       void recorderRef.current?.stop().catch(() => {});
       recorderRef.current = null;
-      toast.error("Microphone access denied or unavailable.");
+      clearTimer();
+      setMicPhase("idle");
+      setLocked(false);
+      toast.error(t("recordingPermissionDenied"));
     }
-  }, [inputsDisabled, busy, recording, finalizeRecording]);
+  }, [clearTimer, finalizeRecording, t]);
 
-  const stopRecording = useCallback(() => {
-    clearTimer();
-    setRecording(false);
-    void recorderRef.current?.stop().catch(() => {});
-  }, [clearTimer]);
+  // ---- Mic pointer gesture (press-and-hold, drag-up-to-lock) ---------
+  //
+  // Pointer Events (not separate touch/mouse handlers) so the exact same
+  // code drives touch (iPhone/Android/PWA) and mouse (desktop) — a
+  // mousedown-hold-drag-mouseup gesture works identically to a touch one.
 
-  const cancelRecording = useCallback(() => {
-    cancelledRef.current = true;
-    clearTimer();
-    setRecording(false);
-    void recorderRef.current?.stop().catch(() => {});
-  }, [clearTimer]);
+  const handleMicPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (inputsDisabled || busy || micPhase !== "idle") return;
+      e.preventDefault();
+      micButtonRef.current?.setPointerCapture(e.pointerId);
+      gestureRef.current = { startY: e.clientY };
+      setLocked(false);
+      setRecordSeconds(0);
+      // Optimistic — the bar shows immediately; beginCapture (mic
+      // permission + encoder init) runs in the background and rolls
+      // this back on failure.
+      setMicPhase("recording");
+      clearTimer();
+      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+      void beginCapture();
+    },
+    [inputsDisabled, busy, micPhase, clearTimer, beginCapture],
+  );
 
-  // Auto-stop at the cap so a forgotten recording can't blow the
-  // upload size limit.
+  const handleMicPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      const gesture = gestureRef.current;
+      if (!gesture || locked || micPhase !== "recording") return;
+      const dy = gesture.startY - e.clientY; // positive = dragged up
+      if (lockHintRef.current) {
+        const clamped = Math.max(0, Math.min(LOCK_THRESHOLD_PX, dy));
+        lockHintRef.current.style.transform = `translateY(${-clamped}px)`;
+      }
+      if (dy > LOCK_THRESHOLD_PX) {
+        setLocked(true);
+      }
+    },
+    [locked, micPhase],
+  );
+
+  // Releasing (or the gesture getting cancelled by the platform, e.g. an
+  // incoming call) stops the capture *unless* already locked — locking
+  // is exactly what makes the finger-lift a no-op.
+  const handleMicPointerEnd = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      micButtonRef.current?.releasePointerCapture(e.pointerId);
+      gestureRef.current = null;
+      if (locked || micPhase !== "recording") return;
+      clearTimer();
+      setMicPhase("paused");
+      void recorderRef.current?.stop().catch(() => {});
+    },
+    [locked, micPhase, clearTimer],
+  );
+
+  const handleDiscardRecording = useCallback(() => {
+    if (micPhase === "recording") {
+      // Still actively capturing (held or locked) — full cancel, mirrors
+      // the pre-existing cancel behaviour: mark cancelled so
+      // finalizeRecording's ondataavailable callback skips the upload
+      // entirely once the recorder actually stops.
+      cancelledRef.current = true;
+      clearTimer();
+      setMicPhase("idle");
+      setLocked(false);
+      void recorderRef.current?.stop().catch(() => {});
+      return;
+    }
+    if (micPhase === "paused") {
+      if (uploadedAudioRef.current) {
+        removeStaged(uploadedAudioRef.current.path);
+        uploadedAudioRef.current = null;
+        setMicPhase("idle");
+      } else {
+        // Upload still in flight — finalizeRecording will GC it once it lands.
+        pendingActionRef.current = "discard";
+        setMicPhase("idle");
+      }
+      setLocked(false);
+    }
+  }, [micPhase, clearTimer, removeStaged]);
+
+  const handleSendRecording = useCallback(() => {
+    if (micPhase === "recording") {
+      // Only reachable while locked (send isn't shown unless the bar is
+      // up, and the bar only stays up hands-free once locked). Stop the
+      // recorder now; finalizeRecording sees pendingActionRef "send" and
+      // sends the moment the upload resolves — no extra tap needed.
+      clearTimer();
+      pendingActionRef.current = "send";
+      setMicPhase("sending");
+      void recorderRef.current?.stop().catch(() => {});
+      return;
+    }
+    if (micPhase === "paused") {
+      if (uploadedAudioRef.current) {
+        const { mediaUrl, path } = uploadedAudioRef.current;
+        uploadedAudioRef.current = null;
+        onSendMedia({ kind: "audio", mediaUrl, path, replyToId: replyTo?.id });
+        onClearReply?.();
+        setMicPhase("idle");
+      } else {
+        // Upload still in flight — finalizeRecording sends the moment it lands.
+        pendingActionRef.current = "send";
+        setMicPhase("sending");
+      }
+      setLocked(false);
+    }
+  }, [micPhase, clearTimer, onSendMedia, replyTo?.id, onClearReply]);
+
+  // Auto-stop at the cap so a forgotten recording can't blow the upload
+  // size limit — pauses exactly like an unlocked release (keeps what was
+  // captured, doesn't discard or auto-send).
   useEffect(() => {
-    if (recording && recordSeconds >= MAX_RECORDING_SECONDS) {
-      stopRecording();
+    if (micPhase === "recording" && recordSeconds >= MAX_RECORDING_SECONDS) {
+      clearTimer();
+      setMicPhase("paused");
+      void recorderRef.current?.stop().catch(() => {});
     }
-  }, [recording, recordSeconds, stopRecording]);
+  }, [micPhase, recordSeconds, clearTimer]);
 
-  // ---- Draft send / discard -----------------------------------------
+  // Tear down any live recording + timer on unmount so a mid-record
+  // navigation doesn't leak the mic, and GC any staged-but-unsent
+  // attachment (image/video/document draft, or an already-uploaded
+  // voice note nobody acted on) so it doesn't orphan in the bucket.
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      cancelledRef.current = true;
+      // stop() releases the mic stream + audio context inside opus-recorder.
+      void recorderRef.current?.stop().catch(() => {});
+      removeStaged(draftRef.current?.path);
+      removeStaged(uploadedAudioRef.current?.path);
+    };
+  }, [clearTimer, removeStaged]);
+
+  // ---- Draft send / discard (image/video/document) --------------------
 
   const sendDraft = useCallback(() => {
     if (!draft || busy) return;
@@ -354,10 +532,7 @@ export function MessageComposer({
       kind: draft.kind,
       mediaUrl: draft.mediaUrl,
       path: draft.path,
-      // Audio takes no caption (Meta rejects it). Everything else: the
-      // trimmed caption, or undefined when blank.
-      caption:
-        draft.kind === "audio" ? undefined : draft.caption.trim() || undefined,
+      caption: draft.caption.trim() || undefined,
       filename: draft.kind === "document" ? draft.filename : undefined,
       replyToId: replyTo?.id,
     });
@@ -377,6 +552,8 @@ export function MessageComposer({
   }, []);
 
   // ---- Render --------------------------------------------------------
+
+  const micActive = micPhase !== "idle";
 
   return (
     // `pb-[calc(...)]` overrides just the bottom side of `p-3`: the same
@@ -455,128 +632,201 @@ export function MessageComposer({
           onSend={sendDraft}
           t={t}
         />
-      ) : recording ? (
-        // Recording bar — replaces the composer while the mic is live.
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2.5">
-          <span className="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
-          <span className="flex-1 text-sm text-foreground">
-            {t("recording", { current: formatDuration(recordSeconds), max: formatDuration(MAX_RECORDING_SECONDS) })}
-          </span>
-          <button
-            type="button"
-            onClick={cancelRecording}
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground"
-          >
-            {t("cancel")}
-          </button>
-          <Button
-            size="sm"
-            onClick={stopRecording}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
-            title={t("stopAndAttach")}
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-        </div>
       ) : (
-        <div className="flex items-end gap-2">
-          {/* Left — attach media: photo / video / document. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={inputsDisabled || busy}
-              title={
-                readOnly
-                  ? t("readOnlyTitle")
-                  : inputsDisabled
-                    ? undefined
-                    : t("attachMedia")
-              }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Paperclip className="h-4 w-4" />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
-                <ImageIcon className="mr-2 h-4 w-4" />
-                {t("photo")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
-                <Video className="mr-2 h-4 w-4" />
-                {t("video")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
-                <FileText className="mr-2 h-4 w-4" />
-                {t("document")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Center — the text field takes all remaining width. Font
-              size is 16px (text-base): below that, focusing an <input>/
-              <textarea> on iOS Safari auto-zooms the viewport, which is
-              exactly the "screen jumps around while typing" behavior
-              WhatsApp/Telegram/iMessage don't have. */}
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            // Empty when there's nothing to type into — no placeholder
-            // text sits in the field itself, matching WhatsApp/Telegram/
-            // iMessage. The read-only/session-expired placeholders stay:
-            // those aren't decorative, they're the only way the agent
-            // learns *why* the field is disabled.
-            placeholder={
-              readOnly
-                ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : undefined
-            }
-            disabled={sessionExpired || readOnly}
-            rows={1}
-            // Textarea keeps its own inline title — the GatedButton
-            // wrapping pattern doesn't apply to non-button inputs.
-            // The placeholder text also surfaces the read-only state.
-            title={readOnly ? t("readOnlyTitle") : undefined}
+        // `relative` wrapper keeps the mic button mounted (just made
+        // invisible + taken out of flow) for the whole recording gesture
+        // instead of unmounting it — removing an element mid-gesture
+        // would drop its pointer capture and break drag-to-lock. The
+        // recording bar overlays in its place, visually replacing the
+        // whole row exactly as if it were a swap.
+        <div className="relative">
+          <div
             className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              "flex items-end gap-2",
+              micActive && "invisible absolute inset-0",
             )}
-          />
-
-          {/* Right — record audio, standalone (no longer buried in the
-              attach menu). */}
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="enviar mensagens"
-            disabled={inputsDisabled || busy}
-            title={readOnly ? undefined : t("voiceNote")}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => void startRecording()}
           >
-            <Mic className="h-4 w-4" />
-          </GatedButton>
+            {/* Left — attach media: photo / video / document. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={inputsDisabled || busy}
+                title={
+                  readOnly
+                    ? t("readOnlyTitle")
+                    : inputsDisabled
+                      ? undefined
+                      : t("attachMedia")
+                }
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Paperclip className="h-4 w-4" />
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="border-border bg-popover">
+                <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
+                  <ImageIcon className="mr-2 h-4 w-4" />
+                  {t("photo")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
+                  <Video className="mr-2 h-4 w-4" />
+                  {t("video")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  {t("document")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <GatedButton
-            size="sm"
-            canAct={!readOnly}
-            gateReason="enviar mensagens"
-            disabled={!text.trim() || sessionExpired || sending}
-            onClick={handleSend}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
-          >
-            <Send className="h-4 w-4" />
-          </GatedButton>
+            {/* Center — the text field takes all remaining width. Font
+                size is 16px (text-base): below that, focusing an <input>/
+                <textarea> on iOS Safari auto-zooms the viewport, which is
+                exactly the "screen jumps around while typing" behavior
+                WhatsApp/Telegram/iMessage don't have. */}
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              // Empty when there's nothing to type into — no placeholder
+              // text sits in the field itself, matching WhatsApp/Telegram/
+              // iMessage. The read-only/session-expired placeholders stay:
+              // those aren't decorative, they're the only way the agent
+              // learns *why* the field is disabled.
+              placeholder={
+                readOnly
+                  ? t("readOnlyPlaceholder")
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : undefined
+              }
+              disabled={sessionExpired || readOnly}
+              rows={1}
+              // Textarea keeps its own inline title — the GatedButton
+              // wrapping pattern doesn't apply to non-button inputs.
+              // The placeholder text also surfaces the read-only state.
+              title={readOnly ? t("readOnlyTitle") : undefined}
+              className={cn(
+                "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+                (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              )}
+            />
+
+            {/* Right — record audio. Press-and-hold (Pointer Events cover
+                touch + mouse identically), drag up to lock. */}
+            <button
+              ref={micButtonRef}
+              type="button"
+              disabled={inputsDisabled || busy}
+              title={readOnly ? undefined : t("voiceNote")}
+              aria-label={t("voiceNote")}
+              onPointerDown={handleMicPointerDown}
+              onPointerMove={handleMicPointerMove}
+              onPointerUp={handleMicPointerEnd}
+              onPointerCancel={handleMicPointerEnd}
+              className="flex h-9 w-9 shrink-0 touch-none select-none items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
+
+            <GatedButton
+              size="sm"
+              canAct={!readOnly}
+              gateReason="enviar mensagens"
+              disabled={!text.trim() || sessionExpired || sending}
+              onClick={handleSend}
+              className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+            </GatedButton>
+          </div>
+
+          {micActive && (
+            <div className="relative flex items-center gap-3 rounded-xl border border-border bg-muted px-3 py-2.5">
+              {/* Drag-up-to-lock hint — only while still holding and not
+                  yet locked. Translated live (via ref, not state) during
+                  the gesture in handleMicPointerMove for a 1:1 tracking
+                  feel with zero re-render overhead. */}
+              {micPhase === "recording" && !locked && (
+                <div
+                  ref={lockHintRef}
+                  className="pointer-events-none absolute -top-12 right-2 flex flex-col items-center gap-1 rounded-full border border-border bg-popover px-2 py-1.5 text-muted-foreground shadow-md"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleDiscardRecording}
+                aria-label={t("discardRecording")}
+                disabled={micPhase === "sending"}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+
+              <div className="flex flex-1 items-center justify-center gap-2.5">
+                {locked && (
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-primary" />
+                )}
+                {micPhase !== "sending" ? (
+                  <RecordingIndicator active={micPhase === "recording"} />
+                ) : (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                )}
+                <span className="text-sm font-medium tabular-nums text-foreground">
+                  {formatDuration(recordSeconds)}
+                </span>
+              </div>
+
+              <GatedButton
+                size="sm"
+                canAct={!readOnly}
+                gateReason="enviar mensagens"
+                disabled={micPhase === "sending"}
+                onClick={handleSendRecording}
+                aria-label={t("sendRecording")}
+                className="h-8 w-8 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+              >
+                <Send className="h-4 w-4" />
+              </GatedButton>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Small "audio is capturing" cue — a pulsing dot plus a 3-bar equalizer
+ * that bounces at staggered delays. Swaps to a plain static dot once the
+ * capture has actually stopped (paused, waiting on a trash/send tap) so
+ * it doesn't keep implying audio is still being recorded.
+ */
+function RecordingIndicator({ active }: { active: boolean }) {
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <span
+        className={cn(
+          "h-2.5 w-2.5 rounded-full bg-red-500",
+          active && "animate-pulse",
+        )}
+      />
+      {active && (
+        // The waveform keyframe lives in globals.css, not a component-
+        // scoped <style jsx> block — see the comment there for why.
+        <span className="flex items-end gap-0.5" aria-hidden>
+          <span className="h-2 w-0.5 animate-[waveform_1s_ease-in-out_infinite] rounded-full bg-red-500" />
+          <span className="h-3 w-0.5 animate-[waveform_1s_ease-in-out_infinite_0.15s] rounded-full bg-red-500" />
+          <span className="h-1.5 w-0.5 animate-[waveform_1s_ease-in-out_infinite_0.3s] rounded-full bg-red-500" />
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -618,9 +868,6 @@ function MediaDraftPreview({
           {draft.kind === "video" && (
             <video src={draft.mediaUrl} controls className="max-h-40 rounded-lg" />
           )}
-          {draft.kind === "audio" && (
-            <audio src={draft.mediaUrl} controls className="w-full" />
-          )}
           {draft.kind === "document" && (
             <div className="flex items-center gap-2 text-sm text-foreground">
               <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
@@ -639,33 +886,28 @@ function MediaDraftPreview({
       </div>
 
       <div className="mt-2 flex items-end gap-2">
-        {draft.kind !== "audio" && (
-          <input
-            value={draft.caption}
-            maxLength={MEDIA_CAPTION_MAX}
-            onChange={(e) => onCaptionChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                onSend();
-              }
-            }}
-            placeholder={t("addCaption")}
-            // text-base (16px), same reasoning as the main textarea —
-            // keeps iOS Safari from auto-zooming the viewport on focus.
-            className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
-          />
-        )}
+        <input
+          value={draft.caption}
+          maxLength={MEDIA_CAPTION_MAX}
+          onChange={(e) => onCaptionChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder={t("addCaption")}
+          // text-base (16px), same reasoning as the main textarea —
+          // keeps iOS Safari from auto-zooming the viewport on focus.
+          className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
+        />
         <GatedButton
           size="sm"
           canAct={!readOnly}
           gateReason="enviar mensagens"
           disabled={busy}
           onClick={onSend}
-          className={cn(
-            "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
-            draft.kind === "audio" && "ml-auto",
-          )}
+          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
           <Send className="h-4 w-4" />
         </GatedButton>

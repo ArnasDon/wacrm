@@ -279,9 +279,6 @@
       "readOnlyPlaceholder": "Somente leitura — visualizadores podem navegar, mas não responder",
       "sessionExpiredPlaceholder": "Sessão expirada - use um template",
       "readOnlyTitle": "Somente leitura — seu perfil não pode enviar mensagens",
-      "recording": "Gravando… {current} / {max}",
-      "cancel": "Cancelar",
-      "stopAndAttach": "Parar e anexar",
       "attachMedia": "Anexar mídia",
       "photo": "Foto",
       "video": "Vídeo",
@@ -289,7 +286,12 @@
       "voiceNote": "Áudio",
       "sendTemplate": "Enviar template",
       "addCaption": "Adicionar legenda…",
-      "removeAttachment": "Remover anexo"
+      "removeAttachment": "Remover anexo",
+      "recordingNotSupported": "Gravação de áudio não é compatível com este navegador.",
+      "recordingPermissionDenied": "Acesso ao microfone negado ou indisponível.",
+      "recordingTooLong": "Gravação muito longa (acima de 16 MB).",
+      "discardRecording": "Excluir gravação",
+      "sendRecording": "Enviar áudio"
     },
     "bubble": {
       "photo": "Foto",

@@ -42,6 +42,17 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "wacrm",
   },
+  // Next's `appleWebApp.capable` only emits the newer, generic
+  // `mobile-web-app-capable` tag (confirmed by inspecting the built
+  // HTML) — it does *not* also emit the iOS-specific
+  // `apple-mobile-web-app-capable` one, even though every other
+  // `appleWebApp` field (title, statusBarStyle) does render its
+  // iOS-specific tag correctly. Older/some current iOS versions still
+  // key standalone-mode detection specifically off the `apple-`
+  // prefixed tag, not (only) the generic one, so add it explicitly.
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
   formatDetection: {
     email: false,
     address: false,

@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 10) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 11) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,19 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 11)** — a correção da parte 10 não resolveu; tag meta faltando + suspeita de cache de instalação do iOS:
+
+Usuário confirmou que a barra preta embaixo continua depois do deploy da parte 10. Duas coisas nesta parte:
+
+1. **`apple-mobile-web-app-capable` estava faltando** — inspecionei o HTML gerado (`.next/server/app/dashboard.html`) e achei uma assimetria real: `appleWebApp: { capable: true, statusBarStyle: ..., title: ... }` no Next 16.2.12 gera corretamente `apple-mobile-web-app-title` e `apple-mobile-web-app-status-bar-style`, mas **não** gera `apple-mobile-web-app-capable` — só a versão genérica `mobile-web-app-capable`. iOS historicamente (e em várias versões ainda hoje) usa especificamente a tag prefixada `apple-` pra decidir tratamento standalone completo. Adicionado explicitamente via `metadata.other` em `app/layout.tsx`. Confirmado no HTML gerado depois do build.
+2. **Suspeita levantada, não confirmada**: o ícone na tela de início do usuário foi adicionado **antes** de qualquer uma das correções desta semana (partes 5-10). Existe um comportamento documentado do iOS onde parte da configuração de "modo de app" (inclusive potencialmente `apple-mobile-web-app-capable` e outros metadados de lançamento) é capturada **no momento em que o ícone é adicionado à tela de início**, não relida a cada abertura — mesmo que o HTML/CSS da página em si seja buscado de novo normalmente. Se for esse o caso, **nenhuma correção de CSS/layout feita nesta semana teria efeito visível** até o usuário remover o ícone atual e adicionar de novo. Pedido ao usuário: remover o app da tela de início e readicionar (Safari → compartilhar → Adicionar à Tela de Início) antes de testar de novo — isso isola se o problema é código ou cache de instalação do iOS.
+
+**Honestidade sobre confiança**: depois de 3 rodadas seguidas de correção sem resolver via observação remota (sem acesso a dispositivo físico), a confiança de que isso resolve sozinho é moderada, não alta. Se persistir mesmo depois de remover/readicionar o ícone, o próximo passo deveria ser pedir uma screenshot real do problema em vez de continuar corrigindo às cegas — está registrado como próxima ação recomendada.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` — `apple-mobile-web-app-capable` confirmado presente no HTML gerado. **Não testado em dispositivo físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 10)** — a causa raiz de verdade: número mágico duplicado (`3.5rem`) ficou obsoleto:
 
@@ -285,11 +298,13 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico com o app instalado standalone — prioridade máxima absoluta, não uma recomendação de rotina** (Adicionar à Tela de Início — não numa aba do Safari). iPhone 14/15 Pro Max de preferência, mais um Android qualquer como segunda checagem. Escopo: layout do chat E de outras telas (Dashboard, Contatos, Pipeline) completo desde a abertura fria do app — sem espaço vazio, sem cabeçalho escondido, sem faixa vazia no fim de listas/painéis, sem depender de scroll/toque/foco pra "assentar" —, header sem sobrepor a Dynamic Island, arraste em tempo real do menu lateral, a barra de composição com teclado aberto/fechado/conversa longa, e a gravação de áudio por pressionar-e-segurar incluindo o gesto de travar. Histórico desta semana: **três rodadas seguidas** de bug de mobile que só apareceu em uso standalone real e nunca em revisão de código/`next build` (partes 8, 9 e 10 — a 9 foi a própria correção da 8 causando um bug pior; a 10 achou uma causa raiz diferente e mais concreta do mesmo sintoma). Revisão de código sozinha já provou, três vezes, que não é suficiente pra este tipo de mudança — o próximo ajuste de mobile, se houver, deveria idealmente já nascer validado em dispositivo real, não só revisado.
-2. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-3. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-4. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-5. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Antes de qualquer outra coisa: remover o ícone atual da Tela de Início e adicionar de novo** (Safari → Compartilhar → Adicionar à Tela de Início), depois testar. O ícone atual do usuário foi adicionado antes de todas as correções desta semana — existe uma suspeita levantada na parte 11 (não confirmada) de que parte da configuração de modo-app do iOS é capturada no momento da instalação e não relida depois, o que explicaria por que 3 correções seguidas de código "não resolveram" nada visível.
+2. **Se persistir mesmo depois de reinstalar o ícone: pedir uma screenshot real do problema antes de tentar outra correção às cegas.** Depois de 4 rodadas (partes 8-11) sem conseguir resolver por revisão de código remota, continuar adivinhando sem ver o problema de verdade deixou de ser produtivo — a próxima sessão deveria começar pedindo evidência visual, não propondo mais uma hipótese.
+3. **Validar em iPhone físico com o app instalado standalone — prioridade máxima absoluta, não uma recomendação de rotina** (Adicionar à Tela de Início — não numa aba do Safari). iPhone 14/15 Pro Max de preferência, mais um Android qualquer como segunda checagem. Escopo: layout do chat E de outras telas (Dashboard, Contatos, Pipeline) completo desde a abertura fria do app — sem espaço vazio, sem cabeçalho escondido, sem faixa vazia no fim de listas/painéis, sem depender de scroll/toque/foco pra "assentar" —, header sem sobrepor a Dynamic Island, arraste em tempo real do menu lateral, a barra de composição com teclado aberto/fechado/conversa longa, e a gravação de áudio por pressionar-e-segurar incluindo o gesto de travar. Histórico desta semana: **quatro rodadas seguidas** de bug de mobile que só apareceu em uso standalone real e nunca em revisão de código/`next build` (partes 8, 9, 10 e 11). Revisão de código sozinha já provou, repetidamente, que não é suficiente pra este tipo de mudança.
+4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+7. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

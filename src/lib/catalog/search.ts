@@ -104,11 +104,11 @@ function assertSafeExternalUrl(raw: string): URL {
 }
 
 function externalItems(payload: unknown, mapping: ExternalFieldMapping): unknown[] {
-  // Explicit mapping always wins. Fallbacks only make common catalogue APIs
-  // usable when the operator leaves the mapping incomplete.
+  // Prefer the configured mapping, but do not let a stale/incorrect items path
+  // hide an otherwise valid external catalogue response.
   if (mapping.items) {
     const mapped = valueAt(payload, mapping.items)
-    return Array.isArray(mapped) ? mapped : []
+    if (Array.isArray(mapped)) return mapped
   }
 
   if (Array.isArray(payload)) return payload

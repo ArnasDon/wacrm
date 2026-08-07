@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 17) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 18) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,20 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 18)** — reverte SOMENTE a lógica da parte 17 (`611a737`): ela impedia o composer de acompanhar o teclado:
+
+Usuário testou `611a737` no iPhone e reportou regressão: com o teclado aberto, o composer parou de acompanhá-lo — ficou escondido atrás/embaixo do teclado. Fazia sentido em retrospecto: `main.scrollTo(0,0)`/`window.scrollTo(0,0)` disparados a cada `visualViewport.resize` estavam cancelando **qualquer** ajuste de scroll que o iOS aplicasse nesse momento — inclusive o ajuste que, aparentemente, o composer *precisava* pra ficar visível acima do teclado. A hipótese da parte 17 (iOS rolando `<main>` indevidamente) não foi descartada, mas a contramedida escolhida (zerar scroll sempre) era ampla demais — cancelava o bom junto com o suposto ruim.
+
+**Revertido:** removido inteiramente o `useEffect` de `visualViewport.resize` + `scrollTo` adicionado em `message-composer.tsx` na parte 17. Nada mais foi tocado — `dashboard-shell.tsx`, a fórmula de altura global (`h-dvh` → `calc(100dvh+env(safe-area-inset-top))`, parte 16), desktop e as demais páginas continuam exatamente como estavam.
+
+**Análise do posicionamento do Composer (pedida pelo usuário, feita sem aplicar mudança especulativa):** revisado `message-composer.tsx` e `message-thread.tsx` de ponta a ponta — o Composer é um filho flex comum, sem `position: fixed/absolute`, sem `bottom`/`transform`/`translate` aplicado à sua posição geral (só uso local de `transform` no indicador de "arrastar pra travar" da gravação de áudio, sem relação). Ele fica posicionado inteiramente pela cadeia flexbox (thread: header `shrink-0` → mensagens `flex-1 overflow-y-auto` → composer `shrink-0`, último filho). Refazendo as contas da fórmula de altura da parte 16 com os números do diagnóstico da parte 13 (`dvh≈873` de boca fechada), a altura calculada do painel do Inbox bate exatamente com a altura que `<main>` reserva pra ele via flexbox — não há overflow/corte previsto pela matemática da fórmula atual. Isso aponta pra uma conclusão: o sintoma "composer cortado embaixo, teclado fechado" reportado junto com a regressão do teclado provavelmente também era efeito colateral do mesmo `scrollTo` (rodando em momentos indevidos, inclusive possivelmente logo após o app abrir, deslocando o conteúdo pra uma posição errada) — não um bug estrutural separado no Composer.
+
+**Por isso, nesta parte, nenhuma correção adicional foi aplicada ao posicionamento do Composer** — só o revert. Evita empilhar uma correção sobre uma hipótese ainda não confirmada, exatamente como pedido. Se o corte/posicionamento errado persistir *depois* deste revert (ou seja, sem o `scrollTo` no caminho), aí sim é evidência de um problema estrutural real no Composer, e a próxima sessão deve investigar a partir daí — não repetir esta análise do zero.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome (desktop) — composer funcional, digitação normal, sem erros no console. **O comportamento real do teclado (se voltou a acompanhar o composer corretamente, e se o corte na parte inferior desapareceu) só é validável no iPhone físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 17)** — ajuste cirúrgico só na tela de conversa: header/composer sendo deslocados junto com o teclado, escopo restrito a `message-composer.tsx`:
 
@@ -386,9 +400,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Correção global (parte 16, shell raiz) e correção local (parte 17, scroll de `<main>` na tela de conversa) precisam de confirmação real. Testar especificamente na tela de conversa: (a) teclado fechado — composer no fundo, nada "atolado"; (b) tocar no composer — header da conversa NÃO se move, composer sobe só o suficiente pra ficar colado no teclado, sem vão preto entre os dois; (c) fechar o teclado — tudo volta à posição original; (d) abrir/fechar repetidamente — sem deslocamento acumulado; (e) rolar a conversa — só as mensagens rolam, header e composer continuam fixos.
-2. **Se o deslocamento do header/composer com o teclado persistir mesmo depois da parte 17: mandar screenshot ou vídeo real.** Depois de 9 rodadas (partes 8-17), se a contramedida de scroll (`visualViewport.resize` resetando `<main>`/`window`) não for suficiente, o próximo passo é revisar com dado real do dispositivo (ex.: o que exatamente move — `main.scrollTop`, `window.scrollY`, ou algo em outro ancestral) em vez de mais uma hipótese.
-3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-17 acima.
+1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** A parte 18 reverteu o `scrollTo` da parte 17, que estava impedindo o composer de acompanhar o teclado. Testar: (a) teclado fechado — composer 100% visível, sem corte na parte inferior; (b) tocar no composer — teclado abre, composer acompanha e fica imediatamente acima dele (não escondido atrás); (c) fechar o teclado — composer volta pro fundo correto; (d) repetir 5x — sem deslocamento acumulado; (e) header da conversa — se ainda subir junto com o teclado, essa é uma questão separada e ainda em aberto (a contramedida da parte 17 foi revertida por causar uma regressão pior; não há correção pra isso pendente no momento).
+2. **Se o composer continuar cortado/incompleto com teclado fechado MESMO depois do revert: essa é a evidência que faltava de que é um bug estrutural real** (não efeito do `scrollTo` removido) — reportar com screenshot, e a próxima sessão deve investigar a partir da análise já feita na parte 18 (Composer é puro flexbox, sem position/transform próprios — o suspeito seria a fórmula de altura do Inbox, `inbox/page.tsx`, não o Composer em si).
+3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-18 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

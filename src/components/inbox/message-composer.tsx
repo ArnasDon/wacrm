@@ -144,35 +144,6 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // iOS Safari/WKWebView, on focusing an input, can auto-scroll an
-  // *ancestor* to "reveal" it — separate from, and in addition to, the
-  // `dvh`-driven viewport shrink that already correctly resizes the
-  // conversation panel above the keyboard (dashboard-shell.tsx). That
-  // extra scroll is what was displacing the conversation header upward
-  // along with the composer instead of leaving it in place: it doesn't
-  // target the message list (the intended scroll region) but `<main>`
-  // (the dashboard shell's own scroll container), shifting everything
-  // inside it — header included. `visualViewport`'s `resize` event fires
-  // once the keyboard has finished animating open/closed, so resetting
-  // scroll there (rather than immediately on focus, before the OS has
-  // even applied its own scroll) reliably lands *after* it and cancels
-  // it out. Scoped to this component only — no global height variable,
-  // no change to `dvh`/the shell — active only while the composer (i.e.
-  // a conversation) is mounted.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    function resetScroll() {
-      const main = textareaRef.current?.closest("main");
-      main?.scrollTo(0, 0);
-      window.scrollTo(0, 0);
-    }
-
-    vv.addEventListener("resize", resetScroll);
-    return () => vv.removeEventListener("resize", resetScroll);
-  }, []);
-
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // image/video/document; `busy` covers the upload window. Voice notes
   // never populate this — see the recording state machine below, which

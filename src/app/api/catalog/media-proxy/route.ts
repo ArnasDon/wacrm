@@ -1,5 +1,4 @@
-import React from 'react'
-import { ImageResponse } from 'next/og'
+import sharp from 'sharp'
 import {
   assertPublicHttpsImageUrl,
   verifyCatalogueMediaProxySignature,
@@ -47,13 +46,13 @@ export async function GET(request: Request) {
       return new Response('Catalogue image is too large.', { status: 413 })
     }
 
-    const bytes = await response.arrayBuffer()
+    const bytes = Buffer.from(await response.arrayBuffer())
     if (bytes.byteLength <= 0 || bytes.byteLength > MAX_IMAGE_BYTES) {
       return new Response('Catalogue image is empty or too large.', { status: 413 })
     }
 
     if (PASSTHROUGH_TYPES.has(contentType)) {
-      return new Response(bytes, {
+      return new Response(new Uint8Array(bytes), {
         status: 200,
         headers: {
           'Content-Type': contentType,
@@ -63,44 +62,24 @@ export async function GET(request: Request) {
       })
     }
 
-    const dataUrl = `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`
-    const rendered = new ImageResponse(
-      React.createElement(
-        'div',
-        {
-          style: {
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#ffffff',
-          },
-        },
-        React.createElement('img', {
-          src: dataUrl,
-          style: {
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-          },
-        }),
-      ),
-      {
-        width: 1200,
-        height: 1200,
-      },
-    )
+    const converted = await sharp(bytes, { animated: false })
+      .rotate()
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toBuffer()
 
-    // Do not return ImageResponse directly here. In standalone/next start
-    // deployments its streaming body can fail while Next pipes the response.
-    // Materialising the rendered PNG first gives Meta a normal byte response.
-    const converted = await rendered.arrayBuffer()
     if (converted.byteLength <= 0 || converted.byteLength > MAX_IMAGE_BYTES) {
       return new Response('Converted catalogue image is empty or too large.', { status: 502 })
     }
 
-    return new Response(converted, {
+    console.info('[catalog media proxy] converted image:', {
+      sourceType: contentType,
+      sourceBytes: bytes.byteLength,
+      outputType: 'image/png',
+      outputBytes: converted.byteLength,
+      host: remoteUrl.hostname,
+    })
+
+    return new Response(new Uint8Array(converted), {
       status: 200,
       headers: {
         'Content-Type': 'image/png',

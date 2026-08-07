@@ -55,9 +55,6 @@ function buildSearchVariants(query: string): string[] {
 
   add(query)
 
-  // Individual meaningful words make conversational queries such as
-  // "quanto custa uma legging de treino" searchable without requiring an
-  // exact sentence match in the catalogue.
   normalized
     .split(' ')
     .filter((word) => word.length >= 3)
@@ -75,8 +72,6 @@ function buildSearchVariants(query: string): string[] {
 }
 
 function safePostgrestTerm(value: string): string {
-  // PostgREST .or() uses commas and parentheses as syntax. Strip them rather
-  // than allowing user text to alter the filter expression.
   return value.replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
@@ -187,7 +182,24 @@ async function searchInternal(
     .eq('is_active', true)
     .or(filters)
     .limit(input.limit)
-  if (error || !data) return []
+
+  if (error) {
+    console.error('[catalog search] internal query failed:', {
+      query: input.query,
+      variants,
+      message: error.message,
+      code: error.code,
+    })
+    throw new Error(`Internal catalogue search failed: ${error.message}`)
+  }
+  if (!data) return []
+
+  console.info('[catalog search] internal results:', {
+    query: input.query,
+    variants,
+    count: data.length,
+    names: data.map((row) => row.name),
+  })
 
   return data.map((row) => ({
     id: row.id,
@@ -211,12 +223,20 @@ export async function searchCatalogues(
   const internal = await searchInternal(db, accountId, input)
   if (internal.length >= input.limit) return internal.slice(0, input.limit)
 
-  const { data: sourceRows } = await db
+  const { data: sourceRows, error: sourcesError } = await db
     .from('catalog_sources')
     .select('*')
     .eq('account_id', accountId)
     .eq('source_type', 'external_rest')
     .eq('is_active', true)
+
+  if (sourcesError) {
+    console.error('[catalog search] external source lookup failed:', {
+      query: input.query,
+      message: sourcesError.message,
+      code: sourcesError.code,
+    })
+  }
 
   const sources = (sourceRows ?? []) as CatalogSourceRow[]
   const variants = buildSearchVariants(input.query)
@@ -226,9 +246,11 @@ export async function searchCatalogues(
       externalQueries.map((query) => searchExternalSource(source, { ...input, query })),
     ),
   )
-  const external = externalSettled.flatMap((result) =>
-    result.status === 'fulfilled' ? result.value : [],
-  )
+  const external = externalSettled.flatMap((result) => {
+    if (result.status === 'fulfilled') return result.value
+    console.error('[catalog search] external query failed:', result.reason)
+    return []
+  })
 
   const unique = new Map<string, CatalogProduct>()
   for (const product of [...internal, ...external]) {

@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 23) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 24) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,28 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 24)** — segundo pedido idêntico de "reconstrução completa"; análise confirmou (de novo) que a arquitetura já está correta; reaplicado o único fix pro header ainda não confirmado como inocente/culpado com certeza:
+
+Usuário reenviou o mesmo prompt-mestre de reconstrução completa da parte 22 (idêntico, palavra por palavra). Análise local dos componentes da conversa (`dashboard-shell.tsx`, `inbox/page.tsx`, `message-thread.tsx`, `message-composer.tsx`) feita de novo, conforme pedido antes de qualquer código:
+
+- `git diff 05dab64` (o commit de referência "praticamente perfeita") contra o estado atual, nos 6 arquivos da conversa: **vazio** — nada tinha mudado desde a parte 23 (o rollback cirúrgico do composer).
+- Isso confirma, pela segunda vez, o que a parte 22 já tinha encontrado: a máquina de estados de gravação, os handlers de gesto (pressionar-segurar, arrastar-pra-travar com tolerância lateral, lixeira/ondas/enviar), e a hierarquia de layout (header fixo / lista rolável / composer fixo, altura herdada de `<main>` sem recálculo de viewport) **já implementam a arquitetura pedida**. Reescrever essas partes do zero destruiria código correto e testado, sem nenhum ganho — por isso não foi feito, apesar do pedido explícito de "reconstrução".
+
+**O único requisito do prompt genuinamente não resolvido:** "o header não deve se mover quando o teclado abre." Esse problema nunca foi corrigido com sucesso — a única tentativa (parte 20, `overflow: hidden` em `html`/`body`) foi revertida na parte 21 a pedido do usuário, sem motivo declarado, no mesmo momento em que um bug real (não relacionado) causava o Composer cortado. A investigação da parte 23 (via `git diff`, não hipótese) **provou que o culpado pelo Composer cortado era outro commit** (aumento dos alvos de toque, parte 22) — a mudança de `overflow:hidden` nunca teve relação com aquele bug.
+
+**Correção aplicada nesta parte:** reaplicado `overflow: hidden` em `html`/`body` (`globals.css`, mesmo bloco da parte 12/20), agora que está comprovadamente inocente do bug que motivou sua reversão. Mecanismo: fecha a possibilidade de `document.scrollingElement` ser deslocado pelo comportamento nativo do iOS de "rolar o campo focado pra área visível" ao focar o `<textarea>` do composer — um caminho que não é bloqueado pelo `overflow: hidden` de containers aninhados mais abaixo (shell, painéis do Inbox), e que é a explicação estrutural mais provável pro header se mover junto (documento inteiro sendo deslocado, não um container específico).
+
+**Arquivos alterados:** `src/app/globals.css` (só a regra `html`/`body`).
+**Arquivos NÃO alterados:** `message-composer.tsx`, `message-thread.tsx`, `inbox/page.tsx`, `dashboard-shell.tsx`, Dashboard, Sidebar, Configurações, Notificações, Transmissões, Automações, Fluxos, Contatos, Pipeline, banco, autenticação, APIs.
+**Arquitetura usada:** inalterada desde a parte 19 — `ConversationShell → Header fixo (shrink-0) → MessageList flexível (flex-1 overflow-y-auto) → Composer fixo (shrink-0)`, altura herdada por CSS puro (percentual) a partir de uma única fonte no shell (`h-[calc(100dvh+env(safe-area-inset-top))]`), sem `visualViewport`/JS em nenhum nível.
+**Workarounds antigos removidos nesta parte:** nenhum novo — os únicos que existiram (a) o `scrollTo` de `visualViewport.resize` (parte 17, removido na 18) e (b) o `--app-height`/boot script baseado em `visualViewport` (parte 13, removido na 14) já tinham sido eliminados em sessões anteriores.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo — `overflow:hidden` confirmado presente em `html{}`/`body{}` no CSS gerado. Testado no Chrome: Configurações → Campos e tags (página longa) rolando normalmente através de `<main>`, confirmando que o `overflow:hidden` do documento não quebra scroll nenhum de nenhuma página.
+
+**Resultado dos testes (o que pôde ser verificado remotamente):** TypeScript/ESLint/testes/build passam. Os testes 1-10 do prompt (comportamento real de teclado, gesto de arrastar, envio/anexo/áudio/encaminhar/apagar em uso real) **exigem o dispositivo físico** — Chrome não reproduz nem o comportamento de teclado virtual do iOS nem o gesto de arrastar por toque.
+
+---
 
 **Sessão de 2026-08-07 (parte 23)** — rollback cirúrgico: restaura `message-composer.tsx` ao estado exato da parte 19, a pedido do usuário (regressão reportada: Composer ~50% cortado com teclado fechado):
 
@@ -494,13 +516,14 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar no iPhone físico, relançando o app do ZERO (não só recarregar) antes de testar — prioridade máxima absoluta.** A parte 23 restaurou `message-composer.tsx` byte a byte ao estado da parte 19 (confirmado via `git diff`, vazio). Se o corte de ~50% do Composer ainda aparecer mesmo depois de fechar o app completamente e reabrir, **não é mais um problema de código** (o `git diff` prova que o composer está exatamente como estava quando funcionava) — é cache do PWA ou algo no dispositivo, e a próxima ação é investigar isso especificamente, não tentar outra mudança de layout. Testar junto: composer 100% visível com teclado fechado; tocar no composer (acompanha o teclado); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado).
-2. **Separadamente, registrar se o header da conversa ainda sobe junto com o teclado.** Esse problema nunca foi resolvido (a tentativa da parte 20 — `overflow:hidden` em `html`/`body` — não funcionou e foi revertida na parte 21) e não foi tocado na parte 23 por instrução explícita do usuário ("não usar o Composer como mecanismo pra corrigir o header"). É um problema isolado, tratado depois de confirmar que o Composer está de volta ao normal — não misturar os dois na mesma tentativa.
-3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-23 acima.
-4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-7. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Validar no iPhone físico, relançando o app do ZERO (não só recarregar) antes de testar — prioridade máxima absoluta.** Dois pontos a confirmar juntos, sem misturar a análise se algo falhar: (a) Composer — deve continuar 100% visível/correto, exatamente como na parte 19 (nada mudou nele desde então); (b) header — a parte 24 reaplicou `overflow:hidden` em `html`/`body`, agora comprovadamente sem relação com o bug do Composer que motivou sua reversão anterior (parte 23 provou isso via `git diff`). Testar: teclado fechado (composer no fundo, sem corte); tocar no composer (**header não se move**, composer acompanha o teclado, sem vão); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
+2. **Se o header ainda subir mesmo com essa correção: é hora de considerar gravação de tela em vez de mais uma hipótese de código.** Essa era a explicação estrutural mais provável restante (`document.scrollingElement` sendo deslocado pelo foco do teclado) — se não resolver, o problema provavelmente não é mais alcançável só por CSS/arquitetura de layout, e vale reproduzir com o usuário ao vivo.
+3. **Se o Composer regredir de novo:** como nada mudou nele nesta parte, qualquer problema novo relatado não pode vir do código — checar cache do PWA primeiro (fechar e reabrir do zero) antes de qualquer alteração.
+4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-24 acima.
+5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+8. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

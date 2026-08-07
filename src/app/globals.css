@@ -229,6 +229,26 @@ html[data-theme="rose"] {
   }
 }
 
+/* Mobile header height — the ONE place this is defined. Header.tsx uses
+   `--header-content-height` for its own `min-height` (paired with its
+   own `padding-top: env(safe-area-inset-top)`, so notch/Dynamic-Island
+   content is pushed *below* the unsafe area rather than just centered
+   in a taller box). Anything that needs to know the header's *total*
+   rendered height — content plus the safe-area padding — uses
+   `--header-height` instead (currently only the Inbox page's own
+   height calc, which can't just inherit `<main>`'s flex-computed
+   height the normal way because it also needs a *fixed* pixel height
+   to bound its two independently-scrolling panels).
+   Previously this number was hardcoded as a bare `3.5rem` directly in
+   inbox/page.tsx — that literal predated the header's safe-area
+   padding and silently went stale once the padding was added, which
+   is exactly the kind of drift a shared variable prevents: change the
+   header's height here and both spots update together. */
+:root {
+  --header-content-height: 3.5rem;
+  --header-height: calc(var(--header-content-height) + env(safe-area-inset-top));
+}
+
 /* Tiny "audio capturing" equalizer bars — Inbox voice-note recorder
    (message-composer.tsx). Needs to live in global CSS rather than a
    component-scoped `<style jsx>` block: styled-jsx auto-renames

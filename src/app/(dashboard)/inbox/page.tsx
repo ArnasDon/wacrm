@@ -599,15 +599,28 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    // `100dvh` (not `100vh`) minus the Header's 3.5rem — the browser's
-    // own dynamic-viewport-height unit is the single source of truth
-    // for this panel's size, correct on the first frame and natively
-    // tracking the iOS keyboard / standalone-PWA viewport with no JS.
-    // (A prior version read a `--app-height` custom property set from a
-    // `useEffect`, which only updated *after* the first paint — that
-    // extra, later-arriving height source is what was causing a visible
-    // reflow a moment after load, not fixing one. See dashboard-shell.tsx.)
-    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // `100dvh` (not `100vh`) minus `--header-height` (globals.css) — the
+    // browser's own dynamic-viewport-height unit for the viewport part,
+    // and the *same* variable Header.tsx sizes itself with for the
+    // header part, instead of a hardcoded number that can go stale.
+    //
+    // This exact drift already happened once: this used to subtract a
+    // bare `3.5rem`, which was correct only until Header.tsx grew a
+    // `padding-top: env(safe-area-inset-top)` for the Dynamic Island —
+    // after that the header was actually `3.5rem + env(safe-area-inset-
+    // top)` tall (~115px on notch devices, not 56px), so this panel
+    // claimed ~59px more height than `<main>` actually had left for it,
+    // and the whole Inbox column silently overflowed by that amount:
+    // empty space at first paint, then the conversation header sliding
+    // up behind the main header once anything triggered a reflow.
+    // `--header-height` folds in the same `env()` term Header.tsx uses,
+    // so the two can't diverge again.
+    //
+    // (A still-earlier attempt fixed a *different* symptom here with a
+    // `--app-height` custom property set from a `useEffect` — that ran
+    // *after* first paint, causing its own separate reflow, and was
+    // removed. See dashboard-shell.tsx.)
+    <div className="-m-4 flex h-[calc(100dvh-var(--header-height))] flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

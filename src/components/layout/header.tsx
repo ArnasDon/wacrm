@@ -57,13 +57,20 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    // `min-h-14` (not `h-14`) + `pt-[env(...)]`: the safe-area inset adds
-    // to the box's height instead of eating into the 56px content row,
-    // so the logo/hamburger/avatar stay a consistent size and just sit
-    // lower on notch/Dynamic-Island devices. `env()` resolves to 0 on
-    // everything else (desktop, older phones), so this is a no-op there.
+    // `min-h-[var(--header-content-height)]` (not a fixed `h-`) +
+    // `pt-[env(...)]`: the safe-area inset adds to the box's height
+    // instead of eating into the content row, so the logo/hamburger/
+    // avatar stay a consistent size and just sit lower on notch/
+    // Dynamic-Island devices. `env()` resolves to 0 elsewhere (desktop,
+    // older phones), so this is a no-op there.
+    //
+    // `--header-content-height` (globals.css) is the ONE place this
+    // 3.5rem is defined — inbox/page.tsx's own height calc reads the
+    // same variable (via `--header-height`, which adds the safe-area
+    // padding on top) rather than duplicating the number, so the two
+    // can't drift out of sync the way they did before.
     <header
-      className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 pt-[env(safe-area-inset-top)] lg:px-6"
+      className="flex min-h-[var(--header-content-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 pt-[env(safe-area-inset-top)] lg:px-6"
     >
       <div className="flex min-w-0 items-center gap-2">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}

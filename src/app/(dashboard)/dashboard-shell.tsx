@@ -87,10 +87,18 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
         asideRef={asideRef}
         backdropRef={backdropRef}
       />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/* `min-h-0` on both flex children below: a flex item's default
+          `min-height: auto` lets it grow to fit its own content instead
+          of respecting its flex-computed share, which for `<main>`
+          specifically (holding pages of arbitrary height, e.g. Inbox's
+          own fixed-height panel) could let it silently claim more room
+          than the header actually leaves it. Cheap, defensive — closes
+          off the *general* version of the bug the Inbox-specific
+          `--header-height` fix above addresses concretely. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
         {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

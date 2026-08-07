@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 21) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 22) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,31 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 22)** — pedido de "reconstrução completa" da experiência de conversa (layout + gravação de áudio); análise mostrou que quase tudo já existia — só os alvos de toque precisavam crescer:
+
+Usuário pediu uma reconstrução ampla e localizada de `ConversationShell`/`Header`/`MessageList`/`Composer`, incluindo uma reformulação inteira da gravação de áudio (pressionar-e-segurar, gravar imediatamente, arrastar pra travar com gesto tolerante a variação lateral, barra `[lixeira] [ondas+tempo] [enviar]`, cancelar/enviar preservando a integração existente, botões maiores).
+
+**Análise (antes de qualquer mudança, como pedido):** revisado `message-composer.tsx` linha a linha (máquina de estados de gravação, handlers de gesto, JSX de cada estado) e `message-thread.tsx`/`inbox/page.tsx`/`dashboard-shell.tsx` (arquitetura de layout, já corrigida nas partes 16-19). Resultado: **a máquina de estados e o gesto de gravação já implementavam quase tudo pedido**, provavelmente de uma sessão anterior a este histórico de bugs de viewport:
+- pressionar-e-segurar inicia a gravação imediatamente (UI otimista, antes mesmo da permissão do microfone resolver);
+- Pointer Events unificados (não handlers separados de touch/mouse) — `pointerdown`/`pointermove`/`pointerup`/`pointercancel`, com `setPointerCapture` (o dedo pode escorregar pra fora do botão sem quebrar o gesto);
+- arrastar-pra-travar com distância **só vertical** (comentário original já dizia: "no horizontal check at all... a diagonal drag locks exactly as readily as a straight one") — exatamente o "gesto natural, sem exigir linha reta" pedido;
+- animação suave (easing, não 1:1) do indicador de "travar" crescendo conforme o gesto se aproxima do threshold, com uma confirmação visual (ícone de cadeado) ao travar;
+- travado: soltar o dedo não para a gravação; solto sem travar: para e vai pro estado de decisão (`paused`);
+- barra exatamente `[lixeira] [ondas+tempo] [enviar]`, já implementada;
+- cancelar descarta o áudio (GC do storage), enviar usa `onSendMedia`/upload existentes — nenhuma API/backend precisou mudar;
+- parar automático no limite de duração, limpeza no unmount (libera o microfone, GC de upload órfão).
+- arquitetura de layout da conversa (header fixo / lista rolável / composer fixo, teclado encolhendo só a lista) já reconstruída nas partes 16-19, sem regressão desde então.
+
+**Único gap real encontrado:** os alvos de toque estavam abaixo do mínimo confortável da Apple (44px) — o botão de anexo/microfone/enviar da barra principal e o de lixeira/enviar da barra de gravação estavam em 36px/32px.
+
+**Correção (só isso):** `message-composer.tsx` — os cinco botões (anexo, microfone, enviar da barra principal; lixeira e enviar da barra de gravação) foram todos ampliados de `h-9 w-9`/`h-8 w-8` pra `h-11 w-11` (44px, o mínimo recomendado pela Apple), com os ícones internos ajustados de `h-4 w-4` pra `h-5 w-5` pra manter a proporção visual. Nenhuma lógica de estado/gesto foi tocada — não havia nada de errado nela.
+
+**Não alterado (confirmado correto, sem necessidade de reescrita):** a máquina de estados de gravação inteira, os handlers de pointer/gesto, `message-thread.tsx`, `inbox/page.tsx`, `dashboard-shell.tsx`, backend, banco, APIs, outras páginas.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome: composer com botões visivelmente maiores e proporcionais (zoom conferido), gesto de pressionar o microfone testado (barra de gravação com lixeira/ondas/enviar renderizando corretamente nos novos tamanhos), descarte testado (volta ao estado normal sem erros). **O gesto real de arrastar com o dedo (touch) e a permissão de microfone real só são testáveis no iPhone** — Chrome desktop não reproduz um gesto de arraste por toque nem concede microfone da mesma forma.
+
+---
 
 **Sessão de 2026-08-07 (parte 21)** — reverte a parte 20 (`overflow: hidden` em `html`/`body`) a pedido do usuário:
 
@@ -449,9 +474,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Perguntar ao usuário o motivo do revert da parte 20 antes de tentar de novo.** A parte 20 (`overflow: hidden` em `html`/`body`, pra impedir o iOS de rolar o documento inteiro ao focar o composer) foi desfeita a pedido direto do usuário na parte 21, sem explicação do motivo — pode ter sido só cautela, ou pode ter quebrado algo real (ex.: algo parou de rolar em alguma tela). Não reaplicar a mesma mudança sem entender o que aconteceu.
-2. **Validar em iPhone físico standalone o que ainda está de pé:** a correção da parte 19 (altura da Inbox herdada de `<main>`, elimina duplicação de cálculo) permanece ativa e não foi revertida. Testar a tela de conversa: teclado fechado (composer 100% visível), tocar no composer (teclado abre, composer acompanha), fechar (volta ao normal), repetir 5x (sem deslocamento acumulado), rolar mensagens (só elas rolam). O comportamento do header ao abrir o teclado (se ainda sobe ou não) é o que resta confirmar sem a correção da parte 20.
-3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-21 acima.
+1. **Validar no iPhone físico: os botões maiores do composer (parte 22) e tudo que ficou de pé das partes 16-19.** O gesto de gravação (pressionar, arrastar pra travar, lixeira/enviar) já existia e não foi alterado nesta sessão — só os alvos de toque cresceram para 44px. Testar: microfone/anexo/enviar/lixeira confortáveis de tocar; gesto de arrastar pra travar continua reconhecendo variação lateral; teclado fechado (composer 100% visível); tocar no composer (teclado abre, composer acompanha, sem vão); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
+2. **Perguntar ao usuário o motivo do revert da parte 20 antes de tentar de novo.** A parte 20 (`overflow: hidden` em `html`/`body`, pra impedir o iOS de rolar o documento inteiro ao focar o composer) foi desfeita a pedido direto do usuário na parte 21, sem explicação do motivo — pode ter sido só cautela, ou pode ter quebrado algo real. Não reaplicar a mesma mudança sem entender o que aconteceu. Se o header da conversa ainda subir junto com o teclado (item 1), esse é o candidato mais provável a reconsiderar.
+3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-22 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

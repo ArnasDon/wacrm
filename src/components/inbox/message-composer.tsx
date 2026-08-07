@@ -678,12 +678,12 @@ export function MessageComposer({
                       ? undefined
                       : t("attachMedia")
                 }
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <Paperclip className="h-4 w-4" />
+                  <Paperclip className="h-5 w-5" />
                 )}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="border-border bg-popover">
@@ -737,7 +737,11 @@ export function MessageComposer({
             />
 
             {/* Right — record audio. Press-and-hold (Pointer Events cover
-                touch + mouse identically), drag up to lock. */}
+                touch + mouse identically), drag up to lock. `h-11 w-11`
+                (44px) meets Apple's minimum comfortable touch target —
+                this is the button agents hold down repeatedly for every
+                voice note, so it's the one most worth being generous
+                with. */}
             <button
               ref={micButtonRef}
               type="button"
@@ -748,9 +752,9 @@ export function MessageComposer({
               onPointerMove={handleMicPointerMove}
               onPointerUp={handleMicPointerEnd}
               onPointerCancel={handleMicPointerEnd}
-              className="flex h-9 w-9 shrink-0 touch-none select-none items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-11 w-11 shrink-0 touch-none select-none items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Mic className="h-4 w-4" />
+              <Mic className="h-5 w-5" />
             </button>
 
             <GatedButton
@@ -759,9 +763,9 @@ export function MessageComposer({
               gateReason="enviar mensagens"
               disabled={!text.trim() || sessionExpired || sending}
               onClick={handleSend}
-              className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+              className="h-11 w-11 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-5 w-5" />
             </GatedButton>
           </div>
 
@@ -791,9 +795,9 @@ export function MessageComposer({
                 onClick={handleDiscardRecording}
                 aria-label={t("discardRecording")}
                 disabled={micPhase === "sending"}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-5 w-5" />
               </button>
 
               <div className="flex flex-1 items-center justify-center gap-2.5">
@@ -820,9 +824,9 @@ export function MessageComposer({
                 disabled={micPhase === "sending"}
                 onClick={handleSendRecording}
                 aria-label={t("sendRecording")}
-                className="h-8 w-8 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+                className="h-11 w-11 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
               >
-                <Send className="h-4 w-4" />
+                <Send className="h-5 w-5" />
               </GatedButton>
             </div>
           )}

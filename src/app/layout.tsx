@@ -103,6 +103,24 @@ const THEME_BOOT_SCRIPT = `
 })();
 `;
 
+// Inline boot script — sets `--app-height` synchronously before first
+// paint, same rationale as the theme script above (avoids a flash/
+// reflow once the `useAppHeight` hook mounts and would otherwise set
+// it for the first time). Only acts in real standalone-PWA use — see
+// `use-app-height.ts` for the full reasoning (parte 27) behind using
+// `outerHeight` as the resting value there. A no-op everywhere else
+// (desktop, a regular Safari tab): the CSS fallback `var(--app-height,
+// 100dvh)` covers that case, unchanged from before.
+const VIEWPORT_BOOT_SCRIPT = `
+(function(){
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+      document.documentElement.style.setProperty('--app-height', window.outerHeight + 'px');
+    }
+  } catch (_e) {}
+})();
+`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -131,6 +149,11 @@ export default async function RootLayout({
           id="theme-boot"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
+        />
+        <Script
+          id="viewport-height-boot"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: VIEWPORT_BOOT_SCRIPT }}
         />
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">

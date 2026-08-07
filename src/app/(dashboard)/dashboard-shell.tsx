@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
+import { useAppHeight } from "@/hooks/use-app-height";
 import { ViewportDebugBadge } from "@/components/debug/viewport-debug-badge";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -33,6 +34,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLButtonElement>(null);
+  useAppHeight();
   useDrawerGesture({
     open: sidebarOpen,
     onOpenChange: setSidebarOpen,
@@ -49,7 +51,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-background">
+      <div className="flex h-[var(--app-height,100dvh)] items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">Loading...</p>
@@ -63,42 +65,30 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     // `touch-pan-y` tells the browser vertical scroll is still native
     // (no latency added there) while leaving horizontal gestures for
-    // the JS listeners in useDrawerGesture to interpret. `h-dvh`.
+    // the JS listeners in useDrawerGesture to interpret.
     //
-    // History, because this exact line has been fought over across many
-    // sessions (partes 13-16, 25) — the *symptom* looked the same each
-    // time (something at the bottom cut off) but the cause flipped
-    // direction depending on what `dvh` itself measured as on the real
-    // device at the time:
-    //  - parte 13: `visualViewport.height` (873) read ~59px shorter
-    //    than `outerHeight` (932) — but that's not `dvh`, it's a
-    //    different API that deliberately excludes safe-area, and using
-    //    it as the shell's height was the actual bug (parte 14 fixed
-    //    the resulting keyboard regression by dropping it for plain
-    //    `dvh`).
-    //  - parte 16: bare `dvh` alone still looked ~59px short (matching
-    //    the *safe-area-inset-top* amount), so `+ env(safe-area-inset-
-    //    top)` was added to compensate.
-    //  - parte 25: real on-device measurement (`getBoundingClientRect`
-    //    on this exact element, not an inferred number) showed the
-    //    *opposite* — shell rendered at 991px while the true screen was
-    //    932px, and `991 - env(safe-area-inset-top)=59 = 932` exactly.
-    //    `dvh` was, this time, already the full 932px on its own; the
-    //    parte-16 addition was now double-counting the same inset,
-    //    pushing the shell (and everything anchored to its bottom,
-    //    composer included) 59px past the real bottom of the screen.
-    // Net: `dvh` on its own has, empirically, been correct both times
-    // it was actually measured directly (parte 14's fix worked; parte
-    // 25's measurement shows it's exactly right again now) — the
-    // *compensation* is what kept introducing the error. Reverted to
-    // plain `h-dvh`; if `dvh` itself is ever again confirmed short on
-    // a real device, fix it with a fresh on-device measurement at that
-    // time rather than reapplying a static offset that's already
-    // proven to go stale.
+    // Height: `var(--app-height, 100dvh)`. This line has been fought
+    // over across many sessions (partes 13-16, 25-27) chasing a moving
+    // target — `dvh` (and the `window.innerHeight` it tracks) has been
+    // measured, on the *same real device*, at both 932 (the true full
+    // screen) and 873 (59px short) minutes apart with no keyboard
+    // involved. No static CSS formula built from `dvh` can be correct
+    // in both states, because the correct answer genuinely differs
+    // between them — every fix in that range "worked" for whichever
+    // measurement motivated it and broke for the next one.
+    // `window.outerHeight`, by contrast, has read 932 in *every* real-
+    // device measurement taken across this project's history — the one
+    // stable signal. `use-app-height.ts` sets `--app-height` from
+    // `outerHeight` at rest, and switches to live `visualViewport.height`
+    // tracking the moment a text field is focused (via `focusin`, not by
+    // inferring keyboard state from the height number itself — that
+    // inference is exactly what isn't reliable here). Only active in
+    // real standalone-PWA use; a no-op on desktop or a regular Safari
+    // tab, where the `100dvh` fallback is unchanged from before.
     <div
       ref={shellRef}
       data-debug-shell
-      className="flex h-dvh touch-pan-y overflow-hidden bg-background"
+      className="flex h-[var(--app-height,100dvh)] touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}

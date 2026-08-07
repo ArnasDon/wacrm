@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 26) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 27) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,20 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 27)** — prova definitiva de que `dvh` sozinho é instável neste aparelho; correção por JS orientada a foco (`outerHeight` em repouso, `visualViewport` ao focar um campo), só em standalone PWA:
+
+Usuário mandou dois prints do iPhone, minutos depois do deploy da parte 26: `iH:873 oH:932 shellH:873` (na conversa) e o mesmo padrão na tela com o menu lateral aberto — a mesma "faixa preta" global de antes, agora com o shell **curto** (873 em vez de 932). Reportou explicitamente que o problema voltou a afetar o app inteiro, não só o composer.
+
+**Prova, não hipótese:** comparando essa medição com a da parte 25 (mesma sessão do usuário, mais cedo): `iH` foi **932** numa leitura e **873** minutos depois, no mesmo aparelho, sem teclado envolvido nas duas. `oH` (outerHeight) foi **932 nas duas** — e em toda medição já feita neste projeto. Isso prova matematicamente que nenhuma fórmula CSS estática baseada em `dvh` pode funcionar nos dois estados, porque a resposta certa é diferente em cada um — every fix nesse trecho (partes 13, 16, 26) "funcionou" pra medição que motivou e quebrou pra próxima, porque `dvh` real neste aparelho **muda de estado sozinho**, não é um valor fixo errado por um deslocamento constante.
+
+**Correção — volta a usar JS, mas com arquitetura diferente das tentativas que falharam antes (partes 13, 17):** `use-app-height.ts` (recriado) define `--app-height` como `window.outerHeight` (o único valor estável em toda medição já feita) **em repouso**, e passa a acompanhar `visualViewport.height` ao vivo **só quando um campo de texto recebe foco** (evento `focusin`, não inferido a partir do próprio número de altura — essa inferência é exatamente a parte que não é confiável). Diferença crucial das tentativas anteriores: aquelas tentavam adivinhar se o teclado estava aberto olhando o número de altura (a mesma coisa que provamos instável); esta usa foco de campo como sinal direto. **Só ativa em `display-mode: standalone` real** — `matchMedia` checado tanto no script de boot (`layout.tsx`, síncrono antes do primeiro paint) quanto no hook — no desktop ou numa aba comum do Safari o hook não faz nada, e o fallback CSS (`var(--app-height, 100dvh)`) mantém o comportamento de sempre.
+
+**Arquivos alterados:** `src/hooks/use-app-height.ts` (recriado), `src/app/layout.tsx` (novo `VIEWPORT_BOOT_SCRIPT`, só ativo em standalone), `dashboard-shell.tsx` (`useAppHeight()`, altura trocada pra `h-[var(--app-height,100dvh)]` nos dois lugares), `globals.css` (fallback `--app-height: 100dvh` em `:root`), `viewport-debug-badge.tsx` (adicionado `vv` e `appH` ao print, pra confirmar se o valor realmente aplicado bate com o esperado). `inbox/page.tsx` não precisou de nenhuma mudança — como já herda `100%` de `<main>` desde a parte 19, corrigir só o shell propaga automaticamente.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome (desktop, `standalone:false`): badge confirma `appH:100dvh` (fallback correto, hook realmente inerte) tanto em repouso quanto com o campo de texto focado — nenhuma mudança de comportamento no desktop, como exigido. **A validação real (se `outerHeight`/foco resolve de forma estável, em vez de mais um estado que também pode variar) só é possível no iPhone físico — pedir print do badge de novo, com atenção especial ao `appH` e ao `vv`.**
+
+---
 
 **Sessão de 2026-08-07 (parte 26)** — causa raiz confirmada por medição real (não hipótese): a fórmula da parte 16 estava dobrando a mesma margem; revertida:
 
@@ -546,12 +560,12 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e confirma via badge se `OVERFLOW` chegou em 0 na tela da conversa.** A parte 26 corrigiu a causa raiz confirmada por medição real (shell 59px mais alto que a tela, por dobrar a soma da safe-area-top). Testar: composer 100% visível com teclado fechado; tocar no composer (acompanha o teclado); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
-2. **Assim que confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, e os atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção. Mantido de propósito na parte 26 pra permitir essa confirmação final.
-3. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do composer.
-4. **Se algo divergir de novo no futuro:** não reaplicar às cegas a fórmula `+env(safe-area-inset-top)` da parte 16 — o histórico (partes 13, 16, 26) mostra que o valor real de `dvh` nesse aparelho mudou entre medições, então qualquer correção futura precisa partir de uma medição nova (o próprio badge, ou o Web Inspector no Mac), não de reaplicar uma correção estática antiga.
-5. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
-6. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-26 acima.
+1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e manda print do badge.** Focar em `appH` (deve mostrar um valor em px, não `100dvh`, confirmando que o hook rodou) e `OVERFLOW` (deve ser 0 ou negativo). Testar também: focar o campo de texto (deve trocar pra acompanhar o teclado ao vivo) e desfocar (deve voltar ao valor de `outerHeight`); repetir abrir/fechar teclado 5x sem deslocamento acumulado; navegar entre Painel/Inbox/menu lateral conferindo que todas as telas usam a tela inteira agora (não só a conversa).
+2. **Se `appH` continuar variando de forma instável mesmo com `outerHeight` como base:** isso seria uma descoberta nova e mais séria — significaria que nem `outerHeight` é 100% estável nesse aparelho, e nesse caso a investigação precisa ir mais fundo, idealmente já no Mac com Web Inspector, observando o que exatamente dispara a mudança (mais provável: alguma transição de estado do WKWebView specific a esse iOS/dispositivo).
+3. **Assim que confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer`) — não é UI de produção.
+4. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do shell/composer.
+5. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão — especialmente se o item 2 acima se confirmar. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
+6. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-27 acima.
 7. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 8. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 9. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

@@ -291,6 +291,12 @@ html[data-theme="rose"] {
    the header measures without anything needing to know the number. */
 :root {
   --header-content-height: 3.5rem;
+  /* Fallback only — in real standalone-PWA use, `use-app-height.ts`
+     sets the real value (from `outerHeight`, switching to live
+     `visualViewport.height` while a text field is focused; see
+     dashboard-shell.tsx, parte 27). Everywhere else (desktop, a
+     regular Safari tab) this fallback is the only value ever used. */
+  --app-height: 100dvh;
 }
 
 /* Tiny "audio capturing" equalizer bars — Inbox voice-note recorder

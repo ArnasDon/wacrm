@@ -3,16 +3,16 @@
 import { useEffect, useState } from "react";
 
 /** TEMPORARY — diagnosing the composer being cut off below the visible
- *  screen in iOS standalone-PWA use (STATUS_PROJETO.md, parte 25).
- *  Unlike the parte-13 version, this one measures the *actual rendered*
- *  numbers (shell height, composer's real bottom edge, the real
- *  `env(safe-area-inset-*)` values applied in context) instead of just
- *  the raw window/viewport APIs — those alone weren't enough to explain
- *  why the composer sits below the fold even after the `dvh +
- *  env(safe-area-inset-top)` shell-height fix. Renders on screen (not
- *  just `console.log`) so it can be read/screenshotted straight off the
- *  installed home-screen app. Remove this component (and its mount in
- *  dashboard-shell.tsx) once the cause is confirmed. */
+ *  screen in iOS standalone-PWA use (STATUS_PROJETO.md, partes 25-27).
+ *  Measures the *actual rendered* numbers (shell height, composer's
+ *  real bottom edge, the real `env(safe-area-inset-*)` values applied
+ *  in context) instead of just the raw window/viewport APIs. `vv` and
+ *  `appH` (parte 27) show whether the `outerHeight`/focus-based
+ *  `--app-height` fix (use-app-height.ts) is landing the value it's
+ *  supposed to. Renders on screen (not just `console.log`) so it can
+ *  be read/screenshotted straight off the installed home-screen app.
+ *  Remove this component (and its mount in dashboard-shell.tsx) once
+ *  the cause is confirmed. */
 export function ViewportDebugBadge() {
   const [info, setInfo] = useState<string | null>(null);
 
@@ -39,12 +39,16 @@ export function ViewportDebugBadge() {
       const safeAreaBottomPx = composer
         ? getComputedStyle(composer).paddingBottom
         : "?";
+      const appHeightVar = getComputedStyle(
+        document.documentElement,
+      ).getPropertyValue("--app-height");
 
       const data = {
         standalone,
         innerHeight: window.innerHeight,
         outerHeight: window.outerHeight,
         visualViewportHeight: window.visualViewport?.height ?? null,
+        appHeightVar: appHeightVar.trim() || null,
         shellHeight: shellRect ? Math.round(shellRect.height) : null,
         shellBottom: shellRect ? Math.round(shellRect.bottom) : null,
         composerBottom: composerRect ? Math.round(composerRect.bottom) : null,
@@ -59,8 +63,8 @@ export function ViewportDebugBadge() {
       };
       console.log("[wacrm][viewport-debug]", data);
       setInfo(
-        `sa:${data.standalone} iH:${data.innerHeight} oH:${data.outerHeight} ` +
-          `shellH:${data.shellHeight} shellBot:${data.shellBottom} ` +
+        `sa:${data.standalone} iH:${data.innerHeight} oH:${data.outerHeight} vv:${data.visualViewportHeight} ` +
+          `appH:${data.appHeightVar} shellH:${data.shellHeight} shellBot:${data.shellBottom} ` +
           `compBot:${data.composerBottom} OVERFLOW:${data.composerOverflowPx} ` +
           `satop:${data.safeAreaTop} sabot:${data.safeAreaBottomPx}`,
       );

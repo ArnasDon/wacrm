@@ -1,12 +1,10 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
-import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage } from './query'
 import { createAutoReplyTools } from './tools'
 import { loadAgentToolPermissions } from './tool-permissions'
 import { engineSendText } from '@/lib/flows/meta-send'
@@ -76,17 +74,13 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    const knowledge = await retrieveKnowledge(
-      db,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
-
+    // Knowledge retrieval is now tool-driven. This prevents the same knowledge
+    // base being queried once before the model call and again through
+    // search_knowledge, and makes the Tools switches authoritative.
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
-      knowledge,
+      knowledge: [],
     })
 
     const permissions = await loadAgentToolPermissions(

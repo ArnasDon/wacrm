@@ -22,9 +22,19 @@ const PRODUCT_SYNONYM_GROUPS = [
 function valueAt(input: unknown, path: string | undefined): unknown {
   if (!path) return undefined
   return path.split('.').reduce<unknown>((value, key) => {
+    if (Array.isArray(value) && /^\d+$/.test(key)) return value[Number(key)]
     if (!value || typeof value !== 'object') return undefined
     return (value as Record<string, unknown>)[key]
   }, input)
+}
+
+function firstValueAt(input: unknown, paths: Array<string | undefined>): unknown {
+  for (const path of paths) {
+    if (!path) continue
+    const value = valueAt(input, path)
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+  return undefined
 }
 
 function text(value: unknown): string | null {
@@ -93,26 +103,67 @@ function assertSafeExternalUrl(raw: string): URL {
   return url
 }
 
+function externalItems(payload: unknown, mapping: ExternalFieldMapping): unknown[] {
+  // Explicit mapping always wins. Fallbacks only make common catalogue APIs
+  // usable when the operator leaves the mapping incomplete.
+  if (mapping.items) {
+    const mapped = valueAt(payload, mapping.items)
+    return Array.isArray(mapped) ? mapped : []
+  }
+
+  if (Array.isArray(payload)) return payload
+
+  const common = firstValueAt(payload, ['products', 'data.products', 'items', 'data.items', 'data'])
+  return Array.isArray(common) ? common : []
+}
+
 function normalizeExternalProduct(
   item: unknown,
   mapping: ExternalFieldMapping,
   source: CatalogSourceRow,
   index: number,
 ): CatalogProduct | null {
-  const name = text(valueAt(item, mapping.name ?? 'name'))
-  const price = numberValue(valueAt(item, mapping.price ?? 'price'))
+  const name = text(firstValueAt(item, [mapping.name, 'name', 'title', 'product_name']))
+  const price = numberValue(firstValueAt(item, [mapping.price, 'price', 'amount', 'unit_price']))
   if (!name || price === null || price < 0) return null
 
   return {
-    id: text(valueAt(item, mapping.id ?? 'id')) ?? `${source.id}:${index}`,
+    id:
+      text(firstValueAt(item, [mapping.id, 'id', 'sku', 'external_id'])) ??
+      `${source.id}:${index}`,
     name,
-    description: text(valueAt(item, mapping.description ?? 'description')),
+    description: text(
+      firstValueAt(item, [mapping.description, 'description', 'short_description', 'summary']),
+    ),
     price,
-    currency: text(valueAt(item, mapping.currency ?? 'currency')) ?? 'MZN',
-    imageUrl: text(valueAt(item, mapping.imageUrl ?? 'image_url')),
-    productUrl: text(valueAt(item, mapping.productUrl ?? 'product_url')),
-    category: text(valueAt(item, mapping.category ?? 'category')),
-    stockQuantity: numberValue(valueAt(item, mapping.stockQuantity ?? 'stock_quantity')),
+    currency:
+      text(firstValueAt(item, [mapping.currency, 'currency', 'currency_code'])) ?? 'MZN',
+    imageUrl: text(
+      firstValueAt(item, [
+        mapping.imageUrl,
+        'image_url',
+        'imageUrl',
+        'thumbnail',
+        'image',
+        'images.0.url',
+        'images.0',
+      ]),
+    ),
+    productUrl: text(
+      firstValueAt(item, [mapping.productUrl, 'product_url', 'productUrl', 'url', 'link']),
+    ),
+    category: text(
+      firstValueAt(item, [mapping.category, 'category.name', 'category', 'type']),
+    ),
+    stockQuantity: numberValue(
+      firstValueAt(item, [
+        mapping.stockQuantity,
+        'stock_quantity',
+        'stockQuantity',
+        'stock',
+        'quantity',
+      ]),
+    ),
     sourceName: source.name,
   }
 }
@@ -140,21 +191,47 @@ async function searchExternalSource(
     }
   }
 
+  console.info('[catalog search] external request:', {
+    sourceId: source.id,
+    sourceName: source.name,
+    query: input.query,
+    url: url.toString(),
+  })
+
   const response = await fetch(url, {
     headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: 'no-store',
   })
-  if (!response.ok) throw new Error(`Catalogue API returned ${response.status}.`)
-  const payload: unknown = await response.json()
-  const mapping = source.field_mapping ?? {}
-  const itemsValue = mapping.items ? valueAt(payload, mapping.items) : payload
-  const items = Array.isArray(itemsValue) ? itemsValue : []
+  if (!response.ok) {
+    throw new Error(`Catalogue API ${source.name} returned HTTP ${response.status}.`)
+  }
 
-  return items
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    throw new Error(`Catalogue API ${source.name} returned invalid JSON.`)
+  }
+
+  const mapping = source.field_mapping ?? {}
+  const items = externalItems(payload, mapping)
+  const products = items
     .slice(0, input.limit)
     .map((item, index) => normalizeExternalProduct(item, mapping, source, index))
     .filter((item): item is CatalogProduct => item !== null)
+
+  console.info('[catalog search] external results:', {
+    sourceId: source.id,
+    sourceName: source.name,
+    query: input.query,
+    rawItemCount: items.length,
+    normalizedCount: products.length,
+    names: products.map((product) => product.name),
+    mapping,
+  })
+
+  return products
 }
 
 async function searchInternal(
@@ -236,9 +313,22 @@ export async function searchCatalogues(
       message: sourcesError.message,
       code: sourcesError.code,
     })
+    throw new Error(`External catalogue source lookup failed: ${sourcesError.message}`)
   }
 
   const sources = (sourceRows ?? []) as CatalogSourceRow[]
+  console.info('[catalog search] external sources loaded:', {
+    accountId,
+    query: input.query,
+    count: sources.length,
+    sources: sources.map((source) => ({
+      id: source.id,
+      name: source.name,
+      baseUrl: source.base_url,
+      searchPath: source.search_path,
+    })),
+  })
+
   const variants = buildSearchVariants(input.query)
   const externalQueries = variants.length > 0 ? variants.slice(0, 4) : [input.query]
   const externalSettled = await Promise.allSettled(

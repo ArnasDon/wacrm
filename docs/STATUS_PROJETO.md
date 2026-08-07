@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 20) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 21) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,16 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 21)** — reverte a parte 20 (`overflow: hidden` em `html`/`body`) a pedido do usuário:
+
+Usuário pediu diretamente para desfazer a última alteração, sem detalhar o motivo. Revertido exatamente: `html`/`body` voltam a ter só `bg-background`/`overscroll-y-none` (estado da parte 12), sem `overflow: hidden`. Nenhum outro arquivo tocado — `dashboard-shell.tsx`, `inbox/page.tsx`, `message-composer.tsx`, `message-thread.tsx` e a correção da parte 19 (altura da Inbox herdada de `<main>`) continuam intactos.
+
+**Validação:** `tsc`, `eslint`, `vitest run` (652/655, mesma base pré-existente), `next build` limpo — diff conferido como revert exato (só remove o texto adicionado na parte 20, nada além disso).
+
+Se o motivo do revert for algum efeito colateral observado no iPhone (ex.: algo parou de rolar), é importante que a próxima sessão saiba o quê — não foi informado nesta interação.
+
+---
 
 **Sessão de 2026-08-07 (parte 20)** — ajuste cirúrgico: `overflow: hidden` em `html`/`body`, fecha o canal que deixava o header da conversa ser deslocado pelo foco do teclado:
 
@@ -439,9 +449,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Duas correções empilhadas agora: parte 19 (altura da Inbox herdada de `<main>`, elimina a duplicação de cálculo) e parte 20 (`overflow: hidden` em `html`/`body`, fecha o canal de rolagem do documento). Testar na tela de conversa: (a) teclado fechado — composer 100% visível, sem corte; (b) tocar no composer — **header não se move nem um pixel**, composer acompanha o teclado, sem vão; (c) fechar o teclado — tudo volta ao normal; (d) repetir 5x — sem deslocamento acumulado; (e) rolar a conversa — só as mensagens rolam. Se passar em tudo, esta série (partes 8-20) sobre barra preta/teclado/header pode ser considerada fechada.
-2. **Se o header ainda se mover mesmo depois da parte 20: mandar screenshot/vídeo real antes de qualquer nova tentativa de código.** Depois de 13 rodadas (partes 8-20), as duas explicações estruturais mais prováveis (altura duplicada — parte 19; documento sendo rolado pelo foco do teclado — parte 20) já foram aplicadas. Se mesmo assim persistir, considerar reproduzir com o usuário em uma chamada/gravação de tela, não mais por relato + código remoto.
-3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-20 acima.
+1. **Perguntar ao usuário o motivo do revert da parte 20 antes de tentar de novo.** A parte 20 (`overflow: hidden` em `html`/`body`, pra impedir o iOS de rolar o documento inteiro ao focar o composer) foi desfeita a pedido direto do usuário na parte 21, sem explicação do motivo — pode ter sido só cautela, ou pode ter quebrado algo real (ex.: algo parou de rolar em alguma tela). Não reaplicar a mesma mudança sem entender o que aconteceu.
+2. **Validar em iPhone físico standalone o que ainda está de pé:** a correção da parte 19 (altura da Inbox herdada de `<main>`, elimina duplicação de cálculo) permanece ativa e não foi revertida. Testar a tela de conversa: teclado fechado (composer 100% visível), tocar no composer (teclado abre, composer acompanha), fechar (volta ao normal), repetir 5x (sem deslocamento acumulado), rolar mensagens (só elas rolam). O comportamento do header ao abrir o teclado (se ainda sobe ou não) é o que resta confirmar sem a correção da parte 20.
+3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-21 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

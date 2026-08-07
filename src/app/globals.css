@@ -242,34 +242,12 @@ html[data-theme="rose"] {
      stray black strip at the top/bottom edge — reported as a "black
      bar" specifically in standalone PWA mode (no browser chrome there
      to absorb the bounce). `bg-background` below is belt-and-suspenders
-     so even a residual bounce matches the page instead of clashing.
-
-     `overflow: hidden` on both (2026-08-07, parte 20): closes a
-     related but separate gap — html/body were never actually given
-     scroll content (dashboard-shell.tsx's root always sizes itself to
-     fill them exactly), but nothing stopped them from being scrolled;
-     `overscroll-behavior` only governs the *bounce past* a scroll
-     boundary, not whether scrolling can happen at all. iOS's native
-     "scroll the focused input into view" behavior, triggered when a
-     `<textarea>`/`<input>` receives focus, can shift
-     `document.scrollingElement` directly — a different code path from
-     regular CSS-overflow-driven scrolling — and isn't reliably stopped
-     by a nested container's own `overflow: hidden` (dashboard-shell.tsx
-     and the Inbox panels already have it). That was the most likely
-     remaining explanation for the conversation header appearing to
-     move when the composer's field is focused: not the header's own
-     container being scrolled, but the *document* being nudged, taking
-     everything on the page with it. `overflow: hidden` here removes
-     any scroll range for the document to move within in the first
-     place — nothing to compensate for after the fact, nothing for iOS
-     to "helpfully" scroll. Never changes any page's actual visible
-     behavior: every page already scrolls exclusively through `<main>`
-     inside the shell, never through html/body. */
+     so even a residual bounce matches the page instead of clashing. */
   body {
-    @apply bg-background text-foreground overscroll-y-none overflow-hidden;
+    @apply bg-background text-foreground overscroll-y-none;
   }
   html {
-    @apply bg-background font-sans overscroll-y-none overflow-hidden;
+    @apply bg-background font-sans overscroll-y-none;
   }
 }
 

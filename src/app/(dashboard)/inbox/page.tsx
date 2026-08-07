@@ -43,6 +43,34 @@ function InboxPageInner() {
    */
   const deepLinkConvId = searchParams.get("c");
 
+  // iOS's native "scroll the focused input into view" behavior, on
+  // focusing the composer's textarea, can scroll `<main>` (dashboard-
+  // shell.tsx — always `overflow-y-auto`, needed there for pages taller
+  // than the viewport) even though this panel's own height already
+  // exactly matches `<main>`'s (see the height comment below) and
+  // never legitimately needs `<main>` to scroll. That scroll pushes
+  // everything up out of view — conversation header included — which
+  // is what was reported as the header/composer "flying up" when the
+  // keyboard opens (2026-08-07, parte 28). Rather than reacting to that
+  // scroll after the fact (tried and reverted before, partes 17-18:
+  // fighting a scroll after it happens is unreliable and can itself
+  // misbehave), this prevents it outright: `<main>` is genuinely not
+  // scrollable while a conversation is open, so there's nothing for
+  // iOS to scroll to begin with. Scoped to this page only — `<main>`
+  // reverts to its normal scrollable behavior the moment this
+  // unmounts, unaffected on every other route (Dashboard, Settings,
+  // etc., which do need it for taller content).
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const main = rootRef.current?.closest("main");
+    if (!main) return;
+    const previousOverflow = main.style.overflowY;
+    main.style.overflowY = "hidden";
+    return () => {
+      main.style.overflowY = previousOverflow;
+    };
+  }, []);
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
@@ -626,7 +654,10 @@ function InboxPageInner() {
     // place that owns it (dashboard-shell.tsx), and it flows down
     // through ordinary CSS box inheritance from there — nothing in this
     // file re-derives it.
-    <div className="-m-4 flex h-[calc(100%+2rem)] flex-col overflow-hidden sm:-m-6 sm:h-[calc(100%+3rem)]">
+    <div
+      ref={rootRef}
+      className="-m-4 flex h-[calc(100%+2rem)] flex-col overflow-hidden sm:-m-6 sm:h-[calc(100%+3rem)]"
+    >
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

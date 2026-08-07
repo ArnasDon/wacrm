@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 27) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 28) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,21 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 28)** — causa raiz real do "composer sobe pra o topo": não é cálculo de altura, é `<main>` sendo rolado pelo iOS; travado o scroll dele especificamente na tela da conversa:
+
+Usuário confirmou que a correção de altura da parte 27 está matematicamente perfeita (`compBot` bate exatamente com `vv`/`appH` nos dois estados, teclado aberto e fechado) — mas esclareceu um detalhe crucial: o print "correto" só foi possível porque ele **arrastou a tela manualmente pra revelar o badge**. Na posição de repouso real (sem esse gesto manual), com o teclado aberto, **nem o header nem o corpo da conversa ficam visíveis** — só o composer, no topo, com um vão enorme até o teclado.
+
+**Isso muda o diagnóstico por completo:** não é mais sobre a altura calculada estar errada (os números provam que está certa) — é sobre **algo rolar a tela inteira pra cima** quando o teclado abre, escondendo o header e as mensagens acima do topo visível, deixando só uma fatia (o composer) visível por baixo. Isso é exatamente o mecanismo suspeitado desde a parte 17: o comportamento nativo do iOS de "rolar o campo focado pra dentro da área visível" — só que a correção da parte 24 (`overflow:hidden` em `html`/`body`) nunca fechou essa porta no lugar certo: `<main>` (`dashboard-shell.tsx`) sempre teve `overflow-y-auto` — necessário pra páginas mais altas que a tela (Configurações, etc.) — e nunca foi tocado.
+
+**Correção — impedir, não compensar (como pedido explicitamente):** `inbox/page.tsx` — novo `useEffect` que, enquanto a página da conversa está montada, encontra o `<main>` mais próximo (via `ref` no container raiz + `.closest("main")`) e define `overflowY: "hidden"` nele diretamente, restaurando o valor original no unmount. Diferente da tentativa da parte 17 (que tentava **corrigir depois** que o iOS já tinha rolado, usando `scrollTo` — revertida por brigar com o comportamento legítimo do teclado), esta **elimina a possibilidade de rolar antes de precisar acontecer** — não há evento, não há correção, só a garantia estrutural de que `<main>` não pode ser alvo de scroll enquanto uma conversa está aberta. Escopo: só `inbox/page.tsx` — `dashboard-shell.tsx` não foi tocado (a trava é aplicada de fora, via ref), e todas as outras páginas continuam rolando `<main>` normalmente assim que a Inbox desmonta.
+
+**Arquivos alterados:** só `src/app/(dashboard)/inbox/page.tsx`.
+**Arquivos NÃO alterados:** `dashboard-shell.tsx`, `message-composer.tsx`, `message-thread.tsx`, `use-app-height.ts`, `globals.css` — nada da correção de altura da parte 27 foi tocado, ela já estava certa.
+
+**Validação:** `tsc`, `eslint` (zero erros novos), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome: Inbox renderiza normal, `OVERFLOW:0`, a lista de mensagens continua rolando normalmente (só `<main>` foi travado, não a lista); saindo da Inbox pra Configurações (página propositalmente longa), `<main>` volta a rolar normalmente — confirma que a trava é escopada e reversível, não vaza pra outras páginas. **A prova real (se o header/conversa somem de vista ao abrir o teclado) só é possível no iPhone físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 27)** — prova definitiva de que `dvh` sozinho é instável neste aparelho; correção por JS orientada a foco (`outerHeight` em repouso, `visualViewport` ao focar um campo), só em standalone PWA:
 
@@ -560,16 +575,15 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e manda print do badge.** Focar em `appH` (deve mostrar um valor em px, não `100dvh`, confirmando que o hook rodou) e `OVERFLOW` (deve ser 0 ou negativo). Testar também: focar o campo de texto (deve trocar pra acompanhar o teclado ao vivo) e desfocar (deve voltar ao valor de `outerHeight`); repetir abrir/fechar teclado 5x sem deslocamento acumulado; navegar entre Painel/Inbox/menu lateral conferindo que todas as telas usam a tela inteira agora (não só a conversa).
-2. **Se `appH` continuar variando de forma instável mesmo com `outerHeight` como base:** isso seria uma descoberta nova e mais séria — significaria que nem `outerHeight` é 100% estável nesse aparelho, e nesse caso a investigação precisa ir mais fundo, idealmente já no Mac com Web Inspector, observando o que exatamente dispara a mudança (mais provável: alguma transição de estado do WKWebView specific a esse iOS/dispositivo).
-3. **Assim que confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer`) — não é UI de produção.
-4. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do shell/composer.
-5. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão — especialmente se o item 2 acima se confirmar. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
-6. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-27 acima.
-7. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-8. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-9. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-10. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e confirma se o header/conversa permanecem visíveis ao abrir o teclado.** A parte 28 trava o scroll do `<main>` especificamente na tela de conversa — se essa era realmente a causa (rolagem nativa do iOS, não cálculo de altura), o composer deve subir só o necessário pra ficar acima do teclado, com header e mensagens continuando visíveis o tempo todo. Testar também: abrir/fechar o teclado 5x sem deslocamento acumulado; rolar a lista de mensagens (deve continuar funcionando normalmente — só `<main>`, não a lista, foi travado).
+2. **Se o header/mensagens ainda sumirem de vista:** essa era a explicação mais forte encontrada até agora (usuário observou diretamente que precisou rolar manualmente pra revelar o badge) — se mesmo assim persistir, a próxima etapa é o Mac + Web Inspector, observando ao vivo o que exatamente dispara o scroll durante a transição do teclado.
+3. **Assim que tudo confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção.
+4. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
+5. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-28 acima.
+6. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+7. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+8. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+9. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

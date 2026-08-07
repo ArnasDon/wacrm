@@ -298,6 +298,11 @@ export interface WhatsAppConfig {
    * inbound attachments expire. Migration 039.
    */
   mirror_inbound_media?: boolean;
+  /** Which transport this account's number sends/receives through. Defaults to 'meta'. */
+  provider?: 'meta' | 'evolution';
+  evolution_api_url?: string | null;
+  evolution_instance_name?: string | null;
+  evolution_instance_uuid?: string | null;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

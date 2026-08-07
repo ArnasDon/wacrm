@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -56,10 +56,10 @@ export function MessageActions({
       toast.error(t("nothingToCopy"));
       return;
     }
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyToClipboard(text);
+    if (ok) {
       toast.success(t("copied"));
-    } catch {
+    } else {
       toast.error(t("copyFailed"));
     }
     setTouchOpen(false);

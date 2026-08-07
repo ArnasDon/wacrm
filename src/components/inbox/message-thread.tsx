@@ -786,7 +786,7 @@ export function MessageThread({
         return;
       }
       if (messageId.startsWith("temp-")) {
-        toast.error("Wait for the message to finish sending");
+        toast.error(t("waitForSend"));
         return;
       }
 
@@ -836,7 +836,7 @@ export function MessageThread({
         setReactions(snapshot);
       }
     },
-    [conversation, user?.id],
+    [conversation, user?.id, t],
   );
 
   const handleAssignChange = useCallback(
@@ -851,13 +851,13 @@ export function MessageThread({
 
       if (error) {
         console.error("Failed to update assignment:", error);
-        toast.error("Failed to update assignment");
+        toast.error(t("assignUpdateError"));
         return;
       }
 
       onAssignChange(conversation.id, agentId);
     },
-    [conversation, onAssignChange],
+    [conversation, onAssignChange, t],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active

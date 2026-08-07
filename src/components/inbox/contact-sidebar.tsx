@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { copyToClipboard } from "@/lib/utils";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -82,13 +84,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
-    await navigator.clipboard.writeText(contact.phone);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(contact.phone);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error(tSidebar("copyFailed"));
+    }
     // Dep is the whole `contact` object (not `contact?.phone`) so the
     // React Compiler's inference agrees with the manual dep list —
     // fixes the `preserve-manual-memoization` lint error.
-  }, [contact]);
+  }, [contact, tSidebar]);
 
   const handleAddNote = useCallback(async () => {
     if (!contact || !newNote.trim()) return;

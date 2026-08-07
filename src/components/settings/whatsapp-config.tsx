@@ -15,6 +15,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { copyToClipboard } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { EvolutionWhatsAppConfig } from './evolution-whatsapp-config';
+import { WhatsAppDangerZone } from './whatsapp-danger-zone';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Accordion,
   AccordionItem,
@@ -86,6 +90,11 @@ export function WhatsAppConfig() {
   // a viewer's toggle would match zero rows and appear to work.
   const [mirrorMedia, setMirrorMedia] = useState(true);
   const [savingMirror, setSavingMirror] = useState(false);
+  // Which provider's panel is showing. Defaults to whatever the saved
+  // row uses (Meta unless a prior save set provider='evolution') —
+  // synced in fetchConfig below, not fought on every render so a
+  // manual toggle click during the session sticks until the next load.
+  const [providerTab, setProviderTab] = useState<'meta' | 'evolution'>('meta');
 
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
@@ -141,6 +150,7 @@ export function WhatsAppConfig() {
         // Undefined on a row read before migration 039 — treat that as
         // on, matching the webhook's own default.
         setMirrorMedia(data.mirror_inbound_media !== false);
+        setProviderTab(data.provider === 'evolution' ? 'evolution' : 'meta');
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -154,8 +164,14 @@ export function WhatsAppConfig() {
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
 
-      // Then verify health via the API (decrypts token + pings Meta)
-      if (data) {
+      // Then verify health via the API (decrypts token + pings Meta).
+      // Evolution rows manage their own connection status inline via
+      // GET /api/whatsapp/evolution/qr — skip the Meta-specific probe.
+      if (data?.provider === 'evolution') {
+        setConnectionStatus(data.status === 'connected' ? 'connected' : 'disconnected');
+        setResetReason(null);
+        setStatusMessage('');
+      } else if (data) {
         try {
           const res = await fetch('/api/whatsapp/config', { method: 'GET' });
           const payload = await res.json();
@@ -180,11 +196,11 @@ export function WhatsAppConfig() {
       }
     } catch (err) {
       console.error('fetchConfig error:', err);
-      toast.error('Failed to load WhatsApp configuration');
+      toast.error(t('loadConfigError'));
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, t]);
 
   useEffect(() => {
     // Need both the auth session (`!authLoading`) AND the profile
@@ -228,11 +244,11 @@ export function WhatsAppConfig() {
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {
-      toast.error('Phone Number ID is required');
+      toast.error(t('phoneNumberIdRequired'));
       return;
     }
     if (!config && (!accessToken.trim() || !tokenEdited)) {
-      toast.error('Access Token is required for initial setup');
+      toast.error(t('accessTokenRequiredInitial'));
       return;
     }
 
@@ -260,7 +276,7 @@ export function WhatsAppConfig() {
         // server. But our POST handler requires an access_token to verify
         // with Meta. If the user didn't change the token, we need to signal
         // that. Simplest: require token re-entry if they're updating.
-        toast.error('Please re-enter the Access Token to save changes');
+        toast.error(t('reenterAccessToken'));
         setSaving(false);
         return;
       }
@@ -274,7 +290,7 @@ export function WhatsAppConfig() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to save configuration');
+        toast.error(data.error || t('saveConfigError'));
         setSaving(false);
         return;
       }
@@ -287,7 +303,7 @@ export function WhatsAppConfig() {
       //                         is human-readable from Meta.
       if (data.registered === false && data.registration_error) {
         toast.error(
-          `Saved, but Meta couldn't register the number: ${data.registration_error}`,
+          t('savedButRegistrationFailed', { error: data.registration_error }),
           { duration: 12000 },
         );
       } else if (data.registration_skipped) {
@@ -296,15 +312,15 @@ export function WhatsAppConfig() {
         // Don't claim the number is "Live" — point at the
         // Registration status banner instead.
         toast.success(
-          'Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.',
+          t('registrationSkipped'),
           { duration: 10000 },
         );
         setPin('');
       } else {
         toast.success(
           data.phone_info?.verified_name
-            ? `Live — ${data.phone_info.verified_name} can now receive events.`
-            : 'WhatsApp connected. Events will start flowing within a minute.',
+            ? t('liveConnected', { name: data.phone_info.verified_name })
+            : t('connectedGeneric'),
         );
         // Clear the PIN so subsequent saves don't accidentally
         // re-register (which would void the active subscription if
@@ -315,7 +331,7 @@ export function WhatsAppConfig() {
       if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Save error:', err);
-      toast.error('Failed to save configuration');
+      toast.error(t('saveConfigError'));
     } finally {
       setSaving(false);
     }
@@ -333,19 +349,19 @@ export function WhatsAppConfig() {
         setStatusMessage('');
         toast.success(
           payload.phone_info?.verified_name
-            ? `Connected to ${payload.phone_info.verified_name}`
-            : 'API connection successful'
+            ? t('connectedToName', { name: payload.phone_info.verified_name })
+            : t('apiConnectionSuccess')
         );
       } else {
         setConnectionStatus('disconnected');
         setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
         setStatusMessage(payload.message || '');
-        toast.error(payload.message || 'API connection failed');
+        toast.error(payload.message || t('apiConnectionFailed'));
       }
     } catch (err) {
       console.error('Test connection error:', err);
       setConnectionStatus('disconnected');
-      toast.error('Connection test failed. Check network and try again.');
+      toast.error(t('connectionTestFailed'));
     } finally {
       setTesting(false);
     }
@@ -361,24 +377,24 @@ export function WhatsAppConfig() {
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
-        toast.success('Number is fully wired — Meta is delivering events.');
+        toast.success(t('registrationLive'));
       } else {
         toast.error(
-          'Number is not fully registered. See the checks below for which step failed.',
+          t('registrationNotLive'),
           { duration: 8000 },
         );
       }
       if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('verify-registration failed:', err);
-      toast.error('Could not reach the verification endpoint.');
+      toast.error(t('verifyEndpointUnreachable'));
     } finally {
       setVerifyingRegistration(false);
     }
   }
 
   async function handleReset() {
-    if (!confirm('This will delete the current WhatsApp config so you can re-enter it. Continue?')) {
+    if (!confirm(t('resetConfirm'))) {
       return;
     }
 
@@ -388,11 +404,11 @@ export function WhatsAppConfig() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to reset configuration');
+        toast.error(data.error || t('resetConfigError'));
         return;
       }
 
-      toast.success('Configuration cleared. You can now re-enter your credentials.');
+      toast.success(t('resetConfigSuccess'));
       setConfig(null);
       setPhoneNumberId('');
       setWabaId('');
@@ -404,15 +420,19 @@ export function WhatsAppConfig() {
       setStatusMessage('');
     } catch (err) {
       console.error('Reset error:', err);
-      toast.error('Failed to reset configuration');
+      toast.error(t('resetConfigError'));
     } finally {
       setResetting(false);
     }
   }
 
-  function handleCopyWebhookUrl() {
-    navigator.clipboard.writeText(webhookUrl);
-    toast.success('Webhook URL copied to clipboard');
+  async function handleCopyWebhookUrl() {
+    const ok = await copyToClipboard(webhookUrl);
+    if (ok) {
+      toast.success(t('webhookUrlCopied'));
+    } else {
+      toast.error(t('copyFailed'));
+    }
   }
 
   if (loading) {
@@ -437,6 +457,24 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
+
+      <Tabs
+        value={providerTab}
+        onValueChange={(v) => setProviderTab(v as 'meta' | 'evolution')}
+        className="mb-6"
+      >
+        <TabsList>
+          <TabsTrigger value="meta">{t('providerMeta')}</TabsTrigger>
+          <TabsTrigger value="evolution">{t('providerEvolution')}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {providerTab === 'evolution' ? (
+        <EvolutionWhatsAppConfig
+          config={config}
+          onChanged={() => accountId && fetchConfig(accountId)}
+        />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
@@ -915,6 +953,11 @@ export function WhatsAppConfig() {
           </CardContent>
         </Card>
       </div>
+    </div>
+    )}
+
+    <div className="mt-6">
+      <WhatsAppDangerZone />
     </div>
     </section>
   );

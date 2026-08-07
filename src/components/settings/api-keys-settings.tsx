@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Copy, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
 
+import { copyToClipboard } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -339,10 +340,10 @@ function CreateKeyDialog({
 
   async function copyKey() {
     if (!createdKey) return;
-    try {
-      await navigator.clipboard.writeText(createdKey);
+    const ok = await copyToClipboard(createdKey);
+    if (ok) {
       toast.success(t('copySuccess'));
-    } catch {
+    } else {
       toast.error(t('copyFailed'));
     }
   }

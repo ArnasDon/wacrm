@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
@@ -68,7 +69,8 @@ export async function POST(request: Request) {
   let effectiveTriggerConfig = trigger_config
 
   if (template && (!steps || steps.length === 0)) {
-    const t = getTemplate(template)
+    const tTemplates = await getTranslations('Automations.templates')
+    const t = getTemplate(template, tTemplates)
     if (t) {
       effectiveName = effectiveName ?? t.name
       effectiveDescription = effectiveDescription ?? t.description

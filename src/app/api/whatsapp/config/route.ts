@@ -87,7 +87,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, access_token, status, provider')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -108,6 +108,18 @@ export async function GET() {
         },
         { status: 200 }
       )
+    }
+
+    // This endpoint only knows how to verify Meta credentials — an
+    // 'evolution' row has neither phone_number_id nor access_token, so
+    // don't fall into the Meta decrypt/verify path below (it would
+    // misreport as "token_corrupted"). The Evolution settings panel
+    // manages its own status via GET /api/whatsapp/evolution/qr.
+    if (config.provider === 'evolution') {
+      return NextResponse.json({
+        connected: config.status === 'connected',
+        provider: 'evolution',
+      })
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.
@@ -354,6 +366,11 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      // Saving Meta credentials through this endpoint always means "use
+      // Meta" — flips a row that was previously provider='evolution'
+      // back, so send-message.ts and the inbound webhook route stop
+      // routing through Evolution Go the moment Meta creds are saved.
+      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,

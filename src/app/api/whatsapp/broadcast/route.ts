@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  renderTemplateAsText,
+} from '@/lib/whatsapp/evolution-api'
+import { resolveEngineProviderCreds } from '@/lib/whatsapp/engine-send-core'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
@@ -136,7 +140,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const creds = resolveEngineProviderCreds(config)
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -185,16 +189,31 @@ export async function POST(request: Request) {
 
       for (const variant of variants) {
         try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: resolvedTemplate.language,
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
+          // Evolution Go has no template API — same fallback used by
+          // the manual send path and the automations/flows engines:
+          // render the approved template down to plain text.
+          const result = creds.isEvolution
+            ? await evolutionSendTextMessage({
+                apiUrl: creds.evolutionApiUrl,
+                instanceToken: creds.evolutionInstanceToken,
+                to: variant,
+                text: renderTemplateAsText(
+                  templateRow,
+                  template_name,
+                  recipient.messageParams as SendTimeParams | undefined,
+                  recipient.params ?? []
+                ),
+              })
+            : await sendTemplateMessage({
+                phoneNumberId: creds.phoneNumberId,
+                accessToken: creds.accessToken,
+                to: variant,
+                templateName: template_name,
+                language: resolvedTemplate.language,
+                template: templateRow ?? undefined,
+                messageParams: recipient.messageParams,
+                params: recipient.params ?? [],
+              })
           sentMessageId = result.messageId
           lastError = null
           break

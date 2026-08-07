@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
+import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
 import {
@@ -192,9 +193,13 @@ export function ContactDetailView({
 
   async function copyPhone() {
     if (!contact) return;
-    await navigator.clipboard.writeText(contact.phone);
-    setCopiedPhone(true);
-    setTimeout(() => setCopiedPhone(false), 2000);
+    const ok = await copyToClipboard(contact.phone);
+    if (ok) {
+      setCopiedPhone(true);
+      setTimeout(() => setCopiedPhone(false), 2000);
+    } else {
+      toast.error(t('copyFailed'));
+    }
   }
 
   async function saveDetails() {

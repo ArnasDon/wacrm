@@ -221,11 +221,23 @@ html[data-theme="rose"] {
   * {
     @apply border-border outline-ring/50;
   }
+  /* `overscroll-behavior-y: none` on both html and body: without it,
+     iOS Safari/WKWebView (including installed standalone PWAs) can
+     rubber-band the whole *document* when a nested scrollable panel
+     (e.g. the Inbox conversation list or message thread, both
+     `overflow-y-auto`) hits its own scroll boundary — a native
+     "scroll chaining" behavior, separate from CSS `overflow`. The
+     bounce briefly exposes whatever is behind `<body>`, i.e. `<html>`'s
+     own background; since neither had one set, that gap showed as a
+     stray black strip at the top/bottom edge — reported as a "black
+     bar" specifically in standalone PWA mode (no browser chrome there
+     to absorb the bounce). `bg-background` below is belt-and-suspenders
+     so even a residual bounce matches the page instead of clashing. */
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overscroll-y-none;
   }
   html {
-    @apply font-sans;
+    @apply bg-background font-sans overscroll-y-none;
   }
 }
 
@@ -253,7 +265,7 @@ html[data-theme="rose"] {
    (message-composer.tsx). Needs to live in global CSS rather than a
    component-scoped `<style jsx>` block: styled-jsx auto-renames
    `@keyframes` to a scoped name, which would silently break the
-   Tailwind arbitrary-value class (`animate-[waveform_...]`) that
+   Tailwind arbitrary-value class referencing `animate-waveform` that
    references this name literally from outside that style block. */
 @keyframes waveform {
   0%,

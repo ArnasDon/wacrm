@@ -57,8 +57,8 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    // `min-h-[var(--header-content-height)]` (not a fixed `h-`) +
-    // `pt-[env(...)]`: the safe-area inset adds to the box's height
+    // `min-h-[var(--header-content-height)]` (not a fixed `h-`) plus a
+    // safe-area-inset-top padding-top below: the inset adds to the box's height
     // instead of eating into the content row, so the logo/hamburger/
     // avatar stay a consistent size and just sit lower on notch/
     // Dynamic-Island devices. `env()` resolves to 0 elsewhere (desktop,

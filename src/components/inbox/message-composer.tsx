@@ -575,7 +575,7 @@ export function MessageComposer({
   const micActive = micPhase !== "idle";
 
   return (
-    // `pb-[calc(...)]` overrides just the bottom side of `p-3`: the same
+    // The bottom padding below overrides just the bottom side of `p-3`: the same
     // 12px as the other three sides, plus the device's safe-area inset
     // (home indicator / gesture bar) on top of that. `env()` resolves to
     // 0 on devices without one (desktop, older phones), so this is a

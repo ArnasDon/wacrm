@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 16) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 17) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,20 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 17)** — ajuste cirúrgico só na tela de conversa: header/composer sendo deslocados junto com o teclado, escopo restrito a `message-composer.tsx`:
+
+Usuário confirmou que a correção global de altura (parte 16) resolveu dashboard/menu/demais telas — pediu explicitamente pra não tocar mais no shell, só investigar a tela de conversa. Sintoma restante: com o teclado fechado o composer está um pouco "atolado"; com o teclado aberto, o composer sobe além do necessário, sobra um vão preto até o teclado, **e o header da conversa se desloca junto** — o que indica que algo está rolando (scroll) um elemento ANCESTRAL comum ao header e ao composer, não só redimensionando a área de mensagens.
+
+**Investigação:** revisados `inbox/page.tsx`, `message-thread.tsx` e `message-composer.tsx` — a estrutura flex (header da conversa `shrink-0` fixo → lista de mensagens `flex-1 overflow-y-auto` → composer `shrink-0` fixo) já está correta, sem nenhum JS de scroll/foco além do auto-scroll pra última mensagem em `message-thread.tsx`. A explicação mais provável, dado o header também se deslocar: o iOS, ao focar o `<textarea>` do composer, aplica seu próprio comportamento nativo de "rolar um ancestral pra revelar o campo focado" — que pode mirar `<main>` (o container com scroll do shell, fora do escopo desta parte) em vez de (ou além) da lista de mensagens, deslocando tudo que está dentro dele, header incluso. Isso é **adicional** ao encolhimento correto do `dvh` já funcionando (parte 14) — os dois mecanismos competindo é o que explica o "sobe além do necessário".
+
+**Correção:** `message-composer.tsx` — novo `useEffect` que escuta `visualViewport.resize` (dispara quando o teclado termina de abrir/fechar) e, nesse momento, zera a posição de scroll do `<main>` mais próximo (via `textareaRef.current?.closest("main")`) e do `window`. Escopo: só dentro do componente do composer, ativo só enquanto uma conversa está aberta — nenhuma variável global nova, nenhuma mudança em `dvh`/shell/altura estrutural. Não é um "esconder com background" — é a contramedida direta pro mecanismo mais provável identificado (scroll indevido de um ancestral), aplicada depois que o iOS já tentou aplicar o dele, então cancela o efeito sem competir com ele.
+
+**Não tocado nesta parte:** `dashboard-shell.tsx`, altura global/`h-dvh`/`--app-height`, desktop, padding do composer (mantido como ficou na parte 15).
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome (desktop) — composer funcional, digitação normal, sem erros no console. **Chrome não dispara `visualViewport.resize` por teclado (não há teclado virtual em desktop), então o comportamento real desse `useEffect` só é observável no iPhone físico** — é o ponto mais importante a confirmar na próxima validação.
+
+---
 
 **Sessão de 2026-08-07 (parte 16)** — causa raiz real do vão preto: `100dvh` sozinho não cobre a tela inteira em standalone real neste hardware; corrigido no container raiz, não no Composer:
 
@@ -372,9 +386,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Teclado (parte 14) já confirmado corrigido pelo usuário — preservado, não reaberto nesta parte. Falta confirmar: (a) o vão preto embaixo do menu lateral E do composer sumiu com a correção de `h-[calc(100dvh+env(safe-area-inset-top))]` no shell raiz; (b) o teclado continua funcionando exatamente como antes (composer imediatamente acima dele, sem espaço, sem subir pro topo); (c) abrir/fechar o teclado repetidamente não desloca nada; (d) scroll da conversa continua só na área central, header/composer fixos; (e) o badge de diagnóstico não aparece mais (se ainda aparecer depois de relançar o app do zero, é cache do PWA, não bug de código).
-2. **Se o vão preto persistir mesmo depois desta correção no shell raiz: mandar screenshot real antes de mais uma tentativa.** Depois de 8 rodadas (partes 8-16), essa é a explicação mais estrutural encontrada até agora (elemento ancestral comum, confirmada pelo próprio screenshot do usuário) — se nem essa resolver, o próximo passo é reconsiderar a abordagem, não mais uma variação da mesma fórmula.
-3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-16 acima.
+1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Correção global (parte 16, shell raiz) e correção local (parte 17, scroll de `<main>` na tela de conversa) precisam de confirmação real. Testar especificamente na tela de conversa: (a) teclado fechado — composer no fundo, nada "atolado"; (b) tocar no composer — header da conversa NÃO se move, composer sobe só o suficiente pra ficar colado no teclado, sem vão preto entre os dois; (c) fechar o teclado — tudo volta à posição original; (d) abrir/fechar repetidamente — sem deslocamento acumulado; (e) rolar a conversa — só as mensagens rolam, header e composer continuam fixos.
+2. **Se o deslocamento do header/composer com o teclado persistir mesmo depois da parte 17: mandar screenshot ou vídeo real.** Depois de 9 rodadas (partes 8-17), se a contramedida de scroll (`visualViewport.resize` resetando `<main>`/`window`) não for suficiente, o próximo passo é revisar com dado real do dispositivo (ex.: o que exatamente move — `main.scrollTop`, `window.scrollY`, ou algo em outro ancestral) em vez de mais uma hipótese.
+3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-17 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

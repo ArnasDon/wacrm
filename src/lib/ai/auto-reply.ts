@@ -8,6 +8,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { createAutoReplyTools } from './tools'
+import { loadAgentToolPermissions } from './tool-permissions'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -87,6 +88,12 @@ export async function dispatchInboundToAiReply(
       mode: 'auto_reply',
       knowledge,
     })
+
+    const permissions = await loadAgentToolPermissions(
+      db,
+      accountId,
+      config.agentId!,
+    )
     const agentTools = createAutoReplyTools({
       db,
       accountId,
@@ -94,6 +101,7 @@ export async function dispatchInboundToAiReply(
       contactId,
       configOwnerUserId,
       config,
+      permissions,
     })
 
     const { text, handoff, usage } = await generateReply({

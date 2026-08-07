@@ -254,6 +254,7 @@
       "statusOpen": "열림",
       "statusPending": "대기 중",
       "statusClosed": "닫힘",
+      "markAsUnread": "읽지 않음으로 표시",
       "assign": "담당자 지정",
       "assigned": "담당자 지정됨",
       "unassign": "담당자 해제",
@@ -273,7 +274,6 @@
       "noCustomerMessages": "고객 메시지 없음"
     },
     "composer": {
-      "draftHint": "✨를 눌러 AI로 답장 초안을 작성하세요 — 보내기 전에 수정할 수 있습니다",
       "sessionExpiredHint": "24시간 세션이 만료되었습니다. 다시 연결하려면 템플릿을 사용하세요.",
       "templates": "템플릿",
       "readOnlyPlaceholder": "읽기 전용 — 뷰어는 열람만 가능하고 답장할 수 없습니다",
@@ -289,18 +289,8 @@
       "document": "문서",
       "voiceNote": "음성 메모",
       "sendTemplate": "템플릿 보내기",
-      "draftWithAI": "AI로 답장 초안 작성",
       "addCaption": "캡션 추가…",
-      "removeAttachment": "첨부 파일 제거",
-      "moreActions": "더보기",
-      "interactiveMessage": "인터랙티브 메시지",
-      "quickReplies": "빠른 답장",
-      "quickRepliesEmpty": "아직 빠른 답장이 없습니다. 설정 → 빠른 답장에서 추가하세요.",
-      "saveAsQuickReply": "빠른 답장으로 저장",
-      "send": "보내기",
-      "quickReplyNamePrompt": "이 빠른 답장의 이름을 지정하세요:",
-      "quickReplySaved": "빠른 답장으로 저장되었습니다.",
-      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다."
+      "removeAttachment": "첨부 파일 제거"
     },
     "bubble": {
       "photo": "사진",
@@ -585,7 +575,6 @@
       "noPipelinesYet": "아직 파이프라인이 없습니다",
       "managePipelines": "파이프라인 관리",
       "addPipeline": "파이프라인 추가",
-      "addDeal": "딜 추가",
       "createToStartTracking": "파이프라인을 만들어 딜 추적을 시작하세요",
       "createPipeline": "파이프라인 만들기",
       "newPipeline": "새 파이프라인",
@@ -602,13 +591,24 @@
       "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
     },
     "board": {
-      "dropDealHere": "여기에 딜을 놓으세요",
-      "addDeal": "딜 추가"
+      "dropDealHere": "여기에 딜을 놓으세요"
     },
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
       "lost": "실패"
+    },
+    "detail": {
+      "tags": "태그",
+      "noTags": "태그 없음",
+      "stage": "단계",
+      "createdAt": "생성일",
+      "notes": "메모",
+      "noNotes": "메모 없음",
+      "lastInteraction": "마지막 상호작용",
+      "noHistory": "아직 기록된 상호작용이 없습니다",
+      "openConversation": "대화 열기",
+      "edit": "수정"
     },
     "form": {
       "editDeal": "딜 수정",

@@ -10,6 +10,7 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendPushToAccount } from '@/lib/push/send'
+import { ensureDealForNewLead } from '@/lib/pipelines/auto-deal'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -568,6 +569,17 @@ async function processMessage(
     await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
+    })
+    // Pipeline is the CRM's central view — every lead that starts a
+    // conversation gets a card in the first stage automatically, no
+    // manual "add deal" step required.
+    await ensureDealForNewLead({
+      db: supabaseAdmin(),
+      accountId,
+      userId: configOwnerUserId,
+      contactId: contactRecord.id,
+      contactName: contactRecord.name || contactName || senderPhone,
+      conversationId: conversation.id,
     })
   }
 

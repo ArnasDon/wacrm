@@ -15,7 +15,6 @@ import type {
   ConversationStatus,
   MessageTemplate,
   Profile,
-  InteractiveMessagePayload,
 } from "@/types";
 import {
   MessageSquare,
@@ -33,6 +32,7 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -73,6 +73,13 @@ interface MessageThreadProps {
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
   onStatusChange: (conversationId: string, status: ConversationStatus) => void;
+  /**
+   * Manual "mark as unread" — sets the conversation's unread_count back
+   * to a nonzero value. Independent of `status`: a conversation can be
+   * pending and read at the same time, so this is its own callback
+   * rather than piggy-backing on onStatusChange.
+   */
+  onMarkUnread: (conversationId: string) => void;
   onAssignChange: (
     conversationId: string,
     assignedAgentId: string | null,
@@ -161,6 +168,7 @@ export function MessageThread({
   onNewMessage,
   onUpdateMessage,
   onStatusChange,
+  onMarkUnread,
   onAssignChange,
   onBack,
   resyncToken = 0,
@@ -568,59 +576,6 @@ export function MessageThread({
     [conversation, onNewMessage, onUpdateMessage],
   );
 
-  const handleSendInteractive = useCallback(
-    async (payload: InteractiveMessagePayload, replyToId?: string) => {
-      if (!conversation) return;
-
-      const tempId = `temp-${Date.now()}`;
-      // Optimistic bubble — renders the buttons/list immediately via the
-      // interactive_payload, same as the persisted row will.
-      const optimisticMsg: Message = {
-        id: tempId,
-        conversation_id: conversation.id,
-        sender_type: "agent",
-        content_type: "interactive",
-        content_text: payload.body,
-        interactive_payload: payload,
-        status: "sending",
-        created_at: new Date().toISOString(),
-        reply_to_message_id: replyToId,
-      };
-      onNewMessage(optimisticMsg);
-
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "interactive",
-            interactive_payload: payload,
-            reply_to_message_id: replyToId,
-          }),
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = data?.error || `HTTP ${res.status}`;
-          console.error("Failed to send interactive message:", reason);
-          toast.error(`Failed to send: ${reason}`);
-          onUpdateMessage(tempId, { status: "failed" });
-          return;
-        }
-
-        onUpdateMessage(tempId, { status: "sent" });
-      } catch (err) {
-        console.error("Failed to send interactive message:", err);
-        const reason = err instanceof Error ? err.message : "network error";
-        toast.error(`Failed to send: ${reason}`);
-        onUpdateMessage(tempId, { status: "failed" });
-      }
-    },
-    [conversation, onNewMessage, onUpdateMessage],
-  );
-
   const handleStatusChange = useCallback(
     async (status: ConversationStatus) => {
       if (!conversation) return;
@@ -635,6 +590,31 @@ export function MessageThread({
     },
     [conversation, onStatusChange]
   );
+
+  // "Pendente" is a toggle, not a one-way status: clicking it again
+  // clears the flag back to "open" (the default/no-marker state).
+  // "Aberta" was removed as a manual option — opening the conversation
+  // already means it's been read, so there's nothing left to "set".
+  const handleTogglePending = useCallback(async () => {
+    if (!conversation) return;
+    const nextStatus: ConversationStatus =
+      conversation.status === "pending" ? "open" : "pending";
+    await handleStatusChange(nextStatus);
+  }, [conversation, handleStatusChange]);
+
+  // Manual unread marker — independent of `status`. Sets unread_count
+  // back to 1 so the badge in the conversation list reappears; the next
+  // time this conversation is opened, the reset effect above (hasUnread)
+  // clears it again automatically, same as any other unread message.
+  const handleMarkUnread = useCallback(async () => {
+    if (!conversation) return;
+    const supabase = createClient();
+    await supabase
+      .from("conversations")
+      .update({ unread_count: 1 })
+      .eq("id", conversation.id);
+    onMarkUnread(conversation.id);
+  }, [conversation, onMarkUnread]);
 
   const handleOpenTemplates = useCallback(() => {
     setTemplateModalOpen(true);
@@ -978,15 +958,19 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
-              {STATUS_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
-                >
-                  {t(`status${opt.label}`)}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuCheckboxItem
+                checked={conversation.status === "pending"}
+                onCheckedChange={handleTogglePending}
+                className="text-sm text-amber-400"
+              >
+                {t("statusPending")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem
+                onClick={handleMarkUnread}
+                className="text-sm text-primary"
+              >
+                {t("markAsUnread")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -1151,11 +1135,9 @@ export function MessageThread({
 
       {/* Composer */}
       <MessageComposer
-        conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
-        onSendInteractive={handleSendInteractive}
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}

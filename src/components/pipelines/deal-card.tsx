@@ -2,7 +2,6 @@
 
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
-import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -28,8 +27,13 @@ function initials(name?: string, fallback?: string) {
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
-  const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
+  const contact = deal.contact;
+  const displayName = contact?.name || contact?.phone || t("noContact");
+  // Only show a separate phone line when it isn't already doing double
+  // duty as the name above (contactless leads fall back to phone there).
+  const showPhoneLine = !!contact?.name && !!contact?.phone;
   const assigneeLabel = deal.assignee?.full_name || null;
+  const tags = contact?.tags ?? [];
 
   return (
     <button
@@ -54,10 +58,28 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         style={{ backgroundColor: stage?.color ?? "#94a3b8" }}
       />
 
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="flex-1 text-sm font-semibold leading-snug text-foreground break-words">
-          {deal.title}
-        </h4>
+      {/* Contact row — photo, name, phone */}
+      <div className="flex items-start gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-xs font-semibold text-foreground">
+          {contact?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={contact.avatar_url}
+              alt={displayName}
+              className="h-8 w-8 rounded-full object-cover"
+            />
+          ) : (
+            initials(contact?.name, contact?.phone)
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-sm font-semibold leading-snug text-foreground">
+            {displayName}
+          </h4>
+          {showPhoneLine && (
+            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+          )}
+        </div>
         {deal.status === "won" && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
             <Check className="h-3 w-3" />
@@ -72,34 +94,39 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         )}
       </div>
 
-      {/* Contact row */}
-      <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
-          {initials(deal.contact?.name, deal.contact?.phone)}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
-      </div>
+      {/* Tags — same pill style as the contact sidebar in the Inbox */}
+      {tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {tags.map((tag) => (
+            <span
+              key={tag.id}
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+            >
+              {tag.name}
+            </span>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-sm font-bold text-primary">
-          {formatCurrency(deal.value, deal.currency)}
-        </span>
-        {deal.expected_close_date && (
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Calendar className="h-3 w-3" />
-            {formatDate(deal.expected_close_date)}
-          </span>
-        )}
-      </div>
-
-      {assigneeLabel && (
-        <div className="mt-2 flex items-center justify-end">
-          <span
-            title={assigneeLabel}
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
-          >
-            {initials(assigneeLabel)}
-          </span>
+      {(deal.expected_close_date || assigneeLabel) && (
+        <div className="mt-2 flex items-center justify-between">
+          {deal.expected_close_date ? (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              {formatDate(deal.expected_close_date)}
+            </span>
+          ) : (
+            <span />
+          )}
+          {assigneeLabel && (
+            <span
+              title={assigneeLabel}
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
+            >
+              {initials(assigneeLabel)}
+            </span>
+          )}
         </div>
       )}
     </button>

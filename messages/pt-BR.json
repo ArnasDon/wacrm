@@ -254,6 +254,7 @@
       "statusOpen": "Aberta",
       "statusPending": "Pendente",
       "statusClosed": "Fechada",
+      "markAsUnread": "Marcar como não lida",
       "assign": "Atribuir",
       "assigned": "Atribuído",
       "unassign": "Remover atribuição",
@@ -273,7 +274,6 @@
       "noCustomerMessages": "Nenhuma mensagem do cliente"
     },
     "composer": {
-      "draftHint": "Toque em ✨ para gerar uma resposta com IA — você pode editar antes de enviar",
       "sessionExpiredHint": "Sessão de 24 horas expirada. Use um template para retomar o contato.",
       "templates": "Templates",
       "readOnlyPlaceholder": "Somente leitura — visualizadores podem navegar, mas não responder",
@@ -289,18 +289,8 @@
       "document": "Documento",
       "voiceNote": "Áudio",
       "sendTemplate": "Enviar template",
-      "draftWithAI": "Gerar resposta com IA",
       "addCaption": "Adicionar legenda…",
-      "removeAttachment": "Remover anexo",
-      "moreActions": "Mais",
-      "interactiveMessage": "Mensagem interativa",
-      "quickReplies": "Respostas rápidas",
-      "quickRepliesEmpty": "Nenhuma resposta rápida ainda. Adicione em Configurações → Respostas rápidas.",
-      "saveAsQuickReply": "Salvar como resposta rápida",
-      "send": "Enviar",
-      "quickReplyNamePrompt": "Nomeie esta resposta rápida:",
-      "quickReplySaved": "Salvo como resposta rápida.",
-      "quickReplySaveError": "Não foi possível salvar a resposta rápida."
+      "removeAttachment": "Remover anexo"
     },
     "bubble": {
       "photo": "Foto",
@@ -585,7 +575,6 @@
       "noPipelinesYet": "Nenhum pipeline ainda",
       "managePipelines": "Gerenciar pipelines",
       "addPipeline": "Adicionar pipeline",
-      "addDeal": "Adicionar negócio",
       "createToStartTracking": "Crie um pipeline para começar a acompanhar negócios",
       "createPipeline": "Criar pipeline",
       "newPipeline": "Novo pipeline",
@@ -602,13 +591,24 @@
       "toastNotLinkedToAccount": "Seu perfil não está vinculado a uma conta."
     },
     "board": {
-      "dropDealHere": "Solte um negócio aqui",
-      "addDeal": "Adicionar negócio"
+      "dropDealHere": "Solte um negócio aqui"
     },
     "card": {
       "noContact": "Sem contato",
       "won": "Ganho",
       "lost": "Perdido"
+    },
+    "detail": {
+      "tags": "Tags",
+      "noTags": "Sem tags",
+      "stage": "Etapa",
+      "createdAt": "Criado em",
+      "notes": "Observações",
+      "noNotes": "Nenhuma observação",
+      "lastInteraction": "Última interação",
+      "noHistory": "Nenhuma interação registrada ainda",
+      "openConversation": "Abrir conversa",
+      "edit": "Editar"
     },
     "form": {
       "editDeal": "Editar negócio",

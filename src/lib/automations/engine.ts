@@ -559,6 +559,22 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'create_deal': {
       const cfg = step.step_config as CreateDealStepConfig
       if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
+      // A contact must never end up with two cards in the same pipeline
+      // — leads already get a card automatically on their first inbound
+      // message (see ensureDealForNewLead), so an automation configured
+      // to *also* create one on the same trigger would otherwise
+      // duplicate it.
+      if (args.contactId) {
+        const { data: existingDeals } = await db
+          .from('deals')
+          .select('id')
+          .eq('pipeline_id', cfg.pipeline_id)
+          .eq('contact_id', args.contactId)
+          .limit(1)
+        if (existingDeals && existingDeals.length > 0) {
+          return 'deal already exists for this contact in this pipeline — skipped'
+        }
+      }
       // Match the account's configured default currency rather than
       // the static `deals.currency` DB default — keeps automation-
       // created deals consistent with the one-currency-per-account

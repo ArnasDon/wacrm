@@ -534,6 +534,25 @@ function InboxPageInner() {
     [activeConversation]
   );
 
+  const handleMarkUnread = useCallback(
+    (conversationId: string) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 1 } : c))
+      );
+      // This is always fired from the currently-open thread's header
+      // menu. Leaving that conversation active would immediately undo
+      // it: MessageThread's unread-reset effect fires whenever the
+      // *active* conversation's unread_count goes above 0 and clears it
+      // straight back to 0. Closing the thread (back to the list) is
+      // what makes "mark as unread" actually stick, same as Gmail/most
+      // inboxes do.
+      if (activeConversation?.id === conversationId) {
+        handleCloseConversation();
+      }
+    },
+    [activeConversation, handleCloseConversation]
+  );
+
   const handleAssignChange = useCallback(
     (conversationId: string, assignedAgentId: string | null) => {
       setConversations((prev) =>
@@ -617,6 +636,7 @@ function InboxPageInner() {
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}
+            onMarkUnread={handleMarkUnread}
             onAssignChange={handleAssignChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}

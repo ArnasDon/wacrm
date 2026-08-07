@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
+import { DEAL_SELECT, normalizeDeals } from "@/lib/pipelines/deals";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
-import { DealForm } from "@/components/pipelines/deal-form";
+import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,7 +49,6 @@ export default function PipelinesPage() {
   const t = useTranslations("Pipelines.page");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
-  const canCreateDeals = useCan("send-messages");
   const { accountId } = useAuth();
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -63,11 +63,12 @@ export default function PipelinesPage() {
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Deal form state is lifted here so both the top-bar "Add Deal" and
-  // the per-column "+" trigger the same Sheet.
-  const [dealFormOpen, setDealFormOpen] = useState(false);
-  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
-  const [defaultStageId, setDefaultStageId] = useState<string>("");
+  // Deal detail drawer — opened by clicking a card. Deals themselves are
+  // no longer manually created (see "Entrada automática" in the product
+  // spec: every new WhatsApp lead gets a card automatically), so there's
+  // no separate "new deal" form state here anymore — DealForm is only
+  // reachable as the drawer's "Editar" action.
+  const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
 
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
@@ -100,10 +101,10 @@ export default function PipelinesPage() {
     async (pipelineId: string) => {
       const { data } = await supabase
         .from("deals")
-        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .select(DEAL_SELECT)
         .eq("pipeline_id", pipelineId)
         .order("created_at", { ascending: false });
-      return (data ?? []) as Deal[];
+      return normalizeDeals(data ?? []);
     },
     [supabase],
   );
@@ -231,19 +232,8 @@ export default function PipelinesPage() {
     [supabase, refreshDeals, t],
   );
 
-  const handleAddDeal = useCallback(
-    (stageId?: string) => {
-      setEditingDeal(null);
-      setDefaultStageId(stageId ?? stages[0]?.id ?? "");
-      setDealFormOpen(true);
-    },
-    [stages],
-  );
-
-  const handleEditDeal = useCallback((deal: Deal) => {
-    setEditingDeal(deal);
-    setDefaultStageId(deal.stage_id);
-    setDealFormOpen(true);
+  const handleOpenDeal = useCallback((deal: Deal) => {
+    setSelectedDeal(deal);
   }, []);
 
   async function handleCreatePipeline() {
@@ -376,16 +366,6 @@ export default function PipelinesPage() {
             <Plus className="mr-1 h-4 w-4" />
             {t("addPipeline")}
           </GatedButton>
-          <GatedButton
-            canAct={canCreateDeals}
-            gateReason="criar negócios"
-            disabled={!selectedPipelineId || stages.length === 0}
-            onClick={() => handleAddDeal()}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("addDeal")}
-          </GatedButton>
         </div>
       </div>
 
@@ -414,8 +394,7 @@ export default function PipelinesPage() {
           stages={stages}
           deals={deals}
           onDealMoved={handleDealMoved}
-          onAddDeal={handleAddDeal}
-          onEditDeal={handleEditDeal}
+          onEditDeal={handleOpenDeal}
         />
       )}
 
@@ -475,15 +454,15 @@ export default function PipelinesPage() {
         />
       )}
 
-      {/* Deal Form (Sheet) */}
-      <DealForm
-        open={dealFormOpen}
-        onOpenChange={setDealFormOpen}
-        deal={editingDeal}
+      {/* Deal detail drawer — opened by clicking a card. Owns the
+          hand-off to DealForm (edit) internally. */}
+      <DealDetailDrawer
+        deal={selectedDeal}
+        stage={stages.find((s) => s.id === selectedDeal?.stage_id) ?? null}
         pipelineId={selectedPipelineId}
         stages={stages}
-        defaultStageId={defaultStageId}
-        onSaved={refreshDeals}
+        onClose={() => setSelectedDeal(null)}
+        onChanged={refreshDeals}
       />
     </div>
   );

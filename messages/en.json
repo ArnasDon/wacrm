@@ -254,6 +254,7 @@
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
+      "markAsUnread": "Mark as unread",
       "assign": "Assign",
       "assigned": "Assigned",
       "unassign": "Unassign",
@@ -273,7 +274,6 @@
       "noCustomerMessages": "No customer messages"
     },
     "composer": {
-      "draftHint": "Tap the ✨ to draft a reply with AI — you can edit it before sending",
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
       "templates": "Templates",
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
@@ -289,18 +289,8 @@
       "document": "Document",
       "voiceNote": "Voice note",
       "sendTemplate": "Send template",
-      "draftWithAI": "Draft a reply with AI",
       "addCaption": "Add a caption…",
-      "removeAttachment": "Remove attachment",
-      "moreActions": "More",
-      "interactiveMessage": "Interactive message",
-      "quickReplies": "Quick replies",
-      "quickRepliesEmpty": "No quick replies yet. Add some in Settings → Quick replies.",
-      "saveAsQuickReply": "Save as quick reply",
-      "send": "Send",
-      "quickReplyNamePrompt": "Name this quick reply:",
-      "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "removeAttachment": "Remove attachment"
     },
     "bubble": {
       "photo": "Photo",
@@ -585,7 +575,6 @@
       "noPipelinesYet": "No pipelines yet",
       "managePipelines": "Manage Pipelines",
       "addPipeline": "Add Pipeline",
-      "addDeal": "Add Deal",
       "createToStartTracking": "Create a pipeline to start tracking deals",
       "createPipeline": "Create Pipeline",
       "newPipeline": "New Pipeline",
@@ -602,13 +591,24 @@
       "toastNotLinkedToAccount": "Your profile is not linked to an account."
     },
     "board": {
-      "dropDealHere": "Drop a deal here",
-      "addDeal": "Add Deal"
+      "dropDealHere": "Drop a deal here"
     },
     "card": {
       "noContact": "No contact",
       "won": "Won",
       "lost": "Lost"
+    },
+    "detail": {
+      "tags": "Tags",
+      "noTags": "No tags",
+      "stage": "Stage",
+      "createdAt": "Created at",
+      "notes": "Notes",
+      "noNotes": "No notes",
+      "lastInteraction": "Last interaction",
+      "noHistory": "No interaction recorded yet",
+      "openConversation": "Open conversation",
+      "edit": "Edit"
     },
     "form": {
       "editDeal": "Edit Deal",

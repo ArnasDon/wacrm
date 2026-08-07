@@ -5,6 +5,10 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  buildGoogleAuthorizeUrl,
+  exchangeCodeForTokens,
+  isRevokedGrantError,
+  GOOGLE_CALENDAR_OAUTH_SCOPES,
   CalendarError,
   type HttpClient,
 } from './client'
@@ -142,6 +146,110 @@ describe('createEvent / updateEvent / deleteEvent', () => {
     await expect(deleteEvent('at-1', 'primary', 'evt-1', http)).rejects.toMatchObject({
       code: 'forbidden',
     })
+  })
+})
+
+describe('buildGoogleAuthorizeUrl', () => {
+  it('builds a consent URL with offline access, forced consent, and the minimal scopes', () => {
+    const url = new URL(
+      buildGoogleAuthorizeUrl({
+        clientId: 'cid',
+        redirectUri: 'https://example.com/api/calendar/google/callback',
+        state: 'signed-state-token',
+      }),
+    )
+    expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth')
+    expect(url.searchParams.get('client_id')).toBe('cid')
+    expect(url.searchParams.get('redirect_uri')).toBe('https://example.com/api/calendar/google/callback')
+    expect(url.searchParams.get('response_type')).toBe('code')
+    expect(url.searchParams.get('access_type')).toBe('offline')
+    expect(url.searchParams.get('prompt')).toBe('consent')
+    expect(url.searchParams.get('state')).toBe('signed-state-token')
+    expect(url.searchParams.get('scope')).toBe(GOOGLE_CALENDAR_OAUTH_SCOPES.join(' '))
+    // Never the broad `calendar` scope.
+    expect(url.searchParams.get('scope')).not.toContain('/auth/calendar ')
+    expect(url.searchParams.get('scope')?.split(' ')).not.toContain(
+      'https://www.googleapis.com/auth/calendar',
+    )
+  })
+
+  it('includes login_hint only when provided', () => {
+    const withHint = new URL(
+      buildGoogleAuthorizeUrl({
+        clientId: 'cid',
+        redirectUri: 'https://example.com/cb',
+        state: 's',
+        loginHint: 'user@example.com',
+      }),
+    )
+    expect(withHint.searchParams.get('login_hint')).toBe('user@example.com')
+
+    const withoutHint = new URL(
+      buildGoogleAuthorizeUrl({ clientId: 'cid', redirectUri: 'https://example.com/cb', state: 's' }),
+    )
+    expect(withoutHint.searchParams.has('login_hint')).toBe(false)
+  })
+})
+
+describe('exchangeCodeForTokens', () => {
+  it('exchanges an authorization code for tokens including a refresh_token', async () => {
+    const http = mockHttp(ok({ access_token: 'at-1', expires_in: 3600, refresh_token: 'rt-1' }))
+    const tokens = await exchangeCodeForTokens('auth-code', 'https://example.com/cb', creds, http)
+    expect(tokens.accessToken).toBe('at-1')
+    expect(tokens.refreshToken).toBe('rt-1')
+    expect(tokens.expiresAt.getTime()).toBeGreaterThan(Date.now())
+
+    const [url, init] = vi.mocked(http.fetch).mock.calls[0]
+    expect(url).toBe('https://oauth2.googleapis.com/token')
+    const body = new URLSearchParams(init!.body as string)
+    expect(body.get('code')).toBe('auth-code')
+    expect(body.get('redirect_uri')).toBe('https://example.com/cb')
+    expect(body.get('grant_type')).toBe('authorization_code')
+  })
+
+  it('surfaces refreshToken: null when Google omits it (re-consent without a fresh grant)', async () => {
+    const http = mockHttp(ok({ access_token: 'at-1', expires_in: 3600 }))
+    const tokens = await exchangeCodeForTokens('auth-code', 'https://example.com/cb', creds, http)
+    expect(tokens.refreshToken).toBeNull()
+  })
+
+  it('throws CalendarError on a Google error response', async () => {
+    const http = mockHttp(err(400, { error: { message: 'invalid_grant' } }))
+    await expect(
+      exchangeCodeForTokens('bad-code', 'https://example.com/cb', creds, http),
+    ).rejects.toThrow(CalendarError)
+  })
+
+  it('throws when the response has no access_token', async () => {
+    const http = mockHttp(ok({ expires_in: 3600 }))
+    await expect(
+      exchangeCodeForTokens('auth-code', 'https://example.com/cb', creds, http),
+    ).rejects.toThrow(CalendarError)
+  })
+})
+
+describe('isRevokedGrantError', () => {
+  it('detects a 400 invalid_grant response from refreshAccessToken', async () => {
+    const http = mockHttp(err(400, { error: 'invalid_grant' }))
+    const error = await refreshAccessToken('rt-1', creds, http).catch((e) => e)
+    expect(isRevokedGrantError(error)).toBe(true)
+  })
+
+  it('detects the 401 invalid_token code path too', async () => {
+    const http = mockHttp(err(401, { error: { message: 'invalid_grant: Token has been expired or revoked.' } }))
+    const error = await refreshAccessToken('rt-1', creds, http).catch((e) => e)
+    expect(isRevokedGrantError(error)).toBe(true)
+  })
+
+  it('does not flag an unrelated CalendarError (e.g. 500 upstream failure)', async () => {
+    const http = mockHttp(err(500, { error: { message: 'internal error' } }))
+    const error = await refreshAccessToken('rt-1', creds, http).catch((e) => e)
+    expect(isRevokedGrantError(error)).toBe(false)
+  })
+
+  it('returns false for a non-CalendarError value', () => {
+    expect(isRevokedGrantError(new Error('plain error'))).toBe(false)
+    expect(isRevokedGrantError(null)).toBe(false)
   })
 })
 

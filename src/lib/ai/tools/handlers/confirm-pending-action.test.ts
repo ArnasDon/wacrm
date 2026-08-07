@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const h = vi.hoisted(() => ({
   getCalendarConfig: vi.fn(),
+  setCalendarConfigActive: vi.fn(),
   updateCalendarConfigRefreshToken: vi.fn(),
   createBooking: vi.fn(),
   getBooking: vi.fn(),
@@ -10,9 +11,12 @@ const h = vi.hoisted(() => ({
   resolvePendingAction: vi.fn(),
   attachResultingBooking: vi.fn(),
   createAccountCalendarClient: vi.fn(),
+  createAgentNotification: vi.fn(),
+  loadAiConfig: vi.fn(),
 }))
 vi.mock('@/lib/eter/repo/calendar-config.repo', () => ({
   getCalendarConfig: h.getCalendarConfig,
+  setCalendarConfigActive: h.setCalendarConfigActive,
   updateCalendarConfigRefreshToken: h.updateCalendarConfigRefreshToken,
 }))
 vi.mock('@/lib/eter/repo/bookings.repo', () => ({
@@ -24,10 +28,17 @@ vi.mock('@/lib/eter/repo/pending-actions.repo', () => ({
   resolvePendingAction: h.resolvePendingAction,
   attachResultingBooking: h.attachResultingBooking,
 }))
+vi.mock('@/lib/eter/repo/notifications.repo', () => ({
+  createAgentNotification: h.createAgentNotification,
+}))
+vi.mock('@/lib/ai/config', () => ({
+  loadAiConfig: h.loadAiConfig,
+}))
 vi.mock('@/lib/calendar/google/account-client', () => ({
   createAccountCalendarClient: h.createAccountCalendarClient,
 }))
 
+import { CalendarError } from '@/lib/calendar/google/client'
 import { confirmPendingAction, PendingActionError } from './confirm-pending-action'
 
 const db = {} as SupabaseClient
@@ -128,5 +139,87 @@ describe('confirmPendingAction — tool_input validation', () => {
 
     await confirmPendingAction(db, 'acct-1', 'pa-1')
     expect(h.updateCalendarConfigRefreshToken).toHaveBeenCalledWith(db, 'acct-1', 'rt-NEW')
+  })
+})
+
+describe('confirmPendingAction — revoked Google grant resilience', () => {
+  it('deactivates the calendar config, notifies the handoff agent, and reports calendar_revoked (not a generic error)', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction())
+    h.getCalendarConfig.mockResolvedValue(activeConfig())
+    h.createAccountCalendarClient.mockRejectedValueOnce(
+      new CalendarError('Google Calendar API error (400): invalid_grant', { code: 'google_error', status: 400 }),
+    )
+    h.loadAiConfig.mockResolvedValue({ handoffAgentId: 'user-42' })
+
+    const err = await confirmPendingAction(db, 'acct-1', 'pa-1').catch((e) => e)
+    expect(err).toBeInstanceOf(PendingActionError)
+    expect(err).toMatchObject({ code: 'calendar_revoked' })
+
+    expect(h.setCalendarConfigActive).toHaveBeenCalledWith(db, 'acct-1', false)
+    expect(h.createAgentNotification).toHaveBeenCalledWith(
+      db,
+      'acct-1',
+      expect.objectContaining({ userId: 'user-42' }),
+    )
+  })
+
+  it('does not write a booking when the revoked grant is detected mid-createEvent', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction())
+    h.getCalendarConfig.mockResolvedValue(activeConfig())
+    const createEvent = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CalendarError('Google Calendar API error (401)', { code: 'invalid_token', status: 401 }),
+      )
+    h.createAccountCalendarClient.mockResolvedValue({ createEvent, rotatedRefreshToken: null })
+    h.loadAiConfig.mockResolvedValue({ handoffAgentId: 'user-42' })
+
+    await expect(confirmPendingAction(db, 'acct-1', 'pa-1')).rejects.toMatchObject({
+      code: 'calendar_revoked',
+    })
+    expect(h.createBooking).not.toHaveBeenCalled()
+    expect(h.setCalendarConfigActive).toHaveBeenCalledWith(db, 'acct-1', false)
+  })
+
+  it('still reports calendar_revoked even when no handoff agent is configured to notify', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction())
+    h.getCalendarConfig.mockResolvedValue(activeConfig())
+    h.createAccountCalendarClient.mockRejectedValueOnce(
+      new CalendarError('invalid_grant', { code: 'invalid_token', status: 401 }),
+    )
+    h.loadAiConfig.mockResolvedValue({ handoffAgentId: null })
+
+    await expect(confirmPendingAction(db, 'acct-1', 'pa-1')).rejects.toMatchObject({
+      code: 'calendar_revoked',
+    })
+    expect(h.createAgentNotification).not.toHaveBeenCalled()
+    expect(h.setCalendarConfigActive).toHaveBeenCalledWith(db, 'acct-1', false)
+  })
+
+  it('does NOT treat a generic Google failure (e.g. 500) as a revoked grant', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction())
+    h.getCalendarConfig.mockResolvedValue(activeConfig())
+    h.createAccountCalendarClient.mockRejectedValueOnce(
+      new CalendarError('Google Calendar API error (500): upstream failure', { code: 'google_error', status: 502 }),
+    )
+
+    const err = await confirmPendingAction(db, 'acct-1', 'pa-1').catch((e) => e)
+    expect(err).toBeInstanceOf(CalendarError)
+    expect(h.setCalendarConfigActive).not.toHaveBeenCalled()
+    expect(h.createAgentNotification).not.toHaveBeenCalled()
+  })
+
+  it('still reports calendar_revoked when the deactivate/notify side effects themselves fail', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction())
+    h.getCalendarConfig.mockResolvedValue(activeConfig())
+    h.createAccountCalendarClient.mockRejectedValueOnce(
+      new CalendarError('invalid_grant', { code: 'invalid_token', status: 401 }),
+    )
+    h.setCalendarConfigActive.mockRejectedValueOnce(new Error('db unavailable'))
+    h.loadAiConfig.mockRejectedValueOnce(new Error('db unavailable'))
+
+    await expect(confirmPendingAction(db, 'acct-1', 'pa-1')).rejects.toMatchObject({
+      code: 'calendar_revoked',
+    })
   })
 })

@@ -30,6 +30,23 @@ export class CalendarError extends Error {
   }
 }
 
+/**
+ * True when `err` is a `CalendarError` produced by a revoked/invalid
+ * Google OAuth grant — the user disconnected the app in their Google
+ * Account, an admin revoked the OAuth client, or the refresh token
+ * otherwise stopped working. Google reports this as an
+ * `invalid_grant` error on `refreshAccessToken`/`exchangeCodeForTokens`
+ * (usually HTTP 400, occasionally 401). Distinguishing this from a
+ * generic API failure matters because it's not retryable: the caller
+ * needs a brand-new consent flow, not a retry with backoff. See
+ * `src/lib/calendar/google/account-client.ts` / the tool-executor's
+ * revocation handling for where this is consumed.
+ */
+export function isRevokedGrantError(err: unknown): err is CalendarError {
+  if (!(err instanceof CalendarError)) return false
+  return err.code === 'invalid_token' || /invalid_grant/i.test(err.message)
+}
+
 export interface HttpClient {
   fetch: typeof fetch
 }
@@ -65,8 +82,64 @@ export interface GoogleTokens {
   expiresAt: Date
 }
 
+const OAUTH_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3'
+
+/** Minimal scopes for the agent's calendar use — read free/busy to
+ *  offer slots, and create/update/delete the events it books itself.
+ *  Deliberately NOT the broad `calendar` scope (full read/write
+ *  access to every calendar detail, ACLs included): the agent never
+ *  needs to read event contents or manage calendar sharing, so
+ *  requesting less here is both a real security reduction and a
+ *  smaller ask on Google's consent screen. */
+export const GOOGLE_CALENDAR_OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.freebusy',
+  'https://www.googleapis.com/auth/calendar.events',
+] as const
+
+/**
+ * Build the Google consent-screen URL for the "Connect Google
+ * Calendar" flow. `access_type=offline` + `prompt=consent` are both
+ * required to reliably get a `refresh_token` back on the callback —
+ * without `prompt=consent`, Google silently omits it on any
+ * authorization after the first (see `exchangeCodeForTokens`'s doc on
+ * `refreshToken: null`).
+ */
+export function buildGoogleAuthorizeUrl(params: {
+  clientId: string
+  redirectUri: string
+  state: string
+  loginHint?: string
+}): string {
+  const url = new URL(OAUTH_AUTHORIZE_URL)
+  url.searchParams.set('client_id', params.clientId)
+  url.searchParams.set('redirect_uri', params.redirectUri)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('scope', GOOGLE_CALENDAR_OAUTH_SCOPES.join(' '))
+  url.searchParams.set('access_type', 'offline')
+  url.searchParams.set('prompt', 'consent')
+  url.searchParams.set('include_granted_scopes', 'true')
+  url.searchParams.set('state', params.state)
+  if (params.loginHint) url.searchParams.set('login_hint', params.loginHint)
+  return url.toString()
+}
+
+export interface ExchangedTokens {
+  accessToken: string
+  expiresAt: Date
+  /**
+   * Google only returns a `refresh_token` on some authorization-code
+   * exchanges — reliably on the FIRST consent for a given
+   * user+client (or any consent that used `prompt=consent`, which
+   * `buildGoogleAuthorizeUrl` always sets), but it can still be
+   * absent if the account already granted these scopes to this OAuth
+   * client and Google decides not to re-issue one. Callers MUST
+   * treat `null` as "connection failed, ask the user to retry" —
+   * never silently upsert a null/empty token into `calendar_configs`.
+   */
+  refreshToken: string | null
+}
 
 async function googleFetch(
   http: HttpClient,
@@ -106,6 +179,49 @@ async function parseGoogleError(res: Response): Promise<CalendarError> {
     detail ? `Google Calendar API error (${res.status}): ${detail}` : `Google Calendar API error (${res.status})`,
     { code, status: res.status >= 500 ? 502 : res.status },
   )
+}
+
+/**
+ * Exchange an authorization `code` (from the OAuth callback's `?code=`
+ * query param) for tokens. This is the ONE call in the flow that can
+ * hand back a `refresh_token` — see `ExchangedTokens.refreshToken`'s
+ * doc for why it can still be null and what callers must do about it.
+ */
+export async function exchangeCodeForTokens(
+  code: string,
+  redirectUri: string,
+  creds: GoogleOAuthCredentials,
+  http: HttpClient = defaultHttp,
+): Promise<ExchangedTokens> {
+  const res = await googleFetch(http, OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+      code,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }),
+  })
+  if (!res.ok) throw await parseGoogleError(res)
+
+  const data = (await res.json().catch(() => null)) as {
+    access_token?: string
+    expires_in?: number
+    refresh_token?: string
+  } | null
+  if (!data?.access_token) {
+    throw new CalendarError('Google token exchange returned no access_token.', {
+      code: 'invalid_token_response',
+    })
+  }
+  const expiresInSec = typeof data.expires_in === 'number' ? data.expires_in : 3600
+  return {
+    accessToken: data.access_token,
+    expiresAt: new Date(Date.now() + expiresInSec * 1000),
+    refreshToken: data.refresh_token ?? null,
+  }
 }
 
 /**

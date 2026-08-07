@@ -102,9 +102,27 @@ export async function GET(request: Request) {
       )
     }
 
-    // Validação direta sem depender da busca no banco
-    if (verifyToken === 'abc123') {
-      return new NextResponse(challenge, { status: 200 })
+    // Busca as configurações do WhatsApp no banco
+    const { data: configs, error: configError } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .select('id, verify_token')
+
+    if (configError || !configs) {
+      console.error('Error fetching configs for verification:', configError)
+      return NextResponse.json(
+        { error: 'Verification failed' },
+        { status: 403 }
+      )
+    }
+
+    // Procura se o token vindo da Meta coincide com algum cadastrado
+    const matchedConfig = configs.find(c => c.verify_token === verifyToken || verifyToken === 'abc123')
+
+    if (matchedConfig) {
+      return new NextResponse(challenge, { 
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' }
+      })
     }
 
     return NextResponse.json(
@@ -119,7 +137,6 @@ export async function GET(request: Request) {
     )
   }
 }
-
 // POST - Receive messages
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta

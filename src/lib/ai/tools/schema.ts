@@ -32,7 +32,7 @@
 export interface JsonSchema {
   type: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array'
   description?: string
-  enum?: readonly string[]
+  enum?: readonly string[] | readonly number[]
   properties?: Record<string, JsonSchema>
   items?: JsonSchema
   required?: readonly string[]
@@ -174,27 +174,62 @@ export const cancelBookingTool: ToolDefinition = {
 // ------------------------------------------------------------
 // save_lead_qualification — persist the qualification rubric outcome.
 // ------------------------------------------------------------
+// NOTE on this schema's shape (deviates from an earlier free `score`
+// integer field): the product rubric requires the total score and
+// stage to be DERIVED, never invented by the model — see
+// src/lib/eter/lead-scoring.ts. So this tool no longer accepts `score`
+// or `stage` at all: the model can only report FACTS (one rubric
+// dimension at a time, 0-2, as it learns them across the conversation),
+// and the handler computes score/stage server-side from every
+// dimension recorded so far. The old free-text `urgency` enum is also
+// gone — it duplicated/could contradict the `urgencia` rubric
+// dimension, which is now the single source of truth the handler
+// derives `lead_qualification.urgency` from (lead-scoring.ts,
+// `urgencyFromDimension`).
 export const saveLeadQualificationTool: ToolDefinition = {
   name: 'save_lead_qualification',
   description:
-    'Grava (ou actualiza) o resultado da qualificação do lead — pontuação, fase, urgência e as respostas dadas. Chama sempre que aprenderes algo novo relevante para a qualificação, não só no fim.',
+    'Regista o que aprendeste sobre UMA (ou mais) das 5 dimensões da qualificação do lead (necessidade, autoridade, urgência, enquadramento, dimensão da empresa) — nunca uma pontuação total, essa é sempre calculada a partir das respostas guardadas. Chama assim que aprenderes uma dimensão nova, não como questionário — nunca voltes a perguntar uma dimensão já respondida (consulta o resultado devolvido para saberes quais faltam).',
   parameters: {
     type: 'object',
     properties: {
       contact_id: { type: 'string', format: 'uuid', description: 'UUID do contacto (contacts.id).' },
-      score: { type: 'integer', description: 'Pontuação de qualificação (escala definida pelo produto/rubrica).' },
-      stage: {
-        type: 'string',
-        description: 'Fase de qualificação livre (ex.: "novo", "em_qualificacao", "qualificado", "descartado").',
-      },
-      urgency: {
-        type: 'string',
-        enum: ['low', 'medium', 'high', 'urgent'],
-        description: 'Urgência percebida do lead — alimenta a cadência de follow-up e a prioridade em notify_admin.',
+      dimensions: {
+        type: 'object',
+        description:
+          'Uma ou mais das 5 dimensões da rubrica, cada uma 0, 1 ou 2. Envia só as que aprendeste nesta troca — as já registadas não precisam de ser repetidas.',
+        properties: {
+          necessidade: {
+            type: 'integer',
+            enum: [0, 1, 2],
+            description: '0 = sem problema identificado / curiosidade, 1 = problema vago, 2 = dor concreta + o seu custo.',
+          },
+          autoridade: {
+            type: 'integer',
+            enum: [0, 1, 2],
+            description: '0 = sem poder de decisão/influência, 1 = influencia mas outra pessoa decide, 2 = é quem decide (sócio/gerente/CEO).',
+          },
+          urgencia: {
+            type: 'integer',
+            enum: [0, 1, 2],
+            description: '0 = "um dia destes", 1 = próximos meses, 2 = já esta semana / prazo definido.',
+          },
+          enquadramento: {
+            type: 'integer',
+            enum: [0, 1, 2],
+            description: '0 = fora do que a Eter faz, 1 = adjacente, 2 = encaixa num serviço Eter.',
+          },
+          dimensao: {
+            type: 'integer',
+            enum: [0, 1, 2],
+            description: '0 = sem operação (particular/projecto pessoal), 1 = micro-empresa, 2 = tem equipa + receita recorrente.',
+          },
+        },
+        additionalProperties: false,
       },
       answers: {
         type: 'object',
-        description: 'Mapa livre pergunta→resposta recolhido na conversa de qualificação (auditável).',
+        description: 'Mapa livre pergunta→resposta adicional recolhido na conversa (auditável, fora das 5 dimensões da rubrica).',
         additionalProperties: true,
       },
       qualified: {

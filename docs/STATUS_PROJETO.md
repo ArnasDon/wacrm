@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 22) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 23) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,26 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 23)** — rollback cirúrgico: restaura `message-composer.tsx` ao estado exato da parte 19, a pedido do usuário (regressão reportada: Composer ~50% cortado com teclado fechado):
+
+Usuário reportou regressão grave: depois da última tentativa de corrigir o header, o Composer (que estava corretamente visível e posicionado no fundo) passou a ficar cerca de 50% cortado abaixo da área visível, mesmo com o teclado fechado — e o header continuou subindo (problema original não resolvido). Pedido explícito: identificar o commit imediatamente anterior à última tentativa de corrigir o header, comparar os arquivos da conversa, e reverter exatamente o que mudou — sem adicionar nenhum offset/padding/translateY/cálculo novo.
+
+**Investigação (git, não hipótese):**
+- Commit de referência identificado: `05dab64` (parte 19 — "elimina altura duplicada", o estado que o próprio usuário confirmou como "praticamente perfeita" antes de pedir a correção do header).
+- `git diff 05dab64 -- globals.css`: **vazio** — a adição de `overflow:hidden` em `html`/`body` (parte 20, tentativa de corrigir o header) e a reversão pedida na parte 21 se cancelam exatamente; `globals.css` já estava idêntico à parte 19.
+- `git diff 05dab64 -- dashboard-shell.tsx inbox/page.tsx message-thread.tsx layout.tsx`: **vazio** — nenhum desses arquivos mudou desde a parte 19.
+- `git diff 05dab64 -- message-composer.tsx`: a **única** diferença encontrada era o aumento dos alvos de toque da parte 22 (`h-9 w-9`/`h-8 w-8` → `h-11 w-11`, ícones `h-4 w-4` → `h-5 w-5`, em 5 botões: anexo, microfone, enviar, lixeira, enviar-da-gravação).
+
+**Correção:** `message-composer.tsx` restaurado via `git checkout 05dab64 -- message-composer.tsx` — voltou byte a byte ao estado da parte 19/15 (botões `h-9`/`h-8`, ícones `h-4`, mesmo padding/posição de sempre). **Nenhum arquivo teve offset, padding, bottom, translateY ou cálculo de viewport adicionado** — isso foi um revert puro, não uma nova correção.
+
+**Honestidade sobre a causa:** a análise estrutural (flexbox: Composer é `shrink-0`, nunca se auto-comprime; um aumento de ~8px na altura da barra de botões não deveria, por conta própria, cortar metade do Composer) não explica sozinha um corte de 50%. É bem possível que o dispositivo do usuário estivesse mostrando uma versão em cache do PWA no momento do teste (tema recorrente nesta sessão inteira — iOS pode segurar o bundle JS anterior até o app ser relançado do zero), não necessariamente o efeito direto do aumento dos botões. Ainda assim, como a parte 22 era a única mudança real desde o estado bom conhecido, revertê-la é a ação mais segura e literal pedida — e não custa nada, já que os alvos de toque maiores não eram uma correção crítica.
+
+**Sobre o header:** **não foi tocado nesta parte**, exatamente como pedido. Ele provavelmente continua subindo junto com o teclado — esse problema nunca foi resolvido (a tentativa da parte 20 não funcionou e foi revertida na parte 21). Fica registrado como isolado, não deve ser misturado com a posição do Composer de novo.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome — composer de volta à aparência da parte 15/19 (botões no tamanho anterior), totalmente visível, sem corte. **A confirmação real de que o corte desapareceu no iPhone depende do usuário relançar o app do zero** (não só recarregar) pra garantir que não está vendo uma versão em cache.
+
+---
 
 **Sessão de 2026-08-07 (parte 22)** — pedido de "reconstrução completa" da experiência de conversa (layout + gravação de áudio); análise mostrou que quase tudo já existia — só os alvos de toque precisavam crescer:
 
@@ -474,9 +494,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar no iPhone físico: os botões maiores do composer (parte 22) e tudo que ficou de pé das partes 16-19.** O gesto de gravação (pressionar, arrastar pra travar, lixeira/enviar) já existia e não foi alterado nesta sessão — só os alvos de toque cresceram para 44px. Testar: microfone/anexo/enviar/lixeira confortáveis de tocar; gesto de arrastar pra travar continua reconhecendo variação lateral; teclado fechado (composer 100% visível); tocar no composer (teclado abre, composer acompanha, sem vão); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
-2. **Perguntar ao usuário o motivo do revert da parte 20 antes de tentar de novo.** A parte 20 (`overflow: hidden` em `html`/`body`, pra impedir o iOS de rolar o documento inteiro ao focar o composer) foi desfeita a pedido direto do usuário na parte 21, sem explicação do motivo — pode ter sido só cautela, ou pode ter quebrado algo real. Não reaplicar a mesma mudança sem entender o que aconteceu. Se o header da conversa ainda subir junto com o teclado (item 1), esse é o candidato mais provável a reconsiderar.
-3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-22 acima.
+1. **Validar no iPhone físico, relançando o app do ZERO (não só recarregar) antes de testar — prioridade máxima absoluta.** A parte 23 restaurou `message-composer.tsx` byte a byte ao estado da parte 19 (confirmado via `git diff`, vazio). Se o corte de ~50% do Composer ainda aparecer mesmo depois de fechar o app completamente e reabrir, **não é mais um problema de código** (o `git diff` prova que o composer está exatamente como estava quando funcionava) — é cache do PWA ou algo no dispositivo, e a próxima ação é investigar isso especificamente, não tentar outra mudança de layout. Testar junto: composer 100% visível com teclado fechado; tocar no composer (acompanha o teclado); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado).
+2. **Separadamente, registrar se o header da conversa ainda sobe junto com o teclado.** Esse problema nunca foi resolvido (a tentativa da parte 20 — `overflow:hidden` em `html`/`body` — não funcionou e foi revertida na parte 21) e não foi tocado na parte 23 por instrução explícita do usuário ("não usar o Composer como mecanismo pra corrigir o header"). É um problema isolado, tratado depois de confirmar que o Composer está de volta ao normal — não misturar os dois na mesma tentativa.
+3. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-23 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

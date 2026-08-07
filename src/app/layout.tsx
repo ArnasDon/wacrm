@@ -103,31 +103,6 @@ const THEME_BOOT_SCRIPT = `
 })();
 `;
 
-// Inline boot script — sets `--app-height` (the pixel height JS actually
-// sees) synchronously before first paint, same rationale as the theme
-// script above. This exists because `100dvh` alone was suspected (2026-08-07
-// report, parte 13) of under-reporting the true usable height in real
-// iOS standalone-PWA use, leaving a gap at the bottom sized like Safari's
-// own chrome — which should never be present in true standalone mode.
-// `visualViewport.height` is the most trustworthy read of "space actually
-// available for content" on iOS (it's what the on-screen keyboard resizes),
-// falling back to `innerHeight` where `visualViewport` doesn't exist.
-//
-// Deliberately synchronous and pre-paint, unlike the earlier `useEffect`-
-// based `--app-height` attempt (removed — see dashboard-shell.tsx) that
-// ran *after* first paint and caused a visible reflow: this one lands
-// before React even hydrates, so there is exactly one height calculation,
-// not two competing ones. `useAppHeight()` (use-app-height.ts) only
-// *updates* this value post-mount, for keyboard/rotation changes.
-const VIEWPORT_BOOT_SCRIPT = `
-(function(){
-  try {
-    var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    document.documentElement.style.setProperty('--app-height', h + 'px');
-  } catch (_e) {}
-})();
-`;
-
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -156,11 +131,6 @@ export default async function RootLayout({
           id="theme-boot"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
-        />
-        <Script
-          id="viewport-height-boot"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: VIEWPORT_BOOT_SCRIPT }}
         />
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">

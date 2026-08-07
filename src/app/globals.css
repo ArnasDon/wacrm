@@ -269,11 +269,6 @@ html[data-theme="rose"] {
 :root {
   --header-content-height: 3.5rem;
   --header-height: calc(var(--header-content-height) + env(safe-area-inset-top));
-  /* Fallback only — the real value is set synchronously pre-paint by the
-     boot script in layout.tsx (`VIEWPORT_BOOT_SCRIPT`) from
-     `visualViewport.height`/`innerHeight`. This default covers the brief
-     window before that script runs and any context without JS. */
-  --app-height: 100dvh;
 }
 
 /* Tiny "audio capturing" equalizer bars — Inbox voice-note recorder

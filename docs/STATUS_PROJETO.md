@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 13) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 14) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,18 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 14)** — causa raiz real confirmada e revertida: `--app-height`/`visualViewport` (parte 13) causava os dois bugs; voltou pra `100dvh` puro:
+
+O badge de diagnóstico da parte 13 cumpriu o papel: usuário confirmou `standalone: true`, `iH: 873`, `vv: 873`, `oH: 932` no iPhone 14 Pro Max real, e reportou dois problemas — a faixa preta continuava, e um bug novo: ao abrir o teclado no composer, ele "voa" pra perto do topo com um espaço vazio enorme até o teclado (deveria ficar imediatamente acima dele, como no WhatsApp).
+
+**Causa raiz:** `visualViewport.height` no iOS **já exclui as safe-areas** por definição — diferente de `dvh`, que inclui a tela inteira (full-bleed, com `viewport-fit=cover`) e deixa `env(safe-area-inset-*)` recortar as insets *dentro* dela via CSS. A diferença `oH (932) - vv (873) = 59px` bate com a safe-area-inset-top do Dynamic Island. A parte 13 usou `visualViewport.height` (873, já sem a inset) como altura estrutural do shell inteiro — mas `Header.tsx` **também** soma `padding-top: env(safe-area-inset-top)` (~59px) dentro desse mesmo shell. Resultado: a inset era subtraída duas vezes, sobrando ~59px de espaço morto embaixo (a faixa preta — não é mais um bug de cor, como a parte 12 corrigiu; é um bug de tamanho real). E como esse valor só era recalculado via evento `resize` assíncrono (não de forma síncrona/nativa como `dvh`), abrir o teclado disparava um recálculo com lag em relação à animação real do teclado, encolhendo o shell inteiro (header+conversa+composer) pro novo valor menor — como o shell começa no topo da tela, isso empurra o composer pra cima, longe do teclado, com um vão vazio entre os dois.
+
+**Correção:** revertido — não empilhada mais uma correção em cima da anterior. `dashboard-shell.tsx` voltou a usar `h-dvh` puro (era `style={{height: 'var(--app-height, 100dvh)'}}`); `inbox/page.tsx` voltou a usar `100dvh` no `calc()` com `--header-height` (era `var(--app-height,100dvh)`); removido o script de boot `VIEWPORT_BOOT_SCRIPT` de `layout.tsx`; removida a variável `--app-height` de `globals.css`; deletados `use-app-height.ts` e `components/debug/viewport-debug-badge.tsx` (cumpriram o papel de diagnóstico, dados já coletados). `dvh` nativamente encolhe pra abertura do teclado do iOS de forma síncrona, como parte do layout normal do WebKit — não precisa de JS nenhum pra isso, e por isso não sofre do lag que causava o bug do teclado. A hierarquia flexbox (header `shrink-0` fixo → conteúdo `flex-1 overflow-y-auto` único com scroll → composer como último filho sem `flex-1`, fixo no fluxo) já estava correta desde antes — o bug nunca foi de estrutura flex, foi da *fonte* da altura usada por ela. Mantido intacto o que não tinha relação: `--header-height`/`--header-content-height` (parte 10) e o `background-color`/`overscroll-behavior-y: none` em `html`/`body` (parte 12).
+
+**Validação:** `tsc`, `eslint` (zero erros nos arquivos tocados), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado visualmente via Chrome (desktop: Painel, Inbox, lista, conversa aberta — tudo renderizando normal, sem regressão). **Não foi possível validar o comportamento do teclado real nem `visualViewport`/`dvh` em standalone real via Chrome** (Chrome/Blink não emula isso) — a validação definitiva depende do teste no iPhone físico pedido a seguir.
+
+---
 
 **Sessão de 2026-08-07 (parte 13)** — usuário reportou detalhe novo: a altura da faixa vazia bate com a área da UI inferior do Safari; layout global reestruturado em torno de `--app-height` (JS, pré-paint) em vez de `100dvh` puro, mais instrumentação de diagnóstico:
 
@@ -333,14 +345,13 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Abrir o app instalado no iPhone e ler o badge de diagnóstico (canto superior direito, texto pequeno) — primeiro passo, antes de mais nada.** Ele mostra `standalone:true/false` direto na tela. Se vier `false`: o problema nunca foi CSS — o ícone atual foi adicionado antes da correção da parte 11 (`apple-mobile-web-app-capable`) e está preso como bookmark comum, mostrando a UI **real** do Safari (é isso que bate com "a faixa tem a altura dos controles do Safari"). Ação: remover o ícone da Tela de Início e adicionar de novo, testar de novo, comparar o badge. Se vier `true` e a faixa persistir: comparar os valores de `iH`/`vv` (innerHeight/visualViewport.height) mostrados com a altura de tela conhecida do iPhone 14 Pro Max — isso confirma ou descarta `--app-height` estar calculando errado.
-2. **Se persistir mesmo com `standalone:true` e ícone recém-adicionado: mandar uma screenshot do badge + da tela com o problema.** Depois de 5 rodadas (partes 8-13) sem conseguir resolver por revisão de código remota, evidência visual real deixou de ser opcional.
-3. **Depois de confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx` — apagar o arquivo e as duas linhas que o importam/renderizam em `dashboard-shell.tsx`) e os `console.log` temporários — não é UI de produção.
-4. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, composer com teclado aberto/fechado, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-13 acima.
-5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-8. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** A parte 14 reverteu `--app-height`/`visualViewport` (que os diagnósticos da parte 13 mostraram ser a causa dos dois bugs mais recentes) de volta pra `100dvh` puro. Testar especificamente: (a) a faixa preta embaixo sumiu com teclado fechado; (b) abrir o teclado no composer — ele deve ficar imediatamente acima do teclado, sem espaço vazio, sem subir pro topo; (c) abrir/fechar o teclado várias vezes seguidas sem deslocamento acumulado; (d) rolar a conversa — header e composer continuam fixos, só as mensagens rolam.
+2. **Se a faixa preta OU o bug do teclado persistirem mesmo depois desta reversão: mandar screenshot/vídeo real.** Depois de 6 rodadas (partes 8-14) sem conseguir fechar isso só por revisão de código remota, não continuar tentando mais hipóteses às cegas — mudar de estratégia.
+3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-14 acima.
+4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+7. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

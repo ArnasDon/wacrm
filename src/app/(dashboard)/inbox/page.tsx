@@ -599,28 +599,27 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    // `var(--app-height)` (not bare `100dvh`) minus `--header-height`
-    // (globals.css) — `--app-height` is the *same* height source
-    // dashboard-shell.tsx's root now uses (see its comment for why:
-    // `dvh` was suspected of under-reporting real usable height in iOS
-    // standalone-PWA use, parte 13), and `--header-height` is the same
-    // variable Header.tsx sizes itself with for the header part, instead
-    // of a hardcoded number that can go stale.
+    // `100dvh` minus `--header-height` (globals.css) — the browser's own
+    // dynamic-viewport-height unit for the viewport part (shrinks
+    // natively/synchronously for the iOS on-screen keyboard, no JS), and
+    // the *same* variable Header.tsx sizes itself with for the header
+    // part, instead of a hardcoded number that can go stale.
     //
-    // This exact kind of drift already happened once: this used to
-    // subtract a bare `3.5rem`, which was correct only until Header.tsx
-    // grew a `padding-top: env(safe-area-inset-top)` for the Dynamic
-    // Island — after that the header was actually `3.5rem +
-    // env(safe-area-inset-top)` tall (~115px on notch devices, not
-    // 56px), so this panel claimed ~59px more height than `<main>`
-    // actually had left for it, and the whole Inbox column silently
-    // overflowed by that amount: empty space at first paint, then the
-    // conversation header sliding up behind the main header once
-    // anything triggered a reflow. Using the same `--app-height`
-    // dashboard-shell.tsx uses (rather than each independently reading
-    // `100dvh`) closes off the same class of bug for the *outer*
-    // viewport height too — both now trace back to one source.
-    <div className="-m-4 flex h-[calc(var(--app-height,100dvh)-var(--header-height))] flex-col overflow-hidden sm:-m-6">
+    // This exact drift already happened once: this used to subtract a
+    // bare `3.5rem`, which was correct only until Header.tsx grew a
+    // `padding-top: env(safe-area-inset-top)` for the Dynamic Island —
+    // after that the header was actually `3.5rem + env(safe-area-inset-
+    // top)` tall (~115px on notch devices, not 56px), so this panel
+    // claimed ~59px more height than `<main>` actually had left for it.
+    // `--header-height` folds in the same `env()` term Header.tsx uses,
+    // so the two can't diverge again.
+    //
+    // (A same-session detour — parte 13 — swapped `100dvh` here for a
+    // JS-computed `--app-height` based on `visualViewport.height`, on a
+    // hypothesis that `dvh` itself was wrong. Real-device diagnostics
+    // disproved that and identified the actual bug — see
+    // dashboard-shell.tsx's height comment. Reverted to plain `100dvh`.)
+    <div className="-m-4 flex h-[calc(100dvh-var(--header-height))] flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

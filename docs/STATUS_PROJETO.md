@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 29) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 30) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,24 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 30)** — reverte `position: fixed` em `html`/`body` (piorou, segundo o usuário); sessão de depuração remota encerrada aqui — próximo passo é Mac + Safari Web Inspector:
+
+Usuário testou a parte 29 (`position: fixed; inset: 0` em `html`/`body`) e reportou que piorou, pedindo revert explícito e confirmando a decisão já combinada de migrar a depuração pro Mac.
+
+**Revertido:** `globals.css` restaurado via `git checkout 8c54453 -- src/app/globals.css` — volta byte a byte ao estado da parte 28 (só `overflow: hidden`, sem `position: fixed`/`inset`). Nenhum outro arquivo tocado.
+
+**Estado em que o projeto fica, de propósito, pra continuar no Mac:**
+- Altura do shell (partes 26-27): `--app-height` via `outerHeight` em repouso + `visualViewport.height` ao vivo quando um campo é focado, só em standalone. Matematicamente comprovado correto por medição real (`appH`/`shellH`/`compBot` sempre batendo).
+- `<main>` travado (`overflow: hidden`) enquanto a conversa está aberta (parte 28) — não resolveu sozinho.
+- `html`/`body` com `overflow: hidden` (parte 24) — não resolveu sozinho, e a tentativa de reforçar com `position: fixed` (parte 29) piorou e foi revertida.
+- Badge de diagnóstico (`viewport-debug-badge.tsx`) ainda ativo — vai ser útil no Mac também, mostra os números em tempo real; considerar se o Web Inspector já é suficiente uma vez lá, ou manter os dois.
+
+**Por que parar de tentar CSS puro remotamente:** três camadas de prevenção de scroll foram tentadas (`overflow:hidden` em `<main>`, `overflow:hidden` em `html`/`body`, `position:fixed` em `html`/`body`) e nenhuma resolveu — a última ainda piorou. Isso sugere fortemente que a causa não é (só) sobre impedir uma rolagem de documento simples — pode ser algo mais específico do WKWebView em PWA standalone (redimensionamento de viewport durante a transição do teclado, nao apenas scroll) que só fica claro observando ao vivo no Web Inspector, não adivinhando mais uma propriedade CSS.
+
+**Validação do revert:** `tsc`, `vitest run` (652/655, mesma base pré-existente), `next build` limpo — `git diff` contra `8c54453` confirmado vazio (revert exato).
+
+---
 
 **Sessão de 2026-08-07 (parte 29)** — trava do `<main>` (parte 28) não foi suficiente, confirmado pelo usuário com cache 100% eliminado; aplicada técnica mais forte, `position: fixed` em `html`/`body`, ainda 100% CSS:
 
@@ -590,10 +608,10 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero, cache já eliminado antes) e confirma se o header/conversa permanecem visíveis ao abrir o teclado.** A parte 29 aplicou `position: fixed` em `html`/`body` — tecnicamente uma garantia mais forte que `overflow: hidden` (parte 24) sozinho ou a trava do `<main>` (parte 28), nenhuma das quais resolveu sozinha. Se isso não resolver, é o sinal mais forte possível de que o remoto/código chegou ao limite.
-2. **Se o header/mensagens ainda sumirem de vista mesmo com `position: fixed`:** já foram tentadas as três camadas de prevenção estruturalmente razoáveis (`overflow: hidden` em `<main>` e em `html`/`body`, e agora `position: fixed` em `html`/`body`) sem sucesso confirmado — nesse ponto, **migrar para o Mac + Safari Web Inspector já combinado com o usuário**, observando ao vivo o que exatamente dispara o deslocamento durante a transição do teclado, em vez de mais uma hipótese de CSS.
-3. **Assim que tudo confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção.
-4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-29 acima.
+1. **Prioridade máxima: continuar a depuração no Mac com Safari Web Inspector conectado ao iPhone.** Combinado com o usuário — três tentativas de prevenção de scroll via CSS puro (`overflow:hidden` no `<main>`, `overflow:hidden` em `html`/`body`, `position:fixed` em `html`/`body`) foram feitas remotamente sem sucesso confirmado (a última até piorou e foi revertida). O Web Inspector no Mac permite observar ao vivo, no DOM/CSS computado real, o que exatamente acontece no instante em que o teclado abre — inclusive testar hipóteses (como mudar `overflow`/`position` ao vivo no inspector) sem precisar de um novo deploy a cada tentativa.
+2. Antes de tentar mais qualquer mudança de CSS: usar o Web Inspector pra confirmar se o que acontece é realmente um *scroll* (verificar `document.scrollingElement.scrollTop`, `main.scrollTop` no momento do bug) ou se é outra coisa — redimensionamento incorreto de algum elemento, ou comportamento específico do WKWebView em PWA standalone que não é scroll no sentido tradicional.
+3. **Assim que confirmado e corrigido: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção.
+4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-30 acima.
 5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

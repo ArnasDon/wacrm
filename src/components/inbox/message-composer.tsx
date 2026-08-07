@@ -379,7 +379,14 @@ export function MessageComposer({
   // ---- Render --------------------------------------------------------
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    // `pb-[calc(...)]` overrides just the bottom side of `p-3`: the same
+    // 12px as the other three sides, plus the device's safe-area inset
+    // (home indicator / gesture bar) on top of that. `env()` resolves to
+    // 0 on devices without one (desktop, older phones), so this is a
+    // no-op there — the bar only moves up where something would actually
+    // overlap it. Requires `viewport-fit=cover` (see app/layout.tsx),
+    // otherwise iOS never reports a nonzero inset.
+    <div className="border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote

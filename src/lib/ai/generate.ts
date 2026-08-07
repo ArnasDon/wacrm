@@ -6,8 +6,10 @@ import {
   type GenerateResult,
 } from './types'
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
-import { generateOpenAi } from './providers/openai'
-import { generateAnthropic } from './providers/anthropic'
+import { generateOpenAi, runOpenAiToolLoop } from './providers/openai'
+import { generateAnthropic, runAnthropicToolLoop } from './providers/anthropic'
+import type { ToolDefinition } from './tools/schema'
+import type { ToolExecutor } from './tools/loop-types'
 
 export interface GenerateArgs {
   config: AiConfig
@@ -49,6 +51,62 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
   }
 
   return parseGeneration(result.text, result.usage)
+}
+
+export interface GenerateWithToolsArgs extends GenerateArgs {
+  tools: readonly ToolDefinition[]
+  executor: ToolExecutor
+  maxIterations?: number
+  toolTimeoutMs?: number
+}
+
+export interface GenerateWithToolsResult extends GenerateResult {
+  iterations: number
+  hitIterationLimit: boolean
+}
+
+/**
+ * Same contract as `generateReply`, but runs the full agentic
+ * tool-calling loop (see providers/anthropic.ts `runAnthropicToolLoop` /
+ * providers/openai.ts `runOpenAiToolLoop`) before parsing the handoff
+ * sentinel out of whatever text the model settles on. Use this for the
+ * EterWA agent turn; plain `generateReply` stays as-is for the existing
+ * draft / auto-reply paths that don't call tools.
+ */
+export async function generateReplyWithTools(
+  args: GenerateWithToolsArgs,
+): Promise<GenerateWithToolsResult> {
+  const { config, systemPrompt, messages, tools, executor, maxIterations, toolTimeoutMs } = args
+  const timeoutMs = aiRequestTimeoutMs()
+  const loopArgs = {
+    apiKey: config.apiKey,
+    model: config.model,
+    systemPrompt,
+    messages,
+    timeoutMs,
+    tools,
+    executor,
+    maxIterations,
+    toolTimeoutMs,
+  }
+
+  let result: { text: string; usage: AiUsage | null; iterations: number; hitIterationLimit: boolean }
+  switch (config.provider) {
+    case 'openai':
+      result = await runOpenAiToolLoop(loopArgs)
+      break
+    case 'anthropic':
+      result = await runAnthropicToolLoop(loopArgs)
+      break
+    default:
+      throw new AiError(`Unsupported AI provider: ${config.provider}`, {
+        code: 'unsupported_provider',
+        status: 400,
+      })
+  }
+
+  const parsed = parseGeneration(result.text, result.usage)
+  return { ...parsed, iterations: result.iterations, hitIterationLimit: result.hitIterationLimit }
 }
 
 /**

@@ -28,11 +28,29 @@ export const MAX_OUTPUT_TOKENS = 1024
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
+const DEFAULT_MAX_TOOL_ITERATIONS = 6
+const DEFAULT_TOOL_TIMEOUT_MS = 10_000
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */
 export function aiRequestTimeoutMs(): number {
   const raw = Number(process.env.AI_REQUEST_TIMEOUT_MS)
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+/** Hard cap on request↔tool round-trips in one agent turn — the loop
+ *  stops and returns whatever text it has rather than looping forever
+ *  on a confused model. Override with `AI_MAX_TOOL_ITERATIONS`. */
+export function aiMaxToolIterations(): number {
+  const raw = Number(process.env.AI_MAX_TOOL_ITERATIONS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_TOOL_ITERATIONS
+}
+
+/** Wall-clock budget for a single tool execution. A tool that blows
+ *  this returns an error tool_result to the model instead of hanging
+ *  the whole conversation turn. Override with `AI_TOOL_TIMEOUT_MS`. */
+export function aiToolTimeoutMs(): number {
+  const raw = Number(process.env.AI_TOOL_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TOOL_TIMEOUT_MS
 }
 
 /** How many recent text messages to feed the model. Override with

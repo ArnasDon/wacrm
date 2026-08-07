@@ -599,13 +599,15 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    // Height tracks `--app-height` (see useViewportHeight, mounted once
-    // in dashboard-shell.tsx) minus the Header's 3.5rem, falling back to
-    // `100dvh` before that effect's first run. Not `100vh` — iOS doesn't
-    // reliably shrink that for the on-screen keyboard, especially in
-    // standalone-PWA mode (this app's primary way of being used), which
-    // was pushing/hiding the composer at the bottom of this exact panel.
-    <div className="-m-4 flex h-[calc(var(--app-height,100dvh)-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // `100dvh` (not `100vh`) minus the Header's 3.5rem — the browser's
+    // own dynamic-viewport-height unit is the single source of truth
+    // for this panel's size, correct on the first frame and natively
+    // tracking the iOS keyboard / standalone-PWA viewport with no JS.
+    // (A prior version read a `--app-height` custom property set from a
+    // `useEffect`, which only updated *after* the first paint — that
+    // extra, later-arriving height source is what was causing a visible
+    // reflow a moment after load, not fixing one. See dashboard-shell.tsx.)
+    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

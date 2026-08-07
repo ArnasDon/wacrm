@@ -42,6 +42,13 @@ async function sendStaticNotice(args: DispatchArgs, text: string) {
   })
 }
 
+function formatHandoffNote(reason: string, summary?: string | null): string {
+  const cleanSummary = summary?.trim()
+  return cleanSummary
+    ? `Motivo: ${reason}\n\nResumo: ${cleanSummary}`
+    : `Motivo: ${reason}`
+}
+
 /**
  * AI auto-reply for a freshly-arrived inbound message.
  *
@@ -68,6 +75,45 @@ export async function dispatchInboundToAiReply(
       return
     }
 
+    const notifyHandoffAssignee = async (note: string) => {
+      if (!config.handoffAgentId) return
+      const { error } = await db.from('notifications').insert({
+        account_id: accountId,
+        user_id: config.handoffAgentId,
+        type: 'conversation_assigned',
+        conversation_id: conversationId,
+        contact_id: contactId,
+        title: 'Conversa requer intervenção',
+        body: note,
+      })
+      if (error) {
+        // Assignment itself must still succeed even if notification delivery
+        // is temporarily unavailable.
+        console.error('[ai auto-reply] handoff notification failed:', error)
+      }
+    }
+
+    const markHandoff = async (reason: string, summary?: string | null) => {
+      const note = formatHandoffNote(reason, summary)
+      const update: Record<string, unknown> = {
+        ai_autoreply_disabled: true,
+        ai_handoff_summary: note,
+      }
+      if (config.handoffAgentId) update.assigned_agent_id = config.handoffAgentId
+
+      const { error } = await db
+        .from('conversations')
+        .update(update)
+        .eq('id', conversationId)
+        .eq('account_id', accountId)
+      if (error) {
+        console.error('[ai auto-reply] failed to persist handoff:', error)
+      } else {
+        await notifyHandoffAssignee(note)
+      }
+      return note
+    }
+
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
@@ -91,12 +137,10 @@ export async function dispatchInboundToAiReply(
       console.info(
         `[ai auto-reply] conversation ${conversationId} reached reply cap (${replyCount}/${config.autoReplyMaxPerConversation}); handing off.`,
       )
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: `Limite automático atingido após ${replyCount} respostas.`,
-      }
-      if (config.handoffAgentId) update.assigned_agent_id = config.handoffAgentId
-      await db.from('conversations').update(update).eq('id', conversationId)
+      await markHandoff(
+        'Limite de respostas automáticas atingido.',
+        `A IA respondeu ${replyCount} vezes nesta conversa. Continue o atendimento a partir da última mensagem do cliente.`,
+      )
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -108,9 +152,7 @@ export async function dispatchInboundToAiReply(
     }
 
     // Deterministic message responders win over the LLM, but only when
-    // an active automation ACTUALLY matches this inbound. The previous
-    // implementation skipped AI whenever any keyword automation merely
-    // existed in the account, which caused apparently random silence.
+    // an active automation ACTUALLY matches this inbound.
     const latestInbound = [...messages].reverse().find((m) => m.role === 'user')
     const { data: autoResponders, error: automationErr } = await db
       .from('automations')
@@ -141,17 +183,16 @@ export async function dispatchInboundToAiReply(
       console.warn(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — handing off this inbound.`,
       )
-      await db
-        .from('conversations')
-        .update({ ai_autoreply_disabled: true })
-        .eq('id', conversationId)
+      await markHandoff(
+        'Limite temporário do serviço de IA atingido.',
+        'O cliente escreveu enquanto o serviço automático estava temporariamente limitado. Continue a partir da última mensagem recebida.',
+      )
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
 
-    // Knowledge retrieval is now tool-driven. This prevents the same knowledge
-    // base being queried once before the model call and again through
-    // search_knowledge, and makes the Tools switches authoritative.
+    // Knowledge retrieval is tool-driven. This prevents duplicate retrieval
+    // and makes the Tools switches authoritative.
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
@@ -210,14 +251,12 @@ export async function dispatchInboundToAiReply(
         messages,
         replyCount,
       })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
-      }
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
+      await markHandoff(
+        handoff
+          ? 'A IA determinou que o atendimento necessita de intervenção humana.'
+          : 'A IA não conseguiu produzir uma resposta segura.',
+        summary,
+      )
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -234,15 +273,19 @@ export async function dispatchInboundToAiReply(
     )
     if (claimErr) {
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
+      await markHandoff(
+        'Falha técnica ao reservar a resposta automática.',
+        'A mensagem do cliente foi recebida, mas o sistema não conseguiu reservar uma resposta da IA. Continue a partir da última mensagem.',
+      )
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
     if (claimed !== true) {
       console.warn('[ai auto-reply] reply slot was not claimed; handing off', conversationId)
-      await db
-        .from('conversations')
-        .update({ ai_autoreply_disabled: true })
-        .eq('id', conversationId)
+      await markHandoff(
+        'Limite de respostas automáticas atingido durante o processamento.',
+        'A IA não enviou nova resposta. Continue a partir da última mensagem do cliente.',
+      )
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }

@@ -115,8 +115,18 @@ function formatDuration(seconds: number): string {
 const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 
 // Vertical drag distance (px) that arms "locked" (hands-free) recording —
-// same idea as WhatsApp's own slide-up-to-lock gesture.
-const LOCK_THRESHOLD_PX = 70;
+// same idea as WhatsApp's own slide-up-to-lock gesture. Slightly more
+// than a hair-trigger tap needs, on purpose: the progressive visual
+// buildup below (the hint growing/brightening as it approaches this) is
+// what should carry the "am I close?" feeling, not a razor-thin
+// threshold — this just guards against arming on a barely-there twitch.
+//
+// Deliberately vertical-only, with no horizontal check at all: a
+// natural upward swipe always drifts sideways some, and penalizing
+// that (requiring a perfectly straight line) is exactly what reads as
+// "mechanical" instead of a natural continuation of the press. A
+// diagonal drag locks exactly as readily as a straight one.
+const LOCK_THRESHOLD_PX = 80;
 
 type MicPhase = "idle" | "recording" | "paused" | "sending";
 
@@ -418,8 +428,17 @@ export function MessageComposer({
       if (!gesture || locked || micPhase !== "recording") return;
       const dy = gesture.startY - e.clientY; // positive = dragged up
       if (lockHintRef.current) {
-        const clamped = Math.max(0, Math.min(LOCK_THRESHOLD_PX, dy));
-        lockHintRef.current.style.transform = `translateY(${-clamped}px)`;
+        const progress = Math.min(1, Math.max(0, dy / LOCK_THRESHOLD_PX));
+        // Ease-out (not a 1:1 linear follow): the hint travels faster
+        // at the start of the drag and settles as it nears the top —
+        // a natural deceleration, closer to how WhatsApp's own lock
+        // indicator moves than a rigid ruler-straight mapping. Scale
+        // and opacity build up alongside it, so the *whole* icon
+        // visibly grows more confident as the gesture continues
+        // instead of just sitting there until an abrupt flip.
+        const eased = 1 - (1 - progress) * (1 - progress);
+        lockHintRef.current.style.transform = `translateY(${-(eased * LOCK_THRESHOLD_PX)}px) scale(${0.85 + eased * 0.35})`;
+        lockHintRef.current.style.opacity = String(0.55 + eased * 0.45);
       }
       if (dy > LOCK_THRESHOLD_PX) {
         setLocked(true);
@@ -747,13 +766,19 @@ export function MessageComposer({
           {micActive && (
             <div className="relative flex items-center gap-3 rounded-xl border border-border bg-muted px-3 py-2.5">
               {/* Drag-up-to-lock hint — only while still holding and not
-                  yet locked. Translated live (via ref, not state) during
-                  the gesture in handleMicPointerMove for a 1:1 tracking
-                  feel with zero re-render overhead. */}
+                  yet locked. Position/scale/opacity are all written
+                  live (via ref, not state) during the gesture in
+                  handleMicPointerMove, eased rather than 1:1, so it
+                  builds up progressively instead of just sitting there
+                  until an abrupt flip — zero re-render overhead either way. */}
               {micPhase === "recording" && !locked && (
                 <div
                   ref={lockHintRef}
-                  className="pointer-events-none absolute -top-12 right-2 flex flex-col items-center gap-1 rounded-full border border-border bg-popover px-2 py-1.5 text-muted-foreground shadow-md"
+                  // Resting classes match what handleMicPointerMove
+                  // computes at progress=0 (scale 0.85, opacity 0.55) —
+                  // so there's no flash-of-full-strength before the
+                  // first pointermove event lands.
+                  className="pointer-events-none absolute -top-12 right-2 flex scale-[0.85] flex-col items-center gap-1 rounded-full border border-border bg-popover px-2 py-1.5 text-muted-foreground opacity-55 shadow-md"
                 >
                   <Lock className="h-3.5 w-3.5" />
                 </div>
@@ -771,7 +796,10 @@ export function MessageComposer({
 
               <div className="flex flex-1 items-center justify-center gap-2.5">
                 {locked && (
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  // The above-bar hint just disappears the instant this
+                  // mounts (locked flips true) — this pop-in is what
+                  // actually carries the "locked!" confirmation moment.
+                  <Lock className="h-3.5 w-3.5 shrink-0 animate-in text-primary zoom-in-50 duration-200" />
                 )}
                 {micPhase !== "sending" ? (
                   <RecordingIndicator active={micPhase === "recording"} />

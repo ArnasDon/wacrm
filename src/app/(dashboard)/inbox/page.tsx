@@ -599,7 +599,13 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // Height tracks `--app-height` (see useViewportHeight, mounted once
+    // in dashboard-shell.tsx) minus the Header's 3.5rem, falling back to
+    // `100dvh` before that effect's first run. Not `100vh` — iOS doesn't
+    // reliably shrink that for the on-screen keyboard, especially in
+    // standalone-PWA mode (this app's primary way of being used), which
+    // was pushing/hiding the composer at the bottom of this exact panel.
+    <div className="-m-4 flex h-[calc(var(--app-height,100dvh)-3.5rem)] flex-col overflow-hidden sm:-m-6">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

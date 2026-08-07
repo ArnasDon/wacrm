@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
+import { useViewportHeight } from "@/hooks/use-viewport-height";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -15,6 +16,14 @@ import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+
+  // Keeps --app-height in sync with the real visible viewport (see the
+  // hook for why plain `100vh`/h-screen isn't trustworthy here,
+  // especially for the on-screen keyboard in standalone-PWA mode —
+  // this app's primary way of being used). Mounted once at the shell
+  // root so every descendant (e.g. the Inbox page's own height calc)
+  // can reference the same `:root`-scoped custom property.
+  useViewportHeight();
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
   // always visible and this stays at `false` (ignored by the component).
@@ -48,7 +57,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-[100dvh] items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">Loading...</p>
@@ -62,10 +71,14 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     // `touch-pan-y` tells the browser vertical scroll is still native
     // (no latency added there) while leaving horizontal gestures for
-    // the JS listeners in useDrawerGesture to interpret.
+    // the JS listeners in useDrawerGesture to interpret. Height is
+    // `--app-height` (see useViewportHeight above) falling back to
+    // `100dvh` before that effect's first run — not `h-screen`
+    // (100vh), which iOS doesn't reliably shrink for the on-screen
+    // keyboard, especially in standalone-PWA mode.
     <div
       ref={shellRef}
-      className="flex h-screen touch-pan-y overflow-hidden bg-background"
+      className="flex h-[var(--app-height,100dvh)] touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}

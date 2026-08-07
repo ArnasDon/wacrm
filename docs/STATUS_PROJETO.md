@@ -1,6 +1,6 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
-> Última atualização: **2026-08-04**, ao final da sessão de configuração da conexão real do WhatsApp Cloud API (credenciais + webhook em produção).
+> Última atualização: **2026-08-07**, ao final de uma sessão de ajustes de interface no Inbox/Pipeline e correções de mobile (safe area + menu por gesto).
 > Este arquivo é o ponto de partida para qualquer sessão futura — leia antes de qualquer outra coisa.
 
 ## Estado atual
@@ -10,15 +10,26 @@
 - **Banco:** Supabase, projeto `qedptmrcvcbzhucoeznd`, plano FREE. Migrations aplicadas manualmente via SQL Editor do Supabase (sem CLI/CI) — ver `docs/ARQUITETURA.md`.
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
-- **Testes automatizados:** mesma base de 651/654 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado) — ver "Problemas conhecidos".
-- Commit `ef8f27f` — código pronto localmente, será enviado (`git push`) e o deploy automático confirmado ao final desta sessão.
+- **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
+- **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 5) — inclui o hash exato.
 
 ## O que está funcionando
 
 - CRM completo em pt-BR (tradução 100% — `messages/pt-BR.json`, paridade garantida por teste automatizado com `en.json`).
-- Caixa de entrada, funis (pipelines Kanban), automações, fluxos (flow builder), transmissões (broadcasts, com filtro AND/OR por tag), agentes de IA, templates.
+- Caixa de entrada, Pipeline (CRM de atendimento — ver bullet dedicado abaixo, deixou de ser "funil de negócios" genérico), automações, fluxos (flow builder), transmissões (broadcasts, com filtro AND/OR por tag), agentes de IA, templates.
 - Contatos: CRUD completo, importação CSV, campos personalizados, tags agrupadas por categoria.
-- **Dashboard redesenhado (novo, implementado hoje)** — de "analytics genérico" para central operacional:
+- **Caixa de Entrada — comportamento de leitura/status simplificado (2026-08-07)** — a bolinha de não lida (`conversation-list.tsx`) tinha um bug real: refletia `conversation.status`, então ficava roxa para sempre em conversas `status = "open"` (o padrão), independente de terem sido lidas. Corrigido para só acender em `pending`/`closed`; o indicador de não lida de verdade já era (e continua sendo) o contador numérico, que já zerava certo ao abrir. Menu de status do cabeçalho da conversa trocado de Aberta/Pendente/Fechada para **Pendente** (toggle) + **Marcar como não lida** (seta `unread_count` de volta pra 1, fecha a conversa ativa em seguida — senão o efeito que zera `unread_count` ao visualizar reverteria na hora). `status = "closed"` continua existindo no banco (usado pela automação `close_conversation`), só não é mais exposto nesse menu específico.
+- **Pipeline virou um CRM de atendimento, não mais um funil de negócios com valor em dinheiro (2026-08-07)** — mudança de modelo mental grande:
+  - **Entrada automática**: todo novo lead que inicia conversa no WhatsApp gera um card automaticamente na primeira etapa (`src/lib/pipelines/auto-deal.ts`, chamado do webhook em `convResult.created`). Etapa alvo é sempre a de menor `position` do pipeline mais antigo da conta — nada hardcoded por nome, então continua funcionando não importa como as etapas forem renomeadas em Configurações → Pipeline. Guarda de duplicidade por `(pipeline_id, contact_id)`; a mesma guarda foi replicada no step `create_deal` de Automações, que também podia gerar duplicata agora que a criação automática existe.
+  - **Card redesenhado** (`deal-card.tsx`) — removido valor em US$/moeda e o botão "Adicionar negócio" (tanto do card quanto da coluna e da barra superior — negócios não são mais criados manualmente). Mostra foto/iniciais, nome, telefone e tags do contato (mesmo estilo de pill do Inbox). `src/lib/pipelines/deals.ts` (`DEAL_SELECT`/`normalizeDeals`) traz as tags do contato junto, espelhando `src/lib/inbox/conversations.ts`.
+  - **Drawer de detalhe do lead** (`deal-detail-drawer.tsx`, novo) — abre ao clicar no card: tags, etapa atual, data de criação, notas, última interação da conversa vinculada e link direto pra abrir a conversa no Inbox (`/inbox?c=<id>`, deep-link que já existia). "Editar" dentro do drawer reabre o `DealForm` completo que já existia (valor/moeda/atribuído/data de fechamento continuam lá, só não aparecem mais no card).
+  - Drag-and-drop entre etapas já existia e persistia no banco (`@dnd-kit`) — intocado.
+- **Barra de composição de mensagens simplificada (2026-08-07)** — removidos Resposta com IA, Mensagens interativas e Respostas rápidas do composer (`message-composer.tsx`); botão de template continua só no banner de sessão expirada (é a única forma de reengajar depois da janela de 24h da Meta, então não podia sumir de vez). Layout final: anexar mídia (imagem/vídeo/documento) à esquerda, campo de texto ocupando o resto, gravar áudio (virou botão próprio, saiu do menu de anexo) à direita, enviar na extrema direita. `quick-reply-picker.tsx` foi deletado (ficou órfão — o gerenciador de Respostas Rápidas em Configurações é uma tela separada e continua existindo). Placeholder "Digite uma mensagem" removido do campo vazio (os placeholders de somente-leitura/sessão-expirada continuam, são indicadores de estado, não decoração).
+- **Apagar mensagens/áudios enviados + menu de contexto estilo WhatsApp (2026-08-07)** — clique direito (desktop) ou pressionar-e-segurar (mobile, via `contextmenu` nativo) em qualquer mensagem abre um menu ancorado nela (`message-actions.tsx`, reconstruído com `DropdownMenu` controlado em vez da fileira de ícones antiga): **Responder** (fluxo já existente), **Encaminhar** (novo, ver abaixo), **Copiar** (só texto), **Apagar** (só mensagens **enviadas pelo agente**, tipos texto/imagem/documento/vídeo/áudio — nunca mensagens do cliente). Apagar pede confirmação, some da tela, apaga a linha em `messages` (RLS já permitia via `messages_modify`), limpa o objeto do Storage se for mídia, e sincroniza para outros agentes com a mesma conversa aberta via Realtime (canal já escutava `messages`, só faltava tratar o evento `DELETE` em `handleMessageEvent`).
+  - **Encaminhar** — seletor com busca de contatos do CRM, multi-seleção (`forward-message-dialog.tsx`), reenvia via `POST /api/whatsapp/forward` (novo). A rota resolve/cria a conversa de cada contato (`findOrCreateConversation` extraído de `/api/whatsapp/send` pra reuso) e redespacha pelo mesmo core (`sendMessageToConversation`). Mídia recebida do cliente é uma URL de proxy autenticada (`/api/whatsapp/media/:id`) que a Meta não consegue buscar sozinha pra reenviar a terceiros — a rota detecta isso e rebaixa a mídia da Meta pro bucket `chat-media` antes de encaminhar (mesmo destino de mídia enviada pelo agente, que já é reaproveitada direto).
+- **Mobile — safe area + menu lateral por gesto (2026-08-07)** — `viewport-fit=cover` no `viewport` do `app/layout.tsx` (necessário pra `env(safe-area-inset-*)` retornar valor real no iOS). Header (`header.tsx`) e o topo/rodapé do drawer do menu lateral (`sidebar.tsx`) ganharam `pt-[env(safe-area-inset-top)]`/`pb-[calc(...)+env(safe-area-inset-bottom)]` — antes o cabeçalho "Painel" ficava atrás do relógio/Dynamic Island em iPhone 14/15 Pro Max. Mesmo padrão já tinha sido aplicado na barra de composição do Inbox numa sessão anterior. Menu lateral mobile agora abre com swipe a partir da borda esquerda e fecha com swipe pra esquerda em qualquer lugar do menu aberto (`src/hooks/use-swipe.ts`, hook novo, touchstart/touchend puro sem dependência nova) — abrir exige que o toque *comece* dentro de uma faixa estreita de 24px da borda (mesma lógica do gesto de "voltar" do próprio iOS), então nunca compete com scroll horizontal do Pipeline, da Agenda da Semana ou do drag-and-drop de cards, que sempre começam bem depois dessa faixa. Nunca chama `preventDefault`, então scroll vertical nunca é bloqueado. Clique fora e ESC pra fechar já existiam antes desta sessão.
+- **Dashboard redesenhado (2026-08-04)** — de "analytics genérico" para central operacional:
   - 4 cards de KPI: Leads Hoje (novos contatos hoje vs ontem), Leads Não Respondidos (conversas cuja última mensagem é do cliente, sem resposta — card com destaque visual laranja), Tempo Médio de Primeira Resposta (janela de 7 dias), **Leads Aguardando Classificação** (contatos com conversa iniciada mas sem tag de classificação principal — card âmbar, clicável, leva para `/contacts?filter=unclassified`).
   - Removidos: gráfico "Conversas ao longo do tempo", "Valor do funil" (donut), "Tempo médio de primeira resposta" em gráfico por dia da semana, "Atividade recente", filtros 7/30/90 dias, e o card "Agenda Hoje" (duplicava conceitualmente a seção "Agenda do Dia" abaixo). Componentes deletados de vez (não só ocultados).
   - Botão "Novo negócio" na barra de ações rápidas virou **"Segmentos"**.
@@ -41,6 +52,64 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 5)** — safe area do header + menu lateral por gesto no mobile:
+
+Dois problemas relatados especificamente em iPhone 14 Pro Max: (1) o header ("Painel") ficava atrás do relógio/Dynamic Island — `header.tsx` usava `h-14` fixo sem nenhum respeito por safe area; (2) não existia gesto nenhum pra abrir/fechar o menu lateral no mobile, só o botão hambúrguer.
+
+1. **Safe area** — `viewport-fit=cover` já estava no `viewport` de `app/layout.tsx` desde a sessão de correção do composer (parte 3 abaixo), então só faltava aplicar a propriedade CSS nos lugares certos. `header.tsx`: `h-14` → `min-h-14` + `pt-[env(safe-area-inset-top)]` (a inset *soma* à altura em vez de comprimir o conteúdo — importante, senão o conteúdo do header ficaria espremido). Mesmo tratamento na barra de logo do topo do `sidebar.tsx` (é um painel `fixed` independente, começa em y=0 igual ao header) e `pb-[calc(0.75rem+env(safe-area-inset-bottom))]` na seção de usuário no rodapé do menu (home indicator/gesture bar), mesma fórmula já usada na barra de composição do Inbox.
+2. **Menu por gesto** — `src/hooks/use-swipe.ts` (novo): hook mínimo, só `touchstart`/`touchend` nativos do React, sem biblioteca nova. Decide o gesto **no touchend** (compara deslocamento final, não ao vivo durante o arrasto) — mais simples e robusto contra tremida/jitter do que rastrear a cada frame. Exige que o deslocamento horizontal supere o vertical por 1.5× antes de contar como swipe (rejeita diagonais) e nunca chama `preventDefault`, então scroll vertical nunca é bloqueado, em lugar nenhum.
+   - **Abrir**: hook usado em `dashboard-shell.tsx`, anexado no `<div>` raiz do shell (funciona em qualquer página, não só Dashboard). Só começa a rastrear um toque se ele *iniciar* dentro de 24px da borda esquerda (`edgeZonePx`) — abaixo desse limiar, um toque em qualquer lugar do Pipeline, da Agenda da Semana ou de um card sendo arrastado (dnd-kit) já nasce descartado pelo hook, porque esses sempre começam bem depois da faixa de 24px (o próprio `<main>` já tem `p-4`). Não precisou de nenhuma lógica extra de "ignorar essas telas" — a geometria já resolve.
+   - **Fechar**: mesmo hook, sem `edgeZonePx`, anexado no `<aside>` do drawer (`sidebar.tsx`) — swipe pra esquerda em qualquer ponto do menu aberto fecha. Clique fora (backdrop) e ESC pra fechar já existiam antes desta sessão, intocados.
+
+Nenhuma migration, nenhuma dependência nova.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo — CSS de `safe-area-inset-top`/`bottom` confirmado presente no bundle compilado. Revisão manual de código em Pipeline/Agenda/Inbox confirmando que os pontos de scroll horizontal existentes começam bem além dos 24px da faixa de borda. **Não testado em iPhone físico nesta sessão** — validar em iPhone 14/15 Pro Max real antes de considerar fechado (é o ponto de partida recomendado pra próxima sessão, ver "Próxima tarefa recomendada").
+
+---
+
+**Sessão de 2026-08-07 (parte 4)** — menu de contexto nas mensagens (Responder/Encaminhar/Copiar/Apagar):
+
+Reconstruído `message-actions.tsx`: a fileira de ícones que só aparecia no hover virou um menu de contexto de verdade (`DropdownMenu` controlado por estado, não mais botões soltos), estilo WhatsApp. Abre com clique direito (desktop) ou pressionar-e-segurar (mobile, captura o `contextmenu` nativo do navegador — não precisou de lib de gesto) ancorado na própria mensagem, sem navegar de tela; no desktop também dá pra abrir clicando no chevron que aparece ao passar o mouse. Seletor de reação (emoji) que já existia continua do lado, intocado.
+
+Ações: Responder (fluxo já existente, sem mudança de comportamento) · Encaminhar (novo) · Copiar (só `content_type === "text"`) · Apagar (só mensagens enviadas pelo agente, tipos texto/imagem/documento/vídeo/áudio — fluxo de confirmar/remover da tela/apagar no banco/sincronizar via Realtime é o mesmo da parte 2 abaixo, só mudou de onde é disparado).
+
+**Encaminhar** é a peça nova maior: `forward-message-dialog.tsx` (busca + multi-seleção de contatos do CRM) chama `POST /api/whatsapp/forward` (novo). A rota reaproveita `sendMessageToConversation` (o mesmo core que `/api/whatsapp/send` usa) e o find-or-create de conversa por contato foi extraído pra `src/lib/whatsapp/find-or-create-conversation.ts` (usado pelas duas rotas agora). Detalhe que exigiu atenção: mídia recebida do cliente é salva como `/api/whatsapp/media/:id` — uma rota **autenticada** nossa, que a Meta não consegue buscar sozinha pra reenviar a um terceiro. A rota de forward detecta esse caso (URL relativa em vez de `https://`) e baixa a mídia da Meta de novo, reidratando no bucket `chat-media` (mesmo destino de mídia enviada pelo agente, que já tem URL pública e é reaproveitada direto) antes de despachar.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655), `next build` (rota `/api/whatsapp/forward` compilou e está listada) limpos.
+
+---
+
+**Sessão de 2026-08-07 (parte 3)** — safe area na barra de composição do Inbox:
+
+Mesmo sintoma da parte 5 acima, mas restrito à barra de mensagens do Inbox (relatado antes do problema no header ter sido notado): colada na borda inferior, sobreposta pelo home indicator do iOS / barra de gestos do Android. Adicionado `viewport-fit=cover` no `viewport` de `app/layout.tsx` (necessário pra `env(safe-area-inset-*)` funcionar no iOS — sem isso o valor é sempre 0) e `pb-[calc(0.75rem+env(safe-area-inset-bottom))]` no wrapper da barra (`message-composer.tsx`) — mesma fórmula depois reaproveitada no menu lateral (parte 5). Em telas sem área segura o comportamento não muda (`env()` resolve pra 0).
+
+**Validação:** `tsc`, `eslint`, `vitest run` (652/655), `next build` — CSS de `safe-area-inset-bottom` confirmado no bundle.
+
+---
+
+**Sessão de 2026-08-07 (parte 2)** — placeholder do composer removido + apagar mensagem/áudio enviado:
+
+1. Placeholder "Digite uma mensagem" removido do campo de texto vazio da barra de composição — os placeholders de somente-leitura/sessão-expirada continuam (são indicadores de estado, não decoração).
+2. **Apagar mensagem** (primeira versão, antes de virar menu de contexto na parte 4): ação no menu que já existia no hover, restrita a mensagens **enviadas pelo agente**. Confirmação obrigatória → apaga a linha em `messages` (RLS `messages_modify` já permitia) → limpa o objeto no Storage se for mídia/áudio → sincroniza via Realtime pra outros agentes com a mesma conversa aberta (o canal em `use-realtime.ts` já escutava `event: "*"` na tabela `messages`, só faltava tratar o `eventType === "DELETE"` em `handleMessageEvent`, em `inbox/page.tsx`). Reações e citações que apontavam pra a mensagem apagada são limpas automaticamente pelo próprio Postgres (`ON DELETE CASCADE`/`SET NULL` já configurados desde a migration `009`).
+
+**Validação:** `tsc`, `eslint`, `vitest run` (652/655), `next build` limpos.
+
+---
+
+**Sessão de 2026-08-07 (parte 1)** — Inbox (leitura/status) + Pipeline virou CRM de atendimento + composer simplificado:
+
+Sessão grande, três pedidos separados do usuário resolvidos em sequência:
+
+1. **Inbox** — bug real na "bolinha de não lida": era o indicador de `status` (roxo pra `open`, que é o padrão), não de leitura — por isso nunca sumia depois de abrir a conversa. Corrigido pra só acender em `pending`/`closed`. Menu de status trocado de Aberta/Pendente/Fechada pra Pendente (toggle) + Marcar como não lida.
+2. **Pipeline** — virou "o centro do CRM" em vez de funil de negócios genérico: todo novo lead que manda a primeira mensagem no WhatsApp ganha um card automaticamente na primeira etapa (`src/lib/pipelines/auto-deal.ts`, chamado do webhook), card sem valor financeiro (foto/nome/telefone/tags do contato), sem criação manual de negócio (removidos os botões "Adicionar negócio"), e um novo drawer de detalhe (`deal-detail-drawer.tsx`) no lugar de abrir direto o form de edição.
+3. **Composer** — barra de mensagens simplificada: removidos Resposta com IA, Mensagens interativas e Respostas rápidas; áudio virou botão próprio fora do menu de anexo; `quick-reply-picker.tsx` deletado (ficou órfão, o gerenciador em Configurações é separado e continua).
+
+Ver os bullets dedicados em "O que está funcionando" acima para o detalhamento técnico completo de cada um (arquivos tocados, decisões de escopo). Dois commits nesta parte (Inbox+Pipeline separado de um ajuste fino do composer pedido logo em seguida).
+
+**Validação:** `tsc`, `eslint` (zero erros nos arquivos tocados), `vitest run` (652/655, mesma baseline pré-existente de `currency.test.ts`), `next build` (56 páginas) limpos em cada etapa.
+
+---
 
 **Sessão de 2026-08-04 (parte 9)** — causa raiz do "Não registrado" investigada e corrigida:
 
@@ -131,15 +200,16 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. Confirmar a conexão do WhatsApp com um teste real: enviar uma mensagem de um número externo para `+55 83 92004-6142` e confirmar que ela aparece na Caixa de Entrada do wacrm.
-2. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-3. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-4. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Validar em iPhone físico** (14/15 Pro Max de preferência) as mudanças da parte 5: header sem sobrepor a Dynamic Island, swipe pra abrir/fechar o menu lateral sem atrapalhar scroll do Pipeline/Agenda/Inbox. Feito só por revisão de código nesta sessão, não em dispositivo real.
+2. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+3. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+4. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+5. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 
-- **WhatsApp — falta só a confirmação com uma mensagem real.** `META_APP_SECRET` e `META_APP_ID` já estão em produção; PIN de duas etapas configurado; o bug de falso negativo do "Não registrado" (contas SMB, ver "Última alteração realizada" parte 9) foi corrigido no código. Nenhum item pendente que dependa do usuário além de mandar uma mensagem de teste para `+55 83 92004-6142` e eu confirmar que ela chega na Caixa de Entrada.
-  - Não removido o Kommo como parceiro do Meta Business Manager nesta sessão — já não havia nada a remover, ver [[project_kommo_whatsapp_restriction]] na memória: Kommo já aparecia desconectado (aba "Removidos" de Apps conectados) antes desta sessão começar, e a antiga restrição "Conta com restrição" não aparece mais em nenhuma tela do Meta Business Manager verificada.
+- **WhatsApp — status desatualizado neste arquivo, ver "Próxima tarefa recomendada" item 2.** As entradas de 2026-08-04 (partes 6-9) abaixo descrevem uma conexão dada como praticamente pronta ("falta só mandar uma mensagem de teste"), mas isso não reflete mais a realidade — não confiar nesse texto sem checar o estado atual primeiro (memória `project_wacrm` tem o desenrolar completo fora deste arquivo).
+- **Mudanças de mobile desta sessão (parte 5) não testadas em dispositivo real** — só revisão de código + `next build`. Ver item 1 de "Próxima tarefa recomendada".
 - **3 testes falhando, não relacionados a esta sessão:**
   - `src/lib/currency.test.ts` (3 testes) — depende do `Intl.NumberFormat` do Node/ICU instalado na máquina; formatação de locale diverge do esperado neste ambiente Windows local.
 - **Testes pendentes de confirmação manual pelo usuário:**

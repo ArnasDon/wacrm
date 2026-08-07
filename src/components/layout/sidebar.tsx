@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { useSwipe } from "@/hooks/use-swipe";
 import {
   Bell,
   Bot,
@@ -156,6 +157,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     };
   }, [open, onClose]);
 
+  // Swipe-left anywhere on the open drawer to close it — no edge
+  // constraint needed here (unlike the shell's open gesture) since the
+  // drawer is the only thing occupying that screen region while open.
+  const swipeHandlers = useSwipe({
+    onSwipeLeft: () => onClose?.(),
+  });
+
   return (
     <>
       {/* Backdrop — only exists on mobile and only when open. Clicking
@@ -183,10 +191,15 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
         )}
         aria-label="Primary"
+        {...swipeHandlers}
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
-            close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
+            close button is hidden since the sidebar is always-visible.
+            Same safe-area reasoning as Header — the drawer is also a
+            fixed, full-height panel starting at the very top of the
+            screen, so it needs its own inset-top padding independent of
+            the main Header (they're siblings, not nested). */}
+        <div className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4 pt-[env(safe-area-inset-top)]">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <MessageSquare className="h-4 w-4" />
@@ -293,8 +306,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        {/* User section */}
-        <div className="shrink-0 border-t border-border p-3">
+        {/* User section — bottom padding also grows for the home-
+            indicator / gesture-bar safe area, same reasoning as the
+            Inbox composer. */}
+        <div className="shrink-0 border-t border-border p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           {/* Account name display — surfaced only when the account
               name differs from the user's own name (see
               `showAccountStrip`). For a default solo account the two

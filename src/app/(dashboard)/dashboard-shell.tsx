@@ -6,6 +6,17 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import { useSwipe } from "@/hooks/use-swipe";
+
+// Width of the left-edge activation band for the "swipe to open" sidebar
+// gesture. Deliberately narrow — real page content starts at 16-24px in
+// from the edge (the mobile `p-4` on `<main>` below), so this band
+// never overlaps a horizontally-scrollable card row, the dashboard's
+// weekly agenda, or a Pipeline column drag handle; those gestures start
+// well past this. Matches common edge-swipe conventions (iOS's own
+// system back-gesture uses a similarly narrow band, for the same
+// non-interference reason).
+const EDGE_SWIPE_ZONE_PX = 24;
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -19,6 +30,19 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   // always visible and this stays at `false` (ignored by the component).
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // Swipe-from-the-left-edge to open, mirroring native messaging apps.
+  // Closing is the drawer's own gesture (see Sidebar) since it only
+  // makes sense to attach once the drawer exists in the DOM. No-op
+  // (and no visual effect either way — the drawer is CSS-driven to
+  // always show on lg+) if it fires on desktop; touch events simply
+  // don't occur there on a mouse-only device.
+  const swipeHandlers = useSwipe({
+    edgeZonePx: EDGE_SWIPE_ZONE_PX,
+    onSwipeRight: () => {
+      if (!sidebarOpen) setSidebarOpen(true);
+    },
+  });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -40,7 +64,10 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div
+      className="flex h-screen overflow-hidden bg-background"
+      {...swipeHandlers}
+    >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />

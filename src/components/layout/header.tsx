@@ -57,7 +57,14 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 lg:px-6">
+    // `min-h-14` (not `h-14`) + `pt-[env(...)]`: the safe-area inset adds
+    // to the box's height instead of eating into the 56px content row,
+    // so the logo/hamburger/avatar stay a consistent size and just sit
+    // lower on notch/Dynamic-Island devices. `env()` resolves to 0 on
+    // everything else (desktop, older phones), so this is a no-op there.
+    <header
+      className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 pt-[env(safe-area-inset-top)] lg:px-6"
+    >
       <div className="flex min-w-0 items-center gap-2">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button

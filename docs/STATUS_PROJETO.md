@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 24) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 25) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,20 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 25)** — badge de diagnóstico reintroduzido, desta vez medindo os valores reais renderizados (não só as APIs de viewport), pra confirmar por que o composer ainda aparece cortado:
+
+Usuário mandou um print real do iPhone confirmando: mesmo depois da parte 24, o composer continua com a metade de baixo cortada pela borda da tela (teclado fechado). Combinado com o plano de migrar pra depuração via Mac + Safari Web Inspector, o usuário pediu — em vez de mais uma tentativa de CSS às cegas — reintroduzir o badge de diagnóstico pra pegar números reais primeiro.
+
+**Diferença desta vez em relação ao badge da parte 13:** aquele só lia APIs de JS (`innerHeight`, `outerHeight`, `visualViewport.height`). Este mede o que **realmente foi renderizado**: `getBoundingClientRect()` do próprio shell (`data-debug-shell` em `dashboard-shell.tsx`) e do próprio composer (`data-debug-composer` em `message-composer.tsx`), mais os valores de `env(safe-area-inset-top/bottom)` lidos direto do `padding-top` computado do header e do `padding-bottom` computado do composer (não uma sonda sintética) — inclui um número calculado direto, `OVERFLOW`, que é `composer.getBoundingClientRect().bottom - window.innerHeight`: positivo significa exatamente quantos px do composer estão abaixo da área visível, zero ou negativo significa visível por completo. Esse é o número decisivo que faltava.
+
+**Arquivos alterados:** `src/components/debug/viewport-debug-badge.tsx` (recriado), `dashboard-shell.tsx` (import + `<ViewportDebugBadge />` + atributo `data-debug-shell` no container raiz), `message-composer.tsx` (atributo `data-debug-composer` no wrapper externo). Nenhuma lógica de layout/altura foi tocada — só instrumentação.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome — badge renderiza no topo da tela com os números reais (`OVERFLOW:0` no desktop, como esperado sem notch/safe-area).
+
+**Pendente:** usuário vai testar no iPhone e mandar print do badge com o composer cortado. **Remover este badge assim que os números confirmarem a causa** — não é UI de produção.
+
+---
 
 **Sessão de 2026-08-07 (parte 24)** — segundo pedido idêntico de "reconstrução completa"; análise confirmou (de novo) que a arquitetura já está correta; reaplicado o único fix pro header ainda não confirmado como inocente/culpado com certeza:
 
@@ -516,14 +530,15 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar no iPhone físico, relançando o app do ZERO (não só recarregar) antes de testar — prioridade máxima absoluta.** Dois pontos a confirmar juntos, sem misturar a análise se algo falhar: (a) Composer — deve continuar 100% visível/correto, exatamente como na parte 19 (nada mudou nele desde então); (b) header — a parte 24 reaplicou `overflow:hidden` em `html`/`body`, agora comprovadamente sem relação com o bug do Composer que motivou sua reversão anterior (parte 23 provou isso via `git diff`). Testar: teclado fechado (composer no fundo, sem corte); tocar no composer (**header não se move**, composer acompanha o teclado, sem vão); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
-2. **Se o header ainda subir mesmo com essa correção: é hora de considerar gravação de tela em vez de mais uma hipótese de código.** Essa era a explicação estrutural mais provável restante (`document.scrollingElement` sendo deslocado pelo foco do teclado) — se não resolver, o problema provavelmente não é mais alcançável só por CSS/arquitetura de layout, e vale reproduzir com o usuário ao vivo.
-3. **Se o Composer regredir de novo:** como nada mudou nele nesta parte, qualquer problema novo relatado não pode vir do código — checar cache do PWA primeiro (fechar e reabrir do zero) antes de qualquer alteração.
-4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-24 acima.
-5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-8. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e manda print do badge de diagnóstico com o composer cortado.** O número decisivo é `OVERFLOW` no badge — quantos px do composer estão abaixo da área visível. Junto com `satop`/`sabot` (valores reais de safe-area nesse aparelho) e `shellH`/`shellBot` (altura real do shell vs. onde ele termina), isso deve finalmente mostrar exatamente onde o cálculo diverge, em vez de mais uma hipótese.
+2. **Migração pra Mac + Safari Web Inspector já combinada com o usuário** — quando disponível, dá acesso a CSS computado/DOM ao vivo no PWA real, ainda mais preciso que o badge. `docs/STATUS_PROJETO.md` (este arquivo) foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
+3. **Assim que a causa do corte do composer for confirmada pelos números: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, e os atributos `data-debug-shell`/`data-debug-composer`) — não é UI de produção.
+4. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do composer.
+5. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-25 acima.
+6. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+7. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+8. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+9. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

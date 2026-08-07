@@ -49,7 +49,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100dvh+env(safe-area-inset-top))] items-center justify-center bg-background">
+      <div className="flex h-dvh items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">Loading...</p>
@@ -63,35 +63,42 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     // `touch-pan-y` tells the browser vertical scroll is still native
     // (no latency added there) while leaving horizontal gestures for
-    // the JS listeners in useDrawerGesture to interpret.
+    // the JS listeners in useDrawerGesture to interpret. `h-dvh`.
     //
-    // Height: `calc(100dvh + env(safe-area-inset-top))`, not bare
-    // `100dvh` (2026-08-07, parte 16). `100dvh` alone (parte 14 — fixed
-    // the on-screen-keyboard regression from parte 13's JS-based height)
-    // was still leaving a gap at the *bottom* of the screen, and
-    // crucially the gap showed up below *every* child of this shell —
-    // the sidebar included, not just the Inbox/composer — proving the
-    // shell itself, not any descendant, was rendering short. On this
-    // device/iOS combination (Dynamic Island, iPhone 14 Pro Max),
-    // `100dvh` in real standalone-PWA use appears to already exclude the
-    // top safe-area inset from its "dynamic" viewport (a known class of
-    // WebKit quirk on Dynamic-Island hardware), rather than extending
-    // full-bleed under it the way `viewport-fit=cover` is supposed to
-    // guarantee — so the shell (anchored at the true top of the screen)
-    // came up exactly `env(safe-area-inset-top)` short at the bottom.
-    // Adding that inset back in restores the shell to the true full
-    // screen height. This is a *static* correction — `env(safe-area-
-    // inset-top)` never changes for the keyboard — so it composes safely
-    // with `dvh`'s existing, already-correct, synchronous keyboard-
-    // shrink behavior (parte 14) without touching it: both still shrink
-    // together when the keyboard opens, just from a taller baseline.
-    // `env()` resolves to `0` on any device without a notch (desktop,
-    // older phones), so this is a no-op there — not iPhone-14-specific,
-    // a general formula.
+    // History, because this exact line has been fought over across many
+    // sessions (partes 13-16, 25) — the *symptom* looked the same each
+    // time (something at the bottom cut off) but the cause flipped
+    // direction depending on what `dvh` itself measured as on the real
+    // device at the time:
+    //  - parte 13: `visualViewport.height` (873) read ~59px shorter
+    //    than `outerHeight` (932) — but that's not `dvh`, it's a
+    //    different API that deliberately excludes safe-area, and using
+    //    it as the shell's height was the actual bug (parte 14 fixed
+    //    the resulting keyboard regression by dropping it for plain
+    //    `dvh`).
+    //  - parte 16: bare `dvh` alone still looked ~59px short (matching
+    //    the *safe-area-inset-top* amount), so `+ env(safe-area-inset-
+    //    top)` was added to compensate.
+    //  - parte 25: real on-device measurement (`getBoundingClientRect`
+    //    on this exact element, not an inferred number) showed the
+    //    *opposite* — shell rendered at 991px while the true screen was
+    //    932px, and `991 - env(safe-area-inset-top)=59 = 932` exactly.
+    //    `dvh` was, this time, already the full 932px on its own; the
+    //    parte-16 addition was now double-counting the same inset,
+    //    pushing the shell (and everything anchored to its bottom,
+    //    composer included) 59px past the real bottom of the screen.
+    // Net: `dvh` on its own has, empirically, been correct both times
+    // it was actually measured directly (parte 14's fix worked; parte
+    // 25's measurement shows it's exactly right again now) — the
+    // *compensation* is what kept introducing the error. Reverted to
+    // plain `h-dvh`; if `dvh` itself is ever again confirmed short on
+    // a real device, fix it with a fresh on-device measurement at that
+    // time rather than reapplying a static offset that's already
+    // proven to go stale.
     <div
       ref={shellRef}
       data-debug-shell
-      className="flex h-[calc(100dvh+env(safe-area-inset-top))] touch-pan-y overflow-hidden bg-background"
+      className="flex h-dvh touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}

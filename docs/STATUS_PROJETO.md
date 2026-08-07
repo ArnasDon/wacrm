@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 25) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 26) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,22 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 26)** — causa raiz confirmada por medição real (não hipótese): a fórmula da parte 16 estava dobrando a mesma margem; revertida:
+
+Usuário mandou print do badge de diagnóstico (parte 25) direto do iPhone real, tela do Painel: `sa:true iH:932 oH:932 shellH:991 shellBot:991 compBot:null OVERFLOW:null satop:59px sabot:?`.
+
+**A matemática prova a causa sozinha, sem precisar do número do composer:** `shellH (991) − satop (59px) = 932`, exatamente igual a `iH`/`oH` (932, a tela real). Ou seja: `dvh`, neste aparelho, **agora** já reporta a tela inteira (932) sozinho — diferente da medição da parte 13, onde parecia estar curto. Só que a fórmula do shell desde a parte 16 (`calc(100dvh + env(safe-area-inset-top))`) **soma os 59px de novo em cima disso**, resultando em 991 — 59px mais alto que a tela de verdade. O shell (ancorado no topo) fica com a borda de baixo, onde fica o composer, empurrada pra fora da área visível — a causa exata do corte reportado.
+
+**Correção:** `dashboard-shell.tsx` — revertido `h-[calc(100dvh+env(safe-area-inset-top))]` pra `h-dvh` puro, nos dois lugares (shell principal e estado de loading). Como `inbox/page.tsx` já não lê `dvh` diretamente desde a parte 19 (usa `calc(100% + padding)`, herdando de `<main>`), consertar só o shell já é suficiente — tudo abaixo dele (Inbox, composer) se corrige automaticamente por herança, sem precisar tocar em mais nenhum arquivo.
+
+**Nota importante pra não repetir o ciclo:** esse mesmo trecho de código já foi alterado três vezes (partes 13, 16, agora 26) porque o comportamento real de `dvh` nesse aparelho **mudou entre as medições** — provavelmente por causa de alguma mudança de estado do iOS/PWA fora do nosso controle (reinstalação do ícone, atualização do sistema, etc.), não por instabilidade do código em si. Registrado explicitamente em comentário no código: se isso voltar a divergir no futuro, a resposta certa é uma **nova medição real** (o badge de diagnóstico, ou o Web Inspector), não reaplicar às cegas uma correção estática que já provou ficar desatualizada.
+
+**Arquivos alterados:** só `dashboard-shell.tsx` (fórmula de altura, comentário explicando o histórico completo). Badge de diagnóstico (parte 25) mantido — ainda não removido, útil pra confirmar a correção.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome — badge mostra `OVERFLOW:0`, composer com a borda de baixo exatamente alinhada com a borda do shell, sem regressão (esperado, já que sem notch o `env()` já era `0` e não fazia diferença visível ali). **A confirmação real (se o corte sumiu) depende do print do badge no iPhone físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 25)** — badge de diagnóstico reintroduzido, desta vez medindo os valores reais renderizados (não só as APIs de viewport), pra confirmar por que o composer ainda aparece cortado:
 
@@ -530,15 +546,16 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e manda print do badge de diagnóstico com o composer cortado.** O número decisivo é `OVERFLOW` no badge — quantos px do composer estão abaixo da área visível. Junto com `satop`/`sabot` (valores reais de safe-area nesse aparelho) e `shellH`/`shellBot` (altura real do shell vs. onde ele termina), isso deve finalmente mostrar exatamente onde o cálculo diverge, em vez de mais uma hipótese.
-2. **Migração pra Mac + Safari Web Inspector já combinada com o usuário** — quando disponível, dá acesso a CSS computado/DOM ao vivo no PWA real, ainda mais preciso que o badge. `docs/STATUS_PROJETO.md` (este arquivo) foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
-3. **Assim que a causa do corte do composer for confirmada pelos números: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, e os atributos `data-debug-shell`/`data-debug-composer`) — não é UI de produção.
-4. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do composer.
-5. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-25 acima.
-6. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-7. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-8. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-9. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e confirma via badge se `OVERFLOW` chegou em 0 na tela da conversa.** A parte 26 corrigiu a causa raiz confirmada por medição real (shell 59px mais alto que a tela, por dobrar a soma da safe-area-top). Testar: composer 100% visível com teclado fechado; tocar no composer (acompanha o teclado); fechar (volta ao normal); repetir 5x (sem deslocamento acumulado); rolar mensagens (só elas rolam).
+2. **Assim que confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, e os atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção. Mantido de propósito na parte 26 pra permitir essa confirmação final.
+3. Separadamente, o header ainda pode estar subindo com o teclado (não confirmado desde a parte 24) — não misturar esse diagnóstico com o do composer.
+4. **Se algo divergir de novo no futuro:** não reaplicar às cegas a fórmula `+env(safe-area-inset-top)` da parte 16 — o histórico (partes 13, 16, 26) mostra que o valor real de `dvh` nesse aparelho mudou entre medições, então qualquer correção futura precisa partir de uma medição nova (o próprio badge, ou o Web Inspector no Mac), não de reaplicar uma correção estática antiga.
+5. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
+6. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-26 acima.
+7. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+8. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+9. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+10. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 

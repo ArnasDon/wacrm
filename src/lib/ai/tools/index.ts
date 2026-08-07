@@ -3,6 +3,7 @@ import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
 import { engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
+import type { AgentToolKey } from '../tool-permissions'
 import type {
   AgentToolDefinition,
   AgentToolExecutor,
@@ -78,6 +79,12 @@ const SEND_PRODUCT_TOOL: AgentToolDefinition = {
   },
 }
 
+const TOOL_DEFINITIONS: Record<AgentToolKey, AgentToolDefinition> = {
+  search_catalog: SEARCH_CATALOG_TOOL,
+  send_product: SEND_PRODUCT_TOOL,
+  search_knowledge: SEARCH_KNOWLEDGE_TOOL,
+}
+
 function parseObject(raw: string): Record<string, unknown> {
   let value: unknown
   try {
@@ -128,6 +135,7 @@ export function createAutoReplyTools(args: {
   contactId: string
   configOwnerUserId: string
   config: Pick<AiConfig, 'embeddingsApiKey'>
+  permissions: Record<AgentToolKey, boolean>
 }): ToolSet {
   const {
     db,
@@ -136,12 +144,18 @@ export function createAutoReplyTools(args: {
     contactId,
     configOwnerUserId,
     config,
+    permissions,
   } = args
   const pendingProductSends: PendingProductSend[] = []
   const availableProducts = new Map<string, CatalogProduct>()
   let productRefSequence = 0
 
   const executeTool: AgentToolExecutor = async (call) => {
+    const toolKey = call.name as AgentToolKey
+    if (!(toolKey in permissions) || !permissions[toolKey]) {
+      throw new Error(`Tool is disabled for this agent: ${call.name}`)
+    }
+
     const input = parseObject(call.arguments)
 
     if (call.name === SEARCH_KNOWLEDGE_TOOL.name) {
@@ -224,8 +238,12 @@ export function createAutoReplyTools(args: {
     throw new Error(`Unknown or unavailable tool: ${call.name}`)
   }
 
+  const tools = (Object.keys(TOOL_DEFINITIONS) as AgentToolKey[])
+    .filter((key) => permissions[key])
+    .map((key) => TOOL_DEFINITIONS[key])
+
   return {
-    tools: [SEARCH_CATALOG_TOOL, SEND_PRODUCT_TOOL, SEARCH_KNOWLEDGE_TOOL],
+    tools,
     executeTool,
     hasPendingActions: () => pendingProductSends.length > 0,
     dispatchPendingActions: async () => {

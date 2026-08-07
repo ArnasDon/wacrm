@@ -17,11 +17,50 @@ GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
 
 # Redirect URI registado no OAuth client acima — tem de corresponder
 # exactamente a um "Authorized redirect URI" na Google Cloud Console.
-# Ainda não há um fluxo de "Ligar Google Calendar" na UI que use isto —
-# `calendar_configs.refresh_token` tem de ser preenchido manualmente
-# (ex.: via OAuth Playground) até esse fluxo existir.
-GOOGLE_OAUTH_REDIRECT_URI=https://your-deployment.example.com/api/calendar/oauth/callback
+# É o path da rota de callback real (src/app/api/calendar/google/callback).
+GOOGLE_OAUTH_REDIRECT_URI=https://your-deployment.example.com/api/calendar/google/callback
 ```
+
+### "Ligar Google Calendar" — fluxo web (novo)
+
+Settings → Calendário (`/settings?tab=calendar`) tem agora um botão
+"Ligar Google Calendar" que faz o round-trip de consentimento
+completo:
+
+1. `GET /api/calendar/google/authorize` (admin-only) — assina um
+   `state` HMAC e redirige para o ecrã de consentimento da Google
+   (scopes mínimos: `calendar.freebusy` + `calendar.events`, nunca o
+   scope `calendar` completo). `access_type=offline` +
+   `prompt=consent` garantem que a Google devolve sempre um
+   `refresh_token`.
+2. `GET /api/calendar/google/callback` — verifica a assinatura e
+   validade do `state` (anti-CSRF/replay, expira aos 10 min), troca o
+   `code` por tokens, e grava via `upsertCalendarConfig` com
+   `isActive: false` — a conta tem de escolher calendário/horário e
+   activar manualmente antes do agente marcar reuniões a sério.
+3. `GET|PATCH /api/calendar/config` — ler/editar calendarId, fuso
+   horário, `business_hours`, durações e o interruptor `isActive`.
+   Nunca aceita nem devolve `refresh_token` — esse campo só entra pelo
+   callback acima.
+
+Requer uma nova variável, o segredo que assina o `state` (distinto do
+`ENCRYPTION_KEY` que cifra o refresh token em repouso — ameaças
+diferentes, um só precisa resistir a forjadura, o outro a
+decifração):
+
+```bash
+# Qualquer string aleatória de alta entropia — ex.: `openssl rand -hex 32`.
+GOOGLE_OAUTH_STATE_SECRET=your-random-high-entropy-secret
+```
+
+### Resiliência a revogação
+
+Se o utilizador revogar o acesso à app na sua Conta Google, a próxima
+chamada ao calendário (em `confirm-pending-action.ts`) apanha o erro
+`invalid_grant` da Google, desactiva `calendar_configs.is_active`
+automaticamente, e notifica o `handoff_agent_id` configurado via
+`notify_admin` — nunca falha em silêncio nem deixa o agente a tentar
+repetidamente contra uma ligação morta.
 
 ## Tool-calling / agent loop (Fase 2)
 

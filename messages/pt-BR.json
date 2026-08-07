@@ -306,7 +306,9 @@
       "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA"
     },
     "actions": {
+      "openMenu": "Mais opções",
       "reply": "Responder",
+      "forward": "Encaminhar",
       "copyText": "Copiar texto",
       "deleteMessage": "Apagar mensagem",
       "deleteConfirmTitle": "Apagar mensagem?",
@@ -319,6 +321,19 @@
       "nothingToCopy": "Nada para copiar",
       "copied": "Copiado",
       "copyFailed": "Falha ao copiar"
+    },
+    "forward": {
+      "title": "Encaminhar mensagem",
+      "description": "Selecione um ou mais contatos para encaminhar esta mensagem.",
+      "searchPlaceholder": "Buscar contato...",
+      "noContacts": "Nenhum contato encontrado",
+      "unknownContact": "Contato sem nome",
+      "cancel": "Cancelar",
+      "forwardButton": "Encaminhar ({count})",
+      "toastForwarded": "Mensagem encaminhada para {count} {count, plural, =1 {contato} other {contatos}}",
+      "toastPartial": "Encaminhado para {success}, falhou para {failed}",
+      "toastAllFailed": "Falha ao encaminhar a mensagem",
+      "toastFailed": "Falha ao encaminhar a mensagem"
     },
     "replyQuote": {
       "photo": "[Foto]",

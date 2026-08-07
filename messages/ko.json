@@ -306,7 +306,9 @@
       "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함"
     },
     "actions": {
+      "openMenu": "더 보기",
       "reply": "답장",
+      "forward": "전달",
       "copyText": "텍스트 복사",
       "deleteMessage": "메시지 삭제",
       "deleteConfirmTitle": "메시지를 삭제할까요?",
@@ -319,6 +321,19 @@
       "nothingToCopy": "복사할 내용이 없습니다",
       "copied": "복사됨",
       "copyFailed": "복사 실패"
+    },
+    "forward": {
+      "title": "메시지 전달",
+      "description": "이 메시지를 전달할 연락처를 하나 이상 선택하세요.",
+      "searchPlaceholder": "연락처 검색...",
+      "noContacts": "연락처를 찾을 수 없습니다",
+      "unknownContact": "이름 없는 연락처",
+      "cancel": "취소",
+      "forwardButton": "전달 ({count})",
+      "toastForwarded": "{count}명의 연락처로 메시지를 전달했습니다",
+      "toastPartial": "{success}명에게 전달, {failed}명 실패",
+      "toastAllFailed": "메시지 전달에 실패했습니다",
+      "toastFailed": "메시지 전달에 실패했습니다"
     },
     "replyQuote": {
       "photo": "[사진]",

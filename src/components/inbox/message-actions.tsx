@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, CornerUpLeft, Forward, SmilePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -9,6 +9,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -20,10 +26,18 @@ import {
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/types";
 import { useTranslations } from "next-intl";
+import { ForwardMessageDialog } from "./forward-message-dialog";
 
 // WhatsApp's own quick-reaction bar starts with these six. Picking the same
 // set keeps the affordance familiar without pulling in a 300KB emoji library.
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+// Content types the "Copiar"/"Apagar"/"Encaminhar" menu items apply to —
+// mirrors the equivalent gates in the composer and, for forward, the
+// server-side check in /api/whatsapp/forward. Location/template/
+// interactive messages don't have a plain resendable/copyable body.
+const FORWARDABLE_TYPES = new Set(["text", "image", "video", "document", "audio"]);
+const DELETABLE_TYPES = FORWARDABLE_TYPES;
 
 interface MessageActionsProps {
   message: Message;
@@ -36,9 +50,16 @@ interface MessageActionsProps {
 }
 
 /**
- * Hover/long-press toolbar wrapper around a `<MessageBubble>`. The bubble
- * itself stays a pure presenter — this component owns the action surface so
- * the bubble's render path is unaffected when the toolbar isn't visible.
+ * Hover toolbar + right-click/long-press context menu wrapper around a
+ * `<MessageBubble>`. The bubble itself stays a pure presenter — this
+ * component owns the action surface so the bubble's render path is
+ * unaffected when nothing is open.
+ *
+ * Two ways in, same menu: hovering (desktop) reveals a small chevron
+ * next to the reaction picker; clicking it opens the context menu. A
+ * right-click (desktop) or long-press (mobile — the browser fires
+ * `contextmenu` for that natively) opens the exact same menu directly,
+ * anchored to the bubble, without needing the hover step first.
  */
 export function MessageActions({
   message,
@@ -50,19 +71,24 @@ export function MessageActions({
   const t = useTranslations("Inbox.actions");
 
   // Touch devices have no hover. Long-press fires `contextmenu`; we capture
-  // it, suppress the native menu, and pin the toolbar open until the user
-  // interacts elsewhere.
+  // it, suppress the native menu, and pin the toolbar row open until the
+  // user interacts elsewhere (mirrors the reaction-picker's own reveal).
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
+  const canCopy = message.content_type === "text";
+  const canForward = FORWARDABLE_TYPES.has(message.content_type);
+  const canDelete = isAgent && DELETABLE_TYPES.has(message.content_type);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setTouchOpen(true);
+    setMenuOpen(true);
   };
 
   const handleDelete = async () => {
@@ -89,17 +115,11 @@ export function MessageActions({
     } catch {
       toast.error(t("copyFailed"));
     }
-    setTouchOpen(false);
   };
 
   const handlePickEmoji = (emoji: string) => {
     onReact(emoji);
     setPickerOpen(false);
-    setTouchOpen(false);
-  };
-
-  const handleReply = () => {
-    onReply();
     setTouchOpen(false);
   };
 
@@ -123,7 +143,7 @@ export function MessageActions({
       <div className="group/actions relative min-w-0 max-w-[75%]">
         {children}
       <div
-        data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
+        data-touch-open={touchOpen || pickerOpen || menuOpen ? "true" : undefined}
         className={cn(
           "absolute -top-3 z-10 flex h-7 items-center gap-0.5 rounded-full border border-border bg-popover/95 px-1 shadow-md backdrop-blur-sm transition-opacity",
           "opacity-0 group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
@@ -155,37 +175,48 @@ export function MessageActions({
             ))}
           </PopoverContent>
         </Popover>
-        <button
-          type="button"
-          onClick={handleReply}
-          className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
-          aria-label={t("reply")}
-        >
-          <CornerUpLeft className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
-          aria-label={t("copyText")}
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-        {/* WhatsApp only lets you delete messages you sent — never the
-            other party's. */}
-        {isAgent && (
-          <button
-            type="button"
-            onClick={() => {
-              setDeleteConfirmOpen(true);
-              setTouchOpen(false);
-            }}
-            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-destructive/20 hover:text-destructive"
-            aria-label={t("deleteMessage")}
+
+        {/* Context menu trigger — the small chevron is the discoverable
+            desktop affordance; onContextMenu on the row above (right-
+            click / long-press) opens this same controlled menu without
+            it, jumping straight past the hover step. */}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t("openMenu")}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        )}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={isAgent ? "end" : "start"}>
+            <DropdownMenuItem onClick={onReply}>
+              <CornerUpLeft />
+              {t("reply")}
+            </DropdownMenuItem>
+            {canForward && (
+              <DropdownMenuItem onClick={() => setForwardOpen(true)}>
+                <Forward />
+                {t("forward")}
+              </DropdownMenuItem>
+            )}
+            {canCopy && (
+              <DropdownMenuItem onClick={handleCopy}>
+                <Copy />
+                {t("copyText")}
+              </DropdownMenuItem>
+            )}
+            {/* WhatsApp only lets you delete messages you sent — never
+                the other party's. */}
+            {canDelete && (
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                <Trash2 />
+                {t("deleteMessage")}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       </div>
 
@@ -209,6 +240,12 @@ export function MessageActions({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ForwardMessageDialog
+        message={forwardOpen ? message : null}
+        open={forwardOpen}
+        onOpenChange={setForwardOpen}
+      />
     </div>
   );
 }

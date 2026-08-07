@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   checkRateLimit,
@@ -11,6 +10,7 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { findOrCreateConversation } from '@/lib/whatsapp/find-or-create-conversation'
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -187,46 +187,4 @@ export async function POST(request: Request) {
     console.error('Error in WhatsApp send POST:', error)
     return toErrorResponse(error)
   }
-}
-
-type SendSupabase = Awaited<ReturnType<typeof createClient>>
-
-/**
- * Return the contact's conversation id in this account, creating one if
- * it doesn't exist yet. Mirrors the webhook's find-or-create so an
- * inbound-then-outbound (or outbound-first) sequence converges on a single
- * thread per contact. Runs under the caller's RLS — the conversations_insert
- * policy requires account agent membership, which the caller already is.
- */
-async function findOrCreateConversation(
-  supabase: SendSupabase,
-  accountId: string,
-  userId: string,
-  contactId: string,
-): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle()
-
-  if (existing) return existing.id
-
-  const { data: created, error } = await supabase
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: userId,
-      contact_id: contactId,
-    })
-    .select('id')
-    .single()
-
-  if (error) {
-    console.error('Error creating conversation for contact send:', error.message)
-    return null
-  }
-
-  return created.id
 }

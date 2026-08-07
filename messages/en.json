@@ -306,7 +306,9 @@
       "aiBadgeTitle": "Sent automatically by the AI assistant"
     },
     "actions": {
+      "openMenu": "More options",
       "reply": "Reply",
+      "forward": "Forward",
       "copyText": "Copy text",
       "deleteMessage": "Delete message",
       "deleteConfirmTitle": "Delete message?",
@@ -319,6 +321,19 @@
       "nothingToCopy": "Nothing to copy",
       "copied": "Copied",
       "copyFailed": "Copy failed"
+    },
+    "forward": {
+      "title": "Forward message",
+      "description": "Select one or more contacts to forward this message to.",
+      "searchPlaceholder": "Search contact...",
+      "noContacts": "No contacts found",
+      "unknownContact": "Unnamed contact",
+      "cancel": "Cancel",
+      "forwardButton": "Forward ({count})",
+      "toastForwarded": "Message forwarded to {count} {count, plural, =1 {contact} other {contacts}}",
+      "toastPartial": "Forwarded to {success}, failed for {failed}",
+      "toastAllFailed": "Failed to forward the message",
+      "toastFailed": "Failed to forward the message"
     },
     "replyQuote": {
       "photo": "[Photo]",

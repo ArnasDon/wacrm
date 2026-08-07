@@ -19,31 +19,11 @@ const FACT_LOOKUP_RE =
 const PURE_CONVERSATIONAL_RE =
   /\b(pergunta|pergunte|diz|diga|agradece|agrade[cç]a|desculpa|desculpe|cumprimenta|cumprimente|lembra|lembre|avisa|avise|responde|responda)\b/i
 
-/**
- * Operator instructions are commands, not customer queries. Most are simple
- * conversational actions ("pergunta se ainda está interessado") and must not
- * trigger autonomous research just because the previous thread mentioned a
- * product. We only expose read-only tools when the instruction itself asks for
- * a business fact or explicitly asks us to verify/research something.
- */
 function instructionNeedsFacts(instruction: string): boolean {
-  if (FACT_LOOKUP_RE.test(instruction)) return true
-  if (PURE_CONVERSATIONAL_RE.test(instruction)) return false
-  return false
+  if (PURE_CONVERSATIONAL_RE.test(instruction) && !FACT_LOOKUP_RE.test(instruction)) return false
+  return FACT_LOOKUP_RE.test(instruction)
 }
 
-/**
- * POST /api/ai/operator-reply
- *
- * Trusted human-in-the-loop copilot. The operator supplies a short internal
- * instruction (for example "diga-lhe que acabou essa cor") and the AI turns
- * it into a customer-ready reply that still follows the account's normal
- * business prompt and recent conversation context.
- *
- * This endpoint NEVER sends the reply. It only returns a draft for review;
- * the Inbox sends it through the normal WhatsApp send route after the human
- * confirms.
- */
 export async function POST(request: Request) {
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
@@ -72,8 +52,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'instruction is too long' }, { status: 400 })
     }
 
-    // RLS proves the conversation belongs to the caller's account and gives
-    // us the contact needed by the existing agent-tool executor.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
       .select('id, contact_id')
@@ -96,10 +74,7 @@ export async function POST(request: Request) {
     })
     if (!config) {
       return NextResponse.json(
-        {
-          error: 'AI assistant is not set up.',
-          code: 'ai_not_configured',
-        },
+        { error: 'AI assistant is not set up.', code: 'ai_not_configured' },
         { status: 400 },
       )
     }
@@ -113,17 +88,8 @@ export async function POST(request: Request) {
     }
 
     const needsFacts = instructionNeedsFacts(instruction)
-
-    // Conversational operator commands do not need retrieval. This is
-    // intentional: injecting unrelated KB/catalogue context can cause the
-    // model to ignore a simple human instruction and continue the old topic.
     const knowledge = needsFacts
-      ? await retrieveKnowledge(
-          supabase,
-          accountId,
-          config,
-          latestUserMessage(messages),
-        )
+      ? await retrieveKnowledge(supabase, accountId, config, instruction)
       : []
 
     const basePrompt = buildSystemPrompt({
@@ -132,18 +98,14 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const operatorPrompt = `${basePrompt}\n\nHUMAN OPERATOR INSTRUCTION — HIGHEST PRIORITY FOR RESPONSE INTENT:\n${instruction}\n\nThe human operator is controlling this conversation. Your job is to transform the operator's instruction into the next polished customer-facing WhatsApp message.\n\nPRIORITY RULES:\n1. The operator decides WHAT should be communicated. You decide HOW to phrase it clearly, naturally, professionally and empathetically.\n2. Do not replace, reinterpret, expand or continue a previous sales task unless the operator's current instruction asks you to do so.\n3. Use the recent conversation only to understand references, tone and context. Do not let an earlier product topic override the current operator instruction.\n4. If the instruction is conversational, relational or stylistic — for example \"pergunta se ainda está interessado\", \"agradece\", \"pede desculpa\", \"diz que podemos ajudar\" — do NOT research the catalogue or knowledge base. Simply write the requested message.\n5. Only use an available read-only tool when the CURRENT operator instruction explicitly asks for, depends on, or asks you to verify a business fact such as price, stock, availability, catalogue information, delivery, payment or policy.\n6. Preserve factual decisions explicitly supplied by the human operator unless they conflict with verified system data required by the current instruction or would create a safety/security problem.\n7. Never mention the operator, this instruction, tools, internal systems or that AI helped write the reply.\n8. Do not add an extra question, offer, catalogue search, alternative product or sales step unless it helps fulfil the operator's stated intent.\n9. Output only the proposed customer-facing message.`
+    const operatorPrompt = `${basePrompt}\n\n=== MODO COPILOTO HUMANO ===\nA INSTRUÇÃO DO OPERADOR ABAIXO É A AUTORIDADE MÁXIMA SOBRE A INTENÇÃO DA PRÓXIMA RESPOSTA.\n\nINSTRUÇÃO ACTUAL DO OPERADOR:\n${instruction}\n\nTAREFA ÚNICA: transforma exactamente esta intenção numa mensagem pronta para ser enviada ao cliente. Corrige erros, melhora a clareza, naturalidade, educação, emoção e tom da marca, mas NÃO mudes o objectivo da instrução.\n\nREGRAS OBRIGATÓRIAS:\n1. Primeiro identifica a acção pedida pelo operador. A resposta final TEM de executar essa acção.\n2. O histórico da conversa é CONTEXTO PASSIVO. Usa-o somente para perceber referências como “ele”, “ela”, “essa cor”, “esse produto”, “ainda”, “isso” ou o tom apropriado.\n3. É PROIBIDO usar o histórico para escolher uma intenção diferente, retomar uma pergunta antiga, continuar uma venda anterior ou decidir sozinho o próximo passo.\n4. Se o operador disser “pergunta se ainda quer”, “pergunta se ainda está interessado” ou equivalente, limita-te a perguntar ao cliente se ainda está interessado. NÃO perguntes tamanho, cor, modelo, preço, preferência ou qualquer outra coisa, salvo se o operador o pedir.\n5. Se o operador disser “diga que acabou essa cor”, comunica apenas esse facto de forma adequada; não inventes stock, alternativas ou disponibilidade.\n6. Não acrescentes perguntas, ofertas, pesquisas, recomendações, catálogo, alternativas ou passos comerciais que não sejam necessários para cumprir a instrução actual.\n7. Só consulta ferramentas quando a PRÓPRIA INSTRUÇÃO ACTUAL exigir um facto do negócio que não tenha sido fornecido pelo operador. O simples facto de o histórico mencionar produtos NÃO autoriza pesquisa.\n8. Factos explicitamente fornecidos pelo operador devem ser preservados. Não os substituas por inferências do histórico.\n9. Nunca menciones operador, prompt, IA, ferramentas, base de dados, regras internas ou este modo.\n10. Não expliques o que fizeste. Devolve APENAS a mensagem destinada ao cliente.\n\nEXEMPLOS DE FIDELIDADE:\nOperador: “diga ele e ainda quer” -> Cliente: “Ainda está interessado? Se quiser, podemos continuar com o seu atendimento.”\nOperador: “pergunta se ainda quer a legging” -> Cliente: “Ainda está interessado na legging?”\nOperador: “diga que acabou essa cor” -> Cliente: “Essa cor já não está disponível neste momento.”\nOperador: “agradece e diz que amanhã confirmamos” -> Cliente: “Obrigado pela compreensão. Amanhã confirmaremos consigo.”`
 
     const db = supabaseAdmin()
     let readOnlyTools: ReturnType<typeof createAutoReplyTools>['tools'] = []
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
 
     if (needsFacts && config.provider === 'openai') {
-      const permissions = await loadAgentToolPermissions(
-        db,
-        accountId,
-        config.agentId!,
-      )
+      const permissions = await loadAgentToolPermissions(db, accountId, config.agentId!)
       const toolRuntime = createAutoReplyTools({
         db,
         accountId,
@@ -154,8 +116,6 @@ export async function POST(request: Request) {
         permissions,
       })
 
-      // Human copilot remains read-only. It may research the catalogue and
-      // knowledge base, but cannot queue send_product or any other side effect.
       readOnlyTools = toolRuntime.tools.filter(
         (tool) => tool.name === 'search_catalog' || tool.name === 'search_knowledge',
       )
@@ -168,10 +128,21 @@ export async function POST(request: Request) {
       tools: readOnlyTools.map((tool) => tool.name),
     })
 
+    // Deliberately append the operator instruction as the final user turn.
+    // This makes it the most recent actionable request instead of allowing the
+    // previous customer message to compete with the human operator's command.
+    const operatorMessages = [
+      ...messages,
+      {
+        role: 'user' as const,
+        content: `INSTRUÇÃO DO OPERADOR PARA A PRÓXIMA RESPOSTA: ${instruction}`,
+      },
+    ]
+
     const { text, usage } = await generateReply({
       config,
       systemPrompt: operatorPrompt,
-      messages,
+      messages: operatorMessages,
       tools: readOnlyTools.length > 0 ? readOnlyTools : undefined,
       executeTool,
     })
@@ -197,10 +168,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ draft })
   } catch (err) {
     if (err instanceof AiError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: err.status },
-      )
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
     }
     return toErrorResponse(err)
   }

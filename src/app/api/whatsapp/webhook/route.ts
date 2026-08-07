@@ -116,8 +116,7 @@ export async function GET(request: Request) {
     }
 
     // Procura se o token vindo da Meta coincide com algum cadastrado
-    const matchedConfig = configs.find(c => c.verify_token === verifyToken || verifyToken === 'abc123')
-
+const matchedConfig = configs.find((c: any) => c.verify_token === verifyToken || verifyToken === 'abc123')
     if (matchedConfig) {
       return new NextResponse(challenge, { 
         status: 200,

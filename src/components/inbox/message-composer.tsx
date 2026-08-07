@@ -518,12 +518,17 @@ export function MessageComposer({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            // Empty when there's nothing to type into — no placeholder
+            // text sits in the field itself, matching WhatsApp/Telegram/
+            // iMessage. The read-only/session-expired placeholders stay:
+            // those aren't decorative, they're the only way the agent
+            // learns *why* the field is disabled.
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                  : undefined
             }
             disabled={sessionExpired || readOnly}
             rows={1}

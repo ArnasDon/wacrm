@@ -72,6 +72,10 @@ interface MessageThreadProps {
   onMessagesLoaded: (messages: Message[]) => void;
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
+  /** Removes a message from local state — fired after the DB delete
+   *  succeeds, and again (as a no-op) when the realtime DELETE echoes
+   *  back for any other connected client. */
+  onDeleteMessage: (id: string) => void;
   onStatusChange: (conversationId: string, status: ConversationStatus) => void;
   /**
    * Manual "mark as unread" — sets the conversation's unread_count back
@@ -116,6 +120,24 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+}
+
+/**
+ * The `messages` table only stores the public URL (no separate `path`
+ * column), so deleting an agent-sent attachment has to recover the
+ * Storage object path from it. Supabase's `getPublicUrl` always shapes
+ * URLs as `.../object/public/<bucket>/<path>` — anything after the
+ * bucket segment is the path. Returns null for URLs that aren't hosted
+ * in that bucket (e.g. a customer's inbound media, proxied through
+ * `/api/whatsapp/media/`), which is also every case we'd ever attempt
+ * this for, since deletion is agent-messages-only.
+ */
+function extractStoragePath(mediaUrl: string | undefined, bucket: string): string | null {
+  if (!mediaUrl) return null;
+  const marker = `/${bucket}/`;
+  const idx = mediaUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return mediaUrl.slice(idx + marker.length);
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -167,6 +189,7 @@ export function MessageThread({
   onMessagesLoaded,
   onNewMessage,
   onUpdateMessage,
+  onDeleteMessage,
   onStatusChange,
   onMarkUnread,
   onAssignChange,
@@ -574,6 +597,34 @@ export function MessageThread({
       }
     },
     [conversation, onNewMessage, onUpdateMessage],
+  );
+
+  // WhatsApp-style delete: only ever called on agent-sent messages (the
+  // Trash icon in MessageActions is gated on that already). Waits for
+  // the DB delete before touching local state — simpler and safer than
+  // optimistic-removal-with-rollback, and still feels instant since
+  // this is a single-row delete. Throws on failure so the confirm
+  // dialog's catch block can surface the toast.
+  const handleDeleteMessage = useCallback(
+    async (msg: Message) => {
+      const supabase = createClient();
+      const { error } = await supabase.from("messages").delete().eq("id", msg.id);
+      if (error) {
+        console.error("Failed to delete message:", error);
+        throw error;
+      }
+
+      onDeleteMessage(msg.id);
+
+      // Best-effort storage cleanup for agent-sent media (image, video,
+      // document, voice note) — the row is gone either way; this just
+      // stops the object from orphaning in the chat-media bucket.
+      const path = extractStoragePath(msg.media_url, CHAT_MEDIA_BUCKET);
+      if (path) {
+        void deleteAccountMedia(CHAT_MEDIA_BUCKET, path).catch(() => {});
+      }
+    },
+    [onDeleteMessage],
   );
 
   const handleStatusChange = useCallback(
@@ -1099,6 +1150,7 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={() => handleDeleteMessage(msg)}
                       >
                         <MessageBubble
                           message={msg}

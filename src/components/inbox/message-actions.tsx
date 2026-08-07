@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, SmilePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -9,6 +9,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type { Message } from "@/types";
 import { useTranslations } from "next-intl";
 
@@ -20,6 +29,9 @@ interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  /** Delete this (agent-sent) message. Awaited so the confirm dialog can
+   *  show a spinner and stay open on failure. */
+  onDelete: () => Promise<void> | void;
   children: ReactNode;
 }
 
@@ -32,6 +44,7 @@ export function MessageActions({
   message,
   onReply,
   onReact,
+  onDelete,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -41,6 +54,8 @@ export function MessageActions({
   // interacts elsewhere.
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
@@ -48,6 +63,18 @@ export function MessageActions({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setTouchOpen(true);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await onDelete();
+      setDeleteConfirmOpen(false);
+    } catch {
+      toast.error(t("deleteFailed"));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -144,8 +171,44 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {/* WhatsApp only lets you delete messages you sent — never the
+            other party's. */}
+        {isAgent && (
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteConfirmOpen(true);
+              setTouchOpen(false);
+            }}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-destructive/20 hover:text-destructive"
+            aria-label={t("deleteMessage")}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       </div>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("deleteConfirmTitle")}</DialogTitle>
+            <DialogDescription>{t("deleteConfirmDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={deleting}
+            >
+              {t("cancel")}
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {t("deleteConfirmButton")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

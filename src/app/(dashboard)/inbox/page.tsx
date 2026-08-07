@@ -271,6 +271,16 @@ function InboxPageInner() {
           prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
         );
       }
+
+      if (event.eventType === "DELETE") {
+        // Postgres DELETE payloads only populate `old` — `new` is empty.
+        // Covers a message deleted from another tab/agent; the deleting
+        // client itself already removed it optimistically.
+        const deletedId = event.old?.id;
+        if (deletedId) {
+          setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+        }
+      }
     },
     [activeConversation, hydrateConversation]
   );
@@ -522,6 +532,14 @@ function InboxPageInner() {
     []
   );
 
+  // Local removal for a deleted message — covers both the optimistic
+  // removal right after the agent confirms "Apagar mensagem" and the
+  // realtime DELETE echoed back from Postgres (filter is a no-op the
+  // second time, so calling it twice for the same id is harmless).
+  const handleDeleteMessage = useCallback((id: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
   const handleStatusChange = useCallback(
     (conversationId: string, status: ConversationStatus) => {
       setConversations((prev) =>
@@ -635,6 +653,7 @@ function InboxPageInner() {
             onMessagesLoaded={handleMessagesLoaded}
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}
+            onDeleteMessage={handleDeleteMessage}
             onStatusChange={handleStatusChange}
             onMarkUnread={handleMarkUnread}
             onAssignChange={handleAssignChange}

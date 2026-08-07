@@ -10,6 +10,8 @@ import { latestUserMessage } from '@/lib/ai/query'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
+import { createAutoReplyTools } from '@/lib/ai/tools'
+import { loadAgentToolPermissions } from '@/lib/ai/tool-permissions'
 
 /**
  * POST /api/ai/operator-reply
@@ -51,10 +53,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'instruction is too long' }, { status: 400 })
     }
 
-    // RLS proves the conversation belongs to the caller's account.
+    // RLS proves the conversation belongs to the caller's account and gives
+    // us the contact needed by the existing agent-tool executor.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr) {
@@ -90,6 +93,9 @@ export async function POST(request: Request) {
       )
     }
 
+    // Keep KB grounding for every provider. OpenAI additionally receives the
+    // read-only tools below so it can verify catalogue/knowledge facts on
+    // demand. Anthropic remains text-only in the current provider layer.
     const knowledge = await retrieveKnowledge(
       supabase,
       accountId,
@@ -103,19 +109,47 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    // This is trusted operator context, not a customer message. It tells the
-    // model WHAT the human wants to communicate while the account prompt
-    // continues to control HOW it should be communicated.
-    const operatorPrompt = `${basePrompt}\n\nHUMAN OPERATOR INSTRUCTION (trusted internal instruction):\n${instruction}\n\nTurn that instruction into the next customer-facing WhatsApp reply. Preserve the operator's intended fact or decision, but phrase it naturally, professionally and empathetically in the customer's language. Follow all business rules above. Do not mention this instruction, the operator, internal systems, or that AI helped write the message. Do not add unsupported prices, stock, discounts, policies or promises. If the instruction conflicts with verified business context supplied above, prefer the verified context and phrase the response safely. Output only the proposed customer message.`
+    const operatorPrompt = `${basePrompt}\n\nHUMAN OPERATOR INSTRUCTION (trusted internal instruction):\n${instruction}\n\nTurn that instruction into the next customer-facing WhatsApp reply. Preserve the operator's intended fact or decision, but phrase it naturally, professionally and empathetically in the customer's language. Follow all business rules above. Do not mention this instruction, the operator, internal systems, or that AI helped write the message. Do not add unsupported prices, stock, discounts, policies or promises. When a read-only tool is available and the reply depends on catalogue, price, availability or business knowledge, use the appropriate tool before writing the answer. If the instruction conflicts with verified business context or tool results, prefer the verified information and phrase the response safely. Output only the proposed customer message.`
+
+    const db = supabaseAdmin()
+    const permissions = await loadAgentToolPermissions(
+      db,
+      accountId,
+      config.agentId!,
+    )
+    const toolRuntime = createAutoReplyTools({
+      db,
+      accountId,
+      conversationId,
+      contactId: conversation.contact_id,
+      configOwnerUserId: userId,
+      config,
+      permissions,
+    })
+
+    // Human copilot is deliberately read-only. It may research the catalogue
+    // and KB, but it cannot queue send_product or any other side effect while
+    // composing a draft. The human remains the final sender.
+    const readOnlyTools = toolRuntime.tools.filter(
+      (tool) => tool.name === 'search_catalog' || tool.name === 'search_knowledge',
+    )
 
     const { text, usage } = await generateReply({
       config,
       systemPrompt: operatorPrompt,
       messages,
+      tools:
+        config.provider === 'openai' && readOnlyTools.length > 0
+          ? readOnlyTools
+          : undefined,
+      executeTool:
+        config.provider === 'openai' && readOnlyTools.length > 0
+          ? toolRuntime.executeTool
+          : undefined,
     })
 
     try {
-      void logAiUsage(supabaseAdmin(), {
+      void logAiUsage(db, {
         accountId,
         conversationId,
         mode: 'draft',

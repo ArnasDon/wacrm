@@ -48,7 +48,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-background">
+      <div className="flex h-[calc(100dvh+env(safe-area-inset-top))] items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">Loading...</p>
@@ -62,39 +62,34 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     // `touch-pan-y` tells the browser vertical scroll is still native
     // (no latency added there) while leaving horizontal gestures for
-    // the JS listeners in useDrawerGesture to interpret. `h-dvh`
-    // (100dvh) is the structural height — computed natively by the
-    // browser's own layout engine, synchronously, on every frame,
-    // including when the iOS on-screen keyboard opens/closes (that's
-    // the entire point of the `dvh` unit: it already shrinks for the
-    // keyboard as part of normal layout, no JS needed).
+    // the JS listeners in useDrawerGesture to interpret.
     //
-    // A same-session experiment (2026-08-07, parte 13) replaced this
-    // with a JS-computed `--app-height` read from
-    // `visualViewport.height`, on the hypothesis that `dvh` itself was
-    // under-reporting the real standalone-PWA height. Diagnostics the
-    // user gathered from the actual device disproved that: standalone
-    // was confirmed `true`, but `visualViewport.height` (873) was ~59px
-    // *shorter* than `outerHeight` (932) — because `visualViewport`, on
-    // iOS, deliberately reports a viewport that already excludes the
-    // safe-area insets, unlike the CSS layout viewport `dvh` is based
-    // on (which extends full-bleed under the notch/home-indicator with
-    // `viewport-fit=cover`, letting `env(safe-area-inset-*)` carve out
-    // the insets inside it). Using that shorter value as the shell's
-    // structural height, while Header.tsx *also* adds its own
-    // `padding-top: env(safe-area-inset-top)` inside that shell,
-    // double-subtracted the same inset — leaving an unused gap at the
-    // bottom (the reported "black bar"). Worse, because that height was
-    // only updated via an async `resize` listener (not synchronously,
-    // like native `dvh`), opening the keyboard visibly lagged behind
-    // the real keyboard animation, sending the composer toward the top
-    // with a large gap before the on-screen keyboard.  Reverted;
-    // `h-dvh` alone is simpler and was already correct. See
-    // `use-app-height.ts`/`viewport-debug-badge.tsx` removal in the
-    // same commit.
+    // Height: `calc(100dvh + env(safe-area-inset-top))`, not bare
+    // `100dvh` (2026-08-07, parte 16). `100dvh` alone (parte 14 — fixed
+    // the on-screen-keyboard regression from parte 13's JS-based height)
+    // was still leaving a gap at the *bottom* of the screen, and
+    // crucially the gap showed up below *every* child of this shell —
+    // the sidebar included, not just the Inbox/composer — proving the
+    // shell itself, not any descendant, was rendering short. On this
+    // device/iOS combination (Dynamic Island, iPhone 14 Pro Max),
+    // `100dvh` in real standalone-PWA use appears to already exclude the
+    // top safe-area inset from its "dynamic" viewport (a known class of
+    // WebKit quirk on Dynamic-Island hardware), rather than extending
+    // full-bleed under it the way `viewport-fit=cover` is supposed to
+    // guarantee — so the shell (anchored at the true top of the screen)
+    // came up exactly `env(safe-area-inset-top)` short at the bottom.
+    // Adding that inset back in restores the shell to the true full
+    // screen height. This is a *static* correction — `env(safe-area-
+    // inset-top)` never changes for the keyboard — so it composes safely
+    // with `dvh`'s existing, already-correct, synchronous keyboard-
+    // shrink behavior (parte 14) without touching it: both still shrink
+    // together when the keyboard opens, just from a taller baseline.
+    // `env()` resolves to `0` on any device without a notch (desktop,
+    // older phones), so this is a no-op there — not iPhone-14-specific,
+    // a general formula.
     <div
       ref={shellRef}
-      className="flex h-dvh touch-pan-y overflow-hidden bg-background"
+      className="flex h-[calc(100dvh+env(safe-area-inset-top))] touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}

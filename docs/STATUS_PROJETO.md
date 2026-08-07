@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 15) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 16) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,22 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 16)** — causa raiz real do vão preto: `100dvh` sozinho não cobre a tela inteira em standalone real neste hardware; corrigido no container raiz, não no Composer:
+
+Usuário mandou um screenshot com o menu lateral aberto mostrando a mesma faixa preta **abaixo do próprio menu** — não só abaixo do Composer. Isso prova que o problema é no elemento ancestral comum (o shell raiz de `dashboard-shell.tsx`), não em nada específico do Composer ou do Inbox — a correção da parte 15 (padding do Composer) era um remendo no lugar errado.
+
+**Causa raiz:** `100dvh`, sozinho, aparentemente **não** cobre a tela física inteira em uso standalone real neste iPhone 14 Pro Max — parece excluir a safe-area-inset-top (Dynamic Island) do seu cálculo de "viewport dinâmico" em vez de se estender por baixo dela como `viewport-fit=cover` deveria garantir (uma classe de comportamento conhecida do WebKit em hardware com Dynamic Island). Como o shell (`dashboard-shell.tsx`, `h-dvh`) é ancorado no topo físico real da tela, ficar ~59px mais baixo que o necessário sobra exatamente como espaço morto embaixo — e como TUDO (sidebar, header/main) é filho do mesmo shell, o vão aparece embaixo de tudo, exatamente o que o screenshot mostrou.
+
+**Correção:** trocado `h-dvh` por `h-[calc(100dvh+env(safe-area-inset-top))]` no shell raiz de `dashboard-shell.tsx` (incluindo o estado de loading) — soma de volta o valor que parece estar faltando. `env(safe-area-inset-top)` é um valor **estático** (não muda com o teclado), então essa soma não reintroduz o bug de teclado da parte 13: o `dvh` continua encolhendo nativa e sincronamente quando o teclado abre (correção da parte 14, preservada), só que a partir de uma base maior/correta. `inbox/page.tsx` recebeu a mesma correção no seu próprio `calc()` (ele não herda a altura via flexbox do jeito que `<main>` herda, por causa das margens negativas que cancelam o padding do `<main>` — por isso recalcula a altura explicitamente, e precisa da mesma fórmula pra não divergir do shell). Menu lateral, conversa e demais páginas do shell se corrigem automaticamente, sem tocar em cada um — exatamente como o usuário pediu.
+
+**Não tocado nesta parte:** `visualViewport`, `--app-height`, comportamento/posição do Composer com o teclado (parte 14, já confirmado funcionando pelo usuário), desktop (o `env()` resolve pra `0` sem notch, então o `calc()` vira simplesmente `100dvh`, idêntico ao que já rodava). O ajuste de padding do Composer da parte 15 foi mantido (não era o problema, mas também não é errado por si só).
+
+**Badge de diagnóstico:** confirmado, de novo, que já não existe no código-fonte (`grep` não encontra nenhuma referência) — segue sendo cache do PWA instalado no dispositivo do usuário, não algo pendente no código.
+
+**Validação:** `tsc`, `eslint` (zero erros nos arquivos tocados), `vitest run` (652/655, mesma base pré-existente), `next build` limpo — as duas novas regras `h-[calc(100dvh+env(safe-area-inset-top))]` e `h-[calc(100dvh+env(safe-area-inset-top)-var(--header-height))]` confirmadas presentes e corretas no CSS gerado do bundle. Testado visualmente via Chrome (desktop, Inbox com conversa aberta) — idêntico ao antes, sem regressão, como esperado já que `env()` é `0` sem notch. **A prova real (se o vão realmente sumiu no iPhone, mantendo o teclado funcionando) só é possível no dispositivo físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 15)** — ajuste fino, sem tocar em estrutura: padding do composer reduzido; badge de diagnóstico confirmado já removido:
 
@@ -356,9 +372,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Teclado (parte 14) já foi confirmado corrigido pelo usuário — preservar, não reabrir. Falta confirmar: (a) o vão preto embaixo do composer diminuiu/sumiu depois do ajuste de padding da parte 15; (b) o composer continua confortável de tocar/digitar (não "achatado"); (c) o badge de diagnóstico não aparece mais (se ainda aparecer depois de relançar o app do zero, aí sim investigar — o código já não o renderiza desde a parte 14).
-2. **Se o vão residual persistir mesmo depois do ajuste de padding: mandar screenshot real antes de tentar mais um ajuste.** Depois de 7 rodadas (partes 8-15), evidência visual deixou de ser opcional.
-3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-15 acima.
+1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Teclado (parte 14) já confirmado corrigido pelo usuário — preservado, não reaberto nesta parte. Falta confirmar: (a) o vão preto embaixo do menu lateral E do composer sumiu com a correção de `h-[calc(100dvh+env(safe-area-inset-top))]` no shell raiz; (b) o teclado continua funcionando exatamente como antes (composer imediatamente acima dele, sem espaço, sem subir pro topo); (c) abrir/fechar o teclado repetidamente não desloca nada; (d) scroll da conversa continua só na área central, header/composer fixos; (e) o badge de diagnóstico não aparece mais (se ainda aparecer depois de relançar o app do zero, é cache do PWA, não bug de código).
+2. **Se o vão preto persistir mesmo depois desta correção no shell raiz: mandar screenshot real antes de mais uma tentativa.** Depois de 8 rodadas (partes 8-16), essa é a explicação mais estrutural encontrada até agora (elemento ancestral comum, confirmada pelo próprio screenshot do usuário) — se nem essa resolver, o próximo passo é reconsiderar a abordagem, não mais uma variação da mesma fórmula.
+3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-16 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

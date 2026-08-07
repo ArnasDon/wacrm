@@ -233,3 +233,41 @@ export async function markScheduledMessageFailed(
     .eq('id', id)
   if (error) throw error
 }
+
+/**
+ * Recover rows stuck in `processing` beyond `olderThanMs` (default 10
+ * minutes) — cross-tenant, same shape as `getDueScheduledMessages`.
+ *
+ * A row only ever sits in `processing` between `claimScheduledMessage`
+ * and the matching `markScheduledMessageSent` / `markScheduledMessageFailed`
+ * call in the cron route. Without this sweep, a function crash/timeout
+ * between those two steps (or `markScheduledMessageFailed` itself
+ * throwing on a transient DB error) leaves the row invisible to BOTH
+ * `getDueScheduledMessages` (only selects `pending`) and any
+ * operator dashboard querying `failed` — a silent, permanent leak
+ * where a lead's follow-up/reminder simply never sends and nothing
+ * says why. `updated_at` (bumped by the table's own trigger on every
+ * UPDATE, including the claim) is what ages a `processing` row here —
+ * reclaimed straight to `failed` with an explicit reason rather than
+ * back to `pending`, so a message that's repeatedly getting stuck
+ * doesn't retry forever against the same failure; it surfaces as a
+ * `failed` row an operator can find and act on.
+ */
+export async function reclaimStaleProcessingMessages(
+  db: SupabaseClient,
+  opts: { olderThanMs?: number; now?: Date } = {},
+): Promise<number> {
+  const { olderThanMs = 10 * 60 * 1000, now = new Date() } = opts
+  const cutoff = new Date(now.getTime() - olderThanMs).toISOString()
+  const { data, error } = await db
+    .from('agent_scheduled_messages')
+    .update({
+      status: 'failed',
+      error: `stuck in "processing" past ${Math.round(olderThanMs / 60000)}min — reclaimed by cron sweep`,
+    })
+    .eq('status', 'processing')
+    .lt('updated_at', cutoff)
+    .select('id')
+  if (error) throw error
+  return (data as unknown[])?.length ?? 0
+}

@@ -6,6 +6,7 @@ import {
   claimScheduledMessage,
   markScheduledMessageSent,
   markScheduledMessageFailed,
+  reclaimStaleProcessingMessages,
   type ScheduledMessage,
   type ScheduledMessageKind,
 } from '@/lib/eter/repo/scheduled-messages.repo'
@@ -48,32 +49,58 @@ export async function GET(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  // Recover rows a PREVIOUS invocation left stuck in `processing` (crash/
+  // timeout between claim and sent/failed, or `markScheduledMessageFailed`
+  // itself throwing) — see reclaimStaleProcessingMessages's doc comment.
+  // Runs before the sweep below and is itself non-fatal: a failure here
+  // must not prevent this invocation from still draining whatever IS
+  // currently due.
+  const reclaimed = await reclaimStaleProcessingMessages(admin).catch((err) => {
+    console.error('[eter-agent-cron] reclaimStaleProcessingMessages failed:', err)
+    return 0
+  })
+
   const due = await getDueScheduledMessages(admin, { limit: 50 })
-  if (due.length === 0) return NextResponse.json({ sent: 0, failed: 0, skipped: 0 })
+  if (due.length === 0) return NextResponse.json({ sent: 0, failed: 0, skipped: 0, reclaimed })
 
   let sent = 0
   let failed = 0
   let skipped = 0
 
   for (const row of due) {
-    const claimed = await claimScheduledMessage(admin, row.id)
-    if (!claimed) {
-      skipped++
-      continue
-    }
-
+    // The ENTIRE per-row body is wrapped, not just `sendOne` — a prior
+    // version let `markScheduledMessageFailed` throw uncaught (e.g. a
+    // transient DB error writing the failure), which aborted the whole
+    // `GET` handler: every remaining `due` row in this batch was left
+    // untouched until the next cron tick, and the row that triggered it
+    // stayed stuck in `processing` — invisible to both this sweep (only
+    // selects `pending`) and `reclaimStaleProcessingMessages` until its
+    // 10-minute threshold passed. One row's failure to record its own
+    // failure must never take down the batch; log and move on instead.
     try {
-      await sendOne(admin, claimed)
-      await markScheduledMessageSent(admin, claimed.id)
-      sent++
+      const claimed = await claimScheduledMessage(admin, row.id)
+      if (!claimed) {
+        skipped++
+        continue
+      }
+
+      try {
+        await sendOne(admin, claimed)
+        await markScheduledMessageSent(admin, claimed.id)
+        sent++
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await markScheduledMessageFailed(admin, claimed.id, message)
+        failed++
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      await markScheduledMessageFailed(admin, claimed.id, message)
+      console.error('[eter-agent-cron] unrecoverable error processing scheduled message', row.id, err)
       failed++
     }
   }
 
-  return NextResponse.json({ sent, failed, skipped })
+  return NextResponse.json({ sent, failed, skipped, reclaimed })
 }
 
 const TEMPLATE_NAME_BY_KIND: Record<ScheduledMessageKind, string> = {

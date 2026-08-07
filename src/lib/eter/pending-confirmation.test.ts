@@ -111,6 +111,48 @@ describe('handleInboundPendingConfirmation — deterministic confirm', () => {
     expect(call.text).toMatch(/confirmado/i)
   })
 
+  it('a getBooking failure AFTER a successful confirm still sends the confirmation reply (silent-failure fix)', async () => {
+    // The Google Calendar mutation + bookings write (confirmPendingAction)
+    // already succeeded — the real meeting exists. The SECOND getBooking
+    // call (used only to format the time in the reply text) failing must
+    // never drop the reply to the lead; it should fall back to the
+    // generic "está confirmado" text instead of silently propagating.
+    h.getPendingActionForConversation.mockResolvedValue(pendingAction())
+    h.confirmPendingAction.mockResolvedValue({ bookingId: 'bk-1' })
+    h.getBooking.mockRejectedValue(new Error('transient db error'))
+
+    const outcome = await handleInboundPendingConfirmation({ ...baseArgs, inboundText: 'sim' })
+
+    expect(outcome).toBe('confirmed')
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText.mock.calls[0][0].text).toMatch(/confirmado/i)
+    expect(h.engineSendText.mock.calls[0][0].text).not.toMatch(/undefined/i)
+  })
+
+  it('afterConfirmedBooking side effects failing (e.g. the reminder-scheduling getBooking read) still sends the reply', async () => {
+    // Same booking-already-written invariant as above, but the failure
+    // happens inside afterConfirmedBooking's own getBooking call (used
+    // to (re)schedule reminders), not the reply-text one.
+    h.getPendingActionForConversation.mockResolvedValue(pendingAction())
+    h.confirmPendingAction.mockResolvedValue({ bookingId: 'bk-1' })
+    h.getBooking
+      .mockRejectedValueOnce(new Error('transient db error in afterConfirmedBooking'))
+      .mockResolvedValueOnce({
+        id: 'bk-1',
+        status: 'confirmed',
+        startsAt: new Date('2026-08-25T10:00:00Z'),
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+      })
+
+    const outcome = await handleInboundPendingConfirmation({ ...baseArgs, inboundText: 'sim' })
+
+    expect(outcome).toBe('confirmed')
+    expect(h.scheduleMeetingReminders).not.toHaveBeenCalled() // afterConfirmedBooking bailed early
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText.mock.calls[0][0].text).toMatch(/confirmado/i)
+  })
+
   it('cancel_booking confirm cancels reminders for the booking instead of scheduling new ones', async () => {
     h.getPendingActionForConversation.mockResolvedValue(pendingAction({ toolName: 'cancel_booking' }))
     h.confirmPendingAction.mockResolvedValue({ bookingId: 'bk-1' })

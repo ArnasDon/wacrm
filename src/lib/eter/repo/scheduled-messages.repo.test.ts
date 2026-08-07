@@ -8,6 +8,7 @@ import {
   claimScheduledMessage,
   markScheduledMessageSent,
   markScheduledMessageFailed,
+  reclaimStaleProcessingMessages,
 } from './scheduled-messages.repo'
 
 // ============================================================
@@ -32,6 +33,7 @@ interface Row {
   error: string | null
   sent_at: string | null
   created_at: string
+  updated_at: string
 }
 
 function row(overrides: Partial<Row> = {}): Row {
@@ -48,6 +50,7 @@ function row(overrides: Partial<Row> = {}): Row {
     error: null,
     sent_at: null,
     created_at: '2026-08-19T09:00:00.000Z',
+    updated_at: '2026-08-19T09:00:00.000Z',
     ...overrides,
   }
 }
@@ -103,6 +106,10 @@ function makeDb(initialRows: Row[] = []) {
       },
       in(col: string, vals: unknown[]) {
         filtered = filtered.filter((r) => vals.includes((r as Record<string, unknown>)[col]))
+        return builder
+      },
+      lt(col: string, val: unknown) {
+        filtered = filtered.filter((r) => String((r as Record<string, unknown>)[col]) < String(val))
         return builder
       },
       select() {
@@ -236,5 +243,54 @@ describe('scheduled-messages.repo — cron sweep primitives', () => {
     await markScheduledMessageFailed(db, 'r2', 'no approved template')
     expect(rows.find((r) => r.id === 'r1')?.status).toBe('sent')
     expect(rows.find((r) => r.id === 'r2')).toMatchObject({ status: 'failed', error: 'no approved template' })
+  })
+})
+
+// ============================================================
+// reclaimStaleProcessingMessages — regression coverage for the
+// silent-failure review finding: a row could get stuck in `processing`
+// forever (function crash between claim and sent/failed, or
+// markScheduledMessageFailed itself throwing) and become invisible to
+// both getDueScheduledMessages (only selects `pending`) and any
+// operator dashboard querying `failed`. This sweep is what makes such
+// a row visible again.
+// ============================================================
+describe('scheduled-messages.repo — reclaimStaleProcessingMessages', () => {
+  it('reclaims a processing row past the threshold to failed, with an explanatory error', async () => {
+    const { db, rows } = makeDb([
+      row({ id: 'stuck', status: 'processing', updated_at: '2026-08-19T00:00:00.000Z' }),
+    ])
+    const count = await reclaimStaleProcessingMessages(db, {
+      now: new Date('2026-08-19T00:20:00.000Z'), // 20 min after updated_at
+      olderThanMs: 10 * 60 * 1000, // 10 min threshold
+    })
+    expect(count).toBe(1)
+    const reclaimed = rows.find((r) => r.id === 'stuck')
+    expect(reclaimed?.status).toBe('failed')
+    expect(reclaimed?.error).toMatch(/stuck in "processing"/i)
+  })
+
+  it('leaves a recently-claimed processing row untouched (still within the grace window)', async () => {
+    const { db, rows } = makeDb([
+      row({ id: 'fresh', status: 'processing', updated_at: '2026-08-19T00:18:00.000Z' }),
+    ])
+    const count = await reclaimStaleProcessingMessages(db, {
+      now: new Date('2026-08-19T00:20:00.000Z'), // only 2 min after updated_at
+      olderThanMs: 10 * 60 * 1000,
+    })
+    expect(count).toBe(0)
+    expect(rows.find((r) => r.id === 'fresh')?.status).toBe('processing')
+  })
+
+  it('never touches pending, sent, cancelled, or already-failed rows regardless of age', async () => {
+    const { db, rows } = makeDb([
+      row({ id: 'p', status: 'pending', updated_at: '2000-01-01T00:00:00.000Z' }),
+      row({ id: 's', status: 'sent', updated_at: '2000-01-01T00:00:00.000Z' }),
+      row({ id: 'c', status: 'cancelled', updated_at: '2000-01-01T00:00:00.000Z' }),
+      row({ id: 'f', status: 'failed', updated_at: '2000-01-01T00:00:00.000Z' }),
+    ])
+    const count = await reclaimStaleProcessingMessages(db, { now: new Date('2026-08-19T00:00:00.000Z') })
+    expect(count).toBe(0)
+    expect(rows.map((r) => r.status)).toEqual(['pending', 'sent', 'cancelled', 'failed'])
   })
 })

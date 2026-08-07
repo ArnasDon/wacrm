@@ -287,11 +287,31 @@ export async function confirmPendingAction(
 /** Reject a pending proposal without touching the calendar — e.g. the
  *  lead said "não, obrigado" or asked for something else instead. Also
  *  atomic via the same `.eq('status', 'pending')` claim, so this can't
- *  race a concurrent `confirmPendingAction` either. */
+ *  race a concurrent `confirmPendingAction` either.
+ *
+ *  Mirrors `confirmPendingAction`'s claim try/catch — a claim failure
+ *  (row already resolved by a concurrent call: duplicate webhook
+ *  delivery, a retried admin click, or a race with `confirmPendingAction`
+ *  itself) is wrapped into `PendingActionError('not_pending')` rather
+ *  than left as a raw Supabase/`.single()` error. Without this, callers
+ *  that pattern-match on `instanceof PendingActionError` to treat a
+ *  duplicate reject as a harmless no-op (see
+ *  `pending-confirmation.ts`'s `classification === 'reject'` branch)
+ *  never actually hit that branch — the raw error falls through to
+ *  their generic `else { throw err }`, which propagates uncaught out of
+ *  the webhook and skips the lead's "cancelei esse pedido" reply
+ *  entirely. Caught in review: this was dead code on the reject path. */
 export async function rejectPendingAction(
   db: SupabaseClient,
   accountId: string,
   pendingActionId: string,
 ): Promise<void> {
-  await resolvePendingAction(db, accountId, pendingActionId, { status: 'rejected' })
+  try {
+    await resolvePendingAction(db, accountId, pendingActionId, { status: 'rejected' })
+  } catch {
+    throw new PendingActionError(
+      `No pending action ${pendingActionId} to reject for account ${accountId} (already resolved, or never existed).`,
+      'not_pending',
+    )
+  }
 }

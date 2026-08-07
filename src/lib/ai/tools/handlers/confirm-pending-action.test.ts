@@ -39,7 +39,7 @@ vi.mock('@/lib/calendar/google/account-client', () => ({
 }))
 
 import { CalendarError } from '@/lib/calendar/google/client'
-import { confirmPendingAction, PendingActionError } from './confirm-pending-action'
+import { confirmPendingAction, rejectPendingAction, PendingActionError } from './confirm-pending-action'
 
 const db = {} as SupabaseClient
 
@@ -96,6 +96,27 @@ describe('confirmPendingAction — concurrency (write-gate second half)', () => 
     await expect(first).resolves.toEqual({ bookingId: 'bk-1' })
     await expect(second).rejects.toBeInstanceOf(PendingActionError)
     expect(createEvent).toHaveBeenCalledTimes(1) // NOT 2 — no double-booking
+  })
+})
+
+describe('rejectPendingAction — error wrapping (silent-failure review fix)', () => {
+  it('a claim failure (already resolved / never existed) is wrapped as PendingActionError, not a raw error', async () => {
+    // Previously this threw whatever raw error resolvePendingAction's
+    // .single() surfaced (e.g. a Supabase "no rows" error), which
+    // pending-confirmation.ts's `instanceof PendingActionError` check
+    // never matched — the duplicate-reject branch was dead code and the
+    // raw error propagated uncaught out of the webhook, dropping the
+    // lead's "cancelei esse pedido" reply entirely.
+    h.resolvePendingAction.mockRejectedValueOnce(new Error('no row matched — already resolved'))
+    await expect(rejectPendingAction(db, 'acct-1', 'pa-1')).rejects.toBeInstanceOf(PendingActionError)
+
+    h.resolvePendingAction.mockRejectedValueOnce(new Error('no row matched — already resolved'))
+    await expect(rejectPendingAction(db, 'acct-1', 'pa-1')).rejects.toMatchObject({ code: 'not_pending' })
+  })
+
+  it('resolves normally when the claim succeeds', async () => {
+    h.resolvePendingAction.mockResolvedValueOnce(pendingAction({ status: 'rejected' }))
+    await expect(rejectPendingAction(db, 'acct-1', 'pa-1')).resolves.toBeUndefined()
   })
 })
 

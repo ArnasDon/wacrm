@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 28) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 29) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,21 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 29)** — trava do `<main>` (parte 28) não foi suficiente, confirmado pelo usuário com cache 100% eliminado; aplicada técnica mais forte, `position: fixed` em `html`/`body`, ainda 100% CSS:
+
+Usuário confirmou explicitamente ter eliminado qualquer possibilidade de cache (aguardou o deploy, atualizou o PWA, fechou/abriu várias vezes, chegou a adicionar um novo atalho à tela de início) e o problema persistiu de forma idêntica: header e corpo da conversa desaparecem de vista quando o teclado abre, só o composer fica visível perto do topo com um vão até o teclado. Mandou 3 imagens comparando teclado fechado (perfeito) vs. aberto (quebrado) vs. aberto-mas-arrastado-manualmente (números corretos). Detalhe adicional revelado pelas imagens: o badge de diagnóstico (`position: fixed`, deveria aparecer sempre) **some especificamente durante o estado quebrado** — mais um indício de que a página inteira está sendo deslocada de um jeito que interfere até com elementos `fixed`.
+
+**Conclusão:** a trava de `overflow: hidden` no `<main>` (parte 28) não foi suficiente — confirma a suspeita de que o comportamento nativo do iOS de "rolar o campo focado pra dentro da área visível" consegue mover `document.scrollingElement` por um caminho que `overflow: hidden` sozinho não bloqueia (um code path interno do WebKit, separado da rolagem normal disparada por CSS).
+
+**Correção — técnica diferente e mais forte, ainda sem JS/scrollTo:** `html`/`body` (`globals.css`) ganharam `position: fixed; inset: 0` além do `overflow: hidden` já existente. Diferença de fundo: `overflow: hidden` apenas esconde o conteúdo que excede a caixa, mas a caixa ainda existe e ainda é, em teoria, "rolável" por código nativo que não respeita CSS `overflow`. `position: fixed` tira o elemento do fluxo normal — não existe mais uma caixa de documento rolável ali, então não sobra nada pro iOS agir em cima, seja qual for o caminho interno que ele usa. É a técnica mais citada na comunidade de desenvolvimento iOS especificamente pra esse tipo de bug (input focado deslocando a página).
+
+**Arquivos alterados:** só `src/app/globals.css` (regra `html`/`body`, mesmo bloco das partes 12/20/24).
+**Arquivos NÃO alterados:** `dashboard-shell.tsx`, `inbox/page.tsx`, `message-composer.tsx`, `message-thread.tsx`, `use-app-height.ts` — nada da lógica de altura (partes 26-27) ou da trava do `<main>` (parte 28) foi tocado ou removido; essa correção se soma a elas.
+
+**Validação:** `tsc`, `eslint` (n/a, CSS puro), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado no Chrome com atenção especial a regressão: Inbox renderiza normal (`OVERFLOW:0`), texto digitável no composer sem problema, e — mais importante — Configurações → Campos e tags (página propositalmente longa) **continua rolando normalmente** através do `<main>` mesmo com `html`/`body` agora fixos, confirmando que a mudança não quebra nenhuma página. **A prova real (se o header/conversa somem de vista ao abrir o teclado) só é possível no iPhone físico.** Se esta tentativa não resolver, o usuário e o Claude já combinaram que o próximo passo é migrar a depuração para um Mac com Safari Web Inspector conectado ao iPhone.
+
+---
 
 **Sessão de 2026-08-07 (parte 28)** — causa raiz real do "composer sobe pra o topo": não é cálculo de altura, é `<main>` sendo rolado pelo iOS; travado o scroll dele especificamente na tela da conversa:
 
@@ -575,19 +590,18 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero) e confirma se o header/conversa permanecem visíveis ao abrir o teclado.** A parte 28 trava o scroll do `<main>` especificamente na tela de conversa — se essa era realmente a causa (rolagem nativa do iOS, não cálculo de altura), o composer deve subir só o necessário pra ficar acima do teclado, com header e mensagens continuando visíveis o tempo todo. Testar também: abrir/fechar o teclado 5x sem deslocamento acumulado; rolar a lista de mensagens (deve continuar funcionando normalmente — só `<main>`, não a lista, foi travado).
-2. **Se o header/mensagens ainda sumirem de vista:** essa era a explicação mais forte encontrada até agora (usuário observou diretamente que precisou rolar manualmente pra revelar o badge) — se mesmo assim persistir, a próxima etapa é o Mac + Web Inspector, observando ao vivo o que exatamente dispara o scroll durante a transição do teclado.
+1. **Prioridade máxima: usuário testa no iPhone (relançando o app do zero, cache já eliminado antes) e confirma se o header/conversa permanecem visíveis ao abrir o teclado.** A parte 29 aplicou `position: fixed` em `html`/`body` — tecnicamente uma garantia mais forte que `overflow: hidden` (parte 24) sozinho ou a trava do `<main>` (parte 28), nenhuma das quais resolveu sozinha. Se isso não resolver, é o sinal mais forte possível de que o remoto/código chegou ao limite.
+2. **Se o header/mensagens ainda sumirem de vista mesmo com `position: fixed`:** já foram tentadas as três camadas de prevenção estruturalmente razoáveis (`overflow: hidden` em `<main>` e em `html`/`body`, e agora `position: fixed` em `html`/`body`) sem sucesso confirmado — nesse ponto, **migrar para o Mac + Safari Web Inspector já combinado com o usuário**, observando ao vivo o que exatamente dispara o deslocamento durante a transição do teclado, em vez de mais uma hipótese de CSS.
 3. **Assim que tudo confirmado: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção.
-4. Migração pra Mac + Safari Web Inspector já combinada com o usuário, pra depurações futuras com mais precisão. `docs/STATUS_PROJETO.md` foi escrito exatamente pra dar contexto completo a uma sessão nova de Claude Code em outra máquina.
-5. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-28 acima.
-6. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-7. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-8. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-9. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-29 acima.
+5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
+6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+8. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 
-- **WhatsApp — status desatualizado neste arquivo, ver "Próxima tarefa recomendada" item 2.** As entradas de 2026-08-04 (partes 6-9) abaixo descrevem uma conexão dada como praticamente pronta ("falta só mandar uma mensagem de teste"), mas isso não reflete mais a realidade — não confiar nesse texto sem checar o estado atual primeiro (memória `project_wacrm` tem o desenrolar completo fora deste arquivo).
+- **WhatsApp — status desatualizado neste arquivo, ver "Próxima tarefa recomendada" item 5.** As entradas de 2026-08-04 (partes 6-9) abaixo descrevem uma conexão dada como praticamente pronta ("falta só mandar uma mensagem de teste"), mas isso não reflete mais a realidade — não confiar nesse texto sem checar o estado atual primeiro (memória `project_wacrm` tem o desenrolar completo fora deste arquivo).
 - **Mudanças de mobile desta sessão (partes 5-10) não testadas em dispositivo real, especificamente em modo PWA standalone** — só revisão de código + `next build`. Três rodadas seguidas de bug que só se manifestou em uso standalone real: a parte 8 tentou corrigir um problema da parte 3 e, ela mesma, causou um bug pior (corrigido na parte 9); a parte 10 achou uma causa raiz concreta diferente pro mesmo sintoma (número mágico `3.5rem` desatualizado em `inbox/page.tsx`) — motivo pelo qual esse modo virou o ambiente prioritário documentado no topo deste arquivo. Ver item 1 de "Próxima tarefa recomendada".
 - **3 testes falhando, não relacionados a esta sessão:**
   - `src/lib/currency.test.ts` (3 testes) — depende do `Intl.NumberFormat` do Node/ICU instalado na máquina; formatação de locale diverge do esperado neste ambiente Windows local.

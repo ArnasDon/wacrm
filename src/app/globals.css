@@ -270,12 +270,29 @@ html[data-theme="rose"] {
      (parte 23). Reapplying this now that it's cleared. Never changes
      any page's actual visible behavior: every page already scrolls
      exclusively through `<main>` inside the shell, never through
-     html/body. */
+     html/body.
+
+     `position: fixed; inset: 0` on both (2026-08-07, parte 29): even
+     with `<main>` itself locked from scrolling (parte 28), the
+     conversation header/composer still visibly jumped when the
+     keyboard opened — real-device screenshots showed the whole page
+     shifted up (header scrolled above the top edge, composer left
+     floating with a gap below it, this fixed-position debug badge
+     itself briefly not rendering where expected). That means
+     `overflow: hidden` alone wasn't sufficient: iOS's native "scroll
+     the focused input into view" behavior can apparently still move
+     `document.scrollingElement` through a code path `overflow: hidden`
+     doesn't fully block. `position: fixed` is a stronger guarantee —
+     an element taken out of normal flow like this has no scroll box at
+     all for that native behavior to act on, regardless of which code
+     path it uses. Deliberately CSS-only, no JS, no `scrollTo` — the
+     structural "prevent it from being possible" this project has been
+     aiming for the whole time, not a reactive compensation. */
   body {
-    @apply bg-background text-foreground overscroll-y-none overflow-hidden;
+    @apply bg-background text-foreground overscroll-y-none overflow-hidden fixed inset-0;
   }
   html {
-    @apply bg-background font-sans overscroll-y-none overflow-hidden;
+    @apply bg-background font-sans overscroll-y-none overflow-hidden fixed inset-0;
   }
 }
 

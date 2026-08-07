@@ -8,9 +8,20 @@ import {
   type Dimension,
   type DimensionScore,
 } from '@/lib/eter/lead-scoring'
+import { scheduleFollowUpCadence } from '@/lib/eter/followups'
 import type { ToolExecutionResult } from '../loop-types'
 import type { ToolHandlerContext } from './context'
 import { requireString, optionalInteger, optionalString, ToolInputError } from './parse-input'
+
+/** Case/whitespace-insensitive — `stage` is free-form text (see
+ *  migration 037's design note), so "morno", "Morno", " morno " all
+ *  mean the same qualification bucket for cadence-scheduling purposes.
+ *  Since `computeQualification` writes `stage` as exactly one of
+ *  'frio' | 'morno' | 'quente', this mostly guards against any legacy
+ *  row written before this handler existed. */
+function normalizeStage(stage: string | null | undefined): string | null {
+  return stage ? stage.trim().toLowerCase() : null
+}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -54,7 +65,18 @@ function parseDimensionsInput(input: Record<string, unknown>): Partial<Record<Di
  *  gets persisted. If a model still sends legacy `score`/`stage`
  *  arguments (schema.ts no longer declares them, but providers vary in
  *  how strictly they enforce `additionalProperties: false`), they are
- *  read only to keep parsing tolerant and then discarded — never used. */
+ *  read only to keep parsing tolerant and then discarded — never used.
+ *
+ *  Also owns two side effects of a qualification update, both
+ *  best-effort (never allowed to turn a successful save into a tool
+ *  error):
+ *    - notify_admin when the new classification is 'quente' or the
+ *      urgência dimension maxes out (2), exactly once per qualifying
+ *      transition (see the notified_admin_at note below).
+ *    - scheduling the quiet-lead follow-up cadence (T+1/T+3/T+7,
+ *      followups.ts) the moment the classification transitions INTO
+ *      'morno' — not on every subsequent save while already there,
+ *      which would keep resetting the clock. */
 export async function saveLeadQualificationHandler(
   ctx: ToolHandlerContext,
   input: Record<string, unknown>,
@@ -72,6 +94,7 @@ export async function saveLeadQualificationHandler(
     const existing = await getLeadQualification(ctx.db, ctx.accountId, contactId)
     const existingDimensions = parseStoredDimensions(existing?.answers.dimensions)
     const mergedDimensions = { ...existingDimensions, ...newDimensions }
+    const previousStage = normalizeStage(existing?.stage)
 
     const result = computeQualification(mergedDimensions)
     const urgency = urgencyFromDimension(mergedDimensions.urgencia)
@@ -123,6 +146,22 @@ export async function saveLeadQualificationHandler(
       answers: answersPayload,
       qualified,
     })
+
+    // Eter agent — quiet-lead follow-up cadence (agent_scheduled_messages,
+    // migration 039 / followups.ts). Only on the actual transition INTO
+    // 'morno' (never on a re-save while already there, which would keep
+    // resetting the T+1/T+3/T+7 clock), and only when the conversation
+    // this agent turn is running in is known (always true on the
+    // WhatsApp path; a Playground/test call without one has nothing to
+    // follow up on). Never allowed to fail the tool call — a scheduling
+    // hiccup shouldn't turn a successful qualification save into a tool
+    // error.
+    if (result.classification === 'morno' && previousStage !== 'morno' && ctx.conversationId) {
+      await scheduleFollowUpCadence(ctx.db, ctx.accountId, {
+        conversationId: ctx.conversationId,
+        contactId,
+      }).catch((err) => console.error('[save-lead-qualification] failed to schedule follow-up cadence:', err))
+    }
 
     return {
       isError: false,

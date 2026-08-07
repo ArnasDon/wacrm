@@ -14,6 +14,8 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { handleInboundPendingConfirmation } from '@/lib/eter/pending-confirmation'
+import { cancelFollowUpCadence } from '@/lib/eter/followups'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -714,6 +716,16 @@ async function processMessage(
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
+  // Eter agent — quiet-lead follow-up cadence (agent_scheduled_messages,
+  // migration 039). ANY inbound message from the lead cancels the
+  // pending T+1/T+3/T+7 cadence, not just a reply to a follow-up
+  // itself — the lead engaging at all means the quiet period is over.
+  // Never allowed to affect the rest of the cascade below: best-effort,
+  // never throws.
+  await cancelFollowUpCadence(supabaseAdmin(), accountId, conversation.id).catch((err) =>
+    console.error('[webhook] failed to cancel follow-up cadence:', err)
+  )
+
   // ============================================================
   // Flow runner dispatch.
   //
@@ -811,12 +823,47 @@ async function processMessage(
     }).catch((err) => console.error('[automations] dispatch failed:', err))
   }
 
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
+  // Eter agent — write-gate confirmation detection (write-gate.ts /
+  // pending-confirmation.ts). Runs under the SAME eligibility gate as
+  // AI auto-reply below (plain text, not consumed by a flow) and
+  // BEFORE it, so an explicit "sim"/"não" reply to a pending calendar
+  // proposal is resolved deterministically instead of being sent to
+  // the LLM as a fresh message. Returns 'none' immediately (a no-op)
+  // for the overwhelming majority of conversations, which have no
+  // pending action — this does not otherwise touch the cascade.
+  // Never throws: any failure here still lets AI auto-reply run below.
+  let pendingConfirmationOutcome: 'none' | 'confirmed' | 'rejected' | 'other' = 'none'
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+    pendingConfirmationOutcome = await handleInboundPendingConfirmation({
+      db: supabaseAdmin(),
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
+      userId: configOwnerUserId,
+      inboundText,
+    }).catch((err) => {
+      console.error('[webhook] pending-action confirmation detection failed:', err)
+      return 'none' as const
+    })
+  }
+
+  // AI auto-reply. Runs only for plain-text inbound the deterministic
+  // flow runner did NOT consume (flows win over the LLM), only when the
+  // account has enabled it, and only when the message above wasn't
+  // already resolved as an explicit confirm/reject of a pending
+  // proposal (that reply has already been sent by
+  // handleInboundPendingConfirmation — sending a second, LLM-generated
+  // reply to the same inbound message would double-text the lead).
+  // Awaited inside `after()` (same reason as the webhook dispatch
+  // below); `dispatchInboundToAiReply` owns its eligibility gates +
+  // try/catch and never throws.
+  if (
+    !flowConsumed &&
+    !interactiveReplyId &&
+    inboundText.trim() &&
+    pendingConfirmationOutcome !== 'confirmed' &&
+    pendingConfirmationOutcome !== 'rejected'
+  ) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,

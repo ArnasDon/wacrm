@@ -7,6 +7,8 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
+import { useAppHeight } from "@/hooks/use-app-height";
+import { ViewportDebugBadge } from "@/components/debug/viewport-debug-badge";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -32,6 +34,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLButtonElement>(null);
+  useAppHeight();
   useDrawerGesture({
     open: sidebarOpen,
     onOpenChange: setSidebarOpen,
@@ -62,25 +65,35 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     // `touch-pan-y` tells the browser vertical scroll is still native
     // (no latency added there) while leaving horizontal gestures for
-    // the JS listeners in useDrawerGesture to interpret. `h-dvh`
-    // (100dvh) is the single source of truth for height — computed by
-    // the browser's own layout engine as part of the normal layout
-    // pass, correct on the very first frame, and natively tracks the
-    // iOS on-screen keyboard / standalone-PWA viewport without any JS.
-    // A prior version of this also set a `--app-height` custom property
-    // from a `useEffect` reading `visualViewport.height` as a "belt and
-    // suspenders" correction — that ran *after* the first paint (which
-    // had already rendered against the dvh fallback), so the page
-    // visibly reflowed a moment later when the effect fired: two
-    // competing height sources instead of one. Removed; `h-dvh` alone
-    // is both simpler and correct from frame one.
+    // the JS listeners in useDrawerGesture to interpret.
+    //
+    // Height: `var(--app-height)`, set synchronously pre-paint by the
+    // boot script in layout.tsx (`VIEWPORT_BOOT_SCRIPT`) from
+    // `visualViewport.height`/`innerHeight`, falling back to `100dvh`
+    // (globals.css `:root`) if that hasn't run for any reason. This
+    // used to be plain `h-dvh` — simpler, and correct in every case
+    // tested at the time — but real iOS standalone-PWA use (2026-08-07,
+    // parte 13) showed a gap at the bottom sized like Safari's own
+    // chrome despite standalone mode, meaning `dvh` itself was suspected
+    // of under-reporting the true available height in that context.
+    // `visualViewport.height` is what iOS actually resizes for the
+    // on-screen keyboard and is the more trustworthy read of "space
+    // genuinely available for content" there. A prior attempt at a JS
+    // height var (removed — see git history) set it from a `useEffect`
+    // *after* first paint, causing a visible reflow the moment it fired;
+    // this one runs before hydration, so there's exactly one height
+    // calculation, not two racing ones. `useAppHeight()` above only
+    // *updates* the value post-mount (keyboard, rotation) — it never
+    // sets it for the first time.
     <div
       ref={shellRef}
-      className="flex h-dvh touch-pan-y overflow-hidden bg-background"
+      className="flex touch-pan-y overflow-hidden bg-background"
+      style={{ height: "var(--app-height, 100dvh)" }}
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
+      <ViewportDebugBadge />
       <Sidebar
         open={sidebarOpen}
         onClose={closeSidebar}

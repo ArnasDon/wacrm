@@ -2,6 +2,16 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Tailwind v4's zero-config content detection scans the whole project
+   (anything not gitignored), not just `src/` — including `docs/`. That's
+   how prose *describing* a bug (e.g. STATUS_PROJETO.md quoting a broken
+   class like `pt-[env(...)]` as an example) can silently reintroduce the
+   exact same "Parsing CSS source code failed" dev-build break, since the
+   scanner doesn't distinguish code from Markdown text. Excluding `docs/`
+   closes this off structurally instead of relying on never writing a
+   bracket-shaped example in prose again. */
+@source not "../../docs";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -259,6 +269,11 @@ html[data-theme="rose"] {
 :root {
   --header-content-height: 3.5rem;
   --header-height: calc(var(--header-content-height) + env(safe-area-inset-top));
+  /* Fallback only — the real value is set synchronously pre-paint by the
+     boot script in layout.tsx (`VIEWPORT_BOOT_SCRIPT`) from
+     `visualViewport.height`/`innerHeight`. This default covers the brief
+     window before that script runs and any context without JS. */
+  --app-height: 100dvh;
 }
 
 /* Tiny "audio capturing" equalizer bars — Inbox voice-note recorder

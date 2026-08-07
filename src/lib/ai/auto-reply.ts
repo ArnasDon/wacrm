@@ -7,6 +7,10 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { createAutoReplyTools } from './tools'
 import { loadAgentToolPermissions } from './tool-permissions'
+import {
+  cataloguePrefetchPrompt,
+  prefetchCatalogueForConversation,
+} from './catalog-prefetch'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { triggerMatches } from '@/lib/automations/engine'
@@ -87,8 +91,6 @@ export async function dispatchInboundToAiReply(
         body: note,
       })
       if (error) {
-        // Assignment itself must still succeed even if notification delivery
-        // is temporarily unavailable.
         console.error('[ai auto-reply] handoff notification failed:', error)
       }
     }
@@ -151,8 +153,6 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Deterministic message responders win over the LLM, but only when
-    // an active automation ACTUALLY matches this inbound.
     const latestInbound = [...messages].reverse().find((m) => m.role === 'user')
     const { data: autoResponders, error: automationErr } = await db
       .from('automations')
@@ -191,14 +191,6 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Knowledge retrieval is tool-driven. This prevents duplicate retrieval
-    // and makes the Tools switches authoritative.
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'auto_reply',
-      knowledge: [],
-    })
-
     const permissions = await loadAgentToolPermissions(
       db,
       accountId,
@@ -213,6 +205,34 @@ export async function dispatchInboundToAiReply(
       config,
       permissions,
     })
+
+    let catalogueGrounding: string | null = null
+    if (permissions.search_catalog) {
+      const prefetch = await prefetchCatalogueForConversation({
+        db,
+        accountId,
+        messages,
+        limit: 5,
+      })
+      catalogueGrounding = cataloguePrefetchPrompt(prefetch)
+      if (prefetch.attempted) {
+        console.info('[ai auto-reply] catalogue prefetch:', {
+          conversationId,
+          query: prefetch.query,
+          count: prefetch.products.length,
+          names: prefetch.products.map((product) => product.name),
+        })
+      }
+    }
+
+    const baseSystemPrompt = buildSystemPrompt({
+      userPrompt: config.systemPrompt,
+      mode: 'auto_reply',
+      knowledge: [],
+    })
+    const systemPrompt = catalogueGrounding
+      ? `${baseSystemPrompt}\n\n${catalogueGrounding}`
+      : baseSystemPrompt
 
     console.info('[ai auto-reply] tools enabled:', {
       conversationId,
@@ -261,9 +281,6 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Reserve the single auto-reply slot before executing any queued side
-    // effect. Tool calls only prepare actions; no photo leaves the system
-    // until this atomic cap check succeeds.
     const { data: claimed, error: claimErr } = await db.rpc(
       'claim_ai_reply_slot',
       {

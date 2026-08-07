@@ -1,12 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getCalendarConfig, updateCalendarConfigRefreshToken } from '@/lib/eter/repo/calendar-config.repo'
+import {
+  getCalendarConfig,
+  setCalendarConfigActive,
+  updateCalendarConfigRefreshToken,
+} from '@/lib/eter/repo/calendar-config.repo'
 import { createBooking, getBooking, updateBooking } from '@/lib/eter/repo/bookings.repo'
 import {
   attachResultingBooking,
   resolvePendingAction,
   type PendingAction,
 } from '@/lib/eter/repo/pending-actions.repo'
+import { createAgentNotification } from '@/lib/eter/repo/notifications.repo'
 import { createAccountCalendarClient } from '@/lib/calendar/google/account-client'
+import { isRevokedGrantError } from '@/lib/calendar/google/client'
+import { loadAiConfig } from '@/lib/ai/config'
 import { requireString, requireIsoDate, optionalString, ToolInputError } from './parse-input'
 
 // ============================================================
@@ -102,6 +109,51 @@ function parseToolInput(action: PendingAction): ParsedInput {
   }
 }
 
+/**
+ * Google reported the account's refresh token as revoked/invalid
+ * (`isRevokedGrantError`) — the user disconnected the app in their
+ * Google Account, an admin revoked the OAuth client, or similar. This
+ * is not retryable and not a generic error: the connection needs to
+ * be re-established through a brand-new consent flow
+ * (`/api/calendar/google/authorize`). We flip `is_active` off so
+ * nothing else silently keeps trying to book through a dead
+ * connection, and — best-effort — tell whoever is configured to
+ * receive agent alerts. Errors from either step are logged, not
+ * thrown: the caller already has a real error to report (the revoked
+ * grant itself) and shouldn't lose it because the notification
+ * side-channel also failed.
+ */
+async function flagCalendarRevoked(db: SupabaseClient, accountId: string): Promise<void> {
+  try {
+    await setCalendarConfigActive(db, accountId, false)
+  } catch (err) {
+    console.error(
+      `[confirmPendingAction] failed to deactivate calendar_configs for account ${accountId} after a revoked Google grant:`,
+      err,
+    )
+  }
+
+  try {
+    const aiConfig = await loadAiConfig(db, accountId, { requireActive: false })
+    if (!aiConfig?.handoffAgentId) {
+      console.warn(
+        `[confirmPendingAction] Google Calendar revoked for account ${accountId}, but no handoff_agent_id is configured to notify.`,
+      )
+      return
+    }
+    await createAgentNotification(db, accountId, {
+      userId: aiConfig.handoffAgentId,
+      title: 'Ligação ao Google Calendar foi revogada',
+      body: 'O agente detectou que a autorização do Google Calendar foi revogada (token inválido). A marcação de reuniões foi desactivada automaticamente — é necessário voltar a ligar o calendário em Definições > Calendário.',
+    })
+  } catch (err) {
+    console.error(
+      `[confirmPendingAction] failed to notify admin about revoked Google Calendar grant for account ${accountId}:`,
+      err,
+    )
+  }
+}
+
 /** Confirm a pending proposal: atomically claim it, then perform the
  *  real Google Calendar mutation and write/patch the `bookings` row.
  *  Throws `PendingActionError` for anything that should stop the
@@ -138,18 +190,28 @@ export async function confirmPendingAction(
     )
   }
 
-  const calendar = await createAccountCalendarClient(config)
-  // Google rarely rotates the refresh token on exchange, but when it
-  // does, persist it immediately — otherwise every subsequent refresh
-  // for this account fails.
-  if (calendar.rotatedRefreshToken) {
-    await updateCalendarConfigRefreshToken(db, accountId, calendar.rotatedRefreshToken)
-  }
+  // Everything from here on can hit Google. A revoked/invalid refresh
+  // token (the account holder disconnected the app on Google's side)
+  // surfaces from ANY of createAccountCalendarClient / createEvent /
+  // updateEvent / deleteEvent — caught narrowly here so it flips
+  // calendar_configs.is_active off and notifies an admin instead of
+  // either throwing an opaque 502 up through the WhatsApp webhook or
+  // (worse) getting swallowed and leaving the agent silently unable
+  // to book anything with no one aware. Any other error propagates
+  // unchanged — this is not a generic try/catch.
+  try {
+    const calendar = await createAccountCalendarClient(config)
+    // Google rarely rotates the refresh token on exchange, but when it
+    // does, persist it immediately — otherwise every subsequent refresh
+    // for this account fails.
+    if (calendar.rotatedRefreshToken) {
+      await updateCalendarConfigRefreshToken(db, accountId, calendar.rotatedRefreshToken)
+    }
 
-  const input = parseToolInput(claimed)
+    const input = parseToolInput(claimed)
 
-  switch (input.tool) {
-    case 'book_meeting': {
+    switch (input.tool) {
+      case 'book_meeting': {
       const { contactId, startsAt, endsAt, service, notes } = input
       const event = await calendar.createEvent({
         summary: service || 'Reunião',
@@ -209,6 +271,16 @@ export async function confirmPendingAction(
       await attachResultingBooking(db, accountId, pendingActionId, updated.id)
       return { bookingId: updated.id }
     }
+    }
+  } catch (err) {
+    if (isRevokedGrantError(err)) {
+      await flagCalendarRevoked(db, accountId)
+      throw new PendingActionError(
+        `Google Calendar connection for account ${accountId} was revoked by the account holder — it has been deactivated and an admin has been notified. Reconnect via Definições > Calendário before confirming again.`,
+        'calendar_revoked',
+      )
+    }
+    throw err
   }
 }
 

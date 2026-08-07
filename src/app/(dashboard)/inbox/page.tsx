@@ -599,25 +599,34 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    // Same height source as dashboard-shell.tsx's root (2026-08-07,
-    // parte 16: `calc(100dvh + env(safe-area-inset-top))`, not bare
-    // `100dvh` — see its comment for why), minus `--header-height`
-    // (globals.css) for the header part — the *same* variable Header.tsx
-    // sizes itself with, instead of a hardcoded number that can go
-    // stale. Must track dashboard-shell.tsx's own formula exactly:
-    // `<main>` there gets its height for free from flexbox once the
-    // shell is sized correctly, but this panel can't rely on that same
-    // flex inheritance (see the `-m-4`/`-m-6` note below) and has to
-    // compute it explicitly — so it re-derives it from the same pieces
-    // rather than reading a shared variable, to keep the formula visibly
-    // in sync with the shell's rather than risking a second silent drift.
+    // Height: `calc(100% + 2rem)` (`+3rem` at `sm:`) — 100% of `<main>`'s
+    // own content box, plus back the padding (`p-4`/`sm:p-6` in
+    // dashboard-shell.tsx) that the `-m-4`/`sm:-m-6` below pulls this
+    // panel out into, so it still reaches every edge `<main>` actually
+    // has despite rendering edge-to-edge over the padding. `1rem`/
+    // `1.5rem` match Tailwind's `p-4`/`p-6` exactly (has to: this is
+    // literally undoing that padding, not an independent number).
     //
-    // This exact kind of drift already happened once before: this used
-    // to subtract a bare `3.5rem` for the header, which went stale the
-    // moment Header.tsx grew a `padding-top: env(safe-area-inset-top)`
-    // for the Dynamic Island. `--header-height` folds in that same
-    // `env()` term now, so the two can't diverge again.
-    <div className="-m-4 flex h-[calc(100dvh+env(safe-area-inset-top)-var(--header-height))] flex-col overflow-hidden sm:-m-6">
+    // 2026-08-07, parte 19 (conversation-screen rebuild): this used to
+    // be computed from raw viewport units instead — `100dvh` (or, for a
+    // while, a JS `visualViewport` reading) minus a `--header-height`
+    // custom property duplicating what Header.tsx's own rendered height
+    // adds up to. That's a *second* height calculation, independent
+    // from the one flexbox already performs for `<main>` in
+    // dashboard-shell.tsx (`flex-1` there, sized once from the shell's
+    // single `dvh`-based height) — two numbers that are *supposed* to
+    // always agree, computed two different ways, one JS/viewport-based
+    // and one CSS/flex-based. Every drift bug in this file's history
+    // (partes 9, 10, 13, 16) came from exactly that shape: something
+    // reading the viewport directly instead of just asking its own
+    // parent how tall it already is. `100%` has no such gap — it *is*
+    // `<main>`'s real rendered height, in the same layout pass, always;
+    // wherever the shell's height itself comes from (`dvh`, `env()`,
+    // whatever it needs to be) only has to be gotten right in the one
+    // place that owns it (dashboard-shell.tsx), and it flows down
+    // through ordinary CSS box inheritance from there — nothing in this
+    // file re-derives it.
+    <div className="-m-4 flex h-[calc(100%+2rem)] flex-col overflow-hidden sm:-m-6 sm:h-[calc(100%+3rem)]">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

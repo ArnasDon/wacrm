@@ -65,10 +65,10 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     // older phones), so this is a no-op there.
     //
     // `--header-content-height` (globals.css) is the ONE place this
-    // 3.5rem is defined — inbox/page.tsx's own height calc reads the
-    // same variable (via `--header-height`, which adds the safe-area
-    // padding on top) rather than duplicating the number, so the two
-    // can't drift out of sync the way they did before.
+    // 3.5rem is defined. Nothing else needs to duplicate it — pages
+    // below this header size themselves from `<main>`'s own rendered
+    // height (dashboard-shell.tsx), which already excludes whatever
+    // this header ends up measuring.
     <header
       className="flex min-h-[var(--header-content-height)] shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 pt-[env(safe-area-inset-top)] lg:px-6"
     >

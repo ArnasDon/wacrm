@@ -64,7 +64,7 @@ export async function GET(request: Request) {
     }
 
     const dataUrl = `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`
-    return new ImageResponse(
+    const rendered = new ImageResponse(
       React.createElement(
         'div',
         {
@@ -89,11 +89,25 @@ export async function GET(request: Request) {
       {
         width: 1200,
         height: 1200,
-        headers: {
-          'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-        },
       },
     )
+
+    // Do not return ImageResponse directly here. In standalone/next start
+    // deployments its streaming body can fail while Next pipes the response.
+    // Materialising the rendered PNG first gives Meta a normal byte response.
+    const converted = await rendered.arrayBuffer()
+    if (converted.byteLength <= 0 || converted.byteLength > MAX_IMAGE_BYTES) {
+      return new Response('Converted catalogue image is empty or too large.', { status: 502 })
+    }
+
+    return new Response(converted, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+        'Content-Length': String(converted.byteLength),
+      },
+    })
   } catch (error) {
     console.error('[catalog media proxy] failed:', error)
     return new Response('Unable to prepare catalogue image.', { status: 502 })

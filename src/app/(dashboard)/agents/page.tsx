@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart3, Bot, Database, Settings2, Sparkles } from 'lucide-react';
+import { BarChart3, Bot, Settings2, Sparkles, Wrench } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
-import { KnowledgeSources } from '@/components/agents/knowledge-sources';
+import { AgentTools } from '@/components/agents/agent-tools';
 import { AiConfig } from '@/components/settings/ai-config';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 
-type Tab = 'playground' | 'setup' | 'sources' | 'usage';
+type Tab = 'playground' | 'setup' | 'tools' | 'usage';
 
 export default function AgentsPage() {
   const { accountRole } = useAuth();
@@ -45,7 +45,7 @@ export default function AgentsPage() {
         </h1>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Configure o agente, escolha as fontes de conhecimento e teste as respostas antes de o utilizar na caixa de entrada.
+        Configure o agente, defina o conhecimento e as ferramentas permitidas, e teste as respostas antes de o utilizar na caixa de entrada.
       </p>
 
       {decided && (
@@ -59,10 +59,10 @@ export default function AgentsPage() {
               <Sparkles className="mr-1.5 h-4 w-4" /> Playground
             </TabsTrigger>
             <TabsTrigger value="setup">
-              <Settings2 className="mr-1.5 h-4 w-4" /> Configuração
+              <Settings2 className="mr-1.5 h-4 w-4" /> Configuração e conhecimento
             </TabsTrigger>
-            <TabsTrigger value="sources">
-              <Database className="mr-1.5 h-4 w-4" /> Fontes de conhecimento
+            <TabsTrigger value="tools">
+              <Wrench className="mr-1.5 h-4 w-4" /> Ferramentas
             </TabsTrigger>
             {canViewUsage && (
               <TabsTrigger value="usage">
@@ -79,8 +79,8 @@ export default function AgentsPage() {
             <AiConfig />
           </TabsContent>
 
-          <TabsContent value="sources" className="mt-4">
-            <KnowledgeSources />
+          <TabsContent value="tools" className="mt-4">
+            <AgentTools />
           </TabsContent>
 
           {canViewUsage && (

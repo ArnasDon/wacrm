@@ -8,6 +8,16 @@ import type {
 } from './types'
 
 const REQUEST_TIMEOUT_MS = 8_000
+const MAX_SEARCH_VARIANTS = 8
+
+// Common retail vocabulary. This is deliberately generic and can benefit every
+// tenant while account_id continues to isolate each business catalogue.
+const PRODUCT_SYNONYM_GROUPS = [
+  ['legging', 'leggings', 'colante', 'colantes', 'calca de treino', 'calcas de treino', 'calca fitness', 'calcas fitness', 'tights'],
+  ['sapatilha', 'sapatilhas', 'tenis', 'calcado desportivo', 'sapato desportivo'],
+  ['camisola', 'camisolas', 'camiseta', 'camisetas', 't-shirt', 't-shirts'],
+  ['calcoes', 'short', 'shorts'],
+] as const
 
 function valueAt(input: unknown, path: string | undefined): unknown {
   if (!path) return undefined
@@ -24,6 +34,50 @@ function text(value: unknown): string | null {
 function numberValue(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function buildSearchVariants(query: string): string[] {
+  const normalized = normalizeSearchText(query)
+  const variants = new Set<string>()
+  const add = (value: string) => {
+    const cleaned = normalizeSearchText(value)
+    if (cleaned.length >= 2) variants.add(cleaned)
+  }
+
+  add(query)
+
+  // Individual meaningful words make conversational queries such as
+  // "quanto custa uma legging de treino" searchable without requiring an
+  // exact sentence match in the catalogue.
+  normalized
+    .split(' ')
+    .filter((word) => word.length >= 3)
+    .forEach(add)
+
+  for (const group of PRODUCT_SYNONYM_GROUPS) {
+    const normalizedGroup = group.map(normalizeSearchText)
+    const matches = normalizedGroup.some(
+      (term) => normalized === term || normalized.includes(term) || term.includes(normalized),
+    )
+    if (matches) group.forEach(add)
+  }
+
+  return Array.from(variants).slice(0, MAX_SEARCH_VARIANTS)
+}
+
+function safePostgrestTerm(value: string): string {
+  // PostgREST .or() uses commas and parentheses as syntax. Strip them rather
+  // than allowing user text to alter the filter expression.
+  return value.replace(/[,%()]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function assertSafeExternalUrl(raw: string): URL {
@@ -113,12 +167,25 @@ async function searchInternal(
   accountId: string,
   input: CatalogSearchInput,
 ): Promise<CatalogProduct[]> {
+  const variants = buildSearchVariants(input.query)
+  if (variants.length === 0) return []
+
+  const filters = variants
+    .map(safePostgrestTerm)
+    .filter(Boolean)
+    .flatMap((term) => [
+      `name.ilike.%${term}%`,
+      `description.ilike.%${term}%`,
+      `category.ilike.%${term}%`,
+    ])
+    .join(',')
+
   const { data, error } = await db
     .from('catalog_products')
     .select('id, name, description, price, currency, image_url, product_url, category, stock_quantity')
     .eq('account_id', accountId)
     .eq('is_active', true)
-    .or(`name.ilike.%${input.query}%,description.ilike.%${input.query}%,category.ilike.%${input.query}%`)
+    .or(filters)
     .limit(input.limit)
   if (error || !data) return []
 
@@ -152,12 +219,22 @@ export async function searchCatalogues(
     .eq('is_active', true)
 
   const sources = (sourceRows ?? []) as CatalogSourceRow[]
+  const variants = buildSearchVariants(input.query)
+  const externalQueries = variants.length > 0 ? variants.slice(0, 4) : [input.query]
   const externalSettled = await Promise.allSettled(
-    sources.map((source) => searchExternalSource(source, input)),
+    sources.flatMap((source) =>
+      externalQueries.map((query) => searchExternalSource(source, { ...input, query })),
+    ),
   )
   const external = externalSettled.flatMap((result) =>
     result.status === 'fulfilled' ? result.value : [],
   )
 
-  return [...internal, ...external].slice(0, input.limit)
+  const unique = new Map<string, CatalogProduct>()
+  for (const product of [...internal, ...external]) {
+    const key = `${product.sourceName}:${product.id}`
+    if (!unique.has(key)) unique.set(key, product)
+  }
+
+  return Array.from(unique.values()).slice(0, input.limit)
 }

@@ -1,4 +1,5 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
+import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
 import { engineSendMedia } from '@/lib/flows/meta-send'
@@ -14,6 +15,7 @@ interface PendingProductSend {
   productRef: string
   name: string
   imageUrl: string
+  displayImageUrl: string
   caption: string
 }
 
@@ -219,10 +221,19 @@ export function createAutoReplyTools(args: {
         throw new Error('The product photograph must use HTTPS.')
       }
 
+      const directImageUrl = imageUrl.toString()
+      const deliveryImageUrl = buildCatalogueMediaProxyUrl(directImageUrl) ?? directImageUrl
+      if (deliveryImageUrl === directImageUrl && !process.env.NEXT_PUBLIC_SITE_URL) {
+        console.warn(
+          '[ai send_product] NEXT_PUBLIC_SITE_URL is unset; sending catalogue image directly to Meta.',
+        )
+      }
+
       pendingProductSends.push({
         productRef,
         name: product.name,
-        imageUrl: imageUrl.toString(),
+        imageUrl: deliveryImageUrl,
+        displayImageUrl: directImageUrl,
         caption: buildProductCaption(product),
       })
 
@@ -249,6 +260,13 @@ export function createAutoReplyTools(args: {
     dispatchPendingActions: async () => {
       let sent = 0
       for (const item of pendingProductSends.splice(0)) {
+        console.info('[ai send_product] sending product image:', {
+          productRef: item.productRef,
+          name: item.name,
+          deliveryUrl: item.imageUrl,
+          sourceUrl: item.displayImageUrl,
+        })
+
         const result = await engineSendMedia({
           accountId,
           userId: configOwnerUserId,
@@ -261,7 +279,7 @@ export function createAutoReplyTools(args: {
 
         const { error: enrichError } = await db
           .from('messages')
-          .update({ media_url: item.imageUrl, ai_generated: true })
+          .update({ media_url: item.displayImageUrl, ai_generated: true })
           .eq('conversation_id', conversationId)
           .eq('message_id', result.whatsapp_message_id)
         if (enrichError) {

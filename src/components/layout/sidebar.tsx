@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
-import { useSwipe } from "@/hooks/use-swipe";
 import {
   Bell,
   Bot,
@@ -110,11 +109,19 @@ interface SidebarProps {
   /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
   open?: boolean;
   onClose?: () => void;
+  /**
+   * Forwarded from DashboardShell so its drag gesture (useDrawerGesture)
+   * can drive this drawer's transform/opacity directly during a touch
+   * drag — see dashboard-shell.tsx. Both optional so Sidebar still
+   * renders (just without drag support) if ever used without the shell.
+   */
+  asideRef?: RefObject<HTMLElement | null>;
+  backdropRef?: RefObject<HTMLElement | null>;
 }
 
 import { useTranslations } from "next-intl";
 
-export function Sidebar({ open = false, onClose }: SidebarProps) {
+export function Sidebar({ open = false, onClose, asideRef, backdropRef }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
@@ -157,19 +164,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     };
   }, [open, onClose]);
 
-  // Swipe-left anywhere on the open drawer to close it — no edge
-  // constraint needed here (unlike the shell's open gesture) since the
-  // drawer is the only thing occupying that screen region while open.
-  const swipeHandlers = useSwipe({
-    onSwipeLeft: () => onClose?.(),
-  });
-
   return (
     <>
       {/* Backdrop — only exists on mobile and only when open. Clicking
           it closes the drawer. Hidden from lg+ since the sidebar is
-          part of the main flex row there. */}
+          part of the main flex row there. These CSS classes are the
+          "settled" state (and the transition for any non-gesture
+          open/close — hamburger button, ESC, route change); while a
+          drag is in progress, useDrawerGesture (via `backdropRef`)
+          drives `style.opacity` directly instead, then hands back
+          control here once its own release animation finishes. */}
       <button
+        ref={backdropRef as RefObject<HTMLButtonElement>}
         type="button"
         aria-label={t("closeMenu")}
         onClick={onClose}
@@ -182,8 +188,12 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       />
 
       <aside
+        ref={asideRef as RefObject<HTMLElement>}
         className={cn(
-          // Mobile: fixed drawer that slides in from the left.
+          // Mobile: fixed drawer that slides in from the left. Same
+          // "settled state + non-gesture transition" story as the
+          // backdrop above — useDrawerGesture drives `style.transform`
+          // directly during an active drag via `asideRef`.
           "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border bg-card",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
@@ -191,7 +201,6 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
         )}
         aria-label="Primary"
-        {...swipeHandlers}
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible.

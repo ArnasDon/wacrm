@@ -1,22 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
-import { useSwipe } from "@/hooks/use-swipe";
-
-// Width of the left-edge activation band for the "swipe to open" sidebar
-// gesture. Deliberately narrow — real page content starts at 16-24px in
-// from the edge (the mobile `p-4` on `<main>` below), so this band
-// never overlaps a horizontally-scrollable card row, the dashboard's
-// weekly agenda, or a Pipeline column drag handle; those gestures start
-// well past this. Matches common edge-swipe conventions (iOS's own
-// system back-gesture uses a similarly narrow band, for the same
-// non-interference reason).
-const EDGE_SWIPE_ZONE_PX = 24;
+import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -31,17 +21,23 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
-  // Swipe-from-the-left-edge to open, mirroring native messaging apps.
-  // Closing is the drawer's own gesture (see Sidebar) since it only
-  // makes sense to attach once the drawer exists in the DOM. No-op
-  // (and no visual effect either way — the drawer is CSS-driven to
-  // always show on lg+) if it fires on desktop; touch events simply
-  // don't occur there on a mouse-only device.
-  const swipeHandlers = useSwipe({
-    edgeZonePx: EDGE_SWIPE_ZONE_PX,
-    onSwipeRight: () => {
-      if (!sidebarOpen) setSidebarOpen(true);
-    },
+  // Drag-to-open/close the mobile drawer, tracking the finger live —
+  // see use-drawer-gesture.ts. Needs refs to the shell (where the touch
+  // listeners live — it has to span the whole screen so an edge-swipe
+  // works from any page) and to the drawer/backdrop themselves (Sidebar
+  // forwards its own internal elements up so this hook can drive their
+  // transform/opacity directly during the gesture). No-op on desktop —
+  // touch events simply don't occur there on a mouse-only device, and
+  // the drawer is CSS-driven to always show on lg+ regardless.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const backdropRef = useRef<HTMLButtonElement>(null);
+  useDrawerGesture({
+    open: sidebarOpen,
+    onOpenChange: setSidebarOpen,
+    containerRef: shellRef,
+    panelRef: asideRef,
+    backdropRef,
   });
 
   useEffect(() => {
@@ -64,14 +60,22 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
+    // `touch-pan-y` tells the browser vertical scroll is still native
+    // (no latency added there) while leaving horizontal gestures for
+    // the JS listeners in useDrawerGesture to interpret.
     <div
-      className="flex h-screen overflow-hidden bg-background"
-      {...swipeHandlers}
+      ref={shellRef}
+      className="flex h-screen touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
-      <Sidebar open={sidebarOpen} onClose={closeSidebar} />
+      <Sidebar
+        open={sidebarOpen}
+        onClose={closeSidebar}
+        asideRef={asideRef}
+        backdropRef={backdropRef}
+      />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
         {/* Thinner horizontal padding on mobile so cards have room to breathe. */}

@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 14) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 15) — inclui o hash exato.
 
 ## O que está funcionando
 
@@ -59,6 +59,17 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 15)** — ajuste fino, sem tocar em estrutura: padding do composer reduzido; badge de diagnóstico confirmado já removido:
+
+Usuário confirmou que a correção da parte 14 resolveu o bug do teclado (composer não sobe mais pro topo) — pediu explicitamente para **não mexer** em `visualViewport`/`--app-height`/estrutura/desktop, e só fazer dois ajustes pontuais: (1) reduzir o padding vertical do composer, que estava um pouco alto com espaço vazio sobrando embaixo dele; (2) remover o badge verde de diagnóstico, que ainda apareceu sobrepondo os ícones do topo.
+
+1. **Badge:** já tinha sido removido do código na parte 14 (`viewport-debug-badge.tsx` deletado, import/uso tirados de `dashboard-shell.tsx`) e esse commit já estava em produção (`https://crmronaldomeira.com` respondendo 200 antes desta sessão). Se o usuário ainda viu o badge, foi cache do PWA instalado (WKWebView standalone pode segurar o bundle JS anterior até o app ser relançado) — nada a corrigir no código; resolve sozinho ao reabrir o app.
+2. **Composer:** `message-composer.tsx` — padding externo trocado de `p-3` (12px em todos os lados) pra `px-3 py-2` (8px vertical, 12px horizontal mantido), e a fórmula de `padding-bottom` que soma a safe-area trocada de `calc(0.75rem+env(safe-area-inset-bottom))` pra `calc(0.5rem+env(safe-area-inset-bottom))` — mesmo mecanismo (a safe-area continua sendo somada, não removida), só a base reduzida. Nenhum outro arquivo tocado nesta parte.
+
+**Validação:** `tsc`, `eslint` (zero erros), `vitest run` (652/655, mesma base pré-existente), `next build` limpo. Testado visualmente via Chrome (desktop, conversa aberta) — composer com aparência confortável, botões no tamanho normal, sem badge visível. **Comportamento em safe-area real do iPhone (o quanto o vão realmente diminuiu) só é validável no dispositivo físico.**
+
+---
 
 **Sessão de 2026-08-07 (parte 14)** — causa raiz real confirmada e revertida: `--app-height`/`visualViewport` (parte 13) causava os dois bugs; voltou pra `100dvh` puro:
 
@@ -345,9 +356,9 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** A parte 14 reverteu `--app-height`/`visualViewport` (que os diagnósticos da parte 13 mostraram ser a causa dos dois bugs mais recentes) de volta pra `100dvh` puro. Testar especificamente: (a) a faixa preta embaixo sumiu com teclado fechado; (b) abrir o teclado no composer — ele deve ficar imediatamente acima do teclado, sem espaço vazio, sem subir pro topo; (c) abrir/fechar o teclado várias vezes seguidas sem deslocamento acumulado; (d) rolar a conversa — header e composer continuam fixos, só as mensagens rolam.
-2. **Se a faixa preta OU o bug do teclado persistirem mesmo depois desta reversão: mandar screenshot/vídeo real.** Depois de 6 rodadas (partes 8-14) sem conseguir fechar isso só por revisão de código remota, não continuar tentando mais hipóteses às cegas — mudar de estratégia.
-3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-14 acima.
+1. **Validar em iPhone físico standalone — prioridade máxima absoluta.** Teclado (parte 14) já foi confirmado corrigido pelo usuário — preservar, não reabrir. Falta confirmar: (a) o vão preto embaixo do composer diminuiu/sumiu depois do ajuste de padding da parte 15; (b) o composer continua confortável de tocar/digitar (não "achatado"); (c) o badge de diagnóstico não aparece mais (se ainda aparecer depois de relançar o app do zero, aí sim investigar — o código já não o renderiza desde a parte 14).
+2. **Se o vão residual persistir mesmo depois do ajuste de padding: mandar screenshot real antes de tentar mais um ajuste.** Depois de 7 rodadas (partes 8-15), evidência visual deixou de ser opcional.
+3. Revisar o resto da UX mobile completa em standalone real (header sem sobrepor a Dynamic Island, arraste do menu lateral, gravação de áudio por pressionar-e-segurar) — histórico completo de tentativas nas partes 8-15 acima.
 4. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
 5. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
 6. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).

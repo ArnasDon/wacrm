@@ -575,14 +575,16 @@ export function MessageComposer({
   const micActive = micPhase !== "idle";
 
   return (
-    // The bottom padding below overrides just the bottom side of `p-3`: the same
-    // 12px as the other three sides, plus the device's safe-area inset
-    // (home indicator / gesture bar) on top of that. `env()` resolves to
-    // 0 on devices without one (desktop, older phones), so this is a
-    // no-op there — the bar only moves up where something would actually
-    // overlap it. Requires `viewport-fit=cover` (see app/layout.tsx),
-    // otherwise iOS never reports a nonzero inset.
-    <div className="border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+    // `px-3 py-2` (not `p-3`) — the bar was a bit taller than it needed
+    // to be, leaving more empty padding above the safe-area buffer than
+    // the actual input row needed (2026-08-07, parte 15 fine-tune). The
+    // bottom padding overrides just that side: the same 0.5rem as the
+    // other three, plus the device's safe-area inset (home indicator /
+    // gesture bar) on top of that — unchanged mechanism, just a smaller
+    // base amount. `env()` resolves to 0 on devices without one (desktop,
+    // older phones), so this is a no-op there. Requires `viewport-fit=cover`
+    // (see app/layout.tsx), otherwise iOS never reports a nonzero inset.
+    <div className="border-t border-border bg-card px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote

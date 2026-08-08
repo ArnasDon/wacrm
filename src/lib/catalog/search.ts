@@ -89,6 +89,11 @@ function safeIdentifier(value: string | undefined, fallback?: string): string {
   return candidate
 }
 
+function optionalIdentifier(value: string | undefined): string | null {
+  if (!value?.trim()) return null
+  return safeIdentifier(value)
+}
+
 function assertSafeExternalUrl(raw: string): URL {
   const url = new URL(raw)
   if (url.protocol !== 'https:') throw new Error('External catalogue URL must use HTTPS.')
@@ -124,7 +129,7 @@ function normalizeExternalProduct(
   index: number,
 ): CatalogProduct | null {
   const name = text(firstValueAt(item, [mapping.name, 'name', 'title', 'product_name']))
-  const price = numberValue(firstValueAt(item, [mapping.price, 'price', 'amount', 'unit_price', 'base_price_mt']))
+  const price = numberValue(firstValueAt(item, [mapping.price, 'price', 'price_mt', 'base_price', 'amount', 'unit_price', 'base_price_mt']))
   if (!name || price === null || price < 0) return null
 
   return {
@@ -135,7 +140,7 @@ function normalizeExternalProduct(
     currency: text(firstValueAt(item, [mapping.currency, 'currency', 'currency_code'])) ?? 'MZN',
     imageUrl: text(firstValueAt(item, [mapping.imageUrl, 'image_url', 'imageUrl', 'thumbnail', 'image', 'images.0.url', 'images.0'])),
     productUrl: text(firstValueAt(item, [mapping.productUrl, 'product_url', 'productUrl', 'url', 'link'])),
-    category: text(firstValueAt(item, [mapping.category, 'category.name', 'category', 'type'])),
+    category: text(firstValueAt(item, [mapping.category, 'category.name', 'category', 'type', 'product_type'])),
     stockQuantity: numberValue(firstValueAt(item, [mapping.stockQuantity, 'stock_quantity', 'stockQuantity', 'stock', 'quantity', 'current_stock'])),
     sourceName: source.name,
   }
@@ -145,12 +150,12 @@ function catalogTableMapping(mapping: ExternalFieldMapping): ExternalFieldMappin
   return {
     id: mapping.catalogId || mapping.id,
     name: mapping.catalogName || mapping.name,
-    description: mapping.catalogDescription || mapping.description,
-    price: mapping.catalogPrice || mapping.price,
-    currency: mapping.catalogCurrency || mapping.currency,
-    imageUrl: mapping.catalogImageUrl || mapping.imageUrl,
-    productUrl: mapping.catalogProductUrl || mapping.productUrl,
-    category: mapping.catalogCategory || mapping.category,
+    description: mapping.catalogDescription,
+    price: mapping.catalogPrice,
+    currency: mapping.catalogCurrency,
+    imageUrl: mapping.catalogImageUrl,
+    productUrl: mapping.catalogProductUrl,
+    category: mapping.catalogCategory,
     searchColumns: mapping.catalogSearchColumns,
     activeColumn: mapping.catalogActiveColumn,
     publishedColumn: mapping.catalogPublishedColumn,
@@ -270,17 +275,24 @@ async function searchExternalSupabaseSource(
     global: { headers: { 'X-WACRM-Source': source.id } },
   })
 
+  const requiredColumns = [
+    safeIdentifier(mapping.id, 'id'),
+    safeIdentifier(mapping.name, 'name'),
+    safeIdentifier(mapping.price, 'price'),
+  ]
+  const optionalColumns = [
+    optionalIdentifier(mapping.description),
+    optionalIdentifier(mapping.currency),
+    optionalIdentifier(mapping.imageUrl),
+    optionalIdentifier(mapping.productUrl),
+    optionalIdentifier(mapping.category),
+    optionalIdentifier(mapping.stockQuantity),
+  ]
   const selectColumns = Array.from(new Set([
-    mapping.id || 'id',
-    mapping.name || 'name',
-    mapping.description || 'description',
-    mapping.price || 'price',
-    mapping.currency || 'currency',
-    mapping.imageUrl || 'image_url',
-    mapping.productUrl || 'product_url',
-    mapping.category || 'category',
-    mapping.stockQuantity || 'stock_quantity',
-  ].filter(Boolean).map((column) => safeIdentifier(column)))).join(',')
+    ...requiredColumns,
+    ...searchColumns,
+    ...optionalColumns.filter((column): column is string => Boolean(column)),
+  ])).join(',')
 
   let query = client.from(table).select(selectColumns)
   if (mapping.activeColumn) query = query.eq(safeIdentifier(mapping.activeColumn), true)
@@ -308,11 +320,18 @@ async function searchExternalSupabaseSource(
     const variantsTable = safeIdentifier(mapping.variantsTable)
     const variantId = safeIdentifier(mapping.variantId, 'id')
     const variantProductId = safeIdentifier(mapping.variantProductId, 'product_id')
-    const variantSize = safeIdentifier(mapping.variantSize, 'size')
-    const variantColor = safeIdentifier(mapping.variantColor, 'color')
-    const variantStock = safeIdentifier(mapping.variantStock, 'stock_quantity')
-    const variantImageUrl = mapping.variantImageUrl ? safeIdentifier(mapping.variantImageUrl) : null
-    const variantColumns = Array.from(new Set([variantId, variantProductId, variantSize, variantColor, variantStock, variantImageUrl].filter((value): value is string => Boolean(value)))).join(',')
+    const variantSize = optionalIdentifier(mapping.variantSize)
+    const variantColor = optionalIdentifier(mapping.variantColor)
+    const variantStock = optionalIdentifier(mapping.variantStock)
+    const variantImageUrl = optionalIdentifier(mapping.variantImageUrl)
+    const variantColumns = Array.from(new Set([
+      variantId,
+      variantProductId,
+      variantSize,
+      variantColor,
+      variantStock,
+      variantImageUrl,
+    ].filter((value): value is string => Boolean(value)))).join(',')
     const productIds = products.map((product) => product.id)
 
     let variantsQuery = client.from(variantsTable).select(variantColumns).in(variantProductId, productIds)
@@ -337,9 +356,9 @@ async function searchExternalSupabaseSource(
         if (!productId) continue
         const variant: CatalogProductVariant = {
           id: String(item[variantId] ?? `${productId}:${variantsByProduct.get(productId)?.length ?? 0}`),
-          size: text(item[variantSize]),
-          color: text(item[variantColor]),
-          stockQuantity: numberValue(item[variantStock]),
+          size: variantSize ? text(item[variantSize]) : null,
+          color: variantColor ? text(item[variantColor]) : null,
+          stockQuantity: variantStock ? numberValue(item[variantStock]) : null,
           imageUrl: variantImageUrl ? text(item[variantImageUrl]) : null,
         }
         const current = variantsByProduct.get(productId) ?? []

@@ -2,7 +2,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
-import { engineSendMedia } from '@/lib/flows/meta-send'
+import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
 import type { AgentToolKey } from '../tool-permissions'
 import type {
@@ -48,7 +48,7 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. For discovery, browsing or comparison requests, set visual=true so the server presents up to three products as visual WhatsApp product cards instead of making you write a numbered text list. For a precise lookup or when you only need data, omit visual or set it false. When the customer selected an item from prior context, search the exact selected product name rather than a number.',
+    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server presents up to three products with photographs and clickable selection buttons. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -66,7 +66,7 @@ const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
       visual: {
         type: 'boolean',
         description:
-          'Set true when the customer wants to browse, compare or see several product options. The server will send visual product cards with photo and price.',
+          'Optional. Defaults to true. Set false only for a precise lookup that must not present browsing cards to the customer.',
       },
     },
     required: ['query'],
@@ -120,7 +120,7 @@ function parseSearchInput(input: Record<string, unknown>) {
   return {
     query,
     limit: Math.min(5, Math.max(1, requestedLimit)),
-    visual: input.visual === true,
+    visual: input.visual !== false,
   }
 }
 
@@ -165,7 +165,7 @@ function buildProductCaption(product: CatalogProduct, visualCard = false): strin
     )
   }
   if (visualCard) {
-    parts.push('Responda directamente a esta fotografia se quiser este produto.')
+    parts.push('Escolha este produto no botão abaixo.')
   }
   return parts.join('\n').slice(0, 1024)
 }
@@ -193,6 +193,14 @@ function buildPendingProduct(
     displayImageUrl: directImageUrl,
     caption: buildProductCaption(product, visualCard),
   }
+}
+
+function compactButtonTitle(name: string, index: number): string {
+  const cleaned = name.replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= 20) return cleaned
+  const prefix = `Opção ${index + 1}: `
+  const available = Math.max(1, 20 - prefix.length)
+  return `${prefix}${cleaned.slice(0, available)}`.slice(0, 20)
 }
 
 export function createAutoReplyTools(args: {
@@ -282,7 +290,7 @@ export function createAutoReplyTools(args: {
         found: referencedProducts.length > 0,
         visual_queued: visualQueued,
         instruction: visualQueued
-          ? 'The server queued visual WhatsApp product cards. Do not repeat these products as a numbered list and do not ask the customer to type a number. Tell them briefly that they can reply directly to the product photograph they prefer.'
+          ? 'The server queued visual WhatsApp product cards and clickable selection buttons. Do not repeat product names or prices in the final text, do not make a numbered list, and do not ask the customer to type a number or product name. Reply only with a very short introduction such as "Veja estas opções:".'
           : 'Only quote prices and availability returned here. To send one photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
       })
     }
@@ -357,6 +365,22 @@ export function createAutoReplyTools(args: {
               enrichError.message,
             )
           }
+          sent += 1
+        }
+
+        if (gallery.items.length > 0) {
+          await engineSendInteractiveButtons({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            bodyText: 'Qual destas opções prefere?',
+            footerText: 'Toque numa opção para continuar.',
+            buttons: gallery.items.map((item, index) => ({
+              id: `product:${item.productRef}`,
+              title: compactButtonTitle(item.name, index),
+            })),
+          })
           sent += 1
         }
       }

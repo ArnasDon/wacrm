@@ -14,9 +14,13 @@ const NUMBER_SELECTION_RE = /^\s*(\d{1,2})\s*[.!?]?\s*$/
 const CATALOGUE_CONTEXT_RE =
   /\b(cat[aá]logo|produto|produtos|pre[cç]o|pre[cç]os|stock|estoque|dispon[ií]vel|disponibilidade|modelo|modelos|op[cç][aã]o|op[cç][oõ]es|foto|imagem)\b/i
 
+const PHOTO_CHOICE_RE =
+  /\b(foto|fotografia|imagem|envio|enviar|envie|manda|mandar|mostra|mostrar)\b/i
+
 interface NumberedSelection {
   number: number
   productName: string
+  photoChoice: boolean
 }
 
 function cleanNumberedProductLabel(value: string): string {
@@ -56,7 +60,13 @@ function resolveNumberedSelection(messages: ChatMessage[]): NumberedSelection | 
     if (message.role !== 'assistant') continue
     const products = numberedProducts(message.content)
     const productName = products.get(number)
-    if (productName) return { number, productName }
+    if (productName) {
+      return {
+        number,
+        productName,
+        photoChoice: PHOTO_CHOICE_RE.test(message.content),
+      }
+    }
   }
 
   return null
@@ -103,8 +113,6 @@ function candidateQueries(messages: ChatMessage[]): string[] {
     if (queries.length >= 3) break
   }
 
-  // If every recent user message was only a continuation, retain the latest
-  // one as a last-resort query rather than returning an empty list.
   if (queries.length === 0 && userMessages[0]) queries.push(userMessages[0])
   return queries
 }
@@ -154,7 +162,14 @@ export function cataloguePrefetchPrompt(result: CataloguePrefetchResult): string
         `The customer's latest numeric reply selected option ${result.selection.number} from the most recent numbered product list.`,
         `The selected product is exactly: ${JSON.stringify(result.selection.productName)}.`,
         'Keep this selection fixed. Do not reinterpret the number as a new catalogue search and do not fall back to an older numbered list.',
-        'If the customer wants the photograph, call search_catalog with this exact product name, then call send_product with the returned product_ref that has a photograph.',
+        ...(result.selection.photoChoice
+          ? [
+              'The preceding assistant message explicitly invited the customer to choose a product photograph by number. Therefore this numeric selection is already a request to send that selected product photograph.',
+              'Do not ask for confirmation. Call search_catalog with the exact selected product name and then call send_product with the best exact-name result that has a photograph.',
+            ]
+          : [
+              'If the customer wants the photograph, call search_catalog with this exact product name, then call send_product with the returned product_ref that has a photograph.',
+            ]),
       ]
     : []
 

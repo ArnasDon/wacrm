@@ -48,7 +48,7 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server presents up to three products with photographs and clickable selection buttons. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
+    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server presents up to three products with photographs and a selection action attached immediately to each product. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -191,7 +191,7 @@ function buildProductCaption(product: CatalogProduct, visualCard = false): strin
     )
   }
   if (visualCard) {
-    parts.push('Escolha este produto no botão abaixo.')
+    parts.push('Seleccione este produto abaixo para ver os detalhes.')
   }
   return parts.join('\n').slice(0, 1024)
 }
@@ -340,7 +340,7 @@ export function createAutoReplyTools(args: {
         found: referencedProducts.length > 0,
         visual_queued: visualQueued,
         instruction: visualQueued
-          ? 'The server queued visual WhatsApp product cards and clickable selection buttons. Do not repeat product names or prices in the final text, do not make a numbered list, and do not ask the customer to type a number or product name. Reply only with a very short introduction such as "Veja estas opções:".'
+          ? 'The server queued a visual WhatsApp product selection. Each photograph, product information and its own selection button will be delivered together in sequence. Do not repeat product names or prices in the final text, do not make a numbered list, and do not ask the customer to type a number or product name. Reply only with a very short introduction such as "Veja estas opções:".'
           : 'Only quote prices and availability returned here. To send one photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
       })
     }
@@ -392,8 +392,12 @@ export function createAutoReplyTools(args: {
     dispatchPendingActions: async () => {
       let sent = 0
 
+      // WhatsApp does not visually bind a later multi-button message to the
+      // media messages that precede it. Keep each product atomic instead:
+      // image/caption -> that product's single selection button -> next item.
+      // Awaiting every send also preserves the intended ordering end-to-end.
       for (const gallery of pendingProductGalleries.splice(0)) {
-        for (const item of gallery.items) {
+        for (const [index, item] of gallery.items.entries()) {
           const result = await engineSendMedia({
             accountId,
             userId: configOwnerUserId,
@@ -416,20 +420,20 @@ export function createAutoReplyTools(args: {
             )
           }
           sent += 1
-        }
 
-        if (gallery.items.length > 0) {
           await engineSendInteractiveButtons({
             accountId,
             userId: configOwnerUserId,
             conversationId,
             contactId,
-            bodyText: 'Qual destas opções prefere?',
-            footerText: 'Toque numa opção para continuar.',
-            buttons: gallery.items.map((item, index) => ({
-              id: `product:${item.productRef}`,
-              title: compactButtonTitle(item.name, index),
-            })),
+            bodyText: `Seleccionar ${item.name}`.slice(0, 1024),
+            footerText: 'Toque para ver detalhes, tamanhos e cores.',
+            buttons: [
+              {
+                id: `product:${item.productRef}`,
+                title: compactButtonTitle(item.name, index),
+              },
+            ],
           })
           sent += 1
         }

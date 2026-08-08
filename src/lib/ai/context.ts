@@ -8,13 +8,17 @@ interface DbMessage {
 }
 
 /**
- * Fetch the last N text messages of a conversation and map them to the
+ * Fetch the last N conversational messages and map them to the
  * provider-neutral chat shape. Customer messages become `user`; agent
- * and bot messages become `assistant`. Non-text messages (media,
- * templates, interactive) are excluded — they carry no text to model.
+ * and bot messages become `assistant`.
  *
- * Ordered oldest-first (chronological) so the transcript reads
- * naturally and the most recent customer message lands last.
+ * We intentionally include any persisted message that has content_text,
+ * not only content_type='text'. WhatsApp interactive button/list replies
+ * and media captions carry useful conversational text and must remain in
+ * context so a tap on a product can continue the same sales conversation.
+ *
+ * Ordered oldest-first (chronological) so the transcript reads naturally
+ * and the most recent customer message lands last.
  */
 export async function buildConversationContext(
   db: WacrmSupabaseClient,
@@ -25,7 +29,7 @@ export async function buildConversationContext(
     .from('messages')
     .select('sender_type, content_text')
     .eq('conversation_id', conversationId)
-    .eq('content_type', 'text')
+    .not('content_text', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit)
 

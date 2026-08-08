@@ -139,8 +139,19 @@ export function MessageActions({
        *  Default `min-width: auto` lets content (a long quote preview,
        *  an unbroken URL) push past the cap and shove the row past
        *  100%, which used to bleed across into the contact-sidebar
-       *  area. See issue #165. */}
-      <div className="group/actions relative min-w-0 max-w-[75%]">
+       *  area. See issue #165.
+       *
+       *  `select-none [-webkit-touch-callout:none]`: message text is
+       *  selectable by default, and on iOS a long-press on selectable
+       *  text starts the native text-selection gesture (magnifier +
+       *  selection handles) instead of firing `contextmenu` — the two
+       *  gestures compete and selection usually wins, so the menu
+       *  above never opened from a long-press. Disabling selection/
+       *  callout here removes that competing gesture so long-press
+       *  reliably reaches `onContextMenu` on the row. "Copiar" still
+       *  works — it copies `content_text` via the Clipboard API, not
+       *  a native text selection. */}
+      <div className="group/actions relative min-w-0 max-w-[75%] select-none [-webkit-touch-callout:none]">
         {children}
       <div
         data-touch-open={touchOpen || pickerOpen || menuOpen ? "true" : undefined}

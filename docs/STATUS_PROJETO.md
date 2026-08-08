@@ -60,6 +60,21 @@
 
 ## Última alteração realizada
 
+**Sessão de 2026-08-07 (parte 33)** — corrige toque-e-segure não abrindo o menu de apagar/encaminhar no iPhone: a seleção nativa de texto competia com `contextmenu`:
+
+Usuário reportou que apertar e segurar numa mensagem só selecionava o texto (comportamento nativo de seleção do iOS), em vez de abrir o menu de contexto (apagar/encaminhar/copiar) implementado nas partes anteriores. O menu em si (`message-actions.tsx`) já existia e funcionava — o gatilho é que nunca disparava de forma confiável no iOS.
+
+**Causa:** texto de mensagem é selecionável por padrão. No iOS, um toque-e-segure em texto selecionável inicia o gesto nativo de seleção (lupa + alças de seleção) — que compete com o `contextmenu` que o WebKit também dispara em long-press, e a seleção geralmente ganha essa corrida, então o menu nunca abria.
+
+**Correção:** `select-none [-webkit-touch-callout:none]` na div que envolve a bolha da mensagem em `message-actions.tsx` (a mesma que já tinha `onContextMenu`). Remove o gesto concorrente — o toque-e-segure passa a cair direto no `contextmenu`. "Copiar texto" continua funcionando normalmente (usa `navigator.clipboard.writeText`, não depende de seleção nativa).
+
+**Arquivos alterados:** `src/components/inbox/message-actions.tsx` (uma classe CSS).
+**Arquivos NÃO alterados:** toda a lógica de apagar/encaminhar/menu já existente, `message-thread.tsx`, backend, banco.
+
+**Validação:** `tsc` (zero erros), `eslint` (mesmo 1 erro pré-existente e não relacionado), `vitest run` (655/655), `next build` limpo. **Comportamento real de toque-e-segure no iPhone só é validável no dispositivo físico.**
+
+---
+
 **Sessão de 2026-08-07 (parte 32)** — remove o badge de diagnóstico agora que o bug do teclado está confirmado resolvido em produção:
 
 Usuário confirmou no dispositivo físico que o header/mensagens não somem mais com o teclado aberto (parte 31). O badge (`viewport-debug-badge.tsx`, introduzido na parte 25) cumpriu seu papel — não tem mais função e ficava visível na tela (texto lima sobreposto no topo) pra qualquer uso do app, além de rodar um `setInterval` de 1s desnecessário.

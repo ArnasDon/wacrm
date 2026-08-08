@@ -19,6 +19,9 @@
       }
     ],
     "paths": {
+      "@/components/inbox/message-thread": [
+        "./src/components/inbox/message-thread-reset-aware.tsx"
+      ],
       "@/*": ["./src/*"]
     }
   },

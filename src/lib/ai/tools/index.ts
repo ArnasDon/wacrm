@@ -142,12 +142,38 @@ function rankCatalogueProducts(products: CatalogProduct[], query: string): Catal
       if (normalizedName === normalizedQuery) score += 100
       else if (normalizedName.startsWith(normalizedQuery)) score += 60
       else if (normalizedName.includes(normalizedQuery)) score += 30
-      if (product.imageUrl) score += 20
+      if (resolveProductImage(product)) score += 20
       if (product.stockQuantity !== null && product.stockQuantity > 0) score += 5
       return { product, index, score }
     })
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map(({ product }) => product)
+}
+
+function resolveProductImage(product: CatalogProduct): {
+  url: string
+  source: 'product' | 'variant'
+} | null {
+  const candidates: Array<{ url: string | null | undefined; source: 'product' | 'variant' }> = [
+    { url: product.imageUrl, source: 'product' },
+    ...(product.variants ?? []).map((variant) => ({
+      url: variant.imageUrl,
+      source: 'variant' as const,
+    })),
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate.url) continue
+    try {
+      const parsed = new URL(candidate.url)
+      if (parsed.protocol === 'https:') {
+        return { url: parsed.toString(), source: candidate.source }
+      }
+    } catch {
+      // Ignore malformed catalogue media URLs and continue to the next candidate.
+    }
+  }
+  return null
 }
 
 function buildProductCaption(product: CatalogProduct, visualCard = false): string {
@@ -175,17 +201,29 @@ function buildPendingProduct(
   product: CatalogProduct,
   visualCard = false,
 ): PendingProductSend | null {
-  if (!product.imageUrl) return null
-  let imageUrl: URL
-  try {
-    imageUrl = new URL(product.imageUrl)
-  } catch {
+  const resolvedImage = resolveProductImage(product)
+  if (!resolvedImage) {
+    console.info('[ai product gallery] no valid image resolved:', {
+      productRef,
+      name: product.name,
+      productImageUrl: product.imageUrl,
+      variantImageUrls: (product.variants ?? [])
+        .map((variant) => variant.imageUrl)
+        .filter(Boolean),
+    })
     return null
   }
-  if (imageUrl.protocol !== 'https:') return null
 
-  const directImageUrl = imageUrl.toString()
+  const directImageUrl = resolvedImage.url
   const deliveryImageUrl = buildCatalogueMediaProxyUrl(directImageUrl) ?? directImageUrl
+
+  console.info('[ai product gallery] image resolved:', {
+    productRef,
+    name: product.name,
+    source: resolvedImage.source,
+    imageUrl: directImageUrl,
+  })
+
   return {
     productRef,
     name: product.name,
@@ -263,6 +301,18 @@ export function createAutoReplyTools(args: {
         availableProducts.set(productRef, product)
         return { ...product, product_ref: productRef }
       })
+
+      console.info('[ai product gallery] catalogue candidates:',
+        referencedProducts.slice(0, 5).map((product) => ({
+          productRef: product.product_ref,
+          name: product.name,
+          productImageUrl: product.imageUrl,
+          variantImageUrls: (product.variants ?? [])
+            .map((variant) => variant.imageUrl)
+            .filter(Boolean),
+          resolvedImage: resolveProductImage(product)?.url ?? null,
+        })),
+      )
 
       let visualQueued = false
       if (search.visual && referencedProducts.length > 0) {

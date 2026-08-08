@@ -23,18 +23,28 @@ export interface ExportableContact {
 
 const CSV_HEADERS = ["Nome", "Telefone", "Email", "Empresa", "Tags", "CriadoEm"];
 
+/** Field delimiter. `;`, not the RFC 4180 default `,` — Excel/Sheets
+ *  under a pt-BR (or any comma-as-decimal-separator) locale ignore `,`
+ *  as a column boundary when a `.csv` is opened directly (double-click,
+ *  not an explicit "Import" with a delimiter picker) and instead read
+ *  the whole row into a single cell, since that locale's list separator
+ *  is `;`. This is the standard fix for CSVs meant to be double-clicked
+ *  open in Excel PT-BR/EU-locale installs. */
+const DELIMITER = ";";
+
 /** RFC 4180 field escaping: quote + double-up embedded quotes whenever
- *  the value contains a comma, quote, or newline — the characters that
- *  would otherwise break the column boundary or truncate the row. */
+ *  the value contains the delimiter, a quote, or a newline — the
+ *  characters that would otherwise break the column boundary or
+ *  truncate the row. */
 function escapeCsvField(value: string): string {
-  if (/["\n\r,]/.test(value)) {
+  if (new RegExp(`["\\n\\r${DELIMITER}]`).test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
 }
 
 function formatRow(values: string[]): string {
-  return values.map(escapeCsvField).join(",");
+  return values.map(escapeCsvField).join(DELIMITER);
 }
 
 /** Builds a CSV string from contacts, UTF-8 BOM prefixed so Excel and
@@ -48,7 +58,11 @@ export function contactsToCsv(contacts: ExportableContact[]): string {
 
   for (const contact of contacts) {
     const phone = normalizePhone(contact.phone) || contact.phone;
-    const tags = (contact.tags ?? []).map((tag) => tag.name).join(";");
+    // Comma, not `;`, joins multiple tag names within their one cell —
+    // `;` is now the *column* delimiter above, so using it here too
+    // would force that cell to always be quoted. Still fully readable:
+    // "VIP, Lead" is an unambiguous single field either way.
+    const tags = (contact.tags ?? []).map((tag) => tag.name).join(", ");
     const createdAt = new Date(contact.created_at).toISOString().slice(0, 10);
 
     lines.push(

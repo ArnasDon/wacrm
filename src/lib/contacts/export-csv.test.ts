@@ -7,10 +7,10 @@ function tag(id: string, name: string): Tag {
 }
 
 describe('contactsToCsv', () => {
-  it('writes the Portuguese header row', () => {
+  it('writes the Portuguese header row, semicolon-delimited', () => {
     const csv = contactsToCsv([]);
     const [header] = csv.replace(/^﻿/, '').split('\r\n');
-    expect(header).toBe('Nome,Telefone,Email,Empresa,Tags,CriadoEm');
+    expect(header).toBe('Nome;Telefone;Email;Empresa;Tags;CriadoEm');
   });
 
   it('prefixes the file with a UTF-8 BOM', () => {
@@ -28,7 +28,7 @@ describe('contactsToCsv', () => {
     expect(row).toContain('5583996507373');
   });
 
-  it('joins multiple tags with a semicolon', () => {
+  it('joins multiple tags with ", " inside their own cell', () => {
     const contact: ExportableContact = {
       phone: '5583996507373',
       created_at: '2026-08-07T12:00:00Z',
@@ -36,18 +36,29 @@ describe('contactsToCsv', () => {
     };
     const csv = contactsToCsv([contact]);
     const [, row] = csv.replace(/^﻿/, '').split('\r\n');
-    expect(row).toContain('VIP;Lead');
+    expect(row).toContain('VIP, Lead');
   });
 
-  it('quotes fields containing a comma and doubles embedded quotes', () => {
+  it('does not quote a comma inside a field, since ; is the delimiter now', () => {
     const contact: ExportableContact = {
-      name: 'Silva, João "JJ"',
+      name: 'Silva, João',
       phone: '5583996507373',
       created_at: '2026-08-07T12:00:00Z',
     };
     const csv = contactsToCsv([contact]);
     const [, row] = csv.replace(/^﻿/, '').split('\r\n');
-    expect(row).toContain('"Silva, João ""JJ"""');
+    expect(row.startsWith('Silva, João;')).toBe(true);
+  });
+
+  it('quotes fields containing a semicolon and doubles embedded quotes', () => {
+    const contact: ExportableContact = {
+      name: 'Silva; João "JJ"',
+      phone: '5583996507373',
+      created_at: '2026-08-07T12:00:00Z',
+    };
+    const csv = contactsToCsv([contact]);
+    const [, row] = csv.replace(/^﻿/, '').split('\r\n');
+    expect(row).toContain('"Silva; João ""JJ"""');
   });
 
   it('leaves optional fields blank instead of "undefined"', () => {
@@ -57,7 +68,7 @@ describe('contactsToCsv', () => {
     };
     const csv = contactsToCsv([contact]);
     const [, row] = csv.replace(/^﻿/, '').split('\r\n');
-    expect(row).toBe(',5583996507373,,,,2026-08-07');
+    expect(row).toBe(';5583996507373;;;;2026-08-07');
   });
 
   it('formats CriadoEm as an ISO date (YYYY-MM-DD)', () => {
@@ -67,6 +78,6 @@ describe('contactsToCsv', () => {
     };
     const csv = contactsToCsv([contact]);
     const [, row] = csv.replace(/^﻿/, '').split('\r\n');
-    expect(row.endsWith(',2026-08-07')).toBe(true);
+    expect(row.endsWith(';2026-08-07')).toBe(true);
   });
 });

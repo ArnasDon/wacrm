@@ -60,6 +60,21 @@
 
 ## Última alteração realizada
 
+**Sessão de 2026-08-07 (parte 36)** — corrige exportação de CSV vindo tudo numa coluna só: separador trocado de vírgula pra ponto e vírgula:
+
+Usuário reportou, ao abrir o CSV exportado (parte 35), que Nome/Telefone/Email/etc. vinham todos grudados numa única coluna em vez de separados. Causa: `contactsToCsv` usava vírgula `,` como delimitador (padrão RFC 4180/EUA) — mas Excel e Google Sheets configurados em pt-BR (ou qualquer locale onde a vírgula é o separador decimal de números) ignoram `,` como fronteira de coluna ao abrir um `.csv` diretamente (duplo clique, sem passar por um assistente de importação com delimitador escolhível) e jogam a linha inteira numa célula só, porque o separador de lista daquele locale é `;`. É o problema clássico de "CSV brasileiro".
+
+**Correção:** `src/lib/contacts/export-csv.ts` — delimitador trocado pra `;` (`DELIMITER`, agora nomeado explicitamente em vez de hardcoded em dois lugares). A separação de múltiplas tags dentro da própria célula mudou de `;` pra `", "` (vírgula+espaço) — evita que a célula de tags precise ficar sempre entre aspas agora que `;` é o delimitador de coluna, e continua perfeitamente legível ("VIP, Lead"). A função de escape (aspas RFC 4180) passou a disparar em `;` em vez de `,`.
+
+**Arquivos alterados:** `src/lib/contacts/export-csv.ts`, `src/lib/contacts/export-csv.test.ts` (8 casos, atualizados pro novo delimitador + um caso novo de campo contendo `;`).
+**Arquivos NÃO alterados:** `contacts/page.tsx` (a lógica de busca/paginação da parte 35 não mudou, só o formato do arquivo gerado), backend, banco.
+
+**Nota lateral:** durante a validação, um artefato de build duplicado apareceu em `.next/types/` (arquivos ` 2.ts`, provavelmente de rodar build e dev server ao mesmo tempo numa sessão anterior) causando erro de `tsc`. `.next/` é gerado e gitignored — resolvido só limpando a pasta e rebuildando, nada de código.
+
+**Validação:** `tsc` (zero erros, após limpar `.next/`), `eslint` (mesmo 1 erro pré-existente e não relacionado), `vitest run` (663/663), `next build` limpo. **Não pôde ser testado ao vivo nesta sessão** (sem login no navegador local) — pendente de confirmação do usuário no Excel/Sheets.
+
+---
+
 **Sessão de 2026-08-07 (parte 35)** — nova funcionalidade: exportação de Contatos para CSV, respeitando os filtros ativos:
 
 Usuário pediu um botão "Exportar CSV" na tela de Contatos que respeite a busca/filtro de tags atual, pra usar a lista exportada como referência em Transmissões.

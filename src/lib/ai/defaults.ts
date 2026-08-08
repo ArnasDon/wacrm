@@ -1,4 +1,5 @@
-import type { AiProvider } from './types'
+import { commercialStrategyPrompt } from './commercial-strategy'
+import type { AiProvider, CommercialStrategy } from './types'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -52,10 +53,11 @@ export function aiContextMessageLimit(): number {
 export function buildSystemPrompt(args: {
   userPrompt: string | null
   mode: 'draft' | 'auto_reply'
+  commercialStrategy?: CommercialStrategy
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, commercialStrategy, knowledge } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -75,6 +77,10 @@ export function buildSystemPrompt(args: {
       'When the customer taps or names one product, keep that product as the main conversational context and continue naturally about its size, colour, stock, price, delivery, payment, or alternatives. ' +
       'Do not restart the catalogue search or repeat all prior options unless the customer asks for more choices. Ask at most one useful follow-up question at a time.',
   ]
+
+  if (commercialStrategy) {
+    parts.push(commercialStrategyPrompt(commercialStrategy))
+  }
 
   if (mode === 'auto_reply') {
     parts.push(

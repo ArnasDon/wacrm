@@ -29,6 +29,11 @@ function identifier(value: unknown, fallback?: string): string {
   return candidate
 }
 
+function optionalIdentifier(value: unknown): string | null {
+  if (value == null || value === '') return null
+  return identifier(value)
+}
+
 async function testSupabase(input: Record<string, unknown>) {
   const baseUrl = typeof input.base_url === 'string' ? input.base_url.trim() : ''
   const secret = typeof input.auth_secret === 'string' ? input.auth_secret.trim() : ''
@@ -42,16 +47,17 @@ async function testSupabase(input: Record<string, unknown>) {
   const nameColumn = identifier(mapping.name, 'name')
   const priceColumn = identifier(mapping.price, 'price')
   const idColumn = identifier(mapping.id, 'id')
-  const imageColumn = identifier(mapping.imageUrl, 'image_url')
-  const currencyColumn = identifier(mapping.currency, 'currency')
+  const imageColumn = optionalIdentifier(mapping.imageUrl)
+  const currencyColumn = optionalIdentifier(mapping.currency)
   const queryText = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : ''
 
   const client = createClient(safeUrl(baseUrl).toString().replace(/\/$/, ''), secret, {
     auth: { persistSession: false, autoRefreshToken: false },
-    db: { schema },
+    db: { schema: schema as never },
   })
 
-  let query = client.from(table).select([idColumn, nameColumn, priceColumn, currencyColumn, imageColumn].join(','))
+  const selected = [idColumn, nameColumn, priceColumn, currencyColumn, imageColumn].filter((value): value is string => Boolean(value))
+  let query = client.from(table).select(selected.join(','))
   if (queryText) query = query.ilike(nameColumn, `%${queryText.replace(/[,%()]/g, ' ')}%`)
   if (mapping.activeColumn) query = query.eq(identifier(mapping.activeColumn), true)
   if (mapping.publishedColumn) query = query.eq(identifier(mapping.publishedColumn), true)
@@ -66,8 +72,8 @@ async function testSupabase(input: Record<string, unknown>) {
     id: String(item[idColumn] ?? index),
     name: String(item[nameColumn] ?? ''),
     price: Number(item[priceColumn]),
-    currency: String(item[currencyColumn] ?? 'MZN'),
-    imageUrl: item[imageColumn] ?? null,
+    currency: String(currencyColumn ? item[currencyColumn] ?? 'MZN' : 'MZN'),
+    imageUrl: imageColumn ? item[imageColumn] ?? null : null,
   })).filter((item) => item.name && Number.isFinite(item.price))
 
   return { ok: true, source_type: 'external_supabase', schema, table, products, raw_item_count: result.data?.length ?? 0 }

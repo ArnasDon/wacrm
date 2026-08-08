@@ -151,7 +151,7 @@ function catalogTableMapping(mapping: ExternalFieldMapping): ExternalFieldMappin
     imageUrl: mapping.catalogImageUrl || mapping.imageUrl,
     productUrl: mapping.catalogProductUrl || mapping.productUrl,
     category: mapping.catalogCategory || mapping.category,
-    searchColumns: mapping.catalogSearchColumns?.length ? mapping.catalogSearchColumns : mapping.searchColumns,
+    searchColumns: mapping.catalogSearchColumns,
     activeColumn: mapping.catalogActiveColumn,
     publishedColumn: mapping.catalogPublishedColumn,
   }
@@ -172,6 +172,19 @@ function mergeCatalogueProduct(stockProduct: CatalogProduct, catalogueProduct: C
     productUrl: stockProduct.productUrl || catalogueProduct.productUrl,
     category: stockProduct.category || catalogueProduct.category,
   }
+}
+
+function catalogueProductMatches(product: CatalogProduct, terms: string[]): boolean {
+  const haystack = normalizeSearchText([
+    product.name,
+    product.description ?? '',
+    product.category ?? '',
+    product.id,
+  ].join(' '))
+  return terms.some((term) => {
+    const normalized = normalizeSearchText(term)
+    return !normalized || haystack.includes(normalized)
+  })
 }
 
 async function searchExternalRestSource(
@@ -336,44 +349,43 @@ async function searchExternalSupabaseSource(
   if (mapping.catalogTable) {
     const catalogueTable = safeIdentifier(mapping.catalogTable)
     const catalogueMapping = catalogTableMapping(mapping)
-    const catalogueSearchColumns = (catalogueMapping.searchColumns?.length
-      ? catalogueMapping.searchColumns
-      : [catalogueMapping.name || 'name'])
+    const catalogueSearchColumns = (catalogueMapping.searchColumns ?? [])
       .map((column) => safeIdentifier(column))
       .slice(0, 6)
-    const catalogueSelectColumns = Array.from(new Set([
-      catalogueMapping.id || 'id',
-      catalogueMapping.name || 'name',
-      catalogueMapping.description || 'description',
-      catalogueMapping.price || 'price',
-      catalogueMapping.currency || 'currency',
-      catalogueMapping.imageUrl || 'image_url',
-      catalogueMapping.productUrl || 'product_url',
-      catalogueMapping.category || 'category',
-    ].filter(Boolean).map((column) => safeIdentifier(column)))).join(',')
 
-    let catalogueQuery = client.from(catalogueTable).select(catalogueSelectColumns)
+    let catalogueQuery = client.from(catalogueTable).select('*')
     if (catalogueMapping.activeColumn) catalogueQuery = catalogueQuery.eq(safeIdentifier(catalogueMapping.activeColumn), true)
     if (catalogueMapping.publishedColumn) catalogueQuery = catalogueQuery.eq(safeIdentifier(catalogueMapping.publishedColumn), true)
 
-    const catalogueFilters = terms.flatMap((term) => {
-      const safeTerm = safePostgrestTerm(term)
-      return catalogueSearchColumns.map((column) => `${column}.ilike.%${safeTerm}%`)
-    })
-    if (catalogueFilters.length) catalogueQuery = catalogueQuery.or(catalogueFilters.join(','))
+    if (catalogueSearchColumns.length > 0) {
+      const catalogueFilters = terms.flatMap((term) => {
+        const safeTerm = safePostgrestTerm(term)
+        return catalogueSearchColumns.map((column) => `${column}.ilike.%${safeTerm}%`)
+      })
+      if (catalogueFilters.length) catalogueQuery = catalogueQuery.or(catalogueFilters.join(','))
+    }
 
+    const catalogueFetchLimit = catalogueSearchColumns.length > 0
+      ? input.limit
+      : Math.max(input.limit * 25, 250)
     const catalogueResult = await Promise.race([
-      catalogueQuery.limit(input.limit),
+      catalogueQuery.limit(catalogueFetchLimit),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`External Supabase catalogue ${source.name} timed out.`)), REQUEST_TIMEOUT_MS)),
     ])
 
     if (catalogueResult.error) {
       console.error('[catalog search] external Supabase catalogue-only table failed:', catalogueResult.error.message)
     } else {
-      const catalogueProducts = (catalogueResult.data ?? [])
+      let catalogueProducts = (catalogueResult.data ?? [])
         .map((item, index) => normalizeExternalProduct(item, catalogueMapping, source, index))
         .filter((item): item is CatalogProduct => item !== null)
         .map((product) => ({ ...product, stockQuantity: null }))
+
+      if (catalogueSearchColumns.length === 0) {
+        catalogueProducts = catalogueProducts
+          .filter((product) => catalogueProductMatches(product, terms))
+          .slice(0, input.limit)
+      }
 
       const stockIndex = new Map<string, number>()
       products.forEach((product, index) => {

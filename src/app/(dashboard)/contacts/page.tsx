@@ -41,6 +41,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -57,6 +58,7 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { contactsToCsv, downloadCsv } from '@/lib/contacts/export-csv';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -118,6 +120,7 @@ function ContactsPageInner() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailContactId, setDetailContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [customFieldsOpen, setCustomFieldsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
@@ -266,17 +269,128 @@ function ContactsPageInner() {
     setLoading(false);
   }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, isUnclassifiedFilter, t]);
 
+  // Exports every contact matching the *current* filters (search + tag
+  // selection, including the unclassified drill-through) — not just the
+  // 25-row page `contacts` holds. Re-runs the same three query branches
+  // as fetchContacts above, but loops through pages internally instead
+  // of stopping at one, since a filtered result set can exceed a single
+  // request's row limit. Bounded by `totalCount` (the exact count the
+  // last fetchContacts already computed) so a batch coming back short
+  // — the normal end-of-results signal — can't spin forever if the
+  // count drifts mid-export (e.g. another tab deleting a contact).
+  const EXPORT_BATCH_SIZE = 500;
+
+  const handleExportCsv = useCallback(async () => {
+    if (totalCount === 0) {
+      toast.error(t('toastExportEmpty'));
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const term = search.trim();
+      const allRows: Contact[] = [];
+      let offset = 0;
+
+      while (allRows.length < totalCount) {
+        let rows: Contact[];
+
+        if (isUnclassifiedFilter) {
+          const { data, error } = await supabase.rpc('list_unclassified_contacts', {
+            p_classification_category: CLASSIFICATION_CATEGORY,
+            p_search: term || null,
+            p_limit: EXPORT_BATCH_SIZE,
+            p_offset: offset,
+          });
+          if (error) throw error;
+          rows = ((data ?? []) as { contact: Contact }[]).map((r) => r.contact);
+        } else if (selectedTagIds.length > 0) {
+          const rpcName =
+            tagFilterMode === 'all' ? 'filter_contacts_by_all_tags' : 'filter_contacts_by_tags';
+          const { data, error } = await supabase.rpc(rpcName, {
+            p_tag_ids: selectedTagIds,
+            p_search: term || null,
+            p_limit: EXPORT_BATCH_SIZE,
+            p_offset: offset,
+          });
+          if (error) throw error;
+          rows = ((data ?? []) as { contact: Contact }[]).map((r) => r.contact);
+        } else {
+          let query = supabase
+            .from('contacts')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .range(offset, offset + EXPORT_BATCH_SIZE - 1);
+          if (term) {
+            const like = `%${term}%`;
+            query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+          }
+          const { data, error } = await query;
+          if (error) throw error;
+          rows = data ?? [];
+        }
+
+        if (rows.length === 0) break;
+        allRows.push(...rows);
+        offset += EXPORT_BATCH_SIZE;
+        if (rows.length < EXPORT_BATCH_SIZE) break;
+      }
+
+      // Tags, chunked so an export with thousands of contacts can't
+      // build one `.in()` call with thousands of ids into an
+      // oversized URL — same reasoning as the chunked fetch above.
+      const TAG_CHUNK = 200;
+      const tagsByContact: Record<string, Tag[]> = {};
+      const ids = allRows.map((c) => c.id);
+      for (let i = 0; i < ids.length; i += TAG_CHUNK) {
+        const chunk = ids.slice(i, i + TAG_CHUNK);
+        const { data: contactTags, error } = await supabase
+          .from('contact_tags')
+          .select('contact_id, tag_id')
+          .in('contact_id', chunk);
+        if (error) throw error;
+        contactTags?.forEach((ct) => {
+          const tag = tagsMap[ct.tag_id];
+          if (!tag) return;
+          if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
+          tagsByContact[ct.contact_id].push(tag);
+        });
+      }
+
+      const exportRows: ContactWithTags[] = allRows.map((c) => ({
+        ...c,
+        tags: tagsByContact[c.id] ?? [],
+      }));
+
+      const csv = contactsToCsv(exportRows);
+      const filename = `contatos-${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadCsv(filename, csv);
+      toast.success(t('toastExportSuccess', { count: exportRows.length }));
+    } catch {
+      toast.error(t('toastExportFailed'));
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    supabase,
+    search,
+    selectedTagIds,
+    tagFilterMode,
+    isUnclassifiedFilter,
+    tagsMap,
+    totalCount,
+    t,
+  ]);
+
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
   // synchronously in the effect body, so the cascade the lint rule
   // warns about doesn't apply here.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
   }, [fetchTags]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
 
@@ -432,6 +546,23 @@ function ContactsPageInner() {
             <Upload className="size-4" />
             {t('importBtn')}
           </GatedButton>
+          {/* Exports every contact matching the current search/tag
+              filters (see handleExportCsv), not just the loaded page —
+              read-only, so unlike Import/Add it isn't role-gated. */}
+          <Button
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={exporting || totalCount === 0}
+            title={totalCount === 0 ? t('toastExportEmpty') : undefined}
+            className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {t('exportBtn')}
+          </Button>
           <GatedButton
             canAct={canEdit}
             gateReason="adicionar ou importar contatos"

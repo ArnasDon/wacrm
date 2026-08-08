@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 31) — inclui o hash exato. **Bug do header/composer sumindo com o teclado (Inbox, iOS standalone-PWA): resolvido e confirmado no dispositivo físico**, depois de 31 partes de investigação — não é mais um problema em aberto.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 35) — inclui o hash exato. **Bug do header/composer sumindo com o teclado (Inbox, iOS standalone-PWA): resolvido e confirmado no dispositivo físico** (parte 31) — não é mais um problema em aberto. Exportação de Contatos pra CSV (parte 35) e painel de contato colapsável (parte 34) ainda pendentes de teste real pelo usuário (não puderam ser clicados ao vivo nesta sessão, sem login disponível no navegador local).
 
 ## O que está funcionando
 
@@ -59,6 +59,23 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 35)** — nova funcionalidade: exportação de Contatos para CSV, respeitando os filtros ativos:
+
+Usuário pediu um botão "Exportar CSV" na tela de Contatos que respeite a busca/filtro de tags atual, pra usar a lista exportada como referência em Transmissões.
+
+**Implementação:**
+- `src/lib/contacts/export-csv.ts` (novo) — `contactsToCsv()` monta o CSV (cabeçalho `Nome,Telefone,Email,Empresa,Tags,CriadoEm`, campos escapados por RFC 4180, telefone normalizado pra só dígitos via `normalizePhone` — o mesmo formato de `contacts.phone_normalized` e o que a Cloud API/Transmissões esperam — tags separadas por `;`, BOM UTF-8 no início pra Excel/Sheets não bagunçarem acentuação) e `downloadCsv()` (dispara o download via Blob, cliente puro, sem round-trip ao servidor). Testado (`export-csv.test.ts`, 7 casos: cabeçalho, BOM, normalização de telefone, join de tags, escape de vírgula/aspas, campos opcionais vazios, formato de data).
+- `contacts/page.tsx` — botão "Exportar CSV" (ícone `Download`) entre Importar e Adicionar contato, não gated por role (é leitura, ao contrário de Importar/Adicionar) — desabilitado quando não há contato pra exportar (`totalCount === 0`), com spinner enquanto exporta. `handleExportCsv` busca **todos** os contatos que batem com o filtro atual (busca + tags, incluindo o modo any/all e o drill-through "não classificados") — não só a página de 25 carregada na tela — reaproveitando os mesmos três caminhos de query que `fetchContacts` já usa, só sem parar numa página só: pagina internamente em lotes de 500 até esgotar, e busca as tags dos contatos encontrados em lotes de 200 (evita uma URL gigante com milhares de ids num `.in()` só).
+
+**Cabeçalho em português, não reimportável pelo próprio Import ainda:** o pedido especificou os nomes de coluna em português (`Nome`, `Telefone`...); o `ImportModal`/`parse-contact-csv.ts` reconhece só cabeçalhos em inglês minúsculo (`phone`, `name`, `email`, `company`, `tags`) hoje. Um CSV exportado aqui não volta a importar limpo pelo Import da própria tela — decisão consciente de seguir a especificação literal do pedido em vez de mudar silenciosamente pra inglês; documentado como gap conhecido, não implementado sem confirmação do usuário.
+
+**Arquivos alterados:** `src/lib/contacts/export-csv.ts` (novo), `src/lib/contacts/export-csv.test.ts` (novo), `src/app/(dashboard)/contacts/page.tsx`, `messages/en.json`, `messages/pt-BR.json`, `messages/ko.json` (chaves `exportBtn`/`toastExportSuccess`/`toastExportEmpty`/`toastExportFailed`, paridade nos 3 idiomas confirmada pelo teste automatizado de mensagens).
+**Arquivos NÃO alterados:** `import-modal.tsx`, `parse-contact-csv.ts`, backend, banco.
+
+**Validação:** `tsc` (zero erros), `eslint` (mesmo 1 erro pré-existente e não relacionado — e 2 warnings de `eslint-disable` que ficaram órfãos nesta mesma página, removidos), `vitest run` (662/662, +7 dos testes novos), `next build` limpo. **Não foi possível clicar o botão ao vivo no navegador nesta sessão** — sem credenciais da conta pra entrar no Inbox/Contatos autenticado. Pendente de teste real pelo usuário.
+
+---
 
 **Sessão de 2026-08-07 (parte 34)** — painel de detalhes do contato (Inbox): passa a vir recolhido por padrão e ganha transição animada de largura:
 

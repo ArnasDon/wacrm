@@ -35,6 +35,18 @@ const initialForm = {
   searchColumns: 'name,description',
   activeColumn: '',
   publishedColumn: '',
+  variantsTable: '',
+  variantId: 'id',
+  variantProductId: 'product_id',
+  variantSize: 'size',
+  variantColor: 'color',
+  variantStock: 'stock_quantity',
+  variantActiveColumn: '',
+  catalogTable: '',
+  catalogSearchColumns: '',
+  brandsTable: '',
+  brandId: 'id',
+  brandName: 'name',
 }
 
 type IntegrationForm = typeof initialForm
@@ -44,12 +56,15 @@ function mappingString(mapping: Record<string, unknown> | null, key: string, fal
   return typeof value === 'string' ? value : fallback
 }
 
+function mappingList(mapping: Record<string, unknown> | null, key: string, fallback = ''): string {
+  const value = mapping?.[key]
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string').join(',')
+    : mappingString(mapping, key, fallback)
+}
+
 function formFromSource(source: Source): IntegrationForm {
   const mapping = source.field_mapping
-  const searchColumns = Array.isArray(mapping?.searchColumns)
-    ? mapping.searchColumns.filter((value): value is string => typeof value === 'string').join(',')
-    : mappingString(mapping, 'searchColumns', 'name,description')
-
   return {
     ...initialForm,
     name: source.name,
@@ -66,9 +81,21 @@ function formFromSource(source: Source): IntegrationForm {
     productUrl: mappingString(mapping, 'productUrl'),
     category: mappingString(mapping, 'category'),
     stockQuantity: mappingString(mapping, 'stockQuantity'),
-    searchColumns,
+    searchColumns: mappingList(mapping, 'searchColumns', 'name,description'),
     activeColumn: mappingString(mapping, 'activeColumn'),
     publishedColumn: mappingString(mapping, 'publishedColumn'),
+    variantsTable: mappingString(mapping, 'variantsTable'),
+    variantId: mappingString(mapping, 'variantId', 'id'),
+    variantProductId: mappingString(mapping, 'variantProductId', 'product_id'),
+    variantSize: mappingString(mapping, 'variantSize', 'size'),
+    variantColor: mappingString(mapping, 'variantColor', 'color'),
+    variantStock: mappingString(mapping, 'variantStock', 'stock_quantity'),
+    variantActiveColumn: mappingString(mapping, 'variantActiveColumn'),
+    catalogTable: mappingString(mapping, 'catalogTable'),
+    catalogSearchColumns: mappingList(mapping, 'catalogSearchColumns'),
+    brandsTable: mappingString(mapping, 'brandsTable'),
+    brandId: mappingString(mapping, 'brandId', 'id'),
+    brandName: mappingString(mapping, 'brandName', 'name'),
   }
 }
 
@@ -118,6 +145,18 @@ export function DatabaseIntegrations() {
       searchColumns: form.searchColumns.split(',').map((value) => value.trim()).filter(Boolean),
       activeColumn: form.activeColumn.trim() || undefined,
       publishedColumn: form.publishedColumn.trim() || undefined,
+      variantsTable: form.variantsTable.trim() || undefined,
+      variantId: form.variantId.trim() || undefined,
+      variantProductId: form.variantProductId.trim() || undefined,
+      variantSize: form.variantSize.trim() || undefined,
+      variantColor: form.variantColor.trim() || undefined,
+      variantStock: form.variantStock.trim() || undefined,
+      variantActiveColumn: form.variantActiveColumn.trim() || undefined,
+      catalogTable: form.catalogTable.trim() || undefined,
+      catalogSearchColumns: form.catalogSearchColumns.split(',').map((value) => value.trim()).filter(Boolean),
+      brandsTable: form.brandsTable.trim() || undefined,
+      brandId: form.brandId.trim() || undefined,
+      brandName: form.brandName.trim() || undefined,
     }
   }
 
@@ -156,7 +195,8 @@ export function DatabaseIntegrations() {
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.error ?? 'Falha no teste de ligação.')
       setPreview(body.products ?? [])
-      toast.success(`Ligação estabelecida: ${body.raw_item_count ?? 0} registo(s) lido(s).`)
+      const extra = body.tables_checked ? ` · ${body.tables_checked} tabela(s) verificada(s)` : ''
+      toast.success(`Ligação estabelecida: ${body.raw_item_count ?? 0} registo(s) lido(s)${extra}.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Falha no teste de ligação.')
     } finally {
@@ -239,7 +279,7 @@ export function DatabaseIntegrations() {
           <CardDescription>
             {editingId
               ? 'Altere a ligação ou o mapeamento. Deixe a API key vazia para manter a chave já guardada.'
-              : 'Liga uma base Supabase externa em modo de leitura. As credenciais ficam cifradas no backend e nunca são entregues ao agente.'}
+              : 'Liga uma base Supabase externa em modo de leitura. Pode combinar stock, variações e produtos apenas de catálogo na mesma integração.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -249,7 +289,9 @@ export function DatabaseIntegrations() {
             <div className="space-y-2 md:col-span-2"><Label>URL do Supabase</Label><Input required type="url" placeholder="https://supabase.exemplo.com" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
             <div className="space-y-2 md:col-span-2"><Label>API key de leitura</Label><Input required={!editingId} type="password" autoComplete="new-password" placeholder={editingId ? 'Deixe vazio para manter a chave actual' : 'anon key ou chave dedicada read-only'} value={form.auth_secret} onChange={(e) => setForm({ ...form, auth_secret: e.target.value })} /><p className="text-xs text-muted-foreground">{editingId ? 'A chave guardada nunca é mostrada. Preencha este campo apenas se quiser substituí-la.' : 'Evite a service_role. Prefira uma chave/role com acesso apenas aos dados que o agente pode consultar.'}</p></div>
             <div className="space-y-2"><Label>Schema</Label><Input required value={form.schema} onChange={(e) => setForm({ ...form, schema: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Tabela ou view de produtos</Label><Input required placeholder="stock_products_v2" value={form.table} onChange={(e) => setForm({ ...form, table: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Tabela principal de produtos/stock</Label><Input required placeholder="stock_products" value={form.table} onChange={(e) => setForm({ ...form, table: e.target.value })} /></div>
+
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Mapeamento da tabela principal</p><p className="text-xs text-muted-foreground">Esta tabela continua a ser a fonte autoritativa para o stock.</p></div>
             <div className="space-y-2"><Label>Coluna ID</Label><Input value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna nome</Label><Input value={form.nameColumn} onChange={(e) => setForm({ ...form, nameColumn: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna preço</Label><Input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
@@ -262,6 +304,25 @@ export function DatabaseIntegrations() {
             <div className="space-y-2"><Label>Colunas de pesquisa</Label><Input placeholder="name,description" value={form.searchColumns} onChange={(e) => setForm({ ...form, searchColumns: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna activo (opcional)</Label><Input placeholder="is_active" value={form.activeColumn} onChange={(e) => setForm({ ...form, activeColumn: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna publicado (opcional)</Label><Input placeholder="is_published" value={form.publishedColumn} onChange={(e) => setForm({ ...form, publishedColumn: e.target.value })} /></div>
+
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Variações de stock (opcional)</p><p className="text-xs text-muted-foreground">Para a LC Fitness, use <code>stock_variations</code>. A pesquisa associa tamanho, cor e stock a cada produto.</p></div>
+            <div className="space-y-2"><Label>Tabela de variações</Label><Input placeholder="stock_variations" value={form.variantsTable} onChange={(e) => setForm({ ...form, variantsTable: e.target.value })} /></div>
+            <div className="space-y-2"><Label>FK para produto</Label><Input placeholder="product_id" value={form.variantProductId} onChange={(e) => setForm({ ...form, variantProductId: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna ID da variação</Label><Input value={form.variantId} onChange={(e) => setForm({ ...form, variantId: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna tamanho</Label><Input value={form.variantSize} onChange={(e) => setForm({ ...form, variantSize: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna cor</Label><Input value={form.variantColor} onChange={(e) => setForm({ ...form, variantColor: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna stock da variação</Label><Input value={form.variantStock} onChange={(e) => setForm({ ...form, variantStock: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna activo da variação</Label><Input placeholder="is_active" value={form.variantActiveColumn} onChange={(e) => setForm({ ...form, variantActiveColumn: e.target.value })} /></div>
+
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Produtos apenas de catálogo (opcional)</p><p className="text-xs text-muted-foreground">Para a LC Fitness, use <code>store_products</code>. Estes produtos entram na pesquisa sem se assumir stock; se coincidirem com um produto de stock, servem para completar fotografia, descrição e URL.</p></div>
+            <div className="space-y-2"><Label>Tabela de catálogo</Label><Input placeholder="store_products" value={form.catalogTable} onChange={(e) => setForm({ ...form, catalogTable: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Colunas de pesquisa do catálogo</Label><Input placeholder="vazio = usar as da tabela principal" value={form.catalogSearchColumns} onChange={(e) => setForm({ ...form, catalogSearchColumns: e.target.value })} /></div>
+
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Marcas (opcional)</p><p className="text-xs text-muted-foreground"><code>store_brands</code> pode ficar registada na mesma integração para enriquecimento futuro, sem interferir no controlo de stock.</p></div>
+            <div className="space-y-2"><Label>Tabela de marcas</Label><Input placeholder="store_brands" value={form.brandsTable} onChange={(e) => setForm({ ...form, brandsTable: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna nome da marca</Label><Input value={form.brandName} onChange={(e) => setForm({ ...form, brandName: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna ID da marca</Label><Input value={form.brandId} onChange={(e) => setForm({ ...form, brandId: e.target.value })} /></div>
+
             <div className="flex flex-wrap gap-2 md:col-span-2"><Button type="button" variant="outline" onClick={() => void testConnection()} disabled={testing}>{testing ? <Loader2 className="animate-spin" /> : <RefreshCw />}Testar ligação</Button><Button type="submit" disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : editingId ? <Pencil /> : <Plus />}{editingId ? 'Guardar alterações' : 'Guardar integração'}</Button>{editingId ? <Button type="button" variant="ghost" onClick={cancelEdit}><X />Cancelar</Button> : null}</div>
           </form>
           {preview.length > 0 ? <div className="mt-5 space-y-2"><p className="font-medium">Pré-visualização</p>{preview.map((product) => <div key={product.id} className="rounded-lg border p-3"><p className="font-medium">{product.name}</p><p className="text-sm text-muted-foreground">{product.price} {product.currency}</p></div>)}</div> : null}
@@ -271,7 +332,7 @@ export function DatabaseIntegrations() {
       <Card>
         <CardHeader><CardTitle>Integrações ligadas</CardTitle><CardDescription>Somente as fontes de base de dados desta organização.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
-          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
+          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}{source.field_mapping?.catalogTable ? ` + ${String(source.field_mapping.catalogTable)}` : ''}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
         </CardContent>
       </Card>
     </div>

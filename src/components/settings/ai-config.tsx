@@ -27,15 +27,12 @@ import {
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
 import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
-import type { AiProvider } from '@/lib/ai/types';
+import type { AiProvider, ProductQualificationOrder } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
 
 const MASKED_KEY = '••••••••••••••••';
-
-// Radix Select can't use an empty-string item value, so the "leave
-// unassigned" choice gets a sentinel that maps to null in the payload.
 const HANDOFF_QUEUE = '__queue__';
 
 const PROVIDER_LABEL: Record<AiProvider, string> = {
@@ -72,15 +69,27 @@ export function AiConfig() {
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
-  // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
-  // Guard keyed on the account (not a bare boolean) so an in-place
-  // account switch — ownership transfer, multi-account membership —
-  // refetches instead of showing the previous account's config. Mirrors
-  // the loadedAccountIdRef pattern in whatsapp-config.tsx.
+  const [maxProducts, setMaxProducts] = useState(3);
+  const [preferVisual, setPreferVisual] = useState(true);
+  const [autoRecommend, setAutoRecommend] = useState(true);
+  const [checkStock, setCheckStock] = useState(true);
+  const [keepSelectedProduct, setKeepSelectedProduct] = useState(true);
+  const [qualificationOrder, setQualificationOrder] =
+    useState<ProductQualificationOrder>('size_then_color');
+
   const loadedAccountIdRef = useRef<string | null>(null);
+
+  const resetCommercialStrategy = () => {
+    setMaxProducts(3);
+    setPreferVisual(true);
+    setAutoRecommend(true);
+    setCheckStock(true);
+    setKeepSelectedProduct(true);
+    setQualificationOrder('size_then_color');
+  };
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -106,26 +115,35 @@ export function AiConfig() {
         setHasStoredEmbeddingsKey(Boolean(data.has_embeddings_key));
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
+
+        const strategy = data.commercial_strategy ?? {};
+        setMaxProducts(strategy.max_products ?? 3);
+        setPreferVisual(strategy.prefer_visual ?? true);
+        setAutoRecommend(strategy.auto_recommend ?? true);
+        setCheckStock(strategy.check_stock ?? true);
+        setKeepSelectedProduct(strategy.keep_selected_product ?? true);
+        setQualificationOrder(
+          strategy.qualification_order === 'color_then_size'
+            ? 'color_then_size'
+            : 'size_then_color',
+        );
+      } else {
+        resetCommercialStrategy();
       }
     } catch {
       toast.error(t('loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!accountId || loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     void fetchConfig();
-    // Members populate the handoff-target picker. Best-effort — on an
-    // older deployment without the endpoint the picker just shows the
-    // queue option.
     void fetchAccountMembers().then(setMembers);
   }, [accountId, fetchConfig]);
 
-  // Swap the model default when the provider changes, unless the user
-  // typed a custom model.
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
@@ -137,7 +155,6 @@ export function AiConfig() {
 
   const keyPayload = () => (keyEdited ? apiKey.trim() : undefined);
 
-  // undefined = leave unchanged; '' typed = null (clear); text = set.
   const embeddingsKeyPayload = () =>
     embeddingsKeyEdited ? embeddingsKey.trim() || null : undefined;
 
@@ -147,6 +164,14 @@ export function AiConfig() {
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
+    commercial_strategy: {
+      max_products: maxProducts,
+      prefer_visual: preferVisual,
+      auto_recommend: autoRecommend,
+      check_stock: checkStock,
+      keep_selected_product: keepSelectedProduct,
+      qualification_order: qualificationOrder,
+    },
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
@@ -219,6 +244,7 @@ export function AiConfig() {
         setAutoReplyEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        resetCommercialStrategy();
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -233,8 +259,7 @@ export function AiConfig() {
   if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loadFailed')} {/* Re-using label or a global one, wait, loading is better. Let's use useTranslations from overview or just hardcode Loading... actually I should add loading to aiConfig */}
-        {/* Wait, I didn't add loading to aiConfig. I'll just use loading. */}
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loadFailed')}
       </div>
     );
   }
@@ -260,9 +285,7 @@ export function AiConfig() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="h-4 w-4 text-primary" /> {t('providerAndKey')}
             </CardTitle>
-            <CardDescription>
-              {t('encryptionNotice')}
-            </CardDescription>
+            <CardDescription>{t('encryptionNotice')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -384,9 +407,7 @@ export function AiConfig() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t('behaviour')}</CardTitle>
-            <CardDescription>
-              {t('behaviourDesc')}
-            </CardDescription>
+            <CardDescription>{t('behaviourDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -480,6 +501,117 @@ export function AiConfig() {
                       {memberLabel(m)}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Estratégia comercial</CardTitle>
+            <CardDescription>
+              Define como o assistente apresenta, recomenda e acompanha produtos durante uma conversa.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-max-products">Máximo de produtos apresentados</Label>
+                <p className="text-xs text-muted-foreground">
+                  Limita a quantidade de opções mostradas de cada vez.
+                </p>
+              </div>
+              <Input
+                id="ai-max-products"
+                type="number"
+                min={1}
+                max={10}
+                value={maxProducts}
+                onChange={(e) =>
+                  setMaxProducts(
+                    Math.min(10, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+                disabled={disabled}
+                className="w-20"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Preferir apresentação visual</p>
+                <p className="text-xs text-muted-foreground">
+                  Dá prioridade ao catálogo visual e às fotografias dos produtos.
+                </p>
+              </div>
+              <Switch
+                checked={preferVisual}
+                onCheckedChange={setPreferVisual}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Recomendações automáticas</p>
+                <p className="text-xs text-muted-foreground">
+                  Recomenda produtos adequados quando o cliente descreve uma necessidade.
+                </p>
+              </div>
+              <Switch
+                checked={autoRecommend}
+                onCheckedChange={setAutoRecommend}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Confirmar stock</p>
+                <p className="text-xs text-muted-foreground">
+                  Obriga o assistente a consultar o stock antes de confirmar disponibilidade.
+                </p>
+              </div>
+              <Switch
+                checked={checkStock}
+                onCheckedChange={setCheckStock}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Manter produto seleccionado</p>
+                <p className="text-xs text-muted-foreground">
+                  Mantém o produto escolhido como contexto principal até o cliente mudar de produto.
+                </p>
+              </div>
+              <Switch
+                checked={keepSelectedProduct}
+                onCheckedChange={setKeepSelectedProduct}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-qualification-order">Ordem de qualificação</Label>
+              <p className="text-xs text-muted-foreground">
+                Ordem usada para recolher tamanho e cor quando ambos ainda são desconhecidos.
+              </p>
+              <Select
+                value={qualificationOrder}
+                onValueChange={(value) =>
+                  setQualificationOrder(value as ProductQualificationOrder)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="ai-qualification-order">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="size_then_color">Tamanho → cor</SelectItem>
+                  <SelectItem value="color_then_size">Cor → tamanho</SelectItem>
                 </SelectContent>
               </Select>
             </div>

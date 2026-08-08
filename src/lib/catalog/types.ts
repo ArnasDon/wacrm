@@ -1,3 +1,10 @@
+export interface CatalogProductVariant {
+  id: string
+  size: string | null
+  color: string | null
+  stockQuantity: number | null
+}
+
 export interface CatalogProduct {
   id: string
   name: string
@@ -8,6 +15,7 @@ export interface CatalogProduct {
   productUrl: string | null
   category: string | null
   stockQuantity: number | null
+  variants?: CatalogProductVariant[]
   sourceName: string
 }
 
@@ -32,6 +40,13 @@ export interface ExternalFieldMapping {
   searchColumns?: string[]
   activeColumn?: string
   publishedColumn?: string
+  variantsTable?: string
+  variantId?: string
+  variantProductId?: string
+  variantSize?: string
+  variantColor?: string
+  variantStock?: string
+  variantActiveColumn?: string
 }
 
 export interface CatalogSourceRow {

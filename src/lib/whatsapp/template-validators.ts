@@ -154,13 +154,17 @@ export function validateHeader(
     );
   }
   if (header_media_url) {
+    let u: URL;
     try {
-      const u = new URL(header_media_url);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-        throw new Error('header_media_url must use http(s) scheme.');
-      }
+      u = new URL(header_media_url);
     } catch {
       throw new Error('header_media_url must be a valid URL.');
+    }
+    // https-only — matches the SSRF-guard policy already enforced for
+    // webhook_endpoints (normalizeWebhookUrl); a plain http:// sample URL
+    // is fetched server-side and gains nothing from also being allowed.
+    if (u.protocol !== 'https:') {
+      throw new Error('header_media_url must use https.');
     }
   }
   return { variableCount: 0 };

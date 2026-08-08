@@ -3,6 +3,7 @@ export interface CatalogProductVariant {
   size: string | null
   color: string | null
   stockQuantity: number | null
+  imageUrl?: string | null
 }
 
 export interface CatalogProduct {
@@ -47,6 +48,7 @@ export interface ExternalFieldMapping {
   variantSize?: string
   variantColor?: string
   variantStock?: string
+  variantImageUrl?: string
   variantActiveColumn?: string
 
   catalogTable?: string
@@ -61,6 +63,14 @@ export interface ExternalFieldMapping {
   catalogSearchColumns?: string[]
   catalogActiveColumn?: string
   catalogPublishedColumn?: string
+
+  catalogVariantsTable?: string
+  catalogVariantId?: string
+  catalogVariantProductId?: string
+  catalogVariantSize?: string
+  catalogVariantColor?: string
+  catalogVariantImageUrl?: string
+  catalogVariantActiveColumn?: string
 
   brandsTable?: string
   brandId?: string

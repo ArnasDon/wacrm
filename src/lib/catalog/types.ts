@@ -42,7 +42,7 @@ export interface CatalogSourceRow {
   is_active: boolean
   base_url: string | null
   search_path: string | null
-  auth_type: 'none' | 'bearer' | 'api_key_header' | 'supabase_key'
+  auth_type: 'none' | 'bearer' | 'api_key_header'
   auth_header: string | null
   auth_secret_encrypted: string | null
   field_mapping: ExternalFieldMapping | null

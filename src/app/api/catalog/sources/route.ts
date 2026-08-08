@@ -42,31 +42,46 @@ export async function POST(request: Request) {
     const input = body as Record<string, unknown>
     const name = text(input.name, 200)
     const baseUrlRaw = text(input.base_url, 2000)
+    const sourceType = String(input.source_type ?? 'external_rest')
+    if (!['external_rest', 'external_supabase'].includes(sourceType)) {
+      return NextResponse.json({ error: 'Invalid source_type.' }, { status: 400 })
+    }
     if (!name || !baseUrlRaw) {
       return NextResponse.json({ error: 'name and base_url are required.' }, { status: 400 })
     }
 
-    const authType = input.auth_type
-    if (!['none', 'bearer', 'api_key_header'].includes(String(authType ?? 'none'))) {
+    const authType = sourceType === 'external_supabase' ? 'api_key_header' : String(input.auth_type ?? 'none')
+    if (!['none', 'bearer', 'api_key_header'].includes(authType)) {
       return NextResponse.json({ error: 'Invalid auth_type.' }, { status: 400 })
     }
-    const secret = text(input.auth_secret, 4000)
+    const secret = text(input.auth_secret, 8000)
+    if (sourceType === 'external_supabase' && !secret) {
+      return NextResponse.json({ error: 'A Supabase API key read-only is required.' }, { status: 400 })
+    }
+
     const mapping =
       input.field_mapping && typeof input.field_mapping === 'object' && !Array.isArray(input.field_mapping)
         ? input.field_mapping
         : {}
+
+    if (sourceType === 'external_supabase') {
+      const m = mapping as Record<string, unknown>
+      if (typeof m.table !== 'string' || !m.table.trim()) {
+        return NextResponse.json({ error: 'field_mapping.table is required for Supabase sources.' }, { status: 400 })
+      }
+    }
 
     const { data, error } = await supabase
       .from('catalog_sources')
       .insert({
         account_id: accountId,
         name,
-        source_type: 'external_rest',
+        source_type: sourceType,
         is_active: input.is_active !== false,
         base_url: validateHttpsUrl(baseUrlRaw),
-        search_path: text(input.search_path, 2000),
-        auth_type: String(authType ?? 'none'),
-        auth_header: text(input.auth_header, 200),
+        search_path: sourceType === 'external_rest' ? text(input.search_path, 2000) : null,
+        auth_type: authType,
+        auth_header: sourceType === 'external_rest' ? text(input.auth_header, 200) : 'apikey',
         auth_secret_encrypted: secret ? encrypt(secret) : null,
         field_mapping: mapping,
       })

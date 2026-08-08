@@ -1,6 +1,9 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { normalizeCommercialStrategy } from './commercial-strategy'
+import {
+  commercialStrategyPrompt,
+  normalizeCommercialStrategy,
+} from './commercial-strategy'
 import type { AiConfig } from './types'
 
 interface AiConfigRow {
@@ -51,13 +54,21 @@ export async function loadAiConfig(
     }
   }
 
+  const commercialStrategy = normalizeCommercialStrategy(row.commercial_strategy)
+  const systemPrompt = [
+    commercialStrategyPrompt(commercialStrategy),
+    row.system_prompt?.trim() || null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n')
+
   return {
     agentId: row.id,
     provider: row.provider,
     model: row.model,
     apiKey: decrypt(row.api_key),
-    systemPrompt: row.system_prompt,
-    commercialStrategy: normalizeCommercialStrategy(row.commercial_strategy),
+    systemPrompt,
+    commercialStrategy,
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,

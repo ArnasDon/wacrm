@@ -42,6 +42,14 @@ function InboxPageInner() {
    * automatically instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get("c");
+  /**
+   * `?filter=unanswered` drill-through from the dashboard's "Leads Não
+   * Respondidos" card. Only "unanswered" is recognized here — anything
+   * else falls back to ConversationList's own default ("all") rather
+   * than passing through an arbitrary/invalid value.
+   */
+  const initialInboxFilter =
+    searchParams.get("filter") === "unanswered" ? "unanswered" : undefined;
 
   // iOS's native "scroll the focused input into view" behavior, on
   // focusing the composer's textarea, can scroll `<main>` (dashboard-
@@ -687,6 +695,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            initialFilter={initialInboxFilter}
           />
         </div>
 

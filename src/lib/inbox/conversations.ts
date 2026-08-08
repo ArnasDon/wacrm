@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Conversation, Contact, Tag } from "@/types";
 
 /**
@@ -68,4 +69,21 @@ export function matchesContactFilters(
   }
 
   return true;
+}
+
+/**
+ * Ids of conversations that are "unanswered" — the same rule the
+ * dashboard's "Leads Não Respondidos" card counts via
+ * `count_unanswered_conversations` (migration 042/047): not closed,
+ * and the most recent message came from the customer. Backed by
+ * `list_unanswered_conversation_ids`, the SETOF sibling that RPC now
+ * delegates to, so the Inbox drill-through and the dashboard count
+ * can never disagree.
+ */
+export async function loadUnansweredConversationIds(
+  db: SupabaseClient,
+): Promise<Set<string>> {
+  const { data, error } = await db.rpc("list_unanswered_conversation_ids");
+  if (error) throw error;
+  return new Set((data ?? []) as string[]);
 }

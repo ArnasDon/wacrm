@@ -93,6 +93,7 @@ export default function DashboardPage() {
                 sign: leadsToday.current - leadsToday.previous,
                 label: t('vsYesterday', { value: leadsDeltaValue(leadsToday) }),
               }}
+              href="/inbox"
             />
           )}
 
@@ -106,6 +107,8 @@ export default function DashboardPage() {
               tint="orange"
               highlighted
               subtitle={t('awaitingService')}
+              href="/inbox?filter=unanswered"
+              tooltip={t('unansweredLeadsTooltip')}
             />
           )}
 

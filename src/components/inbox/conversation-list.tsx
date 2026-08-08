@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
+  loadUnansweredConversationIds,
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
@@ -34,6 +35,13 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Applied as the initial filter — the dashboard's "Leads Não
+   * Respondidos" card drill-through (`/inbox?filter=unanswered`).
+   * Read once on mount, same as any other `useState` initializer; the
+   * user can still change the filter afterwards via the dropdown.
+   */
+  initialFilter?: InboxFilter;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -44,7 +52,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "unanswered";
 
 export function ConversationList({
   activeConversationId,
@@ -52,20 +60,29 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  initialFilter,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  
+
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
+    { label: t("filterUnanswered"), value: "unanswered" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
   ], [t]);
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>("all");
+  const [filter, setFilter] = useState<InboxFilter>(initialFilter ?? "all");
   const [loading, setLoading] = useState(true);
+  // Ids currently matching the "unanswered" rule (same RPC the
+  // dashboard's "Leads Não Respondidos" count uses — see
+  // loadUnansweredConversationIds). Only fetched while that filter is
+  // selected, and re-fetched whenever any conversation's last message
+  // or status changes (unansweredSignature below) so replying to a
+  // lead promptly drops it out of the filtered list.
+  const [unansweredIds, setUnansweredIds] = useState<Set<string>>(new Set());
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
   // Broadcast audience filtering. Company is an exact match on the field.
@@ -140,6 +157,34 @@ export function ConversationList({
     };
   }, []);
 
+  // Changes whenever any conversation's last message or status changes —
+  // both are exactly what can flip a conversation in or out of the
+  // "unanswered" rule, so this is the signal to refetch that set.
+  const unansweredSignature = useMemo(
+    () =>
+      conversations
+        .map((c) => `${c.id}:${c.last_message_at ?? ""}:${c.status}`)
+        .join("|"),
+    [conversations],
+  );
+
+  useEffect(() => {
+    if (filter !== "unanswered") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const ids = await loadUnansweredConversationIds(supabase);
+        if (!cancelled) setUnansweredIds(ids);
+      } catch (error) {
+        console.error("Failed to load unanswered conversations:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, unansweredSignature]);
+
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
   // are worth offering as an inbox filter.
@@ -163,6 +208,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "unanswered") {
+      result = result.filter((c) => unansweredIds.has(c.id));
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -188,7 +235,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, unansweredIds]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>

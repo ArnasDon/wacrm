@@ -3,12 +3,13 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildConversationContext } from './context'
 
 /** Minimal fake matching the query chain in buildConversationContext:
- *  from().select().eq().eq().order().limit() → { data, error }. */
+ *  from().select().eq().in().order().limit() → { data, error }. */
 function fakeDb(rows: unknown[]): WacrmSupabaseClient {
   const chain = {
     from: () => chain,
     select: () => chain,
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }

@@ -1,5 +1,9 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import {
+  commercialStrategyPrompt,
+  normalizeCommercialStrategy,
+} from './commercial-strategy'
 import type { AiConfig } from './types'
 
 interface AiConfigRow {
@@ -8,6 +12,7 @@ interface AiConfigRow {
   model: string
   api_key: string
   system_prompt: string | null
+  commercial_strategy: unknown
   is_active: boolean
   auto_reply_enabled: boolean
   auto_reply_max_per_conversation: number
@@ -16,7 +21,7 @@ interface AiConfigRow {
 }
 
 const CONFIG_COLUMNS =
-  'id, provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
 
 export async function loadAiConfig(
   db: WacrmSupabaseClient,
@@ -49,12 +54,21 @@ export async function loadAiConfig(
     }
   }
 
+  const commercialStrategy = normalizeCommercialStrategy(row.commercial_strategy)
+  const systemPrompt = [
+    commercialStrategyPrompt(commercialStrategy),
+    row.system_prompt?.trim() || null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('\n\n')
+
   return {
     agentId: row.id,
     provider: row.provider,
     model: row.model,
     apiKey: decrypt(row.api_key),
-    systemPrompt: row.system_prompt,
+    systemPrompt,
+    commercialStrategy,
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,

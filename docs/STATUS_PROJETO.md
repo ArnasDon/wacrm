@@ -80,7 +80,7 @@ Usuário conectou o iPhone por cabo, ativou o Web Inspector (Ajustes → Safari 
 
 **Nota sobre este Mac:** o checkout local estava 6 commits atrás do `origin/main` (partes 25-30 só existiam remotamente) — sincronizado nesta sessão via `git checkout origin/main -- <arquivos tocados>` antes de aplicar esta correção, para garantir que ela fosse construída em cima do estado real do projeto, não de uma versão obsoleta.
 
-**Validação:** `node`/`npm` não disponíveis no shell desta sessão para rodar `tsc`/`eslint`/`vitest`/`next build` — pendente, precisa ser rodado no ambiente normal do usuário antes de considerar a parte concluída. **A prova decisiva (se o header realmente para de subir com o teclado) depende de teste no iPhone físico**, relançando o app do zero (não só recarregar) para garantir que não é bundle em cache.
+**Validação:** `node` instalado no Mac durante esta mesma sessão (não estava disponível antes) — `tsc` (zero erros), `vitest run` (655/655, acima da baseline de 652/655 — as 3 falhas de `currency.test.ts` dependem do ICU da máquina e não ocorrem nesta), `next build` limpo. `eslint`: 1 erro pré-existente em `src/app/api/whatsapp/webhook/route.ts:120` (`no-explicit-any`, de um commit antigo — `591a680` — não tocado por esta parte nem pelas partes 25-30), fora do escopo desta correção. **A prova decisiva (se o header realmente para de subir com o teclado) ainda depende de teste no iPhone físico**, relançando o app do zero (não só recarregar) para garantir que não é bundle em cache.
 
 ---
 

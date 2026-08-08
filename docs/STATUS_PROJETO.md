@@ -60,6 +60,21 @@
 
 ## Última alteração realizada
 
+**Sessão de 2026-08-07 (parte 34)** — painel de detalhes do contato (Inbox): passa a vir recolhido por padrão e ganha transição animada de largura:
+
+Usuário pediu explicitamente collapse/expand com animação suave pro painel lateral direito (Nome, Telefone, Tags, Negócios, Notas). O toggle em si (botão no cabeçalho da conversa, `PanelRightOpen`/`PanelRightClose`) e o estado (`contactPanelOpen`, persistido em `localStorage`) **já existiam** de uma sessão anterior (issue #258) — faltavam só dois pontos específicos do pedido: (1) o padrão vinha aberto, não recolhido; (2) o painel era montado/desmontado condicionalmente (`{contactPanelOpen && <ContactSidebar/>}`), então aparecia/sumia instantaneamente, sem animação nenhuma.
+
+**Correção:**
+- `inbox/page.tsx` — estado inicial de `contactPanelOpen` trocado de `true` pra `false`. A leitura de `localStorage` (pra lembrar a preferência do usuário entre sessões) continua intacta — só o primeiro acesso, sem preferência salva, agora vem recolhido.
+- `ContactSidebar` deixou de ser montado/desmontado condicionalmente; agora fica sempre montado dentro de um wrapper cuja **largura anima** entre `0` e `w-70` (280px, a largura fixa que o próprio `ContactSidebar` já usava) via `transition-[width] duration-300 ease-in-out` + `overflow-hidden` (esconde o conteúdo enquanto a largura é 0, sem cortar/espremer visualmente). Um wrapper interno fixo em `w-70` garante que o conteúdo do painel (foto, nome, tags, negócios, notas) nunca reflui durante a transição — só a fatia visível dele muda. A área de mensagens ao lado já usava `flex-1`, então ocupa o espaço liberado automaticamente, sem mudança necessária ali.
+
+**Arquivos alterados:** `src/app/(dashboard)/inbox/page.tsx` (estado inicial + wrapper animado).
+**Arquivos NÃO alterados:** `contact-sidebar.tsx` (conteúdo do painel intocado, como pedido), `message-thread.tsx` (o botão de toggle já existia, não precisou de mudança), backend, banco.
+
+**Validação:** `tsc` (zero erros), `eslint` (mesmo 1 erro pré-existente e não relacionado), `vitest run` (655/655), `next build` limpo. App testado no navegador local (login carrega sem erros) — **o toggle/animação em si não pôde ser clicado ao vivo nesta sessão**, sem credenciais da conta pra entrar no Inbox autenticado. Pendente de teste real pelo usuário (desktop ou iPhone).
+
+---
+
 **Sessão de 2026-08-07 (parte 33)** — corrige toque-e-segure não abrindo o menu de apagar/encaminhar no iPhone: a seleção nativa de texto competia com `contextmenu`:
 
 Usuário reportou que apertar e segurar numa mensagem só selecionava o texto (comportamento nativo de seleção do iOS), em vez de abrir o menu de contexto (apagar/encaminhar/copiar) implementado nas partes anteriores. O menu em si (`message-actions.tsx`) já existia e funcionava — o gatilho é que nunca disparava de forma confiável no iOS.

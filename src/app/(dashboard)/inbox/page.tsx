@@ -90,13 +90,15 @@ function InboxPageInner() {
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
-   * Defaults to `true` (the historical behaviour) and is restored from
-   * localStorage after mount. We deliberately do NOT read localStorage in
-   * the initializer: the server renders with `true`, so reading a stored
-   * `false` synchronously would produce a hydration mismatch. The effect
-   * below reconciles to the stored value right after mount instead.
+   * Defaults to `false` (collapsed) and is restored from localStorage
+   * after mount. We deliberately do NOT read localStorage in the
+   * initializer: the server renders with `false`, so reading a stored
+   * `true` synchronously would produce a hydration mismatch. The effect
+   * below reconciles to the stored value right after mount instead — so
+   * a returning agent who had it open still gets it back, just not on
+   * the very first paint.
    */
-  const [contactPanelOpen, setContactPanelOpen] = useState(true);
+  const [contactPanelOpen, setContactPanelOpen] = useState(false);
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CONTACT_PANEL_STORAGE_KEY);
@@ -723,15 +725,32 @@ function InboxPageInner() {
           />
         </div>
 
-        {/* Right panel: Contact sidebar — desktop only, and only when the
-            agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
-          <div className="hidden lg:block">
+        {/* Right panel: Contact sidebar — desktop only, collapsed by
+            default until the agent opens it via the thread-header toggle
+            (#258). On mobile it's always hidden (the `lg:block` below),
+            so the toggle — which is itself desktop-only — never affects
+            it.
+
+            Always mounted (not conditionally rendered) so the width
+            change animates as a slide instead of an instant pop: the
+            outer wrapper's width transitions between `0` and the
+            sidebar's own fixed width (`w-70`, matched here so the
+            transition has a concrete end value — width can't animate
+            to `auto`), clipped with `overflow-hidden` while collapsed.
+            The inner wrapper stays pinned at the full width the whole
+            time so `ContactSidebar`'s own content never reflows/
+            squishes mid-transition — only how much of it is visible
+            changes. */}
+        <div
+          className={cn(
+            "hidden overflow-hidden transition-[width] duration-300 ease-in-out lg:block",
+            contactPanelOpen ? "w-70" : "w-0",
+          )}
+        >
+          <div className="h-full w-70">
             <ContactSidebar contact={activeContact} />
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

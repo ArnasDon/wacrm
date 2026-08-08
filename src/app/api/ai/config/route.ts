@@ -9,6 +9,10 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
+import {
+  normalizeCommercialStrategy,
+  serializeCommercialStrategy,
+} from '@/lib/ai/commercial-strategy'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 function bad(message: string) {
@@ -21,13 +25,21 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
     if (!data) return NextResponse.json({ configured: false })
-    const { api_key, embeddings_api_key, ...safe } = data
-    return NextResponse.json({ configured: true, has_key: !!api_key, has_embeddings_key: !!embeddings_api_key, ...safe })
+    const { api_key, embeddings_api_key, commercial_strategy, ...safe } = data
+    return NextResponse.json({
+      configured: true,
+      has_key: !!api_key,
+      has_embeddings_key: !!embeddings_api_key,
+      commercial_strategy: serializeCommercialStrategy(
+        normalizeCommercialStrategy(commercial_strategy),
+      ),
+      ...safe,
+    })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -49,6 +61,7 @@ export async function POST(request: Request) {
     if (!model) return bad('model is required')
 
     const systemPrompt = typeof body.system_prompt === 'string' && body.system_prompt.trim() ? body.system_prompt.trim() : null
+    const commercialStrategy = normalizeCommercialStrategy(body.commercial_strategy)
     const isActive = body.is_active === true
     const autoReplyEnabled = body.auto_reply_enabled === true
     let maxPer = Number(body.auto_reply_max_per_conversation)
@@ -91,6 +104,7 @@ export async function POST(request: Request) {
           model,
           apiKey: apiKeyPlain,
           systemPrompt,
+          commercialStrategy,
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
@@ -112,8 +126,13 @@ export async function POST(request: Request) {
     }
 
     const shared: Record<string, unknown> = {
-      provider, model, system_prompt: systemPrompt, is_active: isActive,
-      auto_reply_enabled: autoReplyEnabled, auto_reply_max_per_conversation: maxPer,
+      provider,
+      model,
+      system_prompt: systemPrompt,
+      commercial_strategy: serializeCommercialStrategy(commercialStrategy),
+      is_active: isActive,
+      auto_reply_enabled: autoReplyEnabled,
+      auto_reply_max_per_conversation: maxPer,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

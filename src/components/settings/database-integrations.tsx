@@ -41,9 +41,17 @@ const initialForm = {
   variantSize: 'size',
   variantColor: 'color',
   variantStock: 'stock_quantity',
+  variantImageUrl: '',
   variantActiveColumn: '',
   catalogTable: '',
   catalogSearchColumns: '',
+  catalogVariantsTable: '',
+  catalogVariantId: 'id',
+  catalogVariantProductId: 'product_id',
+  catalogVariantSize: '',
+  catalogVariantColor: '',
+  catalogVariantImageUrl: '',
+  catalogVariantActiveColumn: '',
   brandsTable: '',
   brandId: 'id',
   brandName: 'name',
@@ -90,9 +98,17 @@ function formFromSource(source: Source): IntegrationForm {
     variantSize: mappingString(mapping, 'variantSize', 'size'),
     variantColor: mappingString(mapping, 'variantColor', 'color'),
     variantStock: mappingString(mapping, 'variantStock', 'stock_quantity'),
+    variantImageUrl: mappingString(mapping, 'variantImageUrl'),
     variantActiveColumn: mappingString(mapping, 'variantActiveColumn'),
     catalogTable: mappingString(mapping, 'catalogTable'),
     catalogSearchColumns: mappingList(mapping, 'catalogSearchColumns'),
+    catalogVariantsTable: mappingString(mapping, 'catalogVariantsTable'),
+    catalogVariantId: mappingString(mapping, 'catalogVariantId', 'id'),
+    catalogVariantProductId: mappingString(mapping, 'catalogVariantProductId', 'product_id'),
+    catalogVariantSize: mappingString(mapping, 'catalogVariantSize'),
+    catalogVariantColor: mappingString(mapping, 'catalogVariantColor'),
+    catalogVariantImageUrl: mappingString(mapping, 'catalogVariantImageUrl'),
+    catalogVariantActiveColumn: mappingString(mapping, 'catalogVariantActiveColumn'),
     brandsTable: mappingString(mapping, 'brandsTable'),
     brandId: mappingString(mapping, 'brandId', 'id'),
     brandName: mappingString(mapping, 'brandName', 'name'),
@@ -151,9 +167,17 @@ export function DatabaseIntegrations() {
       variantSize: form.variantSize.trim() || undefined,
       variantColor: form.variantColor.trim() || undefined,
       variantStock: form.variantStock.trim() || undefined,
+      variantImageUrl: form.variantImageUrl.trim() || undefined,
       variantActiveColumn: form.variantActiveColumn.trim() || undefined,
       catalogTable: form.catalogTable.trim() || undefined,
       catalogSearchColumns: form.catalogSearchColumns.split(',').map((value) => value.trim()).filter(Boolean),
+      catalogVariantsTable: form.catalogVariantsTable.trim() || undefined,
+      catalogVariantId: form.catalogVariantId.trim() || undefined,
+      catalogVariantProductId: form.catalogVariantProductId.trim() || undefined,
+      catalogVariantSize: form.catalogVariantSize.trim() || undefined,
+      catalogVariantColor: form.catalogVariantColor.trim() || undefined,
+      catalogVariantImageUrl: form.catalogVariantImageUrl.trim() || undefined,
+      catalogVariantActiveColumn: form.catalogVariantActiveColumn.trim() || undefined,
       brandsTable: form.brandsTable.trim() || undefined,
       brandId: form.brandId.trim() || undefined,
       brandName: form.brandName.trim() || undefined,
@@ -312,11 +336,19 @@ export function DatabaseIntegrations() {
             <div className="space-y-2"><Label>Coluna tamanho</Label><Input value={form.variantSize} onChange={(e) => setForm({ ...form, variantSize: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna cor</Label><Input value={form.variantColor} onChange={(e) => setForm({ ...form, variantColor: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna stock da variação</Label><Input value={form.variantStock} onChange={(e) => setForm({ ...form, variantStock: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna imagem da variação</Label><Input placeholder="image_url" value={form.variantImageUrl} onChange={(e) => setForm({ ...form, variantImageUrl: e.target.value })} /></div>
             <div className="space-y-2"><Label>Coluna activo da variação</Label><Input placeholder="is_active" value={form.variantActiveColumn} onChange={(e) => setForm({ ...form, variantActiveColumn: e.target.value })} /></div>
 
-            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Produtos apenas de catálogo (opcional)</p><p className="text-xs text-muted-foreground">Para a LC Fitness, use <code>store_products</code>. Estes produtos entram na pesquisa sem se assumir stock; se coincidirem com um produto de stock, servem para completar fotografia, descrição e URL.</p></div>
-            <div className="space-y-2"><Label>Tabela de catálogo</Label><Input placeholder="store_products" value={form.catalogTable} onChange={(e) => setForm({ ...form, catalogTable: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Colunas de pesquisa do catálogo</Label><Input placeholder="vazio = usar as da tabela principal" value={form.catalogSearchColumns} onChange={(e) => setForm({ ...form, catalogSearchColumns: e.target.value })} /></div>
+            <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Produtos apenas de catálogo (opcional)</p><p className="text-xs text-muted-foreground">Na LC Fitness, <code>products</code> e <code>product_variants</code> podem enriquecer a pesquisa e fornecer fotografias sem interferir no stock. O stock continua a vir exclusivamente das tabelas de stock.</p></div>
+            <div className="space-y-2"><Label>Tabela de catálogo</Label><Input placeholder="products" value={form.catalogTable} onChange={(e) => setForm({ ...form, catalogTable: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Colunas de pesquisa do catálogo</Label><Input placeholder="vazio = detecção tolerante" value={form.catalogSearchColumns} onChange={(e) => setForm({ ...form, catalogSearchColumns: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Tabela de variações do catálogo</Label><Input placeholder="product_variants" value={form.catalogVariantsTable} onChange={(e) => setForm({ ...form, catalogVariantsTable: e.target.value })} /></div>
+            <div className="space-y-2"><Label>FK da variação para produto</Label><Input placeholder="product_id" value={form.catalogVariantProductId} onChange={(e) => setForm({ ...form, catalogVariantProductId: e.target.value })} /></div>
+            <div className="space-y-2"><Label>ID da variação de catálogo</Label><Input value={form.catalogVariantId} onChange={(e) => setForm({ ...form, catalogVariantId: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Tamanho da variação de catálogo</Label><Input placeholder="size (opcional)" value={form.catalogVariantSize} onChange={(e) => setForm({ ...form, catalogVariantSize: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Cor da variação de catálogo</Label><Input placeholder="color (opcional)" value={form.catalogVariantColor} onChange={(e) => setForm({ ...form, catalogVariantColor: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Imagem da variação de catálogo</Label><Input placeholder="image_url (vazio = detecção automática)" value={form.catalogVariantImageUrl} onChange={(e) => setForm({ ...form, catalogVariantImageUrl: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Activo da variação de catálogo</Label><Input placeholder="is_active (opcional)" value={form.catalogVariantActiveColumn} onChange={(e) => setForm({ ...form, catalogVariantActiveColumn: e.target.value })} /></div>
 
             <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Marcas (opcional)</p><p className="text-xs text-muted-foreground"><code>store_brands</code> pode ficar registada na mesma integração para enriquecimento futuro, sem interferir no controlo de stock.</p></div>
             <div className="space-y-2"><Label>Tabela de marcas</Label><Input placeholder="store_brands" value={form.brandsTable} onChange={(e) => setForm({ ...form, brandsTable: e.target.value })} /></div>
@@ -332,7 +364,7 @@ export function DatabaseIntegrations() {
       <Card>
         <CardHeader><CardTitle>Integrações ligadas</CardTitle><CardDescription>Somente as fontes de base de dados desta organização.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
-          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}{source.field_mapping?.catalogTable ? ` + ${String(source.field_mapping.catalogTable)}` : ''}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
+          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}{source.field_mapping?.catalogTable ? ` + ${String(source.field_mapping.catalogTable)}` : ''}{source.field_mapping?.catalogVariantsTable ? ` + ${String(source.field_mapping.catalogVariantsTable)}` : ''}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
         </CardContent>
       </Card>
     </div>

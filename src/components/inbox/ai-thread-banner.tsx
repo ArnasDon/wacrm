@@ -10,17 +10,13 @@ import {
   Send,
   WandSparkles,
   X,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
 
-// ------------------------------------------------------------
-// Account AI status is the same for every conversation, so cache it per
-// account and reuse it across thread switches instead of hitting
-// /api/ai/config every time the agent opens a chat.
-// ------------------------------------------------------------
 interface AiAccountStatus {
   autoReplyOn: boolean;
 }
@@ -45,13 +41,9 @@ async function fetchAiAccountStatus(accountId: string): Promise<AiAccountStatus>
 
 interface AiThreadBannerProps {
   conversationId: string;
-  /** `conversations.ai_autoreply_disabled` — bot paused on this thread. */
   disabled: boolean;
-  /** `conversations.ai_handoff_summary` — internal handoff reason + summary. */
   handoffSummary?: string | null;
-  /** Current assignee; when a human owns the thread the bot won't run. */
   assignedAgentId?: string | null;
-  /** The acting agent — "Take over" assigns the thread to them. */
   currentUserId?: string | null;
   onChange?: (patch: {
     ai_autoreply_disabled: boolean;
@@ -59,18 +51,6 @@ interface AiThreadBannerProps {
   }) => void;
 }
 
-/**
- * Inbox AI control + human copilot.
- *
- * Auto mode:
- *   - AI active → "AI is replying automatically" + Take over.
- *
- * Human/handoff mode:
- *   - surfaces the internal handoff summary as "Requires intervention";
- *   - lets the human give a short internal instruction to the same AI;
- *   - AI rewrites it into a customer-ready reply;
- *   - nothing is sent until the human explicitly confirms Send.
- */
 export function AiThreadBanner({
   conversationId,
   disabled,
@@ -83,10 +63,8 @@ export function AiThreadBanner({
   const { accountId } = useAuth();
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [paused, setPaused] = useState(disabled);
-
-  // Human copilot state. Reset when switching threads so an instruction or
-  // draft for one customer can never leak into another conversation.
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [draft, setDraft] = useState("");
@@ -142,6 +120,38 @@ export function AiThreadBanner({
     [conversationId, currentUserId, onChange, t],
   );
 
+  const resetConversationContext = useCallback(async () => {
+    if (resetting) return;
+    const confirmed = window.confirm(
+      "Reiniciar esta conversa para a IA? O histórico continuará visível no CRM, mas será ignorado pela IA. A próxima mensagem do cliente será tratada como o início de uma nova conversa.",
+    );
+    if (!confirmed) return;
+
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/ai/autoreply/${conversationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused: false, reset_context: true }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload?.error ?? "Não foi possível reiniciar a conversa.");
+        return;
+      }
+      setPaused(false);
+      setCopilotOpen(false);
+      setInstruction("");
+      setDraft("");
+      onChange?.({ ai_autoreply_disabled: false, assigned_agent_id: null });
+      toast.success("Contexto reiniciado. A próxima mensagem será tratada como uma conversa nova.");
+    } catch {
+      toast.error("Não foi possível reiniciar a conversa.");
+    } finally {
+      setResetting(false);
+    }
+  }, [conversationId, onChange, resetting]);
+
   const generateOperatorReply = useCallback(async () => {
     const trimmed = instruction.trim();
     if (!trimmed || generating) return;
@@ -150,10 +160,7 @@ export function AiThreadBanner({
       const res = await fetch("/api/ai/operator-reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          instruction: trimmed,
-        }),
+        body: JSON.stringify({ conversation_id: conversationId, instruction: trimmed }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -203,7 +210,6 @@ export function AiThreadBanner({
     }
   }, [conversationId, draft, sending]);
 
-  // No account AI configuration → no AI controls or copilot.
   if (!autoReplyOn) return null;
 
   const humanMode = paused || Boolean(assignedAgentId);
@@ -224,29 +230,22 @@ export function AiThreadBanner({
               <Hand className="h-4 w-4 text-muted-foreground" />
             )}
           </div>
-
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-foreground">
               {handoffSummary ? "Requer intervenção" : "Atendimento humano"}
             </p>
             {handoffSummary ? (
-              <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
-                {handoffSummary}
-              </p>
+              <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">{handoffSummary}</p>
             ) : (
-              <p className="mt-0.5 text-muted-foreground">
-                A IA automática está em pausa nesta conversa.
-              </p>
+              <p className="mt-0.5 text-muted-foreground">A IA automática está em pausa nesta conversa.</p>
             )}
           </div>
-
-          <div className="flex shrink-0 items-center gap-1.5">
-            <BannerButton
-              onClick={() => setCopilotOpen((open) => !open)}
-              busy={false}
-              icon={WandSparkles}
-            >
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <BannerButton onClick={() => setCopilotOpen((open) => !open)} busy={false} icon={WandSparkles}>
               Assistir com IA
+            </BannerButton>
+            <BannerButton onClick={() => void resetConversationContext()} busy={resetting} icon={RotateCcw}>
+              Reiniciar conversa
             </BannerButton>
             {paused && (
               <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
@@ -266,16 +265,10 @@ export function AiThreadBanner({
                     Dê a instrução em linguagem simples. A IA reformula; reveja antes de enviar.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCopilotOpen(false)}
-                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="Fechar copiloto"
-                >
+                <button type="button" onClick={() => setCopilotOpen(false)} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Fechar copiloto">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-
               <div className="flex gap-2">
                 <textarea
                   value={instruction}
@@ -285,55 +278,22 @@ export function AiThreadBanner({
                   maxLength={2000}
                   className="min-h-16 flex-1 resize-y rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
                 />
-                <button
-                  type="button"
-                  onClick={() => void generateOperatorReply()}
-                  disabled={!instruction.trim() || generating}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 self-end rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-50"
-                >
-                  {generating ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3.5 w-3.5" />
-                  )}
+                <button type="button" onClick={() => void generateOperatorReply()} disabled={!instruction.trim() || generating} className="inline-flex h-9 shrink-0 items-center gap-1.5 self-end rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground disabled:opacity-50">
+                  {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   Gerar
                 </button>
               </div>
-
               {draft && (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                      Resposta proposta
-                    </p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Resposta proposta</p>
                     <span className="text-[10px] text-muted-foreground">Revise antes de enviar</span>
                   </div>
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    rows={3}
-                    className="w-full resize-y rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
-                  />
+                  <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} className="w-full resize-y rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50" />
                   <div className="mt-2 flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setDraft("")}
-                      disabled={sending}
-                      className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                    >
-                      Descartar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void sendOperatorReply()}
-                      disabled={!draft.trim() || sending}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
-                    >
-                      {sending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Send className="h-3.5 w-3.5" />
-                      )}
+                    <button type="button" onClick={() => setDraft("")} disabled={sending} className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">Descartar</button>
+                    <button type="button" onClick={() => void sendOperatorReply()} disabled={!draft.trim() || sending} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50">
+                      {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                       Enviar ao cliente
                     </button>
                   </div>
@@ -346,38 +306,27 @@ export function AiThreadBanner({
     );
   }
 
-  // AI active and no human owns the thread.
   return (
     <Banner tone="primary">
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-        <span className="truncate font-medium text-foreground">
-          {t("activeText")}
-        </span>
+        <span className="truncate font-medium text-foreground">{t("activeText")}</span>
       </div>
-      <BannerButton onClick={() => toggle(true)} busy={busy} icon={Hand}>
-        {t("takeOver")}
-      </BannerButton>
+      <div className="flex items-center gap-1.5">
+        <BannerButton onClick={() => void resetConversationContext()} busy={resetting} icon={RotateCcw}>
+          Reiniciar conversa
+        </BannerButton>
+        <BannerButton onClick={() => toggle(true)} busy={busy} icon={Hand}>
+          {t("takeOver")}
+        </BannerButton>
+      </div>
     </Banner>
   );
 }
 
-function Banner({
-  tone,
-  children,
-}: {
-  tone: "primary" | "muted";
-  children: React.ReactNode;
-}) {
+function Banner({ tone, children }: { tone: "primary" | "muted"; children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 border-b px-3 py-2 text-xs sm:px-4",
-        tone === "primary"
-          ? "border-primary/20 bg-primary/5"
-          : "border-border bg-muted/40",
-      )}
-    >
+    <div className={cn("flex items-center gap-3 border-b px-3 py-2 text-xs sm:px-4", tone === "primary" ? "border-primary/20 bg-primary/5" : "border-border bg-muted/40")}>
       {children}
     </div>
   );
@@ -395,17 +344,8 @@ function BannerButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-    >
-      {busy ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
-      ) : (
-        <Icon className="h-3 w-3" />
-      )}
+    <button type="button" onClick={onClick} disabled={busy} className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60">
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
       {children}
     </button>
   );

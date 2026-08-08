@@ -8,31 +8,25 @@ type Params = { params: Promise<{ conversationId: string }> }
 /**
  * POST /api/ai/autoreply/[conversationId]  (agent+)
  *
- * Toggle the AI auto-reply bot for one conversation from the inbox — the
- * "Take over" / "Resume AI" banner.
+ * Controls the AI auto-reply bot for one inbox conversation.
  *
- * Body: { paused: boolean, assign_to_me?: boolean }
- *   - paused: true  → pause the bot here (a human is taking over). When
- *                     `assign_to_me` is set, also assign the thread to the
- *                     caller (the usual "Take over" flow). Assignment
- *                     fires the `on_conversation_assigned` trigger.
- *   - paused: false → hand the thread back to the bot: clear the pause,
- *                     reset the per-conversation reply count so it gets
- *                     fresh slots, and clear the handoff note. If the
- *                     caller currently owns the thread, unassign it too so
- *                     the bot isn't blocked by the "human owns this" gate.
+ * Body: {
+ *   paused: boolean,
+ *   assign_to_me?: boolean,
+ *   reset_context?: boolean
+ * }
  *
- * Access is validated through the RLS-scoped SSR client. The final write
- * uses the internal service-role client because the AI engine fields are
- * protected by database triggers from direct authenticated-user updates.
+ * `reset_context: true` starts a fresh AI conversation without deleting the
+ * WhatsApp audit trail. Old messages remain visible to human agents, but the
+ * AI will only receive messages created after the reset timestamp. The reset
+ * also clears handoff state, releases human assignment and restores the reply
+ * budget so the next inbound message is treated as a new conversation.
  */
 export async function POST(request: Request, { params }: Params) {
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
     const db = supabaseAdmin()
 
-    // Reuse the send bucket: this is a cheap per-user inbox action and
-    // toggling it in a tight loop has no legitimate use.
     const limit = checkRateLimit(`ai-takeover:${userId}`, RATE_LIMITS.send)
     if (!limit.success) return rateLimitResponse(limit)
 
@@ -46,8 +40,8 @@ export async function POST(request: Request, { params }: Params) {
     }
     const paused = body.paused as boolean
     const assignToMe = body.assign_to_me === true
+    const resetContext = body.reset_context === true
 
-    // Confirm the conversation is in the caller's account before writing.
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
       .select('id')
@@ -67,21 +61,16 @@ export async function POST(request: Request, { params }: Params) {
 
     const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
 
-    if (paused) {
+    if (resetContext) {
+      update.ai_context_reset_at = new Date().toISOString()
+      update.ai_autoreply_disabled = false
+      update.assigned_agent_id = null
+      update.ai_reply_count = 0
+      update.ai_handoff_summary = null
+    } else if (paused) {
       if (assignToMe) update.assigned_agent_id = userId
     } else {
-      // Resuming hands the thread *back to the bot*. Clear the pause and
-      // the handoff note, and — crucially — release ANY assignment, not
-      // just the caller's own: the auto-reply eligibility gate stands
-      // down whenever a human is assigned, so leaving a stale assignee
-      // (e.g. the agent a prior handoff routed to) would silently keep
-      // the bot muted and make "Resume AI" a no-op. This is the explicit
-      // choice to let the bot own the thread again.
       update.assigned_agent_id = null
-      // Give the bot a fresh reply budget on this thread. This is a
-      // deliberate, manual, rate-limited action (not automatable), so it
-      // can't be used to bypass the per-conversation cap at scale — it's
-      // a human choosing to re-engage the assistant.
       update.ai_reply_count = 0
       update.ai_handoff_summary = null
     }
@@ -99,7 +88,11 @@ export async function POST(request: Request, { params }: Params) {
       )
     }
 
-    return NextResponse.json({ success: true, paused })
+    return NextResponse.json({
+      success: true,
+      paused: resetContext ? false : paused,
+      context_reset: resetContext,
+    })
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -9,4 +9,4 @@ alter table wacrm.catalog_sources
   check (source_type in ('internal', 'external_rest', 'external_supabase'));
 
 comment on column wacrm.catalog_sources.field_mapping is
-  'Connector-specific mapping. external_supabase supports schema, table, id, name, description, price, currency, imageUrl, productUrl, category, stockQuantity, searchColumns, activeColumn, publishedColumn.';
+  'Connector-specific mapping. external_supabase supports the primary product table plus optional variantsTable, catalogTable and brandsTable mappings. The primary table remains authoritative for stock; catalogue-only rows may enrich product media without implying stock.';

@@ -60,6 +60,16 @@
 
 ## Última alteração realizada
 
+**Sessão de 2026-08-07 (parte 32)** — remove o badge de diagnóstico agora que o bug do teclado está confirmado resolvido em produção:
+
+Usuário confirmou no dispositivo físico que o header/mensagens não somem mais com o teclado aberto (parte 31). O badge (`viewport-debug-badge.tsx`, introduzido na parte 25) cumpriu seu papel — não tem mais função e ficava visível na tela (texto lima sobreposto no topo) pra qualquer uso do app, além de rodar um `setInterval` de 1s desnecessário.
+
+**Removido:** `src/components/debug/viewport-debug-badge.tsx` (arquivo inteiro), seu import/mount em `dashboard-shell.tsx`, e os atributos `data-debug-shell`/`data-debug-composer` que só existiam pra ele ler (`dashboard-shell.tsx`, `message-composer.tsx`). Nenhuma lógica de altura/scroll tocada — `use-app-height.ts`, o boot script de `layout.tsx` e o listener de scroll da parte 31 continuam intactos, são a correção real, não instrumentação.
+
+**Validação:** `tsc` (zero erros), `eslint` (mesmo 1 erro pré-existente e não relacionado de sempre, nenhum novo), `vitest run` (655/655), `next build` limpo.
+
+---
+
 **Sessão de 2026-08-07 (parte 31)** — causa raiz real do header/composer sumindo com o teclado, achada ao vivo no Mac + Safari Web Inspector (Develop → iPhone conectado), continuação direta do handoff combinado ao final da parte 30:
 
 Usuário conectou o iPhone por cabo, ativou o Web Inspector (Ajustes → Safari → Avançado) e reproduziu o bug ao vivo enquanto instrumentávamos o Console juntos — sem aplicar nenhuma correção especulativa antes de ter dado real, como pedido.

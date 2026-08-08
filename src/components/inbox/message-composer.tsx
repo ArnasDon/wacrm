@@ -584,10 +584,7 @@ export function MessageComposer({
     // base amount. `env()` resolves to 0 on devices without one (desktop,
     // older phones), so this is a no-op there. Requires `viewport-fit=cover`
     // (see app/layout.tsx), otherwise iOS never reports a nonzero inset.
-    <div
-      data-debug-composer
-      className="border-t border-border bg-card px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
-    >
+    <div className="border-t border-border bg-card px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote

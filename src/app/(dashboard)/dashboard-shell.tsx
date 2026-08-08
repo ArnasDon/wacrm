@@ -8,7 +8,6 @@ import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
 import { useAppHeight } from "@/hooks/use-app-height";
-import { ViewportDebugBadge } from "@/components/debug/viewport-debug-badge";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -118,13 +117,11 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     // tab, where the `100dvh` fallback is unchanged from before.
     <div
       ref={shellRef}
-      data-debug-shell
       className="flex h-[var(--app-height,100dvh)] touch-pan-y overflow-hidden bg-background"
     >
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
-      <ViewportDebugBadge />
       <Sidebar
         open={sidebarOpen}
         onClose={closeSidebar}

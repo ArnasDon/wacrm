@@ -8,6 +8,19 @@
 
 export type AiProvider = 'openai' | 'anthropic'
 
+export type ProductQualificationOrder =
+  | 'size_then_color'
+  | 'color_then_size'
+
+export interface CommercialStrategy {
+  maxProducts: number
+  preferVisual: boolean
+  autoRecommend: boolean
+  checkStock: boolean
+  keepSelectedProduct: boolean
+  qualificationOrder: ProductQualificationOrder
+}
+
 /**
  * Account AI setup, decrypted and ready to use. Produced by
  * `loadAiConfig` — `apiKey` is the plaintext BYO provider key
@@ -19,6 +32,7 @@ export interface AiConfig {
   model: string
   apiKey: string
   systemPrompt: string | null
+  commercialStrategy: CommercialStrategy
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number

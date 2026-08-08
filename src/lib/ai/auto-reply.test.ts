@@ -29,9 +29,21 @@ vi.mock('./admin-client', () => ({
         const chain = { select: () => chain, eq: () => chain, in: () => chain, limit: () => Promise.resolve({ data: h.state.autoResponders, error: null }) }
         return chain
       }
+      if (table === 'agent_tools') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          then: (resolve: (value: { data: unknown[]; error: null }) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+        }
+        return chain
+      }
       return {
         select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: h.state.conv, error: null }) }) }),
-        update: (payload: Record<string, unknown>) => { h.state.updatePayload = payload; return { eq: () => Promise.resolve({ error: null }) } },
+        update: (payload: Record<string, unknown>) => {
+          h.state.updatePayload = payload
+          const chain = { eq: () => chain, then: (resolve: (value: { error: null }) => unknown) => Promise.resolve({ error: null }).then(resolve) }
+          return chain
+        },
       }
     },
     rpc: (name: string, args: unknown) => { h.state.rpcCalls.push({ name, args }); return Promise.resolve({ data: h.state.claim, error: null }) },

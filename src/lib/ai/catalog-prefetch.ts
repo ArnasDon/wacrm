@@ -154,51 +154,55 @@ export async function prefetchCatalogueForConversation(args: {
   return { attempted: true, query: queries[0] ?? null, products: [], selection }
 }
 
+/**
+ * Prefetch is intentionally NOT a catalogue answer source.
+ *
+ * It only tells the model that the current turn is catalogue-related and
+ * which concise query was successful. Product names/prices are deliberately
+ * omitted so the model cannot bypass search_catalog and fall back to an old
+ * numbered text list. search_catalog owns current product data and, in visual
+ * mode, queues the WhatsApp photographs + interactive selection buttons.
+ */
 export function cataloguePrefetchPrompt(result: CataloguePrefetchResult): string | null {
   if (!result.attempted) return null
 
   const selectionInstruction = result.selection
     ? [
-        `The customer's latest numeric reply selected option ${result.selection.number} from the most recent numbered product list.`,
-        `The selected product is exactly: ${JSON.stringify(result.selection.productName)}.`,
-        'Keep this selection fixed. Do not reinterpret the number as a new catalogue search and do not fall back to an older numbered list.',
+        `The customer's latest numeric reply selected option ${result.selection.number} from a legacy numbered product list.`,
+        `The selected product name is exactly: ${JSON.stringify(result.selection.productName)}.`,
+        'Keep this selection fixed and migrate the interaction to the visual catalogue tools.',
         ...(result.selection.photoChoice
           ? [
-              'The preceding assistant message explicitly invited the customer to choose a product photograph by number. Therefore this numeric selection is already a request to send that selected product photograph.',
-              'Do not ask for confirmation. Call search_catalog with the exact selected product name and then call send_product with the best exact-name result that has a photograph.',
+              'This selection is already a request for that product photograph.',
+              'Call search_catalog with the exact selected product name and then call send_product with the best exact-name result that has a photograph. Do not ask for confirmation again.',
             ]
           : [
-              'If the customer wants the photograph, call search_catalog with this exact product name, then call send_product with the returned product_ref that has a photograph.',
+              'If a catalogue response is required, call search_catalog with this exact product name rather than quoting an older list.',
             ]),
       ]
     : []
 
   if (result.products.length === 0) {
     return [
-      'CATALOGUE GROUNDING:',
+      'CATALOGUE TOOL ROUTING:',
       ...selectionInstruction,
-      `A server-side catalogue pre-search for ${JSON.stringify(result.query ?? '')} returned no products.`,
-      'Do not assume the catalogue is empty. If the customer is asking about a product, use search_catalog with a concise product term before concluding that nothing is available.',
+      `A server-side intent check for ${JSON.stringify(result.query ?? '')} did not find a result.`,
+      'Do not assume the catalogue is empty. Call search_catalog with a concise product term before concluding that nothing is available.',
+      'Never reconstruct or repeat an older numbered product list from conversation history.',
     ].join('\n')
   }
 
-  const products = result.products.map((product) => ({
-    name: product.name,
-    description: product.description,
-    price: product.price,
-    currency: product.currency,
-    category: product.category,
-    stock_quantity: product.stockQuantity,
-    has_photo: Boolean(product.imageUrl),
-    source: product.sourceName,
-  }))
+  const withPhotos = result.products.filter((product) =>
+    Boolean(product.imageUrl || product.variants?.some((variant) => variant.imageUrl)),
+  ).length
 
   return [
-    'CATALOGUE GROUNDING — CURRENT SERVER RESULTS:',
+    'CATALOGUE TOOL ROUTING — PRODUCT INTENT DETECTED:',
     ...selectionInstruction,
-    `Query used: ${JSON.stringify(result.query ?? '')}`,
-    JSON.stringify(products),
-    'These results are authoritative for names, prices and stock in this turn. Answer directly from them when relevant.',
-    'If the customer asks for a photograph, still call search_catalog followed by send_product so the server can create and validate the temporary product_ref.',
+    `A server-side intent check found ${result.products.length} possible current result(s) for query ${JSON.stringify(result.query ?? '')}; ${withPhotos} have a directly resolvable photograph at this stage.`,
+    'You MUST call search_catalog before answering with product names, prices, availability or recommendations.',
+    'For browsing/recommendation requests, call search_catalog with visual=true (or omit visual, since true is the default). The server will queue photographs and clickable WhatsApp selection buttons.',
+    'When visual_queued=true, do NOT reproduce product names/prices as bullets or numbered text. Reply only with a very short introduction such as "Veja estas opções:".',
+    'Never ask the customer to type a number or product name when interactive product buttons are available.',
   ].join('\n')
 }

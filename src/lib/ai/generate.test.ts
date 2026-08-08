@@ -80,7 +80,7 @@ describe('generateReply', () => {
       systemPrompt: 'system',
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
-      executeTool: async () => ({ ok: true }),
+      executeTool: async () => JSON.stringify({ ok: true }),
     })).rejects.toBeInstanceOf(AiError)
   })
 
@@ -95,7 +95,7 @@ describe('generateReply', () => {
       systemPrompt: 'system',
       messages: [{ role: 'user', content: 'hello' }],
       tools: [],
-      executeTool: async () => ({ ok: true }),
+      executeTool: async () => JSON.stringify({ ok: true }),
     })).resolves.toMatchObject({ text: 'Hello!', handoff: false })
   })
 })

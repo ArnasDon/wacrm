@@ -44,7 +44,7 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues, including the quick internal catalogue and connected external website APIs. Returns real names, prices, photos, links, stock and a temporary product_ref that can be passed to send_product. Always use this before recommending a product or quoting a price.',
+    'Search all active product catalogues, including the quick internal catalogue and connected external website APIs. Returns real names, prices, photos, links, stock and a temporary product_ref that can be passed to send_product. Always use this before recommending a product or quoting a price. When the customer selected an item from a prior numbered list, search the exact selected product name rather than the number.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -67,7 +67,7 @@ const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
 const SEND_PRODUCT_TOOL: AgentToolDefinition = {
   name: 'send_product',
   description:
-    'Prepare the WhatsApp delivery of one product photo returned by search_catalog. Call this only when the customer asked to see, receive or choose that product. Use the exact temporary product_ref; never pass a URL. The actual send happens only after server-side limits and conversation checks pass.',
+    'Prepare the WhatsApp delivery of one product photo returned by search_catalog. Call this only when the customer asked to see, receive or choose that product. Use the exact temporary product_ref; never pass a URL. If several search results represent the same product, prefer the exact-name result that has a photograph. The actual send happens only after server-side limits and conversation checks pass.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -109,6 +109,32 @@ function parseSearchInput(input: Record<string, unknown>) {
       ? Math.floor(input.limit)
       : 5
   return { query, limit: Math.min(5, Math.max(1, requestedLimit)) }
+}
+
+function normalizeProductSearchText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function rankCatalogueProducts(products: CatalogProduct[], query: string): CatalogProduct[] {
+  const normalizedQuery = normalizeProductSearchText(query)
+  return products
+    .map((product, index) => {
+      const normalizedName = normalizeProductSearchText(product.name)
+      let score = 0
+      if (normalizedName === normalizedQuery) score += 100
+      else if (normalizedName.startsWith(normalizedQuery)) score += 60
+      else if (normalizedName.includes(normalizedQuery)) score += 30
+      if (product.imageUrl) score += 20
+      if (product.stockQuantity !== null && product.stockQuantity > 0) score += 5
+      return { product, index, score }
+    })
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ product }) => product)
 }
 
 function buildProductCaption(product: CatalogProduct): string {
@@ -179,7 +205,10 @@ export function createAutoReplyTools(args: {
 
     if (call.name === SEARCH_CATALOG_TOOL.name) {
       const search = parseSearchInput(input)
-      const products = await searchCatalogues(db, accountId, search)
+      const products = rankCatalogueProducts(
+        await searchCatalogues(db, accountId, search),
+        search.query,
+      )
       const referencedProducts = products.map((product) => {
         productRefSequence += 1
         const productRef = `catalog_result_${productRefSequence}`
@@ -192,7 +221,7 @@ export function createAutoReplyTools(args: {
         products: referencedProducts,
         found: referencedProducts.length > 0,
         instruction:
-          'Only quote prices and availability returned here. To send a photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
+          'Only quote prices and availability returned here. To send a photograph, call send_product with the exact product_ref. For an exact selected product, prefer the first exact-name result with has/photo data rather than another similarly named item. Do not use a product id or URL.',
       })
     }
 

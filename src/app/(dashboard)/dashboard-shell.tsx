@@ -49,6 +49,37 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, router]);
 
+  // 2026-08-07 (parte 31) — found via Safari Web Inspector connected
+  // live to the iPhone (Develop → device), not hypothesis: focusing the
+  // Inbox composer's `<textarea>` sets `document.documentElement
+  // .scrollTop` to a nonzero value (measured: 354px) via iOS's native
+  // "scroll the focused input into view" behavior. That's a different
+  // code path from CSS-overflow-driven scrolling — confirmed neither
+  // `html`/`body`'s `overflow: hidden` (globals.css, parte 24) nor
+  // locking `<main>` (inbox/page.tsx, parte 28) stops it, because
+  // neither of those elements is the one actually being scrolled; it's
+  // `<html>` itself (`document.scrollingElement`), one level above both.
+  // `--app-height`'s own math was independently confirmed correct at
+  // the same moment (composer's real bottom edge exactly matched the
+  // live-shrunk viewport, zero overflow) — this was purely a scroll-
+  // position bug, not a sizing one. Fixed reactively: snap
+  // `document.scrollingElement.scrollTop` back to 0 the instant it
+  // moves, rather than trying to block it via CSS (doesn't work) or via
+  // a broad `scrollTo` on every `visualViewport.resize` (tried in parte
+  // 17, reverted in parte 18 — at the time it fought a height
+  // adjustment the composer still needed; that need is gone now that
+  // the height math is confirmed correct on its own).
+  useEffect(() => {
+    const resetDocumentScroll = () => {
+      const scroller = document.scrollingElement;
+      if (scroller && scroller.scrollTop !== 0) {
+        scroller.scrollTop = 0;
+      }
+    };
+    window.addEventListener("scroll", resetDocumentScroll, { passive: true });
+    return () => window.removeEventListener("scroll", resetDocumentScroll);
+  }, []);
+
   if (loading) {
     return (
       <div className="flex h-[var(--app-height,100dvh)] items-center justify-center bg-background">

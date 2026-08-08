@@ -60,6 +60,30 @@
 
 ## Última alteração realizada
 
+**Sessão de 2026-08-07 (parte 31)** — causa raiz real do header/composer sumindo com o teclado, achada ao vivo no Mac + Safari Web Inspector (Develop → iPhone conectado), continuação direta do handoff combinado ao final da parte 30:
+
+Usuário conectou o iPhone por cabo, ativou o Web Inspector (Ajustes → Safari → Avançado) e reproduziu o bug ao vivo enquanto instrumentávamos o Console juntos — sem aplicar nenhuma correção especulativa antes de ter dado real, como pedido.
+
+**Investigação (medição real, não hipótese):**
+- Boca fechada: o badge de diagnóstico (parte 25/26) mostrou `shellHeight`/`composerBottom` batendo exatamente com `innerHeight`/`visualViewportHeight` (932px), `composerOverflowPx: 0`. Confirma o que as partes 26-27 já tinham comprovado: `--app-height` (via `outerHeight` em repouso, `visualViewport.height` ao vivo no foco) está matematicamente correto.
+- Teclado aberto: `innerHeight`/`visualViewportHeight` caem certo para 519px (o `--app-height` acompanha), mas `shellBottom`/`composerBottom` caem para 165 — só possível se o topo do shell estiver em `165 − 519 = −354`. `composerOverflowPx: -354` confirma: o shell inteiro (header incluso) está 354px acima de onde deveria.
+- Consulta direta no Console, teclado ainda aberto: `scrollY: 354`, `document.documentElement.scrollTop: 354`, `document.body.scrollTop: 0`, `transform` computado `"none"` em `html`/`body`/no shell. **Prova direta: é rolagem de verdade (scrollTop), não transform, e é especificamente `<html>` que se move — não `<body>`, não `<main>`.**
+
+**Por que as partes 24 e 28 não resolveram sozinhas (agora sabemos por quê):** ambas atacavam o elemento errado. A parte 24 bloqueou rolagem por CSS (`overflow: hidden`) em `html`/`body` — mas o comportamento nativo do iOS de "rolar o campo focado pra área visível" seta `scrollTop` num caminho separado, que `overflow: hidden` não intercepta. A parte 28 travou `<main>` — mas `<main>` nunca foi o elemento rolado; é `<html>`, um nível acima de tudo que já tinha sido tentado. A parte 29 (`position: fixed`) piorou porque mexe em como o navegador recalcula a viewport visual/scroll, sem endereçar o elemento certo.
+
+**Por que a abordagem da parte 17 (revertida na 18) volta a ser segura agora:** foi revertida porque "brigava" com um ajuste que o composer aparentemente precisava — mas isso foi antes da causa raiz da altura duplicada ser eliminada (parte 19) e antes de `--app-height` ser comprovado matematicamente correto (partes 26-27, reconfirmado ao vivo nesta parte: `composerOverflowPx: 0` de boca fechada). Hoje não existe mais nenhum ajuste de scroll legítimo para cancelar — o único scroll possível é o espúrio do iOS.
+
+**Correção aplicada:** `src/app/(dashboard)/dashboard-shell.tsx` — novo `useEffect` em `DashboardShellInner` que escuta `scroll` em `window` e zera `document.scrollingElement.scrollTop` sempre que ele for diferente de 0. Reativo e específico ao sintoma medido (scrollTop do documento), não um `scrollTo` amplo disparado por `visualViewport.resize` como na parte 17. Os locks de CSS das partes 24/28 (`overflow: hidden` em `html`/`body` e em `<main>` durante a conversa) foram mantidos — continuam corretos como defesa complementar contra rolagem por arraste/overflow, só não eram suficientes sozinhos contra este canal específico.
+
+**Arquivos alterados nesta parte:** `src/app/(dashboard)/dashboard-shell.tsx` (novo listener de scroll).
+**Arquivos NÃO alterados:** `globals.css`, `use-app-height.ts`, `layout.tsx`, `inbox/page.tsx`, `message-composer.tsx`, `viewport-debug-badge.tsx` (badge mantido ativo — ainda útil para a validação final no dispositivo).
+
+**Nota sobre este Mac:** o checkout local estava 6 commits atrás do `origin/main` (partes 25-30 só existiam remotamente) — sincronizado nesta sessão via `git checkout origin/main -- <arquivos tocados>` antes de aplicar esta correção, para garantir que ela fosse construída em cima do estado real do projeto, não de uma versão obsoleta.
+
+**Validação:** `node`/`npm` não disponíveis no shell desta sessão para rodar `tsc`/`eslint`/`vitest`/`next build` — pendente, precisa ser rodado no ambiente normal do usuário antes de considerar a parte concluída. **A prova decisiva (se o header realmente para de subir com o teclado) depende de teste no iPhone físico**, relançando o app do zero (não só recarregar) para garantir que não é bundle em cache.
+
+---
+
 **Sessão de 2026-08-07 (parte 30)** — reverte `position: fixed` em `html`/`body` (piorou, segundo o usuário); sessão de depuração remota encerrada aqui — próximo passo é Mac + Safari Web Inspector:
 
 Usuário testou a parte 29 (`position: fixed; inset: 0` em `html`/`body`) e reportou que piorou, pedindo revert explícito e confirmando a decisão já combinada de migrar a depuração pro Mac.

@@ -2,10 +2,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
-import {
-  engineSendInteractiveButtons,
-  engineSendMedia,
-} from '@/lib/flows/meta-send'
+import { engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
 import type { AgentToolKey } from '../tool-permissions'
 import type {
@@ -51,7 +48,7 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. For discovery or comparison requests, set visual=true so the server presents up to three products visually in WhatsApp instead of making you write a numbered text list. For a precise lookup or when you only need data, omit visual or set it false. When the customer selected an item from a prior list or interactive choice, search the exact selected product name rather than a number.',
+    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. For discovery, browsing or comparison requests, set visual=true so the server presents up to three products as visual WhatsApp product cards instead of making you write a numbered text list. For a precise lookup or when you only need data, omit visual or set it false. When the customer selected an item from prior context, search the exact selected product name rather than a number.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -69,7 +66,7 @@ const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
       visual: {
         type: 'boolean',
         description:
-          'Set true when the customer wants to browse, compare or see several product options. The server will send visual product cards and clickable selection buttons.',
+          'Set true when the customer wants to browse, compare or see several product options. The server will send visual product cards with photo and price.',
       },
     },
     required: ['query'],
@@ -153,7 +150,7 @@ function rankCatalogueProducts(products: CatalogProduct[], query: string): Catal
     .map(({ product }) => product)
 }
 
-function buildProductCaption(product: CatalogProduct): string {
+function buildProductCaption(product: CatalogProduct, visualCard = false): string {
   const parts = [
     product.name,
     `${Number(product.price).toLocaleString('pt-PT', {
@@ -167,10 +164,17 @@ function buildProductCaption(product: CatalogProduct): string {
         : 'Actualmente sem stock',
     )
   }
+  if (visualCard) {
+    parts.push('Responda directamente a esta fotografia se quiser este produto.')
+  }
   return parts.join('\n').slice(0, 1024)
 }
 
-function buildPendingProduct(productRef: string, product: CatalogProduct): PendingProductSend | null {
+function buildPendingProduct(
+  productRef: string,
+  product: CatalogProduct,
+  visualCard = false,
+): PendingProductSend | null {
   if (!product.imageUrl) return null
   let imageUrl: URL
   try {
@@ -187,23 +191,8 @@ function buildPendingProduct(productRef: string, product: CatalogProduct): Pendi
     name: product.name,
     imageUrl: deliveryImageUrl,
     displayImageUrl: directImageUrl,
-    caption: buildProductCaption(product),
+    caption: buildProductCaption(product, visualCard),
   }
-}
-
-function compactButtonTitle(name: string, index: number, used: Set<string>): string {
-  const clean = name.replace(/\s+/g, ' ').trim()
-  let title = clean.slice(0, 20)
-  if (!title) title = `Produto ${index + 1}`
-  if (!used.has(title)) {
-    used.add(title)
-    return title
-  }
-
-  const suffix = ` ${index + 1}`
-  title = `${clean.slice(0, Math.max(1, 20 - suffix.length))}${suffix}`
-  used.add(title)
-  return title
 }
 
 export function createAutoReplyTools(args: {
@@ -267,16 +256,22 @@ export function createAutoReplyTools(args: {
         return { ...product, product_ref: productRef }
       })
 
+      let visualQueued = false
       if (search.visual && referencedProducts.length > 0) {
         const visualItems = referencedProducts
           .slice(0, 3)
           .map((product) =>
-            buildPendingProduct(product.product_ref, product as CatalogProduct),
+            buildPendingProduct(
+              product.product_ref,
+              product as CatalogProduct,
+              true,
+            ),
           )
           .filter((item): item is PendingProductSend => Boolean(item))
 
         if (visualItems.length > 0) {
           pendingProductGalleries.push({ items: visualItems })
+          visualQueued = true
         }
       }
 
@@ -285,9 +280,9 @@ export function createAutoReplyTools(args: {
         query: search.query,
         products: referencedProducts,
         found: referencedProducts.length > 0,
-        visual_queued: search.visual && pendingProductGalleries.length > 0,
-        instruction: search.visual
-          ? 'The server has queued a visual WhatsApp presentation for the products that have photographs. Do not repeat them as a numbered text list. Keep the final text to one short sentence, or omit it if the visual presentation is sufficient.'
+        visual_queued: visualQueued,
+        instruction: visualQueued
+          ? 'The server queued visual WhatsApp product cards. Do not repeat these products as a numbered list and do not ask the customer to type a number. Tell them briefly that they can reply directly to the product photograph they prefer.'
           : 'Only quote prices and availability returned here. To send one photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
       })
     }
@@ -362,23 +357,6 @@ export function createAutoReplyTools(args: {
               enrichError.message,
             )
           }
-          sent += 1
-        }
-
-        if (gallery.items.length > 1) {
-          const usedTitles = new Set<string>()
-          await engineSendInteractiveButtons({
-            accountId,
-            userId: configOwnerUserId,
-            conversationId,
-            contactId,
-            bodyText: 'Qual destes produtos quer ver em detalhe?',
-            footerText: 'Toque numa opção para continuar.',
-            buttons: gallery.items.slice(0, 3).map((item, index) => ({
-              id: `catalog_pick:${item.productRef}`,
-              title: compactButtonTitle(item.name, index, usedTitles),
-            })),
-          })
           sent += 1
         }
       }

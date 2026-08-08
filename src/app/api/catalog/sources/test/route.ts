@@ -89,8 +89,9 @@ async function testSupabase(input: Record<string, unknown>) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item?.name) && Number.isFinite(item?.price))
 
   const optionalTables = [
-    ['variações', mapping.variantsTable],
+    ['variações de stock', mapping.variantsTable],
     ['catálogo', mapping.catalogTable],
+    ['variações do catálogo', mapping.catalogVariantsTable],
     ['marcas', mapping.brandsTable],
   ] as const
   const checkedTables = [table]

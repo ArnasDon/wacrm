@@ -3,6 +3,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type {
   CatalogProduct,
+  CatalogProductVariant,
   CatalogSearchInput,
   CatalogSourceRow,
   ExternalFieldMapping,
@@ -140,6 +141,39 @@ function normalizeExternalProduct(
   }
 }
 
+function catalogTableMapping(mapping: ExternalFieldMapping): ExternalFieldMapping {
+  return {
+    id: mapping.catalogId || mapping.id,
+    name: mapping.catalogName || mapping.name,
+    description: mapping.catalogDescription || mapping.description,
+    price: mapping.catalogPrice || mapping.price,
+    currency: mapping.catalogCurrency || mapping.currency,
+    imageUrl: mapping.catalogImageUrl || mapping.imageUrl,
+    productUrl: mapping.catalogProductUrl || mapping.productUrl,
+    category: mapping.catalogCategory || mapping.category,
+    searchColumns: mapping.catalogSearchColumns?.length ? mapping.catalogSearchColumns : mapping.searchColumns,
+    activeColumn: mapping.catalogActiveColumn,
+    publishedColumn: mapping.catalogPublishedColumn,
+  }
+}
+
+function productIdentityKeys(product: CatalogProduct): string[] {
+  const keys = [`id:${normalizeSearchText(product.id)}`]
+  const normalizedName = normalizeSearchText(product.name)
+  if (normalizedName) keys.push(`name:${normalizedName}`)
+  return keys
+}
+
+function mergeCatalogueProduct(stockProduct: CatalogProduct, catalogueProduct: CatalogProduct): CatalogProduct {
+  return {
+    ...stockProduct,
+    description: stockProduct.description || catalogueProduct.description,
+    imageUrl: stockProduct.imageUrl || catalogueProduct.imageUrl,
+    productUrl: stockProduct.productUrl || catalogueProduct.productUrl,
+    category: stockProduct.category || catalogueProduct.category,
+  }
+}
+
 async function searchExternalRestSource(
   source: CatalogSourceRow,
   input: CatalogSearchInput,
@@ -252,20 +286,128 @@ async function searchExternalSupabaseSource(
   const { data, error } = result
   if (error) throw new Error(`External Supabase source ${source.name} failed: ${error.message}`)
 
-  const products = (data ?? [])
+  let products = (data ?? [])
     .map((item, index) => normalizeExternalProduct(item, mapping, source, index))
     .filter((item): item is CatalogProduct => item !== null)
+
+  if (mapping.variantsTable && products.length > 0) {
+    const variantsTable = safeIdentifier(mapping.variantsTable)
+    const variantId = safeIdentifier(mapping.variantId, 'id')
+    const variantProductId = safeIdentifier(mapping.variantProductId, 'product_id')
+    const variantSize = safeIdentifier(mapping.variantSize, 'size')
+    const variantColor = safeIdentifier(mapping.variantColor, 'color')
+    const variantStock = safeIdentifier(mapping.variantStock, 'stock_quantity')
+    const variantColumns = Array.from(new Set([variantId, variantProductId, variantSize, variantColor, variantStock])).join(',')
+    const productIds = products.map((product) => product.id)
+
+    let variantsQuery = client.from(variantsTable).select(variantColumns).in(variantProductId, productIds)
+    if (mapping.variantActiveColumn) variantsQuery = variantsQuery.eq(safeIdentifier(mapping.variantActiveColumn), true)
+
+    const variantsResult = await Promise.race([
+      variantsQuery.limit(Math.max(input.limit * 20, 100)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`External Supabase variants ${source.name} timed out.`)), REQUEST_TIMEOUT_MS)),
+    ])
+
+    if (variantsResult.error) {
+      console.error('[catalog search] external Supabase variants failed:', variantsResult.error.message)
+    } else {
+      const variantsByProduct = new Map<string, CatalogProductVariant[]>()
+      for (const row of variantsResult.data ?? []) {
+        const item = row as Record<string, unknown>
+        const productId = String(item[variantProductId] ?? '')
+        if (!productId) continue
+        const variant: CatalogProductVariant = {
+          id: String(item[variantId] ?? `${productId}:${variantsByProduct.get(productId)?.length ?? 0}`),
+          size: text(item[variantSize]),
+          color: text(item[variantColor]),
+          stockQuantity: numberValue(item[variantStock]),
+        }
+        const current = variantsByProduct.get(productId) ?? []
+        current.push(variant)
+        variantsByProduct.set(productId, current)
+      }
+      products = products.map((product) => ({
+        ...product,
+        variants: variantsByProduct.get(product.id) ?? undefined,
+      }))
+    }
+  }
+
+  if (mapping.catalogTable) {
+    const catalogueTable = safeIdentifier(mapping.catalogTable)
+    const catalogueMapping = catalogTableMapping(mapping)
+    const catalogueSearchColumns = (catalogueMapping.searchColumns?.length
+      ? catalogueMapping.searchColumns
+      : [catalogueMapping.name || 'name'])
+      .map((column) => safeIdentifier(column))
+      .slice(0, 6)
+    const catalogueSelectColumns = Array.from(new Set([
+      catalogueMapping.id || 'id',
+      catalogueMapping.name || 'name',
+      catalogueMapping.description || 'description',
+      catalogueMapping.price || 'price',
+      catalogueMapping.currency || 'currency',
+      catalogueMapping.imageUrl || 'image_url',
+      catalogueMapping.productUrl || 'product_url',
+      catalogueMapping.category || 'category',
+    ].filter(Boolean).map((column) => safeIdentifier(column)))).join(',')
+
+    let catalogueQuery = client.from(catalogueTable).select(catalogueSelectColumns)
+    if (catalogueMapping.activeColumn) catalogueQuery = catalogueQuery.eq(safeIdentifier(catalogueMapping.activeColumn), true)
+    if (catalogueMapping.publishedColumn) catalogueQuery = catalogueQuery.eq(safeIdentifier(catalogueMapping.publishedColumn), true)
+
+    const catalogueFilters = terms.flatMap((term) => {
+      const safeTerm = safePostgrestTerm(term)
+      return catalogueSearchColumns.map((column) => `${column}.ilike.%${safeTerm}%`)
+    })
+    if (catalogueFilters.length) catalogueQuery = catalogueQuery.or(catalogueFilters.join(','))
+
+    const catalogueResult = await Promise.race([
+      catalogueQuery.limit(input.limit),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`External Supabase catalogue ${source.name} timed out.`)), REQUEST_TIMEOUT_MS)),
+    ])
+
+    if (catalogueResult.error) {
+      console.error('[catalog search] external Supabase catalogue-only table failed:', catalogueResult.error.message)
+    } else {
+      const catalogueProducts = (catalogueResult.data ?? [])
+        .map((item, index) => normalizeExternalProduct(item, catalogueMapping, source, index))
+        .filter((item): item is CatalogProduct => item !== null)
+        .map((product) => ({ ...product, stockQuantity: null }))
+
+      const stockIndex = new Map<string, number>()
+      products.forEach((product, index) => {
+        for (const keyName of productIdentityKeys(product)) stockIndex.set(keyName, index)
+      })
+
+      for (const catalogueProduct of catalogueProducts) {
+        const match = productIdentityKeys(catalogueProduct)
+          .map((keyName) => stockIndex.get(keyName))
+          .find((index): index is number => index !== undefined)
+        if (match !== undefined) {
+          products[match] = mergeCatalogueProduct(products[match], catalogueProduct)
+          continue
+        }
+        const nextIndex = products.length
+        products.push(catalogueProduct)
+        for (const keyName of productIdentityKeys(catalogueProduct)) stockIndex.set(keyName, nextIndex)
+      }
+    }
+  }
 
   console.info('[catalog search] external Supabase results:', {
     sourceId: source.id,
     sourceName: source.name,
     schema,
     table,
+    variantsTable: mapping.variantsTable || null,
+    catalogTable: mapping.catalogTable || null,
+    brandsTable: mapping.brandsTable || null,
     query: input.query,
     normalizedCount: products.length,
   })
 
-  return products
+  return products.slice(0, input.limit)
 }
 
 async function searchInternal(

@@ -34,6 +34,11 @@ function optionalIdentifier(value: unknown): string | null {
   return identifier(value)
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
 async function testSupabase(input: Record<string, unknown>) {
   const baseUrl = typeof input.base_url === 'string' ? input.base_url.trim() : ''
   const secret = typeof input.auth_secret === 'string' ? input.auth_secret.trim() : ''
@@ -68,15 +73,22 @@ async function testSupabase(input: Record<string, unknown>) {
   ])
   if (result.error) throw new Error(result.error.message)
 
-  const products = (result.data ?? []).map((item: Record<string, unknown>, index: number) => ({
-    id: String(item[idColumn] ?? index),
-    name: String(item[nameColumn] ?? ''),
-    price: Number(item[priceColumn]),
-    currency: String(currencyColumn ? item[currencyColumn] ?? 'MZN' : 'MZN'),
-    imageUrl: imageColumn ? item[imageColumn] ?? null : null,
-  })).filter((item) => item.name && Number.isFinite(item.price))
+  const rows: unknown[] = Array.isArray(result.data) ? result.data as unknown[] : []
+  const products = rows
+    .map((value, index) => {
+      const item = record(value)
+      if (!item) return null
+      return {
+        id: String(item[idColumn] ?? index),
+        name: String(item[nameColumn] ?? ''),
+        price: Number(item[priceColumn]),
+        currency: String(currencyColumn ? item[currencyColumn] ?? 'MZN' : 'MZN'),
+        imageUrl: imageColumn ? item[imageColumn] ?? null : null,
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item?.name) && Number.isFinite(item?.price))
 
-  return { ok: true, source_type: 'external_supabase', schema, table, products, raw_item_count: result.data?.length ?? 0 }
+  return { ok: true, source_type: 'external_supabase', schema, table, products, raw_item_count: rows.length }
 }
 
 async function testRest(input: Record<string, unknown>) {

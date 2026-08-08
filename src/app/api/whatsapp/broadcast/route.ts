@@ -19,6 +19,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { MAX_RECIPIENTS } from '@/lib/whatsapp/broadcast-core'
 
 interface BroadcastResult {
   phone: string
@@ -120,6 +121,20 @@ export async function POST(request: Request) {
     if (!template_name) {
       return NextResponse.json(
         { error: 'template_name is required' },
+        { status: 400 }
+      )
+    }
+
+    // Same cap as the public /api/v1/broadcasts path (broadcast-core.ts).
+    // The rate limit above only throttles how often a campaign can be
+    // *started* — this bounds how many messages one call can fan out,
+    // so a single request can't blast an unbounded audience and run up
+    // real messaging cost or risk the number getting banned for spam.
+    if (recipients.length > MAX_RECIPIENTS) {
+      return NextResponse.json(
+        {
+          error: `A broadcast is capped at ${MAX_RECIPIENTS} recipients per request; split larger sends`,
+        },
         { status: 400 }
       )
     }

@@ -7,6 +7,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import { readBodyWithLimit } from '@/lib/http/read-body-with-limit'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
@@ -179,11 +180,20 @@ export async function GET(request: Request) {
   }
 }
 
+// Meta webhook payloads are small JSON events; media is fetched separately
+// via signed URLs, never inlined here. 5 MB is generous headroom.
+const MAX_WEBHOOK_BODY_BYTES = 5 * 1024 * 1024
+
 // POST - Receive messages
 export async function POST(request: Request) {
-  // Read raw body first so we can HMAC-verify the exact bytes Meta
-  // signed. request.json() would re-encode and break the signature.
-  const rawBody = await request.text()
+  // Read raw body first (size-capped — see readBodyWithLimit) so we can
+  // HMAC-verify the exact bytes Meta signed. request.json() would
+  // re-encode and break the signature.
+  const bodyResult = await readBodyWithLimit(request, MAX_WEBHOOK_BODY_BYTES)
+  if (!bodyResult.ok) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
+  const rawBody = bodyResult.text
   const signature = request.headers.get('x-hub-signature-256')
 
   if (!verifyMetaWebhookSignature(rawBody, signature)) {

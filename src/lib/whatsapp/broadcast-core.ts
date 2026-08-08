@@ -80,7 +80,7 @@ export interface BroadcastPlan {
   rejected: number;
 }
 
-const MAX_RECIPIENTS = 1000;
+export const MAX_RECIPIENTS = 1000;
 
 /**
  * Validate + persist a broadcast, resolving each recipient to a

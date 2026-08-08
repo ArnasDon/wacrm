@@ -27,17 +27,22 @@ export interface ExternalFieldMapping {
   productUrl?: string
   category?: string
   stockQuantity?: string
+  schema?: string
+  table?: string
+  searchColumns?: string[]
+  activeColumn?: string
+  publishedColumn?: string
 }
 
 export interface CatalogSourceRow {
   id: string
   account_id: string
   name: string
-  source_type: 'internal' | 'external_rest'
+  source_type: 'internal' | 'external_rest' | 'external_supabase'
   is_active: boolean
   base_url: string | null
   search_path: string | null
-  auth_type: 'none' | 'bearer' | 'api_key_header'
+  auth_type: 'none' | 'bearer' | 'api_key_header' | 'supabase_key'
   auth_header: string | null
   auth_secret_encrypted: string | null
   field_mapping: ExternalFieldMapping | null

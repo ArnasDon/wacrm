@@ -40,6 +40,7 @@ export interface ExternalFieldMapping {
   searchColumns?: string[]
   activeColumn?: string
   publishedColumn?: string
+
   variantsTable?: string
   variantId?: string
   variantProductId?: string
@@ -47,6 +48,23 @@ export interface ExternalFieldMapping {
   variantColor?: string
   variantStock?: string
   variantActiveColumn?: string
+
+  catalogTable?: string
+  catalogId?: string
+  catalogName?: string
+  catalogDescription?: string
+  catalogPrice?: string
+  catalogCurrency?: string
+  catalogImageUrl?: string
+  catalogProductUrl?: string
+  catalogCategory?: string
+  catalogSearchColumns?: string[]
+  catalogActiveColumn?: string
+  catalogPublishedColumn?: string
+
+  brandsTable?: string
+  brandId?: string
+  brandName?: string
 }
 
 export interface CatalogSourceRow {

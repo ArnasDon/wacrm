@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { DEFAULT_COMMERCIAL_STRATEGY } from './commercial-strategy'
 import type { AiConfig } from './types'
 
 const h = vi.hoisted(() => ({
@@ -45,6 +46,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
     agentId: 'agent-config-1',
     provider: 'openai', model: 'gpt-test', apiKey: 'sk-test', systemPrompt: null,
+    commercialStrategy: DEFAULT_COMMERCIAL_STRATEGY,
     isActive: true, autoReplyEnabled: true, autoReplyMaxPerConversation: 3,
     handoffAgentId: null, embeddingsApiKey: null, ...overrides,
   }

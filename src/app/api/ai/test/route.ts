@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
+import { DEFAULT_COMMERCIAL_STRATEGY } from '@/lib/ai/commercial-strategy'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
 export async function POST(request: Request) {
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
         model,
         apiKey: apiKeyPlain,
         systemPrompt: null,
+        commercialStrategy: DEFAULT_COMMERCIAL_STRATEGY,
         isActive: true,
         autoReplyEnabled: false,
         autoReplyMaxPerConversation: 3,

@@ -307,11 +307,25 @@ export async function dispatchInboundToAiReply(
       return
     }
 
+    // For structured catalogue replies, the short model introduction belongs
+    // before the cards. Sending it after the media made the WhatsApp thread
+    // read backwards (cards first, then "Veja estas opções").
+    if (hasPendingActions && text) {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text,
+        aiGenerated: true,
+      })
+    }
+
     if (hasPendingActions) {
       await agentTools.dispatchPendingActions()
     }
 
-    if (text) {
+    if (!hasPendingActions && text) {
       await engineSendText({
         accountId,
         userId: configOwnerUserId,

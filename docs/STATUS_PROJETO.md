@@ -15,7 +15,7 @@
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
 - **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 30) — inclui o hash exato.
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 31) — inclui o hash exato. **Bug do header/composer sumindo com o teclado (Inbox, iOS standalone-PWA): resolvido e confirmado no dispositivo físico**, depois de 31 partes de investigação — não é mais um problema em aberto.
 
 ## O que está funcionando
 
@@ -80,7 +80,7 @@ Usuário conectou o iPhone por cabo, ativou o Web Inspector (Ajustes → Safari 
 
 **Nota sobre este Mac:** o checkout local estava 6 commits atrás do `origin/main` (partes 25-30 só existiam remotamente) — sincronizado nesta sessão via `git checkout origin/main -- <arquivos tocados>` antes de aplicar esta correção, para garantir que ela fosse construída em cima do estado real do projeto, não de uma versão obsoleta.
 
-**Validação:** `node` instalado no Mac durante esta mesma sessão (não estava disponível antes) — `tsc` (zero erros), `vitest run` (655/655, acima da baseline de 652/655 — as 3 falhas de `currency.test.ts` dependem do ICU da máquina e não ocorrem nesta), `next build` limpo. `eslint`: 1 erro pré-existente em `src/app/api/whatsapp/webhook/route.ts:120` (`no-explicit-any`, de um commit antigo — `591a680` — não tocado por esta parte nem pelas partes 25-30), fora do escopo desta correção. **A prova decisiva (se o header realmente para de subir com o teclado) ainda depende de teste no iPhone físico**, relançando o app do zero (não só recarregar) para garantir que não é bundle em cache.
+**Validação:** `node` instalado no Mac durante esta mesma sessão (não estava disponível antes) — `tsc` (zero erros), `vitest run` (655/655, acima da baseline de 652/655 — as 3 falhas de `currency.test.ts` dependem do ICU da máquina e não ocorrem nesta), `next build` limpo. `eslint`: 1 erro pré-existente em `src/app/api/whatsapp/webhook/route.ts:120` (`no-explicit-any`, de um commit antigo — `591a680` — não tocado por esta parte nem pelas partes 25-30), fora do escopo desta correção. **Confirmado no iPhone físico, pós-deploy:** primeiro teste do usuário (logo após o `git push`) ainda mostrava o bug — Hostinger provavelmente ainda não tinha terminado de buildar/reiniciar (esse projeto já teve esse exato problema de timing de deploy antes). Após aguardar o deploy propagar e relançar o app do zero, o usuário confirmou: **o header e as mensagens permanecem visíveis com o teclado aberto — o bug está resolvido.**
 
 ---
 

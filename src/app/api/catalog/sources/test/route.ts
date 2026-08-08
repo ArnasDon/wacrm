@@ -88,7 +88,34 @@ async function testSupabase(input: Record<string, unknown>) {
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item?.name) && Number.isFinite(item?.price))
 
-  return { ok: true, source_type: 'external_supabase', schema, table, products, raw_item_count: rows.length }
+  const optionalTables = [
+    ['variações', mapping.variantsTable],
+    ['catálogo', mapping.catalogTable],
+    ['marcas', mapping.brandsTable],
+  ] as const
+  const checkedTables = [table]
+
+  for (const [label, rawTable] of optionalTables) {
+    if (typeof rawTable !== 'string' || !rawTable.trim()) continue
+    const optionalTable = identifier(rawTable)
+    const tableResult = await Promise.race([
+      client.from(optionalTable).select('*').limit(1),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`A tabela de ${label} excedeu o tempo limite.`)), TIMEOUT_MS)),
+    ])
+    if (tableResult.error) throw new Error(`Tabela de ${label} (${optionalTable}): ${tableResult.error.message}`)
+    checkedTables.push(optionalTable)
+  }
+
+  return {
+    ok: true,
+    source_type: 'external_supabase',
+    schema,
+    table,
+    products,
+    raw_item_count: rows.length,
+    tables_checked: checkedTables.length,
+    checked_tables: checkedTables,
+  }
 }
 
 async function testRest(input: Record<string, unknown>) {

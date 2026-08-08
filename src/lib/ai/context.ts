@@ -3,22 +3,34 @@ import type { ChatMessage } from './types'
 import { aiContextMessageLimit } from './defaults'
 
 interface DbMessage {
+  id: string
   sender_type: 'customer' | 'agent' | 'bot'
+  content_type: string
   content_text: string | null
+  reply_to_message_id: string | null
+}
+
+function readableMessageContent(message: DbMessage): string | null {
+  const text = message.content_text?.trim()
+  if (!text) return null
+
+  if (message.content_type === 'image') {
+    return `[Produto/fotografia enviada no WhatsApp]\n${text}`
+  }
+  if (message.content_type === 'interactive') {
+    return `[Opção interactiva no WhatsApp]\n${text}`
+  }
+  return text
 }
 
 /**
- * Fetch the last N conversational messages and map them to the
- * provider-neutral chat shape. Customer messages become `user`; agent
- * and bot messages become `assistant`.
+ * Fetch the recent conversation in a model-friendly form.
  *
- * We intentionally include any persisted message that has content_text,
- * not only content_type='text'. WhatsApp interactive button/list replies
- * and media captions carry useful conversational text and must remain in
- * context so a tap on a product can continue the same sales conversation.
- *
- * Ordered oldest-first (chronological) so the transcript reads naturally
- * and the most recent customer message lands last.
+ * Product-image captions are intentionally retained: when a customer
+ * uses WhatsApp's Reply action on a product photograph, reply_to_message_id
+ * identifies exactly which visual card they selected. The generated user
+ * turn then names that parent message explicitly, so the model never has
+ * to guess which product "este", "esse" or "quero" refers to.
  */
 export async function buildConversationContext(
   db: WacrmSupabaseClient,
@@ -27,19 +39,40 @@ export async function buildConversationContext(
 ): Promise<ChatMessage[]> {
   const { data, error } = await db
     .from('messages')
-    .select('sender_type, content_text')
+    .select('id, sender_type, content_type, content_text, reply_to_message_id')
     .eq('conversation_id', conversationId)
-    .not('content_text', 'is', null)
+    .in('content_type', ['text', 'image', 'interactive'])
     .order('created_at', { ascending: false })
     .limit(limit)
 
   if (error) throw error
 
   const rows = ((data ?? []) as DbMessage[]).reverse()
-  return rows
-    .filter((m) => m.content_text && m.content_text.trim())
-    .map((m) => ({
-      role: m.sender_type === 'customer' ? 'user' : 'assistant',
-      content: m.content_text!.trim(),
-    }))
+  const byId = new Map(rows.map((message) => [message.id, message]))
+
+  return rows.flatMap((message): ChatMessage[] => {
+    const content = readableMessageContent(message)
+    if (!content) return []
+
+    let resolvedContent = content
+    if (message.sender_type === 'customer' && message.reply_to_message_id) {
+      const parent = byId.get(message.reply_to_message_id)
+      const parentContent = parent ? readableMessageContent(parent) : null
+      if (parentContent) {
+        resolvedContent = [
+          'O cliente respondeu directamente a esta mensagem/produto anterior:',
+          parentContent,
+          '',
+          `Resposta do cliente: ${content}`,
+        ].join('\n')
+      }
+    }
+
+    return [
+      {
+        role: message.sender_type === 'customer' ? 'user' : 'assistant',
+        content: resolvedContent,
+      },
+    ]
+  })
 }

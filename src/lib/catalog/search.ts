@@ -327,7 +327,11 @@ async function searchExternalSupabaseSource(
       console.error('[catalog search] external Supabase variants failed:', variantsResult.error.message)
     } else {
       const variantsByProduct = new Map<string, CatalogProductVariant[]>()
-      for (const row of variantsResult.data ?? []) {
+      const variantRows: unknown[] = Array.isArray(variantsResult.data)
+        ? variantsResult.data as unknown[]
+        : []
+      for (const row of variantRows) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue
         const item = row as Record<string, unknown>
         const productId = String(item[variantProductId] ?? '')
         if (!productId) continue
@@ -390,70 +394,6 @@ async function searchExternalSupabaseSource(
           .slice(0, input.limit)
       }
 
-      if (mapping.catalogVariantsTable && catalogueProducts.length > 0) {
-        const catalogVariantsTable = safeIdentifier(mapping.catalogVariantsTable)
-        const catalogVariantId = safeIdentifier(mapping.catalogVariantId, 'id')
-        const catalogVariantProductId = safeIdentifier(mapping.catalogVariantProductId, 'product_id')
-        const catalogVariantSize = mapping.catalogVariantSize ? safeIdentifier(mapping.catalogVariantSize) : null
-        const catalogVariantColor = mapping.catalogVariantColor ? safeIdentifier(mapping.catalogVariantColor) : null
-        const catalogVariantImageUrl = mapping.catalogVariantImageUrl ? safeIdentifier(mapping.catalogVariantImageUrl) : null
-        const catalogueIds = catalogueProducts.map((product) => product.id)
-
-        let catalogueVariantsQuery = client
-          .from(catalogVariantsTable)
-          .select('*')
-          .in(catalogVariantProductId, catalogueIds)
-        if (mapping.catalogVariantActiveColumn) {
-          catalogueVariantsQuery = catalogueVariantsQuery.eq(safeIdentifier(mapping.catalogVariantActiveColumn), true)
-        }
-
-        const catalogueVariantsResult = await Promise.race([
-          catalogueVariantsQuery.limit(Math.max(input.limit * 30, 150)),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`External Supabase catalogue variants ${source.name} timed out.`)), REQUEST_TIMEOUT_MS)),
-        ])
-
-        if (catalogueVariantsResult.error) {
-          console.error('[catalog search] external Supabase catalogue variants failed:', catalogueVariantsResult.error.message)
-        } else {
-          const variantsByProduct = new Map<string, CatalogProductVariant[]>()
-          for (const row of catalogueVariantsResult.data ?? []) {
-            const item = row as Record<string, unknown>
-            const productId = String(firstValueAt(item, [catalogVariantProductId, 'product_id', 'productId']) ?? '')
-            if (!productId) continue
-            const imageUrl = text(firstValueAt(item, [
-              catalogVariantImageUrl || undefined,
-              'image_url',
-              'imageUrl',
-              'thumbnail',
-              'image',
-              'images.0.url',
-              'images.0',
-            ]))
-            const variant: CatalogProductVariant = {
-              id: String(firstValueAt(item, [catalogVariantId, 'id', 'sku']) ?? `${productId}:${variantsByProduct.get(productId)?.length ?? 0}`),
-              size: text(firstValueAt(item, [catalogVariantSize || undefined, 'size', 'name', 'title'])),
-              color: text(firstValueAt(item, [catalogVariantColor || undefined, 'color', 'colour'])),
-              stockQuantity: null,
-              imageUrl,
-            }
-            const current = variantsByProduct.get(productId) ?? []
-            current.push(variant)
-            variantsByProduct.set(productId, current)
-          }
-
-          catalogueProducts = catalogueProducts.map((product) => {
-            const catalogVariants = variantsByProduct.get(product.id)
-            if (!catalogVariants?.length) return product
-            const firstVariantImage = catalogVariants.find((variant) => variant.imageUrl)?.imageUrl ?? null
-            return {
-              ...product,
-              imageUrl: product.imageUrl || firstVariantImage,
-              variants: catalogVariants,
-            }
-          })
-        }
-      }
-
       const stockIndex = new Map<string, number>()
       products.forEach((product, index) => {
         for (const keyName of productIdentityKeys(product)) stockIndex.set(keyName, index)
@@ -481,7 +421,6 @@ async function searchExternalSupabaseSource(
     table,
     variantsTable: mapping.variantsTable || null,
     catalogTable: mapping.catalogTable || null,
-    catalogVariantsTable: mapping.catalogVariantsTable || null,
     brandsTable: mapping.brandsTable || null,
     query: input.query,
     normalizedCount: products.length,

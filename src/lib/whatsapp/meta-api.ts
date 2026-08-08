@@ -604,6 +604,78 @@ export async function uploadResumableMedia(
 }
 
 // ============================================================
+// Business Profile (the photo/about customers see in WhatsApp)
+// ============================================================
+//
+// Distinct from anything in the CRM itself — an agent's wacrm login
+// avatar (profiles.avatar_url) only ever renders inside wacrm's own UI
+// and has no connection to Meta. Getting a photo in front of customers
+// requires actually calling this Graph API endpoint.
+//
+// Setting the photo is a two-step dance, same shape as the template
+// image-header handle above: Meta's `whatsapp_business_profile` POST
+// doesn't accept a plain URL for the picture, only a Resumable-Upload
+// handle (`uploadResumableMedia`, right above).
+
+export interface GetBusinessProfileArgs {
+  phoneNumberId: string
+  accessToken: string
+}
+
+export interface MetaBusinessProfile {
+  profile_picture_url?: string
+  about?: string
+}
+
+/** Fetches the business profile as customers currently see it — used
+ *  to show what's actually live, not just what was last uploaded. */
+export async function getBusinessProfile(
+  args: GetBusinessProfileArgs,
+): Promise<MetaBusinessProfile> {
+  const { phoneNumberId, accessToken } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/whatsapp_business_profile?fields=profile_picture_url,about`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  // Meta wraps this single-row resource in a `data: [...]` envelope,
+  // same shape as a list endpoint, even though it's always exactly one.
+  return data?.data?.[0] ?? {}
+}
+
+export interface UpdateBusinessProfilePhotoArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Handle from `uploadResumableMedia`, not a URL. */
+  handle: string
+}
+
+/** Sets the WhatsApp Business Profile photo customers see. */
+export async function updateBusinessProfilePhoto(
+  args: UpdateBusinessProfilePhotoArgs,
+): Promise<void> {
+  const { phoneNumberId, accessToken, handle } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/whatsapp_business_profile`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      profile_picture_handle: handle,
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
+// ============================================================
 // Template submission (Business Management API)
 // ============================================================
 

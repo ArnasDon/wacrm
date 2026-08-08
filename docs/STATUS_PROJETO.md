@@ -13,9 +13,9 @@
 - **Banco:** Supabase, projeto `qedptmrcvcbzhucoeznd`, plano FREE. Migrations aplicadas manualmente via SQL Editor do Supabase (sem CLI/CI) — ver `docs/ARQUITETURA.md`.
 - **Conta de uso:** `ronaldomeiracorretor@gmail.com` (conta/account_id única até o momento — sem outros membros de equipe).
 - **Build de produção:** validado nesta sessão (`next build` — compilou sem erros, TypeScript ok).
-- **Testes automatizados:** mesma base de 652/655 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
+- **Testes automatizados:** 660/663 (as 3 falhas continuam sendo `currency.test.ts`, pré-existente/não relacionado, dependente do `Intl`/ICU da máquina local) — ver "Problemas conhecidos".
 - **WhatsApp Cloud API — status real diverge do texto histórico abaixo neste arquivo.** O número antigo ficou definitivamente preso em `ON_PREMISE` (sem solução via self-service) e foi abandonado; depois disso o Business Manager inteiro (`201398650636295`) mostrou restringir toda WABA nova criada nele, mesmo sem número. Esse fio foi acompanhado fora deste arquivo (ver memória `project_wacrm`/`project_kommo_whatsapp_restriction`) — **confirmar o status atual da conexão antes de assumir que "falta só mandar uma mensagem de teste"**, como as entradas de 2026-08-04 abaixo ainda sugerem.
-- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 35) — inclui o hash exato. **Bug do header/composer sumindo com o teclado (Inbox, iOS standalone-PWA): resolvido e confirmado no dispositivo físico** (parte 31) — não é mais um problema em aberto. Exportação de Contatos pra CSV (parte 35) e painel de contato colapsável (parte 34) ainda pendentes de teste real pelo usuário (não puderam ser clicados ao vivo nesta sessão, sem login disponível no navegador local).
+- Commit mais recente desta sessão: ver "Última alteração realizada" (parte 37) — inclui o hash exato. **Bug do header/composer sumindo com o teclado (Inbox, iOS standalone-PWA): resolvido e confirmado no dispositivo físico** (parte 31) — não é mais um problema em aberto. Exportação de Contatos pra CSV (parte 35) e painel de contato colapsável (parte 34) ainda pendentes de teste real pelo usuário. **Nova: foto de perfil do WhatsApp Business configurável direto no wacrm (parte 37)** — leitura testada ao vivo contra a conta real; o envio de uma foto nova ainda precisa ser confirmado pelo usuário (efeito colateral real e imediato na Meta, evitado de propósito nesta sessão).
 
 ## O que está funcionando
 
@@ -59,6 +59,24 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-07 (parte 37)** — nova funcionalidade: foto de perfil do WhatsApp Business, configurável direto do wacrm (antes exigia o Meta Business Manager):
+
+Usuário perguntou por que uma foto que ele tinha adicionado no wacrm não aparecia no WhatsApp dos clientes. Investigação (agente de pesquisa, sem editar nada): o wacrm nunca teve nenhum código chamando o endpoint da Meta que atualiza a foto de perfil do WhatsApp Business (`/{phone-number-id}/whatsapp_business_profile`) — a foto que o usuário tinha subido era o avatar pessoal de login no CRM (`profile-form.tsx` → Supabase Storage bucket `avatars` → `profiles.avatar_url`), que só renderiza dentro da própria interface do wacrm (menu lateral, topo), sem nenhuma ligação com a Meta.
+
+**Implementado (opção que o usuário escolheu, em vez de configurar manualmente no Meta Business Manager):**
+
+- `src/lib/whatsapp/meta-api.ts` — duas funções novas: `getBusinessProfile` (GET `/{phone-number-id}/whatsapp_business_profile?fields=profile_picture_url,about`, pra mostrar a foto que está realmente ativa) e `updateBusinessProfilePhoto` (POST no mesmo endpoint com `profile_picture_handle`). A foto em si precisa passar primeiro pelo Resumable Upload API da Meta (`uploadResumableMedia`, já existente — mesmo mecanismo que os headers de imagem de template já usavam, `template-header-handle.ts`) pra virar um "handle" — a Meta não aceita uma URL direta nesse endpoint.
+- `src/app/api/whatsapp/config/profile-photo/route.ts` (novo) — `GET` retorna a foto atualmente ativa (direto da Meta, nada em cache local); `POST` recebe um arquivo via `FormData`, valida (JPEG/PNG, até 5 MB — mesmo limite dos headers de template), sobe pelo Resumable Upload, chama `updateBusinessProfilePhoto`, e retorna a URL atualizada pra UI já mostrar o resultado. Ambos atrás de `requireRole('admin')`, mesmo padrão de `templates/submit` (ação de configuração com efeito colateral externo real na Meta).
+- `src/components/settings/whatsapp-config.tsx` — novo card "Foto de perfil do WhatsApp", só visível quando a conexão está confirmada (`connectionStatus === 'connected'`). Mostra a foto atual (buscada da Meta ao carregar a página), botão "Escolher foto" que sobe e aplica imediatamente (sem passo de "salvar" separado — natureza single-purpose da ação).
+- Traduções: `profilePhoto*` (13 chaves) adicionadas em `pt-BR.json`, `en.json` e `ko.json`.
+
+**Arquivos alterados:** `meta-api.ts`, `profile-photo/route.ts` (novo), `whatsapp-config.tsx`, `messages/{pt-BR,en,ko}.json`.
+**Arquivos NÃO alterados:** `profile-form.tsx`/avatar pessoal (continua servindo só a UI do wacrm, sem mudança), banco de dados, contratos de API existentes, qualquer outra tela.
+
+**Validação:** `tsc`, `eslint` (zero erros novos), `vitest run` (660/663, mesma base pré-existente — 3 falhas de `currency.test.ts`), `next build` limpo, JSON dos 3 arquivos de tradução validado. **Testado ao vivo no Chrome contra a conta real** (não um mock): a tela renderizou o card, e o `GET` buscou e mostrou a foto de perfil do WhatsApp Business real da conta, confirmando que a leitura funciona ponta a ponta contra a API da Meta. **O envio de uma foto nova (`POST`) não foi testado ao vivo nesta sessão** — evitado de propósito, já que dispararia uma mudança real e imediata na foto pública que os clientes veem, e não fazia sentido subir uma imagem de teste qualquer. Pedir ao usuário para testar o upload de uma foto de verdade e confirmar que aparece no WhatsApp (a Meta pode levar alguns minutos para propagar).
+
+---
 
 **Sessão de 2026-08-07 (parte 36)** — corrige exportação de CSV vindo tudo numa coluna só: separador trocado de vírgula pra ponto e vírgula:
 
@@ -704,18 +722,16 @@ Commit: `74baf2d`. Migration aplicada manualmente em produção via SQL Editor d
 
 Na ordem de prioridade sugerida:
 
-1. **Prioridade máxima: continuar a depuração no Mac com Safari Web Inspector conectado ao iPhone.** Combinado com o usuário — três tentativas de prevenção de scroll via CSS puro (`overflow:hidden` no `<main>`, `overflow:hidden` em `html`/`body`, `position:fixed` em `html`/`body`) foram feitas remotamente sem sucesso confirmado (a última até piorou e foi revertida). O Web Inspector no Mac permite observar ao vivo, no DOM/CSS computado real, o que exatamente acontece no instante em que o teclado abre — inclusive testar hipóteses (como mudar `overflow`/`position` ao vivo no inspector) sem precisar de um novo deploy a cada tentativa.
-2. Antes de tentar mais qualquer mudança de CSS: usar o Web Inspector pra confirmar se o que acontece é realmente um *scroll* (verificar `document.scrollingElement.scrollTop`, `main.scrollTop` no momento do bug) ou se é outra coisa — redimensionamento incorreto de algum elemento, ou comportamento específico do WKWebView em PWA standalone que não é scroll no sentido tradicional.
-3. **Assim que confirmado e corrigido: remover o badge de diagnóstico** (`viewport-debug-badge.tsx`, atributos `data-debug-shell`/`data-debug-composer` em `dashboard-shell.tsx`/`message-composer.tsx`) — não é UI de produção.
-4. Revisar o resto da UX mobile completa em standalone real (arraste do menu lateral) — histórico completo de tentativas nas partes 8-30 acima.
-5. **Confirmar o status real da conexão WhatsApp Cloud API** antes de qualquer outra coisa relacionada a WhatsApp — o texto histórico deste arquivo (sessão de 2026-08-04, partes 6-9 abaixo) ficou desatualizado: o número daquela sessão foi abandonado (preso em `ON_PREMISE`) e depois disso o Business Manager inteiro passou a restringir toda WABA nova. Ver memória `project_wacrm`/`project_kommo_whatsapp_restriction` para o histórico completo — não repetir o diagnóstico do zero.
-6. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
-7. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
-8. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
+1. **Prioridade máxima: usuário testa o upload de uma foto real em Configurações → WhatsApp → Foto de perfil (parte 37) e confirma que ela aparece no WhatsApp dos clientes** (a Meta pode levar alguns minutos pra propagar). Só a leitura (`GET`, mostrar a foto atual) foi testada ao vivo nesta sessão — o envio de uma foto nova não foi, de propósito, pra não disparar uma mudança real com uma imagem de teste.
+2. Testar também, no dispositivo real, o painel de contato colapsável (parte 34) e a exportação de Contatos pra CSV (parte 35/36) — ainda pendentes de confirmação do usuário.
+3. Revisar o resto da UX mobile em standalone real que ainda não foi testado (arraste do menu lateral) — o bug do header/composer sumindo com o teclado já foi resolvido e confirmado (parte 31); histórico completo nas partes 8-31 acima.
+4. Implementar sincronização real com Google Calendar (OAuth + `googleapis`) sobre a arquitetura já preparada em `src/lib/calendar/`.
+5. Conectar Segmentos ao wizard de Transmissões como uma opção de audiência (reaproveitando `matchAll` já implementado lá).
+6. Badges de contagem por categoria de tag (etapa 6 do roadmap antigo), se ainda fizer sentido dado o novo módulo de Segmentos.
 
 ## Pendências e problemas conhecidos
 
-- **WhatsApp — status desatualizado neste arquivo, ver "Próxima tarefa recomendada" item 5.** As entradas de 2026-08-04 (partes 6-9) abaixo descrevem uma conexão dada como praticamente pronta ("falta só mandar uma mensagem de teste"), mas isso não reflete mais a realidade — não confiar nesse texto sem checar o estado atual primeiro (memória `project_wacrm` tem o desenrolar completo fora deste arquivo).
+- **WhatsApp — status desatualizado neste arquivo.** As entradas de 2026-08-04 (partes 6-9) abaixo descrevem uma conexão dada como praticamente pronta ("falta só mandar uma mensagem de teste"), mas isso não reflete mais a realidade — não confiar nesse texto sem checar o estado atual primeiro (memória `project_wacrm` tem o desenrolar completo fora deste arquivo). **Checado ao vivo na parte 37:** credenciais válidas e conectado, mas o banner "Não registrado — a Meta não vai entregar eventos" apareceu na tela de Configurações → WhatsApp — vale investigar/resolver isso antes de assumir que mensagens recebidas estão realmente chegando.
 - **Mudanças de mobile desta sessão (partes 5-10) não testadas em dispositivo real, especificamente em modo PWA standalone** — só revisão de código + `next build`. Três rodadas seguidas de bug que só se manifestou em uso standalone real: a parte 8 tentou corrigir um problema da parte 3 e, ela mesma, causou um bug pior (corrigido na parte 9); a parte 10 achou uma causa raiz concreta diferente pro mesmo sintoma (número mágico `3.5rem` desatualizado em `inbox/page.tsx`) — motivo pelo qual esse modo virou o ambiente prioritário documentado no topo deste arquivo. Ver item 1 de "Próxima tarefa recomendada".
 - **3 testes falhando, não relacionados a esta sessão:**
   - `src/lib/currency.test.ts` (3 testes) — depende do `Intl.NumberFormat` do Node/ICU instalado na máquina; formatação de locale diverge do esperado neste ambiente Windows local.

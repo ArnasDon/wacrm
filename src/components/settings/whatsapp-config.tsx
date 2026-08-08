@@ -13,6 +13,8 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -77,6 +79,16 @@ export function WhatsAppConfig() {
   const isRegistered = Boolean(config?.registered_at);
   const lastRegistrationError = config?.last_registration_error ?? null;
 
+  // Business Profile photo — the one customers actually see next to
+  // messages from this number. Unrelated to the agent's own wacrm login
+  // avatar (profiles.avatar_url, set in Settings → Seu perfil), which
+  // only ever renders inside the CRM's own UI. Fetched fresh from Meta
+  // (not cached locally) so this always reflects what's actually live.
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
   type RegistrationProbe = {
     live: boolean;
@@ -93,6 +105,71 @@ export function WhatsAppConfig() {
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
+
+  const fetchProfilePhoto = useCallback(async () => {
+    setLoadingPhoto(true);
+    try {
+      const res = await fetch('/api/whatsapp/config/profile-photo', {
+        method: 'GET',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProfilePhotoUrl(data.profile_picture_url ?? null);
+      }
+    } catch (err) {
+      console.error('Failed to fetch current WhatsApp profile photo:', err);
+    } finally {
+      setLoadingPhoto(false);
+    }
+  }, []);
+
+  // Only meaningful once Meta confirms the credentials work — before
+  // that there's no live phone_number_id/token combo to ask Meta with.
+  useEffect(() => {
+    if (connectionStatus === 'connected') {
+      fetchProfilePhoto();
+    } else {
+      setProfilePhotoUrl(null);
+    }
+  }, [connectionStatus, fetchProfilePhoto]);
+
+  async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so the same file can be re-picked
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      toast.error(t('profilePhotoUnsupported'));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(t('profilePhotoTooLarge'));
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch('/api/whatsapp/config/profile-photo', {
+        method: 'POST',
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || t('profilePhotoUploadFailed'));
+      }
+      if (data.profile_picture_url) {
+        setProfilePhotoUrl(data.profile_picture_url);
+      }
+      toast.success(t('profilePhotoSuccess'));
+    } catch (err) {
+      console.error('WhatsApp profile photo upload error:', err);
+      toast.error(err instanceof Error ? err.message : t('profilePhotoUploadFailed'));
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
@@ -682,6 +759,73 @@ export function WhatsAppConfig() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Business Profile Photo — the photo customers see in WhatsApp
+            next to messages from this number. Only meaningful once
+            credentials are confirmed live. */}
+        {connectionStatus === 'connected' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-foreground">{t('profilePhotoTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('profilePhotoDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted">
+                  {loadingPhoto ? (
+                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                  ) : profilePhotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profilePhotoUrl}
+                      alt={t('profilePhotoAlt')}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <ImageIcon className="size-6 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {profilePhotoUrl ? t('profilePhotoCurrent') : t('profilePhotoNone')}
+                  </p>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    className="hidden"
+                    onChange={handlePhotoPick}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                    className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                  >
+                    {uploadingPhoto ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        {t('profilePhotoUploading')}
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="size-4" />
+                        {t('profilePhotoChoose')}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+                {t('profilePhotoHint')}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">

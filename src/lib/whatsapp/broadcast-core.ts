@@ -193,49 +193,44 @@ export async function createBroadcast(
   // recipient change). `rejected` phones have no recipient row, so they
   // are reported to the caller in the POST response, not in these
   // persisted counts.
-  const { data: broadcast, error: bErr } = await db
-    .from('broadcasts')
-    .insert({
-      account_id: accountId,
-      user_id: auditUserId,
-      name: name || `API broadcast (${templateName})`,
-      template_name: templateName,
-      template_language: templateLanguage,
-      status: 'sending',
-      total_recipients: deduped.length,
-    })
-    .select('id')
-    .single();
-  if (bErr || !broadcast) {
-    console.error('[broadcast-core] create broadcast error:', bErr);
+  // Insert the parent broadcast and its recipient rows in ONE transaction
+  // (migration 037's create_broadcast_with_recipients). Previously these
+  // were two separate inserts: if the recipient insert failed, the parent
+  // was already persisted with status 'sending' and no recipients, leaving
+  // an orphaned campaign that looked like it was sending but had no
+  // delivery plan (issue #370). The function body is atomic, so a recipient
+  // failure now rolls the parent back and nothing orphaned survives.
+  const { data: createdRows, error: createErr } = await db.rpc(
+    'create_broadcast_with_recipients',
+    {
+      p_account_id: accountId,
+      p_user_id: auditUserId,
+      p_name: name || `API broadcast (${templateName})`,
+      p_template_name: templateName,
+      p_template_language: templateLanguage,
+      p_total_recipients: deduped.length,
+      p_contact_ids: deduped.map((r) => r.contactId),
+    }
+  );
+  if (createErr || !createdRows || createdRows.length === 0) {
+    console.error('[broadcast-core] create broadcast error:', createErr);
     throw new BroadcastError('internal', 'Failed to create broadcast', 500);
   }
 
-  const { data: recipientRows, error: rErr } = await db
-    .from('broadcast_recipients')
-    .insert(
-      deduped.map((r) => ({
-        broadcast_id: broadcast.id,
-        contact_id: r.contactId,
-        status: 'pending' as const,
-      }))
-    )
-    .select('id, contact_id');
-  if (rErr || !recipientRows) {
-    console.error('[broadcast-core] create recipients error:', rErr);
-    throw new BroadcastError('internal', 'Failed to create broadcast', 500);
-  }
+  const broadcastId = createdRows[0].broadcast_id as string;
 
   // Pair each inserted recipient row back to its phone/params by
   // contact_id — unambiguous now that duplicates are collapsed.
   const byContact = new Map(deduped.map((r) => [r.contactId, r]));
-  const planned: PlannedRecipient[] = recipientRows.map((row) => {
-    const r = byContact.get(row.contact_id as string)!;
-    return { recipientRowId: row.id as string, phone: r.phone, params: r.params };
-  });
+  const planned: PlannedRecipient[] = createdRows.map(
+    (row: { recipient_id: string; contact_id: string }) => {
+      const r = byContact.get(row.contact_id)!;
+      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+    }
+  );
 
   return {
-    broadcastId: broadcast.id,
+    broadcastId,
     templateName,
     templateLanguage,
     phoneNumberId: config.phone_number_id,

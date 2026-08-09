@@ -794,9 +794,9 @@ export function WhatsAppConfig() {
                 <AccordionContent className="text-muted-foreground">
                   <ol className="list-decimal list-inside space-y-1 text-sm">
                     <li>{t('step3_1')}</li>
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_2') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_3') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step3_4') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step3_3') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step3_4') }} />
                   </ol>
                 </AccordionContent>
               </AccordionItem>
@@ -812,8 +812,8 @@ export function WhatsAppConfig() {
                   <ol className="list-decimal list-inside space-y-1 text-sm">
                     <li>{t('step4_1')}</li>
                     <li>{t('step4_2')}</li>
-                    <li dangerouslySetInnerHTML={{ __html: t('step4_3') }} />
-                    <li dangerouslySetInnerHTML={{ __html: t('step4_4') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step4_3') }} />
+                    <li dangerouslySetInnerHTML={{ __html: t.raw('step4_4') }} />
                     <li>{t('step4_5')}</li>
                   </ol>
                 </AccordionContent>

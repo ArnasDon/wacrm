@@ -93,6 +93,134 @@ async function sendInteractive(args: {
   return { messageId }
 }
 
+async function sendTemplatePayload(args: {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  template: Record<string, unknown>
+}): Promise<{ messageId: string }> {
+  const { phoneNumberId, accessToken, to, template } = args
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'template',
+      template,
+    }),
+  })
+  if (!response.ok) await metaError(response, `Meta carousel send error: ${response.status}`)
+  const body = (await response.json()) as { messages?: Array<{ id?: string }> }
+  const messageId = body.messages?.[0]?.id
+  if (!messageId) throw new Error('Meta did not return a WhatsApp message id.')
+  return { messageId }
+}
+
+export async function createProductCarouselTemplate(args: {
+  wabaId: string
+  accessToken: string
+  name: string
+  language?: string
+  bodyText?: string
+}): Promise<{ id: string; status?: string }> {
+  const {
+    wabaId,
+    accessToken,
+    name,
+    language = 'pt_PT',
+    bodyText = 'Veja estas opções disponíveis e escolha a que prefere.',
+  } = args
+
+  const card = {
+    components: [
+      { type: 'HEADER', format: 'PRODUCT' },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'SPM', text: 'Ver produto' }],
+      },
+    ],
+  }
+
+  const response = await fetch(`${META_API_BASE}/${wabaId}/message_templates`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      name,
+      language,
+      category: 'MARKETING',
+      components: [
+        { type: 'BODY', text: bodyText.slice(0, 1024) },
+        { type: 'CAROUSEL', cards: [card, card] },
+      ],
+    }),
+  })
+
+  if (!response.ok) await metaError(response, `Meta carousel template create error: ${response.status}`)
+  const body = (await response.json()) as { id?: string; status?: string }
+  if (!body.id) throw new Error('Meta did not return a carousel template id.')
+  return { id: body.id, status: body.status }
+}
+
+export async function sendProductCarouselTemplate(args: {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  catalogId: string
+  templateName: string
+  language?: string
+  productRetailerIds: string[]
+}): Promise<{ messageId: string }> {
+  const {
+    phoneNumberId,
+    accessToken,
+    to,
+    catalogId,
+    templateName,
+    language = 'pt_PT',
+    productRetailerIds,
+  } = args
+
+  const ids = Array.from(new Set(productRetailerIds.map((id) => id.trim()).filter(Boolean))).slice(0, 10)
+  if (ids.length < 2) throw new Error('A product carousel requires at least two product retailer ids.')
+
+  return sendTemplatePayload({
+    phoneNumberId,
+    accessToken,
+    to,
+    template: {
+      name: templateName,
+      language: { code: language },
+      components: [
+        {
+          type: 'carousel',
+          cards: ids.map((product_retailer_id, card_index) => ({
+            card_index,
+            components: [
+              {
+                type: 'header',
+                parameters: [
+                  {
+                    type: 'product',
+                    product: { catalog_id: catalogId, product_retailer_id },
+                  },
+                ],
+              },
+            ],
+          })),
+        },
+      ],
+    },
+  })
+}
+
 export async function sendCatalogProduct(args: {
   phoneNumberId: string
   accessToken: string

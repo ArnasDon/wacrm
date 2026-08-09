@@ -110,6 +110,13 @@ export interface Contact {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  /** "Já comprou comigo?" (migration 048). Defaults to false in the DB
+   *  for every existing and new contact; changed only by explicit user
+   *  action. Optional here because most queries don't select it. */
+  has_purchased?: boolean;
+  /** Reserved for a future AI suggestion (migration 048) — not read or
+   *  written by any UI yet. */
+  suggested_has_purchased?: boolean | null;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];

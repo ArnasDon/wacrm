@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -76,6 +77,8 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
+  const [hasPurchased, setHasPurchased] = useState(false);
+  const [savingHasPurchased, setSavingHasPurchased] = useState(false);
 
   // Tags tab
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -114,6 +117,7 @@ export function ContactDetailView({
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
+      setHasPurchased(data.has_purchased ?? false);
     }
     setLoading(false);
   }, [contactId, supabase]);
@@ -224,6 +228,26 @@ export function ContactDetailView({
       onUpdated();
     }
     setSavingDetails(false);
+  }
+
+  async function toggleHasPurchased(value: boolean) {
+    if (!contactId) return;
+    const previous = hasPurchased;
+    setHasPurchased(value);
+    setSavingHasPurchased(true);
+
+    const { error } = await supabase
+      .from('contacts')
+      .update({ has_purchased: value, updated_at: new Date().toISOString() })
+      .eq('id', contactId);
+
+    if (error) {
+      setHasPurchased(previous);
+      toast.error(t('toastUpdateFailed'));
+    } else {
+      onUpdated();
+    }
+    setSavingHasPurchased(false);
   }
 
   async function toggleTag(tagId: string) {
@@ -520,6 +544,21 @@ export function ContactDetailView({
                       value={editCompany}
                       onChange={(e) => setEditCompany(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {t('hasPurchased')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {hasPurchased ? t('hasPurchasedYes') : t('hasPurchasedNo')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={hasPurchased}
+                      onCheckedChange={toggleHasPurchased}
+                      disabled={savingHasPurchased}
                     />
                   </div>
                   <Button

@@ -83,11 +83,11 @@ export async function loadEmbeddingsKey(
 ): Promise<{ key: string | null; corrupt: boolean }> {
   const { data, error } = await db
     .from('ai_configs')
-    .select('provider, api_key, embeddings_api_key, is_active')
+    .select('provider, api_key, embeddings_api_key, is_active, transcription_enabled')
     .eq('account_id', accountId)
     .maybeSingle()
 
-  if (error || !data || !data.is_active) {
+  if (error || !data || !data.is_active || data.transcription_enabled === false) {
     return { key: null, corrupt: false }
   }
 

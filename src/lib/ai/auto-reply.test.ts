@@ -40,6 +40,12 @@ vi.mock('./crm-context', () => ({
   loadCrmCustomerContext: vi.fn().mockResolvedValue({}),
   crmCustomerContextPrompt: vi.fn().mockReturnValue('CRM context'),
 }))
+vi.mock('./contact-memory', () => ({
+  retrieveContactMemory: vi.fn().mockResolvedValue([
+    'Prefere receber entregas ao sábado.',
+  ]),
+  contactMemoryPrompt: vi.fn().mockReturnValue('Contact memory'),
+}))
 vi.mock('./tools', () => ({
   createAutoReplyTools: () => ({
     tools: [
@@ -181,6 +187,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).toHaveBeenCalledWith(expect.objectContaining({
       tools: expect.arrayContaining([expect.objectContaining({ name: 'search_knowledge' })]),
       executeTool: expect.any(Function),
+      systemPrompt: expect.stringContaining('Contact memory'),
     }))
   })
 

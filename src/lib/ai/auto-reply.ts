@@ -2,6 +2,10 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { crmCustomerContextPrompt, loadCrmCustomerContext } from './crm-context'
+import {
+  contactMemoryPrompt,
+  retrieveContactMemory,
+} from './contact-memory'
 import { createWhatsAppImageResolver } from './image-context'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
@@ -271,31 +275,47 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       onToolCall: (call) => trace?.recordToolCall(call),
     })
 
-    let catalogueGrounding: string | null = null
-    if (permissions.search_catalog) {
-      const prefetch = await prefetchCatalogueForConversation({
+    const [prefetch, crmContext, memories] = await Promise.all([
+      permissions.search_catalog
+        ? prefetchCatalogueForConversation({
+            db,
+            accountId,
+            messages,
+            limit: 5,
+          }).catch((error) => {
+            console.error('[ai auto-reply] catalogue prefetch failed:', error)
+            return null
+          })
+        : Promise.resolve(null),
+      loadCrmCustomerContext(db, accountId, contactId)
+        .then(crmCustomerContextPrompt)
+        .catch((error) => {
+          console.error('[ai auto-reply] CRM context lookup failed:', error)
+          return null
+        }),
+      retrieveContactMemory({
         db,
         accountId,
-        messages,
-        limit: 5,
+        contactId,
+        embeddingsApiKey: config.embeddingsApiKey,
+        currentMessage: latestInboundText,
+        limit: 3,
+      }).catch((error) => {
+        console.error('[ai auto-reply] contact memory lookup failed:', error)
+        return []
+      }),
+    ])
+    const catalogueGrounding = prefetch
+      ? cataloguePrefetchPrompt(prefetch)
+      : null
+    if (prefetch?.attempted) {
+      console.info('[ai auto-reply] catalogue prefetch:', {
+        conversationId,
+        count: prefetch.products.length,
       })
-      catalogueGrounding = cataloguePrefetchPrompt(prefetch)
-      if (prefetch.attempted) {
-        console.info('[ai auto-reply] catalogue prefetch:', {
-          conversationId,
-          query: prefetch.query,
-          count: prefetch.products.length,
-          names: prefetch.products.map((product) => product.name),
-        })
-      }
     }
-
-    const crmContext = await loadCrmCustomerContext(db, accountId, contactId)
-      .then(crmCustomerContextPrompt)
-      .catch((error) => {
-        console.error('[ai auto-reply] CRM context lookup failed:', error)
-        return null
-      })
+    trace?.setMemoryMatchCount(memories.length)
+    const memoryContext = contactMemoryPrompt(memories)
 
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -303,7 +323,12 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
     })
-    const systemPrompt = [baseSystemPrompt, crmContext, catalogueGrounding]
+    const systemPrompt = [
+      baseSystemPrompt,
+      crmContext,
+      memoryContext,
+      catalogueGrounding,
+    ]
       .filter((part): part is string => Boolean(part))
       .join('\n\n')
 

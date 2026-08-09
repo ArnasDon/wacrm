@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_AGENT_TOOLS } from '@/lib/ai/tool-permissions'
-import { buildAgentFlowGraph } from './agent-flow-panel'
+import { agentFlowAccountState, buildAgentFlowGraph } from './agent-flow-panel'
+
+describe('agentFlowAccountState', () => {
+  it('waits only while the profile is still loading', () => {
+    expect(agentFlowAccountState(null, true)).toBe('loading')
+  })
+
+  it('uses the account id without requiring the account summary object', () => {
+    expect(agentFlowAccountState('account-1', false)).toBe('ready')
+  })
+
+  it('stops loading when the profile settled without an account id', () => {
+    expect(agentFlowAccountState(null, false)).toBe('unavailable')
+  })
+})
 
 describe('buildAgentFlowGraph', () => {
   it('connects WhatsApp, buffer, agent, active tools and response', () => {

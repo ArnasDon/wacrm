@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -61,6 +61,7 @@ interface ToolsResponse {
   configured: boolean
   agent_id: string | null
   tools: Record<AgentToolKey, boolean>
+  error?: string
 }
 
 interface ToolCallRow {
@@ -186,6 +187,16 @@ function AgentFlowNode({ data }: NodeProps) {
 
 const NODE_TYPES = { agentFlow: AgentFlowNode }
 
+export type AgentFlowAccountState = 'loading' | 'ready' | 'unavailable'
+
+export function agentFlowAccountState(
+  accountId: string | null,
+  profileLoading: boolean,
+): AgentFlowAccountState {
+  if (accountId) return 'ready'
+  return profileLoading ? 'loading' : 'unavailable'
+}
+
 export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
   nodes: Node<FlowNodeData>[]
   edges: Edge[]
@@ -299,36 +310,59 @@ export function AgentFlowPanel({
 }: {
   onOpenTab: (tab: AgentTab) => void
 }) {
-  const { account } = useAuth()
+  const { accountId, profileLoading } = useAuth()
   const [snapshot, setSnapshot] = useState<AgentFlowSnapshot | null>(null)
   const [selected, setSelected] = useState<FlowNodeData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const loadAbortRef = useRef<AbortController | null>(null)
 
   const load = useCallback(async () => {
-    if (!account?.id) return
+    const accountState = agentFlowAccountState(accountId, profileLoading)
+    if (accountState === 'loading') return
+    if (accountState === 'unavailable') {
+      setSnapshot(null)
+      setError('Não foi possível identificar a conta actual. Actualize a página ou volte a iniciar sessão.')
+      setLoading(false)
+      return
+    }
+
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+    let timedOut = false
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 15_000)
     setLoading(true)
     setError(null)
     try {
       const supabase = createClient()
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
       const [configResponse, toolsResponse, callsResult] = await Promise.all([
-        fetch('/api/ai/config'),
-        fetch('/api/ai/tools'),
+        fetch('/api/ai/config', { cache: 'no-store', signal: controller.signal }),
+        fetch('/api/ai/tools', { cache: 'no-store', signal: controller.signal }),
         supabase
           .from('agent_tool_calls')
           .select('tool_key, called_at, succeeded')
-          .eq('account_id', account.id)
+          .eq('account_id', accountId)
           .gte('called_at', since)
           .order('called_at', { ascending: false })
-          .limit(5000),
+          .limit(5000)
+          .abortSignal(controller.signal),
       ])
-      const config = (await configResponse.json()) as ConfigResponse
-      const toolState = (await toolsResponse.json()) as ToolsResponse
-      if (!configResponse.ok || !toolsResponse.ok || callsResult.error) {
-        throw new Error('Não foi possível carregar o fluxo do agente.')
+      const config = (await configResponse.json().catch(() => ({}))) as ConfigResponse & {
+        error?: string
       }
+      const toolState = (await toolsResponse.json()) as ToolsResponse
+      if (!configResponse.ok)
+        throw new Error(config.error ?? 'Não foi possível carregar a configuração do agente.')
+      if (!toolsResponse.ok)
+        throw new Error(toolState.error ?? 'Não foi possível carregar as ferramentas do agente.')
+      if (callsResult.error)
+        throw new Error(`Não foi possível carregar a actividade do agente: ${callsResult.error.message}`)
       const counts: Partial<Record<AgentToolKey, number>> = {}
       for (const row of (callsResult.data ?? []) as ToolCallRow[]) {
         counts[row.tool_key] = (counts[row.tool_key] ?? 0) + 1
@@ -340,32 +374,50 @@ export function AgentFlowPanel({
         counts,
       })
     } catch (loadError) {
+      if (controller.signal.aborted) {
+        if (loadAbortRef.current !== controller) return
+        setError(
+          timedOut
+            ? 'O carregamento do fluxo demorou demasiado. Tente novamente.'
+            : 'O carregamento do fluxo foi interrompido. Tente novamente.',
+        )
+        return
+      }
       setError(
         loadError instanceof Error
           ? loadError.message
           : 'Não foi possível carregar o fluxo do agente.',
       )
     } finally {
-      setLoading(false)
+      window.clearTimeout(timeoutId)
+      if (loadAbortRef.current === controller) {
+        loadAbortRef.current = null
+        setLoading(false)
+      }
     }
-  }, [account?.id])
+  }, [accountId, profileLoading])
 
   useEffect(() => {
     void load()
+    return () => {
+      const activeLoad = loadAbortRef.current
+      loadAbortRef.current = null
+      activeLoad?.abort()
+    }
   }, [load])
 
   useEffect(() => {
-    if (!account?.id) return
+    if (!accountId) return
     const supabase = createClient()
     const channel = supabase
-      .channel(`agent-tool-calls:${account.id}`)
+      .channel(`agent-tool-calls:${accountId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'wacrm',
           table: 'agent_tool_calls',
-          filter: `account_id=eq.${account.id}`,
+          filter: `account_id=eq.${accountId}`,
         },
         (payload) => {
           const row = payload.new as ToolCallRow
@@ -388,7 +440,7 @@ export function AgentFlowPanel({
       void supabase.removeChannel(channel)
       setIsConnected(false)
     }
-  }, [account?.id])
+  }, [accountId])
 
   const graph = useMemo(
     () => (snapshot ? buildAgentFlowGraph(snapshot) : null),

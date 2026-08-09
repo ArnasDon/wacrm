@@ -25,7 +25,7 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, handoff_agent_id, api_key, embeddings_api_key')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
@@ -70,6 +70,9 @@ export async function POST(request: Request) {
     let bufferWindowSeconds = Number(body.buffer_window_seconds)
     if (!Number.isFinite(bufferWindowSeconds)) bufferWindowSeconds = 12
     bufferWindowSeconds = Math.min(30, Math.max(1, Math.floor(bufferWindowSeconds)))
+    let maxReplyChunks = Number(body.max_reply_chunks)
+    if (!Number.isFinite(maxReplyChunks)) maxReplyChunks = 3
+    maxReplyChunks = Math.min(5, Math.max(1, Math.floor(maxReplyChunks)))
 
     const rawHandoff = typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
     const handoffProvided = 'handoff_agent_id' in body
@@ -112,6 +115,7 @@ export async function POST(request: Request) {
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
           bufferWindowSeconds,
+          maxReplyChunks,
           handoffAgentId: null,
           embeddingsApiKey: null,
         })
@@ -138,6 +142,7 @@ export async function POST(request: Request) {
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
       buffer_window_seconds: bufferWindowSeconds,
+      max_reply_chunks: maxReplyChunks,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

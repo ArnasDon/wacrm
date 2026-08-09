@@ -39,6 +39,8 @@ export interface AiConfig {
   /** Quiet period after the latest inbound message before auto-reply runs.
    *  This lets rapid WhatsApp fragments become one model turn. */
   bufferWindowSeconds: number
+  /** Maximum number of WhatsApp bubbles sent for one automatic reply. */
+  maxReplyChunks: number
   /** Where auto-reply hands a conversation off when the model bails: an
    *  agent's `auth.users.id`, or null to leave it unassigned (drop into
    *  the shared queue). */

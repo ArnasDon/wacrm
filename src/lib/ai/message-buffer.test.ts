@@ -26,6 +26,7 @@ const DISPATCH_ARGS = {
   conversationId: 'conv-1',
   contactId: 'contact-1',
   configOwnerUserId: 'user-1',
+  inboundMessageId: 'wamid.inbound-1',
 }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
@@ -40,6 +41,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyEnabled: true,
     autoReplyMaxPerConversation: 3,
     bufferWindowSeconds: 12,
+    maxReplyChunks: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,

@@ -1679,6 +1679,8 @@
       "messageBuffer": "Message buffer",
       "messageBufferDesc": "Wait for rapid message fragments before the AI replies (1–30 seconds).",
       "seconds": "seconds",
+      "maxReplyChunks": "Maximum bubbles per reply",
+      "maxReplyChunksDesc": "Send one AI answer as up to this many short WhatsApp messages.",
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",

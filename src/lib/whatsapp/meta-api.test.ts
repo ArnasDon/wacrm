@@ -3,6 +3,7 @@ import {
   INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTypingIndicator,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -20,6 +21,38 @@ const BASE_ARGS = {
   to: "1234567890",
   bodyText: "Body text",
 } as const;
+
+describe("sendTypingIndicator", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends Meta's read receipt and native typing payload", async () => {
+    let captured: { url: string; body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        captured = { url, body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+
+    await sendTypingIndicator({
+      phoneNumberId: "phone-1",
+      accessToken: "token-1",
+      messageId: "wamid.inbound-1",
+    });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.url).toContain("phone-1/messages");
+    expect(captured!.body).toEqual({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: "wamid.inbound-1",
+      typing_indicator: { type: "text" },
+    });
+  });
+});
 
 describe("sendInteractiveButtons — validation", () => {
   beforeEach(() => {

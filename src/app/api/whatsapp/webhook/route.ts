@@ -653,6 +653,7 @@ async function processMessage(
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      inboundMessageId: message.id,
     }
 
     // Nested after() callbacks share this route's maxDuration and let the

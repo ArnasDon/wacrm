@@ -1679,6 +1679,8 @@
       "messageBuffer": "메시지 버퍼",
       "messageBufferDesc": "AI가 답하기 전에 연속으로 들어오는 메시지 조각을 기다립니다(1~30초).",
       "seconds": "초",
+      "maxReplyChunks": "응답당 최대 말풍선 수",
+      "maxReplyChunksDesc": "AI 답변 하나를 이 개수까지의 짧은 WhatsApp 메시지로 보냅니다.",
       "handoffTo": "인계 대상",
       "handoffToDesc": "봇이 도움을 줄 수 없거나 응답 한도에 도달하면 일시 중지하고 무슨 일이 있었는지 짧은 메모와 함께 이 대상에게 대화를 넘깁니다.",
       "handoffQueue": "미배정 대기열 (모든 상담원이 처리 가능)",

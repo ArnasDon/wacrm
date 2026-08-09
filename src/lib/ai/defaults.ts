@@ -1,4 +1,5 @@
 import { commercialStrategyPrompt } from './commercial-strategy'
+import { REPLY_SPLIT_MARKER } from './chunk-reply'
 import type { AiProvider, CommercialStrategy } from './types'
 
 // ============================================================
@@ -54,10 +55,13 @@ export function buildSystemPrompt(args: {
   userPrompt: string | null
   mode: 'draft' | 'auto_reply'
   commercialStrategy?: CommercialStrategy
+  /** Maximum WhatsApp bubbles for automatic replies. Omit outside the live
+   *  auto-reply path so drafts and the Playground never expose markers. */
+  maxReplyChunks?: number
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
 }): string {
-  const { userPrompt, mode, commercialStrategy, knowledge } = args
+  const { userPrompt, mode, commercialStrategy, maxReplyChunks, knowledge } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -91,6 +95,12 @@ export function buildSystemPrompt(args: {
     parts.push(
       'Source attribution rule: when an excerpt identifies both a discovery source and a source to cite, cite only the source marked "Fonte a citar". The discovery source is internal provenance and must not be presented as the origin of the fact. Prefer an official primary source; otherwise cite the agency or newsroom responsible for the original reporting. Do not invent or infer a different source.',
     )
+    if (maxReplyChunks && maxReplyChunks > 1) {
+      parts.push(
+        `WhatsApp bubble rule: when the reply reads more naturally as separate short messages, split it into at most ${maxReplyChunks} bubbles using exactly ${REPLY_SPLIT_MARKER} between bubbles. ` +
+          `Never show or explain this marker. Do not force a split when one short bubble is more natural.`,
+      )
+    }
   }
 
   if (userPrompt && userPrompt.trim()) {

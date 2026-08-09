@@ -447,6 +447,8 @@
       "messageBuffer": "Buffer de mensagens",
       "messageBufferDesc": "Aguarda por fragmentos enviados em sequência antes de a IA responder (1–30 segundos).",
       "seconds": "segundos",
+      "maxReplyChunks": "Máximo de balões por resposta",
+      "maxReplyChunksDesc": "Envia uma resposta da IA em até este número de mensagens curtas no WhatsApp.",
       "handoffTo": "Transferir para",
       "handoffToDesc": "Quando o agente não consegue ajudar ou atinge o limite de respostas, entra em pausa e encaminha a conversa para este destino, com uma nota resumida.",
       "handoffQueue": "Fila sem atribuição, disponível para qualquer agente",

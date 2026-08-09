@@ -259,6 +259,39 @@ export async function sendTextMessage(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendTypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta wamid of the inbound message being acknowledged. */
+  messageId: string
+}
+
+/**
+ * Mark an inbound message as read and display WhatsApp's native typing
+ * indicator. Meta dismisses it when a response is sent or after 25 seconds.
+ */
+export async function sendTypingIndicator(
+  args: SendTypingIndicatorArgs
+): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
 export type MediaKind = 'image' | 'video' | 'document' | 'audio'
 
 export interface SendMediaMessageArgs {

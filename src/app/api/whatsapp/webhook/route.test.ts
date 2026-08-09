@@ -315,6 +315,7 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
       conversationId: 'conv-1',
       contactId: 'contact-1',
       configOwnerUserId: 'user-1',
+      inboundMessageId: 'wamid.TEST1',
     })
     expect(h.dispatchBufferedInboundToAiReply).not.toHaveBeenCalled()
   })

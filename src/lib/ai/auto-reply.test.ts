@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   buildConversationContext: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  engineSendTypingIndicator: vi.fn(),
   triggerMatches: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
@@ -20,7 +21,10 @@ const h = vi.hoisted(() => ({
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  engineSendTypingIndicator: h.engineSendTypingIndicator,
+}))
 vi.mock('@/lib/automations/engine', () => ({ triggerMatches: h.triggerMatches }))
 vi.mock('@/lib/rate-limit', () => ({
   RATE_LIMITS: { aiAutoReplyAccount: { limit: 100, windowMs: 60_000 } },
@@ -88,7 +92,7 @@ vi.mock('./admin-client', () => ({
 
 import { dispatchInboundToAiReply } from './auto-reply'
 
-const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', contactId: 'contact-1', configOwnerUserId: 'user-1' }
+const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', contactId: 'contact-1', configOwnerUserId: 'user-1', inboundMessageId: 'wamid.inbound-1' }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -97,6 +101,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     commercialStrategy: DEFAULT_COMMERCIAL_STRATEGY,
     isActive: true, autoReplyEnabled: true, autoReplyMaxPerConversation: 3,
     bufferWindowSeconds: 12,
+    maxReplyChunks: 3,
     handoffAgentId: null, embeddingsApiKey: null, ...overrides,
   }
 }
@@ -112,6 +117,7 @@ beforeEach(() => {
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.engineSendTypingIndicator.mockResolvedValue(undefined)
   h.triggerMatches.mockReturnValue(false)
 })
 
@@ -120,6 +126,30 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.rpcCalls).toEqual([{ name: 'claim_ai_reply_slot', args: { conversation_id: 'conv-1', max_replies: 3 } }])
     expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-1', text: 'Hello!' }))
+    expect(h.engineSendTypingIndicator).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      inboundMessageId: 'wamid.inbound-1',
+    })
+  })
+
+  it('sends explicit reply chunks in order with a human-like pause', async () => {
+    vi.useFakeTimers()
+    h.generateReply.mockResolvedValue({
+      text: 'Primeiro balão.[[SPLIT]]Segundo balão.',
+      handoff: false,
+    })
+
+    const pending = dispatchInboundToAiReply(ARGS)
+    await vi.runAllTimersAsync()
+    await pending
+    vi.useRealTimers()
+
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText.mock.calls.map(([call]) => call.text)).toEqual([
+      'Primeiro balão.',
+      'Segundo balão.',
+    ])
+    expect(h.engineSendTypingIndicator).toHaveBeenCalledTimes(2)
   })
 
   it('exposes the knowledge tool to OpenAI generation', async () => {

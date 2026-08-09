@@ -83,6 +83,7 @@ export async function dispatchBufferedInboundToAiReply(
       conversationId,
       contactId,
       configOwnerUserId,
+      inboundMessageId: args.inboundMessageId,
     })
   } catch (error) {
     console.error('[ai message buffer] dispatch failed:', error)

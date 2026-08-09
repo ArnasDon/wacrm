@@ -4,6 +4,7 @@ import { buildConversationContext } from './context'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
+import { replyChunkDelayMs, splitReplyIntoChunks } from './chunk-reply'
 import { logAiUsage } from './usage'
 import { createAutoReplyTools } from './tools'
 import { loadAgentToolPermissions } from './tool-permissions'
@@ -11,7 +12,10 @@ import {
   cataloguePrefetchPrompt,
   prefetchCatalogueForConversation,
 } from './catalog-prefetch'
-import { engineSendText } from '@/lib/flows/meta-send'
+import {
+  engineSendText,
+  engineSendTypingIndicator,
+} from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { triggerMatches } from '@/lib/automations/engine'
 import type { Automation } from '@/types'
@@ -21,6 +25,8 @@ export interface DispatchArgs {
   accountId: string
   conversationId: string
   contactId: string
+  /** Meta wamid of the newest inbound, used by the native typing indicator. */
+  inboundMessageId: string
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
@@ -44,6 +50,41 @@ async function sendStaticNotice(args: DispatchArgs, text: string) {
     text,
     aiGenerated: true,
   })
+}
+
+async function showTyping(args: DispatchArgs): Promise<void> {
+  try {
+    await engineSendTypingIndicator({
+      accountId: args.accountId,
+      inboundMessageId: args.inboundMessageId,
+    })
+  } catch (error) {
+    console.warn('[ai auto-reply] typing indicator failed:', error)
+  }
+}
+
+async function sendReplyChunks(
+  args: DispatchArgs,
+  text: string,
+  maxChunks: number,
+): Promise<void> {
+  const chunks = splitReplyIntoChunks(text, maxChunks)
+  for (let index = 0; index < chunks.length; index++) {
+    if (index > 0) {
+      await showTyping(args)
+      await new Promise((resolve) =>
+        setTimeout(resolve, replyChunkDelayMs(chunks[index - 1])),
+      )
+    }
+    await engineSendText({
+      accountId: args.accountId,
+      userId: args.configOwnerUserId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      text: chunks[index],
+      aiGenerated: true,
+    })
+  }
 }
 
 function formatHandoffNote(reason: string, summary?: string | null): string {
@@ -228,6 +269,7 @@ export async function dispatchInboundToAiReply(
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
+      maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
     })
     const systemPrompt = catalogueGrounding
@@ -240,6 +282,7 @@ export async function dispatchInboundToAiReply(
       tools: agentTools.tools.map((tool) => tool.name),
     })
 
+    await showTyping(args)
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
@@ -311,14 +354,7 @@ export async function dispatchInboundToAiReply(
     // before the cards. Sending it after the media made the WhatsApp thread
     // read backwards (cards first, then "Veja estas opções").
     if (hasPendingActions && text) {
-      await engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId,
-        contactId,
-        text,
-        aiGenerated: true,
-      })
+      await sendReplyChunks(args, text, config.maxReplyChunks)
     }
 
     if (hasPendingActions) {
@@ -326,14 +362,7 @@ export async function dispatchInboundToAiReply(
     }
 
     if (!hasPendingActions && text) {
-      await engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId,
-        contactId,
-        text,
-        aiGenerated: true,
-      })
+      await sendReplyChunks(args, text, config.maxReplyChunks)
     }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)

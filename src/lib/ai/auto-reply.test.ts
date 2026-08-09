@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
     toolHandoff: null as { reason: string; summary: string | null } | null,
+    tracePayload: null as Record<string, unknown> | null,
   },
 }))
 
@@ -77,6 +78,14 @@ vi.mock('./admin-client', () => ({
       if (table === 'notifications') {
         return { insert: () => Promise.resolve({ error: null }) }
       }
+      if (table === 'agent_traces') {
+        return {
+          insert: (payload: Record<string, unknown>) => {
+            h.state.tracePayload = payload
+            return Promise.resolve({ error: null })
+          },
+        }
+      }
       return {
         select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: h.state.conv, error: null }) }) }),
         update: (payload: Record<string, unknown>) => {
@@ -120,6 +129,7 @@ beforeEach(() => {
   h.state.updatePayload = null
   h.state.rpcCalls = []
   h.state.toolHandoff = null
+  h.state.tracePayload = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
@@ -136,6 +146,11 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.engineSendTypingIndicator).toHaveBeenCalledWith({
       accountId: 'acct-1',
       inboundMessageId: 'wamid.inbound-1',
+    })
+    expect(h.state.tracePayload).toMatchObject({
+      account_id: 'acct-1',
+      conversation_id: 'conv-1',
+      final_action: 'reply',
     })
   })
 
@@ -237,6 +252,7 @@ describe('dispatchInboundToAiReply — handoff', () => {
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(
       'Confirmar a identidade antes de cancelar.',
     )
+    expect(h.state.tracePayload).toMatchObject({ final_action: 'handoff' })
   })
 
   it('disables auto-reply, writes a summary, and sends the handoff notice', async () => {

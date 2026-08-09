@@ -29,6 +29,7 @@ function runtime(
   db: WacrmSupabaseClient,
   enabled: AgentToolKey,
   agentId?: string,
+  onToolCall?: Parameters<typeof createAutoReplyTools>[0]['onToolCall'],
 ) {
   return createAutoReplyTools({
     db,
@@ -38,6 +39,7 @@ function runtime(
     configOwnerUserId: 'user-1',
     config: { agentId, embeddingsApiKey: null },
     permissions: permissions(enabled),
+    onToolCall,
   })
 }
 
@@ -198,5 +200,27 @@ describe('CRM agent tools', () => {
     })
     expect(JSON.stringify(logged)).not.toContain('Sensitive complaint')
     expect(JSON.stringify(logged)).not.toContain('secret-call-id')
+  })
+
+  it('reports safe timing metadata to the turn trace', async () => {
+    const onToolCall = vi.fn()
+    const db = {
+      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
+    } as unknown as WacrmSupabaseClient
+    const tools = runtime(db, 'handoff_human', 'agent-1', onToolCall)
+
+    await tools.executeTool({
+      id: 'private-id',
+      name: 'handoff_human',
+      arguments: JSON.stringify({ reason: 'Private reason' }),
+    })
+
+    expect(onToolCall).toHaveBeenCalledWith({
+      name: 'handoff_human',
+      ms: expect.any(Number),
+      succeeded: true,
+    })
+    expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('Private reason')
+    expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('private-id')
   })
 })

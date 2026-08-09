@@ -5,6 +5,7 @@ import type { CatalogProduct } from '@/lib/catalog/types'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
+import type { AgentTraceToolCall } from '../trace'
 import type { AgentToolKey } from '../tool-permissions'
 import type {
   AgentToolDefinition,
@@ -347,6 +348,7 @@ export function createAutoReplyTools(args: {
   configOwnerUserId: string
   config: Pick<AiConfig, 'agentId' | 'embeddingsApiKey'>
   permissions: Record<AgentToolKey, boolean>
+  onToolCall?: (call: AgentTraceToolCall) => void
 }): ToolSet {
   const {
     db,
@@ -356,6 +358,7 @@ export function createAutoReplyTools(args: {
     configOwnerUserId,
     config,
     permissions,
+    onToolCall,
   } = args
   const pendingProductSends: PendingProductSend[] = []
   const pendingProductGalleries: PendingProductGallery[] = []
@@ -631,6 +634,12 @@ export function createAutoReplyTools(args: {
       succeeded = true
       return result
     } finally {
+      const durationMs = Math.max(0, Date.now() - startedAt)
+      try {
+        onToolCall?.({ name: call.name, ms: durationMs, succeeded })
+      } catch (error) {
+        console.error('[ai tools] trace callback failed:', error)
+      }
       if (config.agentId) {
         try {
           const { error } = await db.from('agent_tool_calls').insert({
@@ -638,7 +647,7 @@ export function createAutoReplyTools(args: {
             agent_id: config.agentId,
             conversation_id: conversationId,
             tool_key: call.name,
-            duration_ms: Math.max(0, Date.now() - startedAt),
+            duration_ms: durationMs,
             succeeded,
           })
           if (error) {

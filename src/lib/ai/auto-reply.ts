@@ -9,6 +9,11 @@ import { buildHandoffSummary } from './handoff'
 import { replyChunkDelayMs, splitReplyIntoChunks } from './chunk-reply'
 import { logAiUsage } from './usage'
 import { createAutoReplyTools } from './tools'
+import {
+  createAgentTraceCollector,
+  type AgentFinalAction,
+  type AgentTraceCollector,
+} from './trace'
 import { loadAgentToolPermissions } from './tool-permissions'
 import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
 import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
@@ -92,6 +97,8 @@ function formatHandoffNote(reason: string, summary?: string | null): string {
  */
 export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void> {
   const { accountId, conversationId, contactId, configOwnerUserId } = args
+  let trace: AgentTraceCollector | null = null
+  let finalAction: AgentFinalAction = 'no_reply'
 
   try {
     const db = supabaseAdmin()
@@ -161,6 +168,15 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       return
     }
 
+    if (config.agentId) {
+      trace = createAgentTraceCollector({
+        db,
+        accountId,
+        agentId: config.agentId,
+        conversationId,
+      })
+    }
+
     const replyCount = conv.ai_reply_count ?? 0
     if (replyCount >= config.autoReplyMaxPerConversation) {
       console.info(
@@ -170,6 +186,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         'Limite de respostas automáticas atingido.',
         `A IA respondeu ${replyCount} vezes nesta conversa. Continue o atendimento a partir da última mensagem do cliente.`,
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -213,6 +230,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         'Limite temporário do serviço de IA atingido.',
         'O cliente escreveu enquanto o serviço automático estava temporariamente limitado. Continue a partir da última mensagem recebida.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
@@ -226,6 +244,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       configOwnerUserId,
       config,
       permissions,
+      onToolCall: (call) => trace?.recordToolCall(call),
     })
 
     let catalogueGrounding: string | null = null
@@ -312,6 +331,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
           ? `${structuredHandoff.summary}\n\n${summary}`
           : summary,
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -326,6 +346,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         'Falha técnica ao reservar a resposta automática.',
         'A mensagem do cliente foi recebida, mas o sistema não conseguiu reservar uma resposta da IA. Continue a partir da última mensagem.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
@@ -335,6 +356,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         'Limite de respostas automáticas atingido durante o processamento.',
         'A IA não enviou nova resposta. Continue a partir da última mensagem do cliente.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -353,12 +375,16 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     if (!hasPendingActions && text) {
       await sendReplyChunks(args, text, config.maxReplyChunks)
     }
+    finalAction = 'reply'
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
+    finalAction = 'handoff'
     try {
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
     } catch (fallbackErr) {
       console.error('[ai auto-reply] fallback send failed:', fallbackErr)
     }
+  } finally {
+    trace?.finish(finalAction)
   }
 }

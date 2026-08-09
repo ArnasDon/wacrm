@@ -96,6 +96,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     provider: 'openai', model: 'gpt-test', apiKey: 'sk-test', systemPrompt: null,
     commercialStrategy: DEFAULT_COMMERCIAL_STRATEGY,
     isActive: true, autoReplyEnabled: true, autoReplyMaxPerConversation: 3,
+    bufferWindowSeconds: 12,
     handoffAgentId: null, embeddingsApiKey: null, ...overrides,
   }
 }

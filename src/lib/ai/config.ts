@@ -16,12 +16,13 @@ interface AiConfigRow {
   is_active: boolean
   auto_reply_enabled: boolean
   auto_reply_max_per_conversation: number
+  buffer_window_seconds: number
   handoff_agent_id: string | null
   embeddings_api_key: string | null
 }
 
 const CONFIG_COLUMNS =
-  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, handoff_agent_id, embeddings_api_key'
 
 export async function loadAiConfig(
   db: WacrmSupabaseClient,
@@ -72,6 +73,7 @@ export async function loadAiConfig(
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
+    bufferWindowSeconds: row.buffer_window_seconds,
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
   }

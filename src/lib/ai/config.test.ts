@@ -26,6 +26,7 @@ const ROW = {
   is_active: false,
   auto_reply_enabled: false,
   auto_reply_max_per_conversation: 3,
+  buffer_window_seconds: 12,
   embeddings_api_key: null,
 }
 
@@ -41,6 +42,7 @@ describe('loadAiConfig requireActive', () => {
     expect(config).not.toBeNull()
     expect(config!.provider).toBe('openai')
     expect(config!.apiKey).toBe('plain:enc-key')
+    expect(config!.bufferWindowSeconds).toBe(12)
   })
 
   it('returns null when there is no row', async () => {

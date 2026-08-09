@@ -16,7 +16,7 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { triggerMatches } from '@/lib/automations/engine'
 import type { Automation } from '@/types'
 
-interface DispatchArgs {
+export interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
   accountId: string
   conversationId: string

@@ -9,6 +9,10 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import {
+  dispatchBufferedInboundToAiReply,
+  registerInboundForAiBuffer,
+} from '@/lib/ai/message-buffer'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
 import { transcribeAudio } from '@/lib/ai/transcription'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -567,6 +571,14 @@ async function processMessage(
     return
   }
 
+  // Every persisted inbound advances the generation before deterministic
+  // handling. A Flow-consumed message therefore invalidates any older AI
+  // response already waiting, without applying the quiet delay to the Flow.
+  const aiDispatchGeneration = await registerInboundForAiBuffer({
+    accountId,
+    conversationId: conversation.id,
+  })
+
   const { error: convError } = await supabaseAdmin().rpc(
     'bump_conversation_on_inbound',
     {
@@ -636,11 +648,26 @@ async function processMessage(
   }
 
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    const dispatchArgs = {
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+    }
+
+    // Nested after() callbacks share this route's maxDuration and let the
+    // remaining webhook fan-out continue while only the AI path waits.
+    after(async () => {
+      if (aiDispatchGeneration === null) {
+        // Preserve the pre-buffer behaviour during a partial deployment where
+        // the migration/RPC is not available yet.
+        await dispatchInboundToAiReply(dispatchArgs)
+        return
+      }
+      await dispatchBufferedInboundToAiReply({
+        ...dispatchArgs,
+        generation: aiDispatchGeneration,
+      })
     })
   }
 

@@ -25,7 +25,7 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, handoff_agent_id, api_key, embeddings_api_key')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
@@ -67,6 +67,9 @@ export async function POST(request: Request) {
     let maxPer = Number(body.auto_reply_max_per_conversation)
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+    let bufferWindowSeconds = Number(body.buffer_window_seconds)
+    if (!Number.isFinite(bufferWindowSeconds)) bufferWindowSeconds = 12
+    bufferWindowSeconds = Math.min(30, Math.max(1, Math.floor(bufferWindowSeconds)))
 
     const rawHandoff = typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
     const handoffProvided = 'handoff_agent_id' in body
@@ -108,6 +111,7 @@ export async function POST(request: Request) {
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
+          bufferWindowSeconds,
           handoffAgentId: null,
           embeddingsApiKey: null,
         })
@@ -133,6 +137,7 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      buffer_window_seconds: bufferWindowSeconds,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

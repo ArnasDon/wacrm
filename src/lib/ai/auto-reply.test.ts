@@ -131,7 +131,9 @@ beforeEach(() => {
   h.state.toolHandoff = null
   h.state.tracePayload = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
-  h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
+  h.buildConversationContext.mockResolvedValue([
+    { role: 'user', content: 'Como funciona a entrega?' },
+  ])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendTypingIndicator.mockResolvedValue(undefined)
@@ -228,6 +230,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.engineSendText).toHaveBeenCalledOnce()
+  })
+
+  it('hands a clear complaint off before calling the main model', async () => {
+    h.buildConversationContext.mockResolvedValue([
+      {
+        role: 'user',
+        content: 'Isto é inadmissível, quero falar com uma pessoa agora.',
+      },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.tracePayload).toMatchObject({
+      intent: 'complaint',
+      model_tier: 'smart',
+      final_action: 'handoff',
+    })
   })
 
   it('skips when there is nothing to reply to', async () => {

@@ -15,6 +15,7 @@ import {
   type AgentTraceCollector,
 } from './trace'
 import { loadAgentToolPermissions } from './tool-permissions'
+import { classifyIntent, routeToolPermissions } from './route'
 import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
 import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -200,6 +201,9 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     }
 
     const latestInbound = [...messages].reverse().find((m) => m.role === 'user')
+    const latestInboundText = latestInbound
+      ? chatContentText(latestInbound.content)
+      : ''
     const { data: autoResponders, error: automationErr } = await db
       .from('automations')
       .select('*')
@@ -212,12 +216,27 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     } else if (
       autoResponders?.some((automation) =>
         triggerMatches(automation as Automation, {
-          message_text: latestInbound ? chatContentText(latestInbound.content) : '',
+          message_text: latestInboundText,
           conversation_id: conversationId,
         }),
       )
     ) {
       logSkip(conversationId, 'matching_deterministic_automation')
+      return
+    }
+
+    const route = classifyIntent({ lastMessageText: latestInboundText })
+    trace?.setIntent(route.intent, route.modelTier)
+    if (route.forceHandoff) {
+      const summary = buildHandoffSummary({ messages, replyCount })
+      await markHandoff(
+        route.intent === 'complaint'
+          ? 'Reclamação ou pedido de atendimento humano detectado.'
+          : 'Pedido sensível de conta ou pagamento requer validação humana.',
+        summary,
+      )
+      finalAction = 'handoff'
+      await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
 
@@ -235,7 +254,12 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       return
     }
 
-    const permissions = await loadAgentToolPermissions(db, accountId, config.agentId!)
+    const configuredPermissions = await loadAgentToolPermissions(
+      db,
+      accountId,
+      config.agentId!,
+    )
+    const permissions = routeToolPermissions(configuredPermissions, route)
     const agentTools = createAutoReplyTools({
       db,
       accountId,

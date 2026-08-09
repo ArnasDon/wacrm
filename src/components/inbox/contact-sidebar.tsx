@@ -15,8 +15,10 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  ShoppingBag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -36,6 +38,24 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [savingHasPurchased, setSavingHasPurchased] = useState(false);
+
+  // Optimistic override for the toggle below, reset on every contact
+  // switch via the render-time "adjusting state when a prop changes"
+  // pattern (no effect needed). Absent the override, the displayed
+  // value comes straight from `contact.has_purchased` — the same
+  // `contacts` row/column the Contacts-page detail panel reads and
+  // writes, so a change made there shows up here next time this
+  // contact is opened (and vice versa).
+  const [purchasedContactId, setPurchasedContactId] = useState(contact?.id);
+  const [optimisticHasPurchased, setOptimisticHasPurchased] = useState<
+    boolean | null
+  >(null);
+  if (contact?.id !== purchasedContactId) {
+    setPurchasedContactId(contact?.id);
+    setOptimisticHasPurchased(null);
+  }
+  const hasPurchased = optimisticHasPurchased ?? contact?.has_purchased ?? false;
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -119,6 +139,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     setAddingNote(false);
   }, [contact, newNote, accountId]);
 
+  const handleToggleHasPurchased = useCallback(
+    async (value: boolean) => {
+      if (!contact) return;
+      const previous = hasPurchased;
+      setOptimisticHasPurchased(value);
+      setSavingHasPurchased(true);
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("contacts")
+        .update({ has_purchased: value, updated_at: new Date().toISOString() })
+        .eq("id", contact.id);
+
+      if (error) {
+        setOptimisticHasPurchased(previous);
+      }
+      setSavingHasPurchased(false);
+    },
+    [contact, hasPurchased],
+  );
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
@@ -176,6 +217,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 <span className="truncate">{contact.email}</span>
               </div>
             )}
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Has Purchased */}
+          <div>
+            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <ShoppingBag className="h-3 w-3" />
+              {tSidebar("hasPurchased")}
+            </div>
+            <div className="mt-2 flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                {hasPurchased ? tSidebar("hasPurchasedYes") : tSidebar("hasPurchasedNo")}
+              </span>
+              <Switch
+                checked={hasPurchased}
+                onCheckedChange={handleToggleHasPurchased}
+                disabled={savingHasPurchased}
+              />
+            </div>
           </div>
 
           {/* Divider */}

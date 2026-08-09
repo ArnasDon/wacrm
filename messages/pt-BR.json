@@ -372,7 +372,10 @@
       "deals": "Negócios",
       "noTags": "Nenhuma tag",
       "noDeals": "Nenhum negócio",
-      "addNotePlaceholder": "Adicionar uma nota..."
+      "addNotePlaceholder": "Adicionar uma nota...",
+      "hasPurchased": "Já comprou comigo?",
+      "hasPurchasedYes": "Sim",
+      "hasPurchasedNo": "Não"
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",

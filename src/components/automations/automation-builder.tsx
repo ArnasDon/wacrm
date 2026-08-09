@@ -1376,7 +1376,7 @@ function StepEditor({
             <Input
               value={(cfg.value as string) ?? ""}
               onChange={(e) => set({ value: e.target.value })}
-              placeholder={t("config.placeholderValue")}
+              placeholder={t.raw("config.placeholderValue")}
               className="bg-muted text-foreground"
             />
           </FieldBlock>

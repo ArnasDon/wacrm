@@ -89,7 +89,9 @@ export function SettingsRail({
                   )}
                 >
                   <Icon className="size-4 shrink-0" />
-                  <span className="flex-1">{t(`sections.${s}`)}</span>
+                  <span className="flex-1">
+                    {s === 'audio' ? meta.label : t(`sections.${s}`)}
+                  </span>
                   {hints?.[s] != null ? (
                     <span
                       className={cn(

@@ -28,6 +28,7 @@ function permissions(
 function runtime(
   db: WacrmSupabaseClient,
   enabled: AgentToolKey,
+  agentId?: string,
 ) {
   return createAutoReplyTools({
     db,
@@ -35,7 +36,7 @@ function runtime(
     conversationId: 'conversation-1',
     contactId: 'contact-1',
     configOwnerUserId: 'user-1',
-    config: { embeddingsApiKey: null },
+    config: { agentId, embeddingsApiKey: null },
     permissions: permissions(enabled),
   })
 }
@@ -163,5 +164,39 @@ describe('CRM agent tools', () => {
   it('does not expose a disabled CRM mutation', () => {
     const tools = runtime({} as WacrmSupabaseClient, 'handoff_human')
     expect(tools.tools.map((tool) => tool.name)).toEqual(['handoff_human'])
+  })
+
+  it('logs only safe call metadata, without arguments or results', async () => {
+    let logged: Record<string, unknown> | null = null
+    const db = {
+      from: (table: string) => {
+        expect(table).toBe('agent_tool_calls')
+        return {
+          insert: (payload: Record<string, unknown>) => {
+            logged = payload
+            return Promise.resolve({ error: null })
+          },
+        }
+      },
+    } as unknown as WacrmSupabaseClient
+    const tools = runtime(db, 'handoff_human', 'agent-1')
+
+    await tools.executeTool({
+      id: 'secret-call-id',
+      name: 'handoff_human',
+      arguments: JSON.stringify({
+        reason: 'Sensitive complaint details',
+      }),
+    })
+
+    expect(logged).toMatchObject({
+      account_id: 'account-1',
+      agent_id: 'agent-1',
+      conversation_id: 'conversation-1',
+      tool_key: 'handoff_human',
+      succeeded: true,
+    })
+    expect(JSON.stringify(logged)).not.toContain('Sensitive complaint')
+    expect(JSON.stringify(logged)).not.toContain('secret-call-id')
   })
 })

@@ -345,7 +345,7 @@ export function createAutoReplyTools(args: {
   conversationId: string
   contactId: string
   configOwnerUserId: string
-  config: Pick<AiConfig, 'embeddingsApiKey'>
+  config: Pick<AiConfig, 'agentId' | 'embeddingsApiKey'>
   permissions: Record<AgentToolKey, boolean>
 }): ToolSet {
   const {
@@ -363,7 +363,7 @@ export function createAutoReplyTools(args: {
   let productRefSequence = 0
   let handoffRequest: HandoffToolRequest | null = null
 
-  const executeTool: AgentToolExecutor = async (call) => {
+  const executeToolCore: AgentToolExecutor = async (call) => {
     const toolKey = call.name as AgentToolKey
     if (!(toolKey in permissions) || !permissions[toolKey]) {
       throw new Error(`Tool is disabled for this agent: ${call.name}`)
@@ -621,6 +621,34 @@ export function createAutoReplyTools(args: {
     }
 
     throw new Error(`Unknown or unavailable tool: ${call.name}`)
+  }
+
+  const executeTool: AgentToolExecutor = async (call) => {
+    const startedAt = Date.now()
+    let succeeded = false
+    try {
+      const result = await executeToolCore(call)
+      succeeded = true
+      return result
+    } finally {
+      if (config.agentId) {
+        try {
+          const { error } = await db.from('agent_tool_calls').insert({
+            account_id: accountId,
+            agent_id: config.agentId,
+            conversation_id: conversationId,
+            tool_key: call.name,
+            duration_ms: Math.max(0, Date.now() - startedAt),
+            succeeded,
+          })
+          if (error) {
+            console.error('[ai tools] call log failed:', error)
+          }
+        } catch (error) {
+          console.error('[ai tools] call log failed:', error)
+        }
+      }
+    }
   }
 
   const tools = (Object.keys(TOOL_DEFINITIONS) as AgentToolKey[])

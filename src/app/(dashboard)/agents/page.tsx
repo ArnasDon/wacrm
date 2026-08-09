@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart3, Bot, Settings2, Sparkles, Wrench } from 'lucide-react';
+import { BarChart3, Bot, Settings2, Sparkles, Workflow, Wrench } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AgentTools } from '@/components/agents/agent-tools';
+import { AgentFlowPanel } from '@/components/agents/agent-flow-panel';
 import { AiConfig } from '@/components/settings/ai-config';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 
-type Tab = 'playground' | 'setup' | 'tools' | 'usage';
+type Tab = 'playground' | 'setup' | 'tools' | 'flow' | 'usage';
 
 export default function AgentsPage() {
   const { accountRole } = useAuth();
@@ -64,6 +65,9 @@ export default function AgentsPage() {
             <TabsTrigger value="tools">
               <Wrench className="mr-1.5 h-4 w-4" /> Ferramentas
             </TabsTrigger>
+            <TabsTrigger value="flow">
+              <Workflow className="mr-1.5 h-4 w-4" /> Fluxo ao vivo
+            </TabsTrigger>
             {canViewUsage && (
               <TabsTrigger value="usage">
                 <BarChart3 className="mr-1.5 h-4 w-4" /> Utilização
@@ -81,6 +85,10 @@ export default function AgentsPage() {
 
           <TabsContent value="tools" className="mt-4">
             <AgentTools />
+          </TabsContent>
+
+          <TabsContent value="flow" className="mt-4">
+            <AgentFlowPanel onOpenTab={(nextTab) => setTab(nextTab)} />
           </TabsContent>
 
           {canViewUsage && (

@@ -14,6 +14,7 @@ import {
   serializeCommercialStrategy,
 } from '@/lib/ai/commercial-strategy'
 import { AiError, type AiProvider } from '@/lib/ai/types'
+import { aiContextMessageLimit } from '@/lib/ai/defaults'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -38,6 +39,7 @@ export async function GET() {
       commercial_strategy: serializeCommercialStrategy(
         normalizeCommercialStrategy(commercial_strategy),
       ),
+      context_message_limit: aiContextMessageLimit(),
       ...safe,
     })
   } catch (err) {

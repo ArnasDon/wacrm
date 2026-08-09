@@ -2,6 +2,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
+import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
 import type { AgentToolKey } from '../tool-permissions'
@@ -23,11 +24,17 @@ interface PendingProductGallery {
   items: PendingProductSend[]
 }
 
+export interface HandoffToolRequest {
+  reason: string
+  summary: string | null
+}
+
 interface ToolSet {
   tools: AgentToolDefinition[]
   executeTool: AgentToolExecutor
   dispatchPendingActions: () => Promise<number>
   hasPendingActions: () => boolean
+  getHandoffRequest: () => HandoffToolRequest | null
 }
 
 const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
@@ -90,10 +97,78 @@ const SEND_PRODUCT_TOOL: AgentToolDefinition = {
   },
 }
 
+const ADD_TAG_TOOL: AgentToolDefinition = {
+  name: 'add_tag',
+  description:
+    'Add one existing CRM tag to the current customer. Use only when the conversation clearly establishes the exact tag name. The server accepts only an exact match to a tag already configured for this account; never invent or create a new tag.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      tag_name: {
+        type: 'string',
+        description: 'Exact name of an existing account tag.',
+      },
+    },
+    required: ['tag_name'],
+  },
+}
+
+const CREATE_DEAL_TOOL: AgentToolDefinition = {
+  name: 'create_deal',
+  description:
+    'Capture the current customer as a sales opportunity by creating one open CRM deal in the account default pipeline. Use only after the customer shows clear purchase or commercial intent. Repeated identical calls are idempotent.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      title: {
+        type: 'string',
+        description: 'Short, specific deal title.',
+      },
+      value: {
+        type: 'number',
+        minimum: 0,
+        description: 'Optional estimated value in the account default currency.',
+      },
+      notes: {
+        type: 'string',
+        description: 'Optional concise context useful to the sales team.',
+      },
+    },
+    required: ['title'],
+  },
+}
+
+const HANDOFF_HUMAN_TOOL: AgentToolDefinition = {
+  name: 'handoff_human',
+  description:
+    'Stop automatic replies and route the current conversation to a human. Use when the customer asks for a person, is upset, a complaint or approval needs human judgement, or available tools cannot safely resolve the request.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      reason: {
+        type: 'string',
+        description: 'Short internal reason for the handoff.',
+      },
+      summary: {
+        type: 'string',
+        description:
+          'Optional factual summary of what the human should continue from.',
+      },
+    },
+    required: ['reason'],
+  },
+}
+
 const TOOL_DEFINITIONS: Record<AgentToolKey, AgentToolDefinition> = {
   search_catalog: SEARCH_CATALOG_TOOL,
   send_product: SEND_PRODUCT_TOOL,
   search_knowledge: SEARCH_KNOWLEDGE_TOOL,
+  add_tag: ADD_TAG_TOOL,
+  create_deal: CREATE_DEAL_TOOL,
+  handoff_human: HANDOFF_HUMAN_TOOL,
 }
 
 function parseObject(raw: string): Record<string, unknown> {
@@ -122,6 +197,29 @@ function parseSearchInput(input: Record<string, unknown>) {
     limit: Math.min(5, Math.max(1, requestedLimit)),
     visual: input.visual !== false,
   }
+}
+
+function requiredText(
+  input: Record<string, unknown>,
+  key: string,
+  maxLength: number,
+): string {
+  const value = typeof input[key] === 'string' ? input[key].trim() : ''
+  if (!value) throw new Error(`${key} is required.`)
+  if (value.length > maxLength) throw new Error(`${key} is too long.`)
+  return value
+}
+
+function optionalText(
+  input: Record<string, unknown>,
+  key: string,
+  maxLength: number,
+): string | null {
+  if (input[key] === undefined || input[key] === null) return null
+  const value = typeof input[key] === 'string' ? input[key].trim() : ''
+  if (!value) return null
+  if (value.length > maxLength) throw new Error(`${key} is too long.`)
+  return value
 }
 
 function normalizeProductSearchText(value: string): string {
@@ -263,6 +361,7 @@ export function createAutoReplyTools(args: {
   const pendingProductGalleries: PendingProductGallery[] = []
   const availableProducts = new Map<string, CatalogProduct>()
   let productRefSequence = 0
+  let handoffRequest: HandoffToolRequest | null = null
 
   const executeTool: AgentToolExecutor = async (call) => {
     const toolKey = call.name as AgentToolKey
@@ -377,6 +476,150 @@ export function createAutoReplyTools(args: {
       })
     }
 
+    if (call.name === ADD_TAG_TOOL.name) {
+      const tagName = requiredText(input, 'tag_name', 80)
+      const { data: accountTags, error: tagError } = await db
+        .from('tags')
+        .select('id, name')
+        .eq('account_id', accountId)
+        .order('name')
+        .limit(200)
+      if (tagError) throw new Error('The CRM tag lookup failed.')
+      const normalizedTagName = tagName.toLocaleLowerCase('pt-PT')
+      const tag = accountTags?.find(
+        (candidate) =>
+          candidate.name.trim().toLocaleLowerCase('pt-PT') ===
+          normalizedTagName,
+      )
+      if (!tag) throw new Error(`Existing tag not found: ${tagName}`)
+
+      const added = await addContactTagIfAbsent(db, {
+        accountId,
+        contactId,
+        tagId: tag.id,
+      })
+      return JSON.stringify({
+        ok: true,
+        added,
+        tag: { id: tag.id, name: tag.name },
+      })
+    }
+
+    if (call.name === CREATE_DEAL_TOOL.name) {
+      const title = requiredText(input, 'title', 120)
+      const notes = optionalText(input, 'notes', 1000)
+      const value =
+        input.value === undefined
+          ? 0
+          : typeof input.value === 'number' &&
+              Number.isFinite(input.value) &&
+              input.value >= 0 &&
+              input.value <= 999_999_999_999
+            ? input.value
+            : null
+      if (value === null) throw new Error('value must be a valid positive number.')
+
+      const { data: openDeals, error: existingError } = await db
+        .from('deals')
+        .select('id, title')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .eq('conversation_id', conversationId)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (existingError) throw new Error('The CRM deal lookup failed.')
+      const normalizedTitle = title.toLocaleLowerCase('pt-PT')
+      const existing = openDeals?.find(
+        (deal) =>
+          deal.title.trim().toLocaleLowerCase('pt-PT') === normalizedTitle,
+      )
+      if (existing) {
+        return JSON.stringify({
+          ok: true,
+          created: false,
+          duplicate: true,
+          deal: existing,
+        })
+      }
+
+      const [contactResult, pipelineResult, accountResult] = await Promise.all([
+        db
+          .from('contacts')
+          .select('id')
+          .eq('id', contactId)
+          .eq('account_id', accountId)
+          .maybeSingle(),
+        db
+          .from('pipelines')
+          .select('id, name')
+          .eq('account_id', accountId)
+          .order('created_at')
+          .limit(1)
+          .maybeSingle(),
+        db
+          .from('accounts')
+          .select('default_currency')
+          .eq('id', accountId)
+          .maybeSingle(),
+      ])
+      if (!contactResult.data) throw new Error('Current CRM contact not found.')
+      if (!pipelineResult.data) {
+        throw new Error('No CRM pipeline is configured for this account.')
+      }
+
+      const { data: stage, error: stageError } = await db
+        .from('pipeline_stages')
+        .select('id, name')
+        .eq('pipeline_id', pipelineResult.data.id)
+        .order('position')
+        .limit(1)
+        .maybeSingle()
+      if (stageError || !stage) {
+        throw new Error('The default CRM pipeline has no stage.')
+      }
+
+      const { data: deal, error: insertError } = await db
+        .from('deals')
+        .insert({
+          account_id: accountId,
+          user_id: configOwnerUserId,
+          pipeline_id: pipelineResult.data.id,
+          stage_id: stage.id,
+          contact_id: contactId,
+          conversation_id: conversationId,
+          title,
+          value,
+          currency: accountResult.data?.default_currency ?? 'USD',
+          notes,
+          status: 'open',
+        })
+        .select('id, title')
+        .single()
+      if (insertError || !deal) throw new Error('The CRM deal could not be created.')
+
+      return JSON.stringify({
+        ok: true,
+        created: true,
+        deal,
+        pipeline: pipelineResult.data.name,
+        stage: stage.name,
+      })
+    }
+
+    if (call.name === HANDOFF_HUMAN_TOOL.name) {
+      const request = {
+        reason: requiredText(input, 'reason', 240),
+        summary: optionalText(input, 'summary', 500),
+      }
+      handoffRequest ??= request
+      return JSON.stringify({
+        ok: true,
+        handoff_requested: true,
+        instruction: 'Do not send a further customer-facing answer.',
+      })
+    }
+
     throw new Error(`Unknown or unavailable tool: ${call.name}`)
   }
 
@@ -387,6 +630,7 @@ export function createAutoReplyTools(args: {
   return {
     tools,
     executeTool,
+    getHandoffRequest: () => handoffRequest,
     hasPendingActions: () =>
       pendingProductSends.length > 0 || pendingProductGalleries.length > 0,
     dispatchPendingActions: async () => {

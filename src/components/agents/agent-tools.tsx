@@ -1,7 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, Boxes, Image, Loader2, Wrench } from 'lucide-react'
+import {
+  BookOpen,
+  Boxes,
+  BriefcaseBusiness,
+  Image,
+  Loader2,
+  Tags,
+  UserRoundCheck,
+  Wrench,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -14,6 +23,9 @@ interface ToolState {
     search_catalog: boolean
     send_product: boolean
     search_knowledge: boolean
+    add_tag: boolean
+    create_deal: boolean
+    handoff_human: boolean
   }
 }
 
@@ -40,6 +52,24 @@ const TOOL_COPY: Record<
     description:
       'Permite ao agente pesquisar documentos, FAQs, políticas e informação interna da empresa.',
     icon: BookOpen,
+  },
+  add_tag: {
+    title: 'Adicionar tag ao contacto',
+    description:
+      'Permite ao agente aplicar ao contacto uma tag já existente nesta conta.',
+    icon: Tags,
+  },
+  create_deal: {
+    title: 'Criar negócio no pipeline',
+    description:
+      'Permite ao agente captar uma oportunidade e criar um negócio na primeira etapa do pipeline.',
+    icon: BriefcaseBusiness,
+  },
+  handoff_human: {
+    title: 'Encaminhar para atendimento humano',
+    description:
+      'Permite ao agente suspender a resposta automática e registar um motivo estruturado para a equipa.',
+    icon: UserRoundCheck,
   },
 }
 

@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     let readOnlyTools: ReturnType<typeof createAutoReplyTools>['tools'] = []
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
 
-    if (needsFacts && config.provider === 'openai') {
+    if (needsFacts) {
       const permissions = await loadAgentToolPermissions(db, accountId, config.agentId!)
       const toolRuntime = createAutoReplyTools({
         db,

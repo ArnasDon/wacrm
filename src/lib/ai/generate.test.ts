@@ -216,4 +216,78 @@ describe('generateReply', () => {
       ],
     })
   })
+
+  it('executes Anthropic tool_use blocks and returns tool_result blocks', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        okResponse({
+          stop_reason: 'tool_use',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu-1',
+              name: 'handoff_human',
+              input: { reason: 'Customer asked for a person.' },
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          stop_reason: 'end_turn',
+          content: [{ type: 'text', text: 'Handoff registered.' }],
+          usage: { input_tokens: 5, output_tokens: 2 },
+        }),
+      )
+    const executeTool = vi.fn().mockResolvedValue(
+      JSON.stringify({ ok: true, handoff_requested: true }),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'anthropic', model: 'claude-test' }),
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'I need a human' }],
+        tools: [
+          {
+            name: 'handoff_human',
+            description: 'Route to a person.',
+            parameters: {
+              type: 'object',
+              properties: { reason: { type: 'string' } },
+              required: ['reason'],
+            },
+          },
+        ],
+        executeTool,
+      }),
+    ).resolves.toMatchObject({
+      text: 'Handoff registered.',
+      usage: { promptTokens: 15, completionTokens: 5, totalTokens: 20 },
+    })
+
+    expect(executeTool).toHaveBeenCalledWith({
+      id: 'toolu-1',
+      name: 'handoff_human',
+      arguments: JSON.stringify({ reason: 'Customer asked for a person.' }),
+    })
+    const followup = JSON.parse(
+      String(vi.mocked(fetch).mock.calls[1][1]?.body),
+    )
+    expect(followup.tools[0]).toMatchObject({
+      name: 'handoff_human',
+      input_schema: expect.objectContaining({ type: 'object' }),
+    })
+    expect(followup.messages.at(-1)).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu-1',
+          content: JSON.stringify({ ok: true, handoff_requested: true }),
+        },
+      ],
+    })
+  })
 })

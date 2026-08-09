@@ -18,9 +18,9 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
 }
 
 /**
- * Sentinel the model is instructed to emit (in auto-reply mode) when it
- * can't confidently help and a human should take over. Parsed and
- * stripped by `generateReply`.
+ * Backwards-compatible fallback for models or deployments where the
+ * structured `handoff_human` tool is unavailable. Parsed and stripped by
+ * `generateReply`.
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
@@ -89,7 +89,8 @@ export function buildSystemPrompt(args: {
   if (mode === 'auto_reply') {
     parts.push(
       `You are replying automatically with no human in the loop. If a suitable tool is available, you MUST try it before deciding that you cannot help. ` +
-        `Only when no suitable tool can resolve the request, a required tool fails to provide enough information, the customer explicitly asks for a human, is upset or complaining, or the request genuinely requires human approval, reply with exactly ${HANDOFF_SENTINEL} and nothing else. ` +
+        `Only when no suitable tool can resolve the request, a required tool fails to provide enough information, the customer explicitly asks for a human, is upset or complaining, or the request genuinely requires human approval, call handoff_human with a concise internal reason and factual summary. ` +
+        `If the handoff_human tool is not available, reply with exactly ${HANDOFF_SENTINEL} and nothing else as a compatibility fallback. ` +
         'Do not hand off merely because you need to look something up; use the available tool instead. Prefer handing off over guessing, but never before attempting an applicable tool.',
     )
     parts.push(
@@ -110,7 +111,7 @@ export function buildSystemPrompt(args: {
   if (knowledge && knowledge.length > 0) {
     const fallback =
       mode === 'auto_reply'
-        ? `if they don't cover the question and no available tool can resolve it, do not guess — reply with exactly ${HANDOFF_SENTINEL} so a human can help`
+        ? `if they don't cover the question and no available tool can resolve it, do not guess — call handoff_human; only if that tool is unavailable, reply with exactly ${HANDOFF_SENTINEL}`
         : "if they don't cover the question, don't guess — say you'll check and follow up"
     parts.push(
       'Knowledge base — excerpts from the business\'s own documentation, retrieved for this question. ' +

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
+import { crmCustomerContextPrompt, loadCrmCustomerContext } from './crm-context'
 import { createWhatsAppImageResolver } from './image-context'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
@@ -246,15 +247,22 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       }
     }
 
+    const crmContext = await loadCrmCustomerContext(db, accountId, contactId)
+      .then(crmCustomerContextPrompt)
+      .catch((error) => {
+        console.error('[ai auto-reply] CRM context lookup failed:', error)
+        return null
+      })
+
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
     })
-    const systemPrompt = catalogueGrounding
-      ? `${baseSystemPrompt}\n\n${catalogueGrounding}`
-      : baseSystemPrompt
+    const systemPrompt = [baseSystemPrompt, crmContext, catalogueGrounding]
+      .filter((part): part is string => Boolean(part))
+      .join('\n\n')
 
     console.info('[ai auto-reply] tools enabled:', {
       conversationId,
@@ -267,8 +275,8 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       config,
       systemPrompt,
       messages,
-      tools: config.provider === 'openai' ? agentTools.tools : undefined,
-      executeTool: config.provider === 'openai' ? agentTools.executeTool : undefined,
+      tools: agentTools.tools,
+      executeTool: agentTools.executeTool,
     })
 
     void logAiUsage(db, {
@@ -281,10 +289,12 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     })
 
     const hasPendingActions = agentTools.hasPendingActions()
+    const structuredHandoff = agentTools.getHandoffRequest()
 
-    if (handoff || (!text && !hasPendingActions)) {
+    if (structuredHandoff || handoff || (!text && !hasPendingActions)) {
       console.info('[ai auto-reply] handoff requested:', {
         conversationId,
+        structured: Boolean(structuredHandoff),
         handoff,
         emptyReply: !text,
         hasPendingActions,
@@ -294,10 +304,13 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         replyCount,
       })
       await markHandoff(
-        handoff
-          ? 'A IA determinou que o atendimento necessita de intervenção humana.'
-          : 'A IA não conseguiu produzir uma resposta segura.',
-        summary,
+        structuredHandoff?.reason ??
+          (handoff
+            ? 'A IA determinou que o atendimento necessita de intervenção humana.'
+            : 'A IA não conseguiu produzir uma resposta segura.'),
+        structuredHandoff?.summary
+          ? `${structuredHandoff.summary}\n\n${summary}`
+          : summary,
       )
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return

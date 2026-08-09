@@ -47,7 +47,6 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       result = await generateOpenAi(providerArgs)
       break
     case 'anthropic':
-      // Anthropic remains text-only in this first tools milestone.
       result = await generateAnthropic(providerArgs)
       break
     default:

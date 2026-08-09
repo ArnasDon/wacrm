@@ -4,6 +4,9 @@ export const AGENT_TOOL_KEYS = [
   'search_catalog',
   'send_product',
   'search_knowledge',
+  'add_tag',
+  'create_deal',
+  'handoff_human',
 ] as const
 
 export type AgentToolKey = (typeof AGENT_TOOL_KEYS)[number]
@@ -12,6 +15,12 @@ export const DEFAULT_AGENT_TOOLS: Record<AgentToolKey, boolean> = {
   search_catalog: true,
   send_product: true,
   search_knowledge: true,
+  // CRM mutations require an explicit administrator opt-in.
+  add_tag: false,
+  create_deal: false,
+  // This replaces the existing handoff sentinel, so preserve the current
+  // automatic safety behaviour for every configured agent.
+  handoff_human: true,
 }
 
 export async function loadAgentToolPermissions(

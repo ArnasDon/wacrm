@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    toolHandoff: null as { reason: string; summary: string | null } | null,
   },
 }))
 
@@ -34,6 +35,10 @@ vi.mock('./catalog-prefetch', () => ({
   prefetchCatalogueForConversation: vi.fn().mockResolvedValue({ attempted: false, query: '', products: [] }),
   cataloguePrefetchPrompt: vi.fn().mockReturnValue(null),
 }))
+vi.mock('./crm-context', () => ({
+  loadCrmCustomerContext: vi.fn().mockResolvedValue({}),
+  crmCustomerContextPrompt: vi.fn().mockReturnValue('CRM context'),
+}))
 vi.mock('./tools', () => ({
   createAutoReplyTools: () => ({
     tools: [
@@ -43,6 +48,7 @@ vi.mock('./tools', () => ({
     ],
     executeTool: vi.fn(),
     hasPendingActions: () => false,
+    getHandoffRequest: () => h.state.toolHandoff,
   }),
 }))
 vi.mock('./usage', () => ({ logAiUsage: vi.fn() }))
@@ -113,6 +119,7 @@ beforeEach(() => {
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.toolHandoff = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
@@ -216,6 +223,22 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
+  it('uses the structured tool reason and summary for a human handoff', async () => {
+    h.state.toolHandoff = {
+      reason: 'Cliente pediu cancelamento com validação humana.',
+      summary: 'Confirmar a identidade antes de cancelar.',
+    }
+    h.generateReply.mockResolvedValue({ text: '', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'Cliente pediu cancelamento com validação humana.',
+    )
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'Confirmar a identidade antes de cancelar.',
+    )
+  })
+
   it('disables auto-reply, writes a summary, and sends the handoff notice', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)

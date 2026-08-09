@@ -149,7 +149,7 @@ export async function registerPhoneNumber(
     /* keep empty */
   }
   const message = data.error?.message ?? `Meta API error: ${response.status}`
-  if (/already.*registered/i.test(message)) {
+  if (/already.*registered|SMB.*business|not available for SMB/i.test(message)) {
     return { success: true, alreadyRegistered: true }
   }
   throw new Error(message)

@@ -67,6 +67,23 @@ describe('registerPhoneNumber', () => {
     expect(result).toEqual({ success: true, alreadyRegistered: true });
   });
 
+  it('treats "Register endpoint is not available for SMB businesses" as success', async () => {
+    fetchMock.mockResolvedValueOnce(
+      errorResponse(400, {
+        error: {
+          message: 'Register endpoint is not available for SMB businesses.',
+          code: 100,
+        },
+      }),
+    );
+    const result = await registerPhoneNumber({
+      phoneNumberId: 'PNID_123',
+      accessToken: 'tok',
+      pin: '123456',
+    });
+    expect(result).toEqual({ success: true, alreadyRegistered: true });
+  });
+
   it("surfaces Meta's PIN-required error verbatim so the UI can show it", async () => {
     fetchMock.mockResolvedValueOnce(
       errorResponse(400, {

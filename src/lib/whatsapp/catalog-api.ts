@@ -275,7 +275,7 @@ export async function createProductCarouselTemplate(args: {
         buttons: [
           {
             type: 'SPM',
-            text: 'Ver produto',
+            text: 'Ver',
           },
         ],
       },

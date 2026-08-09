@@ -52,15 +52,13 @@ export async function getCatalogProducts(args: {
   return (body.data ?? []).filter((item) => Boolean(item.retailer_id))
 }
 
-export async function sendCatalogProduct(args: {
+async function sendInteractive(args: {
   phoneNumberId: string
   accessToken: string
   to: string
-  catalogId: string
-  productRetailerId: string
-  bodyText?: string
+  interactive: Record<string, unknown>
 }): Promise<{ messageId: string }> {
-  const { phoneNumberId, accessToken, to, catalogId, productRetailerId, bodyText } = args
+  const { phoneNumberId, accessToken, to, interactive } = args
   const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: {
@@ -72,14 +70,7 @@ export async function sendCatalogProduct(args: {
       recipient_type: 'individual',
       to,
       type: 'interactive',
-      interactive: {
-        type: 'product',
-        ...(bodyText ? { body: { text: bodyText } } : {}),
-        action: {
-          catalog_id: catalogId,
-          product_retailer_id: productRetailerId,
-        },
-      },
+      interactive,
     }),
   })
   if (!response.ok) await metaError(response, `Meta product send error: ${response.status}`)
@@ -87,4 +78,72 @@ export async function sendCatalogProduct(args: {
   const messageId = body.messages?.[0]?.id
   if (!messageId) throw new Error('Meta did not return a WhatsApp message id.')
   return { messageId }
+}
+
+export async function sendCatalogProduct(args: {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  catalogId: string
+  productRetailerId: string
+  bodyText?: string
+}): Promise<{ messageId: string }> {
+  const { phoneNumberId, accessToken, to, catalogId, productRetailerId, bodyText } = args
+  return sendInteractive({
+    phoneNumberId,
+    accessToken,
+    to,
+    interactive: {
+      type: 'product',
+      ...(bodyText ? { body: { text: bodyText } } : {}),
+      action: {
+        catalog_id: catalogId,
+        product_retailer_id: productRetailerId,
+      },
+    },
+  })
+}
+
+export async function sendCatalogProductList(args: {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  catalogId: string
+  productRetailerIds: string[]
+  bodyText?: string
+  sectionTitle?: string
+}): Promise<{ messageId: string }> {
+  const {
+    phoneNumberId,
+    accessToken,
+    to,
+    catalogId,
+    productRetailerIds,
+    bodyText = 'Veja estas opções disponíveis:',
+    sectionTitle = 'Produtos',
+  } = args
+
+  const ids = Array.from(new Set(productRetailerIds.map((id) => id.trim()).filter(Boolean))).slice(0, 10)
+  if (ids.length < 2) {
+    throw new Error('A multi-product message requires at least two product retailer ids.')
+  }
+
+  return sendInteractive({
+    phoneNumberId,
+    accessToken,
+    to,
+    interactive: {
+      type: 'product_list',
+      body: { text: bodyText },
+      action: {
+        catalog_id: catalogId,
+        sections: [
+          {
+            title: sectionTitle.slice(0, 24),
+            product_items: ids.map((product_retailer_id) => ({ product_retailer_id })),
+          },
+        ],
+      },
+    },
+  })
 }

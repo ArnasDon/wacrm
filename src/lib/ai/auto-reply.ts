@@ -8,6 +8,7 @@ import {
 } from './contact-memory'
 import { createWhatsAppImageResolver } from './image-context'
 import { generateReply } from './generate'
+import { evaluateAgentOutput } from './guardrails'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { replyChunkDelayMs, splitReplyIntoChunks } from './chunk-reply'
@@ -358,6 +359,29 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
 
     const hasPendingActions = agentTools.hasPendingActions()
     const structuredHandoff = agentTools.getHandoffRequest()
+    const guardrail = evaluateAgentOutput({
+      text,
+      trustedText: config.systemPrompt ?? '',
+      trustedPriceAmounts: agentTools.getTrustedPriceAmounts(),
+      salesIntent: route.intent === 'sales',
+      catalogueVerified: agentTools.wasCatalogueVerified(),
+    })
+
+    if (!structuredHandoff && !handoff && text && !guardrail.safe) {
+      trace?.recordGuardrailViolations(guardrail.violations)
+      console.warn('[ai auto-reply] output blocked by guardrail:', {
+        conversationId,
+        violations: guardrail.violations,
+      })
+      const summary = buildHandoffSummary({ messages, replyCount })
+      await markHandoff(
+        'Resposta automática bloqueada por uma verificação de segurança.',
+        summary,
+      )
+      finalAction = 'handoff'
+      await sendStaticNotice(args, HANDOFF_NOTICE)
+      return
+    }
 
     if (structuredHandoff || handoff || (!text && !hasPendingActions)) {
       console.info('[ai auto-reply] handoff requested:', {

@@ -223,4 +223,23 @@ describe('CRM agent tools', () => {
     expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('Private reason')
     expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('private-id')
   })
+
+  it('exposes only monetary facts returned by trusted tool data', async () => {
+    const { retrieveKnowledge } = await import('../knowledge')
+    vi.mocked(retrieveKnowledge).mockResolvedValue([
+      'A taxa confirmada na política é 250 MZN.',
+    ])
+    const db = {
+      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
+    } as unknown as WacrmSupabaseClient
+    const tools = runtime(db, 'search_knowledge', 'agent-1')
+    await tools.executeTool({
+      id: 'call-1',
+      name: 'search_knowledge',
+      arguments: JSON.stringify({ query: 'taxa' }),
+    })
+
+    expect(tools.getTrustedPriceAmounts()).toEqual([250])
+    expect(tools.wasCatalogueVerified()).toBe(false)
+  })
 })

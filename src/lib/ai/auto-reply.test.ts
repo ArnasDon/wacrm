@@ -56,6 +56,8 @@ vi.mock('./tools', () => ({
     executeTool: vi.fn(),
     hasPendingActions: () => false,
     getHandoffRequest: () => h.state.toolHandoff,
+    getTrustedPriceAmounts: () => [],
+    wasCatalogueVerified: () => false,
   }),
 }))
 vi.mock('./usage', () => ({ logAiUsage: vi.fn() }))
@@ -180,6 +182,26 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       'Segundo balão.',
     ])
     expect(h.engineSendTypingIndicator).toHaveBeenCalledTimes(2)
+  })
+
+  it('blocks an unsupported price before WhatsApp send and hands off', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'O preço confirmado é 750 MZN.',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.rpcCalls).toEqual([])
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.engineSendText).toHaveBeenCalledOnce()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('encaminhar') }),
+    )
+    expect(h.state.tracePayload).toMatchObject({
+      final_action: 'handoff',
+      guardrail_violations: ['unsupported_price'],
+    })
   })
 
   it('exposes the knowledge tool to OpenAI generation', async () => {

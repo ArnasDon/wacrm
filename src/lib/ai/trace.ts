@@ -1,4 +1,5 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
+import type { GuardrailViolation } from './guardrails'
 
 export type ConversationIntent =
   | 'faq'
@@ -25,6 +26,7 @@ export interface AgentTrace {
   intent: ConversationIntent | null
   toolCalls: AgentTraceToolCall[]
   memoryMatchCount: number
+  guardrailViolations: GuardrailViolation[]
   modelTier: AgentModelTier
   finalAction: AgentFinalAction
   totalMs: number
@@ -52,6 +54,7 @@ export async function recordTrace(
       final_action: trace.finalAction,
       total_ms: Math.max(0, Math.round(trace.totalMs)),
       memory_match_count: Math.max(0, Math.round(trace.memoryMatchCount)),
+      guardrail_violations: trace.guardrailViolations,
       tool_calls: trace.toolCalls.slice(0, 50).map((call, sequence) => ({
         sequence,
         name: call.name,
@@ -69,6 +72,7 @@ export interface AgentTraceCollector {
   setIntent: (intent: ConversationIntent, modelTier: AgentModelTier) => void
   setMemoryMatchCount: (count: number) => void
   recordToolCall: (call: AgentTraceToolCall) => void
+  recordGuardrailViolations: (violations: GuardrailViolation[]) => void
   finish: (finalAction: AgentFinalAction) => void
 }
 
@@ -87,6 +91,7 @@ export function createAgentTraceCollector(args: {
   let memoryMatchCount = 0
   let finished = false
   const toolCalls: AgentTraceToolCall[] = []
+  const guardrailViolations = new Set<GuardrailViolation>()
 
   return {
     setIntent(nextIntent, nextModelTier) {
@@ -98,6 +103,11 @@ export function createAgentTraceCollector(args: {
     },
     recordToolCall(call) {
       if (!finished && toolCalls.length < 50) toolCalls.push({ ...call })
+    },
+    recordGuardrailViolations(violations) {
+      if (!finished) {
+        for (const violation of violations) guardrailViolations.add(violation)
+      }
     },
     finish(finalAction) {
       if (finished) return
@@ -113,6 +123,7 @@ export function createAgentTraceCollector(args: {
         finalAction,
         totalMs: Math.max(0, now() - startedAt),
         memoryMatchCount,
+        guardrailViolations: Array.from(guardrailViolations),
         toolCalls,
       })
     },

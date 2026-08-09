@@ -24,6 +24,7 @@ describe('agent trace', () => {
       finalAction: 'reply',
       totalMs: 321.4,
       memoryMatchCount: 2,
+      guardrailViolations: [],
       toolCalls: [{ name: 'search_catalog', ms: 88.7, succeeded: true }],
     })
 
@@ -37,6 +38,7 @@ describe('agent trace', () => {
       final_action: 'reply',
       total_ms: 321,
       memory_match_count: 2,
+      guardrail_violations: [],
       tool_calls: [
         { sequence: 0, name: 'search_catalog', ms: 89, succeeded: true },
       ],
@@ -58,6 +60,7 @@ describe('agent trace', () => {
     })
     trace.setIntent('faq', 'fast')
     trace.recordToolCall({ name: 'search_knowledge', ms: 12, succeeded: true })
+    trace.recordGuardrailViolations(['unsupported_price'])
     now = 1_145
     trace.finish('reply')
     trace.finish('handoff')
@@ -78,6 +81,7 @@ describe('agent trace', () => {
             succeeded: true,
           },
         ],
+        guardrail_violations: ['unsupported_price'],
       }),
     )
   })

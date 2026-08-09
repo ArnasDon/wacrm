@@ -5,6 +5,7 @@ import type { CatalogProduct } from '@/lib/catalog/types'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
+import { extractCurrencyAmounts } from '../guardrails'
 import type { AgentTraceToolCall } from '../trace'
 import type { AgentToolKey } from '../tool-permissions'
 import type {
@@ -36,6 +37,8 @@ interface ToolSet {
   dispatchPendingActions: () => Promise<number>
   hasPendingActions: () => boolean
   getHandoffRequest: () => HandoffToolRequest | null
+  getTrustedPriceAmounts: () => number[]
+  wasCatalogueVerified: () => boolean
 }
 
 const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
@@ -365,6 +368,8 @@ export function createAutoReplyTools(args: {
   const availableProducts = new Map<string, CatalogProduct>()
   let productRefSequence = 0
   let handoffRequest: HandoffToolRequest | null = null
+  let catalogueVerified = false
+  const trustedPriceAmounts = new Set<number>()
 
   const executeToolCore: AgentToolExecutor = async (call) => {
     const toolKey = call.name as AgentToolKey
@@ -403,6 +408,7 @@ export function createAutoReplyTools(args: {
         availableProducts.set(productRef, product)
         return { ...product, product_ref: productRef }
       })
+      catalogueVerified = referencedProducts.length > 0
 
       console.info('[ai product gallery] catalogue candidates:',
         referencedProducts.slice(0, 5).map((product) => ({
@@ -631,6 +637,9 @@ export function createAutoReplyTools(args: {
     let succeeded = false
     try {
       const result = await executeToolCore(call)
+      for (const amount of extractCurrencyAmounts(result)) {
+        trustedPriceAmounts.add(amount)
+      }
       succeeded = true
       return result
     } finally {
@@ -668,6 +677,8 @@ export function createAutoReplyTools(args: {
     tools,
     executeTool,
     getHandoffRequest: () => handoffRequest,
+    getTrustedPriceAmounts: () => Array.from(trustedPriceAmounts),
+    wasCatalogueVerified: () => catalogueVerified,
     hasPendingActions: () =>
       pendingProductSends.length > 0 || pendingProductGalleries.length > 0,
     dispatchPendingActions: async () => {

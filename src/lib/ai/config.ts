@@ -83,16 +83,40 @@ export async function loadEmbeddingsKey(
 ): Promise<{ key: string | null; corrupt: boolean }> {
   const { data, error } = await db
     .from('ai_configs')
-    .select('embeddings_api_key')
+    .select('provider, api_key, embeddings_api_key, is_active')
     .eq('account_id', accountId)
     .maybeSingle()
-  if (error || !data?.embeddings_api_key) return { key: null, corrupt: false }
-  try {
-    return { key: decrypt(data.embeddings_api_key), corrupt: false }
-  } catch {
-    console.error(
-      `[ai config] embeddings key for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
-    )
-    return { key: null, corrupt: true }
+
+  if (error || !data || !data.is_active) {
+    return { key: null, corrupt: false }
   }
+
+  // Prefer a dedicated OpenAI key when the account has one. This keeps
+  // embeddings/transcription billing separable from the main AI provider.
+  if (data.embeddings_api_key) {
+    try {
+      return { key: decrypt(data.embeddings_api_key), corrupt: false }
+    } catch {
+      console.error(
+        `[ai config] embeddings key for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
+      )
+      return { key: null, corrupt: true }
+    }
+  }
+
+  // Voice-note transcription and embeddings both use OpenAI endpoints. When
+  // the account itself already uses OpenAI, reuse its primary API key so the
+  // feature works without forcing a second key to be configured.
+  if (data.provider === 'openai' && data.api_key) {
+    try {
+      return { key: decrypt(data.api_key), corrupt: false }
+    } catch {
+      console.error(
+        `[ai config] primary OpenAI key for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
+      )
+      return { key: null, corrupt: true }
+    }
+  }
+
+  return { key: null, corrupt: false }
 }

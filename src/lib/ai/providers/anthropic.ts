@@ -1,10 +1,12 @@
-import { AiError, type ChatMessage, type ProviderResult } from '../types'
+import { AiError, chatContentText, type ChatMessage, type ProviderResult } from '../types'
 import { MAX_OUTPUT_TOKENS } from '../defaults'
 import {
+  hasImageContent,
   mergeConsecutive,
   normalizeUsage,
   providerHttpError,
   toNetworkError,
+  withoutImageContent,
   type ProviderArgs,
 } from './shared'
 
@@ -14,6 +16,50 @@ const ANTHROPIC_VERSION = '2023-06-01'
 interface AnthropicResponse {
   content?: { type?: string; text?: string }[]
   usage?: { input_tokens?: number; output_tokens?: number }
+}
+
+type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string }
+    }
+
+interface AnthropicMessage {
+  role: 'user' | 'assistant'
+  content: string | AnthropicContentBlock[]
+}
+
+function dataUrlSource(url: string): { type: 'base64'; media_type: string; data: string } | null {
+  const match = url.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+/=]+)$/)
+  if (!match) return null
+  return { type: 'base64', media_type: match[1], data: match[2] }
+}
+
+function toAnthropicMessage(message: ChatMessage): AnthropicMessage {
+  if (typeof message.content === 'string') {
+    return { role: message.role, content: message.content }
+  }
+
+  // Anthropic accepts image blocks on user turns. CRM assistant turns are
+  // textual today, but flatten defensively if an old/imported row says else.
+  if (message.role === 'assistant') {
+    return { role: 'assistant', content: chatContentText(message.content) }
+  }
+
+  const blocks: AnthropicContentBlock[] = []
+  for (const part of message.content) {
+    if (part.type === 'text') {
+      blocks.push({ type: 'text', text: part.text })
+      continue
+    }
+    const base64 = dataUrlSource(part.url)
+    blocks.push({
+      type: 'image',
+      source: base64 ?? { type: 'url', url: part.url },
+    })
+  }
+  return { role: 'user', content: blocks }
 }
 
 /**
@@ -42,9 +88,10 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
-  let res: Response
-  try {
-    res = await fetch(ANTHROPIC_URL, {
+  const normalized = normalizeForAnthropic(messages)
+  let providerMessages = normalized.map(toAnthropicMessage)
+  const request = (requestMessages: AnthropicMessage[]) =>
+    fetch(ANTHROPIC_URL, {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -55,10 +102,18 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         model,
         system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
-        messages: normalizeForAnthropic(messages),
+        messages: requestMessages,
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })
+
+  let res: Response
+  try {
+    res = await request(providerMessages)
+    if (res.status === 400 && hasImageContent(normalized)) {
+      providerMessages = withoutImageContent(normalized).map(toAnthropicMessage)
+      res = await request(providerMessages)
+    }
   } catch (err) {
     throw toNetworkError(err)
   }

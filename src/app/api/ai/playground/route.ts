@@ -35,22 +35,19 @@ export async function POST(request: Request) {
     }
 
     const messages: ChatMessage[] = rawMessages
-      .filter(
-        (m: unknown): m is ChatMessage =>
-          !!m &&
-          typeof m === 'object' &&
-          ((m as ChatMessage).role === 'user' ||
-            (m as ChatMessage).role === 'assistant') &&
-          typeof (m as ChatMessage).content === 'string' &&
-          (m as ChatMessage).content.trim().length > 0,
-      )
+      .filter((m: unknown): m is ChatMessage => {
+        if (!m || typeof m !== 'object') return false
+        const candidate = m as ChatMessage
+        return (
+          (candidate.role === 'user' || candidate.role === 'assistant') &&
+          typeof candidate.content === 'string' &&
+          candidate.content.trim().length > 0
+        )
+      })
       .slice(-MAX_TURNS)
 
     if (messages.length === 0) {
-      return NextResponse.json(
-        { error: 'Send a message to test the agent.' },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: 'Send a message to test the agent.' }, { status: 400 })
     }
 
     const config = await loadAiConfig(supabase, accountId, {
@@ -84,14 +81,15 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
+    const { text, handoff } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+    })
     return NextResponse.json({ reply: text, handoff })
   } catch (err) {
     if (err instanceof AiError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: err.status },
-      )
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
     }
     return toErrorResponse(err)
   }

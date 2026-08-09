@@ -3,10 +3,10 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
+import { createWhatsAppImageResolver } from '@/lib/ai/image-context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage } from '@/lib/ai/query'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
@@ -39,8 +39,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const conversationId =
       body && typeof body.conversation_id === 'string' ? body.conversation_id.trim() : ''
-    const instruction =
-      body && typeof body.instruction === 'string' ? body.instruction.trim() : ''
+    const instruction = body && typeof body.instruction === 'string' ? body.instruction.trim() : ''
 
     if (!conversationId) {
       return NextResponse.json({ error: 'conversation_id is required' }, { status: 400 })
@@ -79,7 +78,9 @@ export async function POST(request: Request) {
       )
     }
 
-    const messages = await buildConversationContext(supabase, conversationId)
+    const messages = await buildConversationContext(supabase, conversationId, {
+      resolveImage: createWhatsAppImageResolver(supabase, accountId),
+    })
     if (messages.length === 0) {
       return NextResponse.json(
         { error: 'No messages to respond to yet.', code: 'no_messages' },

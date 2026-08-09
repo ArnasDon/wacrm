@@ -8,9 +8,7 @@
 
 export type AiProvider = 'openai' | 'anthropic'
 
-export type ProductQualificationOrder =
-  | 'size_then_color'
-  | 'color_then_size'
+export type ProductQualificationOrder = 'size_then_color' | 'color_then_size'
 
 export interface CommercialStrategy {
   maxProducts: number
@@ -51,10 +49,39 @@ export interface AiConfig {
   embeddingsApiKey: string | null
 }
 
+export type AiImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+
+export interface ChatTextPart {
+  type: 'text'
+  text: string
+}
+
+/** Provider-neutral image input. `url` may be a public HTTPS URL or a
+ * base64 data URL; the provider adapters translate it to their own shape. */
+export interface ChatImagePart {
+  type: 'image_url'
+  url: string
+  mediaType?: AiImageMediaType
+}
+
+export type ChatContentPart = ChatTextPart | ChatImagePart
+export type ChatContent = string | ChatContentPart[]
+
 /** A single conversation turn in the shape both providers accept. */
 export interface ChatMessage {
   role: 'user' | 'assistant'
-  content: string
+  content: ChatContent
+}
+
+/** Text-only projection used by retrieval, automation matching and internal
+ * summaries. Image pixels remain available to provider adapters separately. */
+export function chatContentText(content: ChatContent): string {
+  if (typeof content === 'string') return content
+  return content
+    .filter((part): part is ChatTextPart => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+    .trim()
 }
 
 /** JSON-schema function exposed to a model as an agent tool. */

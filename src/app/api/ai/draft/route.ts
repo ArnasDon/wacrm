@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
+import { createWhatsAppImageResolver } from '@/lib/ai/image-context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
@@ -27,20 +28,14 @@ export async function POST(request: Request) {
     const userLimit = checkRateLimit(`ai-draft:${userId}`, RATE_LIMITS.aiDraft)
     if (!userLimit.success) return rateLimitResponse(userLimit)
     // Also cap the whole team's draws on the shared BYO provider key.
-    const accountLimit = checkRateLimit(
-      `ai-draft-acct:${accountId}`,
-      RATE_LIMITS.aiDraftAccount,
-    )
+    const accountLimit = checkRateLimit(`ai-draft-acct:${accountId}`, RATE_LIMITS.aiDraftAccount)
     if (!accountLimit.success) return rateLimitResponse(accountLimit)
 
     const body = await request.json().catch(() => null)
     const conversationId =
       body && typeof body.conversation_id === 'string' ? body.conversation_id : ''
     if (!conversationId) {
-      return NextResponse.json(
-        { error: 'conversation_id is required' },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: 'conversation_id is required' }, { status: 400 })
     }
 
     // RLS scopes the SSR client to the caller's account, so a missing
@@ -76,7 +71,9 @@ export async function POST(request: Request) {
       )
     }
 
-    const messages = await buildConversationContext(supabase, conversationId)
+    const messages = await buildConversationContext(supabase, conversationId, {
+      resolveImage: createWhatsAppImageResolver(supabase, accountId),
+    })
     // Nothing to draft from — a brand-new thread with no customer text
     // would otherwise produce a nonsensical reply-to-nothing.
     if (messages.length === 0) {
@@ -104,7 +101,11 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, usage } = await generateReply({ config, systemPrompt, messages })
+    const { text, usage } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+    })
 
     // Record spend on the account's BYO key. Best-effort + via the
     // service role (the log has no `authenticated` INSERT policy). This
@@ -129,10 +130,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ draft: text })
   } catch (err) {
     if (err instanceof AiError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: err.status },
-      )
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
     }
     return toErrorResponse(err)
   }

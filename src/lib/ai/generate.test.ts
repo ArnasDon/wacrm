@@ -77,27 +77,143 @@ describe('parseGeneration', () => {
 describe('generateReply', () => {
   it('throws a typed error for a non-OK OpenAI response', async () => {
     vi.mocked(fetch).mockResolvedValue(errResponse(401, { error: { message: 'bad key' } }))
-    await expect(generateReply({
-      config: config(),
-      systemPrompt: 'system',
-      messages: [{ role: 'user', content: 'hello' }],
-      tools: [],
-      executeTool: async () => JSON.stringify({ ok: true }),
-    })).rejects.toBeInstanceOf(AiError)
+    await expect(
+      generateReply({
+        config: config(),
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        executeTool: async () => JSON.stringify({ ok: true }),
+      }),
+    ).rejects.toBeInstanceOf(AiError)
   })
 
   it('returns provider text for a normal OpenAI response', async () => {
-    vi.mocked(fetch).mockResolvedValue(okResponse({
-      choices: [{ message: { content: 'Hello!' } }],
-      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
-    }))
+    vi.mocked(fetch).mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hello!' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+      }),
+    )
 
-    await expect(generateReply({
+    await expect(
+      generateReply({
+        config: config(),
+        systemPrompt: 'system',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        executeTool: async () => JSON.stringify({ ok: true }),
+      }),
+    ).resolves.toMatchObject({ text: 'Hello!', handoff: false })
+  })
+
+  it('maps provider-neutral image parts to OpenAI Chat Completions', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'The product is damaged.' } }],
+      }),
+    )
+
+    await generateReply({
       config: config(),
       systemPrompt: 'system',
-      messages: [{ role: 'user', content: 'hello' }],
-      tools: [],
-      executeTool: async () => JSON.stringify({ ok: true }),
-    })).resolves.toMatchObject({ text: 'Hello!', handoff: false })
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              url: 'data:image/jpeg;base64,cGl4ZWxz',
+              mediaType: 'image/jpeg',
+            },
+            { type: 'text', text: 'What happened?' },
+          ],
+        },
+      ],
+    })
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
+    expect(body.messages[1]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'image_url',
+          image_url: {
+            url: 'data:image/jpeg;base64,cGl4ZWxz',
+            detail: 'auto',
+          },
+        },
+        { type: 'text', text: 'What happened?' },
+      ],
+    })
+  })
+
+  it('retries OpenAI once without pixels when the model rejects vision', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(errResponse(400, { error: { message: 'image unsupported' } }))
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [{ message: { content: 'Please describe the image.' } }],
+        }),
+      )
+
+    await expect(
+      generateReply({
+        config: config({ model: 'text-only-model' }),
+        systemPrompt: 'system',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', url: 'data:image/png;base64,eA==' },
+              { type: 'text', text: '[Image without caption]' },
+            ],
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ text: 'Please describe the image.' })
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const retryBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))
+    expect(JSON.stringify(retryBody)).not.toContain('image_url')
+    expect(JSON.stringify(retryBody)).toContain('[Image without caption]')
+  })
+
+  it('maps base64 image parts to Anthropic image blocks', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      okResponse({
+        content: [{ type: 'text', text: 'I can see the receipt.' }],
+      }),
+    )
+
+    await generateReply({
+      config: config({ provider: 'anthropic', model: 'claude-test' }),
+      systemPrompt: 'system',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', url: 'data:image/png;base64,cGl4ZWxz' },
+            { type: 'text', text: 'Read this receipt.' },
+          ],
+        },
+      ],
+    })
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
+    expect(body.messages[0]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: 'cGl4ZWxz',
+          },
+        },
+        { type: 'text', text: 'Read this receipt.' },
+      ],
+    })
   })
 })

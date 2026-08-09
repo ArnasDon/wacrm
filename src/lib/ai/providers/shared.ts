@@ -3,6 +3,8 @@ import {
   type AgentToolDefinition,
   type AgentToolExecutor,
   type AiUsage,
+  type ChatContent,
+  type ChatContentPart,
   type ChatMessage,
 } from '../types'
 
@@ -62,17 +64,13 @@ export function toNetworkError(err: unknown): AiError {
 
 /** Build a typed AiError from a non-2xx provider response, pulling the
  *  provider's own error message out of the JSON body when present. */
-export async function providerHttpError(
-  provider: string,
-  res: Response,
-): Promise<AiError> {
+export async function providerHttpError(provider: string, res: Response): Promise<AiError> {
   let detail = ''
   try {
-    const body = (await res.json()) as { error?: { message?: string } | string }
-    detail =
-      typeof body?.error === 'string'
-        ? body.error
-        : (body?.error?.message ?? '')
+    const body = (await res.json()) as {
+      error?: { message?: string } | string
+    }
+    detail = typeof body?.error === 'string' ? body.error : (body?.error?.message ?? '')
   } catch {
     // Non-JSON error body — fall back to the status line.
   }
@@ -109,10 +107,50 @@ export function mergeConsecutive(messages: ChatMessage[]): ChatMessage[] {
   for (const m of messages) {
     const last = out[out.length - 1]
     if (last && last.role === m.role) {
-      last.content = `${last.content}\n\n${m.content}`
+      last.content = mergeContent(last.content, m.content)
     } else {
-      out.push({ role: m.role, content: m.content })
+      out.push({ role: m.role, content: cloneContent(m.content) })
     }
   }
   return out
+}
+
+function cloneContent(content: ChatContent): ChatContent {
+  return typeof content === 'string' ? content : content.map((part) => ({ ...part }))
+}
+
+function asParts(content: ChatContent): ChatContentPart[] {
+  return typeof content === 'string'
+    ? [{ type: 'text', text: content }]
+    : content.map((part) => ({ ...part }))
+}
+
+function mergeContent(left: ChatContent, right: ChatContent): ChatContent {
+  if (typeof left === 'string' && typeof right === 'string') {
+    return `${left}\n\n${right}`
+  }
+  return [...asParts(left), { type: 'text', text: '\n\n' }, ...asParts(right)]
+}
+
+export function hasImageContent(messages: ChatMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
+  )
+}
+
+/** Remove pixel inputs while keeping all text placeholders/captions. Used for
+ * one silent retry when a configured economical model rejects vision. */
+export function withoutImageContent(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    if (typeof message.content === 'string') return { ...message }
+    const textParts = message.content.filter((part) => part.type === 'text')
+    return {
+      ...message,
+      content:
+        textParts.length > 0
+          ? textParts.map((part) => ({ ...part }))
+          : '[Imagem enviada no WhatsApp; visão indisponível neste modelo]',
+    }
+  })
 }

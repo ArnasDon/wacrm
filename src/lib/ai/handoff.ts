@@ -1,4 +1,4 @@
-import type { ChatMessage } from './types'
+import { chatContentText, type ChatMessage } from './types'
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
@@ -17,15 +17,12 @@ const MAX_QUOTE_LEN = 160
  * `replyCount` is the bot's auto-reply tally for the thread (0 when it
  * bailed on the very first inbound without answering).
  */
-export function buildHandoffSummary(args: {
-  messages: ChatMessage[]
-  replyCount: number
-}): string {
+export function buildHandoffSummary(args: { messages: ChatMessage[]; replyCount: number }): string {
   const { messages, replyCount } = args
 
   const lastCustomer = [...messages]
     .reverse()
-    .find((m) => m.role === 'user' && m.content.trim())
+    .find((m) => m.role === 'user' && chatContentText(m.content).trim())
 
   const replies =
     replyCount === 0
@@ -36,7 +33,7 @@ export function buildHandoffSummary(args: {
 
   if (!lastCustomer) return base
 
-  const quote = truncate(lastCustomer.content.trim(), MAX_QUOTE_LEN)
+  const quote = truncate(chatContentText(lastCustomer.content).trim(), MAX_QUOTE_LEN)
   return `${base} Last customer message: “${quote}”`
 }
 

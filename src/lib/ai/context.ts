@@ -1,5 +1,6 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
-import type { ChatMessage } from './types'
+import type { ResolveAiImage } from './image-context'
+import { type ChatContent, type ChatMessage } from './types'
 import { aiContextMessageLimit } from './defaults'
 
 interface DbMessage {
@@ -7,20 +8,30 @@ interface DbMessage {
   sender_type: 'customer' | 'agent' | 'bot'
   content_type: string
   content_text: string | null
+  media_url: string | null
   reply_to_message_id: string | null
 }
 
-function readableMessageContent(message: DbMessage): string | null {
+const MAX_CONTEXT_IMAGES = 3
+
+function readableMessageText(message: DbMessage): string | null {
   const text = message.content_text?.trim()
-  if (!text) return null
 
   if (message.content_type === 'image') {
-    return `[Produto/fotografia enviada no WhatsApp]\n${text}`
+    return text
+      ? `[Imagem enviada no WhatsApp]\nLegenda: ${text}`
+      : '[Imagem enviada no WhatsApp sem legenda]'
   }
   if (message.content_type === 'interactive') {
+    if (!text) return null
     return `[Opção interactiva no WhatsApp]\n${text}`
   }
-  return text
+  return text || null
+}
+
+function prependText(content: ChatContent, text: string): ChatContent {
+  if (typeof content === 'string') return `${text}\n${content}`
+  return [{ type: 'text', text }, ...content]
 }
 
 /**
@@ -39,8 +50,12 @@ function readableMessageContent(message: DbMessage): string | null {
 export async function buildConversationContext(
   db: WacrmSupabaseClient,
   conversationId: string,
-  limit: number = aiContextMessageLimit(),
+  options: {
+    limit?: number
+    resolveImage?: ResolveAiImage
+  } = {},
 ): Promise<ChatMessage[]> {
+  const { limit = aiContextMessageLimit(), resolveImage } = options
   const { data: conversation, error: conversationError } = await db
     .from('conversations')
     .select('ai_context_reset_at')
@@ -51,7 +66,7 @@ export async function buildConversationContext(
 
   let query = db
     .from('messages')
-    .select('id, sender_type, content_type, content_text, reply_to_message_id')
+    .select('id, sender_type, content_type, content_text, media_url, reply_to_message_id')
     .eq('conversation_id', conversationId)
     .in('content_type', ['text', 'image', 'interactive'])
 
@@ -60,38 +75,62 @@ export async function buildConversationContext(
     query = query.gt('created_at', resetAt)
   }
 
-  const { data, error } = await query
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(limit)
 
   if (error) throw error
 
   const rows = ((data ?? []) as DbMessage[]).reverse()
   const byId = new Map(rows.map((message) => [message.id, message]))
+  const imageIds = new Set(
+    rows
+      .filter(
+        (message) =>
+          message.sender_type === 'customer' &&
+          message.content_type === 'image' &&
+          Boolean(message.media_url),
+      )
+      .slice(-MAX_CONTEXT_IMAGES)
+      .map((message) => message.id),
+  )
 
-  return rows.flatMap((message): ChatMessage[] => {
-    const content = readableMessageContent(message)
-    if (!content) return []
+  const messages = await Promise.all(
+    rows.map(async (message): Promise<ChatMessage | null> => {
+      const readableText = readableMessageText(message)
+      if (!readableText) return null
 
-    let resolvedContent = content
-    if (message.sender_type === 'customer' && message.reply_to_message_id) {
-      const parent = byId.get(message.reply_to_message_id)
-      const parentContent = parent ? readableMessageContent(parent) : null
-      if (parentContent) {
-        resolvedContent = [
-          'O cliente respondeu directamente a esta mensagem/produto anterior:',
-          parentContent,
-          '',
-          `Resposta do cliente: ${content}`,
-        ].join('\n')
+      let content: ChatContent = readableText
+      if (resolveImage && imageIds.has(message.id) && message.media_url) {
+        const image = await resolveImage(message.media_url)
+        if (image) {
+          // Image-first follows Anthropic's current vision guidance; OpenAI
+          // accepts either order. The text placeholder is kept so retrying a
+          // text-only model still leaves useful conversational context.
+          content = [image, { type: 'text', text: readableText }]
+        }
       }
-    }
 
-    return [
-      {
+      if (message.sender_type === 'customer' && message.reply_to_message_id) {
+        const parent = byId.get(message.reply_to_message_id)
+        const parentText = parent ? readableMessageText(parent) : null
+        if (parentText) {
+          content = prependText(
+            content,
+            [
+              'O cliente respondeu directamente a esta mensagem/produto anterior:',
+              parentText,
+              '',
+              'Resposta actual do cliente:',
+            ].join('\n'),
+          )
+        }
+      }
+
+      return {
         role: message.sender_type === 'customer' ? 'user' : 'assistant',
-        content: resolvedContent,
-      },
-    ]
-  })
+        content,
+      }
+    }),
+  )
+
+  return messages.filter((message): message is ChatMessage => Boolean(message))
 }

@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   buildConversationContext: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  engineSendTypingIndicator: vi.fn(),
   triggerMatches: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
@@ -14,13 +15,18 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    toolHandoff: null as { reason: string; summary: string | null } | null,
+    tracePayload: null as Record<string, unknown> | null,
   },
 }))
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  engineSendTypingIndicator: h.engineSendTypingIndicator,
+}))
 vi.mock('@/lib/automations/engine', () => ({ triggerMatches: h.triggerMatches }))
 vi.mock('@/lib/rate-limit', () => ({
   RATE_LIMITS: { aiAutoReplyAccount: { limit: 100, windowMs: 60_000 } },
@@ -29,6 +35,16 @@ vi.mock('@/lib/rate-limit', () => ({
 vi.mock('./catalog-prefetch', () => ({
   prefetchCatalogueForConversation: vi.fn().mockResolvedValue({ attempted: false, query: '', products: [] }),
   cataloguePrefetchPrompt: vi.fn().mockReturnValue(null),
+}))
+vi.mock('./crm-context', () => ({
+  loadCrmCustomerContext: vi.fn().mockResolvedValue({}),
+  crmCustomerContextPrompt: vi.fn().mockReturnValue('CRM context'),
+}))
+vi.mock('./contact-memory', () => ({
+  retrieveContactMemory: vi.fn().mockResolvedValue([
+    'Prefere receber entregas ao sábado.',
+  ]),
+  contactMemoryPrompt: vi.fn().mockReturnValue('Contact memory'),
 }))
 vi.mock('./tools', () => ({
   createAutoReplyTools: () => ({
@@ -39,6 +55,9 @@ vi.mock('./tools', () => ({
     ],
     executeTool: vi.fn(),
     hasPendingActions: () => false,
+    getHandoffRequest: () => h.state.toolHandoff,
+    getTrustedPriceAmounts: () => [],
+    wasCatalogueVerified: () => false,
   }),
 }))
 vi.mock('./usage', () => ({ logAiUsage: vi.fn() }))
@@ -67,6 +86,14 @@ vi.mock('./admin-client', () => ({
       if (table === 'notifications') {
         return { insert: () => Promise.resolve({ error: null }) }
       }
+      if (table === 'agent_traces') {
+        return {
+          insert: (payload: Record<string, unknown>) => {
+            h.state.tracePayload = payload
+            return Promise.resolve({ error: null })
+          },
+        }
+      }
       return {
         select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: h.state.conv, error: null }) }) }),
         update: (payload: Record<string, unknown>) => {
@@ -88,7 +115,7 @@ vi.mock('./admin-client', () => ({
 
 import { dispatchInboundToAiReply } from './auto-reply'
 
-const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', contactId: 'contact-1', configOwnerUserId: 'user-1' }
+const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', contactId: 'contact-1', configOwnerUserId: 'user-1', inboundMessageId: 'wamid.inbound-1' }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -96,6 +123,8 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     provider: 'openai', model: 'gpt-test', apiKey: 'sk-test', systemPrompt: null,
     commercialStrategy: DEFAULT_COMMERCIAL_STRATEGY,
     isActive: true, autoReplyEnabled: true, autoReplyMaxPerConversation: 3,
+    bufferWindowSeconds: 12,
+    maxReplyChunks: 3,
     handoffAgentId: null, embeddingsApiKey: null, ...overrides,
   }
 }
@@ -107,10 +136,15 @@ beforeEach(() => {
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.toolHandoff = null
+  h.state.tracePayload = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
-  h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
+  h.buildConversationContext.mockResolvedValue([
+    { role: 'user', content: 'Como funciona a entrega?' },
+  ])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.engineSendTypingIndicator.mockResolvedValue(undefined)
   h.triggerMatches.mockReturnValue(false)
 })
 
@@ -119,6 +153,55 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.rpcCalls).toEqual([{ name: 'claim_ai_reply_slot', args: { conversation_id: 'conv-1', max_replies: 3 } }])
     expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-1', text: 'Hello!' }))
+    expect(h.engineSendTypingIndicator).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      inboundMessageId: 'wamid.inbound-1',
+    })
+    expect(h.state.tracePayload).toMatchObject({
+      account_id: 'acct-1',
+      conversation_id: 'conv-1',
+      final_action: 'reply',
+    })
+  })
+
+  it('sends explicit reply chunks in order with a human-like pause', async () => {
+    vi.useFakeTimers()
+    h.generateReply.mockResolvedValue({
+      text: 'Primeiro balão.[[SPLIT]]Segundo balão.',
+      handoff: false,
+    })
+
+    const pending = dispatchInboundToAiReply(ARGS)
+    await vi.runAllTimersAsync()
+    await pending
+    vi.useRealTimers()
+
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText.mock.calls.map(([call]) => call.text)).toEqual([
+      'Primeiro balão.',
+      'Segundo balão.',
+    ])
+    expect(h.engineSendTypingIndicator).toHaveBeenCalledTimes(2)
+  })
+
+  it('blocks an unsupported price before WhatsApp send and hands off', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'O preço confirmado é 750 MZN.',
+      handoff: false,
+      usage: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.rpcCalls).toEqual([])
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.engineSendText).toHaveBeenCalledOnce()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('encaminhar') }),
+    )
+    expect(h.state.tracePayload).toMatchObject({
+      final_action: 'handoff',
+      guardrail_violations: ['unsupported_price'],
+    })
   })
 
   it('exposes the knowledge tool to OpenAI generation', async () => {
@@ -126,6 +209,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).toHaveBeenCalledWith(expect.objectContaining({
       tools: expect.arrayContaining([expect.objectContaining({ name: 'search_knowledge' })]),
       executeTool: expect.any(Function),
+      systemPrompt: expect.stringContaining('Contact memory'),
     }))
   })
 
@@ -177,6 +261,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.engineSendText).toHaveBeenCalledOnce()
   })
 
+  it('hands a clear complaint off before calling the main model', async () => {
+    h.buildConversationContext.mockResolvedValue([
+      {
+        role: 'user',
+        content: 'Isto é inadmissível, quero falar com uma pessoa agora.',
+      },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.tracePayload).toMatchObject({
+      intent: 'complaint',
+      model_tier: 'smart',
+      final_action: 'handoff',
+    })
+  })
+
   it('skips when there is nothing to reply to', async () => {
     h.buildConversationContext.mockResolvedValue([])
     await dispatchInboundToAiReply(ARGS)
@@ -185,6 +286,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
+  it('uses the structured tool reason and summary for a human handoff', async () => {
+    h.state.toolHandoff = {
+      reason: 'Cliente pediu cancelamento com validação humana.',
+      summary: 'Confirmar a identidade antes de cancelar.',
+    }
+    h.generateReply.mockResolvedValue({ text: '', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'Cliente pediu cancelamento com validação humana.',
+    )
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'Confirmar a identidade antes de cancelar.',
+    )
+    expect(h.state.tracePayload).toMatchObject({ final_action: 'handoff' })
+  })
+
   it('disables auto-reply, writes a summary, and sends the handoff notice', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)

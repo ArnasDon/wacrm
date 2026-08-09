@@ -1,7 +1,7 @@
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
-import type { ChatMessage } from './types'
+import { chatContentText, type ChatMessage } from './types'
 
 const PRODUCT_INTENT_RE =
   /\b(pre[cç]o|pre[cç]os|custa|custam|quanto|tem|tens|t[eê]m|dispon[ií]vel|disponibilidade|stock|estoque|cat[aá]logo|produto|produtos|modelo|modelos|tamanho|tamanhos|cor|cores|foto|fotos|imagem|imagens|quero|procuro|procurando|mostra|mostrar|manda|enviar|op[cç][aã]o|op[cç][oõ]es)\b/i
@@ -50,7 +50,8 @@ function resolveNumberedSelection(messages: ChatMessage[]): NumberedSelection | 
   if (latestUserIndex === undefined) return null
 
   const latestUser = messages[latestUserIndex]
-  const selectionMatch = latestUser.content.match(NUMBER_SELECTION_RE)
+  const latestUserText = chatContentText(latestUser.content)
+  const selectionMatch = latestUserText.match(NUMBER_SELECTION_RE)
   if (!selectionMatch) return null
   const number = Number(selectionMatch[1])
   if (!Number.isInteger(number) || number < 1) return null
@@ -58,13 +59,14 @@ function resolveNumberedSelection(messages: ChatMessage[]): NumberedSelection | 
   for (let index = latestUserIndex - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (message.role !== 'assistant') continue
-    const products = numberedProducts(message.content)
+    const messageText = chatContentText(message.content)
+    const products = numberedProducts(messageText)
     const productName = products.get(number)
     if (productName) {
       return {
         number,
         productName,
-        photoChoice: PHOTO_CHOICE_RE.test(message.content),
+        photoChoice: PHOTO_CHOICE_RE.test(messageText),
       }
     }
   }
@@ -79,20 +81,22 @@ function hasRecentCatalogueContext(messages: ChatMessage[]): boolean {
     .some(
       (message) =>
         message.role === 'assistant' &&
-        (CATALOGUE_CONTEXT_RE.test(message.content) || numberedProducts(message.content).size > 0),
+        (CATALOGUE_CONTEXT_RE.test(chatContentText(message.content)) ||
+          numberedProducts(chatContentText(message.content)).size > 0),
     )
 }
 
 function isLikelyProductTurn(messages: ChatMessage[]): boolean {
   const latestUser = [...messages].reverse().find((message) => message.role === 'user')
   if (!latestUser) return false
-  if (PRODUCT_INTENT_RE.test(latestUser.content)) return true
+  const latestUserText = chatContentText(latestUser.content)
+  if (PRODUCT_INTENT_RE.test(latestUserText)) return true
 
-  if (NUMBER_SELECTION_RE.test(latestUser.content.trim())) {
+  if (NUMBER_SELECTION_RE.test(latestUserText.trim())) {
     return Boolean(resolveNumberedSelection(messages))
   }
 
-  if (!SHORT_CONTINUATION_RE.test(latestUser.content.trim())) return false
+  if (!SHORT_CONTINUATION_RE.test(latestUserText.trim())) return false
   return hasRecentCatalogueContext(messages)
 }
 
@@ -102,13 +106,17 @@ function candidateQueries(messages: ChatMessage[]): string[] {
 
   const userMessages = messages
     .filter((message) => message.role === 'user')
-    .map((message) => message.content.trim())
+    .map((message) => chatContentText(message.content).trim())
     .filter(Boolean)
     .reverse()
 
   const queries: string[] = []
   for (const value of userMessages) {
-    if ((SHORT_CONTINUATION_RE.test(value) || NUMBER_SELECTION_RE.test(value)) && queries.length === 0) continue
+    if (
+      (SHORT_CONTINUATION_RE.test(value) || NUMBER_SELECTION_RE.test(value)) &&
+      queries.length === 0
+    )
+      continue
     if (!queries.includes(value)) queries.push(value)
     if (queries.length >= 3) break
   }
@@ -151,7 +159,12 @@ export async function prefetchCatalogueForConversation(args: {
     }
   }
 
-  return { attempted: true, query: queries[0] ?? null, products: [], selection }
+  return {
+    attempted: true,
+    query: queries[0] ?? null,
+    products: [],
+    selection,
+  }
 }
 
 /**

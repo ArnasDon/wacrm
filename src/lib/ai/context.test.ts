@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildConversationContext } from './context'
 
@@ -15,10 +15,11 @@ function fakeDb(rows: unknown[], resetAt: string | null = null): WacrmSupabaseCl
     in: () => chain,
     gt: () => chain,
     order: () => chain,
-    maybeSingle: () => Promise.resolve({
-      data: state.table === 'conversations' ? { ai_context_reset_at: resetAt } : null,
-      error: null,
-    }),
+    maybeSingle: () =>
+      Promise.resolve({
+        data: state.table === 'conversations' ? { ai_context_reset_at: resetAt } : null,
+        error: null,
+      }),
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
   return chain as unknown as WacrmSupabaseClient
@@ -60,6 +61,69 @@ describe('buildConversationContext', () => {
     expect(out).toEqual([{ role: 'user', content: 'real' }])
   })
 
+  it('passes customer image pixels and caption as multimodal content', async () => {
+    const resolveImage = vi.fn().mockResolvedValue({
+      type: 'image_url' as const,
+      url: 'data:image/jpeg;base64,cGl4ZWxz',
+      mediaType: 'image/jpeg' as const,
+    })
+    const out = await buildConversationContext(
+      fakeDb([
+        {
+          id: 'image-1',
+          sender_type: 'customer',
+          content_type: 'image',
+          content_text: 'A peça chegou partida',
+          media_url: '/api/whatsapp/media/meta-1',
+          reply_to_message_id: null,
+        },
+      ]),
+      'conv-1',
+      { resolveImage },
+    )
+
+    expect(resolveImage).toHaveBeenCalledWith('/api/whatsapp/media/meta-1')
+    expect(out).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            url: 'data:image/jpeg;base64,cGl4ZWxz',
+            mediaType: 'image/jpeg',
+          },
+          {
+            type: 'text',
+            text: '[Imagem enviada no WhatsApp]\nLegenda: A peça chegou partida',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('keeps an uncaptioned image visible as text when pixels cannot be loaded', async () => {
+    const out = await buildConversationContext(
+      fakeDb([
+        {
+          id: 'image-1',
+          sender_type: 'customer',
+          content_type: 'image',
+          content_text: null,
+          media_url: '/api/whatsapp/media/meta-1',
+          reply_to_message_id: null,
+        },
+      ]),
+      'conv-1',
+      { resolveImage: vi.fn().mockResolvedValue(null) },
+    )
+    expect(out).toEqual([
+      {
+        role: 'user',
+        content: '[Imagem enviada no WhatsApp sem legenda]',
+      },
+    ])
+  })
+
   it('applies the stored AI context reset timestamp before loading messages', async () => {
     const gtCalls: unknown[][] = []
     const state = { table: '' }
@@ -76,10 +140,11 @@ describe('buildConversationContext', () => {
         return chain
       },
       order: () => chain,
-      maybeSingle: () => Promise.resolve({
-        data: { ai_context_reset_at: '2026-08-08T12:00:00.000Z' },
-        error: null,
-      }),
+      maybeSingle: () =>
+        Promise.resolve({
+          data: { ai_context_reset_at: '2026-08-08T12:00:00.000Z' },
+          error: null,
+        }),
       limit: () => Promise.resolve({ data: [], error: null }),
     }
 

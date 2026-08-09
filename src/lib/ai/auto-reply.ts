@@ -1,33 +1,46 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
+import { crmCustomerContextPrompt, loadCrmCustomerContext } from './crm-context'
+import {
+  contactMemoryPrompt,
+  retrieveContactMemory,
+} from './contact-memory'
+import { createWhatsAppImageResolver } from './image-context'
 import { generateReply } from './generate'
+import { evaluateAgentOutput } from './guardrails'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
+import { replyChunkDelayMs, splitReplyIntoChunks } from './chunk-reply'
 import { logAiUsage } from './usage'
 import { createAutoReplyTools } from './tools'
-import { loadAgentToolPermissions } from './tool-permissions'
 import {
-  cataloguePrefetchPrompt,
-  prefetchCatalogueForConversation,
-} from './catalog-prefetch'
-import { engineSendText } from '@/lib/flows/meta-send'
+  createAgentTraceCollector,
+  type AgentFinalAction,
+  type AgentTraceCollector,
+} from './trace'
+import { loadAgentToolPermissions } from './tool-permissions'
+import { classifyIntent, routeToolPermissions } from './route'
+import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
+import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { triggerMatches } from '@/lib/automations/engine'
 import type { Automation } from '@/types'
+import { chatContentText } from './types'
 
-interface DispatchArgs {
+export interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
   accountId: string
   conversationId: string
   contactId: string
+  /** Meta wamid of the newest inbound, used by the native typing indicator. */
+  inboundMessageId: string
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
 }
 
-const HANDOFF_NOTICE =
-  'Vou encaminhar o seu atendimento à nossa equipa para continuar consigo.'
+const HANDOFF_NOTICE = 'Vou encaminhar o seu atendimento à nossa equipa para continuar consigo.'
 const TEMPORARY_FAILURE_NOTICE =
   'Não consegui concluir esta consulta neste momento. Vou encaminhar o seu atendimento à nossa equipa para que possa continuar sem ficar à espera.'
 
@@ -46,11 +59,38 @@ async function sendStaticNotice(args: DispatchArgs, text: string) {
   })
 }
 
+async function showTyping(args: DispatchArgs): Promise<void> {
+  try {
+    await engineSendTypingIndicator({
+      accountId: args.accountId,
+      inboundMessageId: args.inboundMessageId,
+    })
+  } catch (error) {
+    console.warn('[ai auto-reply] typing indicator failed:', error)
+  }
+}
+
+async function sendReplyChunks(args: DispatchArgs, text: string, maxChunks: number): Promise<void> {
+  const chunks = splitReplyIntoChunks(text, maxChunks)
+  for (let index = 0; index < chunks.length; index++) {
+    if (index > 0) {
+      await showTyping(args)
+      await new Promise((resolve) => setTimeout(resolve, replyChunkDelayMs(chunks[index - 1])))
+    }
+    await engineSendText({
+      accountId: args.accountId,
+      userId: args.configOwnerUserId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      text: chunks[index],
+      aiGenerated: true,
+    })
+  }
+}
+
 function formatHandoffNote(reason: string, summary?: string | null): string {
   const cleanSummary = summary?.trim()
-  return cleanSummary
-    ? `Motivo: ${reason}\n\nResumo: ${cleanSummary}`
-    : `Motivo: ${reason}`
+  return cleanSummary ? `Motivo: ${reason}\n\nResumo: ${cleanSummary}` : `Motivo: ${reason}`
 }
 
 /**
@@ -61,10 +101,10 @@ function formatHandoffNote(reason: string, summary?: string | null): string {
  * try/catch and never throws so an LLM or media failure cannot affect
  * the webhook response to Meta.
  */
-export async function dispatchInboundToAiReply(
-  args: DispatchArgs,
-): Promise<void> {
+export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void> {
   const { accountId, conversationId, contactId, configOwnerUserId } = args
+  let trace: AgentTraceCollector | null = null
+  let finalAction: AgentFinalAction = 'no_reply'
 
   try {
     const db = supabaseAdmin()
@@ -134,6 +174,15 @@ export async function dispatchInboundToAiReply(
       return
     }
 
+    if (config.agentId) {
+      trace = createAgentTraceCollector({
+        db,
+        accountId,
+        agentId: config.agentId,
+        conversationId,
+      })
+    }
+
     const replyCount = conv.ai_reply_count ?? 0
     if (replyCount >= config.autoReplyMaxPerConversation) {
       console.info(
@@ -143,17 +192,23 @@ export async function dispatchInboundToAiReply(
         'Limite de respostas automáticas atingido.',
         `A IA respondeu ${replyCount} vezes nesta conversa. Continue o atendimento a partir da última mensagem do cliente.`,
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
 
-    const messages = await buildConversationContext(db, conversationId)
+    const messages = await buildConversationContext(db, conversationId, {
+      resolveImage: createWhatsAppImageResolver(db, accountId),
+    })
     if (messages.length === 0) {
       logSkip(conversationId, 'empty_conversation_context')
       return
     }
 
     const latestInbound = [...messages].reverse().find((m) => m.role === 'user')
+    const latestInboundText = latestInbound
+      ? chatContentText(latestInbound.content)
+      : ''
     const { data: autoResponders, error: automationErr } = await db
       .from('automations')
       .select('*')
@@ -166,7 +221,7 @@ export async function dispatchInboundToAiReply(
     } else if (
       autoResponders?.some((automation) =>
         triggerMatches(automation as Automation, {
-          message_text: latestInbound?.content ?? '',
+          message_text: latestInboundText,
           conversation_id: conversationId,
         }),
       )
@@ -175,10 +230,22 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    const acctLimit = checkRateLimit(
-      `ai-autoreply:${accountId}`,
-      RATE_LIMITS.aiAutoReplyAccount,
-    )
+    const route = classifyIntent({ lastMessageText: latestInboundText })
+    trace?.setIntent(route.intent, route.modelTier)
+    if (route.forceHandoff) {
+      const summary = buildHandoffSummary({ messages, replyCount })
+      await markHandoff(
+        route.intent === 'complaint'
+          ? 'Reclamação ou pedido de atendimento humano detectado.'
+          : 'Pedido sensível de conta ou pagamento requer validação humana.',
+        summary,
+      )
+      finalAction = 'handoff'
+      await sendStaticNotice(args, HANDOFF_NOTICE)
+      return
+    }
+
+    const acctLimit = checkRateLimit(`ai-autoreply:${accountId}`, RATE_LIMITS.aiAutoReplyAccount)
     if (!acctLimit.success) {
       console.warn(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — handing off this inbound.`,
@@ -187,15 +254,17 @@ export async function dispatchInboundToAiReply(
         'Limite temporário do serviço de IA atingido.',
         'O cliente escreveu enquanto o serviço automático estava temporariamente limitado. Continue a partir da última mensagem recebida.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
 
-    const permissions = await loadAgentToolPermissions(
+    const configuredPermissions = await loadAgentToolPermissions(
       db,
       accountId,
       config.agentId!,
     )
+    const permissions = routeToolPermissions(configuredPermissions, route)
     const agentTools = createAutoReplyTools({
       db,
       accountId,
@@ -204,35 +273,65 @@ export async function dispatchInboundToAiReply(
       configOwnerUserId,
       config,
       permissions,
+      onToolCall: (call) => trace?.recordToolCall(call),
     })
 
-    let catalogueGrounding: string | null = null
-    if (permissions.search_catalog) {
-      const prefetch = await prefetchCatalogueForConversation({
+    const [prefetch, crmContext, memories] = await Promise.all([
+      permissions.search_catalog
+        ? prefetchCatalogueForConversation({
+            db,
+            accountId,
+            messages,
+            limit: 5,
+          }).catch((error) => {
+            console.error('[ai auto-reply] catalogue prefetch failed:', error)
+            return null
+          })
+        : Promise.resolve(null),
+      loadCrmCustomerContext(db, accountId, contactId)
+        .then(crmCustomerContextPrompt)
+        .catch((error) => {
+          console.error('[ai auto-reply] CRM context lookup failed:', error)
+          return null
+        }),
+      retrieveContactMemory({
         db,
         accountId,
-        messages,
-        limit: 5,
+        contactId,
+        embeddingsApiKey: config.embeddingsApiKey,
+        currentMessage: latestInboundText,
+        limit: 3,
+      }).catch((error) => {
+        console.error('[ai auto-reply] contact memory lookup failed:', error)
+        return []
+      }),
+    ])
+    const catalogueGrounding = prefetch
+      ? cataloguePrefetchPrompt(prefetch)
+      : null
+    if (prefetch?.attempted) {
+      console.info('[ai auto-reply] catalogue prefetch:', {
+        conversationId,
+        count: prefetch.products.length,
       })
-      catalogueGrounding = cataloguePrefetchPrompt(prefetch)
-      if (prefetch.attempted) {
-        console.info('[ai auto-reply] catalogue prefetch:', {
-          conversationId,
-          query: prefetch.query,
-          count: prefetch.products.length,
-          names: prefetch.products.map((product) => product.name),
-        })
-      }
     }
+    trace?.setMemoryMatchCount(memories.length)
+    const memoryContext = contactMemoryPrompt(memories)
 
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
+      maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
     })
-    const systemPrompt = catalogueGrounding
-      ? `${baseSystemPrompt}\n\n${catalogueGrounding}`
-      : baseSystemPrompt
+    const systemPrompt = [
+      baseSystemPrompt,
+      crmContext,
+      memoryContext,
+      catalogueGrounding,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join('\n\n')
 
     console.info('[ai auto-reply] tools enabled:', {
       conversationId,
@@ -240,13 +339,13 @@ export async function dispatchInboundToAiReply(
       tools: agentTools.tools.map((tool) => tool.name),
     })
 
+    await showTyping(args)
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
-      tools: config.provider === 'openai' ? agentTools.tools : undefined,
-      executeTool:
-        config.provider === 'openai' ? agentTools.executeTool : undefined,
+      tools: agentTools.tools,
+      executeTool: agentTools.executeTool,
     })
 
     void logAiUsage(db, {
@@ -259,10 +358,35 @@ export async function dispatchInboundToAiReply(
     })
 
     const hasPendingActions = agentTools.hasPendingActions()
+    const structuredHandoff = agentTools.getHandoffRequest()
+    const guardrail = evaluateAgentOutput({
+      text,
+      trustedText: config.systemPrompt ?? '',
+      trustedPriceAmounts: agentTools.getTrustedPriceAmounts(),
+      salesIntent: route.intent === 'sales',
+      catalogueVerified: agentTools.wasCatalogueVerified(),
+    })
 
-    if (handoff || (!text && !hasPendingActions)) {
+    if (!structuredHandoff && !handoff && text && !guardrail.safe) {
+      trace?.recordGuardrailViolations(guardrail.violations)
+      console.warn('[ai auto-reply] output blocked by guardrail:', {
+        conversationId,
+        violations: guardrail.violations,
+      })
+      const summary = buildHandoffSummary({ messages, replyCount })
+      await markHandoff(
+        'Resposta automática bloqueada por uma verificação de segurança.',
+        summary,
+      )
+      finalAction = 'handoff'
+      await sendStaticNotice(args, HANDOFF_NOTICE)
+      return
+    }
+
+    if (structuredHandoff || handoff || (!text && !hasPendingActions)) {
       console.info('[ai auto-reply] handoff requested:', {
         conversationId,
+        structured: Boolean(structuredHandoff),
         handoff,
         emptyReply: !text,
         hasPendingActions,
@@ -272,28 +396,30 @@ export async function dispatchInboundToAiReply(
         replyCount,
       })
       await markHandoff(
-        handoff
-          ? 'A IA determinou que o atendimento necessita de intervenção humana.'
-          : 'A IA não conseguiu produzir uma resposta segura.',
-        summary,
+        structuredHandoff?.reason ??
+          (handoff
+            ? 'A IA determinou que o atendimento necessita de intervenção humana.'
+            : 'A IA não conseguiu produzir uma resposta segura.'),
+        structuredHandoff?.summary
+          ? `${structuredHandoff.summary}\n\n${summary}`
+          : summary,
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
 
-    const { data: claimed, error: claimErr } = await db.rpc(
-      'claim_ai_reply_slot',
-      {
-        conversation_id: conversationId,
-        max_replies: config.autoReplyMaxPerConversation,
-      },
-    )
+    const { data: claimed, error: claimErr } = await db.rpc('claim_ai_reply_slot', {
+      conversation_id: conversationId,
+      max_replies: config.autoReplyMaxPerConversation,
+    })
     if (claimErr) {
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
       await markHandoff(
         'Falha técnica ao reservar a resposta automática.',
         'A mensagem do cliente foi recebida, mas o sistema não conseguiu reservar uma resposta da IA. Continue a partir da última mensagem.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
       return
     }
@@ -303,6 +429,7 @@ export async function dispatchInboundToAiReply(
         'Limite de respostas automáticas atingido durante o processamento.',
         'A IA não enviou nova resposta. Continue a partir da última mensagem do cliente.',
       )
+      finalAction = 'handoff'
       await sendStaticNotice(args, HANDOFF_NOTICE)
       return
     }
@@ -311,14 +438,7 @@ export async function dispatchInboundToAiReply(
     // before the cards. Sending it after the media made the WhatsApp thread
     // read backwards (cards first, then "Veja estas opções").
     if (hasPendingActions && text) {
-      await engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId,
-        contactId,
-        text,
-        aiGenerated: true,
-      })
+      await sendReplyChunks(args, text, config.maxReplyChunks)
     }
 
     if (hasPendingActions) {
@@ -326,21 +446,18 @@ export async function dispatchInboundToAiReply(
     }
 
     if (!hasPendingActions && text) {
-      await engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId,
-        contactId,
-        text,
-        aiGenerated: true,
-      })
+      await sendReplyChunks(args, text, config.maxReplyChunks)
     }
+    finalAction = 'reply'
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
+    finalAction = 'handoff'
     try {
       await sendStaticNotice(args, TEMPORARY_FAILURE_NOTICE)
     } catch (fallbackErr) {
       console.error('[ai auto-reply] fallback send failed:', fallbackErr)
     }
+  } finally {
+    trace?.finish(finalAction)
   }
 }

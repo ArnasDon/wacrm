@@ -37,7 +37,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:agent": "node --import tsx scripts/eval-agent.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -73,6 +74,7 @@
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.11",
     "typescript": "^6",
     "vitest": "^4.1.10"
   },

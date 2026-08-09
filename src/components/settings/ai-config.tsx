@@ -69,6 +69,8 @@ export function AiConfig() {
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
+  const [bufferWindowSeconds, setBufferWindowSeconds] = useState(12);
+  const [maxReplyChunks, setMaxReplyChunks] = useState(3);
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
@@ -108,6 +110,8 @@ export function AiConfig() {
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
+        setBufferWindowSeconds(data.buffer_window_seconds ?? 12);
+        setMaxReplyChunks(data.max_reply_chunks ?? 3);
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
@@ -175,6 +179,8 @@ export function AiConfig() {
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
+    buffer_window_seconds: bufferWindowSeconds,
+    max_reply_chunks: maxReplyChunks,
     handoff_agent_id: handoffAgentId || null,
   });
 
@@ -242,6 +248,8 @@ export function AiConfig() {
         setKeyEdited(false);
         setIsActive(false);
         setAutoReplyEnabled(false);
+        setBufferWindowSeconds(12);
+        setMaxReplyChunks(3);
         setSystemPrompt('');
         setHandoffAgentId('');
         resetCommercialStrategy();
@@ -470,6 +478,59 @@ export function AiConfig() {
                 onChange={(e) =>
                   setMaxPerConversation(
                     Math.min(20, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+                disabled={disabled || !autoReplyEnabled}
+                className="w-20"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-buffer-window">{t('messageBuffer')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('messageBufferDesc')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="ai-buffer-window"
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={bufferWindowSeconds}
+                  onChange={(e) =>
+                    setBufferWindowSeconds(
+                      Math.min(30, Math.max(1, Number(e.target.value) || 1)),
+                    )
+                  }
+                  disabled={disabled || !autoReplyEnabled}
+                  className="w-20"
+                />
+                <span className="text-xs text-muted-foreground">
+                  {t('seconds')}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-max-reply-chunks">
+                  {t('maxReplyChunks')}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('maxReplyChunksDesc')}
+                </p>
+              </div>
+              <Input
+                id="ai-max-reply-chunks"
+                type="number"
+                min={1}
+                max={5}
+                value={maxReplyChunks}
+                onChange={(e) =>
+                  setMaxReplyChunks(
+                    Math.min(5, Math.max(1, Number(e.target.value) || 1)),
                   )
                 }
                 disabled={disabled || !autoReplyEnabled}

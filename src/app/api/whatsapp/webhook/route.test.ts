@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
+  registerInboundForAiBuffer: vi.fn(),
+  dispatchBufferedInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
@@ -150,6 +152,10 @@ vi.mock('@/lib/flows/engine', () => ({
 vi.mock('@/lib/ai/auto-reply', () => ({
   dispatchInboundToAiReply: h.dispatchInboundToAiReply,
 }))
+vi.mock('@/lib/ai/message-buffer', () => ({
+  registerInboundForAiBuffer: h.registerInboundForAiBuffer,
+  dispatchBufferedInboundToAiReply: h.dispatchBufferedInboundToAiReply,
+}))
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
@@ -206,6 +212,8 @@ beforeEach(() => {
   h.state.automationCompleted = 0
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
+  h.registerInboundForAiBuffer.mockResolvedValue(1)
+  h.dispatchBufferedInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
@@ -232,6 +240,14 @@ describe('inbound webhook: idempotent insert (#367)', () => {
     // Downstream side effects ran exactly once.
     expect(h.state.rpcCalls).toHaveLength(1)
     expect(h.dispatchInboundToFlows).toHaveBeenCalledTimes(1)
+    expect(h.registerInboundForAiBuffer).toHaveBeenCalledTimes(1)
+    expect(h.dispatchBufferedInboundToAiReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acc-1',
+        conversationId: 'conv-1',
+        generation: 1,
+      }),
+    )
     expect(h.dispatchWebhookEvent).toHaveBeenCalledTimes(1)
   })
 
@@ -246,6 +262,8 @@ describe('inbound webhook: idempotent insert (#367)', () => {
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
+    expect(h.registerInboundForAiBuffer).not.toHaveBeenCalled()
+    expect(h.dispatchBufferedInboundToAiReply).not.toHaveBeenCalled()
     expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
     expect(h.dispatchWebhookEvent).not.toHaveBeenCalled()
   })
@@ -272,5 +290,33 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
     expect(h.state.automationCompleted).toBe(3)
+  })
+
+  it('invalidates an older AI window without dispatching AI when a Flow consumes the message', async () => {
+    h.dispatchInboundToFlows.mockResolvedValue({ consumed: true })
+
+    await runWebhook()
+
+    expect(h.registerInboundForAiBuffer).toHaveBeenCalledWith({
+      accountId: 'acc-1',
+      conversationId: 'conv-1',
+    })
+    expect(h.dispatchBufferedInboundToAiReply).not.toHaveBeenCalled()
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the immediate dispatcher if the buffer RPC is unavailable', async () => {
+    h.registerInboundForAiBuffer.mockResolvedValue(null)
+
+    await runWebhook()
+
+    expect(h.dispatchInboundToAiReply).toHaveBeenCalledWith({
+      accountId: 'acc-1',
+      conversationId: 'conv-1',
+      contactId: 'contact-1',
+      configOwnerUserId: 'user-1',
+      inboundMessageId: 'wamid.TEST1',
+    })
+    expect(h.dispatchBufferedInboundToAiReply).not.toHaveBeenCalled()
   })
 })

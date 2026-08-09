@@ -3,6 +3,7 @@ import {
   sendInteractiveList,
   sendMediaMessage,
   sendTextMessage,
+  sendTypingIndicator,
   type InteractiveButton,
   type InteractiveListSection,
   type MediaKind,
@@ -148,6 +149,28 @@ export async function engineSendText(
     .eq('id', args.conversationId)
 
   return { whatsapp_message_id: waMessageId }
+}
+
+/** Best-effort caller-facing typing state used by the live AI path. */
+export async function engineSendTypingIndicator(args: {
+  accountId: string
+  inboundMessageId: string
+}): Promise<void> {
+  const db = supabaseAdmin()
+  const { data: config, error } = await db
+    .from('whatsapp_config')
+    .select('phone_number_id, access_token')
+    .eq('account_id', args.accountId)
+    .single()
+  if (error || !config) {
+    throw new Error('WhatsApp not configured for this account')
+  }
+
+  await sendTypingIndicator({
+    phoneNumberId: config.phone_number_id,
+    accessToken: decrypt(config.access_token),
+    messageId: args.inboundMessageId,
+  })
 }
 
 interface SendMediaEngineArgs {

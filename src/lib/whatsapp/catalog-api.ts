@@ -14,14 +14,27 @@ export interface MetaCatalogProduct {
 }
 
 interface MetaErrorEnvelope {
-  error?: { message?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    error_data?: unknown
+    fbtrace_id?: string
+  }
 }
 
 async function metaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
     const body = (await response.json()) as MetaErrorEnvelope
-    if (body.error?.message) message = body.error.message
+    if (body.error?.message) {
+      const details = [
+        body.error.code != null ? `code=${body.error.code}` : null,
+        body.error.error_subcode != null ? `subcode=${body.error.error_subcode}` : null,
+        body.error.fbtrace_id ? `fbtrace_id=${body.error.fbtrace_id}` : null,
+      ].filter(Boolean)
+      message = `${body.error.message}${details.length ? ` (${details.join(', ')})` : ''}`
+    }
   } catch {
     // Keep fallback when Meta did not return JSON.
   }
@@ -111,6 +124,7 @@ export async function sendCatalogProductList(args: {
   catalogId: string
   productRetailerIds: string[]
   bodyText?: string
+  headerText?: string
   sectionTitle?: string
 }): Promise<{ messageId: string }> {
   const {
@@ -120,6 +134,7 @@ export async function sendCatalogProductList(args: {
     catalogId,
     productRetailerIds,
     bodyText = 'Veja estas opções disponíveis:',
+    headerText = 'Produtos disponíveis',
     sectionTitle = 'Produtos',
   } = args
 
@@ -134,6 +149,10 @@ export async function sendCatalogProductList(args: {
     to,
     interactive: {
       type: 'product_list',
+      header: {
+        type: 'text',
+        text: headerText.slice(0, 60),
+      },
       body: { text: bodyText },
       action: {
         catalog_id: catalogId,

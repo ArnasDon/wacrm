@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { shouldAllowSignup } from "@/lib/auth/signup-gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+import { MessageSquare, CheckCircle, ShieldAlert, UsersRound } from "lucide-react";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -88,6 +89,42 @@ function SignupPageInner() {
     setSuccess(true);
     setLoading(false);
   };
+
+  // Public sign-up is closed — the only way to create an account is
+  // via an invite link (/join/<token> → here with ?invite=<token>).
+  // This is the app-level half of a two-layer defence; GoTrue itself
+  // also rejects signup with DISABLE_SIGNUP=true, so this UI gate is
+  // not the only thing standing between the internet and account
+  // creation. Kept as a plain conditional (not middleware) so the
+  // invite-carrying form below still renders normally.
+  if (!inviteToken) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md border-border bg-card">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+              <ShieldAlert className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl text-foreground">
+              Sign-up is invite-only
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              This workspace doesn&apos;t accept public sign-ups. Ask your
+              account admin for an invite link, or sign in if you already
+              have an account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/login">
+              <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                Back to sign in
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (success) {
     return (

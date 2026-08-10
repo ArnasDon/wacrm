@@ -94,13 +94,22 @@ describe("rateLimitResponse", () => {
 });
 
 describe("RATE_LIMITS presets", () => {
-  it("send and broadcast budgets are independent", async () => {
+  it("send and broadcast are budgeted per minute", async () => {
     __resetRateLimitForTests();
     // Importing here so the presets stay close to their assertions.
     const { RATE_LIMITS } = await import("./rate-limit");
-    expect(RATE_LIMITS.send.limit).toBeGreaterThan(RATE_LIMITS.broadcast.limit);
     expect(RATE_LIMITS.send.windowMs).toBe(60_000);
     expect(RATE_LIMITS.broadcast.windowMs).toBe(60_000);
+  });
+
+  it("the broadcast budget carries a campaign's per-batch call pattern", async () => {
+    __resetRateLimitForTests();
+    const { RATE_LIMITS } = await import("./rate-limit");
+    // A campaign is NOT one call: the wizard posts a batch of 10
+    // recipients roughly every 1–2 s, so it needs ~45+ calls of headroom
+    // per minute. Sized below that, every batch past the cap comes back
+    // 429 and its recipients are written off as failed (issue #472).
+    expect(RATE_LIMITS.broadcast.limit).toBeGreaterThanOrEqual(45);
   });
 });
 

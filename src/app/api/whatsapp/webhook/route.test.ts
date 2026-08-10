@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
     // returns the row; a replayed delivery conflicts and returns [].
     messageUpsertResult: [{ id: 'msg-1' }] as { id: string }[],
     priorCustomerMsgCount: 0,
+    /** Row `lookupInternalIdByMetaId` resolves for a `context.id`. */
+    replyContextParent: null as { id: string } | null,
     conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
     upsertCalls: [] as { row: Record<string, unknown>; options: unknown }[],
     rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
@@ -84,16 +86,33 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'messages':
           return {
-            // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
-            select: () => ({
-              eq: () => ({
-                eq: () =>
-                  Promise.resolve({
-                    count: h.state.priorCustomerMsgCount,
-                    error: null,
-                  }),
-              }),
-            }),
+            // Two different chains land here, told apart by the count
+            // option: the prior-message count (head request) and the
+            // reply-context parent lookup.
+            select: (_columns: string, options?: { head?: boolean }) =>
+              options?.head
+                ? // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
+                  {
+                    eq: () => ({
+                      eq: () =>
+                        Promise.resolve({
+                          count: h.state.priorCustomerMsgCount,
+                          error: null,
+                        }),
+                    }),
+                  }
+                : // lookupInternalIdByMetaId: select('id').eq().eq().maybeSingle()
+                  {
+                    eq: () => ({
+                      eq: () => ({
+                        maybeSingle: () =>
+                          Promise.resolve({
+                            data: h.state.replyContextParent,
+                            error: null,
+                          }),
+                      }),
+                    }),
+                  },
             // Idempotent insert: upsert(...).select('id')
             upsert: (row: Record<string, unknown>, options: unknown) => {
               h.state.upsertCalls.push({ row, options })
@@ -156,7 +175,15 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 
 import { POST } from './route'
 
-function inboundRequest() {
+const TEXT_MESSAGE = {
+  id: 'wamid.TEST1',
+  from: '15551230000',
+  timestamp: '1700000000',
+  type: 'text',
+  text: { body: 'hello' },
+}
+
+function inboundRequest(message: Record<string, unknown> = TEXT_MESSAGE) {
   const body = {
     entry: [
       {
@@ -166,15 +193,7 @@ function inboundRequest() {
             value: {
               metadata: { phone_number_id: 'pn-1' },
               contacts: [{ wa_id: '15551230000', profile: { name: 'Ada' } }],
-              messages: [
-                {
-                  id: 'wamid.TEST1',
-                  from: '15551230000',
-                  timestamp: '1700000000',
-                  type: 'text',
-                  text: { body: 'hello' },
-                },
-              ],
+              messages: [message],
             },
           },
         ],
@@ -187,8 +206,8 @@ function inboundRequest() {
   } as unknown as Request
 }
 
-async function runWebhook() {
-  const res = await POST(inboundRequest())
+async function runWebhook(message?: Record<string, unknown>) {
+  const res = await POST(inboundRequest(message))
   // Drain the after() callback exactly as the runtime would.
   for (const cb of h.state.afterCallbacks) await cb()
   return res
@@ -198,6 +217,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.state.messageUpsertResult = [{ id: 'msg-1' }]
   h.state.priorCustomerMsgCount = 0
+  h.state.replyContextParent = null
   h.state.conversation = { id: 'conv-1', unread_count: 0, account_id: 'acc-1' }
   h.state.upsertCalls = []
   h.state.rpcCalls = []
@@ -259,6 +279,68 @@ describe('inbound webhook: atomic unread bump (#369)', () => {
     expect(h.state.rpcCalls[0]).toMatchObject({
       name: 'bump_conversation_on_inbound',
       args: { p_conversation_id: 'conv-1' },
+    })
+  })
+})
+
+describe('inbound webhook: template quick-reply buttons (#478)', () => {
+  // A customer tapping a QUICK_REPLY button on a broadcast template.
+  // `context.id` points at the template message we sent — which the
+  // broadcast path never wrote to `messages`, so the parent lookup
+  // legitimately misses and the reply is stored unquoted.
+  const templateButtonTap = {
+    id: 'wamid.BTN1',
+    from: '15551230000',
+    timestamp: '1700000000',
+    type: 'button',
+    button: { text: 'Yes, interested', payload: 'YES_INTERESTED' },
+    context: { id: 'wamid.BROADCAST1' },
+  }
+
+  it('stores the tap as an interactive reply, not an unsupported message', async () => {
+    await runWebhook(templateButtonTap)
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      content_type: 'interactive',
+      content_text: 'Yes, interested',
+      interactive_reply_id: 'YES_INTERESTED',
+      reply_to_message_id: null,
+    })
+  })
+
+  it('routes the tap to flows and fires the interactive_reply trigger', async () => {
+    await runWebhook(templateButtonTap)
+
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: {
+          kind: 'interactive_reply',
+          reply_id: 'YES_INTERESTED',
+          reply_title: 'Yes, interested',
+          meta_message_id: 'wamid.BTN1',
+        },
+      }),
+    )
+    const triggers = h.runAutomationsForTrigger.mock.calls.map(
+      (call) => (call[0] as { triggerType: string }).triggerType,
+    )
+    expect(triggers).toContain('interactive_reply')
+    // The AI auto-reply must stay out of it — a button tap is not a
+    // free-text question.
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the label when the template button carries no payload', async () => {
+    await runWebhook({
+      ...templateButtonTap,
+      button: { text: 'Track my order' },
+    })
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      content_type: 'interactive',
+      content_text: 'Track my order',
+      interactive_reply_id: 'Track my order',
     })
   })
 })

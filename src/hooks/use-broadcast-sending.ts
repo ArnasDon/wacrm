@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import {
+  BATCH_SEND_ATTEMPTS,
+  batchRetryDelayMs,
+} from '@/lib/broadcast-retry';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -58,6 +62,11 @@ interface UseBroadcastSendingReturn {
  * Meta rate-limit buffer. 10 per batch + 1 s pause matches the spec
  * and keeps us comfortably under Meta's per-phone-number messaging
  * rate so a large broadcast never trips the upstream limiter.
+ *
+ * Note this shape when touching `RATE_LIMITS.broadcast`: a campaign is
+ * many calls to `/api/whatsapp/broadcast`, not one. A 1 000-recipient
+ * send is ~100 calls over several minutes, and a bucket sized for
+ * "one call per campaign" throttles most of it away (issue #472).
  */
 const SEND_BATCH_SIZE = 10;
 const SEND_BATCH_DELAY_MS = 1000;
@@ -474,20 +483,32 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         if (apiRecipients.length === 0) continue;
 
         try {
-          const res = await fetch('/api/whatsapp/broadcast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
-            }),
-          });
+          // Send the batch, waiting out a 429 rather than writing the
+          // whole batch off as failed. Only 429 is replayed — see
+          // batchRetryDelayMs for why nothing else can be.
+          let data: { error?: string; results?: BroadcastApiResult[] } = {};
+          for (let attempt = 1; ; attempt++) {
+            const res = await fetch('/api/whatsapp/broadcast', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipients: apiRecipients,
+                template_name: payload.template.name,
+                template_language: payload.template.language ?? 'en_US',
+              }),
+            });
 
-          const data = await res.json();
+            data = await res.json();
+            if (res.ok) break;
 
-          if (!res.ok) {
-            throw new Error(data.error || 'Broadcast API request failed');
+            const retryIn =
+              attempt < BATCH_SEND_ATTEMPTS
+                ? batchRetryDelayMs(res.status, res.headers.get('Retry-After'))
+                : null;
+            if (retryIn === null) {
+              throw new Error(data.error || 'Broadcast API request failed');
+            }
+            await sleep(retryIn);
           }
 
           const resultsByPhone = new Map<string, BroadcastApiResult>();

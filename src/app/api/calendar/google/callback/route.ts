@@ -24,8 +24,32 @@ import { googleOAuthStateSecretFromEnv, googleOAuthRedirectUriFromEnv } from '@/
 
 const SETTINGS_PATH = '/settings?tab=calendar'
 
+// `request.url` reflects whatever the Next.js server actually bound to —
+// on a self-hosted deploy behind a reverse proxy (nginx → Docker) that's
+// the container's internal bind address (e.g. `http://0.0.0.0:3000` or
+// `http://127.0.0.1:3000`), not the public hostname the browser is on.
+// `new URL(SETTINGS_PATH, request.url)` inherits that internal origin,
+// so the OAuth callback redirect sends the browser to an address it
+// can't reach. `NEXT_PUBLIC_SITE_URL` is the operator's explicit public
+// origin; prefer it whenever it's set and parses as a valid URL, and
+// fall back to `request.url` so unconfigured/dev environments keep
+// working exactly as before.
+function resolveRedirectBase(request: Request): string | URL {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (explicit) {
+    try {
+      return new URL(explicit).toString()
+    } catch {
+      console.warn(
+        `[calendar/google/callback] NEXT_PUBLIC_SITE_URL is set but not a valid URL: ${explicit} — falling back to request.url`,
+      )
+    }
+  }
+  return request.url
+}
+
 function redirectToSettings(request: Request, params: Record<string, string>): NextResponse {
-  const url = new URL(SETTINGS_PATH, request.url)
+  const url = new URL(SETTINGS_PATH, resolveRedirectBase(request))
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value)
   return NextResponse.redirect(url)
 }

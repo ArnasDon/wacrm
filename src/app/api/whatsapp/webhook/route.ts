@@ -8,6 +8,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { dispatchInboundToLeadAnalysis } from '@/lib/ai/lead-analysis'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendPushToAccount } from '@/lib/push/send'
 import { ensureDealForNewLead } from '@/lib/pipelines/auto-deal'
@@ -807,6 +808,22 @@ async function processMessage(
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+    })
+  }
+
+  // Lead intelligence (BLOCO 2/4) — analyzes the conversation and
+  // silently updates tags + (when warranted) proposes a pipeline-stage
+  // move in the Central de IA. Independent of the flow runner and of
+  // auto-reply: it runs whenever there's inbound text to learn from,
+  // even when a Flow or automation already handled the reply, since
+  // it's classifying the LEAD, not answering the customer.
+  // `dispatchInboundToLeadAnalysis` owns its own eligibility gates
+  // (AI configured + active, cooldown claim) and never throws.
+  if (!interactiveReplyId && inboundText.trim()) {
+    await dispatchInboundToLeadAnalysis({
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
     })
   }
 

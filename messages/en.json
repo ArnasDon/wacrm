@@ -25,6 +25,7 @@
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
+    "aiHub": "AI Hub",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -375,7 +376,8 @@
       "addNotePlaceholder": "Add a note...",
       "hasPurchased": "Already purchased?",
       "hasPurchasedYes": "Yes",
-      "hasPurchasedNo": "No"
+      "hasPurchasedNo": "No",
+      "pendingAiSuggestions": "{count, plural, =1 {1 AI suggestion} other {# AI suggestions}}"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
@@ -1671,7 +1673,8 @@
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
-      "api": "API keys"
+      "api": "API keys",
+      "ai-agents": "AI Agents"
     },
     "groups": {
       "account": "Account",
@@ -1793,6 +1796,13 @@
       "saveFailed": "Failed to save default currency",
       "saveSuccess": "Default currency updated"
     },
+    "aiAgentsPanel": {
+      "title": "AI Agents",
+      "description": "Technical setup for the AI — provider, model, API key, behavior, and knowledge base. Operational suggestions live in the Central de IA.",
+      "tabSetup": "Setup",
+      "tabPlayground": "Playground",
+      "tabUsage": "Usage"
+    },
     "aiConfig": {
       "title": "Agent setup",
       "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
@@ -1860,5 +1870,118 @@
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
     }
+  },
+  "AiHub": {
+    "title": "AI Hub",
+    "subtitle": "Everything the AI recommends, in one operational place — lead-stage moves, suggested actions, follow-up nudges, pending learnings, and inconsistencies worth a look. Nothing here acts on its own; you approve, reject, or ignore each one.",
+    "allCategories": "All",
+    "filteredByContact": "Filtered by contact",
+    "categories": {
+      "pipelineMove": "Pipeline moves",
+      "action": "Suggested actions",
+      "followup": "Follow-up",
+      "learning": "Pending learnings",
+      "inconsistency": "Inconsistencies",
+      "other": "Other"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "ignored": "Ignored",
+      "done": "Done"
+    },
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "ignore": "Ignore",
+      "accept": "Accept",
+      "keep": "Keep",
+      "viewConversation": "View conversation"
+    },
+    "confidence": "Confidence",
+    "confidenceBand": {
+      "strong": "strong evidence",
+      "good": "good evidence",
+      "moderate": "moderate evidence",
+      "low": "low evidence"
+    },
+    "followup": {
+      "open": "Open",
+      "title": "Follow-up",
+      "stage": "Stage",
+      "hasPurchased": "Bought with us before?",
+      "yes": "Yes",
+      "no": "No",
+      "lastContact": "Last contact",
+      "hoursAgo": "{hours} hours ago",
+      "reason": "Why now",
+      "approach": "Suggested angle",
+      "ignore": "Ignore",
+      "snooze": "Snooze",
+      "snoozed": "Snoozed for {days} days",
+      "viewConversation": "View conversation",
+      "accept": "Accept",
+      "back": "Back",
+      "modeWhatsApp": "Copy to WhatsApp",
+      "modeWhatsAppDesc": "Free, personalized text — you send it yourself from your own WhatsApp.",
+      "modeCrm": "Send from the CRM",
+      "modeCrmDesc": "Uses an approved template through the official WhatsApp API.",
+      "generateError": "Could not generate the message",
+      "messagePreview": "Message",
+      "regenerate": "Regenerate",
+      "copyButton": "Copy to WhatsApp",
+      "copyError": "Could not copy to clipboard",
+      "copied": "Copied to clipboard",
+      "markDone": "Follow-up done",
+      "markedDone": "Follow-up marked as done",
+      "markDoneError": "Could not mark the follow-up as done",
+      "templateUsed": "Template",
+      "noTemplate": "No approved template fits this follow-up yet. You can still copy a free-text message to send from your own WhatsApp.",
+      "goToConversation": "Go to conversation",
+      "actionError": "Could not complete the action"
+    },
+    "learning": {
+      "open": "Open",
+      "title": "Learning",
+      "types": {
+        "factual": "Product/development fact",
+        "commercial_rule": "Commercial rule",
+        "procedure": "Procedure",
+        "communication_style": "Communication style",
+        "template_usage": "Template usage",
+        "followup_pattern": "Follow-up pattern",
+        "other": "Other"
+      },
+      "info": "Identified information",
+      "context": "Context",
+      "application": "Possible application",
+      "occurrences": "Times identified",
+      "occurrencesShort": "seen {count}×",
+      "origin": "Source",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "approve": "Approve",
+      "approveAdminOnly": "Only an account admin can approve a learning",
+      "reject": "Reject",
+      "approved": "Added to the knowledge base",
+      "rejected": "Learning rejected",
+      "saved": "Changes saved",
+      "actionError": "Could not complete the action"
+    },
+    "bulkAcceptButton": "Accept all stage moves",
+    "bulkAcceptTitle": "Accept all stage moves",
+    "bulkAcceptConfirm": "You're about to accept {count} lead stage-move {count, plural, =1 {suggestion} other {suggestions}}.",
+    "bulkAcceptCancel": "Cancel",
+    "bulkAcceptConfirmBtn": "Confirm",
+    "bulkAcceptSuccess": "{count} stage {count, plural, =1 {move} other {moves}} accepted",
+    "bulkAcceptPartial": "{failed} of {total} could not be accepted",
+    "emptyTitle": "No suggestions here yet",
+    "emptyDesc": "Once AI generation is wired up, recommendations will land here — the Inbox will only show a discreet hint pointing back to this page.",
+    "loadError": "Could not load AI suggestions",
+    "retry": "Retry",
+    "toastUpdated": "Suggestion updated",
+    "toastError": "Could not update the suggestion"
   }
 }

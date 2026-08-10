@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
   StickyNote,
   Plus,
   ShoppingBag,
+  BrainCircuit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -36,6 +38,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  // BLOCO 3/4 — discreet count of pending Central de IA suggestions for
+  // this contact (any category — pipeline moves, follow-ups, etc.).
+  // Keeps the Inbox itself free of AI clutter: just a small hint here
+  // pointing back to the Central de IA, never the suggestions themselves.
+  const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [savingHasPurchased, setSavingHasPurchased] = useState(false);
@@ -62,8 +69,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags, and the pending-AI-suggestions count in
+    // parallel. The last one excludes snoozed-into-the-future rows so
+    // "Adiar" in the Central de IA also quiets this hint, same rule as
+    // the suggestions list route.
+    const [dealsRes, notesRes, tagsRes, suggestionsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -78,6 +88,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("ai_suggestions")
+        .select("id", { count: "exact", head: true })
+        .eq("contact_id", contact.id)
+        .eq("status", "pending")
+        .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
@@ -91,6 +107,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    setPendingSuggestionCount(suggestionsRes.count ?? 0);
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -193,6 +210,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </h3>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
+            )}
+            {pendingSuggestionCount > 0 && (
+              <Link
+                href={`/agents?contact=${contact.id}`}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <BrainCircuit className="h-3 w-3" />
+                {tSidebar("pendingAiSuggestions", { count: pendingSuggestionCount })}
+              </Link>
             )}
           </div>
 

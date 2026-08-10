@@ -25,6 +25,7 @@
     "automations": "Automações",
     "flows": "Fluxos",
     "aiAgents": "Agentes de IA",
+    "aiHub": "Central de IA",
     "settings": "Configurações",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversa não lida} other {conversas não lidas}}",
@@ -375,7 +376,8 @@
       "addNotePlaceholder": "Adicionar uma nota...",
       "hasPurchased": "Já comprou comigo?",
       "hasPurchasedYes": "Sim",
-      "hasPurchasedNo": "Não"
+      "hasPurchasedNo": "Não",
+      "pendingAiSuggestions": "{count, plural, =1 {1 sugestão da IA} other {# sugestões da IA}}"
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",
@@ -1671,7 +1673,8 @@
       "fields": "Campos e tags",
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
-      "api": "Chaves de API"
+      "api": "Chaves de API",
+      "ai-agents": "Agentes de IA"
     },
     "groups": {
       "account": "Conta",
@@ -1793,6 +1796,13 @@
       "saveFailed": "Falha ao salvar moeda padrão",
       "saveSuccess": "Moeda padrão atualizada"
     },
+    "aiAgentsPanel": {
+      "title": "Agentes de IA",
+      "description": "Configuração técnica da IA — provedor, modelo, chave de API, comportamento e base de conhecimento. As sugestões operacionais ficam na Central de IA.",
+      "tabSetup": "Configuração",
+      "tabPlayground": "Playground",
+      "tabUsage": "Uso"
+    },
     "aiConfig": {
       "title": "Configuração do agente",
       "description": "Use sua própria chave da OpenAI ou Anthropic. O wacrm chama o provedor diretamente com sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas geradas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
@@ -1860,5 +1870,118 @@
       "reindexTooltip": "Regerar embeddings de todos os documentos (ex: após adicionar uma chave de embeddings)",
       "loading": "Carregando…"
     }
+  },
+  "AiHub": {
+    "title": "Central de IA",
+    "subtitle": "Tudo o que a IA recomenda, num só lugar operacional — movimentações de pipeline, ações sugeridas, follow-ups, aprendizados pendentes e inconsistências que merecem atenção. Nada aqui age sozinho; você aprova, rejeita ou ignora cada sugestão.",
+    "allCategories": "Todas",
+    "filteredByContact": "Filtrado por contato",
+    "categories": {
+      "pipelineMove": "Movimentações de pipeline",
+      "action": "Ações sugeridas",
+      "followup": "Follow-up",
+      "learning": "Aprendizados pendentes",
+      "inconsistency": "Inconsistências",
+      "other": "Outras recomendações"
+    },
+    "status": {
+      "pending": "Pendentes",
+      "approved": "Aprovadas",
+      "rejected": "Rejeitadas",
+      "ignored": "Ignoradas",
+      "done": "Realizadas"
+    },
+    "actions": {
+      "approve": "Aprovar",
+      "reject": "Rejeitar",
+      "ignore": "Ignorar",
+      "accept": "Aceitar",
+      "keep": "Manter",
+      "viewConversation": "Ver conversa"
+    },
+    "confidence": "Confiança",
+    "confidenceBand": {
+      "strong": "forte evidência",
+      "good": "boa evidência",
+      "moderate": "evidência moderada",
+      "low": "evidência fraca"
+    },
+    "followup": {
+      "open": "Abrir",
+      "title": "Follow-up",
+      "stage": "Etapa",
+      "hasPurchased": "Já comprou comigo?",
+      "yes": "Sim",
+      "no": "Não",
+      "lastContact": "Último contato",
+      "hoursAgo": "há {hours} horas",
+      "reason": "Motivo",
+      "approach": "Sugestão de abordagem",
+      "ignore": "Ignorar",
+      "snooze": "Adiar",
+      "snoozed": "Adiado por {days} dias",
+      "viewConversation": "Ver conversa",
+      "accept": "Aceitar",
+      "back": "Voltar",
+      "modeWhatsApp": "Copiar para WhatsApp",
+      "modeWhatsAppDesc": "Mensagem livre e personalizada — você mesmo envia pelo seu WhatsApp.",
+      "modeCrm": "Enviar pelo CRM",
+      "modeCrmDesc": "Usa um template aprovado através da API oficial do WhatsApp.",
+      "generateError": "Não foi possível gerar a mensagem",
+      "messagePreview": "Mensagem",
+      "regenerate": "Regenerar",
+      "copyButton": "Copiar para WhatsApp",
+      "copyError": "Não foi possível copiar para a área de transferência",
+      "copied": "Copiado para a área de transferência",
+      "markDone": "Follow-up realizado",
+      "markedDone": "Follow-up marcado como realizado",
+      "markDoneError": "Não foi possível marcar o follow-up como realizado",
+      "templateUsed": "Template",
+      "noTemplate": "Nenhum template aprovado compatível com este follow-up ainda. Você ainda pode copiar uma mensagem livre para enviar pelo seu WhatsApp.",
+      "goToConversation": "Ir para a conversa",
+      "actionError": "Não foi possível concluir a ação"
+    },
+    "learning": {
+      "open": "Abrir",
+      "title": "Aprendizado",
+      "types": {
+        "factual": "Fato sobre produto/empreendimento",
+        "commercial_rule": "Regra comercial",
+        "procedure": "Procedimento",
+        "communication_style": "Estilo de comunicação",
+        "template_usage": "Uso de template",
+        "followup_pattern": "Padrão de follow-up",
+        "other": "Outro"
+      },
+      "info": "Informação identificada",
+      "context": "Contexto",
+      "application": "Possível aplicação",
+      "occurrences": "Vezes identificada",
+      "occurrencesShort": "visto {count}×",
+      "origin": "Origem",
+      "edit": "Editar",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "approve": "Aprovar",
+      "approveAdminOnly": "Somente um administrador da conta pode aprovar um aprendizado",
+      "reject": "Rejeitar",
+      "approved": "Adicionado à base de conhecimento",
+      "rejected": "Aprendizado rejeitado",
+      "saved": "Alterações salvas",
+      "actionError": "Não foi possível concluir a ação"
+    },
+    "bulkAcceptButton": "Aceitar todas as movimentações",
+    "bulkAcceptTitle": "Aceitar todas as movimentações",
+    "bulkAcceptConfirm": "Você está prestes a aceitar {count} {count, plural, =1 {sugestão de movimentação} other {sugestões de movimentação}} de leads.",
+    "bulkAcceptCancel": "Cancelar",
+    "bulkAcceptConfirmBtn": "Confirmar",
+    "bulkAcceptSuccess": "{count} {count, plural, =1 {movimentação aceita} other {movimentações aceitas}}",
+    "bulkAcceptPartial": "{failed} de {total} não puderam ser aceitas",
+    "emptyTitle": "Nenhuma sugestão por aqui ainda",
+    "emptyDesc": "Assim que a geração por IA for conectada, as recomendações vão aparecer aqui — a Caixa de Entrada mostrará apenas um indicativo discreto apontando para esta página.",
+    "loadError": "Não foi possível carregar as sugestões",
+    "retry": "Tentar novamente",
+    "toastUpdated": "Sugestão atualizada",
+    "toastError": "Não foi possível atualizar a sugestão"
   }
 }

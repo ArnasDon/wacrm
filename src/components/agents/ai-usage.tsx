@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Bot, PencilLine } from 'lucide-react';
+import { BarChart3, Bot, PencilLine, BrainCircuit, CalendarClock, GraduationCap } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import {
@@ -36,6 +36,9 @@ interface UsageResponse {
   by_mode: {
     auto_reply: { calls: number; tokens: number };
     draft: { calls: number; tokens: number };
+    lead_analysis: { calls: number; tokens: number };
+    followup: { calls: number; tokens: number };
+    learning: { calls: number; tokens: number };
   };
   by_model: {
     model: string;
@@ -142,7 +145,7 @@ export function AiUsageCard() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
               <Stat label="Total tokens" value={formatCompactNumber(data.totals.total_tokens)} />
               <Stat label="LLM calls" value={String(data.totals.calls)} />
               <Stat
@@ -154,6 +157,21 @@ export function AiUsageCard() {
                 label="Drafts"
                 value={formatCompactNumber(data.by_mode.draft.tokens)}
                 icon={PencilLine}
+              />
+              <Stat
+                label="Lead analysis"
+                value={formatCompactNumber(data.by_mode.lead_analysis.tokens)}
+                icon={BrainCircuit}
+              />
+              <Stat
+                label="Follow-up"
+                value={formatCompactNumber(data.by_mode.followup.tokens)}
+                icon={CalendarClock}
+              />
+              <Stat
+                label="Learning"
+                value={formatCompactNumber(data.by_mode.learning.tokens)}
+                icon={GraduationCap}
               />
             </div>
 

@@ -101,6 +101,13 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /**
+   * One-shot draft to seed the text field with (BLOCO 3/4: a follow-up
+   * message "loaded but not sent" from the Central de IA). Only seeds
+   * on change, never overwrites what the agent is actively typing — the
+   * caller is responsible for only setting this once per conversation.
+   */
+  initialText?: string;
 }
 
 function formatDuration(seconds: number): string {
@@ -137,12 +144,22 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  initialText,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Only re-runs when the draft string itself changes — this seeds the
+  // field once and never fights with the agent's own typing afterwards.
+  useEffect(() => {
+    if (initialText) {
+      setText(initialText);
+      textareaRef.current?.focus();
+    }
+  }, [initialText]);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // image/video/document; `busy` covers the upload window. Voice notes

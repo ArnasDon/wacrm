@@ -34,6 +34,14 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /**
+   * Open directly into the preview/edit screen for this template +
+   * values instead of the picker list (BLOCO 3/4: a follow-up template
+   * the AI already chose and filled from the Central de IA). Consumed
+   * once per `open` transition — reopening the picker manually
+   * afterwards starts from the list as usual.
+   */
+  initialSelection?: { template: MessageTemplate; values: TemplateSendValues } | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -78,6 +86,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  initialSelection,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -130,6 +139,19 @@ export function TemplatePicker({
     return () => {
       cancelled = true;
     };
+  }, [open]);
+
+  // Deep-link straight into the preview/edit screen for an
+  // AI-prepared follow-up template (BLOCO 3/4) instead of the picker
+  // list. Only on the open transition — editing values afterwards
+  // doesn't re-seed from the (now stale) initial prop.
+  useEffect(() => {
+    if (!open || !initialSelection) return;
+    setSelected(initialSelection.template);
+    setParams(initialSelection.values.body);
+    setHeaderText(initialSelection.values.headerText ?? "");
+    setButtonParams(initialSelection.values.buttonParams ?? {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function resetSelection() {

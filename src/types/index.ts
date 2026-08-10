@@ -124,7 +124,9 @@ export interface Contact {
 
 export interface Tag {
   id: string;
-  user_id: string;
+  /** Nullable since migration 050 — null for tags the lead-analysis AI
+   *  creates, which have no human author. */
+  user_id: string | null;
   name: string;
   color: string;
   category?: string | null;
@@ -298,6 +300,49 @@ export interface Notification {
   body?: string;
   read_at?: string;
   created_at: string;
+}
+
+// ============================================================
+// AI suggestions (migration 049) — Central de IA
+// ============================================================
+
+export type AiSuggestionCategory =
+  | 'pipeline_move'
+  | 'action'
+  | 'followup'
+  | 'learning'
+  | 'inconsistency'
+  | 'other';
+
+export type AiSuggestionStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'ignored'
+  | 'done';
+
+export interface AiSuggestion {
+  id: string;
+  account_id: string;
+  contact_id?: string;
+  conversation_id?: string;
+  category: AiSuggestionCategory;
+  title: string;
+  description?: string;
+  /** Category-specific detail — interpreted by `category`, not typed here. */
+  payload?: Record<string, unknown>;
+  status: AiSuggestionStatus;
+  created_by?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  /** "Adiar" (BLOCO 3/4) — a pending suggestion snoozed until this
+   *  timestamp is hidden from the default pending view and resurfaces
+   *  on its own once it passes. Null/undefined = not snoozed. */
+  snoozed_until?: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by the list endpoint when contact_id is set. */
+  contact?: { id: string; name: string; avatar_url?: string } | null;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';

@@ -63,8 +63,10 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   container — apply them with the Supabase CLI as described in the
   README.
 - Nothing inside the container is scheduled. If you use automation
-  Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  Wait steps, flows, or the AI follow-up/learning suggestions (Central
+  de IA), point an external scheduler at `GET /api/automations/cron`,
+  `GET /api/flows/cron`, `GET /api/ai/followups/cron`, and
+  `GET /api/ai/learning/cron` on this deployment, sending the shared
+  secret in the `x-cron-secret` header (`AUTOMATION_CRON_SECRET`, see
+  `.env.local.example`). All four return 503 until that variable is
+  set.

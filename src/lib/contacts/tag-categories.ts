@@ -14,7 +14,9 @@ export const CLASSIFICATION_CATEGORY = 'Finalidade';
 // Sort priority for the real-estate qualification categories (migration
 // 039) so they always group in the order a broker fills them out; any
 // other category a user adds falls after these, alphabetically.
-const CATEGORY_ORDER = [
+// Exported so the lead-analysis prompt (BLOCO 2/4) can reuse the exact
+// same category vocabulary instead of duplicating it.
+export const CATEGORY_ORDER = [
   'Finalidade',
   'Tipo de imóvel',
   'Bairro',

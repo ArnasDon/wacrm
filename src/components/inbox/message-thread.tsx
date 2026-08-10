@@ -47,10 +47,11 @@ import {
   type SendMediaPayload,
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
-import { TemplatePicker } from "./template-picker";
+import { TemplatePicker, type TemplateSendValues } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-draft";
 
 interface ReplyDraft {
   id: string;
@@ -208,6 +209,44 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+
+  // BLOCO 3/4 — a follow-up draft primed from the Central de IA
+  // ("Enviar pelo CRM"). `followupPrimeRef` mirrors the state into a
+  // ref so the memoized send handlers below can read the current value
+  // without needing it in their dependency arrays.
+  const [followupPrime, setFollowupPrime] = useState<FollowupDraft | null>(null);
+  const followupPrimeRef = useRef<FollowupDraft | null>(null);
+  useEffect(() => {
+    followupPrimeRef.current = followupPrime;
+  }, [followupPrime]);
+  const [followupTemplateSelection, setFollowupTemplateSelection] = useState<{
+    template: MessageTemplate;
+    values: TemplateSendValues;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!conversation) return;
+    const draft = consumeFollowupDraft(conversation.id);
+    if (!draft) return;
+    setFollowupPrime(draft);
+    if (draft.mode === "template" && draft.templateId) {
+      const supabase = createClient();
+      supabase
+        .from("message_templates")
+        .select("*")
+        .eq("id", draft.templateId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!data) return;
+          setFollowupTemplateSelection({
+            template: data as MessageTemplate,
+            values: draft.values ?? { body: [] },
+          });
+          setTemplateModalOpen(true);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -496,6 +535,13 @@ export function MessageThread({
       onNewMessage(optimisticMsg);
       setReplyTo(null);
 
+      // One-shot: a message going out on a thread primed from a
+      // follow-up tags that specific send so the suggestion resolves
+      // automatically (see /api/whatsapp/send). Consumed here so a
+      // later, unrelated send in the same thread doesn't re-tag it.
+      const followupSuggestionId = followupPrimeRef.current?.suggestionId;
+      setFollowupPrime(null);
+
       try {
         const res = await fetch("/api/whatsapp/send", {
           method: "POST",
@@ -505,6 +551,7 @@ export function MessageThread({
             message_type: "text",
             content_text: text,
             reply_to_message_id: replyToId,
+            ...(followupSuggestionId ? { followup_suggestion_id: followupSuggestionId } : {}),
           }),
         });
 
@@ -697,6 +744,10 @@ export function MessageThread({
       };
       onNewMessage(optimisticMsg);
 
+      const followupSuggestionId = followupPrimeRef.current?.suggestionId;
+      setFollowupPrime(null);
+      setFollowupTemplateSelection(null);
+
       try {
         const res = await fetch("/api/whatsapp/send", {
           method: "POST",
@@ -717,6 +768,7 @@ export function MessageThread({
             },
             template_params: values.body,
             content_text: renderedBody,
+            ...(followupSuggestionId ? { followup_suggestion_id: followupSuggestionId } : {}),
           }),
         });
 
@@ -1193,12 +1245,17 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        initialText={followupPrime?.mode === "free" ? followupPrime.text : undefined}
       />
 
       <TemplatePicker
         open={templateModalOpen}
-        onOpenChange={setTemplateModalOpen}
+        onOpenChange={(open) => {
+          setTemplateModalOpen(open);
+          if (!open) setFollowupTemplateSelection(null);
+        }}
         onSelect={handleSendTemplate}
+        initialSelection={followupTemplateSelection}
       />
     </div>
   );

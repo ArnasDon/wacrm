@@ -18,6 +18,7 @@ import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel'
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
+import { AiAgentsPanel } from '@/components/settings/ai-agents-panel';
 import {
   resolveSection,
   type SettingsSection,
@@ -81,6 +82,7 @@ function SettingsPageInner() {
     deals: <DealsSettings />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
+    'ai-agents': <AiAgentsPanel />,
   };
 
   return (

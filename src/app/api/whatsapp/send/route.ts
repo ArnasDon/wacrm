@@ -58,6 +58,12 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      // BLOCO 3/4: when a compose was primed from a follow-up suggestion
+      // in the Central de IA ("Enviar pelo CRM"), the composer threads
+      // this id through so a successful send auto-resolves that specific
+      // suggestion — see the block below. Absent for every other send;
+      // zero effect on the existing send paths.
+      followup_suggestion_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -166,6 +172,35 @@ export async function POST(request: Request) {
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
       })
+
+      // Best-effort, never blocks the response: a successful send from a
+      // follow-up-primed composer resolves that suggestion automatically
+      // (BLOCO 3/4 spec: "Registrar o envio no histórico" right when the
+      // send happens). Scoped by account_id + status='pending' so a stale
+      // or already-resolved id is silently a no-op, never an error here —
+      // "Follow-up realizado" in the Central de IA remains available as a
+      // manual fallback either way.
+      if (typeof followup_suggestion_id === 'string' && followup_suggestion_id) {
+        try {
+          const { error: resolveError } = await supabase
+            .from('ai_suggestions')
+            .update({
+              status: 'done',
+              resolved_by: userId,
+              resolved_at: new Date().toISOString(),
+              snoozed_until: null,
+            })
+            .eq('id', followup_suggestion_id)
+            .eq('account_id', accountId)
+            .eq('category', 'followup')
+            .eq('status', 'pending')
+          if (resolveError) {
+            console.error('[whatsapp/send] follow-up auto-resolve failed:', resolveError)
+          }
+        } catch (err) {
+          console.error('[whatsapp/send] follow-up auto-resolve threw:', err)
+        }
+      }
 
       return NextResponse.json({
         success: true,

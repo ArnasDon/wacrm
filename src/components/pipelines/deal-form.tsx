@@ -506,30 +506,6 @@ export function DealForm({
               placeholder="Luciano Sant Anna"
               className="h-8 border-none bg-transparent p-0 text-xl font-bold text-foreground focus-visible:ring-0 placeholder:text-muted-foreground/40"
             />
-            <select
-              value={product}
-              onChange={(e) => setProduct(e.target.value)}
-              className="h-7 w-full bg-transparent text-xs text-muted-foreground outline-none cursor-pointer hover:text-foreground border-b border-border/40 pb-1"
-            >
-              <option value="" className="bg-popover text-popover-foreground">
-                Selecionar produtos...
-              </option>
-              <option value="Consultoria Premium" className="bg-popover text-popover-foreground">
-                Consultoria Premium
-              </option>
-              <option value="Plano Mensal" className="bg-popover text-popover-foreground">
-                Plano Mensal
-              </option>
-              <option value="Tratamento Odontológico" className="bg-popover text-popover-foreground">
-                Tratamento Odontológico
-              </option>
-              <option value="Procedimento Estético" className="bg-popover text-popover-foreground">
-                Procedimento Estético
-              </option>
-              <option value="Outro Produto/Serviço" className="bg-popover text-popover-foreground">
-                Outro Produto/Serviço
-              </option>
-            </select>
           </div>
 
           <button

@@ -442,15 +442,66 @@ export function DealForm({
   async function handleStatusChange(status: DealStatus) {
     if (!deal) return;
     setStatusAction(status);
+
+    let targetStageId = stageId;
+
+    if (status === "won") {
+      // Find a stage named Won / Ganho, or fallback to the highest position stage
+      const wonStage = availableStages.find(
+        (s) =>
+          s.name.toLowerCase().includes("won") ||
+          s.name.toLowerCase().includes("ganho") ||
+          s.name.toLowerCase().includes("fechado")
+      ) || availableStages[availableStages.length - 1];
+      if (wonStage) targetStageId = wonStage.id;
+    } else if (status === "lost") {
+      // Find a stage named Lost / Perdido / Cancelado
+      const lostStage = availableStages.find(
+        (s) =>
+          s.name.toLowerCase().includes("lost") ||
+          s.name.toLowerCase().includes("perdido") ||
+          s.name.toLowerCase().includes("cancelado")
+      );
+      if (lostStage) {
+        targetStageId = lostStage.id;
+      } else {
+        // If current stage is a "Won" stage, move it out of the Won stage to the initial stage
+        const currentStage = availableStages.find((s) => s.id === stageId);
+        if (
+          currentStage &&
+          (currentStage.name.toLowerCase().includes("won") ||
+            currentStage.name.toLowerCase().includes("ganho") ||
+            currentStage.name.toLowerCase().includes("fechado"))
+        ) {
+          targetStageId = availableStages[0]?.id || stageId;
+        }
+      }
+    } else if (status === "open") {
+      // If reopening and in a won/lost stage, move to first stage
+      const currentStage = availableStages.find((s) => s.id === stageId);
+      if (
+        currentStage &&
+        (currentStage.name.toLowerCase().includes("won") ||
+          currentStage.name.toLowerCase().includes("ganho") ||
+          currentStage.name.toLowerCase().includes("lost") ||
+          currentStage.name.toLowerCase().includes("perdido"))
+      ) {
+        targetStageId = availableStages[0]?.id || stageId;
+      }
+    }
+
     const { error } = await supabase
       .from("deals")
-      .update({ status })
+      .update({ status, stage_id: targetStageId })
       .eq("id", deal.id);
+
     setStatusAction(null);
     if (error) {
       toast.error(t("toastFailedStatus"));
       return;
     }
+
+    setStageId(targetStageId);
     toast.success(
       status === "won" ? t("toastMarkedWon") : status === "lost" ? t("toastMarkedLost") : t("toastReopened"),
     );

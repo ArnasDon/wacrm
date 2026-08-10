@@ -216,20 +216,36 @@ export default function PipelinesPage() {
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
-      // Optimistic update — board already animated; just persist.
+      const targetStage = stages.find((s) => s.id === newStageId);
+      let newStatus: "open" | "won" | "lost" = "open";
+
+      if (targetStage) {
+        const nameLower = targetStage.name.toLowerCase();
+        if (nameLower.includes("won") || nameLower.includes("ganho") || nameLower.includes("fechado")) {
+          newStatus = "won";
+        } else if (nameLower.includes("lost") || nameLower.includes("perdido") || nameLower.includes("cancelado")) {
+          newStatus = "lost";
+        }
+      }
+
+      // Optimistic update
       setDeals((prev) =>
-        prev.map((d) => (d.id === dealId ? { ...d, stage_id: newStageId } : d)),
+        prev.map((d) =>
+          d.id === dealId ? { ...d, stage_id: newStageId, status: newStatus } : d,
+        ),
       );
+
       const { error } = await supabase
         .from("deals")
-        .update({ stage_id: newStageId })
+        .update({ stage_id: newStageId, status: newStatus })
         .eq("id", dealId);
+
       if (error) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
       }
     },
-    [supabase, refreshDeals, t],
+    [supabase, refreshDeals, t, stages],
   );
 
   const handleAddDeal = useCallback(

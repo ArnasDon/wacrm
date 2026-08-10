@@ -216,7 +216,7 @@ export function DealForm({
     };
   }, [open, currentPipelineId, supabase, stageId]);
 
-  // Load linked conversation for contact
+  // Load linked conversation for contact + subscribe to realtime updates
   useEffect(() => {
     if (!open || !contactId) {
       /* eslint-disable-next-line react-hooks/set-state-in-effect */
@@ -224,7 +224,7 @@ export function DealForm({
       return;
     }
     let cancelled = false;
-    (async () => {
+    const fetchConv = async () => {
       const { data } = await supabase
         .from("conversations")
         .select("*")
@@ -232,11 +232,33 @@ export function DealForm({
         .order("last_message_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (cancelled) return;
-      setLinkedConversation((data as Conversation | null) ?? null);
-    })();
+      if (!cancelled) {
+        setLinkedConversation((data as Conversation | null) ?? null);
+      }
+    };
+
+    fetchConv();
+
+    // Realtime listener on conversations table for this contact so last_message_at updates instantly
+    const channel = supabase
+      .channel(`conv_contact_${contactId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversations",
+          filter: `contact_id=eq.${contactId}`,
+        },
+        () => {
+          fetchConv();
+        }
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
+      supabase.removeChannel(channel);
     };
   }, [open, contactId, supabase]);
 
@@ -700,17 +722,21 @@ export function DealForm({
                 ÚLTIMA INTERAÇÃO
               </p>
               <p className="mt-0.5 text-xs font-semibold text-foreground">
-                {deal?.updated_at || linkedConversation?.last_message_at
-                  ? new Date(
-                      deal?.updated_at || linkedConversation?.last_message_at!
-                    ).toLocaleString("pt-BR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "—"}
+                {(() => {
+                  const timestamps = [
+                    linkedConversation?.last_message_at ? new Date(linkedConversation.last_message_at).getTime() : 0,
+                    deal?.updated_at ? new Date(deal.updated_at).getTime() : 0,
+                    deal?.created_at ? new Date(deal.created_at).getTime() : 0,
+                  ].filter((t) => !isNaN(t) && t > 0);
+                  if (timestamps.length === 0) return "—";
+                  return new Date(Math.max(...timestamps)).toLocaleString("pt-BR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                })()}
               </p>
             </div>
           </div>

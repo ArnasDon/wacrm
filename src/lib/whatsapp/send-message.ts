@@ -489,6 +489,14 @@ export async function sendMessageToConversation(
     })
     .eq('id', conversationId);
 
+  // Touch linked deals updated_at so pipeline deal last interaction timestamp updates
+  await db
+    .from('deals')
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq('contact_id', contact.id);
+
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort.
   try {

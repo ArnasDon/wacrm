@@ -477,7 +477,7 @@ export function DealForm({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="bg-popover text-popover-foreground border-l border-border sm:max-w-lg w-full p-0 flex flex-col h-full shadow-2xl transition-colors duration-200"
+        className="bg-popover text-popover-foreground border-l border-border sm:max-w-2xl w-full p-0 flex flex-col h-full shadow-2xl transition-colors duration-200"
       >
         {/* Top Header matching theme */}
         <div className="flex items-start justify-between border-b border-border/50 px-6 pt-5 pb-3 bg-muted/40">

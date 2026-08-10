@@ -885,7 +885,9 @@
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
-        "close_conversation": "대화 닫기"
+        "close_conversation": "대화 닫기",
+        "send_sms": "SMS 보내기",
+        "send_email": "이메일 보내기"
       },
       "triggers": {
         "new_message_received": {
@@ -919,6 +921,14 @@
         "time_based": {
           "label": "시간 기반",
           "hint": "반복 일정에 따라"
+        },
+        "missed_call": {
+          "label": "부재중 전화",
+          "hint": "수신 전화를 받지 못했을 때"
+        },
+        "message_read": {
+          "label": "메시지 읽음",
+          "hint": "보낸 메시지를 상대가 읽었을 때"
         }
       },
       "trigger": "트리거",
@@ -1022,7 +1032,14 @@
         "matchType": "일치 유형",
         "matchContains": "포함",
         "matchExact": "정확히 일치",
-        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
+        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다.",
+        "smsTextLabel": "SMS 내용",
+        "emailTemplateLabel": "이메일 템플릿"
+      },
+      "emailTemplates": {
+        "select": "템플릿 선택…",
+        "placeholder": "템플릿 이름",
+        "unknown": "{name} — 설정 › 이메일에 없음"
       }
     }
   },

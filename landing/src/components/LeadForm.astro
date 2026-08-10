@@ -18,6 +18,7 @@ const { landingBase } = site;
 
 <form
   id="lead-form"
+  data-landing-base={landingBase}
   class="mx-auto grid max-w-md gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
   novalidate
 >
@@ -96,95 +97,9 @@ const { landingBase } = site;
   <p id="lead-form-error" class="hidden text-sm text-red-600"></p>
 </form>
 
-<script define:vars={{ landingBase }}>
-  const FORM_ID = "lead-form";
-  const ERR_ID = "lead-form-error";
-
-  function readHidden(form: HTMLFormElement, name: string): string {
-    return form.querySelector<HTMLInputElement>(`input[name="${name}"]`)?.value ?? "";
-  }
-
-  function showError(msg: string): void {
-    const el = document.getElementById(ERR_ID);
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.remove("hidden");
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    const form = document.getElementById(FORM_ID) as HTMLFormElement | null;
-    if (!form) return;
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const err = document.getElementById(ERR_ID);
-      err?.classList.add("hidden");
-
-      const name = readHidden(form, "name");
-      const phone = readHidden(form, "phone").trim();
-      const email = readHidden(form, "email");
-      const message = readHidden(form, "message");
-
-      if (!phone) {
-        showError("Por favor ingresa tu teléfono.");
-        return;
-      }
-
-      const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
-      if (button) {
-        button.disabled = true;
-        button.textContent = "Enviando...";
-      }
-
-      const event_id = readHidden(form, "event_id");
-      const attribution = {
-        utm: {
-          source: readHidden(form, "utm_source") || undefined,
-          medium: readHidden(form, "utm_medium") || undefined,
-          campaign: readHidden(form, "utm_campaign") || undefined,
-          term: readHidden(form, "utm_term") || undefined,
-          content: readHidden(form, "utm_content") || undefined,
-        },
-        click_ids: {
-          gclid: readHidden(form, "gclid") || undefined,
-          gbraid: readHidden(form, "gbraid") || undefined,
-          wbraid: readHidden(form, "wbraid") || undefined,
-          fbclid: readHidden(form, "fbclid") || undefined,
-          msclkid: readHidden(form, "msclkid") || undefined,
-          ttclid: readHidden(form, "ttclid") || undefined,
-          li_fat_id: readHidden(form, "li_fat_id") || undefined,
-          gad_source: readHidden(form, "gad_source") || undefined,
-        },
-        landing_slug: readHidden(form, "landing_slug") || undefined,
-        ref_code: readHidden(form, "ref_code") || undefined,
-        channel: readHidden(form, "channel") || undefined,
-        medium: readHidden(form, "medium") || undefined,
-        visitor_id: readHidden(form, "visitor_id") || undefined,
-      };
-
-      try {
-        const res = await fetch(`${location.origin}/api/events`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_id: event_id || `form_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-            event_type: "form_submit",
-            attribution,
-            ref_code: attribution.ref_code,
-            landing_slug: attribution.landing_slug,
-            payload: { name, phone, email, message },
-          }),
-        });
-        if (!res.ok) throw new Error("request failed");
-        const qs = new URLSearchParams({ lead: "1", event_id: event_id || "" });
-        window.location.href = `${location.origin}${landingBase}/thank-you?${qs}`;
-      } catch {
-        showError("Hubo un problema. Intenta de nuevo o escríbenos por WhatsApp.");
-        if (button) {
-          button.disabled = false;
-          button.textContent = "Solicitar información";
-        }
-      }
-    });
-  });
+<script>
+  // Módulo aparte para que Astro lo compile y lo empaquete: un
+  // <script define:vars> es is:inline y llegaría al navegador con los
+  // tipos de TypeScript puestos. Ver landing/src/scripts/lead-form.ts.
+  import "../scripts/lead-form";
 </script>

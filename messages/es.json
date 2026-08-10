@@ -885,7 +885,9 @@
         "wait": "Esperar",
         "condition": "Condición (Si/No)",
         "send_webhook": "Enviar webhook",
-        "close_conversation": "Cerrar conversación"
+        "close_conversation": "Cerrar conversación",
+        "send_sms": "Enviar SMS",
+        "send_email": "Enviar correo"
       },
       "triggers": {
         "new_message_received": {
@@ -919,6 +921,14 @@
         "time_based": {
           "label": "Basado en tiempo",
           "hint": "En un horario recurrente"
+        },
+        "missed_call": {
+          "label": "Llamada perdida",
+          "hint": "Cuando una llamada entrante se queda sin contestar"
+        },
+        "message_read": {
+          "label": "Mensaje leído",
+          "hint": "Cuando el contacto lee un mensaje que le enviaste"
         }
       },
       "trigger": "Disparador",
@@ -1022,7 +1032,14 @@
         "matchType": "Tipo de coincidencia",
         "matchContains": "Contiene",
         "matchExact": "Exacta",
-        "closeConversationHint": "Establece el estado de la conversación a \"cerrada\". No requiere configuración."
+        "closeConversationHint": "Establece el estado de la conversación a \"cerrada\". No requiere configuración.",
+        "smsTextLabel": "Texto del SMS",
+        "emailTemplateLabel": "Plantilla de correo"
+      },
+      "emailTemplates": {
+        "select": "Selecciona una plantilla…",
+        "placeholder": "Nombre de la plantilla",
+        "unknown": "{name} — no está en Ajustes › Email"
       }
     }
   },

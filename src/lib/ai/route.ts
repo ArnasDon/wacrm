@@ -1,10 +1,8 @@
-import type { AgentToolKey } from './tool-permissions'
 import type { AgentModelTier, ConversationIntent } from './trace'
 
 export interface RouteDecision {
   intent: ConversationIntent
   modelTier: AgentModelTier
-  toolKeys: AgentToolKey[]
   forceHandoff: boolean
 }
 
@@ -26,7 +24,7 @@ export const DEFAULT_FRUSTRATION_KEYWORDS = [
 function normalize(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLocaleLowerCase('pt-PT')
     .replace(/\s+/g, ' ')
     .trim()
@@ -38,15 +36,44 @@ const EXPLICIT_HUMAN =
   /\b(quero|preciso)\b.{0,20}\b(falar|atendimento|ser atendid[oa])\b.{0,30}\b(pessoa|humano|atendente|supervisor|gerente)\b/
 const SENSITIVE_ACCOUNT =
   /\b(reembolso|estorno|cobranca indevida|cobraram|debitad[oa]|fraude|senha|password|pin|iban)\b|\b(alterar|mudar|trocar|actualizar|atualizar|cancelar|apagar|remover)\b.{0,50}\b(conta|dados|titular|iban|cartao|pagamento|assinatura)\b/
-const SALES =
-  /\b(preco|quanto custa|comprar|compra|produto|catalogo|stock|estoque|tamanho|cor|disponivel|disponibilidade|encomendar|reservar|fotografia|foto|price|buy|product|catalog|size|colour|color|available)\b/
 const SMALLTALK =
   /^(ola|oi|bom dia|boa tarde|boa noite|hello|hi|hey|obrigad[oa]?|muito obrigad[oa]?|thanks|thank you|ate logo|tchau|bye)[!.? ]*$/
+// Deliberately loose and only ever used to pick modelTier (never to gate
+// tools — see the module doc above). A false negative here just means a
+// negotiation-heavy turn ran on the cheap model instead of the smart one:
+// a quality/cost trade-off, never a capability the customer can't reach.
+const LIKELY_SALES =
+  /\b(preco|quanto custa|comprar|compra|produto|catalogo|stock|estoque|tamanho|cor|disponivel|disponibilidade|encomendar|reservar|fotografia|foto|desconto|negociar|price|buy|product|catalog|size|colour|color|available|discount)\b/
 
 /**
- * Deterministic first-pass router. It intentionally favours a safe, cheap
- * decision over an extra classifier-model call. Unknown messages fall back to
- * FAQ and can still be resolved or handed off by the main agent.
+ * Deterministic first-pass router — SaaS-wide, not tuned to any one
+ * tenant's product vocabulary. It used to also narrow which tools the
+ * agent could use per intent (a SALES keyword list gating catalogue
+ * access, etc.), but a fixed word list can never keep up with an
+ * arbitrary business's own vocabulary — a live bug report showed a real
+ * shopping conversation ("Legging" -> "Azul" -> "Me mostre as duas
+ * opções") never matching the SALES pattern once, silently losing
+ * catalogue access on every turn until the bot had nothing left to
+ * fulfil an ordinary request with and handed off unnecessarily. That is
+ * fundamentally unfixable by growing the keyword list — the next tenant
+ * sells something else.
+ *
+ * This router now only ever does two things, both of them safe in a
+ * multi-tenant SaaS precisely because they DON'T require anticipating a
+ * tenant's vocabulary:
+ *   - modelTier: a cost/quality dial (cheap model by default, upgraded
+ *     for turns that need more reasoning). Picking the wrong tier costs
+ *     money or quality, never correctness.
+ *   - forceHandoff: a conservative safety net for complaints and
+ *     sensitive account/payment requests. Erring toward "hand off to a
+ *     human" is the right default for ANY business when this fires —
+ *     unlike capability-gating, a false positive here only costs a
+ *     human a few extra seconds, never leaves a customer stuck.
+ *
+ * Which tools the agent may call is decided ONLY by what the account
+ * itself configured (see auto-reply.ts) — never narrowed further here.
+ * The model decides which of its available tools to use and when; that
+ * judgement call belongs to the model, not to a keyword list.
  */
 export function classifyIntent(ctx: {
   lastMessageText: string
@@ -65,78 +92,16 @@ export function classifyIntent(ctx: {
     HUMAN_OR_COMPLAINT.test(text) ||
     EXPLICIT_HUMAN.test(text)
   ) {
-    return {
-      intent: 'complaint',
-      modelTier: 'smart',
-      toolKeys: [],
-      forceHandoff: true,
-    }
+    return { intent: 'complaint', modelTier: 'smart', forceHandoff: true }
   }
   if (SENSITIVE_ACCOUNT.test(text)) {
-    return {
-      intent: 'account',
-      modelTier: 'smart',
-      toolKeys: [],
-      forceHandoff: true,
-    }
+    return { intent: 'account', modelTier: 'smart', forceHandoff: true }
   }
   if (SMALLTALK.test(text)) {
-    return {
-      intent: 'smalltalk',
-      modelTier: 'fast',
-      toolKeys: [],
-      forceHandoff: false,
-    }
+    return { intent: 'smalltalk', modelTier: 'fast', forceHandoff: false }
   }
-  if (SALES.test(text)) {
-    return {
-      intent: 'sales',
-      modelTier: 'smart',
-      toolKeys: [
-        'search_catalog',
-        'send_product',
-        'create_deal',
-        'add_tag',
-        'handoff_human',
-      ],
-      forceHandoff: false,
-    }
+  if (LIKELY_SALES.test(text)) {
+    return { intent: 'sales', modelTier: 'smart', forceHandoff: false }
   }
-  // 'faq' is the catch-all for anything the keyword lists above didn't
-  // recognise — not "definitely not sales". A fixed keyword list can never
-  // keep up with one account's own product vocabulary ("legging", "top",
-  // a colour name spoken alone as a one-word reply, "mostra as duas
-  // opções" as a natural follow-up with no product noun in it at all) —
-  // live bug report: an entire real shopping conversation about leggings
-  // never matched SALES once, so every turn — including "show me both
-  // options" answering the bot's own question — lost catalogue access
-  // and the bot had nothing left to do but hand off. Keeping the
-  // catalogue tools available here is safe: routeToolPermissions still
-  // intersects with the account's actual configured permissions below,
-  // so this can only ever restore capability the account already has —
-  // it can never grant what isn't configured.
-  return {
-    intent: 'faq',
-    modelTier: 'fast',
-    toolKeys: [
-      'search_knowledge',
-      'search_catalog',
-      'send_product',
-      'handoff_human',
-    ],
-    forceHandoff: false,
-  }
-}
-
-export function routeToolPermissions(
-  permissions: Record<AgentToolKey, boolean>,
-  route: RouteDecision,
-): Record<AgentToolKey, boolean> {
-  const allowed = new Set(route.toolKeys)
-  return Object.fromEntries(
-    (Object.keys(permissions) as AgentToolKey[]).map((key) => [
-      key,
-      permissions[key] && allowed.has(key),
-    ]),
-  ) as Record<AgentToolKey, boolean>
+  return { intent: 'faq', modelTier: 'fast', forceHandoff: false }
 }

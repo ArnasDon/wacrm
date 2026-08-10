@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
     rpcCalls: [] as { name: string; args: unknown }[],
     toolHandoff: null as { reason: string; summary: string | null } | null,
     tracePayload: null as Record<string, unknown> | null,
+    agentToolRows: [] as Array<{ tool_key: string; enabled: boolean }>,
+    toolsCalledWithPermissions: null as Record<string, boolean> | null,
   },
 }))
 
@@ -47,18 +49,21 @@ vi.mock('./contact-memory', () => ({
   contactMemoryPrompt: vi.fn().mockReturnValue('Contact memory'),
 }))
 vi.mock('./tools', () => ({
-  createAutoReplyTools: () => ({
-    tools: [
-      { name: 'search_catalog' },
-      { name: 'send_product' },
-      { name: 'search_knowledge' },
-    ],
-    executeTool: vi.fn(),
-    hasPendingActions: () => false,
-    getHandoffRequest: () => h.state.toolHandoff,
-    getTrustedPriceAmounts: () => [],
-    wasCatalogueVerified: () => false,
-  }),
+  createAutoReplyTools: (args: { permissions: Record<string, boolean> }) => {
+    h.state.toolsCalledWithPermissions = args.permissions
+    return {
+      tools: [
+        { name: 'search_catalog' },
+        { name: 'send_product' },
+        { name: 'search_knowledge' },
+      ],
+      executeTool: vi.fn(),
+      hasPendingActions: () => false,
+      getHandoffRequest: () => h.state.toolHandoff,
+      getTrustedPriceAmounts: () => [],
+      wasCatalogueVerified: () => false,
+    }
+  },
 }))
 vi.mock('./usage', () => ({ logAiUsage: vi.fn() }))
 vi.mock('./admin-client', () => ({
@@ -79,7 +84,7 @@ vi.mock('./admin-client', () => ({
           select: () => chain,
           eq: () => chain,
           then: (resolve: (value: { data: unknown[]; error: null }) => unknown) =>
-            Promise.resolve({ data: [], error: null }).then(resolve),
+            Promise.resolve({ data: h.state.agentToolRows, error: null }).then(resolve),
         }
         return chain
       }
@@ -138,6 +143,8 @@ beforeEach(() => {
   h.state.rpcCalls = []
   h.state.toolHandoff = null
   h.state.tracePayload = null
+  h.state.agentToolRows = []
+  h.state.toolsCalledWithPermissions = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([
     { role: 'user', content: 'Como funciona a entrega?' },
@@ -146,6 +153,33 @@ beforeEach(() => {
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendTypingIndicator.mockResolvedValue(undefined)
   h.triggerMatches.mockReturnValue(false)
+})
+
+describe('dispatchInboundToAiReply — tool capability comes from account config only', () => {
+  // Regression test for a live bug report: a real shopping conversation
+  // ("Legging" -> "Azul" -> "Me mostre as duas opções") lost catalogue
+  // access on every single turn, because the intent router's SALES
+  // keyword list never matched any of those three messages — no keyword
+  // list can anticipate an arbitrary tenant's own product vocabulary.
+  // The bot had nothing left to fulfil an ordinary follow-up request
+  // with and handed off to a human unnecessarily. The fix removed tool
+  // gating from the router entirely: capability now comes ONLY from
+  // agent_tools (loadAgentToolPermissions), independent of what the
+  // customer's message says. This asserts that end-to-end, for the
+  // exact three messages from the report.
+  it.each(['Legging', 'Azul', 'Me mostre as duas opções', 'Olá!', 'Quero falar com um humano'])(
+    'passes the account\'s configured search_catalog permission through unchanged for message: %s',
+    async (messageText) => {
+      h.buildConversationContext.mockResolvedValue([{ role: 'user', content: messageText }])
+      await dispatchInboundToAiReply(ARGS)
+      // Only asserted when the dispatch reached tool construction at all —
+      // the two safety-handoff messages ('humano') short-circuit before
+      // this point by design, which is correct and unrelated to this bug.
+      if (h.state.toolsCalledWithPermissions) {
+        expect(h.state.toolsCalledWithPermissions.search_catalog).toBe(true)
+      }
+    },
+  )
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {

@@ -634,8 +634,9 @@ async function processMessage(
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
 
+  let interactiveReplyHandled = false
   for (const triggerType of automationTriggers) {
-    await runAutomationsForTrigger({
+    const matched = await runAutomationsForTrigger({
       accountId,
       triggerType,
       contactId: contactRecord.id,
@@ -644,10 +645,25 @@ async function processMessage(
         conversation_id: conversation.id,
         interactive_reply_id: interactiveReplyId ?? undefined,
       },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
+    }).catch((err) => {
+      console.error('[automations] dispatch failed:', err)
+      return false
+    })
+    if (triggerType === 'interactive_reply' && matched) {
+      interactiveReplyHandled = true
+    }
   }
 
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  // A button/list tap with no automation configured for that specific
+  // reply id has nowhere else to go — fall through to the AI agent with
+  // the tapped option's title as the customer's message, instead of
+  // leaving the customer's tap unanswered.
+  const shouldDispatchAi =
+    !flowConsumed &&
+    inboundText.trim() &&
+    (!interactiveReplyId || !interactiveReplyHandled)
+
+  if (shouldDispatchAi) {
     const dispatchArgs = {
       accountId,
       conversationId: conversation.id,

@@ -1079,6 +1079,7 @@
       "deleteNode": "Delete node",
       "canvasView": "Canvas",
       "listView": "List",
+      "liveView": "Live view",
       "noNodeSelected": "No node selected",
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
       "form": {

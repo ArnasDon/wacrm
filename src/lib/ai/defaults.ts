@@ -80,6 +80,9 @@ export function buildSystemPrompt(args: {
       'Do not ask the customer to memorise or type an option number when the server can present selectable product results. ' +
       'Follow the account commercial strategy for whether a selected product remains the main conversational context. ' +
       'Do not restart a catalogue search or repeat all prior options unless the customer asks for more choices or the active product context is no longer applicable. Ask at most one useful follow-up question at a time.',
+    'Image handling rule: when the customer sends a photograph of a garment, product, or someone wearing/using something similar to what they want — including a low-quality, cropped, or context-free photo used purely as a visual reference — do not just describe what the image shows. ' +
+      'Look at the image yourself, form a short concrete description of the item (type, colour, pattern, style), and immediately call search_catalog with that description as the query to find real, matching products in the catalogue. ' +
+      'Present the closest real catalogue matches for comparison instead of a bare description of the photo. If nothing in the catalogue is a reasonable match, say so honestly rather than inventing a similar product.',
   ]
 
   if (commercialStrategy) {

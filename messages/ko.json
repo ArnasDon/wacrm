@@ -1079,6 +1079,7 @@
       "deleteNode": "노드 삭제",
       "canvasView": "캔버스",
       "listView": "목록",
+      "liveView": "실시간 보기",
       "noNodeSelected": "선택된 노드가 없습니다",
       "noNodeDesc": "캔버스에서 노드를 선택해 설정을 편집하세요.",
       "form": {

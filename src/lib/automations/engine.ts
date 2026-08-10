@@ -63,8 +63,15 @@ export interface DispatchInput {
  * Must never throw — callers use fire-and-forget from the webhook.
  * All errors are caught and logged; per-automation failures are
  * recorded into automation_logs with status='failed'.
+ *
+ * Returns whether at least one automation actually matched the trigger
+ * context (e.g. a specific button id for `interactive_reply`). Callers
+ * that have a deterministic fallback — such as the webhook falling back
+ * to the AI agent when a button click has no configured automation —
+ * use this to tell "handled by a configured automation" apart from
+ * "no automation was even listening".
  */
-export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
+export async function runAutomationsForTrigger(input: DispatchInput): Promise<boolean> {
   try {
     const db = supabaseAdmin()
 
@@ -84,11 +91,11 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
         .maybeSingle()
       if (ownErr) {
         console.error('[automations] contact ownership check failed:', ownErr)
-        return
+        return false
       }
       if (!owned) {
         console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
-        return
+        return false
       }
     }
 
@@ -101,20 +108,24 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
 
     if (error) {
       console.error('[automations] fetch failed:', error)
-      return
+      return false
     }
-    if (!automations || automations.length === 0) return
+    if (!automations || automations.length === 0) return false
 
+    let matched = false
     for (const automation of automations as Automation[]) {
       if (!triggerMatches(automation, input.context)) continue
+      matched = true
       try {
         await executeAutomation(automation, input)
       } catch (err) {
         console.error('[automations] execute failed:', automation.id, err)
       }
     }
+    return matched
   } catch (err) {
     console.error('[automations] dispatch failed:', err)
+    return false
   }
 }
 

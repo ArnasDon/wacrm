@@ -166,6 +166,46 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * PATCH /api/ai/config — narrow, single-purpose update for the two dials
+ * exposed inline from the live agent-flow panel (buffer window, reply
+ * chunking). Deliberately does not touch system_prompt, commercial_strategy
+ * or credentials: unlike POST, callers here only ever send the one field
+ * being adjusted, so anything else must be left untouched rather than
+ * defaulted/wiped.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const { accountId, userId } = await requireRole('admin')
+    const db = supabaseAdmin()
+    const limit = checkRateLimit(`ai-config-patch:${userId}`, RATE_LIMITS.adminAction)
+    if (!limit.success) return rateLimitResponse(limit)
+
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') return bad('Invalid request body')
+
+    const update: Record<string, number> = {}
+    if ('buffer_window_seconds' in body) {
+      const value = Number(body.buffer_window_seconds)
+      if (!Number.isFinite(value)) return bad('buffer_window_seconds must be a number')
+      update.buffer_window_seconds = Math.min(30, Math.max(1, Math.floor(value)))
+    }
+    if ('max_reply_chunks' in body) {
+      const value = Number(body.max_reply_chunks)
+      if (!Number.isFinite(value)) return bad('max_reply_chunks must be a number')
+      update.max_reply_chunks = Math.min(5, Math.max(1, Math.floor(value)))
+    }
+    if (Object.keys(update).length === 0) return bad('Nothing to update')
+
+    const { error } = await db.from('ai_configs').update(update).eq('account_id', accountId)
+    if (error) return NextResponse.json({ error: 'Failed to save AI configuration' }, { status: 500 })
+
+    return NextResponse.json({ success: true, ...update })
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+}
+
 export async function DELETE() {
   try {
     const { accountId } = await requireRole('admin')

@@ -6,6 +6,7 @@ import {
   contactMemoryPrompt,
   retrieveContactMemory,
 } from './contact-memory'
+import { lessonsPrompt, retrieveAppliedLessons } from './flywheel'
 import { createWhatsAppImageResolver } from './image-context'
 import { generateReply } from './generate'
 import { evaluateAgentOutput } from './guardrails'
@@ -140,6 +141,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: note,
+        ai_handoff_at: new Date().toISOString(),
       }
       if (config.handoffAgentId) update.assigned_agent_id = config.handoffAgentId
 
@@ -276,7 +278,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       onToolCall: (call) => trace?.recordToolCall(call),
     })
 
-    const [prefetch, crmContext, memories] = await Promise.all([
+    const [prefetch, crmContext, memories, lessons] = await Promise.all([
       permissions.search_catalog
         ? prefetchCatalogueForConversation({
             db,
@@ -305,6 +307,10 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         console.error('[ai auto-reply] contact memory lookup failed:', error)
         return []
       }),
+      retrieveAppliedLessons(db, accountId).catch((error) => {
+        console.error('[ai auto-reply] lessons lookup failed:', error)
+        return []
+      }),
     ])
     const catalogueGrounding = prefetch
       ? cataloguePrefetchPrompt(prefetch)
@@ -317,6 +323,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     }
     trace?.setMemoryMatchCount(memories.length)
     const memoryContext = contactMemoryPrompt(memories)
+    const lessonsContext = lessonsPrompt(lessons)
 
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -328,6 +335,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       baseSystemPrompt,
       crmContext,
       memoryContext,
+      lessonsContext,
       catalogueGrounding,
     ]
       .filter((part): part is string => Boolean(part))

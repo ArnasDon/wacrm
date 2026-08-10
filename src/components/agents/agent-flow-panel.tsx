@@ -20,14 +20,18 @@ import {
   Boxes,
   BrainCircuit,
   BriefcaseBusiness,
+  Check,
+  CheckCircle2,
   Clock3,
   Image,
+  Loader2,
   MessageCircleReply,
   Radio,
   RefreshCw,
   Tags,
   UserRoundCheck,
   Wrench,
+  XCircle,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { autoLayout } from '@/lib/flows/layout'
@@ -35,6 +39,8 @@ import type { AgentToolKey } from '@/lib/ai/tool-permissions'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   Sheet,
   SheetContent,
@@ -43,6 +49,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { useAuth } from '@/hooks/use-auth'
+
+/** A node/tool "pulses" as live when it saw activity within this window. */
+const LIVE_WINDOW_MS = 5 * 60_000
+
+const CALL_TIME_FORMATTER = new Intl.DateTimeFormat('pt-PT', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
 type AgentTab = 'setup' | 'tools' | 'usage'
 
@@ -75,6 +89,9 @@ export interface AgentFlowSnapshot {
   agentId: string | null
   tools: Record<AgentToolKey, boolean>
   counts: Partial<Record<AgentToolKey, number>>
+  /** Up to the last 5 calls per tool, most recent first — powers the live
+   *  pulse and the per-node call history in the detail sheet. */
+  recentByTool?: Partial<Record<AgentToolKey, ToolCallRow[]>>
 }
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -86,6 +103,13 @@ interface FlowNodeData extends Record<string, unknown> {
   toolKey?: AgentToolKey
   targetTab?: AgentTab
   href?: string
+  /** True when this tool ran within LIVE_WINDOW_MS — drives the pulsing dot. */
+  live?: boolean
+  recentCalls?: ToolCallRow[]
+  toolEnabled?: boolean
+  /** Config field this node can edit inline, and its current value. */
+  editableField?: 'buffer_window_seconds' | 'max_reply_chunks'
+  editableValue?: number
 }
 
 const TOOL_META: Record<
@@ -151,10 +175,17 @@ function AgentFlowNode({ data }: NodeProps) {
   return (
     <div
       className={cn(
-        'w-[230px] rounded-xl border bg-card px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+        'relative w-[230px] rounded-xl border bg-card px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
         style.className,
+        node.kind === 'tool' && node.toolEnabled === false && 'opacity-50',
       )}
     >
+      {node.live && (
+        <span className="absolute -right-1 -top-1 flex h-3 w-3" title="Actividade nos últimos 5 minutos">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" />
+        </span>
+      )}
       {node.kind !== 'channel' && (
         <Handle type="target" position={Position.Left} className="!opacity-0" />
       )}
@@ -201,10 +232,12 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
   nodes: Node<FlowNodeData>[]
   edges: Edge[]
 } {
-  const { config, tools, counts } = snapshot
-  const activeTools = (Object.keys(tools) as AgentToolKey[]).filter(
-    (key) => tools[key],
+  const { config, tools, counts, recentByTool } = snapshot
+  const allToolKeys = (Object.keys(tools) as AgentToolKey[]).filter(
+    (key) => key in TOOL_META,
   )
+  const activeTools = allToolKeys.filter((key) => tools[key])
+  const now = Date.now()
   const raw: Array<{ id: string; data: FlowNodeData }> = [
     {
       id: 'whatsapp',
@@ -222,9 +255,11 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
         title: 'Buffer',
         detail: `${config.buffer_window_seconds ?? 12}s de janela`,
         description:
-          'Agrupa fragmentos rápidos do cliente antes de activar o agente.',
+          'Agrupa fragmentos rápidos do cliente antes de activar o agente. Ajuste directamente aqui.',
         kind: 'buffer',
         targetTab: 'setup',
+        editableField: 'buffer_window_seconds',
+        editableValue: config.buffer_window_seconds ?? 12,
       },
     },
     {
@@ -238,27 +273,42 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
         targetTab: 'setup',
       },
     },
-    ...activeTools.map((toolKey) => ({
-      id: `tool:${toolKey}`,
-      data: {
-        title: TOOL_META[toolKey].title,
-        detail: `${counts[toolKey] ?? 0} chamadas em 30 dias`,
-        description: TOOL_META[toolKey].description,
-        kind: 'tool' as const,
-        count: counts[toolKey] ?? 0,
-        targetTab: 'tools' as const,
-        toolKey,
-      },
-    })),
+    // Every known tool gets a node — not just the enabled ones — so the
+    // canvas doubles as the place to turn a skill on, not only watch the
+    // ones already active. Disabled tools render dimmed and are excluded
+    // from the wired pipeline below.
+    ...allToolKeys.map((toolKey) => {
+      const recentCalls = recentByTool?.[toolKey] ?? []
+      const lastCallAt = recentCalls[0]?.called_at
+      return {
+        id: `tool:${toolKey}`,
+        data: {
+          title: TOOL_META[toolKey].title,
+          detail: tools[toolKey]
+            ? `${counts[toolKey] ?? 0} chamadas em 30 dias`
+            : 'Desligada',
+          description: TOOL_META[toolKey].description,
+          kind: 'tool' as const,
+          count: counts[toolKey] ?? 0,
+          targetTab: 'tools' as const,
+          toolKey,
+          toolEnabled: tools[toolKey],
+          live: Boolean(lastCallAt && now - new Date(lastCallAt).getTime() < LIVE_WINDOW_MS),
+          recentCalls,
+        },
+      }
+    }),
     {
       id: 'response',
       data: {
         title: 'Resposta',
         detail: `Até ${config.max_reply_chunks ?? 3} balões`,
         description:
-          'Indicador de escrita, pausas naturais e envio ordenado ao cliente.',
+          'Indicador de escrita, pausas naturais e envio ordenado ao cliente. Ajuste directamente aqui.',
         kind: 'response',
         targetTab: 'setup',
+        editableField: 'max_reply_chunks',
+        editableValue: config.max_reply_chunks ?? 3,
       },
     },
   ]
@@ -316,7 +366,18 @@ export function AgentFlowPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isConnected, setIsConnected] = useState(false)
+  const [tick, setTick] = useState(0)
+  const [draftValue, setDraftValue] = useState<number | null>(null)
+  const [patchStatus, setPatchStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [patchError, setPatchError] = useState<string | null>(null)
   const loadAbortRef = useRef<AbortController | null>(null)
+
+  // Re-derives `live` (activity within LIVE_WINDOW_MS) as time passes, even
+  // without a new tool call arriving to trigger a snapshot update.
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((value) => value + 1), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const load = useCallback(async () => {
     const accountState = agentFlowAccountState(accountId, profileLoading)
@@ -364,14 +425,20 @@ export function AgentFlowPanel({
       if (callsResult.error)
         throw new Error(`Não foi possível carregar a actividade do agente: ${callsResult.error.message}`)
       const counts: Partial<Record<AgentToolKey, number>> = {}
+      const recentByTool: Partial<Record<AgentToolKey, ToolCallRow[]>> = {}
+      // Rows arrive most-recent-first (order: called_at desc), so the first
+      // 5 seen per tool are already its most recent calls.
       for (const row of (callsResult.data ?? []) as ToolCallRow[]) {
         counts[row.tool_key] = (counts[row.tool_key] ?? 0) + 1
+        const existing = recentByTool[row.tool_key] ?? []
+        if (existing.length < 5) recentByTool[row.tool_key] = [...existing, row]
       }
       setSnapshot({
         config,
         agentId: toolState.agent_id,
         tools: toolState.tools,
         counts,
+        recentByTool,
       })
     } catch (loadError) {
       if (controller.signal.aborted) {
@@ -429,6 +496,13 @@ export function AgentFlowPanel({
                     ...current.counts,
                     [row.tool_key]: (current.counts[row.tool_key] ?? 0) + 1,
                   },
+                  recentByTool: {
+                    ...current.recentByTool,
+                    [row.tool_key]: [
+                      row,
+                      ...(current.recentByTool?.[row.tool_key] ?? []),
+                    ].slice(0, 5),
+                  },
                 }
               : current,
           )
@@ -442,9 +516,68 @@ export function AgentFlowPanel({
     }
   }, [accountId])
 
+  useEffect(() => {
+    setDraftValue(selected?.editableValue ?? null)
+    setPatchStatus('idle')
+    setPatchError(null)
+  }, [selected])
+
+  const saveEditableField = useCallback(
+    async (field: 'buffer_window_seconds' | 'max_reply_chunks', value: number) => {
+      setPatchStatus('saving')
+      setPatchError(null)
+      try {
+        const response = await fetch('/api/ai/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: value }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error ?? 'Não foi possível guardar.')
+        setSnapshot((current) =>
+          current ? { ...current, config: { ...current.config, [field]: value } } : current,
+        )
+        setSelected((current) =>
+          current ? { ...current, detail: current.detail, editableValue: value } : current,
+        )
+        setPatchStatus('saved')
+      } catch (err) {
+        setPatchStatus('error')
+        setPatchError(err instanceof Error ? err.message : 'Não foi possível guardar.')
+      }
+    },
+    [],
+  )
+
+  const toggleTool = useCallback(async (toolKey: AgentToolKey, nextEnabled: boolean) => {
+    setPatchStatus('saving')
+    setPatchError(null)
+    try {
+      const response = await fetch('/api/ai/tools', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_key: toolKey, enabled: nextEnabled }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error ?? 'Não foi possível guardar.')
+      setSnapshot((current) =>
+        current
+          ? { ...current, tools: { ...current.tools, [toolKey]: nextEnabled } }
+          : current,
+      )
+      setSelected((current) =>
+        current ? { ...current, toolEnabled: nextEnabled } : current,
+      )
+      setPatchStatus('saved')
+    } catch (err) {
+      setPatchStatus('error')
+      setPatchError(err instanceof Error ? err.message : 'Não foi possível guardar.')
+    }
+  }, [])
+
   const graph = useMemo(
     () => (snapshot ? buildAgentFlowGraph(snapshot) : null),
-    [snapshot],
+    [snapshot, tick],
   )
 
   if (loading) {
@@ -546,22 +679,125 @@ export function AgentFlowPanel({
                   </p>
                   <p className="mt-1 text-sm text-foreground">{selected.detail}</p>
                 </div>
+
+                {selected.kind === 'tool' && selected.toolKey && (
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Ferramenta activa</p>
+                        <p className="text-xs text-muted-foreground">
+                          O agente só pode usar esta capacidade se estiver ligada.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={selected.toolEnabled ?? false}
+                        onCheckedChange={(checked) => {
+                          void toggleTool(selected.toolKey!, checked)
+                        }}
+                        disabled={patchStatus === 'saving'}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selected.editableField && (
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-sm font-medium text-foreground">
+                      {selected.editableField === 'buffer_window_seconds'
+                        ? 'Janela do buffer (segundos)'
+                        : 'Máximo de balões por resposta'}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={selected.editableField === 'buffer_window_seconds' ? 30 : 5}
+                        value={draftValue ?? ''}
+                        onChange={(event) => setDraftValue(Number(event.target.value))}
+                        className="w-24"
+                      />
+                      <Button
+                        size="sm"
+                        disabled={
+                          patchStatus === 'saving' ||
+                          draftValue === null ||
+                          draftValue === selected.editableValue
+                        }
+                        onClick={() => {
+                          if (draftValue !== null) void saveEditableField(selected.editableField!, draftValue)
+                        }}
+                      >
+                        {patchStatus === 'saving' ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'Guardar'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {patchStatus === 'saved' && (
+                  <p className="flex items-center gap-1.5 text-xs text-emerald-600">
+                    <Check className="h-3.5 w-3.5" /> Guardado.
+                  </p>
+                )}
+                {patchStatus === 'error' && (
+                  <p className="text-xs text-destructive">{patchError}</p>
+                )}
+
+                {selected.kind === 'tool' && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Últimas chamadas
+                    </p>
+                    {selected.recentCalls && selected.recentCalls.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {selected.recentCalls.map((call, index) => (
+                          <li
+                            key={`${call.called_at}-${index}`}
+                            className="flex items-center justify-between rounded-md border border-border/60 px-2.5 py-1.5 text-xs"
+                          >
+                            <span className="text-muted-foreground">
+                              {CALL_TIME_FORMATTER.format(new Date(call.called_at))}
+                            </span>
+                            {call.succeeded ? (
+                              <span className="flex items-center gap-1 text-emerald-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Sucesso
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-destructive">
+                                <XCircle className="h-3.5 w-3.5" /> Falhou
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Ainda sem chamadas registadas nos últimos 30 dias.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {selected.href ? (
                   <Link
                     href={selected.href}
-                    className={buttonVariants({ className: 'w-full' })}
+                    className={buttonVariants({ variant: 'outline', className: 'w-full' })}
                   >
                     Abrir definições do canal
                   </Link>
                 ) : selected.targetTab ? (
                   <Button
+                    variant="outline"
                     className="w-full"
                     onClick={() => {
                       onOpenTab(selected.targetTab!)
                       setSelected(null)
                     }}
                   >
-                    Abrir configuração
+                    Abrir configuração completa
                   </Button>
                 ) : null}
               </div>

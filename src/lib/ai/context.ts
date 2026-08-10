@@ -14,6 +14,15 @@ interface DbMessage {
 
 const MAX_CONTEXT_IMAGES = 3
 
+/** Placeholder shown when a media message has no caption/transcript text. */
+const MEDIA_PLACEHOLDER: Record<string, string> = {
+  video: '[Vídeo enviado no WhatsApp]',
+  document: '[Documento enviado no WhatsApp]',
+  audio: '[Nota de voz enviada no WhatsApp]',
+  location: '[Localização partilhada no WhatsApp]',
+  sticker: '[Sticker enviado no WhatsApp]',
+}
+
 function readableMessageText(message: DbMessage): string | null {
   const text = message.content_text?.trim()
 
@@ -26,6 +35,8 @@ function readableMessageText(message: DbMessage): string | null {
     if (!text) return null
     return `[Opção interactiva no WhatsApp]\n${text}`
   }
+  const placeholder = MEDIA_PLACEHOLDER[message.content_type]
+  if (placeholder) return text || placeholder
   return text || null
 }
 
@@ -81,6 +92,31 @@ export async function buildConversationContext(
 
   const rows = ((data ?? []) as DbMessage[]).reverse()
   const byId = new Map(rows.map((message) => [message.id, message]))
+
+  // A quoted parent can fall outside this query's window: it may be a
+  // content_type excluded above (document/audio/video have no caption to
+  // read but should still be nameable when quoted), or simply older than
+  // `limit`/`ai_context_reset_at`. Without this, "O cliente respondeu a
+  // esta mensagem" silently loses its reference and the model has to guess
+  // what "isto"/"esse" means.
+  const missingParentIds = [
+    ...new Set(
+      rows
+        .filter((message) => message.sender_type === 'customer' && message.reply_to_message_id)
+        .map((message) => message.reply_to_message_id as string)
+        .filter((id) => !byId.has(id)),
+    ),
+  ]
+  if (missingParentIds.length > 0) {
+    const { data: parents } = await db
+      .from('messages')
+      .select('id, sender_type, content_type, content_text, media_url, reply_to_message_id')
+      .in('id', missingParentIds)
+    for (const parent of (parents ?? []) as DbMessage[]) {
+      byId.set(parent.id, parent)
+    }
+  }
+
   const imageIds = new Set(
     rows
       .filter(

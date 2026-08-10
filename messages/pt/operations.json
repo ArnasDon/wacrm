@@ -291,6 +291,7 @@
       "deleteNode": "Eliminar nó",
       "canvasView": "Tela",
       "listView": "Lista",
+      "liveView": "Ver ao vivo",
       "noNodeSelected": "Nenhum nó seleccionado",
       "noNodeDesc": "Seleccione um nó na tela para editar a sua configuração.",
       "form": {

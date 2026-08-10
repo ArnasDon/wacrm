@@ -25,10 +25,11 @@
  */
 
 import { useEffect, useState } from "react";
-import { GitFork, List } from "lucide-react";
+import { GitFork, List, Radio } from "lucide-react";
 
 import { FlowBuilder } from "./flow-builder";
 import { FlowCanvas } from "./flow-canvas";
+import { FlowLiveView } from "./flow-live-view";
 import { FlowEditorProvider } from "./flow-editor-state";
 import { EditorHeader } from "./header";
 import { ValidationPanel } from "./validation-panel";
@@ -45,7 +46,7 @@ import { useTranslations } from "next-intl";
  */
 const MOBILE_BREAKPOINT = "(max-width: 767px)";
 
-type View = "canvas" | "list";
+type View = "canvas" | "list" | "live";
 
 const STORAGE_KEY = "wacrm.flowEditor.view";
 
@@ -70,7 +71,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
   const [view, setView] = useState<View>(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved === "canvas" || saved === "list") return saved;
+      if (saved === "canvas" || saved === "list" || saved === "live") return saved;
     } catch {
       // Private browsing / disabled storage — fall through to default.
     }
@@ -121,6 +122,12 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
                 icon={<List className="h-3.5 w-3.5" />}
                 label={t("listView")}
               />
+              <SegButton
+                active={effectiveView === "live"}
+                onClick={() => choose("live")}
+                icon={<Radio className="h-3.5 w-3.5" />}
+                label={t("liveView")}
+              />
             </div>
             <div className="ml-auto hidden flex-wrap items-center gap-x-3.5 gap-y-1.5 lg:flex">
               {LEGEND_TYPES.map((t_type) => (
@@ -143,6 +150,8 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         <div className="relative mx-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
           {effectiveView === "canvas" ? (
             <FlowCanvas />
+          ) : effectiveView === "live" ? (
+            <FlowLiveView />
           ) : (
             <div className="absolute inset-0 overflow-y-auto">
               <FlowBuilder />

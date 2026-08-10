@@ -24,6 +24,7 @@
     "broadcasts": "브로드캐스트",
     "automations": "자동화",
     "flows": "플로우",
+    "products": "제품",
     "aiAgents": "AI 에이전트",
     "settings": "설정",
     "beta": "베타",
@@ -48,6 +49,7 @@
     "pipelines": "파이프라인",
     "broadcasts": "브로드캐스트",
     "automations": "자동화",
+    "products": "제품",
     "settings": "설정",
     "openMenu": "메뉴 열기",
     "openAccountMenu": "계정 메뉴 열기",
@@ -846,6 +848,7 @@
         "send_buttons": "버튼 보내기",
         "send_list": "목록 보내기",
         "send_template": "템플릿 보내기",
+        "send_product": "제품 보내기",
         "add_tag": "태그 추가",
         "remove_tag": "태그 제거",
         "assign_conversation": "대화 담당자 지정",
@@ -955,6 +958,10 @@
         "messageText": "메시지 텍스트",
         "placeholderMessageText": "안녕하세요! 문의해주셔서 감사합니다…",
         "tagLabel": "태그",
+        "productLabel": "제품",
+        "selectProduct": "제품 선택…",
+        "placeholderProductId": "제품 ID",
+        "productUnknown": "{id} (알 수 없는 제품)",
         "modeLabel": "모드",
         "modes": {
           "round_robin": "순차 배정",
@@ -1217,6 +1224,89 @@
       "modeRemove": "제거",
       "tagPicked": "{tag} 태그 {mode}…",
       "tagNone": "태그 {mode} (선택된 태그 없음)"
+    }
+  },
+  "Products": {
+    "pageTitle": "제품",
+    "pageDesc": "디지털·실물 제품을 판매하세요. 고객이 키워드를 보내면 자동화가 결제 링크를 보내고, 결제가 확인되면 WhatsApp으로 파일을 전달합니다.",
+    "newProduct": "새 제품",
+    "tabs": {
+      "products": "제품",
+      "orders": "주문"
+    },
+    "list": {
+      "productColumn": "제품",
+      "typeColumn": "유형",
+      "priceColumn": "가격",
+      "statusColumn": "상태",
+      "active": "판매 중",
+      "inactive": "판매 중지",
+      "activate": "활성화",
+      "deactivate": "비활성화",
+      "digital": "디지털",
+      "physical": "실물",
+      "edit": "편집",
+      "delete": "삭제",
+      "deleted": "제품이 삭제되었습니다",
+      "deleteTitle": "제품 삭제",
+      "deleteDesc": "\"{name}\"을(를) 삭제할까요? 이미 생성된 주문은 유지됩니다.",
+      "emptyTitle": "아직 제품이 없습니다",
+      "emptyDesc": "첫 제품을 만들어 보세요 — 디지털 파일은 결제 후 WhatsApp으로 자동 전달됩니다.",
+      "newProduct": "새 제품"
+    },
+    "orders": {
+      "count": "주문 {count}건",
+      "refresh": "새로고침",
+      "emptyTitle": "아직 주문이 없습니다",
+      "emptyDesc": "고객이 키워드 자동화나 결제 웹훅을 통해 제품을 구매하면 여기에 주문이 표시됩니다.",
+      "status": {
+        "pending": "결제 대기",
+        "paid": "결제 완료",
+        "cancelled": "취소됨",
+        "failed": "실패"
+      },
+      "markPaid": "결제 완료 처리",
+      "cancel": "취소",
+      "markedPaid": "주문이 결제 완료 처리되었습니다 — 고객에게 확인 메시지가 전송됩니다",
+      "markedCancelled": "주문이 취소되었습니다"
+    },
+    "new": {
+      "pageTitle": "새 제품",
+      "pageDesc": "디지털 제품은 파일을 업로드하고 결제 후 WhatsApp으로 전달할 수 있습니다."
+    },
+    "edit": {
+      "pageTitle": "제품 편집",
+      "pageDesc": "아래 세부 정보를 수정하세요. 판매 중인 제품을 수정해도 기존 주문에는 영향이 없습니다."
+    },
+    "product": {
+      "name": "이름",
+      "requiredName": "제품 이름을 입력하세요",
+      "description": "설명",
+      "descriptionPlaceholder": "무엇을 판매하시나요?",
+      "price": "가격",
+      "pricePlaceholder": "0.00",
+      "currency": "통화",
+      "kind": "제품 유형",
+      "digital": "디지털",
+      "digitalHint": "결제 후 WhatsApp으로 전달되는 다운로드 파일.",
+      "physical": "실물",
+      "physicalHint": "실물 상품 — 결제 후 직접 배송을 준비하세요.",
+      "file": "파일",
+      "fileHint": "결제한 고객이 다운로드할 파일을 업로드하세요.",
+      "uploadFile": "파일 업로드",
+      "replaceFile": "파일 교체",
+      "removeFile": "파일 제거",
+      "noFile": "첨부된 파일이 없습니다.",
+      "uploading": "업로드 중…",
+      "paymentLink": "결제 링크",
+      "paymentLinkPlaceholder": "https://checkout.stripe.com/…",
+      "paymentLinkHint": "결제 제공업체의 체크아웃 링크를 붙여넣으세요. 비워 두면 링크를 직접 공유할 수 있습니다.",
+      "active": "판매 중",
+      "activeHint": "비활성 제품은 자동화 선택기에서 숨겨집니다.",
+      "cancel": "취소",
+      "save": "저장",
+      "saving": "저장 중…",
+      "saved": "제품이 저장되었습니다"
     }
   },
   "Settings": {
@@ -1526,7 +1616,8 @@
       "fields": "필드 & 태그",
       "deals": "딜 & 통화",
       "members": "팀원",
-      "api": "API 키"
+      "api": "API 키",
+      "payments": "결제"
     },
     "groups": {
       "account": "계정",
@@ -1635,6 +1726,32 @@
       "newKeyDesc": "이 키를 사용할 연동 서비스의 이름을 붙이고, 필요한 권한 범위만 부여하세요.",
       "done": "완료",
       "networkError": "서버에 연결할 수 없습니다"
+    },
+    "payments": {
+      "title": "결제",
+      "desc": "고객이 결제했음을 wacrm에 알려주는 웹훅입니다. wacrm이 서명을 검증하고 주문을 결제 완료 처리한 뒤 WhatsApp으로 확인 메시지를 보내고 디지털 파일을 전달합니다.",
+      "configured": "설정됨",
+      "notConfigured": "설정되지 않음",
+      "baseUrlWarning": "APP_URL이 설정되지 않았습니다 — 프로덕션에서 웹훅 URL이 잘못됩니다",
+      "statusHint": "시크릿을 생성한 뒤 이 웹훅 URL을 결제 제공업체(Stripe, Paddle, …)에 붙여넣으세요. 제공업체가 각 이벤트에 서명하고, wacrm은 주문을 처리하기 전에 서명을 검증합니다.",
+      "webhookUrl": "웹훅 URL",
+      "webhookUrlHint": "결제 제공업체의 웹훅 설정에 붙여넣으세요. account_id 쿼리 매개변수로 한 번의 배포를 여러 계정에 안전하게 사용할 수 있습니다.",
+      "secret": "웹훅 시크릿",
+      "noSecret": "시크릿 없음 — 생성하기",
+      "secretHint": "접두어만 표시됩니다. 전체 시크릿은 생성할 때 한 번만 보여지며, 분실하면 다시 생성하세요.",
+      "copy": "복사",
+      "copied": "클립보드에 복사되었습니다",
+      "copyFailed": "복사 실패 — 직접 선택해 복사하세요",
+      "regenerate": "다시 생성",
+      "generating": "생성 중…",
+      "regenerated": "새 웹훅 시크릿이 생성되었습니다",
+      "regenerateFailed": "웹훅 시크릿 생성 실패",
+      "loadFailed": "결제 설정을 불러오지 못했습니다",
+      "networkError": "서버에 연결할 수 없습니다",
+      "revealTitle": "웹훅 시크릿 복사",
+      "revealDesc": "전체 시크릿이 표시되는 것은 이번이 마지막입니다. 결제 제공업체에서 요구하는 곳에 저장하세요.",
+      "revealWarning": "시크릿은 암호화되어 저장되며 다시는 표시되지 않습니다. 분실했나요? 다시 생성하세요.",
+      "done": "완료"
     },
     "deals": {
       "title": "딜 & 통화",

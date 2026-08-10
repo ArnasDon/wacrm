@@ -11,6 +11,7 @@ import type {
   SendButtonsStepConfig,
   SendListStepConfig,
   SendTemplateStepConfig,
+  SendProductStepConfig,
   SendWebhookStepConfig,
   TagStepConfig,
   UpdateContactFieldStepConfig,
@@ -22,6 +23,7 @@ import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { createPendingOrder, sendPaymentMessage } from '@/lib/products/fulfill'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
@@ -428,6 +430,22 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         params,
       })
       return `template sent via Meta (${whatsapp_message_id})`
+    }
+
+    case 'send_product': {
+      const cfg = step.step_config as SendProductStepConfig
+      if (!args.contactId) throw new Error('send_product needs a contact')
+      if (!cfg.product_id) throw new Error('send_product needs product_id')
+      const conversationId = await resolveConversationId(args)
+      const { order, product } = await createPendingOrder({
+        accountId: args.automation.account_id,
+        userId: args.automation.user_id,
+        productId: cfg.product_id,
+        contactId: args.contactId,
+        conversationId,
+      })
+      const { whatsapp_message_id } = await sendPaymentMessage(order, product)
+      return `order ${order.payment_reference} created, payment link sent (${whatsapp_message_id})`
     }
 
     case 'add_tag': {

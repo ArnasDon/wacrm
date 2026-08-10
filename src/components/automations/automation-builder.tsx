@@ -33,6 +33,7 @@ import {
   ArrowUp,
   MousePointerClick,
   List,
+  ShoppingCart,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -53,6 +54,7 @@ import type {
   InteractiveMessagePayload,
   KeywordMatchTriggerConfig,
   MessageTemplate,
+  Product,
   Tag as TagRecord,
 } from "@/types"
 import {
@@ -102,6 +104,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   send_buttons: { label: "send_buttons", icon: MousePointerClick, border: "border-l-primary" },
   send_list: { label: "send_list", icon: List, border: "border-l-primary" },
   send_template: { label: "send_template", icon: FileText, border: "border-l-primary" },
+  send_product: { label: "send_product", icon: ShoppingCart, border: "border-l-primary" },
   add_tag: { label: "add_tag", icon: Tag, border: "border-l-primary" },
   remove_tag: { label: "remove_tag", icon: TagIcon, border: "border-l-primary" },
   assign_conversation: { label: "assign_conversation", icon: UserCheck, border: "border-l-primary" },
@@ -118,6 +121,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "send_buttons",
   "send_list",
   "send_template",
+  "send_product",
   "add_tag",
   "remove_tag",
   "assign_conversation",
@@ -171,6 +175,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return toStepConfig(blankListPayload())
     case "send_template":
       return { template_name: "", language: "en_US" }
+    case "send_product":
+      return { product_id: "" }
     case "add_tag":
     case "remove_tag":
       return { tag_id: "" }
@@ -207,6 +213,7 @@ interface AutomationResources {
   tags: TagRecord[]
   members: AccountMember[]
   templates: MessageTemplate[]
+  products: Product[]
   customFields: CustomField[]
   pipelines: PipelineOption[]
   stages: PipelineStageOption[]
@@ -228,6 +235,7 @@ const ResourcesContext = createContext<AutomationResources>({
   tags: [],
   members: [],
   templates: [],
+  products: [],
   customFields: [],
   pipelines: [],
   stages: [],
@@ -241,8 +249,9 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
-  const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [pipelines, setPipelines] = useState<PipelineOption[]>([])
+  const [customFields, setCustomFields] = useState<CustomField[]>([])
   const [stages, setStages] = useState<PipelineStageOption[]>([])
 
   useEffect(() => {
@@ -254,13 +263,18 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
+      const [tagsRes, templatesRes, productsRes, customFieldsRes, pipelinesRes, stagesRes] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
           supabase
             .from("message_templates")
             .select("*")
             .eq("status", "APPROVED")
+            .order("name"),
+          supabase
+            .from("products")
+            .select("*")
+            .eq("is_active", true)
             .order("name"),
           supabase.from("custom_fields").select("*").order("field_name"),
           supabase.from("pipelines").select("id, name").order("name"),
@@ -272,6 +286,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       setTags((tagsRes.data as TagRecord[] | null) ?? [])
       setTemplates((templatesRes.data as MessageTemplate[] | null) ?? [])
+      setProducts((productsRes.data as Product[] | null) ?? [])
       setCustomFields((customFieldsRes.data as CustomField[] | null) ?? [])
       setPipelines((pipelinesRes.data as PipelineOption[] | null) ?? [])
       setStages((stagesRes.data as PipelineStageOption[] | null) ?? [])
@@ -298,7 +313,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages }}
+      value={{ tags, members, templates, products, customFields, pipelines, stages }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -356,6 +371,53 @@ function TagSelect({
         )}
       </select>
     </div>
+  )
+}
+
+/** Product dropdown by name for `send_product`. Falls back to a raw
+ *  id input when the account has no active products yet (products are
+ *  created in the Products section; this just picks one). A saved
+ *  product that's since been deactivated/deleted is preserved so
+ *  editing an existing automation doesn't silently drop it. */
+function ProductSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string
+  onChange: (v: string) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { products } = useResources()
+  if (products.length === 0) {
+    return (
+      <Input
+        placeholder={t("config.placeholderProductId")}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-muted text-foreground"
+      />
+    )
+  }
+  const selected = products.find((p) => p.id === value)
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={SELECT_CLASS}
+    >
+      <option value="">{t("config.selectProduct")}</option>
+      {products.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+      {/* Preserve a saved product that's since been deactivated so
+          editing an existing automation doesn't silently drop it. */}
+      {value && !selected && (
+        <option value={value}>{t("config.productUnknown", { id: value })}</option>
+      )}
+    </select>
   )
 }
 
@@ -1327,6 +1389,16 @@ function StepEditor({
           t={t}
         />
       )
+    case "send_product":
+      return (
+        <FieldBlock label={t("config.productLabel")}>
+          <ProductSelect
+            value={(cfg.product_id as string) ?? ""}
+            onChange={(v) => set({ product_id: v })}
+            t={t}
+          />
+        </FieldBlock>
+      )
     case "add_tag":
     case "remove_tag":
       return (
@@ -1529,6 +1601,8 @@ function previewFor(step: BuilderStep): string {
       return interactivePayloadPreviewText(asInteractive(step.step_config)) || "no body yet"
     case "send_template":
       return (step.step_config.template_name as string) || "pick a template"
+    case "send_product":
+      return (step.step_config.product_id as string) || "pick a product"
     case "wait":
       return `${step.step_config.amount ?? "?"} ${step.step_config.unit ?? ""}`
     case "condition":

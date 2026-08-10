@@ -24,6 +24,7 @@
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
+    "products": "Products",
     "aiAgents": "AI Agents",
     "settings": "Settings",
     "beta": "Beta",
@@ -48,6 +49,7 @@
     "pipelines": "Pipelines",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
+    "products": "Products",
     "settings": "Settings",
     "openMenu": "Open menu",
     "openAccountMenu": "Open account menu",
@@ -846,6 +848,7 @@
         "send_buttons": "Send Buttons",
         "send_list": "Send List",
         "send_template": "Send Template",
+        "send_product": "Send Product",
         "add_tag": "Add Tag",
         "remove_tag": "Remove Tag",
         "assign_conversation": "Assign Conversation",
@@ -955,6 +958,10 @@
         "messageText": "Message text",
         "placeholderMessageText": "Hi! Thanks for reaching out…",
         "tagLabel": "Tag",
+        "productLabel": "Product",
+        "selectProduct": "Select a product…",
+        "placeholderProductId": "Product id",
+        "productUnknown": "{id} (unknown product)",
         "modeLabel": "Mode",
         "modes": {
           "round_robin": "Round-robin",
@@ -1217,6 +1224,89 @@
       "modeRemove": "Remove",
       "tagPicked": "{mode} tag {tag}…",
       "tagNone": "{mode} tag (none picked)"
+    }
+  },
+  "Products": {
+    "pageTitle": "Products",
+    "pageDesc": "Sell digital and physical products. When a customer sends a keyword, your automation sends a payment link — and WhatsApp delivers the file as soon as they pay.",
+    "newProduct": "New product",
+    "tabs": {
+      "products": "Products",
+      "orders": "Orders"
+    },
+    "list": {
+      "productColumn": "Product",
+      "typeColumn": "Type",
+      "priceColumn": "Price",
+      "statusColumn": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "digital": "Digital",
+      "physical": "Physical",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleted": "Product deleted",
+      "deleteTitle": "Delete product",
+      "deleteDesc": "Delete \"{name}\"? Orders already placed stay intact.",
+      "emptyTitle": "No products yet",
+      "emptyDesc": "Create your first product — digital files are delivered automatically over WhatsApp once paid.",
+      "newProduct": "New product"
+    },
+    "orders": {
+      "count": "{count} orders",
+      "refresh": "Refresh",
+      "emptyTitle": "No orders yet",
+      "emptyDesc": "Orders appear here when a customer buys a product — through the keyword automation or the payment webhook.",
+      "status": {
+        "pending": "Pending payment",
+        "paid": "Paid",
+        "cancelled": "Cancelled",
+        "failed": "Failed"
+      },
+      "markPaid": "Mark paid",
+      "cancel": "Cancel",
+      "markedPaid": "Order marked as paid — confirmation sent to the customer",
+      "markedCancelled": "Order cancelled"
+    },
+    "new": {
+      "pageTitle": "New product",
+      "pageDesc": "Digital products let you upload a file and WhatsApp-deliver it after payment."
+    },
+    "edit": {
+      "pageTitle": "Edit product",
+      "pageDesc": "Update the details below. Editing an active product affects new orders only."
+    },
+    "product": {
+      "name": "Name",
+      "requiredName": "Give the product a name",
+      "description": "Description",
+      "descriptionPlaceholder": "What are you selling?",
+      "price": "Price",
+      "pricePlaceholder": "0.00",
+      "currency": "Currency",
+      "kind": "Product type",
+      "digital": "Digital",
+      "digitalHint": "A downloadable file, delivered on WhatsApp after payment.",
+      "physical": "Physical",
+      "physicalHint": "A physical item — you arrange delivery after payment.",
+      "file": "File",
+      "fileHint": "Upload the file customers download after paying.",
+      "uploadFile": "Upload file",
+      "replaceFile": "Replace file",
+      "removeFile": "Remove file",
+      "noFile": "No file attached.",
+      "uploading": "Uploading…",
+      "paymentLink": "Payment link",
+      "paymentLinkPlaceholder": "https://checkout.stripe.com/…",
+      "paymentLinkHint": "Paste a checkout link from your payment provider. Leave blank and share the link manually.",
+      "active": "Active",
+      "activeHint": "Inactive products are hidden from automation pickers.",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Product saved"
     }
   },
   "Settings": {
@@ -1526,7 +1616,8 @@
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
-      "api": "API keys"
+      "api": "API keys",
+      "payments": "Payments"
     },
     "groups": {
       "account": "Account",
@@ -1635,6 +1726,32 @@
       "newKeyDesc": "Name it after the integration that will use it, and grant only the scopes it needs.",
       "done": "Done",
       "networkError": "Could not reach the server"
+    },
+    "payments": {
+      "title": "Payments",
+      "desc": "The webhook that tells wacrm a customer paid. wacrm verifies the signature, marks the order paid, sends the WhatsApp confirmation, and delivers digital files.",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "baseUrlWarning": "APP_URL not set — the webhook URL will be wrong in production",
+      "statusHint": "Generate a secret, then paste this webhook URL into your payment provider (Stripe, Paddle, …). The provider signs each event; wacrm verifies the signature before fulfilling the order.",
+      "webhookUrl": "Webhook URL",
+      "webhookUrlHint": "Paste into your payment provider's webhook settings. The account_id query parameter keeps one deployment safe for many accounts.",
+      "secret": "Webhook secret",
+      "noSecret": "No secret — generate one",
+      "secretHint": "Display prefix only. The full secret is shown once when you generate it; regenerate if it's ever lost.",
+      "copy": "Copy",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed — select and copy manually",
+      "regenerate": "Regenerate",
+      "generating": "Generating…",
+      "regenerated": "New webhook secret generated",
+      "regenerateFailed": "Failed to generate webhook secret",
+      "loadFailed": "Failed to load payment settings",
+      "networkError": "Could not reach the server",
+      "revealTitle": "Copy your webhook secret",
+      "revealDesc": "This is the only time the full secret is shown. Store it where your payment provider expects it.",
+      "revealWarning": "The secret is stored encrypted and is never shown again. Lost it? Regenerate.",
+      "done": "Done"
     },
     "deals": {
       "title": "Deals & currency",

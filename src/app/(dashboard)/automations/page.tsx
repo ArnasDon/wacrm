@@ -15,6 +15,7 @@ import {
   Clock,
   Users,
   PhoneCall,
+  ShoppingCart,
   Loader2,
 } from "lucide-react"
 
@@ -47,6 +48,7 @@ import { cn } from "@/lib/utils"
 const TEMPLATE_ORDER: TemplateSlug[] = [
   "welcome_message",
   "out_of_office",
+  "product_sales",
   "lead_qualifier",
   "follow_up_reminder",
 ]
@@ -54,6 +56,7 @@ const TEMPLATE_ORDER: TemplateSlug[] = [
 const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
   welcome_message: MessageCircle,
   out_of_office: Clock,
+  product_sales: ShoppingCart,
   lead_qualifier: Users,
   follow_up_reminder: PhoneCall,
 }

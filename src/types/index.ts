@@ -446,6 +446,7 @@ export type AutomationStepType =
   | 'send_buttons'
   | 'send_list'
   | 'send_template'
+  | 'send_product'
   | 'add_tag'
   | 'remove_tag'
   | 'assign_conversation'
@@ -567,11 +568,21 @@ export interface SendWebhookStepConfig {
   body_template?: string;
 }
 
+/**
+ * `send_product` — creates a pending `product_orders` row for the
+ * contact and WhatsApps them the product details + payment link,
+ * carrying the order reference the payment webhook echoes back.
+ */
+export interface SendProductStepConfig {
+  product_id: string;
+}
+
 export type AutomationStepConfig =
   | SendMessageStepConfig
   | SendButtonsStepConfig
   | SendListStepConfig
   | SendTemplateStepConfig
+  | SendProductStepConfig
   | TagStepConfig
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
@@ -654,3 +665,68 @@ export interface QuickReply {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================================
+// Products & digital commerce (migration 038)
+// ============================================================
+
+export type ProductKind = 'digital' | 'physical';
+
+export interface Product {
+  id: string;
+  /** Account tenancy key — every product belongs to one account. */
+  account_id: string;
+  /** Creator / audit only — never consulted for tenancy. */
+  user_id: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  /** ISO-4217 3-letter code; formatted with the account currency. */
+  currency: string;
+  kind: ProductKind;
+  is_active: boolean;
+  /** Merchant-provided checkout URL, sent to the buyer at order time. */
+  payment_link?: string | null;
+  /** Storage object path inside the private `product-files` bucket. */
+  file_path?: string | null;
+  file_name?: string | null;
+  file_size_bytes?: number | null;
+  file_mime_type?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProductOrderStatus = 'pending' | 'paid' | 'cancelled' | 'failed';
+
+export interface ProductOrder {
+  id: string;
+  account_id: string;
+  /** Automation author / admin who created or fulfilled the order. */
+  user_id: string;
+  /** Null only if the product row is gone (RESTRICT keeps it, so effectively never). */
+  product_id: string | null;
+  contact_id: string | null;
+  conversation_id: string | null;
+  /** Idempotency key the payment webhook echoes back: `wacrm_<order-id>`. */
+  payment_reference?: string | null;
+  status: ProductOrderStatus;
+  amount: number;
+  currency: string;
+  payment_provider?: string | null;
+  paid_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by the orders API / fulfillment queries. */
+  product?: Product | null;
+}
+
+export interface PaymentSettings {
+  account_id: string;
+  /** AES-256-GCM ciphertext of the webhook secret — never plaintext. */
+  webhook_secret: string;
+  /** Display prefix (e.g. `sk_wacrm_ab12…`) safe to show in the UI. */
+  webhook_secret_prefix: string;
+  updated_at: string;
+}
+

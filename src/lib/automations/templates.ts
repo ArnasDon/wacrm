@@ -10,6 +10,7 @@ export type TemplateSlug =
   | 'out_of_office'
   | 'lead_qualifier'
   | 'follow_up_reminder'
+  | 'product_sales'
 
 export interface TemplateStepSeed {
   step_type: AutomationStepType
@@ -121,6 +122,25 @@ export const AUTOMATION_TEMPLATES: Record<TemplateSlug, AutomationTemplateDefini
         step_config: {
           text:
             "Just circling back — did you have any other questions for us? Happy to help!",
+        },
+      },
+    ],
+  },
+  product_sales: {
+    slug: 'product_sales',
+    name: 'Product Sales',
+    description: 'Sell a digital or physical product when a customer sends a keyword.',
+    trigger_type: 'keyword_match',
+    trigger_config: {
+      keywords: ['buy', 'order', 'price'],
+      match_type: 'contains',
+    },
+    steps: [
+      {
+        step_type: 'send_product',
+        step_config: {
+          // Picked in the builder — every product configurable here.
+          product_id: '',
         },
       },
     ],

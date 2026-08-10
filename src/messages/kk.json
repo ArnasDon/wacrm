@@ -155,6 +155,20 @@
       "checkEmail": "Электрондық поштаны тексеріңіз",
       "checkEmailDescription": "Біз {email} мекенжайына құпия сөзді қалпына келтіру сілтемесін жібердік. Кіріс жәшігіңізді тексеріңіз."
     },
+    "resetPassword": {
+      "title": "Жаңа құпия сөз орнатыңыз",
+      "description": "Есептік жазбаңыз үшін жаңа құпия сөз енгізіңіз",
+      "passwordPlaceholder": "Кемінде 6 таңба",
+      "confirmPasswordPlaceholder": "Құпия сөзді қайталаңыз",
+      "submit": "Құпия сөзді жаңарту",
+      "submitLoading": "Жаңартылуда...",
+      "success": "Құпия сөз жаңартылды",
+      "successDescription": "Құпия сөзіңіз жаңартылды. Енді кіре аласыз.",
+      "goToSignIn": "Кіруге өту",
+      "errorPasswordMismatch": "Құпия сөздер сәйкес келмейді",
+      "errorPasswordLength": "Құпия сөз кемінде 6 таңбадан тұруы керек",
+      "errorInvalidLink": "Бұл қалпына келтіру сілтемесі жарамсыз немесе мерзімі өткен. Жаңасын сұраңыз."
+    },
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",
     "descAccept": "Sign in and we'll take you to the invitation.",

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
 import type {
   Contact,
   Conversation,
@@ -27,6 +26,15 @@ import {
   Trash2,
   MessageSquare,
   Loader2,
+  FileText,
+  History,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  PlusCircle,
+  Clock,
+  Send,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -51,6 +59,20 @@ interface DealMeta {
   userNotes?: string;
 }
 
+interface TimelineEvent {
+  id: string;
+  type:
+    | "deal_created"
+    | "status_won"
+    | "status_lost"
+    | "message_inbound"
+    | "message_outbound"
+    | "note";
+  title: string;
+  description?: string;
+  timestamp: string;
+}
+
 export function DealForm({
   open,
   onOpenChange,
@@ -64,6 +86,9 @@ export function DealForm({
   const t = useTranslations("Pipelines.form");
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
+
+  // Top navigation tabs inside drawer
+  const [activeTab, setActiveTab] = useState<"details" | "history">("details");
 
   // Basic deal fields
   const [title, setTitle] = useState("");
@@ -83,6 +108,11 @@ export function DealForm({
   const [product, setProduct] = useState("");
   const [userNotes, setUserNotes] = useState("");
 
+  // Timeline / History state
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [customNote, setCustomNote] = useState("");
+
   // Auxiliary state
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -100,6 +130,7 @@ export function DealForm({
   useEffect(() => {
     if (!open) return;
     setConfirmDelete(false);
+    setActiveTab("details");
     setCurrentPipelineId(deal?.pipeline_id || pipelineId);
 
     if (deal) {
@@ -255,7 +286,94 @@ export function DealForm({
     };
   }, [open, contactId, supabase]);
 
+  // Load timeline events for history tab
+  useEffect(() => {
+    if (!open || activeTab !== "history") return;
+    let cancelled = false;
+    (async () => {
+      setLoadingTimeline(true);
+      const events: TimelineEvent[] = [];
+
+      // 1. Deal creation event
+      if (deal?.created_at) {
+        events.push({
+          id: `deal_created_${deal.id}`,
+          type: "deal_created",
+          title: "Negócio Criado",
+          description: `Negócio "${deal.title}" criado no funil.`,
+          timestamp: deal.created_at,
+        });
+      }
+
+      // 2. Status event if won or lost
+      if (deal?.status === "won") {
+        events.push({
+          id: `status_won_${deal.id}`,
+          type: "status_won",
+          title: "Negócio Ganho 🎉",
+          description: `Negócio marcado como ganho com sucesso.`,
+          timestamp: deal.updated_at || deal.created_at,
+        });
+      } else if (deal?.status === "lost") {
+        events.push({
+          id: `status_lost_${deal.id}`,
+          type: "status_lost",
+          title: "Negócio Perdido ❌",
+          description: "Status alterado para Perdido.",
+          timestamp: deal.updated_at || deal.created_at,
+        });
+      }
+
+      // 3. Conversation messages (inbound & outbound)
+      if (linkedConversation?.id) {
+        const { data: msgs } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", linkedConversation.id)
+          .order("created_at", { ascending: false })
+          .limit(25);
+
+        if (msgs && msgs.length > 0) {
+          for (const m of msgs) {
+            events.push({
+              id: `msg_${m.id}`,
+              type: m.sender_type === "customer" ? "message_inbound" : "message_outbound",
+              title: m.sender_type === "customer" ? "Mensagem do Cliente (WhatsApp)" : "Mensagem Enviada (WhatsApp)",
+              description: m.content_text || (m.media_url ? "[Mídia enviada]" : `[${m.content_type}]`),
+              timestamp: m.created_at,
+            });
+          }
+        }
+      }
+
+      // Sort all events chronologically (newest first)
+      events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      if (!cancelled) {
+        setTimelineEvents(events);
+        setLoadingTimeline(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeTab, deal, linkedConversation, supabase]);
+
   const selectedContact = contacts.find((c) => c.id === contactId);
+
+  const handleAddCustomNote = () => {
+    if (!customNote.trim()) return;
+    const newEvt: TimelineEvent = {
+      id: `custom_note_${Date.now()}`,
+      type: "note",
+      title: "Anotação de Atendimento",
+      description: customNote.trim(),
+      timestamp: new Date().toISOString(),
+    };
+    setTimelineEvents((prev) => [newEvt, ...prev]);
+    setCustomNote("");
+    toast.success("Anotação adicionada ao histórico!");
+  };
 
   async function handleSave() {
     if (!title.trim() || !contactId || !stageId) {
@@ -361,8 +479,8 @@ export function DealForm({
         side="right"
         className="bg-popover text-popover-foreground border-l border-border sm:max-w-lg w-full p-0 flex flex-col h-full shadow-2xl transition-colors duration-200"
       >
-        {/* Header matching theme */}
-        <div className="flex items-start justify-between border-b border-border/50 px-6 pt-5 pb-4 bg-muted/40">
+        {/* Top Header matching theme */}
+        <div className="flex items-start justify-between border-b border-border/50 px-6 pt-5 pb-3 bg-muted/40">
           <div className="flex-1 space-y-1.5 pr-4">
             <div className="flex items-center gap-2">
               <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
@@ -423,340 +541,472 @@ export function DealForm({
           </button>
         </div>
 
-        {/* Scrollable Form Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Row 1: VALOR & TEMPERATURA */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                VALOR
-              </label>
-              <div className="relative">
+        {/* Navigation Tabs Bar */}
+        <div className="flex items-center gap-1 border-b border-border/50 bg-muted/20 px-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab("details")}
+            className={`flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === "details"
+                ? "border-primary text-primary font-bold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Dados do Negócio
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("history")}
+            className={`flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === "history"
+                ? "border-primary text-primary font-bold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <History className="h-3.5 w-3.5" />
+            Histórico do Lead
+            {timelineEvents.length > 0 && (
+              <span className="rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold text-primary">
+                {timelineEvents.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Tab 1: DADOS DO NEGÓCIO */}
+        {activeTab === "details" && (
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {/* Row 1: VALOR & TEMPERATURA */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  VALOR
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="R$ 47,90"
+                    className="h-10 border-border bg-muted/50 text-sm font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary pl-3"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  TEMPERATURA
+                </label>
+                <select
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Frio" className="bg-popover text-popover-foreground">
+                    Frio
+                  </option>
+                  <option value="Morno" className="bg-popover text-popover-foreground">
+                    Morno
+                  </option>
+                  <option value="Quente" className="bg-popover text-popover-foreground">
+                    Quente
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            {/* Row 2: TIPO & ÚLTIMA COMPRA */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  TIPO
+                </label>
+                <select
+                  value={leadType}
+                  onChange={(e) => setLeadType(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="Lead" className="bg-popover text-popover-foreground">
+                    Lead
+                  </option>
+                  <option value="Cliente" className="bg-popover text-popover-foreground">
+                    Cliente
+                  </option>
+                  <option value="Parceiro" className="bg-popover text-popover-foreground">
+                    Parceiro
+                  </option>
+                  <option value="Outro" className="bg-popover text-popover-foreground">
+                    Outro
+                  </option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  ÚLTIMA COMPRA
+                </label>
                 <Input
-                  type="number"
-                  step="0.01"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="R$ 47,90"
-                  className="h-10 border-border bg-muted/50 text-sm font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary pl-3"
+                  type="date"
+                  value={lastPurchaseDate}
+                  onChange={(e) => setLastPurchaseDate(e.target.value)}
+                  className="h-10 border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
+
+            {/* STATUS DO NEGÓCIO Section */}
+            <div className="space-y-2 pt-1">
               <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                TEMPERATURA
+                STATUS DO NEGÓCIO
               </label>
-              <select
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="Frio" className="bg-popover text-popover-foreground">
-                  Frio
-                </option>
-                <option value="Morno" className="bg-popover text-popover-foreground">
-                  Morno
-                </option>
-                <option value="Quente" className="bg-popover text-popover-foreground">
-                  Quente
-                </option>
-              </select>
-            </div>
-          </div>
+              <div className="grid grid-cols-2 gap-3 w-full">
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange("won")}
+                  disabled={!!statusAction || deal?.status === "won"}
+                  className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
+                    deal?.status === "won"
+                      ? "bg-emerald-600 text-white border border-emerald-400 shadow-md font-bold"
+                      : "bg-emerald-500/10 dark:bg-[#062419]/80 text-emerald-600 dark:text-[#22c55e] border border-emerald-500/30 dark:border-[#14532d]/70 hover:bg-emerald-500/20 active:scale-[0.98]"
+                  } disabled:opacity-50 disabled:pointer-events-none`}
+                >
+                  {statusAction === "won" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
+                  ) : (
+                    "Marcar como ganho"
+                  )}
+                </button>
 
-          {/* Row 2: TIPO & ÚLTIMA COMPRA */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                TIPO
-              </label>
-              <select
-                value={leadType}
-                onChange={(e) => setLeadType(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="Lead" className="bg-popover text-popover-foreground">
-                  Lead
-                </option>
-                <option value="Cliente" className="bg-popover text-popover-foreground">
-                  Cliente
-                </option>
-                <option value="Parceiro" className="bg-popover text-popover-foreground">
-                  Parceiro
-                </option>
-                <option value="Outro" className="bg-popover text-popover-foreground">
-                  Outro
-                </option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                ÚLTIMA COMPRA
-              </label>
-              <Input
-                type="date"
-                value={lastPurchaseDate}
-                onChange={(e) => setLastPurchaseDate(e.target.value)}
-                className="h-10 border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange("lost")}
+                  disabled={!!statusAction || deal?.status === "lost"}
+                  className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
+                    deal?.status === "lost"
+                      ? "bg-rose-600 text-white border border-rose-400 shadow-md font-bold"
+                      : "bg-rose-500/10 dark:bg-[#270c12]/80 text-rose-600 dark:text-[#f87171] border border-rose-500/30 dark:border-[#7f1d1d]/70 hover:bg-rose-500/20 active:scale-[0.98]"
+                  } disabled:opacity-50 disabled:pointer-events-none`}
+                >
+                  {statusAction === "lost" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
+                  ) : (
+                    "Marcar como perdido"
+                  )}
+                </button>
+              </div>
 
-          {/* STATUS DO NEGÓCIO Section */}
-          <div className="space-y-2 pt-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              STATUS DO NEGÓCIO
-            </label>
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <button
-                type="button"
-                onClick={() => handleStatusChange("won")}
-                disabled={!!statusAction || deal?.status === "won"}
-                className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
-                  deal?.status === "won"
-                    ? "bg-emerald-600 text-white border border-emerald-400 shadow-md font-bold"
-                    : "bg-emerald-500/10 dark:bg-[#062419]/80 text-emerald-600 dark:text-[#22c55e] border border-emerald-500/30 dark:border-[#14532d]/70 hover:bg-emerald-500/20 active:scale-[0.98]"
-                } disabled:opacity-50 disabled:pointer-events-none`}
-              >
-                {statusAction === "won" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
-                ) : (
-                  "Marcar como ganho"
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleStatusChange("lost")}
-                disabled={!!statusAction || deal?.status === "lost"}
-                className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
-                  deal?.status === "lost"
-                    ? "bg-rose-600 text-white border border-rose-400 shadow-md font-bold"
-                    : "bg-rose-500/10 dark:bg-[#270c12]/80 text-rose-600 dark:text-[#f87171] border border-rose-500/30 dark:border-[#7f1d1d]/70 hover:bg-rose-500/20 active:scale-[0.98]"
-                } disabled:opacity-50 disabled:pointer-events-none`}
-              >
-                {statusAction === "lost" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
-                ) : (
-                  "Marcar como perdido"
-                )}
-              </button>
-            </div>
-
-            {deal?.status && deal.status !== "open" && (
-              <button
-                type="button"
-                onClick={() => handleStatusChange("open")}
-                disabled={!!statusAction}
-                className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 transition-colors text-center cursor-pointer"
-              >
-                Reabrir negócio
-              </button>
-            )}
-          </div>
-
-          {/* CONTATO Section */}
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                CONTATO
-              </label>
-              {deal?.contact_id && (
-                <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                  🔒 Contato fixado
-                </span>
+              {deal?.status && deal.status !== "open" && (
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange("open")}
+                  disabled={!!statusAction}
+                  className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 transition-colors text-center cursor-pointer"
+                >
+                  Reabrir negócio
+                </button>
               )}
             </div>
 
-            {!deal?.contact_id ? (
-              <select
-                value={contactId}
-                onChange={(e) => setContactId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
-              >
-                <option value="">Selecione um contato...</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || c.phone} {c.phone ? `(${c.phone})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-
-            {selectedContact && (
-              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/40 p-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
-                    {(selectedContact.name || selectedContact.phone || "?").charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {selectedContact.name || "Sem nome"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedContact.phone || selectedContact.email || "Sem contato"}
-                    </p>
-                  </div>
-                </div>
-                {linkedConversation && (
-                  <Link
-                    href={`/inbox?conversationId=${linkedConversation.id}`}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/25 transition-colors"
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Ver no Inbox
-                  </Link>
+            {/* CONTATO Section */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  CONTATO
+                </label>
+                {deal?.contact_id && (
+                  <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                    🔒 Contato fixado
+                  </span>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* FUNIL & ETAPA Row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                FUNIL
-              </label>
-              <select
-                value={currentPipelineId}
-                onChange={(e) => setCurrentPipelineId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                {allPipelines.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                ETAPA
-              </label>
-              <select
-                value={stageId}
-                onChange={(e) => setStageId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                {availableStages.map((s) => (
-                  <option key={s.id} value={s.id} className="bg-popover text-popover-foreground">
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+              {!deal?.contact_id ? (
+                <select
+                  value={contactId}
+                  onChange={(e) => setContactId(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="">Selecione um contato...</option>
+                  {contacts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || c.phone} {c.phone ? `(${c.phone})` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
 
-          {/* RESPONSÁVEL & ORIGEM Row */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                RESPONSÁVEL
-              </label>
-              <select
-                value={assignedTo}
-                onChange={(e) => setAssignedTo(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="" className="bg-popover text-popover-foreground">
-                  Não atribuído
-                </option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
-                    {p.full_name || p.email}
-                  </option>
-                ))}
-              </select>
+              {selectedContact && (
+                <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/40 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
+                      {(selectedContact.name || selectedContact.phone || "?").charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {selectedContact.name || "Sem nome"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedContact.phone || selectedContact.email || "Sem contato"}
+                      </p>
+                    </div>
+                  </div>
+                  {linkedConversation && (
+                    <Link
+                      href={`/inbox?conversationId=${linkedConversation.id}`}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/25 transition-colors"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Ver no Inbox
+                    </Link>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                ORIGEM
-              </label>
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="—" className="bg-popover text-popover-foreground">
-                  —
-                </option>
-                <option value="WhatsApp" className="bg-popover text-popover-foreground">
-                  WhatsApp
-                </option>
-                <option value="Instagram" className="bg-popover text-popover-foreground">
-                  Instagram
-                </option>
-                <option value="Site" className="bg-popover text-popover-foreground">
-                  Site
-                </option>
-                <option value="Indicação" className="bg-popover text-popover-foreground">
-                  Indicação
-                </option>
-                <option value="Anúncio" className="bg-popover text-popover-foreground">
-                  Anúncio
-                </option>
-                <option value="Outro" className="bg-popover text-popover-foreground">
-                  Outro
-                </option>
-              </select>
-            </div>
-          </div>
 
-          {/* Timestamps Row */}
-          <div className="grid grid-cols-2 gap-4 rounded-lg border border-border/50 bg-muted/30 p-3">
-            <div>
-              <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">
-                CRIADO EM
-              </p>
-              <p className="mt-0.5 text-xs font-semibold text-foreground">
-                {deal?.created_at
-                  ? new Date(deal.created_at).toLocaleString("pt-BR", {
+            {/* FUNIL & ETAPA Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  FUNIL
+                </label>
+                <select
+                  value={currentPipelineId}
+                  onChange={(e) => setCurrentPipelineId(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  {allPipelines.map((p) => (
+                    <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  ETAPA
+                </label>
+                <select
+                  value={stageId}
+                  onChange={(e) => setStageId(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  {availableStages.map((s) => (
+                    <option key={s.id} value={s.id} className="bg-popover text-popover-foreground">
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* RESPONSÁVEL & ORIGEM Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  RESPONSÁVEL
+                </label>
+                <select
+                  value={assignedTo}
+                  onChange={(e) => setAssignedTo(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="" className="bg-popover text-popover-foreground">
+                    Não atribuído
+                  </option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
+                      {p.full_name || p.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  ORIGEM
+                </label>
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                  className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  <option value="—" className="bg-popover text-popover-foreground">
+                    —
+                  </option>
+                  <option value="WhatsApp" className="bg-popover text-popover-foreground">
+                    WhatsApp
+                  </option>
+                  <option value="Instagram" className="bg-popover text-popover-foreground">
+                    Instagram
+                  </option>
+                  <option value="Site" className="bg-popover text-popover-foreground">
+                    Site
+                  </option>
+                  <option value="Indicação" className="bg-popover text-popover-foreground">
+                    Indicação
+                  </option>
+                  <option value="Anúncio" className="bg-popover text-popover-foreground">
+                    Anúncio
+                  </option>
+                  <option value="Outro" className="bg-popover text-popover-foreground">
+                    Outro
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            {/* Timestamps Row */}
+            <div className="grid grid-cols-2 gap-4 rounded-lg border border-border/50 bg-muted/30 p-3">
+              <div>
+                <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">
+                  CRIADO EM
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-foreground">
+                  {deal?.created_at
+                    ? new Date(deal.created_at).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">
+                  ÚLTIMA INTERAÇÃO
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-foreground">
+                  {(() => {
+                    const timestamps = [
+                      linkedConversation?.last_message_at ? new Date(linkedConversation.last_message_at).getTime() : 0,
+                      deal?.updated_at ? new Date(deal.updated_at).getTime() : 0,
+                      deal?.created_at ? new Date(deal.created_at).getTime() : 0,
+                    ].filter((t) => !isNaN(t) && t > 0);
+                    if (timestamps.length === 0) return "—";
+                    return new Date(Math.max(...timestamps)).toLocaleString("pt-BR", {
                       day: "2-digit",
                       month: "2-digit",
                       year: "numeric",
                       hour: "2-digit",
                       minute: "2-digit",
-                    })
-                  : "—"}
-              </p>
+                    });
+                  })()}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">
-                ÚLTIMA INTERAÇÃO
-              </p>
-              <p className="mt-0.5 text-xs font-semibold text-foreground">
-                {(() => {
-                  const timestamps = [
-                    linkedConversation?.last_message_at ? new Date(linkedConversation.last_message_at).getTime() : 0,
-                    deal?.updated_at ? new Date(deal.updated_at).getTime() : 0,
-                    deal?.created_at ? new Date(deal.created_at).getTime() : 0,
-                  ].filter((t) => !isNaN(t) && t > 0);
-                  if (timestamps.length === 0) return "—";
-                  return new Date(Math.max(...timestamps)).toLocaleString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-                })()}
-              </p>
-            </div>
-          </div>
 
-          {/* OBSERVAÇÕES */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              OBSERVAÇÕES
-            </label>
-            <Textarea
-              value={userNotes}
-              onChange={(e) => setUserNotes(e.target.value)}
-              placeholder="Adicione observações ou anotações detalhadas sobre este negócio..."
-              className="min-h-[85px] border-border bg-muted/50 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-            />
+            {/* OBSERVAÇÕES */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                OBSERVAÇÕES
+              </label>
+              <Textarea
+                value={userNotes}
+                onChange={(e) => setUserNotes(e.target.value)}
+                placeholder="Adicione observações ou anotações detalhadas sobre este negócio..."
+                className="min-h-[85px] border-border bg-muted/50 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Tab 2: HISTÓRICO DO LEAD */}
+        {activeTab === "history" && (
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {/* Quick Activity Note Add Box */}
+            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                REGISTRAR ATIVIDADE / ANOTAÇÃO
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  value={customNote}
+                  onChange={(e) => setCustomNote(e.target.value)}
+                  placeholder="Ex: Ligação realizada, agendado retorno..."
+                  className="h-9 border-border bg-popover text-xs text-foreground focus:border-primary"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddCustomNote();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleAddCustomNote}
+                  disabled={!customNote.trim()}
+                  className="h-9 px-3 bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
+                >
+                  <PlusCircle className="mr-1 h-3.5 w-3.5" />
+                  Salvar
+                </Button>
+              </div>
+            </div>
+
+            {/* Timeline Feed */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  LINHA DO TEMPO DE ATIVIDADES
+                </label>
+                <span className="text-[10px] text-muted-foreground">
+                  {timelineEvents.length} eventos registrados
+                </span>
+              </div>
+
+              {loadingTimeline ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Carregando histórico do lead...
+                </div>
+              ) : timelineEvents.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                  Nenhum evento registrado até o momento.
+                </div>
+              ) : (
+                <div className="relative border-l-2 border-border/60 ml-3.5 pl-4 space-y-4 py-1">
+                  {timelineEvents.map((evt) => (
+                    <div key={evt.id} className="relative group">
+                      {/* Timeline Icon Badge */}
+                      <span className="absolute -left-[27px] top-0 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-popover shadow-sm">
+                        {evt.type === "deal_created" && <Sparkles className="h-3 w-3 text-blue-500" />}
+                        {evt.type === "status_won" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        {evt.type === "status_lost" && <XCircle className="h-3.5 w-3.5 text-rose-500" />}
+                        {evt.type === "message_inbound" && <MessageCircle className="h-3.5 w-3.5 text-emerald-500" />}
+                        {evt.type === "message_outbound" && <Send className="h-3.5 w-3.5 text-primary" />}
+                        {evt.type === "note" && <FileText className="h-3.5 w-3.5 text-amber-500" />}
+                      </span>
+
+                      {/* Event Details */}
+                      <div className="rounded-lg border border-border/60 bg-muted/30 p-3 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-foreground">{evt.title}</p>
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-2.5 w-2.5" />
+                            {new Date(evt.timestamp).toLocaleString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                        {evt.description && (
+                          <p className="mt-1 text-xs text-muted-foreground/90 whitespace-pre-wrap">
+                            {evt.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Sheet Footer */}
         <div className="border-t border-border/50 bg-popover p-4 space-y-3">

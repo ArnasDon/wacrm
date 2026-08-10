@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { ExternalLink, ImageIcon, Loader2, PackageSearch, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { ExternalLink, ImageIcon, Loader2, PackageSearch, Plus, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +28,7 @@ export default function CatalogPage() {
   const [loading,setLoading]=useState(true); const [savingProduct,setSavingProduct]=useState(false); const [savingSource,setSavingSource]=useState(false); const [uploading,setUploading]=useState(false); const [testing,setTesting]=useState(false)
   const [productForm,setProductForm]=useState(initialProduct); const [sourceForm,setSourceForm]=useState(initialSource); const [preview,setPreview]=useState<Array<{id:string;name:string;price:number;currency:string;imageUrl?:string|null}>>([])
   const [bulkItems,setBulkItems]=useState<BulkItem[]>([]); const [bulkSaving,setBulkSaving]=useState(false)
+  const [classifyingAll,setClassifyingAll]=useState(false)
 
   const loadData=useCallback(async()=>{ setLoading(true); try { const [a,b,c]=await Promise.all([fetch('/api/catalog/products',{cache:'no-store'}),fetch('/api/catalog/sources',{cache:'no-store'}),fetch('/api/catalog/sources/stats',{cache:'no-store'})]); const pa=await a.json().catch(()=>({})); const pb=await b.json().catch(()=>({})); const pc=await c.json().catch(()=>({})); if(!a.ok) throw new Error(pa.error??'Não foi possível carregar os produtos.'); if(!b.ok&&b.status!==403) throw new Error(pb.error??'Não foi possível carregar as fontes.'); setProducts(pa.products??[]); setSources(pb.sources??[]); if(c.ok)setDatabaseStats({totalProductRecords:pc.totalProductRecords??0,totalVariantRecords:pc.totalVariantRecords??0,sources:pc.sources??[]}) } catch(e){ toast.error(e instanceof Error?e.message:'Erro ao carregar o catálogo.') } finally { setLoading(false) } },[])
   useEffect(()=>{void loadData()},[loadData])
@@ -81,6 +82,32 @@ export default function CatalogPage() {
   }
   async function toggleProduct(p:Product){ const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!p.is_active})}); const b=await r.json().catch(()=>({})); if(r.ok)setProducts(c=>c.map(x=>x.id===p.id?b.product:x));else toast.error(b.error??'Não foi possível actualizar o produto.') }
 
+  // For products migrated by SQL (name/price/photo already set, no
+  // description yet): run the same AI classifier used by the bulk
+  // uploader against each one's existing photo, then patch it in.
+  async function classifyAllMissing(){
+    const targets=products.filter(p=>p.image_url && !(p.description??'').trim())
+    if(targets.length===0){ toast.error('Nenhum produto com foto e sem descrição.'); return }
+    setClassifyingAll(true)
+    let done=0
+    for(const p of targets){
+      try{
+        const cr=await fetch('/api/catalog/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:p.image_url})})
+        const cb=await cr.json().catch(()=>({}))
+        if(!cr.ok) throw new Error(cb.error??'Erro ao classificar.')
+        const description=cb.color?`Cor: ${cb.color}. ${cb.description??''}`.trim():(cb.description??'')
+        if(!description) continue
+        const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description})})
+        const b=await r.json().catch(()=>({}))
+        if(r.ok){ setProducts(c=>c.map(x=>x.id===p.id?b.product:x)); done+=1 }
+      }catch(e){
+        console.error('[catalog] classify existing product failed:',p.id,e)
+      }
+    }
+    setClassifyingAll(false)
+    toast.success(`${done} de ${targets.length} produto(s) classificados.`)
+  }
+
   function mapping(){ try{return JSON.parse(sourceForm.field_mapping) as Record<string,unknown>}catch{throw new Error('O mapeamento deve ser JSON válido.')} }
   async function testSource(){ setTesting(true); try { const r=await fetch('/api/catalog/sources/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...sourceForm,source_type:'external_rest',field_mapping:mapping(),query:'produto'})}); const b=await r.json().catch(()=>({})); if(!r.ok) throw new Error(b.error??'Falha no teste.'); setPreview(b.products??[]); toast.success(`Ligação válida: ${b.products?.length??0} produto(s) reconhecido(s).`) } catch(e){ toast.error(e instanceof Error?e.message:'Falha no teste.') } finally { setTesting(false) } }
   async function submitSource(e:FormEvent<HTMLFormElement>){ e.preventDefault(); setSavingSource(true); try { const r=await fetch('/api/catalog/sources',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...sourceForm,source_type:'external_rest',field_mapping:mapping()})}); const b=await r.json().catch(()=>({})); if(!r.ok) throw new Error(b.error??'Não foi possível ligar a API.'); setSources(c=>[b.source,...c]); setSourceForm(initialSource); setPreview([]); toast.success('Fonte externa ligada.') } catch(err){ toast.error(err instanceof Error?err.message:'Erro ao ligar a API.') } finally { setSavingSource(false) } }
@@ -88,7 +115,7 @@ export default function CatalogPage() {
   async function toggleSource(s:Source){ const r=await fetch(`/api/catalog/sources/${s.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!s.is_active})}); const b=await r.json().catch(()=>({})); if(r.ok)setSources(c=>c.map(x=>x.id===s.id?b.source:x));else toast.error(b.error??'Não foi possível actualizar a fonte.') }
 
   return <div className="space-y-6">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><PackageSearch className="h-6 w-6 text-primary"/><h1 className="text-2xl font-bold">Catálogo</h1></div><p className="mt-1 text-sm text-muted-foreground">Produtos internos, APIs e bases de dados externas usados pelo agente no WhatsApp.</p></div><Button variant="outline" onClick={()=>void loadData()} disabled={loading}>{loading?<Loader2 className="animate-spin"/>:<RefreshCw/>}Actualizar</Button></div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><PackageSearch className="h-6 w-6 text-primary"/><h1 className="text-2xl font-bold">Catálogo</h1></div><p className="mt-1 text-sm text-muted-foreground">Produtos internos, APIs e bases de dados externas usados pelo agente no WhatsApp.</p></div><div className="flex gap-2"><Button variant="outline" onClick={()=>void classifyAllMissing()} disabled={classifyingAll} title="Preenche cor e descrição de produtos com foto que ainda não têm descrição"><Sparkles/>{classifyingAll?<Loader2 className="animate-spin"/>:null}Classificar tudo com IA</Button><Button variant="outline" onClick={()=>void loadData()} disabled={loading}>{loading?<Loader2 className="animate-spin"/>:<RefreshCw/>}Actualizar</Button></div></div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Card size="sm"><CardHeader><CardDescription>Produtos internos activos</CardDescription><CardTitle>{activeProducts.length}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Produtos via base de dados</CardDescription><CardTitle>{loading?'—':databaseStats.totalProductRecords}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Variantes via base de dados</CardDescription><CardTitle>{loading?'—':databaseStats.totalVariantRecords}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Fontes externas</CardDescription><CardTitle>{sources.length}</CardTitle></CardHeader></Card></div>
     {databaseStats.sources.length>0?<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{databaseStats.sources.map(stat=><Card key={stat.sourceId} size="sm"><CardHeader><CardDescription>{stat.sourceName}</CardDescription><CardTitle>{stat.ok?`${stat.productRecords} produto(s)`:'Indisponível'}</CardTitle></CardHeader><CardContent className="space-y-1 text-xs text-muted-foreground">{stat.ok?<>{stat.tables.map(table=><div key={`${stat.sourceId}:${table.table}`} className="flex justify-between gap-3"><span>{table.table}</span><span>{table.count}</span></div>)}<div className="flex justify-between gap-3 border-t pt-1"><span>Variantes</span><span>{stat.variantRecords}</span></div></>:<p>{stat.error??'Não foi possível consultar a fonte.'}</p>}</CardContent></Card>)}</div>:null}
     <Tabs defaultValue="products"><TabsList><TabsTrigger value="products">Produtos</TabsTrigger><TabsTrigger value="external">API externa{apiSources.length ? ` (${apiSources.length})` : ''}</TabsTrigger><TabsTrigger value="database">Base de dados{databaseSources.length ? ` (${databaseSources.length})` : ''}</TabsTrigger></TabsList>

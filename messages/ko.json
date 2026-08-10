@@ -212,6 +212,8 @@
       "document": "문서",
       "locationShared": "위치 공유됨",
       "template": "템플릿",
+      "templateNamed": "\"{name}\" 템플릿을 보냈습니다",
+      "templateNoPreview": "템플릿을 보냈습니다",
       "buttonReply": "버튼 응답",
       "interactiveReply": "[인터랙티브 응답]",
       "unsupported": "[지원되지 않는 메시지 형식]",

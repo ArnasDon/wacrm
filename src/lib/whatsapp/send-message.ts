@@ -34,6 +34,10 @@ import {
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
+import {
+  renderTemplateBody,
+  resolveTemplateBodyParams,
+} from '@/lib/whatsapp/template-render';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
@@ -448,13 +452,32 @@ export async function sendMessageToConversation(
   const interactiveBody =
     messageType === 'interactive' ? interactivePayload!.body : null;
 
+  // Template sends carry no body text of their own — Meta gets the
+  // template *name* plus params, and the body lives in the approved
+  // template. Substitute it here so the Inbox has something to show.
+  // The dashboard composer pre-renders and passes `contentText`, so it
+  // wins; an API caller that sends only `template` gets this instead of
+  // the blank bubble it used to produce. A template we can't resolve
+  // locally (never synced, or a language mismatch) still yields null —
+  // the thread falls back to the template name.
+  const renderedTemplateBody =
+    messageType === 'template' && templateRow?.body_text
+      ? renderTemplateBody(
+          templateRow.body_text,
+          resolveTemplateBodyParams(templateMessageParams, templateParams)
+        )
+      : null;
+
+  const persistedText =
+    interactiveBody ?? contentText ?? renderedTemplateBody ?? null;
+
   const { data: messageRecord, error: msgError } = await db
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
       content_type: messageType,
-      content_text: interactiveBody ?? contentText ?? null,
+      content_text: persistedText,
       media_url: mediaUrl || null,
       template_name: templateName || null,
       interactive_payload:
@@ -478,7 +501,7 @@ export async function sendMessageToConversation(
   const lastMessageText =
     messageType === 'interactive'
       ? interactivePayloadPreviewText(interactivePayload!)
-      : contentText || `[${messageType}]`;
+      : contentText || renderedTemplateBody || `[${messageType}]`;
 
   await db
     .from('conversations')

@@ -212,6 +212,8 @@
       "document": "Document",
       "locationShared": "Location shared",
       "template": "Template",
+      "templateNamed": "Sent template \"{name}\"",
+      "templateNoPreview": "Template sent",
       "buttonReply": "Button reply",
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",

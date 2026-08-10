@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
+import { renderTemplateBody } from "@/lib/whatsapp/template-render";
 import { cn } from "@/lib/utils";
 import type {
   Conversation,
@@ -58,13 +59,6 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
-}
-
-function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return params[idx] ?? `{{${raw}}}`;
-  });
 }
 
 interface MessageThreadProps {

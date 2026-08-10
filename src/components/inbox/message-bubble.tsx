@@ -61,10 +61,13 @@ function MessageContent({
   message,
   t,
   onOpenMedia,
+  onPrimary,
 }: {
   message: Message;
   t: ReturnType<typeof useTranslations>;
   onOpenMedia?: (messageId: string) => void;
+  /** True inside an outbound bubble, which is filled with `bg-primary`. */
+  onPrimary?: boolean;
 }) {
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
   // parent wired up no viewer, which is what makes them non-clickable.
@@ -130,15 +133,32 @@ function MessageContent({
     case "template":
       return (
         <div>
-          <span className="mb-1 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span
+            className={cn(
+              "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              // Outbound bubbles are `bg-primary`, so a primary-on-primary
+              // chip is invisible against them.
+              onPrimary
+                ? "bg-primary-foreground/20 text-primary-foreground"
+                : "bg-primary/20 text-primary",
+            )}
+          >
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
-          {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
-            </p>
-          )}
+          {/* A template whose body we couldn't resolve locally persists
+              no content_text. Naming it beats rendering an empty bubble. */}
+          <p
+            className={cn(
+              "mt-1 whitespace-pre-wrap break-words text-sm",
+              !message.content_text && "italic opacity-80",
+            )}
+          >
+            {message.content_text ||
+              (message.template_name
+                ? t("templateNamed", { name: message.template_name })
+                : t("templateNoPreview"))}
+          </p>
         </div>
       );
 
@@ -229,7 +249,12 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} onOpenMedia={onOpenMedia} />
+        <MessageContent
+          message={message}
+          t={t}
+          onOpenMedia={onOpenMedia}
+          onPrimary={isAgent}
+        />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

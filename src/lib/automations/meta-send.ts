@@ -4,6 +4,7 @@ import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
+import { renderTemplateBody } from '@/lib/whatsapp/template-render'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -188,11 +189,34 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
   }
 
+  // Template sends carry no body text of their own — Meta receives the
+  // template name plus params, and the body lives in the approved
+  // template. Substitute it from the local row so the inbox shows the
+  // message instead of an empty bubble. A template we can't resolve
+  // (never synced, or a language mismatch) leaves this null and the
+  // thread falls back to the template name.
+  let renderedTemplateBody: string | null = null
+  if (input.kind === 'template') {
+    const { data: templateRow } = await db
+      .from('message_templates')
+      .select('body_text')
+      .eq('account_id', input.accountId)
+      .eq('name', input.templateName)
+      .eq('language', input.language || 'en_US')
+      .maybeSingle()
+    if (templateRow?.body_text) {
+      renderedTemplateBody = renderTemplateBody(
+        templateRow.body_text,
+        input.params ?? [],
+      )
+    }
+  }
+
   // Persist the sent message so it appears in the inbox with a real
   // Meta message id. sender_type='bot' distinguishes automation sends
   // from manual agent sends.
   const content_type = input.kind === 'template' ? 'template' : 'text'
-  const content_text = input.kind === 'text' ? input.text : null
+  const content_text = input.kind === 'text' ? input.text : renderedTemplateBody
   const template_name = input.kind === 'template' ? input.templateName : null
 
   const { error: msgErr } = await db.from('messages').insert({
@@ -214,7 +238,9 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     .from('conversations')
     .update({
       last_message_text:
-        input.kind === 'template' ? `[template:${input.templateName}]` : input.text,
+        input.kind === 'template'
+          ? (renderedTemplateBody ?? `[template:${input.templateName}]`)
+          : input.text,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

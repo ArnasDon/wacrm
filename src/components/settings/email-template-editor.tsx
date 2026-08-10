@@ -27,7 +27,7 @@ interface EmailTemplateEditorProps {
   bodyHtml: string;
   /** Nombre bloqueado (solo lectura) al editar un template existente. */
   nameDisabled?: boolean;
-  onChange: (patch: { subject?: string; bodyHtml?: string }) => void;
+  onChange: (patch: { name?: string; subject?: string; bodyHtml?: string }) => void;
 }
 
 /**
@@ -68,6 +68,7 @@ export function EmailTemplateEditor({
         <Input
           value={name}
           disabled={nameDisabled}
+          onChange={(e) => onChange({ name: e.target.value })}
           placeholder="missed_call"
           className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
         />

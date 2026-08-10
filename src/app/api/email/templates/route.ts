@@ -15,7 +15,7 @@ export async function GET() {
     const ctx = await requireRole('agent')
     const { data, error } = await ctx.supabase
       .from('email_templates')
-      .select('id, name, subject, updated_at')
+      .select('id, name, subject, body_html, updated_at')
       .eq('account_id', ctx.accountId)
       .order('name')
     if (error) {

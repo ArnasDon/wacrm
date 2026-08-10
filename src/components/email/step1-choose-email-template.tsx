@@ -106,7 +106,7 @@ export function Step1ChooseEmailTemplate({
                 </p>
                 {/* Preview del body sin HTML tags, acotado. */}
                 <p className="line-clamp-3 text-xs text-muted-foreground">
-                  {stripHtml(template.body_html, 120)}
+                  {stripHtml(template.body_html ?? '', 120)}
                 </p>
               </button>
             );

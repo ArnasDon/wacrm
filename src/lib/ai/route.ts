@@ -102,10 +102,28 @@ export function classifyIntent(ctx: {
       forceHandoff: false,
     }
   }
+  // 'faq' is the catch-all for anything the keyword lists above didn't
+  // recognise — not "definitely not sales". A fixed keyword list can never
+  // keep up with one account's own product vocabulary ("legging", "top",
+  // a colour name spoken alone as a one-word reply, "mostra as duas
+  // opções" as a natural follow-up with no product noun in it at all) —
+  // live bug report: an entire real shopping conversation about leggings
+  // never matched SALES once, so every turn — including "show me both
+  // options" answering the bot's own question — lost catalogue access
+  // and the bot had nothing left to do but hand off. Keeping the
+  // catalogue tools available here is safe: routeToolPermissions still
+  // intersects with the account's actual configured permissions below,
+  // so this can only ever restore capability the account already has —
+  // it can never grant what isn't configured.
   return {
     intent: 'faq',
     modelTier: 'fast',
-    toolKeys: ['search_knowledge', 'handoff_human'],
+    toolKeys: [
+      'search_knowledge',
+      'search_catalog',
+      'send_product',
+      'handoff_human',
+    ],
     forceHandoff: false,
   }
 }

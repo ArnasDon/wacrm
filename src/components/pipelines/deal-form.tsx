@@ -492,58 +492,51 @@ export function DealForm({
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
               STATUS DO NEGÓCIO
             </label>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <button
                 type="button"
                 onClick={() => handleStatusChange("won")}
                 disabled={!!statusAction || deal?.status === "won"}
-                className={`h-11 font-semibold text-sm transition-all rounded-lg ${
+                className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
                   deal?.status === "won"
-                    ? "bg-emerald-600 text-white border border-emerald-500"
-                    : "border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500"
-                }`}
+                    ? "bg-emerald-600 text-white border border-emerald-400 shadow-lg shadow-emerald-950/50 font-bold"
+                    : "bg-[#062419]/80 text-[#22c55e] border border-[#14532d]/70 hover:bg-[#0a3827] hover:border-[#166534] active:scale-[0.98]"
+                } disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {statusAction === "won" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
                 ) : (
-                  <>
-                    <Check className="mr-1.5 h-4 w-4" />
-                    Marcar como ganho
-                  </>
+                  "Marcar como ganho"
                 )}
-              </Button>
+              </button>
 
-              <Button
+              <button
                 type="button"
                 onClick={() => handleStatusChange("lost")}
                 disabled={!!statusAction || deal?.status === "lost"}
-                className={`h-11 font-semibold text-sm transition-all rounded-lg ${
+                className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
                   deal?.status === "lost"
-                    ? "bg-rose-600 text-white border border-rose-500"
-                    : "border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500"
-                }`}
+                    ? "bg-rose-600 text-white border border-rose-400 shadow-lg shadow-rose-950/50 font-bold"
+                    : "bg-[#270c12]/80 text-[#f87171] border border-[#7f1d1d]/70 hover:bg-[#3d121c] hover:border-[#991b1b] active:scale-[0.98]"
+                } disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {statusAction === "lost" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin text-rose-400" />
                 ) : (
-                  <>
-                    <X className="mr-1.5 h-4 w-4" />
-                    Marcar como perdido
-                  </>
+                  "Marcar como perdido"
                 )}
-              </Button>
+              </button>
             </div>
 
             {deal?.status && deal.status !== "open" && (
-              <Button
+              <button
                 type="button"
-                variant="ghost"
                 onClick={() => handleStatusChange("open")}
                 disabled={!!statusAction}
-                className="w-full text-xs text-muted-foreground hover:text-foreground mt-1"
+                className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 transition-colors text-center cursor-pointer"
               >
                 Reabrir negócio
-              </Button>
+              </button>
             )}
           </div>
 

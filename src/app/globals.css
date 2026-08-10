@@ -217,6 +217,63 @@ html[data-theme="rose"] {
   --sidebar-ring: oklch(0.645 0.22 16);
 }
 
+/* The real WhatsApp brand green (#25D366), not a "nods at messaging"
+ * approximation. --primary-foreground stays dark (same call as amber,
+ * the other accent this light) so ordinary text-on-primary buttons
+ * across the app keep real contrast — only the composer's send button
+ * gets the authentic white-icon-on-green treatment, further down. */
+html[data-theme="whatsapp"] {
+  --primary: oklch(0.761 0.201 149.7);
+  --primary-foreground: oklch(0.18 0.03 150);
+  --primary-hover: oklch(0.71 0.19 149.7);
+  --primary-soft: oklch(0.761 0.201 149.7 / 0.12);
+  --primary-soft-2: oklch(0.761 0.201 149.7 / 0.22);
+  --ring: oklch(0.761 0.201 149.7);
+  --chart-1: oklch(0.761 0.201 149.7);
+  --chart-2: oklch(0.535 0.102 174.2);
+  --sidebar-primary: oklch(0.761 0.201 149.7);
+  --sidebar-primary-foreground: oklch(0.18 0.03 150);
+  --sidebar-ring: oklch(0.761 0.201 149.7);
+}
+
+/* ---- WhatsApp theme only: authentic chat header, bubbles, wallpaper ----
+ *
+ * These tokens are deliberately undefined for the other 5 themes. The
+ * inbox reads them as `var(--token, var(--existing-fallback))`, so
+ * nothing in the UI changes unless data-theme="whatsapp" is active —
+ * violet/emerald/cobalt/amber/rose keep today's bg-card / bg-muted /
+ * bg-primary bubbles byte-for-byte. Split by data-mode because the real
+ * WhatsApp app uses genuinely different colors in light vs dark, not
+ * just a lightness flip of the same hue.
+ */
+html[data-theme="whatsapp"][data-mode="dark"] {
+  --chat-header: oklch(0.285 0.021 234.1); /* #202C33 */
+  --chat-header-foreground: oklch(0.985 0 0);
+  --bubble-out: oklch(0.424 0.08 174.4); /* #005C4B */
+  --bubble-out-foreground: oklch(0.96 0.01 150);
+  --bubble-in: oklch(0.285 0.021 234.1); /* #202C33 */
+  --bubble-in-foreground: oklch(0.985 0 0);
+  --wallpaper-tint: oklch(0.185 0.018 238.2); /* #0B141A */
+}
+
+html[data-theme="whatsapp"][data-mode="light"] {
+  --chat-header: oklch(0.96 0.005 258.3); /* #F0F2F5 */
+  --chat-header-foreground: oklch(0.21 0.01 260);
+  --bubble-out: oklch(0.957 0.067 141.1); /* #D9FDD3 */
+  --bubble-out-foreground: oklch(0.25 0.02 150);
+  --bubble-in: oklch(1 0 0);
+  --bubble-in-foreground: oklch(0.21 0.01 260);
+  --wallpaper-tint: oklch(0.902 0.014 67.6); /* #E5DDD5 */
+}
+
+/* Authentic circular send button — only under the WhatsApp theme, and
+ * only on the composer's actual send action (marked with this class),
+ * so every other button in the app keeps its normal rounded-lg shape. */
+html[data-theme="whatsapp"] .wa-send-button {
+  border-radius: 9999px;
+  color: oklch(0.985 0 0);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

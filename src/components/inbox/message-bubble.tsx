@@ -223,8 +223,8 @@ export function MessageBubble({
         className={cn(
           "relative rounded-2xl px-3 py-2",
           isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+            ? "rounded-br-md bg-[var(--bubble-out,var(--primary))] text-[var(--bubble-out-foreground,var(--primary-foreground))]"
+            : "rounded-bl-md bg-[var(--bubble-in,var(--muted))] text-[var(--bubble-in-foreground,var(--foreground))]",
         )}
       >
         {reply && (
@@ -247,7 +247,7 @@ export function MessageBubble({
               glance. */}
           {message.ai_generated && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+              className="inline-flex items-center gap-0.5 rounded-full bg-[var(--bubble-out-foreground,var(--primary-foreground))]/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-[var(--bubble-out-foreground,var(--primary-foreground))]"
               title={t("aiBadgeTitle")}
             >
               <Sparkles className="h-2.5 w-2.5" />

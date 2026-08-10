@@ -19,6 +19,7 @@ export const THEME_IDS = [
   "cobalt",
   "amber",
   "rose",
+  "whatsapp",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -96,6 +97,12 @@ export const THEMES: ReadonlyArray<ThemeMeta> = [
     name: "Rose",
     tagline: "Bold and modern — D2C, creator-economy, lifestyle.",
     swatch: "oklch(0.645 0.22 16)",
+  },
+  {
+    id: "whatsapp",
+    name: "WhatsApp",
+    tagline: "The real brand green, with an authentic chat header, bubbles and wallpaper.",
+    swatch: "oklch(0.761 0.201 149.7)",
   },
 ];
 

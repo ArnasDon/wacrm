@@ -21,7 +21,7 @@ import {
   type AgentTraceCollector,
 } from './trace'
 import { loadAgentToolPermissions } from './tool-permissions'
-import { classifyIntent, routeToolPermissions } from './route'
+import { classifyIntent } from './route'
 import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
 import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -261,12 +261,17 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       return
     }
 
-    const configuredPermissions = await loadAgentToolPermissions(
+    // Which tools the agent may call is decided ONLY by what the account
+    // itself configured — never narrowed further by intent classification.
+    // The model decides which of its available tools to use and when;
+    // that judgement call belongs to the model, not to a keyword list
+    // that can never anticipate an arbitrary tenant's own vocabulary
+    // (see route.ts's module doc for the live bug this replaced).
+    const permissions = await loadAgentToolPermissions(
       db,
       accountId,
       config.agentId!,
     )
-    const permissions = routeToolPermissions(configuredPermissions, route)
     const agentTools = createAutoReplyTools({
       db,
       accountId,

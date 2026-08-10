@@ -564,24 +564,34 @@ export function DealForm({
 
           {/* CONTATO Section */}
           <div className="space-y-2 pt-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
-              CONTATO
-            </label>
-            <select
-              value={contactId}
-              onChange={(e) => setContactId(e.target.value)}
-              className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option value="">Selecione um contato...</option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name || c.phone} {c.phone ? `(${c.phone})` : ""}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+                CONTATO
+              </label>
+              {deal?.contact_id && (
+                <span className="text-[10px] text-muted-foreground/70 font-medium flex items-center gap-1">
+                  🔒 Contato fixado
+                </span>
+              )}
+            </div>
+
+            {!deal?.contact_id ? (
+              <select
+                value={contactId}
+                onChange={(e) => setContactId(e.target.value)}
+                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                <option value="">Selecione um contato...</option>
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || c.phone} {c.phone ? `(${c.phone})` : ""}
+                  </option>
+                ))}
+              </select>
+            ) : null}
 
             {selectedContact && (
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-[#14161d] p-3 mt-2">
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-[#14161d] p-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
                     {(selectedContact.name || selectedContact.phone || "?").charAt(0).toUpperCase()}

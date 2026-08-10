@@ -42,6 +42,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     openDeals,
     messagesToday,
     messagesYesterday,
+    closedDealsRes,
   ] = await Promise.all([
     db.from('conversations').select('id', { count: 'exact', head: true }).eq('status', 'open'),
     db
@@ -73,10 +74,37 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .eq('sender_type', 'agent')
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
+    db.from('deals').select('created_at, updated_at, status').in('status', ['won', 'lost']),
   ])
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
   const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+
+  const closedDeals = (closedDealsRes.data ?? []) as {
+    created_at: string
+    updated_at: string | null
+    status: string
+  }[]
+
+  let avgClosingTimeDays: number | null = null
+  if (closedDeals.length > 0) {
+    let totalDays = 0
+    let count = 0
+    for (const d of closedDeals) {
+      if (d.created_at) {
+        const created = new Date(d.created_at).getTime()
+        const updated = d.updated_at ? new Date(d.updated_at).getTime() : Date.now()
+        const diffMs = updated - created
+        if (!isNaN(diffMs) && diffMs >= 0) {
+          totalDays += diffMs / (1000 * 60 * 60 * 24)
+          count += 1
+        }
+      }
+    }
+    if (count > 0) {
+      avgClosingTimeDays = totalDays / count
+    }
+  }
 
   return {
     activeConversations: {
@@ -96,6 +124,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
     },
+    avgClosingTimeDays,
+    closedDealsCount: closedDeals.length,
   }
 }
 

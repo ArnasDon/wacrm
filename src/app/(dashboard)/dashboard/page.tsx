@@ -9,6 +9,7 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Clock,
 } from 'lucide-react'
 
 import {
@@ -132,9 +133,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
             <MetricCard
@@ -169,6 +170,16 @@ export default function DashboardPage() {
               value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
               icon={DollarSign}
               subtitle={t('openDeals', { count: metrics.openDealsCount })}
+            />
+            <MetricCard
+              title="Tempo Médio de Fechamento"
+              value={formatAvgClosingTime(metrics.avgClosingTimeDays)}
+              icon={Clock}
+              subtitle={
+                metrics.closedDealsCount > 0
+                  ? `${metrics.closedDealsCount} negócio(s) fechado(s)`
+                  : "Sem vendas fechadas"
+              }
             />
             <MetricCard
               title={t('messagesSentToday')}
@@ -226,6 +237,18 @@ export default function DashboardPage() {
 }
 
 // ------------------------------------------------------------
+
+function formatAvgClosingTime(days: number | null): string {
+  if (days === null) return '—'
+  if (days < 1) {
+    const hours = Math.round(days * 24)
+    return hours <= 1 ? `${hours || 1} hora` : `${hours} horas`
+  }
+  if (days < 10) {
+    return `${days.toFixed(1)} dias`
+  }
+  return `${Math.round(days)} dias`
+}
 
 function deltaLabel(delta: number, suffix: string, noChangeLabel: string): string {
   if (delta === 0) return noChangeLabel

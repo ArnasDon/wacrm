@@ -463,12 +463,13 @@ async function searchInternal(
       `name.ilike.%${term}%`,
       `description.ilike.%${term}%`,
       `category.ilike.%${term}%`,
+      `color.ilike.%${term}%`,
     ])
     .join(',')
 
   const { data, error } = await db
     .from('catalog_products')
-    .select('id, name, description, price, currency, image_url, product_url, category, stock_quantity')
+    .select('id, name, description, color, price, currency, image_url, product_url, category, stock_quantity')
     .eq('account_id', accountId)
     .eq('is_active', true)
     .or(filters)
@@ -480,7 +481,12 @@ async function searchInternal(
   return data.map((row) => ({
     id: row.id,
     name: row.name,
-    description: row.description,
+    // The colour lives in its own column (editable in the catalogue UI);
+    // fold it into the description text here so the agent's tool result
+    // and text search both see it, without duplicating it in storage.
+    description: row.color
+      ? `Cor: ${row.color}.${row.description ? ` ${row.description}` : ''}`
+      : row.description,
     price: Number(row.price),
     currency: row.currency,
     imageUrl: row.image_url,

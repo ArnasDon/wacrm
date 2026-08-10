@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       currency: optionalText(input.currency, 8) ?? 'MZN',
       image_url: optionalText(input.image_url, 2000),
       description: optionalText(input.description, 4000),
+      color: optionalText(input.color, 100),
       category: optionalText(input.category, 200),
       product_url: optionalText(input.product_url, 2000),
       stock_quantity:

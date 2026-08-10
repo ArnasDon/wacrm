@@ -33,6 +33,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if ('currency' in input) update.currency = optionalText(input.currency, 8) ?? 'MZN'
     if ('image_url' in input) update.image_url = optionalText(input.image_url, 2000)
     if ('description' in input) update.description = optionalText(input.description, 4000)
+    if ('color' in input) update.color = optionalText(input.color, 100)
     if ('category' in input) update.category = optionalText(input.category, 200)
     if ('product_url' in input) update.product_url = optionalText(input.product_url, 2000)
     if ('stock_quantity' in input) {

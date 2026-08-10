@@ -71,8 +71,12 @@ alter table public.email_sends enable row level security;
 
 -- select: viewer+ · insert: agent+ (acotado — el browser NO inserta directo;
 -- el envío real lo hace el server con service_role, que bypasea RLS).
+-- Drop-then-create: Postgres no tiene CREATE POLICY IF NOT EXISTS y la
+-- migración debe re-ejecutarse limpia (auditoría DAT-5).
+drop policy if exists "email_sends_select" on public.email_sends;
 create policy "email_sends_select" on public.email_sends
   for select using (public.is_account_member(account_id, 'viewer'::public.account_role_enum));
+drop policy if exists "email_sends_insert" on public.email_sends;
 create policy "email_sends_insert" on public.email_sends
   for insert with check (public.is_account_member(account_id, 'agent'::public.account_role_enum));
 
@@ -104,9 +108,11 @@ create index if not exists idx_tracking_events_account_type_time
 alter table public.tracking_events enable row level security;
 
 -- select: viewer+ (datos de negocio de la cuenta). El insert lo hace el server
--- (service_role bypasa RLS); si un agente registra eventos vía sesión, agent+.
+-- (service_role bypasea RLS); si un agente registra eventos vía sesión, agent+.
+drop policy if exists "tracking_events_select" on public.tracking_events;
 create policy "tracking_events_select" on public.tracking_events
   for select using (public.is_account_member(account_id, 'viewer'::public.account_role_enum));
+drop policy if exists "tracking_events_insert" on public.tracking_events;
 create policy "tracking_events_insert" on public.tracking_events
   for insert with check (public.is_account_member(account_id, 'agent'::public.account_role_enum));
 

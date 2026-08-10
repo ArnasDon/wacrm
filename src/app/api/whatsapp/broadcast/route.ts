@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { MAX_RECIPIENTS } from '@/lib/whatsapp/broadcast-core'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
@@ -108,6 +109,19 @@ export async function POST(request: Request) {
         {
           error:
             'Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Same cap as the public API (`/api/v1/broadcasts`) — a single
+    // request must not fan out an unbounded blast of Meta template
+    // messages (SEC-3). The per-user rate limit above only gates how
+    // often a campaign can START, not its size.
+    if (recipients.length > MAX_RECIPIENTS) {
+      return NextResponse.json(
+        {
+          error: `A broadcast is capped at ${MAX_RECIPIENTS} recipients per request; split larger sends`,
         },
         { status: 400 }
       )

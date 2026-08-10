@@ -74,7 +74,14 @@ export interface BroadcastPlan {
   rejected: number;
 }
 
-const MAX_RECIPIENTS = 1000;
+/**
+ * Hard cap on recipients per broadcast request, shared by the public
+ * API (`/api/v1/broadcasts`) and the in-app endpoint
+ * (`/api/whatsapp/broadcast`) so both enforce the same budget. The
+ * in-app route previously had no cap, letting a single request fan out
+ * an unbounded blast of Meta template messages (SEC-3).
+ */
+export const MAX_RECIPIENTS = 1000;
 
 /**
  * Validate + persist a broadcast, resolving each recipient to a

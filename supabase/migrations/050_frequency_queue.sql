@@ -31,10 +31,15 @@ create index if not exists idx_frequency_rules_account
 
 alter table public.frequency_rules enable row level security;
 
+-- Drop-then-create: Postgres no tiene CREATE POLICY IF NOT EXISTS y la
+-- migración debe re-ejecutarse limpia (auditoría DAT-5).
+drop policy if exists "frequency_rules_select" on public.frequency_rules;
 create policy "frequency_rules_select" on public.frequency_rules
   for select using (public.is_account_member(account_id, 'viewer'::public.account_role_enum));
+drop policy if exists "frequency_rules_insert" on public.frequency_rules;
 create policy "frequency_rules_insert" on public.frequency_rules
   for insert with check (public.is_account_member(account_id, 'agent'::public.account_role_enum));
+drop policy if exists "frequency_rules_update" on public.frequency_rules;
 create policy "frequency_rules_update" on public.frequency_rules
   for update using (public.is_account_member(account_id, 'agent'::public.account_role_enum));
 
@@ -71,10 +76,13 @@ create index if not exists idx_message_queue_account
 
 alter table public.message_queue enable row level security;
 
+drop policy if exists "message_queue_select" on public.message_queue;
 create policy "message_queue_select" on public.message_queue
   for select using (public.is_account_member(account_id, 'viewer'::public.account_role_enum));
+drop policy if exists "message_queue_insert" on public.message_queue;
 create policy "message_queue_insert" on public.message_queue
   for insert with check (public.is_account_member(account_id, 'agent'::public.account_role_enum));
+drop policy if exists "message_queue_update" on public.message_queue;
 create policy "message_queue_update" on public.message_queue
   for update using (public.is_account_member(account_id, 'agent'::public.account_role_enum));
 

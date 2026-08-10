@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
+import {
   registerPhoneNumber,
   subscribeWabaToApp,
   verifyPhoneNumber,
@@ -165,24 +171,11 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // whatsapp_config INSERT/UPDATE/DELETE policies (migration 017)
+    // require 'admin' — the profile lookup below only proved membership.
+    // Require the role explicitly so a viewer can't reach the external
+    // Meta side effects (verify /register /subscribe) in this handler.
+    const { supabase, accountId, userId } = await requireRole('admin')
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -388,7 +381,7 @@ export async function POST(request: Request) {
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
-          user_id: user.id,
+          user_id: userId,
           ...baseRow,
         })
 
@@ -426,6 +419,14 @@ export async function POST(request: Request) {
       phone_info: phoneInfo,
     })
   } catch (error) {
+    // Auth failures map to 401/403 — a viewer hitting POST should get
+    // 403 "requires the 'admin' role", not a 500.
+    if (
+      error instanceof UnauthorizedError ||
+      error instanceof ForbiddenError
+    ) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -440,24 +441,9 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // whatsapp_config DELETE policy (migration 017) requires 'admin' —
+    // same rationale as the POST handler above.
+    const { supabase, accountId } = await requireRole('admin')
 
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
@@ -474,6 +460,13 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    // Auth failures map to 401/403 — same rationale as the POST handler.
+    if (
+      error instanceof UnauthorizedError ||
+      error instanceof ForbiddenError
+    ) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -800,7 +800,29 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
  */
 async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id
-  if (fromCtx) return fromCtx
+  if (fromCtx) {
+    // Tenancy guard (DAT-3): `context.conversation_id` can arrive from
+    // an external caller of POST /api/automations/engine, and send
+    // steps insert messages via the service-role client (bypassing
+    // RLS). Verify the conversation actually belongs to this account
+    // before returning it — otherwise an agent could inject a message
+    // into another tenant's conversation.
+    const { data: owned, error: ownErr } = await supabaseAdmin()
+      .from('conversations')
+      .select('id')
+      .eq('id', fromCtx)
+      .eq('account_id', args.automation.account_id)
+      .maybeSingle()
+    if (ownErr) {
+      throw new Error(`conversation tenancy check failed: ${ownErr.message}`)
+    }
+    if (!owned?.id) {
+      throw new Error(
+        'cannot resolve conversation: conversation does not belong to this account',
+      )
+    }
+    return fromCtx
+  }
   if (!args.contactId) throw new Error('cannot resolve conversation: no contact')
   const { data, error } = await supabaseAdmin()
     .from('conversations')

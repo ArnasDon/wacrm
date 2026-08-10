@@ -27,13 +27,6 @@ import {
   Trash2,
   MessageSquare,
   Loader2,
-  Calendar,
-  User,
-  Tag,
-  DollarSign,
-  Flame,
-  ShoppingBag,
-  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -366,10 +359,10 @@ export function DealForm({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="bg-[#0e0f12] text-foreground border-l border-border/50 sm:max-w-lg w-full p-0 flex flex-col h-full shadow-2xl"
+        className="bg-popover text-popover-foreground border-l border-border sm:max-w-lg w-full p-0 flex flex-col h-full shadow-2xl transition-colors duration-200"
       >
-        {/* Header matching screenshot */}
-        <div className="flex items-start justify-between border-b border-border/40 px-6 pt-5 pb-4 bg-muted/20">
+        {/* Header matching theme */}
+        <div className="flex items-start justify-between border-b border-border/50 px-6 pt-5 pb-4 bg-muted/40">
           <div className="flex-1 space-y-1.5 pr-4">
             <div className="flex items-center gap-2">
               <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
@@ -379,10 +372,10 @@ export function DealForm({
                 <span
                   className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
                     temperature === "Quente"
-                      ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                      ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
                       : temperature === "Morno"
-                      ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                      : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                      : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30"
                   }`}
                 >
                   {temperature}
@@ -398,24 +391,24 @@ export function DealForm({
             <select
               value={product}
               onChange={(e) => setProduct(e.target.value)}
-              className="h-7 w-full bg-transparent text-xs text-muted-foreground outline-none cursor-pointer hover:text-foreground border-b border-border/30 pb-1"
+              className="h-7 w-full bg-transparent text-xs text-muted-foreground outline-none cursor-pointer hover:text-foreground border-b border-border/40 pb-1"
             >
-              <option value="" className="bg-[#121318] text-foreground">
+              <option value="" className="bg-popover text-popover-foreground">
                 Selecionar produtos...
               </option>
-              <option value="Consultoria Premium" className="bg-[#121318] text-foreground">
+              <option value="Consultoria Premium" className="bg-popover text-popover-foreground">
                 Consultoria Premium
               </option>
-              <option value="Plano Mensal" className="bg-[#121318] text-foreground">
+              <option value="Plano Mensal" className="bg-popover text-popover-foreground">
                 Plano Mensal
               </option>
-              <option value="Tratamento Odontológico" className="bg-[#121318] text-foreground">
+              <option value="Tratamento Odontológico" className="bg-popover text-popover-foreground">
                 Tratamento Odontológico
               </option>
-              <option value="Procedimento Estético" className="bg-[#121318] text-foreground">
+              <option value="Procedimento Estético" className="bg-popover text-popover-foreground">
                 Procedimento Estético
               </option>
-              <option value="Outro Produto/Serviço" className="bg-[#121318] text-foreground">
+              <option value="Outro Produto/Serviço" className="bg-popover text-popover-foreground">
                 Outro Produto/Serviço
               </option>
             </select>
@@ -435,7 +428,7 @@ export function DealForm({
           {/* Row 1: VALOR & TEMPERATURA */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 VALOR
               </label>
               <div className="relative">
@@ -445,26 +438,26 @@ export function DealForm({
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder="R$ 47,90"
-                  className="h-10 border-border/50 bg-[#16181f] text-sm font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary pl-3"
+                  className="h-10 border-border bg-muted/50 text-sm font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary pl-3"
                 />
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 TEMPERATURA
               </label>
               <select
                 value={temperature}
                 onChange={(e) => setTemperature(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="Frio" className="bg-[#121318]">
+                <option value="Frio" className="bg-popover text-popover-foreground">
                   Frio
                 </option>
-                <option value="Morno" className="bg-[#121318]">
+                <option value="Morno" className="bg-popover text-popover-foreground">
                   Morno
                 </option>
-                <option value="Quente" className="bg-[#121318]">
+                <option value="Quente" className="bg-popover text-popover-foreground">
                   Quente
                 </option>
               </select>
@@ -474,44 +467,44 @@ export function DealForm({
           {/* Row 2: TIPO & ÚLTIMA COMPRA */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 TIPO
               </label>
               <select
                 value={leadType}
                 onChange={(e) => setLeadType(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="Lead" className="bg-[#121318]">
+                <option value="Lead" className="bg-popover text-popover-foreground">
                   Lead
                 </option>
-                <option value="Cliente" className="bg-[#121318]">
+                <option value="Cliente" className="bg-popover text-popover-foreground">
                   Cliente
                 </option>
-                <option value="Parceiro" className="bg-[#121318]">
+                <option value="Parceiro" className="bg-popover text-popover-foreground">
                   Parceiro
                 </option>
-                <option value="Outro" className="bg-[#121318]">
+                <option value="Outro" className="bg-popover text-popover-foreground">
                   Outro
                 </option>
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 ÚLTIMA COMPRA
               </label>
               <Input
                 type="date"
                 value={lastPurchaseDate}
                 onChange={(e) => setLastPurchaseDate(e.target.value)}
-                className="h-10 border-border/50 bg-[#16181f] text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
 
           {/* STATUS DO NEGÓCIO Section */}
           <div className="space-y-2 pt-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               STATUS DO NEGÓCIO
             </label>
             <div className="grid grid-cols-2 gap-3 w-full">
@@ -521,12 +514,12 @@ export function DealForm({
                 disabled={!!statusAction || deal?.status === "won"}
                 className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
                   deal?.status === "won"
-                    ? "bg-emerald-600 text-white border border-emerald-400 shadow-lg shadow-emerald-950/50 font-bold"
-                    : "bg-[#062419]/80 text-[#22c55e] border border-[#14532d]/70 hover:bg-[#0a3827] hover:border-[#166534] active:scale-[0.98]"
+                    ? "bg-emerald-600 text-white border border-emerald-400 shadow-md font-bold"
+                    : "bg-emerald-500/10 dark:bg-[#062419]/80 text-emerald-600 dark:text-[#22c55e] border border-emerald-500/30 dark:border-[#14532d]/70 hover:bg-emerald-500/20 active:scale-[0.98]"
                 } disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {statusAction === "won" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-500" />
                 ) : (
                   "Marcar como ganho"
                 )}
@@ -538,12 +531,12 @@ export function DealForm({
                 disabled={!!statusAction || deal?.status === "lost"}
                 className={`h-12 w-full rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center justify-center px-2 text-center cursor-pointer ${
                   deal?.status === "lost"
-                    ? "bg-rose-600 text-white border border-rose-400 shadow-lg shadow-rose-950/50 font-bold"
-                    : "bg-[#270c12]/80 text-[#f87171] border border-[#7f1d1d]/70 hover:bg-[#3d121c] hover:border-[#991b1b] active:scale-[0.98]"
+                    ? "bg-rose-600 text-white border border-rose-400 shadow-md font-bold"
+                    : "bg-rose-500/10 dark:bg-[#270c12]/80 text-rose-600 dark:text-[#f87171] border border-rose-500/30 dark:border-[#7f1d1d]/70 hover:bg-rose-500/20 active:scale-[0.98]"
                 } disabled:opacity-50 disabled:pointer-events-none`}
               >
                 {statusAction === "lost" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-rose-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-rose-500" />
                 ) : (
                   "Marcar como perdido"
                 )}
@@ -565,11 +558,11 @@ export function DealForm({
           {/* CONTATO Section */}
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 CONTATO
               </label>
               {deal?.contact_id && (
-                <span className="text-[10px] text-muted-foreground/70 font-medium flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
                   🔒 Contato fixado
                 </span>
               )}
@@ -579,7 +572,7 @@ export function DealForm({
               <select
                 value={contactId}
                 onChange={(e) => setContactId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
               >
                 <option value="">Selecione um contato...</option>
                 {contacts.map((c) => (
@@ -591,7 +584,7 @@ export function DealForm({
             ) : null}
 
             {selectedContact && (
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-[#14161d] p-3">
+              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/40 p-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
                     {(selectedContact.name || selectedContact.phone || "?").charAt(0).toUpperCase()}
@@ -621,32 +614,32 @@ export function DealForm({
           {/* FUNIL & ETAPA Row */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 FUNIL
               </label>
               <select
                 value={currentPipelineId}
                 onChange={(e) => setCurrentPipelineId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
                 {allPipelines.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#121318]">
+                  <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
                     {p.name}
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 ETAPA
               </label>
               <select
                 value={stageId}
                 onChange={(e) => setStageId(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
                 {availableStages.map((s) => (
-                  <option key={s.id} value={s.id} className="bg-[#121318]">
+                  <option key={s.id} value={s.id} className="bg-popover text-popover-foreground">
                     {s.name}
                   </option>
                 ))}
@@ -657,52 +650,52 @@ export function DealForm({
           {/* RESPONSÁVEL & ORIGEM Row */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 RESPONSÁVEL
               </label>
               <select
                 value={assignedTo}
                 onChange={(e) => setAssignedTo(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="" className="bg-[#121318]">
+                <option value="" className="bg-popover text-popover-foreground">
                   Não atribuído
                 </option>
                 {profiles.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#121318]">
+                  <option key={p.id} value={p.id} className="bg-popover text-popover-foreground">
                     {p.full_name || p.email}
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 ORIGEM
               </label>
               <select
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
-                className="h-10 w-full rounded-md border border-border/50 bg-[#16181f] px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="—" className="bg-[#121318]">
+                <option value="—" className="bg-popover text-popover-foreground">
                   —
                 </option>
-                <option value="WhatsApp" className="bg-[#121318]">
+                <option value="WhatsApp" className="bg-popover text-popover-foreground">
                   WhatsApp
                 </option>
-                <option value="Instagram" className="bg-[#121318]">
+                <option value="Instagram" className="bg-popover text-popover-foreground">
                   Instagram
                 </option>
-                <option value="Site" className="bg-[#121318]">
+                <option value="Site" className="bg-popover text-popover-foreground">
                   Site
                 </option>
-                <option value="Indicação" className="bg-[#121318]">
+                <option value="Indicação" className="bg-popover text-popover-foreground">
                   Indicação
                 </option>
-                <option value="Anúncio" className="bg-[#121318]">
+                <option value="Anúncio" className="bg-popover text-popover-foreground">
                   Anúncio
                 </option>
-                <option value="Outro" className="bg-[#121318]">
+                <option value="Outro" className="bg-popover text-popover-foreground">
                   Outro
                 </option>
               </select>
@@ -710,7 +703,7 @@ export function DealForm({
           </div>
 
           {/* Timestamps Row */}
-          <div className="grid grid-cols-2 gap-4 rounded-lg border border-border/40 bg-[#14161d] p-3">
+          <div className="grid grid-cols-2 gap-4 rounded-lg border border-border/50 bg-muted/30 p-3">
             <div>
               <p className="font-bold uppercase tracking-wider text-muted-foreground text-[10px]">
                 CRIADO EM
@@ -753,25 +746,25 @@ export function DealForm({
 
           {/* OBSERVAÇÕES */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               OBSERVAÇÕES
             </label>
             <Textarea
               value={userNotes}
               onChange={(e) => setUserNotes(e.target.value)}
               placeholder="Adicione observações ou anotações detalhadas sobre este negócio..."
-              className="min-h-[85px] border-border/50 bg-[#16181f] text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+              className="min-h-[85px] border-border bg-muted/50 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
 
         {/* Sheet Footer */}
-        <div className="border-t border-border/40 bg-[#121318] p-4 space-y-3">
+        <div className="border-t border-border/50 bg-popover p-4 space-y-3">
           <div className="flex gap-2">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="flex-1 border-border/60 bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex-1 border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               {t("cancel")}
             </Button>
@@ -787,7 +780,7 @@ export function DealForm({
           {deal &&
             (confirmDelete ? (
               <div className="flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
-                <span className="text-red-300">{t("deletePrompt")}</span>
+                <span className="text-red-600 dark:text-red-300 font-medium">{t("deletePrompt")}</span>
                 <div className="flex gap-1">
                   <button
                     type="button"
@@ -811,7 +804,7 @@ export function DealForm({
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
-                className="flex w-full items-center justify-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors pt-1"
+                className="flex w-full items-center justify-center gap-1.5 text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 transition-colors pt-1 cursor-pointer"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 {t("deleteDeal")}

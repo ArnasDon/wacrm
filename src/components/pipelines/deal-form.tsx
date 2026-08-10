@@ -578,23 +578,8 @@ export function DealForm({
         {/* Tab 1: DADOS DO NEGÓCIO */}
         {activeTab === "details" && (
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            {/* Row 1: VALOR & TEMPERATURA */}
+            {/* Row 1: TEMPERATURA & TIPO */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  VALOR
-                </label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder="R$ 47,90"
-                    className="h-10 border-border bg-muted/50 text-sm font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary pl-3"
-                  />
-                </div>
-              </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   TEMPERATURA
@@ -615,10 +600,7 @@ export function DealForm({
                   </option>
                 </select>
               </div>
-            </div>
 
-            {/* Row 2: TIPO & ÚLTIMA COMPRA */}
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   TIPO
@@ -641,17 +623,6 @@ export function DealForm({
                     Outro
                   </option>
                 </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  ÚLTIMA COMPRA
-                </label>
-                <Input
-                  type="date"
-                  value={lastPurchaseDate}
-                  onChange={(e) => setLastPurchaseDate(e.target.value)}
-                  className="h-10 border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                />
               </div>
             </div>
 

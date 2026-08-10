@@ -24,6 +24,7 @@ import type { AccountRole } from "@/lib/auth/roles";
 import {
   Bell,
   Bot,
+  CalendarClock,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -83,6 +84,7 @@ const navItems: NavItem[] = [
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
   { href: "/catalog", label: "Catálogo", icon: PackageSearch },
+  { href: "/visits", label: "Visitas", icon: CalendarClock },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },

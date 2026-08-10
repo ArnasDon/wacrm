@@ -172,13 +172,13 @@ export default function DashboardPage() {
               subtitle={t('openDeals', { count: metrics.openDealsCount })}
             />
             <MetricCard
-              title="Tempo Médio de Fechamento"
+              title={t('avgClosingTime')}
               value={formatAvgClosingTime(metrics.avgClosingTimeDays)}
               icon={Clock}
               subtitle={
                 metrics.closedDealsCount > 0
-                  ? `${metrics.closedDealsCount} negócio(s) fechado(s)`
-                  : "Sem vendas fechadas"
+                  ? t('avgClosingTimeSub', { count: metrics.closedDealsCount })
+                  : t('noClosedDeals')
               }
             />
             <MetricCard

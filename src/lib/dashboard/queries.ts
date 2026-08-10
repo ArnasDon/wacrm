@@ -74,7 +74,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .eq('sender_type', 'agent')
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    db.from('deals').select('created_at, updated_at, status').in('status', ['won', 'lost']),
+    db.from('deals').select('created_at, updated_at, status').neq('status', 'open'),
   ])
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]

@@ -12,7 +12,11 @@ import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
 export interface GenerateArgs {
-  config: AiConfig
+  // Only the credentials are actually used here — a narrow Pick so a
+  // caller that only has provider/model/apiKey (e.g. a tool executor
+  // making its own nested vision call) doesn't need to fabricate a full
+  // AiConfig just to satisfy the type.
+  config: Pick<AiConfig, 'provider' | 'model' | 'apiKey'>
   /** Fully-built system prompt (see `buildSystemPrompt`). */
   systemPrompt: string
   /** Recent conversation turns, oldest first. */

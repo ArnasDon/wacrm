@@ -20,6 +20,7 @@ import {
   Boxes,
   BrainCircuit,
   BriefcaseBusiness,
+  CalendarClock,
   Check,
   CheckCircle2,
   Clock3,
@@ -28,6 +29,7 @@ import {
   MessageCircleReply,
   Radio,
   RefreshCw,
+  Sparkles,
   Tags,
   UserRoundCheck,
   Wrench,
@@ -140,6 +142,16 @@ const TOOL_META: Record<
     title: 'Criar negócio',
     description: 'Cria uma oportunidade aberta no pipeline comercial.',
     icon: BriefcaseBusiness,
+  },
+  schedule_visit: {
+    title: 'Agendar visita',
+    description: 'Marca uma data e hora para o cliente visitar a loja ou local físico.',
+    icon: CalendarClock,
+  },
+  get_style_opinion: {
+    title: 'Opinião de estilo',
+    description: 'Olha fotos reais dos produtos e avalia se combinam com o que a cliente disse sobre si.',
+    icon: Sparkles,
   },
   handoff_human: {
     title: 'Encaminhar para humano',

@@ -48,6 +48,8 @@ describe('buildAgentFlowGraph', () => {
       'tool:search_knowledge',
       'tool:add_tag',
       'tool:create_deal',
+      'tool:schedule_visit',
+      'tool:get_style_opinion',
       'tool:handoff_human',
       'response',
     ])

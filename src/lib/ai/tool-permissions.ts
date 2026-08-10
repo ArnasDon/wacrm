@@ -6,6 +6,8 @@ export const AGENT_TOOL_KEYS = [
   'search_knowledge',
   'add_tag',
   'create_deal',
+  'schedule_visit',
+  'get_style_opinion',
   'handoff_human',
 ] as const
 
@@ -18,6 +20,10 @@ export const DEFAULT_AGENT_TOOLS: Record<AgentToolKey, boolean> = {
   // CRM mutations require an explicit administrator opt-in.
   add_tag: false,
   create_deal: false,
+  schedule_visit: false,
+  // Read-only reasoning over products already found by search_catalog —
+  // same risk profile as the other always-on lookup tools.
+  get_style_opinion: true,
   // This replaces the existing handoff sentinel, so preserve the current
   // automatic safety behaviour for every configured agent.
   handoff_human: true,

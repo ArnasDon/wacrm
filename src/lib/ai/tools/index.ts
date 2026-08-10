@@ -6,12 +6,14 @@ import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
 import { extractCurrencyAmounts } from '../guardrails'
+import { generateReply } from '../generate'
 import type { AgentTraceToolCall } from '../trace'
 import type { AgentToolKey } from '../tool-permissions'
 import type {
   AgentToolDefinition,
   AgentToolExecutor,
   AiConfig,
+  ChatImagePart,
 } from '../types'
 
 interface PendingProductSend {
@@ -31,12 +33,18 @@ export interface HandoffToolRequest {
   summary: string | null
 }
 
+export interface ScheduledVisitRequest {
+  scheduledAt: string
+  notes: string | null
+}
+
 interface ToolSet {
   tools: AgentToolDefinition[]
   executeTool: AgentToolExecutor
   dispatchPendingActions: () => Promise<number>
   hasPendingActions: () => boolean
   getHandoffRequest: () => HandoffToolRequest | null
+  getScheduledVisit: () => ScheduledVisitRequest | null
   getTrustedPriceAmounts: () => number[]
   wasCatalogueVerified: () => boolean
 }
@@ -144,6 +152,52 @@ const CREATE_DEAL_TOOL: AgentToolDefinition = {
   },
 }
 
+const SCHEDULE_VISIT_TOOL: AgentToolDefinition = {
+  name: 'schedule_visit',
+  description:
+    'Book a date and time for the customer to visit the physical store or location, e.g. to try on or collect items in person. Only offer times that fall within the business hours given in your instructions or the knowledge base. Confirm the exact date and time back to the customer in the same turn.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      scheduled_at: {
+        type: 'string',
+        description:
+          'The agreed date and time as an ISO 8601 datetime (e.g. 2026-08-14T15:00:00+02:00). Must be a specific future date and time, not a vague description.',
+      },
+      notes: {
+        type: 'string',
+        description: 'Optional short note for the team: what the customer wants to try on or discuss.',
+      },
+    },
+    required: ['scheduled_at'],
+  },
+}
+
+const STYLE_OPINION_TOOL: AgentToolDefinition = {
+  name: 'get_style_opinion',
+  description:
+    'Get an honest opinion on how well specific catalogue products (already found via search_catalog in this conversation) suit what the customer said about their own body, height, or style preference. Looks at the real product photos rather than guessing from the text description alone. Use this whenever the customer asks for a suggestion or "what would suit me" based on something they said about themselves.',
+  parameters: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      product_refs: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: 5,
+        description: 'One to five product_ref values returned by an earlier search_catalog call.',
+      },
+      customer_description: {
+        type: 'string',
+        description: "What the customer said about their own body, height, fitness habits, or style preference.",
+      },
+    },
+    required: ['product_refs', 'customer_description'],
+  },
+}
+
 const HANDOFF_HUMAN_TOOL: AgentToolDefinition = {
   name: 'handoff_human',
   description:
@@ -172,6 +226,8 @@ const TOOL_DEFINITIONS: Record<AgentToolKey, AgentToolDefinition> = {
   search_knowledge: SEARCH_KNOWLEDGE_TOOL,
   add_tag: ADD_TAG_TOOL,
   create_deal: CREATE_DEAL_TOOL,
+  schedule_visit: SCHEDULE_VISIT_TOOL,
+  get_style_opinion: STYLE_OPINION_TOOL,
   handoff_human: HANDOFF_HUMAN_TOOL,
 }
 
@@ -349,7 +405,7 @@ export function createAutoReplyTools(args: {
   conversationId: string
   contactId: string
   configOwnerUserId: string
-  config: Pick<AiConfig, 'agentId' | 'embeddingsApiKey'>
+  config: Pick<AiConfig, 'agentId' | 'embeddingsApiKey' | 'provider' | 'model' | 'apiKey'>
   permissions: Record<AgentToolKey, boolean>
   onToolCall?: (call: AgentTraceToolCall) => void
 }): ToolSet {
@@ -368,6 +424,7 @@ export function createAutoReplyTools(args: {
   const availableProducts = new Map<string, CatalogProduct>()
   let productRefSequence = 0
   let handoffRequest: HandoffToolRequest | null = null
+  let scheduledVisit: ScheduledVisitRequest | null = null
   let catalogueVerified = false
   const trustedPriceAmounts = new Set<number>()
 
@@ -616,6 +673,95 @@ export function createAutoReplyTools(args: {
       })
     }
 
+    if (call.name === SCHEDULE_VISIT_TOOL.name) {
+      const rawScheduledAt = requiredText(input, 'scheduled_at', 40)
+      const notes = optionalText(input, 'notes', 500)
+      const scheduledDate = new Date(rawScheduledAt)
+      if (Number.isNaN(scheduledDate.getTime())) {
+        throw new Error('scheduled_at must be a valid ISO 8601 datetime.')
+      }
+      const now = Date.now()
+      const MAX_FUTURE_MS = 90 * 24 * 60 * 60 * 1_000
+      // Small grace window below "now" absorbs clock skew between the
+      // model's notion of the current time and the server's.
+      if (scheduledDate.getTime() < now - 5 * 60_000) {
+        throw new Error('scheduled_at must be in the future.')
+      }
+      if (scheduledDate.getTime() > now + MAX_FUTURE_MS) {
+        throw new Error('scheduled_at is too far in the future.')
+      }
+
+      const { data: visit, error: insertError } = await db
+        .from('scheduled_visits')
+        .insert({
+          account_id: accountId,
+          contact_id: contactId,
+          conversation_id: conversationId,
+          scheduled_at: scheduledDate.toISOString(),
+          notes,
+        })
+        .select('id, scheduled_at')
+        .single()
+      if (insertError || !visit) throw new Error('The visit could not be scheduled.')
+
+      scheduledVisit = { scheduledAt: visit.scheduled_at, notes }
+
+      return JSON.stringify({
+        ok: true,
+        scheduled: true,
+        scheduled_at: visit.scheduled_at,
+      })
+    }
+
+    if (call.name === STYLE_OPINION_TOOL.name) {
+      const rawRefs = Array.isArray(input.product_refs) ? input.product_refs : []
+      const refs = rawRefs
+        .filter((ref): ref is string => typeof ref === 'string')
+        .slice(0, 5)
+      if (refs.length === 0) throw new Error('product_refs is required.')
+      const description = requiredText(input, 'customer_description', 500)
+
+      // Pass the catalogue's own public photo URL straight through — both
+      // provider adapters already accept a plain HTTPS url (no download/
+      // base64 step needed, unlike WhatsApp's auth-gated media).
+      const images: ChatImagePart[] = []
+      const labels: string[] = []
+      for (const ref of refs) {
+        const product = availableProducts.get(ref)
+        if (!product) continue
+        const resolved = resolveProductImage(product)
+        if (!resolved) continue
+        images.push({ type: 'image_url', url: resolved.url })
+        labels.push(`${images.length}. ${product.name}`)
+      }
+      if (images.length === 0) {
+        throw new Error('None of the given product_refs have a usable photograph.')
+      }
+
+      const opinion = await generateReply({
+        config: { provider: config.provider, model: config.model, apiKey: config.apiKey },
+        systemPrompt:
+          'You are a fashion stylist. You are shown real photographs of numbered products and what a customer said about themselves. ' +
+          'For each numbered product, write one short, honest sentence in Portuguese on whether and why it suits what the customer described. ' +
+          'Never invent sizes, prices, stock or fit details that are not visible in the photo. ' +
+          "Be warm and confident regardless of body type; never repeat or dwell on the customer's body descriptors beyond what they themselves said.",
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...images,
+              {
+                type: 'text' as const,
+                text: `O que a cliente disse sobre si: ${description}\n\nProdutos:\n${labels.join('\n')}`,
+              },
+            ],
+          },
+        ],
+      })
+
+      return JSON.stringify({ ok: true, opinion: opinion.text })
+    }
+
     if (call.name === HANDOFF_HUMAN_TOOL.name) {
       const request = {
         reason: requiredText(input, 'reason', 240),
@@ -677,6 +823,7 @@ export function createAutoReplyTools(args: {
     tools,
     executeTool,
     getHandoffRequest: () => handoffRequest,
+    getScheduledVisit: () => scheduledVisit,
     getTrustedPriceAmounts: () => Array.from(trustedPriceAmounts),
     wasCatalogueVerified: () => catalogueVerified,
     hasPendingActions: () =>

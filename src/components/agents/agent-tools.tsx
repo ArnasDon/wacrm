@@ -5,8 +5,10 @@ import {
   BookOpen,
   Boxes,
   BriefcaseBusiness,
+  CalendarClock,
   Image,
   Loader2,
+  Sparkles,
   Tags,
   UserRoundCheck,
   Wrench,
@@ -25,6 +27,8 @@ interface ToolState {
     search_knowledge: boolean
     add_tag: boolean
     create_deal: boolean
+    schedule_visit: boolean
+    get_style_opinion: boolean
     handoff_human: boolean
   }
 }
@@ -64,6 +68,18 @@ const TOOL_COPY: Record<
     description:
       'Permite ao agente captar uma oportunidade e criar um negócio na primeira etapa do pipeline.',
     icon: BriefcaseBusiness,
+  },
+  schedule_visit: {
+    title: 'Agendar visita à loja',
+    description:
+      'Permite ao agente marcar uma data e hora para o cliente visitar a loja ou local físico, e avisar a equipa.',
+    icon: CalendarClock,
+  },
+  get_style_opinion: {
+    title: 'Opinião de estilo',
+    description:
+      'Permite ao agente olhar para as fotos reais dos produtos e dizer se combinam com o que a cliente descreveu sobre si (corpo, altura, estilo).',
+    icon: Sparkles,
   },
   handoff_human: {
     title: 'Encaminhar para atendimento humano',

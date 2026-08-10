@@ -456,6 +456,18 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     if (!hasPendingActions && text) {
       await sendReplyChunks(args, text, config.maxReplyChunks)
     }
+
+    const scheduledVisit = agentTools.getScheduledVisit()
+    if (scheduledVisit) {
+      const when = new Date(scheduledVisit.scheduledAt).toLocaleString('pt-PT', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+      await notifyHandoffAssignee(
+        `Visita agendada para ${when}.${scheduledVisit.notes ? ` ${scheduledVisit.notes}` : ''}`,
+      )
+    }
+
     finalAction = 'reply'
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)

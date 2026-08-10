@@ -56,6 +56,7 @@ vi.mock('./tools', () => ({
     executeTool: vi.fn(),
     hasPendingActions: () => false,
     getHandoffRequest: () => h.state.toolHandoff,
+    getScheduledVisit: () => null,
     getTrustedPriceAmounts: () => [],
     wasCatalogueVerified: () => false,
   }),

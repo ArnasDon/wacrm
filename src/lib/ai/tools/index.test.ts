@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { DEFAULT_AGENT_TOOLS, type AgentToolKey } from '../tool-permissions'
 import { createAutoReplyTools } from './index'
+import { searchCatalogues } from '@/lib/catalog/search'
 
 const mocks = vi.hoisted(() => ({
   addContactTagIfAbsent: vi.fn(),
+  generateReply: vi.fn(),
 }))
 
 vi.mock('@/lib/contacts/tag-write', () => ({
@@ -12,6 +14,7 @@ vi.mock('@/lib/contacts/tag-write', () => ({
 }))
 vi.mock('@/lib/catalog/search', () => ({ searchCatalogues: vi.fn() }))
 vi.mock('../knowledge', () => ({ retrieveKnowledge: vi.fn() }))
+vi.mock('../generate', () => ({ generateReply: mocks.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({
   engineSendInteractiveButtons: vi.fn(),
   engineSendMedia: vi.fn(),
@@ -37,7 +40,13 @@ function runtime(
     conversationId: 'conversation-1',
     contactId: 'contact-1',
     configOwnerUserId: 'user-1',
-    config: { agentId, embeddingsApiKey: null },
+    config: {
+      agentId,
+      embeddingsApiKey: null,
+      provider: 'openai',
+      model: 'test-model',
+      apiKey: 'test-key',
+    },
     permissions: permissions(enabled),
     onToolCall,
   })
@@ -143,6 +152,132 @@ describe('CRM agent tools', () => {
       currency: 'MZN',
       status: 'open',
     })
+  })
+
+  it('schedules a store visit for a valid future datetime', async () => {
+    let inserted: Record<string, unknown> | null = null
+    const db = {
+      from: () => {
+        const chain = {
+          insert: (payload: Record<string, unknown>) => {
+            inserted = payload
+            return chain
+          },
+          select: () => chain,
+          single: () =>
+            Promise.resolve({
+              data: { id: 'visit-1', scheduled_at: '2026-08-20T13:00:00.000Z' },
+              error: null,
+            }),
+        }
+        return chain
+      },
+    } as unknown as WacrmSupabaseClient
+
+    const tools = runtime(db, 'schedule_visit')
+    const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1_000).toISOString()
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'schedule_visit',
+        arguments: JSON.stringify({ scheduled_at: future, notes: 'Quer experimentar leggings.' }),
+      }),
+    )
+
+    expect(result).toMatchObject({ ok: true, scheduled: true })
+    expect(inserted).toMatchObject({
+      account_id: 'account-1',
+      contact_id: 'contact-1',
+      conversation_id: 'conversation-1',
+      notes: 'Quer experimentar leggings.',
+    })
+    expect(tools.getScheduledVisit()).toMatchObject({ notes: 'Quer experimentar leggings.' })
+  })
+
+  it('rejects scheduling a visit in the past', async () => {
+    const tools = runtime({} as WacrmSupabaseClient, 'schedule_visit')
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()
+
+    await expect(
+      tools.executeTool({
+        id: 'call-1',
+        name: 'schedule_visit',
+        arguments: JSON.stringify({ scheduled_at: past }),
+      }),
+    ).rejects.toThrow('scheduled_at must be in the future.')
+    expect(tools.getScheduledVisit()).toBeNull()
+  })
+
+  it('gives a style opinion using the real photo of a product found earlier in the conversation', async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'product-1',
+        name: 'Legging Alta Performance',
+        description: null,
+        price: 1500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/legging.jpg',
+        productUrl: null,
+        category: 'Leggings',
+        stockQuantity: 5,
+        sourceName: 'LC Fitness',
+      },
+    ])
+    mocks.generateReply.mockResolvedValue({
+      text: '1. Legging Alta Performance: cintura alta e tecido flexível, óptima para o seu tipo de corpo.',
+      handoff: false,
+      usage: null,
+    })
+
+    const tools = createAutoReplyTools({
+      db: {} as WacrmSupabaseClient,
+      accountId: 'account-1',
+      conversationId: 'conversation-1',
+      contactId: 'contact-1',
+      configOwnerUserId: 'user-1',
+      config: { provider: 'openai', model: 'test-model', apiKey: 'test-key', embeddingsApiKey: null },
+      permissions: {
+        ...Object.fromEntries(
+          Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, false]),
+        ),
+        search_catalog: true,
+        get_style_opinion: true,
+      } as Record<AgentToolKey, boolean>,
+    })
+    const searchResult = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_catalog',
+        arguments: JSON.stringify({ query: 'legging' }),
+      }),
+    )
+    const productRef = searchResult.products[0].product_ref
+
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-2',
+        name: 'get_style_opinion',
+        arguments: JSON.stringify({
+          product_refs: [productRef],
+          customer_description: 'Sou baixinha e prefiro roupas mais reservadas.',
+        }),
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.opinion).toContain('cintura alta')
+    expect(mocks.generateReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            role: 'user',
+            content: expect.arrayContaining([
+              expect.objectContaining({ type: 'image_url', url: 'https://cdn.example.com/legging.jpg' }),
+            ]),
+          }),
+        ],
+      }),
+    )
   })
 
   it('records a structured handoff without trusting customer-facing text', async () => {

@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { validateDealStageRequirements } from "@/lib/pipelines/validation";
+import { CURRENCIES } from "@/lib/currency";
 
 interface DealFormProps {
   open: boolean;
@@ -835,6 +836,48 @@ export function DealForm({
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            {/* VALOR DO NEGÓCIO & DATA DE FECHAMENTO Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  VALOR DO NEGÓCIO
+                </label>
+                <div className="relative flex items-center">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="0.00"
+                    className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary pl-3 pr-24 font-semibold"
+                  />
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="absolute right-1.5 h-7 rounded border-0 bg-background/80 px-2 text-xs font-bold text-foreground outline-none cursor-pointer hover:bg-muted"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} ({c.symbol})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  DATA DE FECHAMENTO
+                </label>
+                <Input
+                  type="date"
+                  value={expectedCloseDate}
+                  onChange={(e) => setExpectedCloseDate(e.target.value)}
+                  className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                />
               </div>
             </div>
 

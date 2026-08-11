@@ -548,12 +548,14 @@ function DealPipelineFields({
 function SendTemplateFields({
   templateName,
   language,
+  variables,
   onChange,
   t,
 }: {
   templateName: string
   language: string
-  onChange: (patch: { template_name: string; language: string }) => void
+  variables: Record<string, string>
+  onChange: (patch: { template_name: string; language: string; variables?: Record<string, string> }) => void
   t: ReturnType<typeof useTranslations>
 }) {
   const { templates } = useResources()
@@ -565,7 +567,7 @@ function SendTemplateFields({
           <Input
             value={templateName}
             onChange={(e) =>
-              onChange({ template_name: e.target.value, language })
+              onChange({ template_name: e.target.value, language, variables })
             }
             className="bg-muted text-foreground"
           />
@@ -574,7 +576,7 @@ function SendTemplateFields({
           <Input
             value={language}
             onChange={(e) =>
-              onChange({ template_name: templateName, language: e.target.value })
+              onChange({ template_name: templateName, language: e.target.value, variables })
             }
             className="bg-muted text-foreground"
           />
@@ -591,32 +593,73 @@ function SendTemplateFields({
     (t) => toValue(t.name, t.language ?? "en_US") === current,
   )
 
+  const tmpl = templates.find(
+    (t) => t.name === templateName && (t.language ?? "en_US") === language
+  )
+
+  const bodyVars: string[] = []
+  if (tmpl?.body_text) {
+    const matches = tmpl.body_text.match(/\{\{(\d+)\}\}/g)
+    if (matches) {
+      matches.forEach((m) => {
+        const num = m.replace(/\{\{|\}\}/g, "")
+        if (!bodyVars.includes(num)) {
+          bodyVars.push(num)
+        }
+      })
+    }
+  }
+  bodyVars.sort((a, b) => Number(a) - Number(b))
+
   return (
-    <FieldBlock label={t("templates.templateLabel")}>
-      <select
-        value={current}
-        onChange={(e) => {
-          const [name, lang] = e.target.value.split("::")
-          onChange({ template_name: name ?? "", language: lang ?? "" })
-        }}
-        className={SELECT_CLASS}
-      >
-        <option value="">{t("templates.select")}</option>
-        {templates.map((tmpl) => {
-          const lang = tmpl.language ?? "en_US"
-          return (
-            <option key={tmpl.id} value={toValue(tmpl.name, lang)}>
-              {tmpl.name} ({lang})
+    <div className="space-y-4">
+      <FieldBlock label={t("templates.templateLabel")}>
+        <select
+          value={current}
+          onChange={(e) => {
+            const [name, lang] = e.target.value.split("::")
+            onChange({ template_name: name ?? "", language: lang ?? "", variables: {} })
+          }}
+          className={SELECT_CLASS}
+        >
+          <option value="">{t("templates.select")}</option>
+          {templates.map((tmpl) => {
+            const lang = tmpl.language ?? "en_US"
+            return (
+              <option key={tmpl.id} value={toValue(tmpl.name, lang)}>
+                {tmpl.name} ({lang})
+              </option>
+            )
+          })}
+          {current && !hasMatch && (
+            <option value={current}>
+              {t("templates.unknown", { name: templateName, lang: language || t("templates.unknownLang") })}
             </option>
-          )
-        })}
-        {current && !hasMatch && (
-          <option value={current}>
-            {t("templates.unknown", { name: templateName, lang: language || t("templates.unknownLang") })}
-          </option>
-        )}
-      </select>
-    </FieldBlock>
+          )}
+        </select>
+      </FieldBlock>
+
+      {bodyVars.length > 0 && (
+        <div className="space-y-3 border-t border-border pt-4 mt-4">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Variáveis do Modelo
+          </h4>
+          {bodyVars.map((varNum) => (
+            <FieldBlock key={varNum} label={`Variável {{${varNum}}}`}>
+              <Input
+                value={variables?.[varNum] ?? ""}
+                onChange={(e) => {
+                  const nextVars = { ...variables, [varNum]: e.target.value }
+                  onChange({ template_name: templateName, language, variables: nextVars })
+                }}
+                placeholder="Ex: {{contact.name}} ou texto fixo"
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1324,6 +1367,7 @@ function StepEditor({
         <SendTemplateFields
           templateName={(cfg.template_name as string) ?? ""}
           language={(cfg.language as string) ?? ""}
+          variables={(cfg.variables as Record<string, string>) ?? {}}
           onChange={(patch) => set(patch)}
           t={t}
         />

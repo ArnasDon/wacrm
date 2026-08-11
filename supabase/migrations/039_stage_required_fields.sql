@@ -12,3 +12,5 @@ SET search_path TO public;
 
 ALTER TABLE public.pipeline_stages
   ADD COLUMN IF NOT EXISTS required_fields JSONB DEFAULT '[]'::jsonb;
+
+NOTIFY pgrst, 'reload schema';

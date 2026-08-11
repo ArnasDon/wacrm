@@ -49,6 +49,8 @@ interface DealFormProps {
   defaultStageId?: string;
   /** Pre-select a contact when opening the form to create a deal from inbox. */
   initialContactId?: string;
+  /** Pre-fill the deal title with the contact's name. */
+  initialContactName?: string;
   /** Pre-link a conversation when opening the form from inbox. */
   initialConversationId?: string;
   onSaved: () => void;
@@ -86,6 +88,7 @@ export function DealForm({
   stages: initialStages,
   defaultStageId,
   initialContactId,
+  initialContactName,
   initialConversationId,
   onSaved,
 }: DealFormProps) {
@@ -183,7 +186,8 @@ export function DealForm({
       setProduct(parsedMeta.product || "");
       setUserNotes(parsedMeta.userNotes || (deal.notes?.startsWith("{") ? "" : deal.notes) || "");
     } else {
-      setTitle("");
+      // Pre-fill title with the contact's name when opening from the inbox
+      setTitle(initialContactName ?? "");
       setValue("");
       setCurrency(defaultCurrency);
       setContactId(initialContactId ?? "");
@@ -198,7 +202,7 @@ export function DealForm({
       setProduct("");
       setUserNotes("");
     }
-  }, [open, deal, pipelineId, defaultStageId, initialStages, defaultCurrency, initialContactId]);
+  }, [open, deal, pipelineId, defaultStageId, initialStages, defaultCurrency, initialContactId, initialContactName]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Load contacts and profiles

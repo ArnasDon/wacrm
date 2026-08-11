@@ -363,6 +363,7 @@ export function ContactSidebar({ contact, conversationId }: ContactSidebarProps)
             s.name.toLowerCase() !== 'perdido'
         )?.id ?? pipelineStages[0]?.id ?? ""}
         initialContactId={contact?.id}
+        initialContactName={contact?.name || contact?.phone || ""}
         initialConversationId={conversationId}
         onSaved={() => {
           setDealFormOpen(false);

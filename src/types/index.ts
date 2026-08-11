@@ -348,6 +348,11 @@ export interface PipelineStage {
   name: string;
   position: number;
   color: string;
+  /**
+   * When true, the stage cannot be deleted from the UI.
+   * Set on "Ganho" and "Perdido" by migration 038.
+   */
+  is_protected?: boolean;
   created_at: string;
 }
 

@@ -591,7 +591,9 @@
       "toastMoveOrDeleteDeals": "먼저 이 단계의 딜을 이동하거나 삭제하세요",
       "toastFailedDeleteStage": "단계를 삭제하지 못했습니다",
       "toastFailedDeletePipeline": "파이프라인을 삭제하지 못했습니다",
-      "toastDeleted": "파이프라인이 삭제되었습니다"
+      "toastDeleted": "파이프라인이 삭제되었습니다",
+      "toastCannotDeleteProtectedStage": "\"Ganho\" 및 \"Perdido\" 단계는 삭제할 수 없습니다",
+      "protectedStageTooltip": "이 단계는 보호되어 삭제하거나 이름을 변경할 수 없습니다"
     },
     "analytics": {
       "totalDeals": "전체 딜",

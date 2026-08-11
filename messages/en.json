@@ -591,7 +591,9 @@
       "toastMoveOrDeleteDeals": "Move or delete deals in this stage first",
       "toastFailedDeleteStage": "Failed to delete stage",
       "toastFailedDeletePipeline": "Failed to delete pipeline",
-      "toastDeleted": "Pipeline deleted"
+      "toastDeleted": "Pipeline deleted",
+      "toastCannotDeleteProtectedStage": "The \"Ganho\" and \"Perdido\" stages cannot be deleted",
+      "protectedStageTooltip": "This stage is protected and cannot be deleted or renamed"
     },
     "analytics": {
       "totalDeals": "Total Deals",

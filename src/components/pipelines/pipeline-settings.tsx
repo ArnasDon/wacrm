@@ -33,6 +33,7 @@ import {
   Plus,
   GripVertical,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -49,6 +50,16 @@ const STAGE_COLORS = [
   "#14b8a6",
   "#06b6d4",
 ];
+
+/** A stage is protected if the DB flag is set OR the name is one of the
+ * reserved outcome stages. The name check is a belt-and-suspenders guard
+ * for rows fetched before migration 038 ran.
+ */
+function isStageProtected(stage: PipelineStage): boolean {
+  if (stage.is_protected) return true;
+  const n = stage.name.toLowerCase();
+  return n === "ganho" || n === "perdido";
+}
 
 interface PipelineSettingsProps {
   open: boolean;
@@ -162,6 +173,11 @@ export function PipelineSettings({
   }
 
   async function handleRemoveStage(stageId: string) {
+    const stage = localStages.find((s) => s.id === stageId);
+    if (stage && isStageProtected(stage)) {
+      toast.error(t("toastCannotDeleteProtectedStage"));
+      return;
+    }
     // Refuse to delete if deals still reference the stage (FK would fail).
     const { count } = await supabase
       .from("deals")
@@ -264,6 +280,7 @@ export function PipelineSettings({
                         <SortableStageRow
                           key={stage.id}
                           stage={stage}
+                          protected={isStageProtected(stage)}
                           onNameChange={(v) => {
                             const updated = [...localStages];
                             updated[index] = { ...updated[index], name: v };
@@ -366,6 +383,7 @@ export function PipelineSettings({
 
 function SortableStageRow({
   stage,
+  protected: isProtected,
   onNameChange,
   onColorChange,
   onRemove,
@@ -373,6 +391,7 @@ function SortableStageRow({
   t,
 }: {
   stage: PipelineStage;
+  protected: boolean;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
   onRemove: () => void;
@@ -393,7 +412,9 @@ function SortableStageRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2"
+      className={`flex items-center gap-2 rounded-lg border bg-muted p-2 ${
+        isProtected ? "border-primary/30" : "border-border"
+      }`}
     >
       <button
         type="button"
@@ -404,20 +425,32 @@ function SortableStageRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} t={t} />
+      <ColorSwatch value={stage.color} onChange={isProtected ? () => {} : onColorChange} colors={colors} t={t} />
       <Input
         value={stage.name}
-        onChange={(e) => onNameChange(e.target.value)}
-        className="h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border"
+        onChange={(e) => !isProtected && onNameChange(e.target.value)}
+        readOnly={isProtected}
+        className={`h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border ${
+          isProtected ? "cursor-default select-none opacity-80" : ""
+        }`}
       />
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onRemove}
-        className="text-muted-foreground hover:text-red-400"
-      >
-        <Trash2 className="h-3 w-3" />
-      </Button>
+      {isProtected ? (
+        <span
+          title={t("protectedStageTooltip")}
+          className="flex items-center justify-center text-primary/60"
+        >
+          <Lock className="h-3.5 w-3.5" />
+        </span>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          className="text-muted-foreground hover:text-red-400"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }

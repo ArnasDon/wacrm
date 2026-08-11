@@ -1,5 +1,6 @@
 import type { AccountRole } from "@/lib/auth/roles";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+import type { ResponderColor } from "@/lib/responder-color";
 
 export type {
   InteractiveMessagePayload,
@@ -516,6 +517,14 @@ export interface Deal {
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+  /**
+   * Client-derived, not a DB column — the color of the "last internal
+   * responder" indicator bar, merged in by `loadDeals` (pipelines page)
+   * from the same source `colorForConversation` uses for the Inbox, so
+   * a lead's card matches in both places. Undefined until that merge
+   * runs.
+   */
+  responder_color?: ResponderColor;
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';

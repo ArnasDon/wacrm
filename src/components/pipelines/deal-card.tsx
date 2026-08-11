@@ -3,6 +3,8 @@
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { RESPONDER_COLOR_CLASS } from "@/lib/responder-color";
+import { cn } from "@/lib/utils";
 
 interface DealCardProps {
   deal: Deal;
@@ -79,6 +81,16 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           {showPhoneLine && (
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           )}
+          {/* Last-internal-responder indicator — no text/icon, color only.
+              Same source as the Inbox (colorForConversation), keyed by
+              conversation_id, so a lead's card matches in both places. */}
+          <span
+            aria-hidden
+            className={cn(
+              "mt-1.5 block h-1 w-8 rounded-full",
+              RESPONDER_COLOR_CLASS[deal.responder_color ?? "gray"],
+            )}
+          />
         </div>
         {deal.status === "won" && (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">

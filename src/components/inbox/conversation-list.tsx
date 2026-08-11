@@ -9,7 +9,12 @@ import {
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
-import type { Conversation, ConversationStatus, Tag } from "@/types";
+import {
+  RESPONDER_COLOR_CLASS,
+  colorForConversation,
+  type ResponderColor,
+} from "@/lib/responder-color";
+import type { Conversation, ConversationStatus, Profile, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -42,6 +47,12 @@ interface ConversationListProps {
    * user can still change the filter afterwards via the dropdown.
    */
   initialFilter?: InboxFilter;
+  /** Team profiles — builds the "Atendente" filter and resolves the
+   *  responder-indicator color (with `lastAgentSenderMap`). */
+  profiles: Profile[];
+  /** Conversation id → user id of whoever last sent an internal (agent)
+   *  message on it. See `src/lib/responder-color.ts`. */
+  lastAgentSenderMap: Map<string, string>;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -61,6 +72,8 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
   initialFilter,
+  profiles,
+  lastAgentSenderMap,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
 
@@ -89,6 +102,18 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+
+  // WhatsApp-style "Todas / Não lidas" toggle, kept independent of the
+  // Status dropdown above (open/pending/closed/unanswered) — the two
+  // combine via AND like every other filter here, not a replacement for
+  // it. "all" is a no-op; "unread" mirrors the Status dropdown's own
+  // "unread" option so either control gets you there.
+  const [readFilter, setReadFilter] = useState<"all" | "unread">("all");
+  // "Atendente" — filters by the lead's assigned responsible
+  // (`assigned_agent_id`), NOT by who last replied (that's the
+  // indicator bar's job, a different concept — see AGENTS task).
+  // "all" is a no-op; otherwise a `profiles.user_id`.
+  const [attendantFilter, setAttendantFilter] = useState<string>("all");
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -224,6 +249,14 @@ export function ConversationList({
       );
     }
 
+    if (readFilter === "unread") {
+      result = result.filter((c) => c.unread_count > 0);
+    }
+
+    if (attendantFilter !== "all") {
+      result = result.filter((c) => c.assigned_agent_id === attendantFilter);
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((c) => {
@@ -235,7 +268,16 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, unansweredIds]);
+  }, [
+    conversations,
+    filter,
+    search,
+    selectedTagIds,
+    selectedCompany,
+    unansweredIds,
+    readFilter,
+    attendantFilter,
+  ]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -281,6 +323,88 @@ export function ConversationList({
             placeholder={t("searchPlaceholder")}
             className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
           />
+        </div>
+
+        {/* WhatsApp-style "Todas / Não lidas" toggle + Atendente filter,
+            pushed apart so Atendente lands at the right edge. Wraps
+            under itself on narrow widths via flex-wrap, same as the row
+            below. */}
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5">
+            <button
+              onClick={() => setReadFilter("all")}
+              className={cn(
+                "h-6 rounded px-2 text-xs transition-colors",
+                readFilter === "all"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("filterAll")}
+            </button>
+            <button
+              onClick={() => setReadFilter("unread")}
+              className={cn(
+                "h-6 rounded px-2 text-xs transition-colors",
+                readFilter === "unread"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t("filterUnread")}
+            </button>
+          </div>
+
+          {profiles.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex max-w-40 items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  attendantFilter !== "all"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="truncate">
+                  {attendantFilter === "all"
+                    ? t("allAttendants")
+                    : profiles.find((p) => p.user_id === attendantFilter)
+                        ?.full_name ?? t("allAttendants")}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-64 w-56 border-border bg-popover"
+              >
+                <DropdownMenuItem
+                  onClick={() => setAttendantFilter("all")}
+                  className={cn(
+                    "text-sm",
+                    attendantFilter === "all"
+                      ? "text-primary"
+                      : "text-popover-foreground"
+                  )}
+                >
+                  {t("allAttendants")}
+                </DropdownMenuItem>
+                {profiles.map((p) => (
+                  <DropdownMenuItem
+                    key={p.user_id}
+                    onClick={() => setAttendantFilter(p.user_id)}
+                    className={cn(
+                      "text-sm",
+                      attendantFilter === p.user_id
+                        ? "text-primary"
+                        : "text-popover-foreground"
+                    )}
+                  >
+                    <span className="truncate">{p.full_name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
@@ -461,6 +585,11 @@ export function ConversationList({
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
                 t={t}
+                responderColor={colorForConversation(
+                  conv.id,
+                  lastAgentSenderMap,
+                  profiles
+                )}
               />
             ))}
           </div>
@@ -475,6 +604,7 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
+  responderColor: ResponderColor;
 }
 
 function ConversationItem({
@@ -482,6 +612,7 @@ function ConversationItem({
   isActive,
   onSelect,
   t,
+  responderColor,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
@@ -547,6 +678,16 @@ function ConversationItem({
             )}
           </div>
         </div>
+        {/* Last-internal-responder indicator — no text/icon, color only
+            (blue = Ronaldo, pink = Tatiana, gray = no internal reply
+            yet). Same source as the Pipeline's DealCard bar. */}
+        <span
+          aria-hidden
+          className={cn(
+            "mt-1.5 block h-1 w-8 rounded-full",
+            RESPONDER_COLOR_CLASS[responderColor]
+          )}
+        />
       </div>
     </button>
   );

@@ -85,6 +85,14 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * The dashboard user sending this message, persisted on `messages.sender_id`
+   * so features like the Inbox/Pipeline "last internal responder" indicator
+   * can tell Ronaldo's replies from Tatiana's. Omitted by the public v1 API
+   * (no dashboard user, an external integration sent it) — sender_id stays
+   * null there, same as historic messages sent before this field existed.
+   */
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -198,6 +206,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    senderId,
   } = params;
 
   if (!conversationId) {
@@ -465,6 +474,7 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      sender_id: senderId || null,
       content_type: messageType,
       content_text: interactiveBody ?? contentText ?? null,
       media_url: mediaUrl || null,

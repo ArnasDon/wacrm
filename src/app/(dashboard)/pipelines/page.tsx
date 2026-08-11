@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { DEAL_SELECT, normalizeDeals } from "@/lib/pipelines/deals";
+import { colorForConversation, fetchLastAgentSenderMap } from "@/lib/responder-color";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
@@ -99,12 +100,32 @@ export default function PipelinesPage() {
 
   const loadDeals = useCallback(
     async (pipelineId: string) => {
-      const { data } = await supabase
-        .from("deals")
-        .select(DEAL_SELECT)
-        .eq("pipeline_id", pipelineId)
-        .order("created_at", { ascending: false });
-      return normalizeDeals(data ?? []);
+      // The "last internal responder" indicator bar needs, for every
+      // deal, who last answered its conversation — fetched here as one
+      // extra aggregate query (not per-card) and merged in, using the
+      // exact same `colorForConversation` the Inbox uses so a lead's
+      // card shows the same color in both places (see AGENTS task).
+      const [{ data }, { data: profiles }, lastAgentSenderMap] =
+        await Promise.all([
+          supabase
+            .from("deals")
+            .select(DEAL_SELECT)
+            .eq("pipeline_id", pipelineId)
+            .order("created_at", { ascending: false }),
+          supabase.from("profiles").select("*"),
+          fetchLastAgentSenderMap(supabase).catch((error) => {
+            console.error("Failed to load last agent senders:", error);
+            return new Map<string, string>();
+          }),
+        ]);
+      return normalizeDeals(data ?? []).map((deal) => ({
+        ...deal,
+        responder_color: colorForConversation(
+          deal.conversation_id,
+          lastAgentSenderMap,
+          profiles ?? [],
+        ),
+      }));
     },
     [supabase],
   );

@@ -171,6 +171,7 @@ export async function POST(request: Request) {
             contentText: message.content_text,
             mediaUrl,
             filename: message.content_type === 'document' ? message.content_text : undefined,
+            senderId: userId,
           })
           return { contact_id: contactId, success: true }
         } catch (err) {

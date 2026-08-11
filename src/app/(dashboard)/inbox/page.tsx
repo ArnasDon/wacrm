@@ -8,7 +8,8 @@ import {
   CONVERSATION_SELECT,
   normalizeConversation,
 } from "@/lib/inbox/conversations";
-import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type { Conversation, Message, Contact, ConversationStatus, Profile } from "@/types";
+import { fetchLastAgentSenderMap } from "@/lib/responder-color";
 import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
@@ -95,6 +96,49 @@ function InboxPageInner() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+
+  /**
+   * Team profiles (for the Inbox "Atendente" filter and to resolve the
+   * responder-indicator color) and, for every conversation, the user id
+   * of whoever last sent an internal (agent) message on it. Both are
+   * account-scoped by RLS. The map is seeded from a single aggregate
+   * query (`list_conversation_last_agent_senders`, migration 054 — no
+   * per-card query) and kept live by the same message-INSERT realtime
+   * events that already patch `last_message_text` below, plus an
+   * optimistic patch on send (handleNewMessage) for instant feedback.
+   */
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [lastAgentSenderMap, setLastAgentSenderMap] = useState<
+    Map<string, string>
+  >(new Map());
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("profiles").select("*");
+      if (!cancelled && data) setProfiles(data as Profile[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await fetchLastAgentSenderMap(supabase);
+        if (!cancelled) setLastAgentSenderMap(map);
+      } catch (error) {
+        console.error("Failed to load last agent senders:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resyncToken]);
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
@@ -256,6 +300,18 @@ function InboxPageInner() {
       const newMsg = event.new;
 
       if (event.eventType === "INSERT") {
+        // Keep the "last internal responder" map live — only an agent
+        // message with an attributed sender can change a conversation's
+        // color (customer messages and unattributed sends never do).
+        if (newMsg.sender_type === "agent" && newMsg.sender_id) {
+          const senderId = newMsg.sender_id;
+          setLastAgentSenderMap((prev) => {
+            const next = new Map(prev);
+            next.set(newMsg.conversation_id, senderId);
+            return next;
+          });
+        }
+
         // Add to messages if it belongs to active conversation
         if (
           activeConversation &&
@@ -559,6 +615,19 @@ function InboxPageInner() {
       if (prev.some((m) => m.id === msg.id)) return prev;
       return [...prev, msg];
     });
+    // Optimistic color update: the realtime echo for the sender's own
+    // send round-trips through the DB, so patch the map immediately
+    // rather than waiting for it (mirrors the optimistic message bubble
+    // itself, which message-thread.tsx already shows before the send
+    // resolves).
+    if (msg.sender_type === "agent" && msg.sender_id) {
+      const senderId = msg.sender_id;
+      setLastAgentSenderMap((prev) => {
+        const next = new Map(prev);
+        next.set(msg.conversation_id, senderId);
+        return next;
+      });
+    }
   }, []);
 
   const handleUpdateMessage = useCallback(
@@ -696,6 +765,8 @@ function InboxPageInner() {
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
             initialFilter={initialInboxFilter}
+            profiles={profiles}
+            lastAgentSenderMap={lastAgentSenderMap}
           />
         </div>
 

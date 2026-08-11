@@ -3,6 +3,7 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { DEFAULT_AGENT_TOOLS, type AgentToolKey } from '../tool-permissions'
 import { createAutoReplyTools } from './index'
 import { searchCatalogues } from '@/lib/catalog/search'
+import { engineSendMedia } from '@/lib/flows/meta-send'
 
 const mocks = vi.hoisted(() => ({
   addContactTagIfAbsent: vi.fn(),
@@ -376,5 +377,80 @@ describe('CRM agent tools', () => {
 
     expect(tools.getTrustedPriceAmounts()).toEqual([250])
     expect(tools.wasCatalogueVerified()).toBe(false)
+  })
+
+  it('continues sending remaining product photos when one send fails', async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'product-1',
+        name: 'Legging Alta Performance',
+        description: null,
+        price: 1500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/legging-1.jpg',
+        productUrl: null,
+        category: 'Leggings',
+        stockQuantity: 5,
+        sourceName: 'LC Fitness',
+      },
+      {
+        id: 'product-2',
+        name: 'Legging Alta Performance Branca',
+        description: null,
+        price: 1500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/legging-2.jpg',
+        productUrl: null,
+        category: 'Leggings',
+        stockQuantity: 5,
+        sourceName: 'LC Fitness',
+      },
+      {
+        id: 'product-3',
+        name: 'Top Alças Duplas',
+        description: null,
+        price: 1500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/top.jpg',
+        productUrl: null,
+        category: 'Tops',
+        stockQuantity: 5,
+        sourceName: 'LC Fitness',
+      },
+    ])
+    let updateCalls = 0
+    const db = {
+      from: () => {
+        const chain = {
+          update: () => chain,
+          eq: () => chain,
+          then: (resolve: (result: { error: null }) => void) => {
+            updateCalls += 1
+            resolve({ error: null })
+          },
+        }
+        return chain
+      },
+    } as unknown as WacrmSupabaseClient
+
+    vi.mocked(engineSendMedia)
+      .mockResolvedValueOnce({ whatsapp_message_id: 'wamid-1' } as never)
+      .mockRejectedValueOnce(new Error('WhatsApp API error'))
+      .mockResolvedValueOnce({ whatsapp_message_id: 'wamid-3' } as never)
+
+    const tools = runtime(db, 'search_catalog')
+    await tools.executeTool({
+      id: 'call-1',
+      name: 'search_catalog',
+      arguments: JSON.stringify({ query: 'legging' }),
+    })
+    expect(tools.hasPendingActions()).toBe(true)
+
+    const result = await tools.dispatchPendingActions()
+
+    expect(result).toEqual({ sent: 2, failed: 1 })
+    expect(engineSendMedia).toHaveBeenCalledTimes(3)
+    expect(updateCalls).toBe(2)
+    expect(tools.hasPendingActions()).toBe(false)
   })
 })

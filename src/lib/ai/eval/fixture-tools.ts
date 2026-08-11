@@ -25,6 +25,7 @@ export interface FixtureProduct {
   price: number
   currency: string
   imageUrl: string
+  stockQuantity: number
 }
 
 export const FIXTURE_CATALOG: FixtureProduct[] = [
@@ -36,6 +37,7 @@ export const FIXTURE_CATALOG: FixtureProduct[] = [
     price: 1500,
     currency: 'MZN',
     imageUrl: 'https://fixture.local/legging-preta.jpg',
+    stockQuantity: 12,
   },
   {
     productRef: 'fx-legging-branca',
@@ -45,6 +47,7 @@ export const FIXTURE_CATALOG: FixtureProduct[] = [
     price: 1500,
     currency: 'MZN',
     imageUrl: 'https://fixture.local/legging-branca.jpg',
+    stockQuantity: 12,
   },
   {
     productRef: 'fx-top-alcas',
@@ -54,6 +57,7 @@ export const FIXTURE_CATALOG: FixtureProduct[] = [
     price: 1500,
     currency: 'MZN',
     imageUrl: 'https://fixture.local/top-alcas.jpg',
+    stockQuantity: 12,
   },
   {
     productRef: 'fx-camiseta-costurada',
@@ -63,6 +67,7 @@ export const FIXTURE_CATALOG: FixtureProduct[] = [
     price: 2000,
     currency: 'MZN',
     imageUrl: 'https://fixture.local/camiseta-costurada.jpg',
+    stockQuantity: 12,
   },
   {
     productRef: 'fx-lacos',
@@ -72,6 +77,17 @@ export const FIXTURE_CATALOG: FixtureProduct[] = [
     price: 500,
     currency: 'MZN',
     imageUrl: 'https://fixture.local/lacos.jpg',
+    stockQuantity: 12,
+  },
+  {
+    productRef: 'fx-conjunto-esgotado',
+    name: 'Conjunto Fitness Premium',
+    color: 'Preta',
+    description: 'Top e calça a condizer, edição limitada.',
+    price: 2500,
+    currency: 'MZN',
+    imageUrl: 'https://fixture.local/conjunto-esgotado.jpg',
+    stockQuantity: 0,
   },
 ]
 
@@ -203,6 +219,7 @@ export function createFixtureTools(): {
             color: p.color,
             price: p.price,
             currency: p.currency,
+            stockQuantity: p.stockQuantity,
           })),
           found: matches.length > 0,
         })

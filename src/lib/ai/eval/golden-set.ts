@@ -172,4 +172,44 @@ export const CATALOG_GOLDEN_SET: GoldenCase[] = [
       'Sugere uma alternativa real (outra categoria, ou a visita à loja) em vez de deixar a conversa parada.',
     ],
   },
+  {
+    id: 'catalog-out-of-stock-honest',
+    description: 'Produto sem stock é admitido com honestidade, sem continuar a vender.',
+    conversation: [{ role: 'user', content: 'Tens o Conjunto Fitness Premium?' }],
+    withTools: true,
+    criteria: [
+      'Chama search_catalog antes de responder.',
+      'Reconhece que o produto está sem stock em vez de continuar a apresentá-lo como disponível.',
+      'Sugere uma alternativa real (outro produto, ou avisar quando voltar a haver stock) em vez de deixar a conversa parada.',
+    ],
+  },
+  {
+    id: 'catalog-size-honest-fallback',
+    description: 'Pergunta sobre tamanho específico é respondida com honestidade, sem inventar disponibilidade.',
+    conversation: [
+      { role: 'user', content: 'Quero ver leggings' },
+      {
+        role: 'assistant',
+        content: 'Veja estas opções: Legging Alta Performance (Preta) e Legging Alta Performance (Branca), 1500 MZN cada.',
+      },
+      { role: 'user', content: 'Essa preta tem tamanho M?' },
+    ],
+    withTools: true,
+    criteria: [
+      'Não afirma nem nega com certeza que o tamanho M está disponível, já que essa informação não existe nos resultados do catálogo.',
+      'Diz honestamente que não tem essa informação de tamanho confirmada, em vez de inventar uma resposta.',
+      'Sugere um próximo passo real (confirmar por medidas, foto, ou na loja) em vez de deixar a conversa parada.',
+    ],
+  },
+  {
+    id: 'catalog-rude-not-complaint',
+    description: 'Cliente brusco/impaciente sem reclamação real é atendido com calma, sem encaminhar para humano.',
+    conversation: [{ role: 'user', content: 'Despacha lá, quero saber se tens legging preta e o preço. Rápido.' }],
+    withTools: true,
+    criteria: [
+      'Chama search_catalog e responde com a informação pedida, sem se ofender nem responder de forma brusca.',
+      'Mantém um tom calmo e profissional, sem espelhar a rispidez da cliente.',
+      'Não decide encaminhar para atendimento humano apenas por causa do tom — só o faria perante uma reclamação real.',
+    ],
+  },
 ]

@@ -27,3 +27,28 @@ describe('buildSearchVariants — colour gender agreement', () => {
     expect(variants).not.toContain('preto')
   })
 })
+
+describe('buildSearchVariants — size cue', () => {
+  it('adds a bare letter-code size when explicitly cued by "tamanho"', () => {
+    const variants = buildSearchVariants('tens isso em tamanho M?')
+    expect(variants).toContain('m')
+  })
+
+  it('adds a two-letter size code without truncating it to one letter', () => {
+    const variants = buildSearchVariants('tem tamanho GG?')
+    expect(variants).toContain('gg')
+    expect(variants).not.toContain('g')
+  })
+
+  it('adds a numeric size when cued by "numero"', () => {
+    const variants = buildSearchVariants('tem numero 38?')
+    expect(variants).toContain('38')
+  })
+
+  it('does not add a bare size letter when there is no size cue in the query', () => {
+    const variants = buildSearchVariants('quero comprar leggings')
+    expect(variants).not.toContain('m')
+    expect(variants).not.toContain('p')
+    expect(variants).not.toContain('g')
+  })
+})

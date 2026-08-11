@@ -44,6 +44,8 @@ export interface DispatchArgs {
 const HANDOFF_NOTICE = 'Vou encaminhar o seu atendimento à nossa equipa para continuar consigo.'
 const TEMPORARY_FAILURE_NOTICE =
   'Não consegui concluir esta consulta neste momento. Vou encaminhar o seu atendimento à nossa equipa para que possa continuar sem ficar à espera.'
+const MEDIA_SEND_FAILURE_NOTICE =
+  'Não consegui enviar as fotos agora. Diga-me quais produtos procura que confirmo os detalhes por aqui.'
 
 function logSkip(conversationId: string, reason: string) {
   console.info(`[ai auto-reply] conversation ${conversationId} skipped: ${reason}`)
@@ -455,7 +457,12 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     }
 
     if (hasPendingActions) {
-      await agentTools.dispatchPendingActions()
+      const { sent, failed } = await agentTools.dispatchPendingActions()
+      if (failed > 0 && sent === 0) {
+        await sendStaticNotice(args, MEDIA_SEND_FAILURE_NOTICE)
+      } else if (failed > 0) {
+        console.warn('[ai auto-reply] partial media send failure:', { conversationId, sent, failed })
+      }
     }
 
     if (!hasPendingActions && text) {

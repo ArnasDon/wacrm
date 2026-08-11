@@ -41,7 +41,7 @@ export interface ScheduledVisitRequest {
 interface ToolSet {
   tools: AgentToolDefinition[]
   executeTool: AgentToolExecutor
-  dispatchPendingActions: () => Promise<number>
+  dispatchPendingActions: () => Promise<{ sent: number; failed: number }>
   hasPendingActions: () => boolean
   getHandoffRequest: () => HandoffToolRequest | null
   getScheduledVisit: () => ScheduledVisitRequest | null
@@ -822,14 +822,60 @@ export function createAutoReplyTools(args: {
       pendingProductSends.length > 0 || pendingProductGalleries.length > 0,
     dispatchPendingActions: async () => {
       let sent = 0
+      let failed = 0
 
       // Plain photo + caption per product, like a person forwarding photos —
       // no button card. The customer picks one by replying to that photo or
       // naming/describing it in a normal message; buildConversationContext
       // already resolves a quoted reply back to the product it names.
       // Awaiting every send preserves the intended ordering end-to-end.
+      // Each send is isolated so one bad photo (broken URL, WhatsApp API
+      // error) doesn't abort the rest of the batch — see auto-reply.ts's
+      // handling of the returned counts for what the customer sees.
       for (const gallery of pendingProductGalleries.splice(0)) {
         for (const item of gallery.items) {
+          try {
+            const result = await engineSendMedia({
+              accountId,
+              userId: configOwnerUserId,
+              conversationId,
+              contactId,
+              kind: 'image',
+              link: item.imageUrl,
+              caption: item.caption,
+            })
+
+            const { error: enrichError } = await db
+              .from('messages')
+              .update({ media_url: item.displayImageUrl, ai_generated: true })
+              .eq('conversation_id', conversationId)
+              .eq('message_id', result.whatsapp_message_id)
+            if (enrichError) {
+              console.warn(
+                '[ai product gallery] media sent but inbox metadata update failed:',
+                enrichError.message,
+              )
+            }
+            sent += 1
+          } catch (error) {
+            failed += 1
+            console.error(
+              '[ai product gallery] media send failed, continuing with remaining items:',
+              { productRef: item.productRef, name: item.name, imageUrl: item.imageUrl, error },
+            )
+          }
+        }
+      }
+
+      for (const item of pendingProductSends.splice(0)) {
+        console.info('[ai send_product] sending product image:', {
+          productRef: item.productRef,
+          name: item.name,
+          deliveryUrl: item.imageUrl,
+          sourceUrl: item.displayImageUrl,
+        })
+
+        try {
           const result = await engineSendMedia({
             accountId,
             userId: configOwnerUserId,
@@ -847,46 +893,20 @@ export function createAutoReplyTools(args: {
             .eq('message_id', result.whatsapp_message_id)
           if (enrichError) {
             console.warn(
-              '[ai product gallery] media sent but inbox metadata update failed:',
+              '[ai send_product] media sent but inbox metadata update failed:',
               enrichError.message,
             )
           }
           sent += 1
-        }
-      }
-
-      for (const item of pendingProductSends.splice(0)) {
-        console.info('[ai send_product] sending product image:', {
-          productRef: item.productRef,
-          name: item.name,
-          deliveryUrl: item.imageUrl,
-          sourceUrl: item.displayImageUrl,
-        })
-
-        const result = await engineSendMedia({
-          accountId,
-          userId: configOwnerUserId,
-          conversationId,
-          contactId,
-          kind: 'image',
-          link: item.imageUrl,
-          caption: item.caption,
-        })
-
-        const { error: enrichError } = await db
-          .from('messages')
-          .update({ media_url: item.displayImageUrl, ai_generated: true })
-          .eq('conversation_id', conversationId)
-          .eq('message_id', result.whatsapp_message_id)
-        if (enrichError) {
-          console.warn(
-            '[ai send_product] media sent but inbox metadata update failed:',
-            enrichError.message,
+        } catch (error) {
+          failed += 1
+          console.error(
+            '[ai send_product] media send failed, continuing with remaining items:',
+            { productRef: item.productRef, name: item.name, imageUrl: item.imageUrl, error },
           )
         }
-        sent += 1
       }
-      return sent
+      return { sent, failed }
     },
   }
 }

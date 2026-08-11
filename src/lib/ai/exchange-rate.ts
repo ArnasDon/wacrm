@@ -32,7 +32,7 @@ export async function fetchBciUsdMznRate(): Promise<BciRate | null> {
     const html = await res.text()
     return parseBciUsdRow(html)
   } catch (error) {
-    console.error('[exchange-rate] BCI fetch failed:', error)
+    console.error('[exchange-rate] BCI fetch failed:', error instanceof Error ? error.message : error)
     return null
   }
 }

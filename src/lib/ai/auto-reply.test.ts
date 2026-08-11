@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
     tracePayload: null as Record<string, unknown> | null,
     agentToolRows: [] as Array<{ tool_key: string; enabled: boolean }>,
     toolsCalledWithPermissions: null as Record<string, boolean> | null,
+    hasPendingActions: false as boolean,
+    dispatchResult: { sent: 0, failed: 0 } as { sent: number; failed: number },
   },
 }))
 
@@ -58,7 +60,8 @@ vi.mock('./tools', () => ({
         { name: 'search_knowledge' },
       ],
       executeTool: vi.fn(),
-      hasPendingActions: () => false,
+      hasPendingActions: () => h.state.hasPendingActions,
+      dispatchPendingActions: async () => h.state.dispatchResult,
       getHandoffRequest: () => h.state.toolHandoff,
       getScheduledVisit: () => null,
       getTrustedPriceAmounts: () => [],
@@ -146,6 +149,8 @@ beforeEach(() => {
   h.state.tracePayload = null
   h.state.agentToolRows = []
   h.state.toolsCalledWithPermissions = null
+  h.state.hasPendingActions = false
+  h.state.dispatchResult = { sent: 0, failed: 0 }
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([
     { role: 'user', content: 'Como funciona a entrega?' },
@@ -197,6 +202,34 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       conversation_id: 'conv-1',
       final_action: 'reply',
     })
+  })
+
+  it('sends a corrective notice, without handing off, when every queued photo fails to send', async () => {
+    h.state.hasPendingActions = true
+    h.state.dispatchResult = { sent: 0, failed: 2 }
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        text: expect.stringContaining('Não consegui enviar as fotos'),
+      }),
+    )
+    expect(h.state.updatePayload).not.toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.tracePayload).toMatchObject({ final_action: 'reply' })
+  })
+
+  it('does not send a corrective notice when photos partially succeed', async () => {
+    h.state.hasPendingActions = true
+    h.state.dispatchResult = { sent: 2, failed: 1 }
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('Não consegui enviar as fotos') }),
+    )
+    expect(h.state.tracePayload).toMatchObject({ final_action: 'reply' })
   })
 
   it('sends explicit reply chunks in order with a human-like pause', async () => {

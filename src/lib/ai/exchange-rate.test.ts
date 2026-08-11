@@ -132,4 +132,15 @@ describe('getUsdToMznRate', () => {
 
     expect(result).toEqual({ rate: DEFAULT_USD_TO_MZN_RATE, source: 'default', updatedAt: null })
   })
+
+  it('logs a plain error message instead of dumping the raw error object', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+    const db = dbWith({ cachedRate: undefined })
+
+    await getUsdToMznRate(db, 'acct-1')
+
+    expect(consoleSpy).toHaveBeenCalledWith('[exchange-rate] BCI fetch failed:', 'network down')
+    consoleSpy.mockRestore()
+  })
 })

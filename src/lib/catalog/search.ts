@@ -44,6 +44,15 @@ const COLOR_SYNONYM_GROUPS = [
   ['laranja', 'laranjas'],
 ] as const
 
+// Bare size tokens ("M", "P", "G") are too short and too common as
+// substrings of ordinary words ("co-M-prar") to treat like the product/
+// colour synonym groups above, which match anywhere in the query. This
+// only fires when the token is explicitly cued by a size-indicating word
+// immediately before it, so it stays opt-in and query-shape-specific
+// instead of adding noise to every search. Longest letter codes first so
+// "gg"/"xg"/"xxg" aren't cut short by the bare "g" alternative.
+const SIZE_CUE_PATTERN = /\b(?:tamanho|tam|numero|n|size)\s+(xxg|xg|gg|pp|g|m|p|\d{2})\b/i
+
 function valueAt(input: unknown, path: string | undefined): unknown {
   if (!path) return undefined
   return path.split('.').reduce<unknown>((value, key) => {
@@ -98,6 +107,9 @@ export function buildSearchVariants(query: string): string[] {
     )
     if (matches) group.forEach(add)
   }
+
+  const sizeCue = normalized.match(SIZE_CUE_PATTERN)
+  if (sizeCue) variants.add(sizeCue[1])
 
   return Array.from(variants).slice(0, MAX_SEARCH_VARIANTS)
 }

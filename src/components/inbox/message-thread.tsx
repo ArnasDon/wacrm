@@ -49,6 +49,7 @@ import {
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker, type TemplateSendValues } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
+import { CtwaOrigin } from "./ctwa-origin";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-draft";
@@ -1146,6 +1147,11 @@ export function MessageThread({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* CTWA ad origin — tappable on every breakpoint, so it's the
+          mobile/PWA discovery point ContactSidebar (desktop-only,
+          lg:block) can never be. Renders nothing without a referral. */}
+      <CtwaOrigin referral={conversation.ctwa_referral} />
 
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">

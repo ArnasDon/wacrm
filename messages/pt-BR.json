@@ -388,6 +388,17 @@
       "adOrigin": "Origem do anúncio",
       "adOriginImageAlt": "Imagem do anúncio que originou este contato"
     },
+    "adOrigin": {
+      "bannerInstagram": "Anúncio do Instagram",
+      "bannerFacebook": "Anúncio do Facebook",
+      "bannerGeneric": "Anúncio",
+      "showDetails": "Mostrar detalhes",
+      "imageAlt": "Imagem do anúncio",
+      "backToConversation": "Voltar para a conversa",
+      "openInstagram": "Abrir no Instagram",
+      "openFacebook": "Abrir no Facebook",
+      "viewAd": "Ver anúncio"
+    },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",
       "activeText": "O assistente de IA está respondendo automaticamente",

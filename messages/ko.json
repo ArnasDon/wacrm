@@ -388,6 +388,17 @@
       "adOrigin": "광고 출처",
       "adOriginImageAlt": "이 연락처를 유입시킨 광고 이미지"
     },
+    "adOrigin": {
+      "bannerInstagram": "Instagram 광고",
+      "bannerFacebook": "Facebook 광고",
+      "bannerGeneric": "광고",
+      "showDetails": "상세 정보 보기",
+      "imageAlt": "광고 이미지",
+      "backToConversation": "대화로 돌아가기",
+      "openInstagram": "Instagram에서 열기",
+      "openFacebook": "Facebook에서 열기",
+      "viewAd": "광고 보기"
+    },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
       "activeText": "AI 어시스턴트가 자동으로 응답 중입니다",

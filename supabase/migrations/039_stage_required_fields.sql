@@ -13,4 +13,13 @@ SET search_path TO public;
 ALTER TABLE public.pipeline_stages
   ADD COLUMN IF NOT EXISTS required_fields JSONB DEFAULT '[]'::jsonb;
 
+CREATE OR REPLACE FUNCTION public.reload_schema()
+RETURNS void AS $$
+BEGIN
+  NOTIFY pgrst, 'reload schema';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.reload_schema() TO authenticated, service_role, anon;
+
 NOTIFY pgrst, 'reload schema';

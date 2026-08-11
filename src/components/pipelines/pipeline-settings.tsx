@@ -146,6 +146,13 @@ export function PipelineSettings({
       .update({ name: name.trim() })
       .eq("id", pipeline.id);
 
+    // Trigger PostgREST schema cache reload if RPC exists
+    try {
+      await supabase.rpc("reload_schema");
+    } catch {
+      /* ignore */
+    }
+
     let stagesRes = await supabase
       .from("pipeline_stages")
       .upsert(stageRows, { onConflict: "id" });

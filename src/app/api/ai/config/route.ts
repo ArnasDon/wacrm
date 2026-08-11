@@ -29,7 +29,10 @@ export async function GET() {
       .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate, usd_to_mzn_rate_updated_at')
       .eq('account_id', accountId)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
+    if (error) {
+      console.error('[ai/config GET] fetch error:', error)
+      return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
+    }
     if (!data) return NextResponse.json({ configured: false })
     const { api_key, embeddings_api_key, commercial_strategy, ...safe } = data
     return NextResponse.json({

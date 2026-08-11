@@ -229,6 +229,16 @@ export function DealForm({
     };
   }, [open, supabase]);
 
+  // Auto-sync deal title with contact name when creating a new deal if title is empty
+  useEffect(() => {
+    if (!open || deal || !contactId || contacts.length === 0) return;
+    const matchedContact = contacts.find((c) => c.id === contactId);
+    if (matchedContact && !title) {
+      /* eslint-disable-next-line react-hooks/set-state-in-effect */
+      setTitle(matchedContact.name || matchedContact.phone || "");
+    }
+  }, [open, deal, contactId, contacts, title]);
+
   // Load stages when selected pipeline changes
   useEffect(() => {
     if (!open || !currentPipelineId) return;
@@ -779,7 +789,16 @@ export function DealForm({
               {!deal?.contact_id ? (
                 <select
                   value={contactId}
-                  onChange={(e) => setContactId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setContactId(newId);
+                    if (!deal) {
+                      const sel = contacts.find((c) => c.id === newId);
+                      if (sel) {
+                        setTitle(sel.name || sel.phone || "");
+                      }
+                    }
+                  }}
                   className="h-10 w-full rounded-md border border-border bg-muted/50 px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer"
                 >
                   <option value="">Selecione um contato...</option>

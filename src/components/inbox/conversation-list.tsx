@@ -602,10 +602,11 @@ interface ConversationItemProps {
   responderColor: ResponderColor;
 }
 
-// Swipe-reveal panel widths (px, iOS Mail-style) — the left panel holds
-// two actions (unread + pin), the right panel holds one (delete).
+// Swipe-reveal panel width (px, iOS Mail-style) — one panel, two actions
+// (unread + delete). Left-to-right only: a swipe-left/right-side panel
+// (delete-only) was tried and reverted — it fought the original
+// left-to-right gesture's feel, so there's only ever one direction now.
 const SWIPE_LEFT_WIDTH = 152;
-const SWIPE_RIGHT_WIDTH = 76;
 // Minimum finger movement (px) before a touch gesture commits to
 // horizontal swipe vs. vertical scroll.
 const SWIPE_AXIS_THRESHOLD = 8;
@@ -645,8 +646,7 @@ function ConversationItem({
   // don't yet know which direction), then handed back to the
   // `revealed`-driven class once the gesture settles.
   const leftPanelRef = useRef<HTMLDivElement>(null);
-  const rightPanelRef = useRef<HTMLDivElement>(null);
-  const [revealed, setRevealed] = useState<"left" | "right" | null>(null);
+  const [revealed, setRevealed] = useState<"left" | null>(null);
   const dragRef = useRef({
     active: false,
     axis: null as "x" | "y" | null,
@@ -666,14 +666,7 @@ function ConversationItem({
   // Keep the DOM transform in sync whenever `revealed` changes outside
   // a drag (mount, or an action button closing the panel).
   useEffect(() => {
-    applyTransform(
-      revealed === "left"
-        ? SWIPE_LEFT_WIDTH
-        : revealed === "right"
-          ? -SWIPE_RIGHT_WIDTH
-          : 0,
-      true
-    );
+    applyTransform(revealed === "left" ? SWIPE_LEFT_WIDTH : 0, true);
   }, [revealed, applyTransform]);
 
   const handleTouchStart = useCallback(
@@ -684,16 +677,10 @@ function ConversationItem({
         axis: null,
         startX: touch.clientX,
         startY: touch.clientY,
-        baseX:
-          revealed === "left"
-            ? SWIPE_LEFT_WIDTH
-            : revealed === "right"
-              ? -SWIPE_RIGHT_WIDTH
-              : 0,
+        baseX: revealed === "left" ? SWIPE_LEFT_WIDTH : 0,
         x: 0,
       };
       if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
-      if (rightPanelRef.current) rightPanelRef.current.style.visibility = "visible";
     },
     [revealed]
   );
@@ -716,10 +703,10 @@ function ConversationItem({
       }
       if (drag.axis === "y") return; // vertical drag — let the list scroll
 
-      const clamped = Math.min(
-        SWIPE_LEFT_WIDTH,
-        Math.max(-SWIPE_RIGHT_WIDTH, drag.baseX + dx)
-      );
+      // Clamped to [0, SWIPE_LEFT_WIDTH] — left-to-right only. A
+      // right-to-left drag (negative dx) simply can't move the content
+      // at all now, same as it never being wired up.
+      const clamped = Math.min(SWIPE_LEFT_WIDTH, Math.max(0, drag.baseX + dx));
       drag.x = clamped;
       applyTransform(clamped, false);
     },
@@ -734,16 +721,9 @@ function ConversationItem({
     // gesture is settled — clears the imperative override from
     // touchstart so a future hover/idle state can't stay stuck visible.
     if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
-    if (rightPanelRef.current) rightPanelRef.current.style.visibility = "";
     if (drag.axis !== "x") return;
 
-    setRevealed(
-      drag.x > SWIPE_LEFT_WIDTH / 2
-        ? "left"
-        : drag.x < -SWIPE_RIGHT_WIDTH / 2
-          ? "right"
-          : null
-    );
+    setRevealed(drag.x > SWIPE_LEFT_WIDTH / 2 ? "left" : null);
   }, []);
 
   const closeSwipe = useCallback(() => setRevealed(null), []);
@@ -824,17 +804,15 @@ function ConversationItem({
 
   return (
     <div className="relative overflow-hidden">
-      {/* Swipe-right reveal: mark unread + pin.
+      {/* Swipe reveal (left-to-right only): mark unread + delete.
           `z-10`: the sliding content row below is also a positioned
           element (`relative` + a live `transform`), so per CSS stacking
           rules a later-in-DOM positioned sibling with the same
           (auto/0) z-index paints over an earlier one whenever their
           boxes overlap — which they do for most of the drag, not just
           at rest. Without an explicit z-index here, that made this
-          panel (and the delete one below) stay masked under the
-          content through most of the swipe, only clearing right at the
-          very end — the reported "swipe happens but the icon doesn't
-          show" bug. */}
+          panel stay masked under the content through most of the
+          swipe, only clearing right at the very end. */}
       <div
         ref={leftPanelRef}
         aria-hidden
@@ -852,30 +830,6 @@ function ConversationItem({
           <MailOpen className="h-4 w-4" />
           {t("markUnread")}
         </button>
-        <button
-          type="button"
-          onClick={handleTogglePinAction}
-          className="flex flex-1 flex-col items-center justify-center gap-1 bg-amber-500 text-[11px] text-white"
-        >
-          {conversation.pinned ? (
-            <PinOff className="h-4 w-4" />
-          ) : (
-            <Pin className="h-4 w-4" />
-          )}
-          {conversation.pinned ? t("unpin") : t("pin")}
-        </button>
-      </div>
-
-      {/* Swipe-left reveal: delete — see z-10 note on the left panel above. */}
-      <div
-        ref={rightPanelRef}
-        aria-hidden
-        className={cn(
-          "absolute inset-y-0 right-0 z-10 flex",
-          revealed === "right" ? "visible" : "invisible"
-        )}
-        style={{ width: SWIPE_RIGHT_WIDTH }}
-      >
         <button
           type="button"
           onClick={handleDeleteAction}

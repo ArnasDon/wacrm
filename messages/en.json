@@ -1897,7 +1897,8 @@
       "ignore": "Ignore",
       "accept": "Accept",
       "keep": "Keep",
-      "viewConversation": "View conversation"
+      "viewConversation": "View conversation",
+      "restore": "Restore"
     },
     "confidence": "Confidence",
     "confidenceBand": {
@@ -1977,6 +1978,7 @@
     "bulkAcceptConfirmBtn": "Confirm",
     "bulkAcceptSuccess": "{count} stage {count, plural, =1 {move} other {moves}} accepted",
     "bulkAcceptPartial": "{failed} of {total} could not be accepted",
+    "ignoredRetentionHint": "Ignored suggestions are permanently deleted after {days} days. Use \"Restore\" on a card to bring it back before then.",
     "emptyTitle": "No suggestions here yet",
     "emptyDesc": "Once AI generation is wired up, recommendations will land here — the Inbox will only show a discreet hint pointing back to this page.",
     "loadError": "Could not load AI suggestions",

@@ -19,6 +19,7 @@ import { SuggestionCard } from '@/components/ai-hub/suggestion-card';
 import {
   AI_SUGGESTION_CATEGORIES,
   aiSuggestionCategoryConfig,
+  IGNORED_SUGGESTION_RETENTION_DAYS,
 } from '@/lib/ai-suggestion-status';
 import type { AiSuggestion, AiSuggestionCategory, AiSuggestionStatus } from '@/types';
 
@@ -249,6 +250,12 @@ function AgentsPageInner() {
           </Button>
         )}
       </div>
+
+      {statusFilter === 'ignored' && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t('ignoredRetentionHint', { days: IGNORED_SUGGESTION_RETENTION_DAYS })}
+        </p>
+      )}
 
       <Dialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
         <DialogContent>

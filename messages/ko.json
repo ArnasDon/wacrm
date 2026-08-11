@@ -1897,7 +1897,8 @@
       "ignore": "무시",
       "accept": "수락",
       "keep": "유지",
-      "viewConversation": "대화 보기"
+      "viewConversation": "대화 보기",
+      "restore": "복원"
     },
     "confidence": "신뢰도",
     "confidenceBand": {
@@ -1977,6 +1978,7 @@
     "bulkAcceptConfirmBtn": "확인",
     "bulkAcceptSuccess": "{count}건의 단계 이동이 수락되었습니다",
     "bulkAcceptPartial": "{total}건 중 {failed}건을 수락하지 못했습니다",
+    "ignoredRetentionHint": "무시된 제안은 {days}일 후 영구적으로 삭제됩니다. 그 전에 카드에서 \"복원\"을 사용해 되돌릴 수 있습니다.",
     "emptyTitle": "아직 여기에 제안이 없습니다",
     "emptyDesc": "AI 생성 기능이 연결되면 추천 항목이 여기에 표시됩니다 — 인박스에는 이 페이지를 가리키는 작은 알림만 표시됩니다.",
     "loadError": "AI 제안을 불러오지 못했습니다",

@@ -1897,7 +1897,8 @@
       "ignore": "Ignorar",
       "accept": "Aceitar",
       "keep": "Manter",
-      "viewConversation": "Ver conversa"
+      "viewConversation": "Ver conversa",
+      "restore": "Restaurar"
     },
     "confidence": "Confiança",
     "confidenceBand": {
@@ -1977,6 +1978,7 @@
     "bulkAcceptConfirmBtn": "Confirmar",
     "bulkAcceptSuccess": "{count} {count, plural, =1 {movimentação aceita} other {movimentações aceitas}}",
     "bulkAcceptPartial": "{failed} de {total} não puderam ser aceitas",
+    "ignoredRetentionHint": "Sugestões ignoradas são apagadas definitivamente após {days} dias. Use \"Restaurar\" no card para trazer de volta antes disso.",
     "emptyTitle": "Nenhuma sugestão por aqui ainda",
     "emptyDesc": "Assim que a geração por IA for conectada, as recomendações vão aparecer aqui — a Caixa de Entrada mostrará apenas um indicativo discreto apontando para esta página.",
     "loadError": "Não foi possível carregar as sugestões",

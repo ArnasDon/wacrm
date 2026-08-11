@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { generateFollowupSuggestions } from '@/lib/ai/followup-generate'
+import { deleteExpiredIgnoredSuggestions } from '@/lib/ai/suggestions-cleanup'
 
 /**
  * Scans every account with an active AI config for stale conversations
@@ -28,13 +29,19 @@ export async function GET(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  // Housekeeping: permanently drop `ignored` suggestions past their
+  // retention window. Global (not per-account), so it runs once here
+  // regardless of how many accounts exist below.
+  const deletedIgnored = await deleteExpiredIgnoredSuggestions(admin)
+
   const { data: activeConfigs, error } = await admin
     .from('ai_configs')
     .select('account_id')
     .eq('is_active', true)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!activeConfigs || activeConfigs.length === 0) {
-    return NextResponse.json({ accounts_processed: 0, created: 0, scored: 0 })
+    return NextResponse.json({ accounts_processed: 0, created: 0, scored: 0, deleted_ignored: deletedIgnored })
   }
 
   let created = 0
@@ -53,5 +60,6 @@ export async function GET(request: Request) {
     accounts_processed: activeConfigs.length,
     created,
     scored,
+    deleted_ignored: deletedIgnored,
   })
 }

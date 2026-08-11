@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { formatDistanceToNow } from 'date-fns';
-import { Check, ChevronRight, Loader2, EyeOff, MessageSquare, X } from 'lucide-react';
+import { Check, ChevronRight, Loader2, EyeOff, MessageSquare, RotateCcw, X } from 'lucide-react';
 import { getDateFnsLocale } from '@/lib/date-fns-locale';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -161,7 +161,7 @@ export function SuggestionCard({
                 onResolved={() => onRefresh?.()}
               />
             </>
-          ) : isPending && (
+          ) : isPending ? (
             <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
@@ -227,7 +227,21 @@ export function SuggestionCard({
                 </Button>
               )}
             </div>
-          )}
+          ) : suggestion.status === 'ignored' ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pendingAction !== null}
+              onClick={() => act('pending')}
+            >
+              {pendingAction === 'pending' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+              {t('actions.restore')}
+            </Button>
+          ) : null}
         </div>
       </CardContent>
     </Card>

@@ -85,3 +85,9 @@ export const AI_SUGGESTION_STATUSES: readonly AiSuggestionStatus[] = [
   'ignored',
   'done',
 ];
+
+/** An `ignored` suggestion is permanently deleted this many days after
+ *  it was ignored (`resolved_at`) — see deleteExpiredIgnoredSuggestions
+ *  in src/lib/ai/suggestions-cleanup.ts. Before that, "Restaurar" on the
+ *  card puts it back to `pending`. */
+export const IGNORED_SUGGESTION_RETENTION_DAYS = 10;

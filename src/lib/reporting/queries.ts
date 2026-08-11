@@ -6,6 +6,20 @@
 // cierre, sin proxy updated_at), email_sends (persistido por 048) y
 // calls (039). Todas son SELECT de solo lectura con service_role;
 // el cliente NUNCA toca estas tablas directo.
+//
+// TENENCIA — leer antes de añadir un cargador nuevo.
+//
+// `supabaseAdmin()` usa la service-role key, que salta RLS por diseño. Aquí
+// no hay ninguna política que nos proteja: si una consulta no lleva
+// `.eq('account_id', …)`, devuelve las filas de TODAS las cuentas. Con una
+// sola cuenta no se nota; en cuanto existe una segunda, /reports enseña los
+// datos de las dos.
+//
+// Por eso los ocho cargadores reciben `accountId` como PRIMER parámetro y
+// lo aplican a cada tabla que tocan (`contacts`, `deals`, `calls`,
+// `email_sends`, `tracking_events` — todas la tienen). Los tres helpers
+// internos lo reciben igual: un helper sin filtrar reabre el agujero por
+// detrás aunque el cargador que lo llama sí filtre.
 // ============================================================
 
 import { supabaseAdmin } from '@/lib/automations/admin-client'
@@ -95,33 +109,44 @@ export interface LostDealRow {
 }
 
 /** Overview — KPIs del rango. revenue usa won_at real (no updated_at). */
-export async function loadOverview(range: DateRange): Promise<ReportOverview> {
+export async function loadOverview(
+  accountId: string,
+  range: DateRange,
+): Promise<ReportOverview> {
   const db = supabaseAdmin()
 
   const [won, pipeline, leads, calls, email] = await Promise.all([
     db
       .from('deals')
       .select('value, won_at')
+      .eq('account_id', accountId)
       .eq('status', 'won')
       .gte('won_at', range.from)
       .lte('won_at', range.to),
     db
       .from('deals')
       .select('value')
+      .eq('account_id', accountId)
       .eq('status', 'open'),
     db
       .from('contacts')
       .select('id, created_at')
+      .eq('account_id', accountId)
       .gte('created_at', range.from)
       .lte('created_at', range.to),
     db
       .from('calls')
-      .select('id, duration_seconds')
+      // La columna es `duration_sec` (migración 039), no `duration_seconds`.
+      // Con el nombre viejo PostgREST devolvía 400 `column calls.duration_seconds
+      // does not exist`, así que este KPI contaba siempre 0 llamadas.
+      .select('id, duration_sec')
+      .eq('account_id', accountId)
       .gte('created_at', range.from)
       .lte('created_at', range.to),
     db
       .from('email_sends')
       .select('status')
+      .eq('account_id', accountId)
       .gte('sent_at', range.from)
       .lte('sent_at', range.to),
   ])
@@ -134,7 +159,7 @@ export async function loadOverview(range: DateRange): Promise<ReportOverview> {
 
   const revenue_won = wonRows.reduce((acc, d) => acc + toNumber(d.value), 0)
   const pipeline_value = pipelineRows.reduce((acc, d) => acc + toNumber(d.value), 0)
-  const withDeal = leadRows.length ? await countLeadsWithDeal(range) : 0
+  const withDeal = leadRows.length ? await countLeadsWithDeal(accountId, range) : 0
   const conversion_rate =
     leadRows.length === 0 ? 0 : Math.round((withDeal / leadRows.length) * 1000) / 10
 
@@ -149,25 +174,33 @@ export async function loadOverview(range: DateRange): Promise<ReportOverview> {
   }
 }
 
-async function countLeadsWithDeal(range: DateRange): Promise<number> {
+async function countLeadsWithDeal(
+  accountId: string,
+  range: DateRange,
+): Promise<number> {
   // Contacts con >=1 deal (FK real deals.contact_id → contacts.id).
   // Embedded !inner = INNER JOIN en PostgREST (precedente webhook/route.ts:488).
   const { count } = await supabaseAdmin()
     .from('contacts')
     .select('id, deals!inner(id)', { count: 'exact', head: true })
+    .eq('account_id', accountId)
     .gte('created_at', range.from)
     .lte('created_at', range.to)
   return count ?? 0
 }
 
 /** Campañas — agrupado por attribution->utm->campaign. */
-export async function loadCampaigns(range: DateRange): Promise<CampaignRow[]> {
+export async function loadCampaigns(
+  accountId: string,
+  range: DateRange,
+): Promise<CampaignRow[]> {
   const db = supabaseAdmin()
   // deals!inner trae los contactos CON deal (contamos cuántos deals tiene
   // cada contacto del rango vía la relación deals.contact_id → contacts.id).
   const { data } = await db
     .from('contacts')
     .select('attribution, id, deals!inner(id)')
+    .eq('account_id', accountId)
     .gte('created_at', range.from)
     .lte('created_at', range.to)
 
@@ -183,16 +216,20 @@ export async function loadCampaigns(range: DateRange): Promise<CampaignRow[]> {
     byCampaign.set(key, cur)
   }
   // Revenue por campaña: deals del rango ganados, cruzados por contacto.
-  await attachRevenueByContact(byCampaign, range, 'campaign')
+  await attachRevenueByContact(accountId, byCampaign, range, 'campaign')
   return [...byCampaign.values()].sort((a, b) => b.leads - a.leads)
 }
 
 /** Canales — agrupado por attribution->channel. */
-export async function loadChannels(range: DateRange): Promise<ChannelRow[]> {
+export async function loadChannels(
+  accountId: string,
+  range: DateRange,
+): Promise<ChannelRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('contacts')
     .select('attribution, id')
+    .eq('account_id', accountId)
     .gte('created_at', range.from)
     .lte('created_at', range.to)
 
@@ -204,16 +241,20 @@ export async function loadChannels(range: DateRange): Promise<ChannelRow[]> {
     cur.leads += 1
     byChannel.set(channel, cur)
   }
-  await attachRevenueByContact(byChannel, range, 'channel')
+  await attachRevenueByContact(accountId, byChannel, range, 'channel')
   return [...byChannel.values()].sort((a, b) => b.leads - a.leads)
 }
 
 /** Ads — agrupado por click_id (gclid/fbclid/ctwa_clid/...). */
-export async function loadAds(range: DateRange): Promise<AdsRow[]> {
+export async function loadAds(
+  accountId: string,
+  range: DateRange,
+): Promise<AdsRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('contacts')
     .select('attribution, id')
+    .eq('account_id', accountId)
     .gte('created_at', range.from)
     .lte('created_at', range.to)
 
@@ -230,16 +271,20 @@ export async function loadAds(range: DateRange): Promise<AdsRow[]> {
       byClick.set(key, cur)
     }
   }
-  await attachRevenueByContact(byClick, range, 'ads')
+  await attachRevenueByContact(accountId, byClick, range, 'ads')
   return [...byClick.values()].sort((a, b) => b.leads - a.leads)
 }
 
 /** Email — contadores por status desde email_sends (048). */
-export async function loadEmail(range: DateRange): Promise<EmailRow[]> {
+export async function loadEmail(
+  accountId: string,
+  range: DateRange,
+): Promise<EmailRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('email_sends')
     .select('status')
+    .eq('account_id', accountId)
     .gte('sent_at', range.from)
     .lte('sent_at', range.to)
   const rows = data ?? []
@@ -253,11 +298,18 @@ export async function loadEmail(range: DateRange): Promise<EmailRow[]> {
 }
 
 /** Llamadas — por día (039). */
-export async function loadCalls(range: DateRange): Promise<CallRow[]> {
+export async function loadCalls(
+  accountId: string,
+  range: DateRange,
+): Promise<CallRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('calls')
-    .select('created_at, status, duration_seconds')
+    // `duration_sec` y `disposition`, los nombres reales de 039. Con
+    // `duration_seconds` la consulta entera devolvía 400 y la pestaña Calls
+    // salía siempre vacía.
+    .select('created_at, status, disposition, duration_sec')
+    .eq('account_id', accountId)
     .gte('created_at', range.from)
     .lte('created_at', range.to)
   const rows = data ?? []
@@ -266,31 +318,54 @@ export async function loadCalls(range: DateRange): Promise<CallRow[]> {
     const day = (r.created_at ?? '').slice(0, 10)
     const cur = byDay.get(day) ?? { day, count: 0, lost: 0, completed: 0, total_duration: 0 }
     cur.count += 1
-    if (r.status === 'no_answer' || r.status === 'user_busy') cur.lost += 1
-    if (r.status === 'answered' || r.status === 'completed') cur.completed += 1
-    cur.total_duration += typeof r.duration_seconds === 'number' ? r.duration_seconds : 0
+    // El webhook escribe la escalera initiated/ringing/answered/ended en
+    // `status` y marca la perdida en `disposition` (webhook/route.ts), así
+    // que 'no_answer'/'user_busy'/'completed' nunca aparecían en `status`:
+    // lost y completed contaban 0 aunque la consulta hubiera funcionado.
+    if (r.disposition === 'missed') cur.lost += 1
+    else if (r.status === 'answered' || r.status === 'ended') cur.completed += 1
+    cur.total_duration += toNumber(r.duration_sec)
     byDay.set(day, cur)
   }
   return [...byDay.values()].sort((a, b) => (a.day < b.day ? 1 : -1))
 }
 
-/** Top leads — por score desc, fallback value. Sin rango (top 20 global). */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function loadTopLeads(_range: DateRange): Promise<TopLeadRow[]> {
+/**
+ * Top leads — por score desc, fallback value, dentro del rango.
+ *
+ * Antes el parámetro se recibía y se tiraba (`_range`), así que el selector
+ * de fechas de la cabecera no hacía nada en esta pestaña. Ahora acota por
+ * `created_at` del deal, que es la fecha que el resto de pestañas usa para
+ * "entró en el rango".
+ */
+export async function loadTopLeads(
+  accountId: string,
+  range: DateRange,
+): Promise<TopLeadRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('deals')
-    .select('id, name, contact_id, score, priority, status, value, won_at, lost_at')
+    // La columna es `title`; `deals.name` no existe y hacía que la consulta
+    // devolviera 400, dejando la pestaña siempre vacía. Se expone como
+    // `name` más abajo para no cambiar el contrato con la UI.
+    .select('id, title, contact_id, score, priority, status, value, won_at, lost_at')
+    .eq('account_id', accountId)
+    .gte('created_at', range.from)
+    .lte('created_at', range.to)
     .order('score', { ascending: false })
     .order('value', { ascending: false, nullsFirst: false })
     .limit(20)
 
   const rows = (data ?? []) as Array<
-    TopLeadRow & { contact_id: string | null }
+    Omit<TopLeadRow, 'name' | 'source_channel'> & {
+      title: string
+      contact_id: string | null
+    }
   >
-  const channels = await loadSourceChannels(rows.map((r) => r.contact_id))
+  const channels = await loadSourceChannels(accountId, rows.map((r) => r.contact_id))
   return rows.map((r) => ({
     ...r,
+    name: r.title,
     // PostgREST devuelve numeric como string — normalizar para fmtMoney.
     value: r.value == null ? null : toNumber(r.value),
     source_channel: channels.get(r.contact_id ?? '') ?? null,
@@ -298,11 +373,16 @@ export async function loadTopLeads(_range: DateRange): Promise<TopLeadRow[]> {
 }
 
 /** Perdidos — status=lost con lost_at real + razón del último state_changed. */
-export async function loadLost(range: DateRange): Promise<LostDealRow[]> {
+export async function loadLost(
+  accountId: string,
+  range: DateRange,
+): Promise<LostDealRow[]> {
   const db = supabaseAdmin()
   const { data } = await db
     .from('deals')
-    .select('id, name, contact_id, lost_at, tags, score')
+    // `title`, no `name` — ver la nota en loadTopLeads.
+    .select('id, title, contact_id, lost_at, tags, score')
+    .eq('account_id', accountId)
     .eq('status', 'lost')
     .gte('lost_at', range.from)
     .lte('lost_at', range.to)
@@ -310,7 +390,7 @@ export async function loadLost(range: DateRange): Promise<LostDealRow[]> {
 
   const rows = (data ?? []) as Array<{
     id: string
-    name: string
+    title: string
     contact_id: string | null
     lost_at: string
     tags: Record<string, unknown> | null
@@ -324,6 +404,7 @@ export async function loadLost(range: DateRange): Promise<LostDealRow[]> {
     const { data: events } = await db
       .from('tracking_events')
       .select('payload')
+      .eq('account_id', accountId)
       .eq('event_type', 'state_changed')
       .in('payload->>deal_id', ids)
       .order('created_at', { ascending: false })
@@ -334,11 +415,11 @@ export async function loadLost(range: DateRange): Promise<LostDealRow[]> {
     }
   }
 
-  const channels = await loadSourceChannels(rows.map((r) => r.contact_id))
+  const channels = await loadSourceChannels(accountId, rows.map((r) => r.contact_id))
   return rows.map((r) => ({
     id: r.id,
-    name: r.name,
-    contact_name: r.name,
+    name: r.title,
+    contact_name: r.title,
     lost_at: r.lost_at,
     tags: r.tags,
     score: r.score,
@@ -354,6 +435,7 @@ export async function loadLost(range: DateRange): Promise<LostDealRow[]> {
 // landing) → null (directo/manual).
 // ------------------------------------------------------------------
 async function loadSourceChannels(
+  accountId: string,
   contactIds: (string | null)[],
 ): Promise<Map<string, string>> {
   const ids = [...new Set(contactIds.filter(Boolean) as string[])]
@@ -363,6 +445,7 @@ async function loadSourceChannels(
   const { data } = await supabaseAdmin()
     .from('contacts')
     .select('id, attribution')
+    .eq('account_id', accountId)
     .in('id', ids)
 
   for (const c of data ?? []) {
@@ -383,6 +466,7 @@ async function loadSourceChannels(
 // won_at y los cruza con el contacto via deal_id.
 // ------------------------------------------------------------------
 async function attachRevenueByContact(
+  accountId: string,
   byKey: Map<string, { revenue: number }>,
   range: DateRange,
   kind: 'campaign' | 'channel' | 'ads',
@@ -390,6 +474,7 @@ async function attachRevenueByContact(
   const { data } = await supabaseAdmin()
     .from('deals')
     .select('value, contact_id')
+    .eq('account_id', accountId)
     .eq('status', 'won')
     .gte('won_at', range.from)
     .lte('won_at', range.to)
@@ -403,6 +488,7 @@ async function attachRevenueByContact(
   const { data: contacts } = await supabaseAdmin()
     .from('contacts')
     .select('id, attribution')
+    .eq('account_id', accountId)
     .in('id', contactIds)
   const contactAttr = new Map<string, { campaign?: string; channel?: string; click_ids?: Record<string, string> }>()
   for (const c of contacts ?? []) {

@@ -138,43 +138,23 @@ export function PipelineSettings({
       name: s.name,
       color: s.color,
       position: i,
-      required_fields: s.required_fields || [],
+      required_fields: getRequiredFieldsArray(s.required_fields),
     }));
 
-    const renamePromise = supabase
-      .from("pipelines")
-      .update({ name: name.trim() })
-      .eq("id", pipeline.id);
-
-    let stagesRes = await supabase
-      .from("pipeline_stages")
-      .upsert(stageRows, { onConflict: "id" });
-
-    // Fallback: If DB table doesn't have required_fields column yet, retry without required_fields
-    if (stagesRes.error) {
-      console.warn(
-        "Stage upsert with required_fields failed, retrying without required_fields:",
-        stagesRes.error.message
-      );
-      const stageRowsFallback = localStages.map((s, i) => ({
-        id: s.id,
-        pipeline_id: s.pipeline_id,
-        name: s.name,
-        color: s.color,
-        position: i,
-      }));
-      stagesRes = await supabase
-        .from("pipeline_stages")
-        .upsert(stageRowsFallback, { onConflict: "id" });
-    }
-
-    const renameRes = await renamePromise;
+    const [renameRes, stagesRes] = await Promise.all([
+      supabase
+        .from("pipelines")
+        .update({ name: name.trim() })
+        .eq("id", pipeline.id),
+      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
+    ]);
 
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
-      console.error("Failed to save pipeline:", renameRes.error || stagesRes.error);
-      toast.error(t("toastFailedSave"));
+      const err = stagesRes.error || renameRes.error;
+      console.error("Failed to save pipeline:", err);
+      toast.error(err?.message || t("toastFailedSave"));
       return;
     }
 

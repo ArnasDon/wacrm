@@ -19,18 +19,25 @@ export const MEDIA_MAX_BYTES = 16 * 1024 * 1024;
 
 /**
  * Per-kind upload ceilings that mirror Meta's WhatsApp Cloud API caps so
- * a file that the bucket would accept (≤16 MB) but Meta would reject is
- * caught client-side BEFORE upload — otherwise it lands in storage as an
- * orphan and the send fails with a confusing 400. Images are Meta's
- * tightest cap at 5 MB; documents are held at the 16 MB bucket limit
- * (Meta allows 100 MB, but the bucket — and shared-hosting upload UX —
- * caps lower).
+ * a file that the bucket would accept but Meta would reject is caught
+ * client-side BEFORE upload — otherwise it lands in storage as an orphan
+ * and the send fails with a confusing 400. Images are Meta's tightest cap
+ * at 5 MB; video/audio hold at 16 MB (Meta's own cap for those kinds).
+ *
+ * Documents are held at 50 MB, NOT Meta's real 100 MB document cap — the
+ * Supabase project itself enforces a 50 MB hard ceiling on any single
+ * object (a project-level Storage setting, independent of and lower than
+ * a bucket's own `file_size_limit`; confirmed by probing `updateBucket`
+ * in production on 2026-08-11 — every value above 50 MB was rejected
+ * with "The object exceeded the maximum allowed size", 50 MB accepted).
+ * Reaching 100 MB needs that project setting raised (a plan-tier change
+ * outside this bucket's config — see migration 058).
  */
 export const MEDIA_MAX_BYTES_BY_KIND = {
   image: 5 * 1024 * 1024,
   video: 16 * 1024 * 1024,
   audio: 16 * 1024 * 1024,
-  document: 16 * 1024 * 1024,
+  document: 50 * 1024 * 1024,
 } as const;
 
 /**

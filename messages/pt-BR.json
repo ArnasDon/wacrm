@@ -311,6 +311,7 @@
     },
     "bubble": {
       "photo": "Foto",
+      "close": "Fechar",
       "video": "Vídeo",
       "audio": "Áudio",
       "unavailable": "{label} indisponível",

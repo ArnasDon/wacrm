@@ -18,6 +18,7 @@ import {
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { MediaLightbox } from "./media-lightbox";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
 
@@ -56,10 +57,11 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
   );
 }
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
+function MediaImage({ url, alt, t }: { url: string; alt: string; t: ReturnType<typeof useTranslations> }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const loadImage = useCallback(async () => {
     if (!url) return;
@@ -110,12 +112,30 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
-    />
+    <>
+      {/* Reuses the already-loaded `src` (blob: URL for proxy-backed
+          inbound media, or the direct URL for outbound) — opening the
+          lightbox never re-fetches the image. */}
+      <button
+        type="button"
+        onClick={() => setLightboxOpen(true)}
+        aria-label={t("photo")}
+        className="block cursor-zoom-in"
+      >
+        <img
+          src={src ?? ""}
+          alt={alt}
+          className="max-h-64 max-w-60 rounded-lg object-cover"
+          onError={() => setError(true)}
+        />
+      </button>
+      <MediaLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        src={src ?? ""}
+        alt={alt}
+      />
+    </>
   );
 }
 
@@ -132,7 +152,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <MediaImage url={message.media_url} alt="Shared image" t={t} />
           ) : (
             <MediaUnavailable label={t("photo")} t={t} />
           )}

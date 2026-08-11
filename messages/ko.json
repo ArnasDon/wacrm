@@ -311,6 +311,7 @@
     },
     "bubble": {
       "photo": "사진",
+      "close": "닫기",
       "video": "동영상",
       "audio": "오디오",
       "unavailable": "{label}을(를) 사용할 수 없습니다",

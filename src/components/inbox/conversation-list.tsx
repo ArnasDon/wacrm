@@ -708,18 +708,38 @@ function ConversationItem({
       const dy = touch.clientY - drag.startY;
 
       if (drag.axis === null) {
-        if (
-          Math.abs(dx) < SWIPE_AXIS_THRESHOLD &&
-          Math.abs(dy) < SWIPE_AXIS_THRESHOLD
-        )
-          return;
-        // Only commits to horizontal when it's clearly more horizontal
-        // than vertical — a near-diagonal drag (routine on a real
-        // vertical scroll) now locks to "y" instead of stealing the
-        // gesture as a swipe.
-        drag.axis = Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO ? "x" : "y";
+        // Vertical wins on the first sign of doubt — a real touchscreen's
+        // first sample or two are noisy, and it's far worse to
+        // accidentally eat a scroll than to occasionally need a slightly
+        // more deliberate swipe. Any movement that's at least as
+        // vertical as it is horizontal locks straight to "y", no ratio
+        // needed. Horizontal only wins once it's unambiguous.
+        if (Math.abs(dy) >= SWIPE_AXIS_THRESHOLD && Math.abs(dy) >= Math.abs(dx)) {
+          drag.axis = "y";
+        } else if (
+          Math.abs(dx) >= SWIPE_AXIS_THRESHOLD &&
+          Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO
+        ) {
+          drag.axis = "x";
+        } else {
+          return; // not enough signal yet either way
+        }
       }
       if (drag.axis === "y") return; // vertical drag — let the list scroll
+
+      // Safety net, re-checked on every move (not just the first
+      // sample): if the gesture drifts and vertical overtakes
+      // horizontal mid-swipe — a real finger rarely travels in a
+      // perfectly straight line — bail out to scroll instead of
+      // fighting the page under it. This is what actually fixes swipe
+      // misfiring on a real touchscreen/PWA; a one-shot initial
+      // decision alone isn't robust enough against noisy samples.
+      if (Math.abs(dy) > Math.abs(dx)) {
+        drag.axis = "y";
+        drag.x = 0;
+        applyTransform(0, true);
+        return;
+      }
 
       // Clamped to [0, SWIPE_LEFT_WIDTH] — left-to-right only. A
       // right-to-left drag (negative dx) simply can't move the content
@@ -741,8 +761,19 @@ function ConversationItem({
     if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
     if (drag.axis !== "x") return;
 
-    setRevealed(drag.x > SWIPE_LEFT_WIDTH / 2 ? "left" : null);
-  }, []);
+    const next = drag.x > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
+    // Snap explicitly here rather than relying solely on the `revealed`
+    // effect below: when a partial drag resolves back to the SAME value
+    // it already had (the common case — a swipe that doesn't cross the
+    // open threshold resolves to `null`, same as before the gesture),
+    // React bails out of the state update as a no-op and that effect
+    // never re-fires, leaving the card visually stuck wherever the
+    // finger let go instead of snapping back. Calling it directly here
+    // makes the snap unconditional; the effect still covers the other
+    // paths that close it (tap-to-close, action buttons).
+    applyTransform(next === "left" ? SWIPE_LEFT_WIDTH : 0, true);
+    setRevealed(next);
+  }, [applyTransform]);
 
   const closeSwipe = useCallback(() => setRevealed(null), []);
 

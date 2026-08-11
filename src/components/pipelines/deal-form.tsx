@@ -47,6 +47,10 @@ interface DealFormProps {
   pipelines?: Pipeline[];
   stages: PipelineStage[];
   defaultStageId?: string;
+  /** Pre-select a contact when opening the form to create a deal from inbox. */
+  initialContactId?: string;
+  /** Pre-link a conversation when opening the form from inbox. */
+  initialConversationId?: string;
   onSaved: () => void;
 }
 
@@ -81,6 +85,8 @@ export function DealForm({
   pipelines = [],
   stages: initialStages,
   defaultStageId,
+  initialContactId,
+  initialConversationId,
   onSaved,
 }: DealFormProps) {
   const t = useTranslations("Pipelines.form");
@@ -180,7 +186,7 @@ export function DealForm({
       setTitle("");
       setValue("");
       setCurrency(defaultCurrency);
-      setContactId("");
+      setContactId(initialContactId ?? "");
       setStageId(defaultStageId || initialStages[0]?.id || "");
       setAssignedTo("");
       setExpectedCloseDate("");
@@ -192,7 +198,7 @@ export function DealForm({
       setProduct("");
       setUserNotes("");
     }
-  }, [open, deal, pipelineId, defaultStageId, initialStages, defaultCurrency]);
+  }, [open, deal, pipelineId, defaultStageId, initialStages, defaultCurrency, initialContactId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Load contacts and profiles
@@ -425,7 +431,7 @@ export function DealForm({
       }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open", conversation_id: initialConversationId || null });
       if (error) {
         toast.error(t("toastFailedCreate"));
         setSaving(false);

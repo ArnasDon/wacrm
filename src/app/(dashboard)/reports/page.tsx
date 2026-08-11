@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MousePointerClick,
   CalendarRange,
@@ -293,9 +293,11 @@ export default function ReportsPage() {
                 {data.rows.map((row) => {
                   const open = expanded === row.group;
                   return (
-                    <>
+                    // La `key` va en el Fragment, no en el <tr>: una fila puede
+                    // renderizar dos hermanos (la fila y su detalle) y React
+                    // necesita la clave en la raíz de cada elemento de la lista.
+                    <Fragment key={row.group}>
                       <tr
-                        key={row.group}
                         className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/50"
                         onClick={() => setExpanded(open ? null : row.group)}
                       >
@@ -335,13 +337,13 @@ export default function ReportsPage() {
                         </td>
                       </tr>
                       {open && (
-                        <tr key={`${row.group}-detail`} className="border-b border-border">
+                        <tr className="border-b border-border">
                           <td colSpan={7} className="p-0">
                             <DetailPanel row={row} />
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

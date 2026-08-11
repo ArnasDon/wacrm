@@ -69,18 +69,7 @@ export interface AdsRow {
   revenue: number
 }
 
-export interface EmailRow {
-  status: string
-  count: number
-}
 
-export interface CallRow {
-  day: string
-  count: number
-  lost: number
-  completed: number
-  total_duration: number
-}
 
 export interface TopLeadRow {
   id: string
@@ -275,60 +264,7 @@ export async function loadAds(
   return [...byClick.values()].sort((a, b) => b.leads - a.leads)
 }
 
-/** Email — contadores por status desde email_sends (048). */
-export async function loadEmail(
-  accountId: string,
-  range: DateRange,
-): Promise<EmailRow[]> {
-  const db = supabaseAdmin()
-  const { data } = await db
-    .from('email_sends')
-    .select('status')
-    .eq('account_id', accountId)
-    .gte('sent_at', range.from)
-    .lte('sent_at', range.to)
-  const rows = data ?? []
-  const byStatus = new Map<string, number>()
-  for (const r of rows) {
-    byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1)
-  }
-  return [...byStatus.entries()]
-    .map(([status, count]) => ({ status, count }))
-    .sort((a, b) => b.count - a.count)
-}
 
-/** Llamadas — por día (039). */
-export async function loadCalls(
-  accountId: string,
-  range: DateRange,
-): Promise<CallRow[]> {
-  const db = supabaseAdmin()
-  const { data } = await db
-    .from('calls')
-    // `duration_sec` y `disposition`, los nombres reales de 039. Con
-    // `duration_seconds` la consulta entera devolvía 400 y la pestaña Calls
-    // salía siempre vacía.
-    .select('created_at, status, disposition, duration_sec')
-    .eq('account_id', accountId)
-    .gte('created_at', range.from)
-    .lte('created_at', range.to)
-  const rows = data ?? []
-  const byDay = new Map<string, CallRow>()
-  for (const r of rows) {
-    const day = (r.created_at ?? '').slice(0, 10)
-    const cur = byDay.get(day) ?? { day, count: 0, lost: 0, completed: 0, total_duration: 0 }
-    cur.count += 1
-    // El webhook escribe la escalera initiated/ringing/answered/ended en
-    // `status` y marca la perdida en `disposition` (webhook/route.ts), así
-    // que 'no_answer'/'user_busy'/'completed' nunca aparecían en `status`:
-    // lost y completed contaban 0 aunque la consulta hubiera funcionado.
-    if (r.disposition === 'missed') cur.lost += 1
-    else if (r.status === 'answered' || r.status === 'ended') cur.completed += 1
-    cur.total_duration += toNumber(r.duration_sec)
-    byDay.set(day, cur)
-  }
-  return [...byDay.values()].sort((a, b) => (a.day < b.day ? 1 : -1))
-}
 
 /**
  * Top leads — por score desc, fallback value, dentro del rango.

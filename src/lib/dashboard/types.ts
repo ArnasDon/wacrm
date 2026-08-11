@@ -132,3 +132,10 @@ export interface TodayQueueData {
   sections: TodayQueueSection[]
   total: number
 }
+
+/** Actividad de correo y llamadas del panel de inicio (antes dos pestañas de /reports). */
+export interface ChannelActivity {
+  days: number
+  email: { sent: number; delivered: number; bounced: number }
+  calls: { total: number; missed: number; answered: number; totalMinutes: number }
+}

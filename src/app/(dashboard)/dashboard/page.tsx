@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { loadActivity, loadTodayQueue } from '@/lib/dashboard/queries'
-import type { ActivityItem, TodayQueueData, TodayQueueDeal } from '@/lib/dashboard/types'
+import { loadActivity, loadChannelActivity, loadTodayQueue } from '@/lib/dashboard/queries'
+import type {
+  ActivityItem,
+  ChannelActivity as ChannelActivityData,
+  TodayQueueData,
+  TodayQueueDeal,
+} from '@/lib/dashboard/types'
 import type { Deal, PipelineStage } from '@/types'
 
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { ChannelActivity } from '@/components/dashboard/channel-activity'
 import { TodayQueue } from '@/components/dashboard/today-queue'
 import { DealForm } from '@/components/pipelines/deal-form'
 
@@ -21,6 +27,11 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+
+  // Correo y llamadas: actividad que antes vivía como dos pestañas de
+  // /reports, donde eran contadores sueltos sin conectar con ningún resultado.
+  const [channels, setChannels] = useState<ChannelActivityData | null>(null)
+  const [channelsLoading, setChannelsLoading] = useState(true)
 
   // Editor de deals (DealSheet) — mismo flujo que el pipeline: clic en la
   // card de la cola abre la ventana lateral edit deal.
@@ -43,6 +54,11 @@ export default function DashboardPage() {
     // Fetch up to 50 so the biggest page-size option in the feed
     // (50 rows) is already in memory — switching sizes then becomes
     // a pure client-side slice with no extra round trip.
+    void loadChannelActivity(db)
+      .then((c) => setChannels(c))
+      .catch((err) => console.error('[dashboard] channel activity failed:', err))
+      .finally(() => setChannelsLoading(false))
+
     void loadActivity(db, 50)
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
@@ -112,6 +128,8 @@ export default function DashboardPage() {
       <QuickActions />
 
       {/* Activity feed (timeline) — se mantiene debajo de la cola */}
+      <ChannelActivity data={channels} loading={channelsLoading} />
+
       <ActivityFeed items={activity} loading={activityLoading} />
 
       {/* Editor de deal (DealSheet) desde la cola de hoy */}

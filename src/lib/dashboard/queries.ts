@@ -9,6 +9,7 @@ import {
 } from './date-utils'
 import type {
   ActivityItem,
+  ChannelActivity,
   ConversationsSeriesPoint,
   MetricsBundle,
   PipelineDonutData,
@@ -591,4 +592,56 @@ export function partitionTodayQueue(rows: TodayQueueDealRaw[]): TodayQueueData {
   ]
 
   return { sections, total: rows.length }
+}
+
+// --- 6. Actividad de correo y llamadas ---------------------------------
+//
+// Vienen de /reports, donde eran dos pestañas. Un contador de correos
+// entregados no es analítica de adquisición: es un recibo de actividad, y su
+// sitio es el panel de inicio junto al resto de tarjetas.
+//
+// Como el resto de este módulo, usan el cliente del navegador: RLS acota por
+// cuenta automáticamente y no hace falta pasar account_id.
+
+export async function loadChannelActivity(
+  db: DB,
+  days = 30
+): Promise<ChannelActivity> {
+  const since = daysAgoStart(days).toISOString()
+
+  const [emails, calls] = await Promise.all([
+    db.from('email_sends').select('status').gte('sent_at', since),
+    // `duration_sec` y `disposition` son los nombres reales de la migración
+    // 039 — `duration_seconds` no existe y devolvía 400.
+    db.from('calls').select('status, disposition, duration_sec').gte('created_at', since),
+  ])
+
+  const emailRows = (emails.data ?? []) as { status: string }[]
+  const callRows = (calls.data ?? []) as {
+    status: string
+    disposition: string | null
+    duration_sec: number | null
+  }[]
+
+  const bounced = emailRows.filter((e) => e.status === 'bounced').length
+  const answered = callRows.filter((c) => c.status === 'answered' || c.status === 'ended').length
+
+  return {
+    days,
+    email: {
+      sent: emailRows.filter((e) => e.status !== 'failed').length,
+      delivered: emailRows.filter((e) => e.status === 'delivered').length,
+      bounced,
+    },
+    calls: {
+      total: callRows.length,
+      // La perdida se marca en `disposition`, no en `status`: la escalera de
+      // status es initiated/ringing/answered/ended.
+      missed: callRows.filter((c) => c.disposition === 'missed').length,
+      answered,
+      totalMinutes: Math.round(
+        callRows.reduce((acc, c) => acc + (c.duration_sec ?? 0), 0) / 60
+      ),
+    },
+  }
 }

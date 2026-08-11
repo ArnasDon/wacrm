@@ -58,10 +58,8 @@ vi.mock('@/lib/automations/admin-client', () => ({
 
 import {
   loadAds,
-  loadCalls,
   loadCampaigns,
   loadChannels,
-  loadEmail,
   loadLost,
   loadOverview,
   loadTopLeads,
@@ -81,13 +79,11 @@ const LOADERS: [string, (a: string, r: DateRange) => Promise<unknown>][] = [
   ['loadCampaigns', loadCampaigns],
   ['loadChannels', loadChannels],
   ['loadAds', loadAds],
-  ['loadEmail', loadEmail],
-  ['loadCalls', loadCalls],
   ['loadTopLeads', loadTopLeads],
   ['loadLost', loadLost],
 ]
 
-describe('tenencia — los ocho cargadores', () => {
+describe('tenencia — los cargadores de reporting', () => {
   for (const [name, loader] of LOADERS) {
     it(`${name}: toda consulta lleva account_id`, async () => {
       await loader(ACCOUNT, RANGE)

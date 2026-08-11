@@ -526,7 +526,8 @@
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
-      "lost": "실패"
+      "lost": "실패",
+      "newMessage": "새 메시지"
     },
     "form": {
       "editDeal": "딜 수정",

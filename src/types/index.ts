@@ -381,6 +381,9 @@ export interface Deal {
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+  /** Hydrated when the deal query joins conversations. Carries unread_count
+   *  so the pipeline board can show the yellow "new message" badge. */
+  conversation?: Pick<Conversation, 'id' | 'unread_count' | 'last_message_at' | 'last_message_text'> | null;
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';

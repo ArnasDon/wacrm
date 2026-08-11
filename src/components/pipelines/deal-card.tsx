@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, X, MessageCircle } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
@@ -31,21 +31,24 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
 
+  // Show yellow badge when the linked conversation has unread messages from the lead.
+  // The unread_count resets to 0 automatically when the agent replies.
+  const hasUnread =
+    deal.conversation != null && (deal.conversation.unread_count ?? 0) > 0;
+
   return (
     <button
       type="button"
       onClick={(e) => {
-        // `onClick` still fires after a non-drag tap because the PointerSensor
-        // requires 5px movement before it counts as a drag.
         if (isOverlay) return;
         e.stopPropagation();
         onEdit(deal);
       }}
-      className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
-        isOverlay
-          ? "shadow-xl"
-          : "hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg"
-      }`}
+      className={`group relative w-full cursor-pointer rounded-xl border pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
+        hasUnread
+          ? "border-yellow-400/60 bg-yellow-500/5 hover:border-yellow-400 hover:bg-yellow-500/10"
+          : "border-border/50 bg-muted/70 hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg"
+      } ${isOverlay ? "shadow-xl" : ""}`}
     >
       {/* 4px left accent bar using stage color */}
       <span
@@ -79,6 +82,23 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         </span>
         <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
       </div>
+
+      {/* Unread message badge */}
+      {hasUnread && (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-yellow-500/15 px-2 py-1">
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-400" />
+          </span>
+          <MessageCircle className="h-3 w-3 shrink-0 text-yellow-400" />
+          <span className="text-[10px] font-semibold text-yellow-400">
+            {t("newMessage")}
+            {(deal.conversation!.unread_count ?? 0) > 1
+              ? ` (${deal.conversation!.unread_count})`
+              : ""}
+          </span>
+        </div>
+      )}
 
       <div className="mt-2 flex items-center justify-between">
         <span className="text-sm font-bold text-primary">

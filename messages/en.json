@@ -526,7 +526,8 @@
     "card": {
       "noContact": "No contact",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "newMessage": "New message"
     },
     "form": {
       "editDeal": "Edit Deal",

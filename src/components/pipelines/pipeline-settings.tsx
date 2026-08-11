@@ -501,17 +501,17 @@ function SortableStageRow({
       {/* Required fields popover trigger */}
       <Popover>
         <PopoverTrigger
-          className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer shrink-0 ${
             requiredCount > 0
               ? "border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-              : "border-border/60 text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground"
+              : "border-border bg-background/60 text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
-          title="Campos obrigatórios para mover para esta etapa"
+          title="Configurar campos obrigatórios para mover para esta etapa"
         >
-          <ListChecks className="h-3.5 w-3.5" />
-          {requiredCount > 0 && (
-            <span className="text-[10px] font-bold">{requiredCount}</span>
-          )}
+          <ListChecks className="h-3.5 w-3.5 text-current" />
+          <span>
+            {requiredCount > 0 ? `${requiredCount} req.` : "Obrigatoriedade"}
+          </span>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-72 p-3 bg-popover border-border">
           <PopoverHeader className="pb-2 border-b border-border">

@@ -26,6 +26,16 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
+function formatAppointment(dateStr: string) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${day}/${month} às ${hours}:${minutes}`;
+}
+
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
@@ -111,12 +121,20 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         <span className="text-xs font-bold text-emerald-400 font-mono">
           {formatCurrency(deal.value ?? 0, deal.currency || "BRL")}
         </span>
-        {deal.expected_close_date && (
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Calendar className="h-3 w-3" />
-            {formatDate(deal.expected_close_date)}
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {deal.appointment_at && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-primary dark:text-primary-foreground/95 bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
+              <Calendar className="h-3 w-3 text-primary" />
+              {formatAppointment(deal.appointment_at)}
+            </span>
+          )}
+          {deal.expected_close_date && !deal.appointment_at && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              {formatDate(deal.expected_close_date)}
+            </span>
+          )}
+        </div>
       </div>
 
       {assigneeLabel && (

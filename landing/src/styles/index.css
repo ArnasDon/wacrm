@@ -1,0 +1,17 @@
+/* ============================================================
+ * Declaración de capas + imports (skill §3.1).
+ *
+ * Con capas el orden de la cascada es explícito y deja de depender de la
+ * especificidad o del orden de los archivos: una utilidad siempre gana a un
+ * componente sin necesidad de !important. Los <style> con scope de un .astro
+ * quedan fuera de las capas, así que siempre tienen la última palabra.
+ * ============================================================ */
+@layer reset, tokens, base, layout, components, utilities;
+
+@import './01-reset.css' layer(reset);
+@import './02-tokens.css' layer(tokens);
+@import './03-base.css' layer(base);
+@import './04-layout.css' layer(layout);
+@import './05-components.css' layer(components);
+@import './06-utilities.css' layer(utilities);
+@import './07-motion.css';

@@ -5,8 +5,9 @@
 > context7). Si algo de este doc no coincide con el código, el código manda.
 >
 > Alcance de esta guía: poner un número de Telnyx a funcionar en WACRM para
-> **llamar (voz), enviar/recibir SMS y el softphone WebRTC** (widget VoIP ya
-> implementado). El módulo Telnyx está documentado en `docs/telnyx-voice.md`
+> **llamar (voz), enviar/recibir SMS, el softphone WebRTC** (widget VoIP ya
+> implementado) **y recibir llamadas en el navegador** (Fase 4, patrón de dos
+> patas). El módulo Telnyx está documentado en `docs/telnyx-voice.md`
 > (DAD §0–§13); este doc es la guía operativa de setup, no el diseño.
 
 ---
@@ -67,8 +68,9 @@ curl -H "Authorization: Bearer TU_API_KEY" https://api.telnyx.com/v2/public_key
 
 ## Fase 2 — En el WACRM (Settings → Telnyx)
 
-La UI (`telnyx-config.tsx:200-228`) pide 4 campos, que mapean 1:1 a la tabla
-`telnyx_config` (migraciones 038/043/044):
+La UI pide 4 campos para saliente + SMS, que mapean 1:1 a la tabla
+`telnyx_config` (migraciones 038/043/044). Los dos campos del entrante van en su
+propia tarjeta y se explican en la **Fase 4**:
 
 | Campo UI | Columna DB | Lo que pegas |
 |---|---|---|
@@ -147,6 +149,121 @@ Montado en todo el dashboard: `dashboard-shell.tsx:49` → `voice-launcher.tsx`
 
 ---
 
+## Fase 4 — Llamadas entrantes al navegador (patrón de dos patas)
+
+> Esta fase es independiente de las anteriores. Sin ella, una llamada al número
+> entra en la tabla `calls` pero **nunca suena en el navegador**: hasta la
+> migración 057 el webhook solo hacía contabilidad — no contestaba, no creaba la
+> segunda pata y no unía nada.
+
+### 4.1 Por qué hacen falta dos patas
+
+Una llamada que llega de la red telefónica **no se puede "mandar" al navegador**.
+Hay que crear una **segunda llamada** hacia el cliente WebRTC y unir las dos
+(Telnyx lo llama Pattern 2):
+
+```
+Llamada PSTN → tu número (en la Call Control App) → webhook
+                                                      ↓
+                                         answer sobre la pata A
+                                                      ↓
+                              POST /v2/calls → pata B hacia sip:<agente>@sip.telnyx.com
+                              connection_id = CONEXIÓN DE CREDENCIALES
+                                                      ↓
+                                         el navegador contesta
+                                                      ↓
+                                         bridge  pata A ↔ pata B
+```
+
+**El error que produce el "siempre ocupado" (SIP 486 `user_busy`) es usar el
+`connection_id` equivocado al crear la pata B.** Tiene que ser el de la
+**conexión de credenciales** (la que autentica al softphone), no el de la Call
+Control App. La CCA sirve para recibir del exterior; la conexión de credenciales
+es la que sabe enrutar hacia registros SIP. Si mandas la pata B a la CCA, el SIP
+no encuentra a nadie registrado y responde ocupado.
+
+### 4.2 Qué crear en Mission Control
+
+1. **Crear una Credential Connection** → Voice → SIP Connections → *Create SIP
+   Connection* → tipo **Credentials**.
+   - `active`: sí
+   - *Anchorsite*: **Latency**
+   - *SIP URI calling preference*: **internal**
+   - Copiar su **UUID** → será `credential_connection_id` en WACRM.
+   - **No** le pongas webhook URL: para este patrón no hace falta. WACRM manda
+     el `webhook_url` en cada `POST /v2/calls` de la pata B, así que los eventos
+     de las dos patas llegan al mismo endpoint. Ese `webhook_url` se construye
+     con `NEXT_PUBLIC_SITE_URL` (Fase 0), así que **esa env var es obligatoria
+     para el entrante**: sin ella, `call.answered` de la pata B nunca llega y el
+     puente no se hace nunca.
+
+2. **Crear una Telephony Credential** dentro de esa conexión → Voice → SIP
+   Connections → (tu credential connection) → *Credentials* → *Add*.
+   - Anota el **SIP username** (algo tipo `gencred-xxxxxxxx`).
+   - El destino de la pata B es `sip:<sip_username>@sip.telnyx.com` → será
+     `agent_sip_uri` en WACRM.
+   - Verifica que su `connection_id` apunta a la conexión de credenciales y que
+     `expires_at` no está en el pasado:
+     ```bash
+     curl -H "Authorization: Bearer TU_API_KEY" \
+       https://api.telnyx.com/v2/telephony_credentials/<id>
+     ```
+
+3. **El número se queda en la Call Control App.** No lo muevas a la conexión de
+   credenciales: es la CCA la que recibe la llamada de fuera y dispara el webhook.
+
+4. **Webhook de la Call Control App**: el mismo de la Fase 1, más el evento
+   `call.bridged` si quieres verlo en los logs (el código no lo necesita).
+
+> Si WACRM ya te había creado una Telephony Credential colgando de la Call
+> Control App (comportamiento anterior a la migración 057), **bórrala y limpia
+> `telnyx_config.telephony_credential_id`** para que se regenere sobre la
+> conexión de credenciales. Una credencial colgada de la CCA es la causa típica
+> del `registration_status = "Not Registered"` en el softphone.
+
+### 4.3 Qué pegar en WACRM (Settings → Telnyx → *Llamadas entrantes*)
+
+| Campo UI | Columna DB | Lo que pegas |
+|---|---|---|
+| ID de la conexión de credenciales | `credential_connection_id` | UUID del paso 4.2.1 — **no** el de la Call Control App |
+| URI SIP del agente | `agent_sip_uri` | `sip:gencred-xxxxxxxx@sip.telnyx.com` del paso 4.2.2 |
+
+Ambas columnas son nulables (migración 057). Mientras estén vacías, el entrante
+se comporta como antes: se registra en `calls` y no se toca la llamada. En
+cuanto las rellenas, el webhook pasa a contestar y puentear.
+
+### 4.4 Cómo probarlo
+
+1. Abre el widget VoIP y espera a que ponga **online** (el softphone registrado).
+   Si no llega a online, el problema es la credencial, no el puente: pruébala
+   suelta en `https://webrtc.telnyx.com` con el SIP username y password.
+2. Llama a tu número desde un móvil.
+3. Deberías ver, en orden: la llamada suena en el navegador → contestas → hay
+   audio en las dos direcciones.
+4. En los logs del servidor: `call.initiated` (incoming) → `call.answered`
+   (pata A) → `call.initiated`/`call.answered` (pata B) → bridge.
+5. En la tabla `calls` quedan **dos filas**: la pata A (`leg_role='pstn'`) y la
+   pata B (`leg_role='webrtc'`), cada una con `bridge_peer_control_id` apuntando
+   a la otra.
+
+**La prueba que de verdad importa (criterio de salida): tres llamadas seguidas
+al mismo número, contestadas y colgadas desde el navegador. Si la tercera entra
+igual que la primera, el 486 está resuelto.** Prueba también a colgar desde el
+móvil *mientras el navegador todavía suena*: la pata B tiene que morir sola, y
+la siguiente llamada tiene que entrar normal.
+
+### 4.5 Si sigue dando ocupado
+
+| Síntoma | Causa probable |
+|---|---|
+| Ocupado ya en la primera llamada | `credential_connection_id` es el de la CCA, o `agent_sip_uri` mal escrito |
+| La primera entra, la segunda da ocupado | La pata anterior no se colgó. Mira que `call.hangup` esté llegando al webhook |
+| El navegador nunca suena, pero hay filas en `calls` | Falta `NEXT_PUBLIC_SITE_URL`, así que la pata B no manda eventos de vuelta |
+| `registration_status = "Not Registered"` | Credencial telefónica colgada de la CCA en vez de la conexión de credenciales, o expirada |
+| Varias pestañas abiertas | Solo la última en registrarse recibe llamadas. Cierra las demás |
+
+---
+
 ## Checklist de verificación end-to-end
 
 Criterio de salida de Fase 1 (DAD §13): *llamada real entrante → cuelga → llega
@@ -165,6 +282,21 @@ seguimiento automático*.
       y `telnyx_message_id`)
 - [ ] Abrir widget VoIP → aparece "online" → llamada de prueba
 - [ ] Enviar SMS de prueba desde una automatización (step `send_sms`) → llega
+
+Entrante al navegador (Fase 4, migración 057):
+
+- [ ] `credential_connection_id` y `agent_sip_uri` guardados en Settings → Telnyx
+- [ ] La credencial telefónica cuelga de la **conexión de credenciales**, no de
+      la Call Control App (`GET /v2/telephony_credentials/<id>` → `connection_id`)
+- [ ] `NEXT_PUBLIC_SITE_URL` apunta al dominio público — sin ella la pata B no
+      devuelve eventos y el bridge no ocurre
+- [ ] Llamada entrante → suena en el navegador → contestada → audio en ambos
+      sentidos
+- [ ] Quedan **dos** filas en `calls` (`leg_role` `pstn` y `webrtc`) con
+      `bridge_peer_control_id` cruzado
+- [ ] Colgar desde el móvil mientras el navegador suena → la pata B muere sola
+- [ ] **Tres llamadas seguidas**: la tercera entra igual que la primera (486
+      resuelto)
 
 ---
 
@@ -207,5 +339,7 @@ seguimiento automático*.
 - Config UI: `src/components/settings/telnyx-config.tsx`
 - Widget VoIP: `src/hooks/use-telnyx.ts`, `src/components/voice/*`
 - Migraciones: `supabase/migrations/038_telnyx_config.sql`,
-  `043_telnyx_config_messaging_profile.sql`, `044_telnyx_fase2_columns.sql`
+  `043_telnyx_config_messaging_profile.sql`, `044_telnyx_fase2_columns.sql`,
+  `057_telnyx_inbound_bridge.sql` (entrante: conexión de credenciales, SIP del
+  agente y emparejamiento de patas)
 - Diseño: `docs/telnyx-voice.md`

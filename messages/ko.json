@@ -885,7 +885,9 @@
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
-        "close_conversation": "대화 닫기"
+        "close_conversation": "대화 닫기",
+        "send_sms": "SMS 보내기",
+        "send_email": "이메일 보내기"
       },
       "triggers": {
         "new_message_received": {
@@ -919,6 +921,14 @@
         "time_based": {
           "label": "시간 기반",
           "hint": "반복 일정에 따라"
+        },
+        "missed_call": {
+          "label": "부재중 전화",
+          "hint": "수신 전화를 받지 못했을 때"
+        },
+        "message_read": {
+          "label": "메시지 읽음",
+          "hint": "보낸 메시지를 상대가 읽었을 때"
         }
       },
       "trigger": "트리거",
@@ -1022,7 +1032,14 @@
         "matchType": "일치 유형",
         "matchContains": "포함",
         "matchExact": "정확히 일치",
-        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
+        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다.",
+        "smsTextLabel": "SMS 내용",
+        "emailTemplateLabel": "이메일 템플릿"
+      },
+      "emailTemplates": {
+        "select": "템플릿 선택…",
+        "placeholder": "템플릿 이름",
+        "unknown": "{name} — 설정 › 이메일에 없음"
       }
     }
   },
@@ -1745,6 +1762,12 @@
       "fromNumber": "기본 발신 번호",
       "callControlAppId": "Call Control App ID",
       "messagingProfileId": "Messaging Profile ID",
+      "inboundTitle": "수신 통화 (소프트폰)",
+      "inboundDesc": "번호로 걸려온 전화가 브라우저에 도달하려면 필요합니다. 이 두 항목이 없으면 수신은 통화 기록으로만 남습니다.",
+      "credentialConnectionId": "Credential Connection ID",
+      "credentialConnectionIdHint": "Call Control App이 아니라 Credential Connection의 id입니다. CCA의 id를 쓰면 항상 통화 중(486)으로 응답합니다.",
+      "agentSipUri": "에이전트 SIP URI",
+      "agentSipUriHint": "sip:gencred-xxxx@sip.telnyx.com 형식의 소프트폰 대상입니다. Credential Connection의 telephony credential에서 확인할 수 있습니다.",
       "webhookTitle": "웹훅 URL",
       "webhookDesc": "Telnyx 대시보드의 Call Control App webhook_event_url에 이 URL을 붙여넣으세요.",
       "webhookUrl": "웹훅 URL",

@@ -20,13 +20,23 @@ export class TelnyxApiError extends Error {
 }
 
 export interface DialInput {
-  /** E.164 destino */
+  /** E.164 destino, o un SIP URI (`sip:usuario@sip.telnyx.com`) para la pata B */
   to: string
   /** E.164 origen (default_from_number) */
   from: string
-  /** connection_id de la Call Control App */
+  /**
+   * connection_id. Para el saliente normal es el de la Call Control App;
+   * para la pata B hacia el softphone TIENE que ser el de la conexión de
+   * credenciales (ver migración 057).
+   */
   connectionId: string
   webhookUrl?: string
+  /** Nombre a mostrar en el softphone (quién llama de verdad). */
+  fromDisplayName?: string
+  /** base64 que Telnyx devuelve íntegro en cada evento de esta pata. */
+  clientState?: string
+  /** Segundos antes de que Telnyx cancele la pata si nadie contesta. */
+  timeoutSecs?: number
 }
 
 export interface DialResult {
@@ -105,6 +115,12 @@ export interface TelephonyCredential {
 
 export interface TelnyxClient {
   dial(input: DialInput): Promise<DialResult>
+  /** POST /v2/calls/{id}/actions/answer — contesta la pata entrante. */
+  answerCall(callControlId: string, clientState?: string): Promise<void>
+  /** POST /v2/calls/{id}/actions/bridge — une esta pata con `otherCallControlId`. */
+  bridgeCalls(callControlId: string, otherCallControlId: string): Promise<void>
+  /** POST /v2/calls/{id}/actions/hangup — cuelga la pata. */
+  hangupCall(callControlId: string): Promise<void>
   sendSms(input: SendSmsInput): Promise<{ id: string }>
   listPhoneNumbers(): Promise<PhoneNumber[]>
   /** GET /v2/number_lookup/{number} — carrier/line_type de un número. */
@@ -150,7 +166,15 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
   }
 
   return {
-    async dial({ to, from, connectionId, webhookUrl }) {
+    async dial({
+      to,
+      from,
+      connectionId,
+      webhookUrl,
+      fromDisplayName,
+      clientState,
+      timeoutSecs,
+    }) {
       // La respuesta de Telnyx usa snake_case; aquí ya se mapea a camelCase.
       type Raw = {
         call_control_id: string
@@ -164,6 +188,9 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
           from,
           connection_id: connectionId,
           ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
+          ...(fromDisplayName ? { from_display_name: fromDisplayName } : {}),
+          ...(clientState ? { client_state: clientState } : {}),
+          ...(timeoutSecs ? { timeout_secs: timeoutSecs } : {}),
         }),
       })
       return {
@@ -171,6 +198,31 @@ export function createTelnyxClient(apiKey: string): TelnyxClient {
         callLegId: data.call_leg_id,
         callSessionId: data.call_session_id,
       }
+    },
+
+    // ---- Call control sobre una pata ya existente -------------------
+    // Las tres devuelven `{ data: { result: 'ok' } }`; no hay nada que
+    // mapear, así que se ignora el cuerpo y solo importa que no lance.
+
+    async answerCall(callControlId, clientState) {
+      await request(`/calls/${encodeURIComponent(callControlId)}/actions/answer`, {
+        method: "POST",
+        body: JSON.stringify(clientState ? { client_state: clientState } : {}),
+      })
+    },
+
+    async bridgeCalls(callControlId, otherCallControlId) {
+      await request(`/calls/${encodeURIComponent(callControlId)}/actions/bridge`, {
+        method: "POST",
+        body: JSON.stringify({ call_control_id: otherCallControlId }),
+      })
+    },
+
+    async hangupCall(callControlId) {
+      await request(`/calls/${encodeURIComponent(callControlId)}/actions/hangup`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      })
     },
 
     async sendSms({ from, to, text, messagingProfileId, webhookUrl }) {
@@ -372,19 +424,59 @@ export async function loadTelnyxDialConfig(accountId: string): Promise<TelnyxDia
   }
 }
 
+export interface TelnyxInboundConfig {
+  apiKey: string
+  /** Conexión de credenciales — el connection_id de la pata B. */
+  credentialConnectionId: string | null
+  /** `sip:usuario@sip.telnyx.com` del softphone. */
+  agentSipUri: string | null
+}
+
+/**
+ * Config del puente entrante (webhook): API key + los dos identificadores
+ * de la migración 057. Devuelve nulos cuando la cuenta todavía no tiene el
+ * entrante configurado — el webhook lo interpreta como "solo contabilidad"
+ * y no intenta contestar ni crear la pata B.
+ */
+export async function loadTelnyxInboundConfig(
+  accountId: string,
+): Promise<TelnyxInboundConfig | null> {
+  const admin = supabaseAdmin()
+  const { data, error } = await admin
+    .from("telnyx_config")
+    .select("api_key_encrypted, credential_connection_id, agent_sip_uri")
+    .eq("account_id", accountId)
+    .maybeSingle()
+
+  if (error || !data?.api_key_encrypted) return null
+  return {
+    apiKey: decrypt(data.api_key_encrypted),
+    credentialConnectionId: data.credential_connection_id ?? null,
+    agentSipUri: data.agent_sip_uri ?? null,
+  }
+}
+
 /**
  * Asegura que el account tenga una Telephony Credential para el
  * softphone WebRTC (Fase 2). Si `telnyx_config.telephony_credential_id`
- * no existe, crea una asociada a la Call Control App (migración 044) y
- * persiste el id — la próxima llamada la reutiliza. Devuelve el id.
+ * no existe, crea una y persiste el id — la próxima llamada la reutiliza.
  *
- * Verificado context7: POST /v2/telephony_credentials { connection_id, name }.
+ * La credencial se cuelga de la CONEXIÓN DE CREDENCIALES cuando existe
+ * (migración 057). Colgarla de la Call Control App es justo la causa del
+ * `registration_status = "Not Registered"`: una credencial telefónica tiene
+ * que apuntar a la conexión de credenciales para que el softphone quede
+ * registrado y pueda recibir la pata B. Se mantiene el fallback a la CCA
+ * para no romper cuentas que ya la tuvieran creada así.
+ *
+ * POST /v2/telephony_credentials { connection_id, name }.
  */
 export async function ensureWebrtcCredential(accountId: string): Promise<string> {
   const admin = supabaseAdmin()
   const { data, error } = await admin
     .from("telnyx_config")
-    .select("api_key_encrypted, call_control_app_id, telephony_credential_id")
+    .select(
+      "api_key_encrypted, call_control_app_id, credential_connection_id, telephony_credential_id",
+    )
     .eq("account_id", accountId)
     .maybeSingle()
 
@@ -392,13 +484,18 @@ export async function ensureWebrtcCredential(accountId: string): Promise<string>
     throw new TelnyxApiError("Telnyx config not found for account")
   }
   if (data.telephony_credential_id) return data.telephony_credential_id
-  if (!data.call_control_app_id) {
-    throw new TelnyxApiError("Call Control App not configured for account")
+
+  const parentConnectionId =
+    data.credential_connection_id || data.call_control_app_id
+  if (!parentConnectionId) {
+    throw new TelnyxApiError(
+      "No connection configured for account (credential connection or Call Control App)",
+    )
   }
 
   const client = createTelnyxClient(decrypt(data.api_key_encrypted))
   const created = await client.createTelephonyCredential({
-    connectionId: data.call_control_app_id,
+    connectionId: parentConnectionId,
     name: `wacrm-${accountId.slice(0, 8)}`,
   })
 

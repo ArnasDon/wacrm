@@ -1,34 +1,24 @@
 ---
-// HowItWorks — 3 pasos (contacto → diagnóstico → cita). DAD §3.5.
-const steps = [
-  {
-    n: "01",
-    title: "Contacto",
-    desc: "Escríbenos por WhatsApp o deja tus datos en el formulario.",
-  },
-  {
-    n: "02",
-    title: "Diagnóstico",
-    desc: "Valoración personalizada para entender tu caso a fondo.",
-  },
-  {
-    n: "03",
-    title: "Cita",
-    desc: "Agenda el horario que mejor te convenga y empieza tu plan.",
-  },
-];
+// Proceso — reducción de fricción (skill §15.1, paso 6).
+// "Qué pasa después de que envío el formulario": la incertidumbre sobre el
+// siguiente paso es una de las causas principales de abandono.
+// Emite el nodo HowTo del grafo desde el layout (site.steps).
+import { site } from "../../data/site";
 ---
 
-<section id="como-funciona" class="bg-slate-50 py-16">
-  <div class="mx-auto max-w-6xl px-6">
-    <h2 class="text-center text-3xl font-bold text-slate-900">Cómo funciona</h2>
-    <div class="mt-10 grid gap-6 md:grid-cols-3">
-      {steps.map((s) => (
-        <div class="rounded-2xl bg-white p-6 shadow-sm">
-          <div class="text-sm font-bold text-emerald-600">{s.n}</div>
-          <h3 class="mt-2 text-lg font-semibold text-slate-900">{s.title}</h3>
-          <p class="mt-2 text-sm text-slate-600">{s.desc}</p>
-        </div>
+<section id="proceso" class="section bg-secondary">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">Qué pasa cuando nos escribes</h2>
+    </header>
+
+    <div class="row">
+      {site.steps.map((s, i) => (
+        <article class="col-6-md card h-100">
+          <p class="step-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</p>
+          <h3 class="t-lg fw-700 is-marginless mt-1">{s.title}</h3>
+          <p class="text-body mt-1 is-marginless">{s.text}</p>
+        </article>
       ))}
     </div>
   </div>

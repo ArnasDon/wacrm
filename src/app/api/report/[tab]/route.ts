@@ -35,7 +35,10 @@ export async function GET(
   { params }: { params: Promise<{ tab: string }> },
 ) {
   try {
-    await requireRole('agent')
+    // El accountId del llamante acota TODAS las consultas: los cargadores
+    // usan service-role, que salta RLS, así que este es el único filtro de
+    // tenencia que hay. Antes se descartaba y /reports mezclaba cuentas.
+    const ctx = await requireRole('agent')
     const { tab } = await params
     if (!TABS.has(tab)) {
       return NextResponse.json({ error: 'unknown tab' }, { status: 404 })
@@ -48,21 +51,21 @@ export async function GET(
 
     switch (tab) {
       case 'overview':
-        return NextResponse.json(await loadOverview(range))
+        return NextResponse.json(await loadOverview(ctx.accountId, range))
       case 'campaigns':
-        return NextResponse.json(await loadCampaigns(range))
+        return NextResponse.json(await loadCampaigns(ctx.accountId, range))
       case 'channels':
-        return NextResponse.json(await loadChannels(range))
+        return NextResponse.json(await loadChannels(ctx.accountId, range))
       case 'ads':
-        return NextResponse.json(await loadAds(range))
+        return NextResponse.json(await loadAds(ctx.accountId, range))
       case 'email':
-        return NextResponse.json(await loadEmail(range))
+        return NextResponse.json(await loadEmail(ctx.accountId, range))
       case 'calls':
-        return NextResponse.json(await loadCalls(range))
+        return NextResponse.json(await loadCalls(ctx.accountId, range))
       case 'top-leads':
-        return NextResponse.json(await loadTopLeads(range))
+        return NextResponse.json(await loadTopLeads(ctx.accountId, range))
       case 'lost':
-        return NextResponse.json(await loadLost(range))
+        return NextResponse.json(await loadLost(ctx.accountId, range))
     }
   } catch (err) {
     return toErrorResponse(err)

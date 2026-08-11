@@ -1,41 +1,72 @@
 ---
-// Hero — propuesta en 1 frase + CTA WhatsApp (ref_code) + CTA a form.
-// Tracking: page_view (god.js) + whatsapp_click (beacon).
-import WhatsAppCta from "../WhatsAppCta.astro";
-import { site } from "../../data/site";
+// Hero — contexto y promesa (skill §15.1, paso 1).
+// El H1 confirma que el visitante llegó al sitio correcto; el subtítulo lleva
+// la oferta concreta; dos botones: acción principal y canal alternativo.
+import { site, whatsappHref, PRIMARY_CTA } from "../../data/site";
 ---
 
-<section class="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-2 md:py-24">
-  <div>
-    <p class="mb-3 inline-block rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-      Valoración sin costo
-    </p>
-    <h1 class="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
-      Recupera tu bienestar con atención que sí te escucha
-    </h1>
-    <p class="mt-4 text-lg text-slate-600">
-      En {site.clinicName} combinamos diagnóstico personalizado y tratamiento a tu medida.
-      Escríbenos por WhatsApp y agenda tu valoración hoy.
-    </p>
-    <div class="mt-8 flex flex-wrap gap-4">
-      <WhatsAppCta label="Escríbenos por WhatsApp" variant="primary" />
-      <a
-        href="#form"
-        class="inline-flex items-center justify-center rounded-full border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-600 hover:text-emerald-700"
-      >
-        Quiero más información
-      </a>
+<section class="section" itemscope itemtype="https://schema.org/WPHeader">
+  <div class="container">
+    <div class="row is-vertical-align">
+      <div class="col-7-md">
+        <p class="badge mb-1">
+          <span class="badge__dot" aria-hidden="true"></span>
+          Agenda disponible esta semana
+        </p>
+
+        <h1 class="t-4xl lh-tight" itemprop="headline">
+          Fisioterapia que te devuelve el movimiento
+        </h1>
+
+        <p class="lead measure-sm mb-2">
+          Valoración inicial desde ${site.services[0].price} MXN, con diagnóstico y plan
+          de tratamiento el mismo día. Te contactamos por WhatsApp en menos de 24 h.
+        </p>
+
+        <div class="btn-row">
+          <a href="#agenda" class="button primary pill" data-track="cta_click" data-track-label="hero">
+            {PRIMARY_CTA}
+          </a>
+          <a
+            href={whatsappHref}
+            class="button outline pill"
+            target="_blank"
+            rel="noopener"
+            data-wa-cta
+            data-track="whatsapp_click"
+            data-track-label="hero"
+          >
+            Escribir por WhatsApp
+          </a>
+        </div>
+
+        <ul class="inline-stats mt-2 list-unstyled">
+          {site.proof.slice(0, 2).map((p) => (
+            <li class="inline-stat">
+              <strong class="inline-stat__num text-primary">{p.num}</strong>
+              <span class="inline-stat__label">{p.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="col-5-md">
+        <div class="card card--lg">
+          <p class="label text-grey">Primera valoración</p>
+          <p class="t-3xl text-primary lh-1 mb-1">${site.services[0].price} MXN</p>
+          <ul class="step-list">
+            <li><span class="step-num">1</span> 45–60 minutos con un fisioterapeuta</li>
+            <li><span class="step-num">2</span> Diagnóstico y plan por escrito</li>
+            <li><span class="step-num">3</span> Sin compromiso de continuar</li>
+          </ul>
+        </div>
+      </div>
     </div>
-    <div class="mt-6 flex items-center gap-2 text-sm text-slate-500">
-      <span aria-hidden="true" class="text-amber-500">★★★★★</span>
-      Respondemos en menos de 24 h
-    </div>
-  </div>
-  <div class="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 p-10 text-center">
-    <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-white text-4xl shadow">
-      💬
-    </div>
-    <h2 class="mt-4 text-xl font-semibold text-slate-900">Tu primer paso es un mensaje</h2>
-    <p class="mt-2 text-slate-600">Sin filas, sin esperas. Coordina directo por WhatsApp.</p>
   </div>
 </section>
+
+<style>
+  /* Alineación a la izquierda solo en este bloque: .btn-row centra por
+     defecto, y aquí el CTA acompaña al texto. */
+  .btn-row { justify-content: flex-start; }
+</style>

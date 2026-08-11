@@ -885,7 +885,9 @@
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
-        "close_conversation": "Close Conversation"
+        "close_conversation": "Close Conversation",
+        "send_sms": "Send SMS",
+        "send_email": "Send Email"
       },
       "triggers": {
         "new_message_received": {
@@ -919,6 +921,14 @@
         "time_based": {
           "label": "Time-Based",
           "hint": "On a recurring schedule"
+        },
+        "missed_call": {
+          "label": "Missed Call",
+          "hint": "When an inbound call goes unanswered"
+        },
+        "message_read": {
+          "label": "Message Read",
+          "hint": "When the contact reads a message you sent"
         }
       },
       "trigger": "Trigger",
@@ -1022,7 +1032,14 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "smsTextLabel": "SMS text",
+        "emailTemplateLabel": "Email template"
+      },
+      "emailTemplates": {
+        "select": "Select a template…",
+        "placeholder": "Template name",
+        "unknown": "{name} — not found in Settings › Email"
       }
     }
   },
@@ -1745,6 +1762,12 @@
       "fromNumber": "Default from number",
       "callControlAppId": "Call Control App ID",
       "messagingProfileId": "Messaging Profile ID",
+      "inboundTitle": "Inbound calls (softphone)",
+      "inboundDesc": "Required for calls to your number to reach the browser. Without these two fields inbound stays as call logging only.",
+      "credentialConnectionId": "Credential Connection ID",
+      "credentialConnectionIdHint": "The Credential Connection's id, NOT the Call Control App's. Using the CCA's is what makes every call come back busy (486).",
+      "agentSipUri": "Agent SIP URI",
+      "agentSipUriHint": "The softphone destination, like sip:gencred-xxxx@sip.telnyx.com. Found on the telephony credential of the credential connection.",
       "webhookTitle": "Webhook URL",
       "webhookDesc": "Paste this URL as the webhook_event_url of your Call Control App in the Telnyx dashboard.",
       "webhookUrl": "Webhook URL",

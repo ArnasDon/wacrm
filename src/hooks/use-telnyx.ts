@@ -67,6 +67,20 @@ export interface UseTelnyxReturn {
 /** Tolerancia de reconexión tras un telnyx.socket.close. */
 const REGISTRATION_TIMEOUT_MS = 15_000
 
+/**
+ * Margen entre el fin de una llamada y la siguiente. La desregistración SIP
+ * de la sesión anterior tarda un momento; encadenar llamadas sin esperar es
+ * una de las causas del 486 `user_busy`.
+ *
+ * Nota sobre "esperar a que la pasarela vuelva a registrado": esta versión
+ * del SDK NO expone el estado de la pasarela públicamente — `GatewayStateType`
+ * (REGED/UNREGED/…) vive en `RegisterAgent.gatewayStateTask`, que es privado.
+ * La única señal pública de registro es el evento `telnyx.ready`, que es lo
+ * que alimenta `isRegistered`. Así que la comprobación se hace con esa señal
+ * más este margen, no leyendo la pasarela directamente.
+ */
+const REGISTRATION_SETTLE_MS = 1_500
+
 function mapCallState(sdkState: string, direction: string): CallState {
   switch (sdkState) {
     case "new":
@@ -94,6 +108,8 @@ export function useTelnyx(): UseTelnyxReturn {
   const callRef = useRef<any>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const callStartTimeRef = useRef<number | null>(null)
+  /** Momento en que terminó la última llamada, para el margen anti-486. */
+  const lastCallEndedAtRef = useRef<number | null>(null)
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected")
   const [isRegistered, setIsRegistered] = useState(false)
@@ -111,6 +127,13 @@ export function useTelnyx(): UseTelnyxReturn {
     isMutedRef.current = isMuted
   }, [isMuted])
 
+  // Espejo en ref para poder consultar el registro desde callbacks estables
+  // (answer/makeCall) sin recrearlos en cada cambio de estado.
+  const isRegisteredRef = useRef(false)
+  useEffect(() => {
+    isRegisteredRef.current = isRegistered
+  }, [isRegistered])
+
   // ---- Remote audio: elemento <audio id="remoteAudio"> fijo en el DOM
   // (voice-window). El SDK advierte NO usar client.remoteElement (causa
   // circular JSON en ICE signaling) — se adjunta manualmente por call.
@@ -124,6 +147,11 @@ export function useTelnyx(): UseTelnyxReturn {
     }
   }, [])
 
+  // Anti-486, mitad de navegador. Soltar `srcObject` no basta: las pistas
+  // del MediaStream remoto siguen vivas y el SDK conserva una
+  // RTCPeerConnection fantasma de la llamada anterior. Con ella en pie el
+  // registro SIP se considera ocupado y la siguiente entrante recibe 486
+  // `user_busy`. Hay que parar cada pista explícitamente.
   const cleanupRemoteAudio = useCallback(() => {
     const audioEl = document.getElementById("remoteAudio") as HTMLAudioElement | null
     if (!audioEl) return
@@ -131,6 +159,16 @@ export function useTelnyx(): UseTelnyxReturn {
       audioEl.pause()
     } catch {
       /* ignore */
+    }
+    const stream = audioEl.srcObject as MediaStream | null
+    if (stream && typeof stream.getTracks === "function") {
+      for (const track of stream.getTracks()) {
+        try {
+          track.stop()
+        } catch {
+          /* ignore */
+        }
+      }
     }
     audioEl.srcObject = null
   }, [])
@@ -208,6 +246,7 @@ export function useTelnyx(): UseTelnyxReturn {
           stopDurationTimer()
           cleanupRemoteAudio()
           callRef.current = null
+          lastCallEndedAtRef.current = Date.now()
           setIsMuted(false)
           setIsOnHold(false)
           setCurrentCall((prev) =>
@@ -284,6 +323,19 @@ export function useTelnyx(): UseTelnyxReturn {
   const makeCall = useCallback(
     async (destinationNumber: string): Promise<boolean> => {
       if (!clientRef.current || !destinationNumber) return false
+      // La pasarela tiene que estar registrada, no solo el socket abierto.
+      if (!isRegisteredRef.current) return false
+
+      // Y si la llamada anterior acaba de colgar, dejar que la sesión SIP
+      // termine de morir antes de abrir otra (anti-486).
+      const endedAt = lastCallEndedAtRef.current
+      if (endedAt !== null) {
+        const elapsed = Date.now() - endedAt
+        if (elapsed < REGISTRATION_SETTLE_MS) {
+          await new Promise((r) => setTimeout(r, REGISTRATION_SETTLE_MS - elapsed))
+        }
+      }
+
       try {
         const call = clientRef.current.newCall({ destinationNumber })
         callRef.current = call
@@ -305,6 +357,9 @@ export function useTelnyx(): UseTelnyxReturn {
   )
 
   const answer = useCallback(() => {
+    // Contestar con la pasarela caída deja la llamada a medias y el registro
+    // en un estado sucio, que es de donde sale el 486 de la siguiente.
+    if (!isRegisteredRef.current) return
     try {
       callRef.current?.answer()
     } catch {
@@ -329,6 +384,7 @@ export function useTelnyx(): UseTelnyxReturn {
       /* ignore */
     }
     callRef.current = null
+    lastCallEndedAtRef.current = Date.now()
     stopDurationTimer()
     cleanupRemoteAudio()
   }, [cleanupRemoteAudio, stopDurationTimer])

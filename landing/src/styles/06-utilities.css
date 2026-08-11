@@ -1,0 +1,80 @@
+/* Utilidades (skill §5). El conjunto completo.
+ * No se generan utilidades nuevas de forma preventiva: se añade una solo
+ * cuando elimina un estilo repetido tres o más veces. */
+
+/* Escala tipográfica — incluye peso y tracking, no solo tamaño */
+.t-5xl { font-size: var(--text-5xl); line-height: 1.05; letter-spacing: -.03em; font-weight: 800; }
+.t-4xl { font-size: var(--text-4xl); line-height: 1.10; letter-spacing: -.02em; font-weight: 700; }
+.t-3xl { font-size: var(--text-3xl); line-height: 1.15; letter-spacing: -.02em; font-weight: 700; }
+.t-2xl { font-size: var(--text-2xl); line-height: 1.20; font-weight: 700; }
+.t-xl  { font-size: var(--text-xl);  line-height: 1.30; font-weight: 600; }
+.t-lg  { font-size: var(--text-lg);  line-height: 1.50; }
+.t-sm  { font-size: var(--text-sm); }
+.t-xs  { font-size: var(--text-xs); }
+.lead  { font-size: var(--text-lg); color: var(--color-grey); line-height: var(--leading-normal); }
+
+/* Peso */
+.fw-400 { font-weight: 400; } .fw-500 { font-weight: 500; }
+.fw-600 { font-weight: 600; } .fw-700 { font-weight: 700; }
+.fw-800 { font-weight: 800; } .fw-900 { font-weight: 900; }
+
+/* Interlineado */
+.lh-1       { line-height: 1; }
+.lh-tight   { line-height: var(--leading-tight); }
+.lh-snug    { line-height: var(--leading-snug); }
+.lh-relaxed { line-height: var(--leading-relaxed); }
+
+/* Color de texto */
+.text-primary { color: var(--color-primary); }
+.text-grey    { color: var(--color-grey); }
+.text-dark    { color: var(--color-darkGrey); }
+.text-white   { color: var(--color-on-dark); }
+.text-body    { font-size: var(--text-base); color: var(--color-grey); line-height: var(--leading-relaxed); }
+.text-strike  { text-decoration: line-through; }
+.label        { text-transform: uppercase; letter-spacing: .1em; font-size: var(--text-xs); }
+
+/* Alineación */
+.text-center { text-align: center; }
+.text-left   { text-align: left; }
+
+/* Medidas de línea */
+.measure-xs { max-width: var(--measure-xs); }
+.measure-sm { max-width: var(--measure-sm); }
+.measure-md { max-width: var(--measure-md); }
+.measure-lg { max-width: var(--measure-lg); }
+.measure-xl { max-width: var(--measure-xl); }
+
+/* Espaciado */
+.mx-auto { margin-inline: auto; }
+.mb-1 { margin-bottom: var(--space-4); }
+.mb-2 { margin-bottom: var(--space-5); }
+.mb-3 { margin-bottom: var(--space-6); }
+.mt-1 { margin-top: var(--space-4); }
+.mt-2 { margin-top: var(--space-5); }
+.pb-3 { padding-bottom: var(--space-6); }
+.is-marginless  { margin: 0; }
+.is-paddingless { padding: 0; }
+
+/* Layout */
+.flex-col        { display: flex; flex-direction: column; }
+.flex-center     { display: flex; align-items: center; }
+.is-vertical-align { display: flex; align-items: center; }
+.h-100           { height: 100%; }
+.is-full-width   { width: 100%; }
+.pos-relative    { position: relative; }
+.overflow-hidden { overflow: hidden; }
+.obj-cover       { object-fit: cover; }
+.is-rounded      { border-radius: 50%; }
+.radius-12       { border-radius: 12px; }
+.list-unstyled   { list-style: none; padding: 0; }
+
+/* Visibilidad */
+.hide-xs { display: none; }
+@media (min-width: 900px) { .hide-xs { display: block; } }
+
+/* Solo para lectores de pantalla */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

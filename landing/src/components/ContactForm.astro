@@ -1,0 +1,134 @@
+---
+// ContactForm — marcado ÚNICO del formulario (skill §13.4).
+//
+// Se usa en dos sitios: la sección de captación de la página y la vista de
+// soporte del widget flotante. Los `id` derivan de `formId` para que dos
+// instancias en el mismo documento no colisionen y cada <label for> apunte
+// a su campo.
+//
+// El envío lo hace scripts/lead-form.ts contra /api/events — el flujo de
+// datos que ya existía en el fork y que no se toca: el server crea el lead
+// (find-or-create por teléfono) e inserta el tracking_event con la
+// atribución que god.js dejó en los campos ocultos.
+import { site } from "../data/site";
+
+interface Props {
+  formId: string;
+  variant?: "default" | "compact";
+  /** Sale del bloque; en el widget el título lo pone la cabecera del panel. */
+  heading?: string;
+  sub?: string;
+  cta?: string;
+}
+
+const {
+  formId,
+  variant = "default",
+  heading,
+  sub,
+  cta = "Solicitar información",
+} = Astro.props;
+
+const id = (name: string) => `${formId}-${name}`;
+---
+
+<form
+  id={`lead-form-${formId}`}
+  class:list={["form", variant === "compact" && "form--compact"]}
+  data-lead-form
+  data-landing-base={site.landingBase}
+  novalidate
+>
+  {heading && <h3 class="t-xl mb-1">{heading}</h3>}
+  {sub && <p class="t-sm text-grey mb-1">{sub}</p>}
+
+  <p class="form__error" id={id("error")} role="alert" tabindex="-1" hidden></p>
+
+  <div class="field">
+    <label for={id("name")}>Nombre</label>
+    <input
+      id={id("name")}
+      name="name"
+      type="text"
+      autocomplete="name"
+      inputmode="text"
+      maxlength="80"
+      required
+      placeholder="Tu nombre"
+    />
+  </div>
+
+  <div class="field">
+    <label for={id("phone")}>Teléfono *</label>
+    <input
+      id={id("phone")}
+      name="phone"
+      type="tel"
+      autocomplete="tel"
+      inputmode="tel"
+      maxlength="24"
+      required
+      placeholder="+52 55 1234 5678"
+    />
+  </div>
+
+  <div class="field">
+    <label for={id("email")}>Email</label>
+    <input
+      id={id("email")}
+      name="email"
+      type="email"
+      autocomplete="email"
+      inputmode="email"
+      maxlength="120"
+      placeholder="tu@email.com"
+    />
+  </div>
+
+  <div class="field">
+    <label for={id("message")}>Mensaje</label>
+    <textarea
+      id={id("message")}
+      name="message"
+      rows="3"
+      maxlength="600"
+      placeholder="¿Qué te gustaría consultar?"></textarea>
+  </div>
+
+  {/* Campo trampa: oculto y fuera del orden de tabulación (skill §20). */}
+  <div class="form__trap" aria-hidden="true">
+    <label for={id("company_website")}>No rellenar</label>
+    <input id={id("company_website")} name="company_website" type="text" tabindex="-1" autocomplete="off" />
+  </div>
+
+  {/* Campos ocultos que rellena god.js antes del envío. */}
+  <input type="hidden" name="utm_source" />
+  <input type="hidden" name="utm_medium" />
+  <input type="hidden" name="utm_campaign" />
+  <input type="hidden" name="utm_term" />
+  <input type="hidden" name="utm_content" />
+  <input type="hidden" name="gclid" />
+  <input type="hidden" name="gbraid" />
+  <input type="hidden" name="wbraid" />
+  <input type="hidden" name="fbclid" />
+  <input type="hidden" name="msclkid" />
+  <input type="hidden" name="ttclid" />
+  <input type="hidden" name="li_fat_id" />
+  <input type="hidden" name="gad_source" />
+  <input type="hidden" name="landing_slug" />
+  <input type="hidden" name="ref_code" />
+  <input type="hidden" name="event_id" />
+  <input type="hidden" name="channel" />
+  <input type="hidden" name="medium" />
+  <input type="hidden" name="visitor_id" />
+
+  <button type="submit" class="button primary pill">{cta}</button>
+  <p class="form__trust t-xs">Sin compromiso. Te respondemos en menos de 24 h.</p>
+</form>
+
+<script>
+  // Astro deduplica este import aunque el componente se monte varias veces:
+  // el módulo se empaqueta una sola vez y gobierna todos los
+  // [data-lead-form] del documento.
+  import "../scripts/lead-form";
+</script>

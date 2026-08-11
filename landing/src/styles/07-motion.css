@@ -1,0 +1,16 @@
+/* Movimiento.
+ *
+ * Este archivo se importa SIN capa a propósito. Los estilos no adscritos a
+ * ninguna capa ganan a todos los que sí lo están, así que la preferencia del
+ * usuario se impone sobre cualquier componente o utilidad sin necesidad de
+ * !important (skill §1, regla 4). */
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, ::before, ::after {
+    animation-duration: .01ms;
+    animation-iteration-count: 1;
+    transition-duration: .01ms;
+  }
+}

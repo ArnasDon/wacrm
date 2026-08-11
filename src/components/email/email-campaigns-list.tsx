@@ -193,22 +193,10 @@ export function EmailCampaignsList() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('subtitle')}</p>
-        </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="create email campaigns"
-          onClick={() => router.push('/email/new')}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          {t('newCampaign')}
-        </GatedButton>
-      </div>
-
+      {/* Sin cabecera propia: la página ya pinta el título y la acción
+          principal. Este componente vive dentro de una pestaña, y repetir un
+          <h1> aquí dejaba dos títulos encadenados y hundía el botón de crear
+          por debajo del segundo. */}
       {campaigns.length === 0 ? (
         <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-card">
           <Mail className="mb-3 h-10 w-10 text-muted-foreground" />

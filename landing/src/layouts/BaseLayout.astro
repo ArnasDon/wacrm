@@ -1,57 +1,139 @@
 ---
-// BaseLayout — shell HTML de la landing (DAD §3.1).
-// Carga god.js (script de atribución, bundled a /god.js en la raíz de
-// Next) + initAttribution() + wireClickBeacons(). El script se sirve
-// desde /god.js (raíz de Next, NO desde /landing/) — DAD §3.1.
-import "../styles/global.css";
+// BaseLayout — shell HTML de la landing (skill §9.1).
+//
+// Emite las etiquetas de SEO, el grafo JSON-LD (§9.2), las pistas de
+// conexión (§8.4) y monta el widget de contacto después de <main> (§7.7).
+//
+// god.js se conserva tal cual: es el script de atribución (§12.2) y alimenta
+// /api/events. Se sirve desde /god.js (raíz de Next, NO desde /landing/).
+import "../styles/index.css";
 import { site } from "../data/site";
+import { buildGraph } from "../lib/schema";
+import ContactLauncher from "../components/ContactLauncher.astro";
+import Footer from "../components/sections/Footer.astro";
 
 interface Props {
-  title?: string;
-  description?: string;
-  /** Carga el script de Core Web Vitals (DAD §3.4) */
-  vitals?: boolean;
+  title: string;
+  description: string;
+  /** Ruta relativa dentro de landingBase, con barra final. */
+  path?: string;
+  /** Precarga del LCP: la sintaxis debe coincidir con la del elemento (§8.4). */
+  preloadHero?: { mobile: string; desktop: string; breakpoint: number };
+  /** La página contiene una fachada de video → preconnect condicional. */
+  hasVideo?: boolean;
+  noindex?: boolean;
+  faq?: readonly { q: string; a: string }[];
+  steps?: readonly { title: string; text: string }[];
+  breadcrumb?: { name: string; item?: string }[];
 }
 
 const {
-  title = `${site.clinicName} — atención y resultados`,
-  description = "Diagnóstico y tratamiento personalizado. Escríbenos por WhatsApp y agenda tu valoración.",
-  vitals = false,
+  title,
+  description,
+  path = "/",
+  preloadHero,
+  hasVideo = false,
+  noindex = false,
+  faq,
+  steps,
+  breadcrumb,
 } = Astro.props;
 
-// Noindex mientras site.ts conserve placeholders (fork plantilla — la
-// landing no es una clínica real todavía). Ver landing/public/robots.txt.
-const indexable = site.indexable;
+const canonical = `${site.baseUrl}${site.landingBase}${path}`;
+// Noindex mientras site.ts conserve placeholders (el fork es una plantilla,
+// no una clínica real todavía). Ver landing/public/robots.txt.
+const robots = noindex || !site.indexable
+  ? "noindex, nofollow"
+  : "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1";
+
+const graph = buildGraph({
+  url: canonical,
+  title,
+  description,
+  faq,
+  steps,
+  breadcrumb,
+});
+
+const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-dark:${site.theme.primaryDark};--color-accent:${site.theme.accent};}`;
 ---
 
 <!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover es obligatorio: sin él env(safe-area-inset-*)
+         devuelve 0px y toda la lógica de área segura queda inerte (§4). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="robots" content={robots} />
+    <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.ico" />
-    {
-      !indexable && (
-        <meta name="robots" content="noindex, nofollow" />
-      )
-    }
-    <link rel="canonical" href={`${site.baseUrl}${site.landingBase}/`} />
+
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content={site.clinicName} />
+    <meta property="og:site_name" content={site.name} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={`${site.baseUrl}${site.landingBase}/`} />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={`${site.baseUrl}${site.ogImage}`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="es_MX" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${site.baseUrl}${site.ogImage}`} />
+
+    {/* Precarga del LCP con dirección de arte: una entrada por variante y el
+        mismo `media` que el <picture>, o el navegador descarga dos veces. */}
+    {preloadHero && (
+      <>
+        <link
+          rel="preload"
+          as="image"
+          href={preloadHero.mobile}
+          media={`(max-width: ${preloadHero.breakpoint - 1}px)`}
+          fetchpriority="high"
+        />
+        <link
+          rel="preload"
+          as="image"
+          href={preloadHero.desktop}
+          media={`(min-width: ${preloadHero.breakpoint}px)`}
+          fetchpriority="high"
+        />
+      </>
+    )}
+
+    {/* Solo los dominios que la página usa de verdad: un preconnect sobrante
+        desperdicia una conexión y compite con los recursos reales (§8.4). */}
+    {hasVideo && <link rel="preconnect" href="https://www.youtube-nocookie.com" />}
+
+    <style set:html={brandVars}></style>
+    <script type="application/ld+json" set:html={JSON.stringify(graph)}></script>
+
     <script is:inline define:vars={{ siteUrl: site.baseUrl }}>
       window.__WACRM_SITE_URL__ = siteUrl;
     </script>
   </head>
-  <body class="min-h-screen bg-white text-slate-800">
-    <slot />
-    <!-- god.js: atribución + beacons (DAD §2.2). Fuera del bundle de Astro: -->
+  <body>
+    <main>
+      <slot />
+    </main>
+
+    {/* Fuera de <main>: el pie es cromo del sitio, no contenido de la página. */}
+    <Footer />
+
+    <ContactLauncher />
+
+    <!-- god.js: atribución + beacons. Fuera del bundle de Astro. -->
     <script is:inline src="/god.js"></script>
-    {vitals && <script src="../scripts/vitals.ts"></script>}
+    <script>
+      // Inyecta el ref_code persistido en los CTA de WhatsApp. Antes se
+      // importaba desde el frontmatter de index.astro, así que se ejecutaba
+      // en build y nunca llegaba al navegador: el código no viajaba.
+      import "../scripts/wa-ref";
+    </script>
   </body>
 </html>

@@ -145,6 +145,11 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "tag_added" },
   { value: "time_based" },
   { value: "missed_call" },
+  // El disparador ya estaba implementado de punta a punta —types/index.ts:611,
+  // trigger-meta.ts:46, validate.ts:215 y el despacho del webhook de WhatsApp
+  // en api/whatsapp/webhook/route.ts:452— pero no figuraba aquí, así que no
+  // había forma de elegirlo en el desplegable.
+  { value: "message_read" },
 ]
 
 function cid(): string {
@@ -195,6 +200,12 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { url: "", headers: {}, body_template: "" }
     case "close_conversation":
       return {}
+    // Sin estos dos casos los pasos nacían con `{}` y validate.ts los marcaba
+    // inválidos en cuanto se añadían (`text` / `template` requeridos).
+    case "send_sms":
+      return { text: "" }
+    case "send_email":
+      return { template: "" }
     default:
       return {}
   }
@@ -214,9 +225,18 @@ interface AutomationResources {
   tags: TagRecord[]
   members: AccountMember[]
   templates: MessageTemplate[]
+  emailTemplates: EmailTemplateOption[]
   customFields: CustomField[]
   pipelines: PipelineOption[]
   stages: PipelineStageOption[]
+}
+
+/** Plantillas propias de correo (migración 040). El motor las resuelve por
+ *  `name` dentro del account (engine.ts:458), así que el paso guarda el
+ *  nombre, no el id. */
+interface EmailTemplateOption {
+  id: string
+  name: string
 }
 
 interface PipelineOption {
@@ -235,6 +255,7 @@ const ResourcesContext = createContext<AutomationResources>({
   tags: [],
   members: [],
   templates: [],
+  emailTemplates: [],
   customFields: [],
   pipelines: [],
   stages: [],
@@ -248,6 +269,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplateOption[]>([])
   const [customFields, setCustomFields] = useState<CustomField[]>([])
   const [pipelines, setPipelines] = useState<PipelineOption[]>([])
   const [stages, setStages] = useState<PipelineStageOption[]>([])
@@ -261,7 +283,14 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
+      const [
+        tagsRes,
+        templatesRes,
+        emailTemplatesRes,
+        customFieldsRes,
+        pipelinesRes,
+        stagesRes,
+      ] =
         await Promise.all([
           supabase.from("tags").select("*").order("name"),
           supabase
@@ -269,6 +298,9 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
             .select("*")
             .eq("status", "APPROVED")
             .order("name"),
+          // Las plantillas de correo las apruebas tú, no Meta: no hay
+          // estado por el que filtrar.
+          supabase.from("email_templates").select("id, name").order("name"),
           supabase.from("custom_fields").select("*").order("field_name"),
           supabase.from("pipelines").select("id, name").order("name"),
           supabase
@@ -279,6 +311,9 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       setTags((tagsRes.data as TagRecord[] | null) ?? [])
       setTemplates((templatesRes.data as MessageTemplate[] | null) ?? [])
+      setEmailTemplates(
+        (emailTemplatesRes.data as EmailTemplateOption[] | null) ?? [],
+      )
       setCustomFields((customFieldsRes.data as CustomField[] | null) ?? [])
       setPipelines((pipelinesRes.data as PipelineOption[] | null) ?? [])
       setStages((stagesRes.data as PipelineStageOption[] | null) ?? [])
@@ -305,7 +340,15 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages }}
+      value={{
+        tags,
+        members,
+        templates,
+        emailTemplates,
+        customFields,
+        pipelines,
+        stages,
+      }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -363,6 +406,52 @@ function TagSelect({
         )}
       </select>
     </div>
+  )
+}
+
+/** Email-template dropdown by name, storing the template's `name` — que es
+ *  como lo resuelve el motor (engine.ts:458, `.eq('name', cfg.template)`).
+ *  Igual que TagSelect, cae a un input libre cuando la cuenta todavía no
+ *  tiene plantillas, para que el paso siga siendo editable. */
+function EmailTemplateSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string
+  onChange: (v: string) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { emailTemplates } = useResources()
+  if (emailTemplates.length === 0) {
+    return (
+      <Input
+        placeholder={t("emailTemplates.placeholder")}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-muted text-foreground"
+      />
+    )
+  }
+  const known = emailTemplates.some((tpl) => tpl.name === value)
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={SELECT_CLASS}
+    >
+      <option value="">{t("emailTemplates.select")}</option>
+      {emailTemplates.map((tpl) => (
+        <option key={tpl.id} value={tpl.name}>
+          {tpl.name}
+        </option>
+      ))}
+      {/* Conserva una plantilla guardada que ya no existe, para no
+          descartarla en silencio al editar una automatización vieja. */}
+      {value && !known && (
+        <option value={value}>{t("emailTemplates.unknown", { name: value })}</option>
+      )}
+    </select>
   )
 }
 
@@ -1489,7 +1578,7 @@ function StepEditor({
       )
     case "send_sms":
       return (
-        <FieldBlock label="SMS text">
+        <FieldBlock label={t("config.smsTextLabel")}>
           <Textarea
             value={(cfg.text as string) ?? ""}
             onChange={(e) => set({ text: e.target.value })}
@@ -1499,14 +1588,15 @@ function StepEditor({
         </FieldBlock>
       )
     case "send_email":
-      // name en `email_templates` (migración 040); se trae de Settings › Email.
+      // Guarda el `name` de `email_templates` (migración 040), que es lo que
+      // el motor busca. Antes era un input libre: un nombre mal escrito no
+      // fallaba al guardar, fallaba en ejecución con `template "x" not found`.
       return (
-        <FieldBlock label="Email template name">
-          <Input
+        <FieldBlock label={t("config.emailTemplateLabel")}>
+          <EmailTemplateSelect
             value={(cfg.template as string) ?? ""}
-            onChange={(e) => set({ template: e.target.value })}
-            placeholder="missed_call"
-            className="bg-muted text-foreground"
+            onChange={(v) => set({ template: v })}
+            t={t}
           />
         </FieldBlock>
       )

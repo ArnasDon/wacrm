@@ -1,0 +1,55 @@
+/* Base (skill §3.3). */
+body {
+  background: var(--bg-color);
+  color: var(--font-color);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  margin: .35em 0 .7em;
+}
+h1 { font-size: 2em; }
+h2 { font-size: 1.75em; }
+h3 { font-size: 1.5em; }
+h4 { font-size: 1.25em; }
+
+p { margin-top: 0; }
+a { color: var(--color-primary); text-decoration: none; }
+a:hover:not(.button) { opacity: .75; }
+
+/* Anillo de foco visible para teclado, invisible para ratón */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Controles de formulario.
+ * font-size 16px evita el zoom automático de Safari iOS al enfocar, y
+ * min-height 48px cumple el objetivo táctil mínimo de accesibilidad. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]),
+select, textarea {
+  width: 100%;
+  display: block;
+  padding: .8rem 1rem;
+  min-height: 48px;
+  font-size: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+label { display: block; margin-bottom: .4rem; font-weight: 500; }

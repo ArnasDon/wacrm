@@ -68,14 +68,22 @@ DROP POLICY IF EXISTS email_campaigns_select ON email_campaigns;
 CREATE POLICY email_campaigns_select ON email_campaigns FOR SELECT
   USING (is_account_member(account_id));
 
-DROP POLICY IF EXISTS email_campaigns_insert ON email_campaigns FOR INSERT
+-- `DROP POLICY` no admite `FOR INSERT ... WITH CHECK`, y estas tres
+-- sentencias además no traían su `CREATE POLICY`. Tal cual estaban,
+-- Postgres abortaba el archivo aquí por error de sintaxis y ninguna
+-- migración posterior llegaba a correr. Ver 056, que las crea de forma
+-- idempotente sobre bases donde 052 ya se aplicó a medias.
+DROP POLICY IF EXISTS email_campaigns_insert ON email_campaigns;
+CREATE POLICY email_campaigns_insert ON email_campaigns FOR INSERT
   WITH CHECK (is_account_member(account_id, 'agent'));
 
-DROP POLICY IF EXISTS email_campaigns_update ON email_campaigns FOR UPDATE
+DROP POLICY IF EXISTS email_campaigns_update ON email_campaigns;
+CREATE POLICY email_campaigns_update ON email_campaigns FOR UPDATE
   USING (is_account_member(account_id, 'agent'))
   WITH CHECK (is_account_member(account_id, 'agent'));
 
-DROP POLICY IF EXISTS email_campaigns_delete ON email_campaigns FOR DELETE
+DROP POLICY IF EXISTS email_campaigns_delete ON email_campaigns;
+CREATE POLICY email_campaigns_delete ON email_campaigns FOR DELETE
   USING (is_account_member(account_id, 'agent'));
 
 DROP TRIGGER IF EXISTS set_updated_at ON email_campaigns;

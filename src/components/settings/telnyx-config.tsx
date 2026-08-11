@@ -36,6 +36,10 @@ export function TelnyxConfig() {
   const [defaultFromNumber, setDefaultFromNumber] = useState('');
   const [callControlAppId, setCallControlAppId] = useState('');
   const [messagingProfileId, setMessagingProfileId] = useState('');
+  // Entrante (migración 057) — sin estos dos el webhook no puede construir
+  // la pata B hacia el softphone y las llamadas no llegan al navegador.
+  const [credentialConnectionId, setCredentialConnectionId] = useState('');
+  const [agentSipUri, setAgentSipUri] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
 
@@ -57,6 +61,8 @@ export function TelnyxConfig() {
           setDefaultFromNumber((data.default_from_number as string) || '');
           setCallControlAppId((data.call_control_app_id as string) || '');
           setMessagingProfileId((data.messaging_profile_id as string) || '');
+          setCredentialConnectionId((data.credential_connection_id as string) || '');
+          setAgentSipUri((data.agent_sip_uri as string) || '');
           setApiKey(MASKED_KEY);
           setKeyEdited(false);
         } else {
@@ -64,6 +70,8 @@ export function TelnyxConfig() {
           setDefaultFromNumber('');
           setCallControlAppId('');
           setMessagingProfileId('');
+          setCredentialConnectionId('');
+          setAgentSipUri('');
           setApiKey('');
           setKeyEdited(false);
         }
@@ -101,6 +109,9 @@ export function TelnyxConfig() {
     if (defaultFromNumber.trim()) payload.default_from_number = defaultFromNumber.trim();
     if (callControlAppId.trim()) payload.call_control_app_id = callControlAppId.trim();
     if (messagingProfileId.trim()) payload.messaging_profile_id = messagingProfileId.trim();
+    if (credentialConnectionId.trim())
+      payload.credential_connection_id = credentialConnectionId.trim();
+    if (agentSipUri.trim()) payload.agent_sip_uri = agentSipUri.trim();
 
     try {
       setSaving(true);
@@ -225,6 +236,42 @@ export function TelnyxConfig() {
                   onChange={(e) => setMessagingProfileId(e.target.value)}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-foreground">{t('inboundTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('inboundDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">
+                  {t('credentialConnectionId')}
+                </Label>
+                <Input
+                  placeholder="uuid"
+                  value={credentialConnectionId}
+                  onChange={(e) => setCredentialConnectionId(e.target.value)}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('credentialConnectionIdHint')}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t('agentSipUri')}</Label>
+                <Input
+                  placeholder="sip:gencred-xxxx@sip.telnyx.com"
+                  value={agentSipUri}
+                  onChange={(e) => setAgentSipUri(e.target.value)}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground font-mono"
+                />
+                <p className="text-xs text-muted-foreground">{t('agentSipUriHint')}</p>
               </div>
             </CardContent>
           </Card>

@@ -4,14 +4,37 @@ import { verifyTelnyxWebhook } from '@/lib/telnyx/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { buildMediaPath } from '@/lib/storage/upload-media'
+import { createTelnyxClient, loadTelnyxInboundConfig } from '@/lib/telnyx/api'
 
 // ============================================================
-// Telnyx webhook (Fase 1). Sin auth (firma Ed25519 ANTES de DB).
-// Bookkeeping best-effort de calls + missed_call + SMS inbound.
+// Telnyx webhook. Sin auth (firma Ed25519 ANTES de DB).
+// Contabilidad de `calls` + missed_call + SMS inbound, MÁS el control de
+// llamada del entrante (patrón de dos patas, migración 057).
 //
 // Tenancy: se resuelve por `connection_id` → telnyx_config.call_control_app_id
-// (voz) o por el número → default_from_number (SMS). Webhooks desconocidos
-// se ignoran y se ackean (200) para no provocar reintentos de Telnyx.
+// (pata A, entra por la Call Control App) o credential_connection_id (pata B,
+// que se crea sobre la conexión de credenciales), o por el número →
+// default_from_number (SMS). Webhooks desconocidos se ignoran y se ackean
+// (200) para no provocar reintentos de Telnyx.
+//
+// ── Entrante: las tres transiciones ──────────────────────────
+//
+//   call.initiated  direction=incoming  → answer sobre la pata A,
+//                                         client_state {leg:'pstn'}
+//   call.answered   client_state.leg='pstn'   → POST /v2/calls hacia
+//                                         agent_sip_uri con
+//                                         credential_connection_id →
+//                                         pata B, client_state
+//                                         {leg:'webrtc', peer:<pata A>}
+//   call.answered   client_state.leg='webrtc' → bridge pata B ↔ pata A
+//   call.hangup                          → cuelga la pata huérfana
+//
+// El emparejamiento viaja en el `client_state`, que Telnyx devuelve íntegro
+// en cada evento: nunca en un Map en memoria, que se rompería al reiniciar
+// el proceso o con más de una instancia. La pata A se contesta antes de que
+// exista la pata B, así que su client_state no puede nombrarla — esa
+// dirección se guarda en `calls.bridge_peer_control_id` (057), que también
+// sobrevive a reinicios.
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -27,10 +50,55 @@ interface Payload {
   connection_id?: string
   hangup_cause?: string
   call_status?: string
+  client_state?: string
   from?: unknown
   to?: unknown
   recording_urls?: { mp3?: string; wav?: string } | unknown
   [k: string]: unknown
+}
+
+// ------------------------------------------------------------
+// client_state — el emparejamiento de patas
+//
+// Telnyx acepta un base64 arbitrario al contestar o al crear una llamada y
+// lo devuelve tal cual en todos los eventos de esa pata. Es lo que permite
+// saber, al recibir `call.answered`, cuál de las dos contestó: sin él las
+// dos son indistinguibles y el puente se hace al revés o no se hace.
+// ------------------------------------------------------------
+
+type LegRole = 'pstn' | 'webrtc'
+
+interface LegState {
+  /** Versión del sobre, por si el formato cambia con llamadas en vuelo. */
+  v: 1
+  leg: LegRole
+  /** call_control_id de la otra pata. Solo lo lleva la pata B. */
+  peer?: string
+}
+
+function encodeLegState(state: LegState): string {
+  return Buffer.from(JSON.stringify(state)).toString('base64')
+}
+
+function decodeLegState(encoded?: string): LegState | null {
+  if (!encoded) return null
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64').toString()) as LegState
+    return parsed?.leg === 'pstn' || parsed?.leg === 'webrtc' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Los eventos de la pata B llegan por la conexión de credenciales, no por la
+ * Call Control App, así que hay que decirle a Telnyx explícitamente que los
+ * mande al mismo endpoint. Si no, `call.answered` de la pata B nunca llega y
+ * el bridge no ocurre nunca.
+ */
+function webhookUrl(): string | undefined {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL
+  return base ? `${base.replace(/\/$/, '')}/api/telnyx/webhook` : undefined
 }
 
 /**
@@ -118,6 +186,16 @@ async function resolveAccountId(
       .eq('call_control_app_id', connectionId)
       .maybeSingle()
     if (data) return data.account_id
+
+    // La pata B se crea sobre la conexión de credenciales, así que sus
+    // eventos traen ESE connection_id. Sin este segundo lookup se
+    // descartarían como "unknown account" y el bridge nunca se haría.
+    const { data: byCredential } = await admin
+      .from('telnyx_config')
+      .select('account_id')
+      .eq('credential_connection_id', connectionId)
+      .maybeSingle()
+    if (byCredential) return byCredential.account_id
   }
   if (number) {
     const { data } = await admin
@@ -168,6 +246,30 @@ async function onCallInitiated(admin: Admin, accountId: string, p: Payload) {
     .update({ status: 'ringing' })
     .eq('telnyx_call_control_id', ctrl)
     .eq('account_id', accountId)
+
+  // ── Control de llamada: contestar la pata A ──────────────
+  // Solo el entrante de verdad. La pata B que creamos nosotros es
+  // `outgoing` para Telnyx, así que no entra por aquí y no se contesta
+  // sola — la contesta el navegador.
+  if (p.direction !== 'incoming') return
+  if (decodeLegState(p.client_state)) return // ya marcada: reentrega
+
+  const cfg = await loadTelnyxInboundConfig(accountId)
+  if (!cfg?.credentialConnectionId || !cfg.agentSipUri) {
+    // Entrante sin configurar: se queda en contabilidad, como antes.
+    return
+  }
+
+  await admin
+    .from('calls')
+    .update({ leg_role: 'pstn' })
+    .eq('telnyx_call_control_id', ctrl)
+    .eq('account_id', accountId)
+
+  await createTelnyxClient(cfg.apiKey).answerCall(
+    ctrl,
+    encodeLegState({ v: 1, leg: 'pstn' }),
+  )
 }
 
 async function onCallAnswered(admin: Admin, accountId: string, p: Payload) {
@@ -178,6 +280,67 @@ async function onCallAnswered(admin: Admin, accountId: string, p: Payload) {
     .update({ status: 'answered', answered_at: new Date().toISOString() })
     .eq('telnyx_call_control_id', ctrl)
     .eq('account_id', accountId)
+
+  const state = decodeLegState(p.client_state)
+  if (!state) return // llamada saliente normal: nada que puentear
+
+  const cfg = await loadTelnyxInboundConfig(accountId)
+  if (!cfg) return
+  const client = createTelnyxClient(cfg.apiKey)
+
+  // ── Pata A contestada → crear la pata B hacia el softphone ──
+  if (state.leg === 'pstn') {
+    if (!cfg.credentialConnectionId || !cfg.agentSipUri) return
+
+    const legB = await client.dial({
+      to: cfg.agentSipUri,
+      // El DID como caller id, y quién llama de verdad en el display.
+      from: numStr(p.to),
+      fromDisplayName: numStr(p.from) || undefined,
+      // ESTE es el punto del 486: la pata B va sobre la conexión de
+      // credenciales (la que autentica al softphone), NO sobre la Call
+      // Control App. La CCA no sabe enrutar a registros SIP y el SIP
+      // responde ocupado.
+      connectionId: cfg.credentialConnectionId,
+      webhookUrl: webhookUrl(),
+      timeoutSecs: 30,
+      clientState: encodeLegState({ v: 1, leg: 'webrtc', peer: ctrl }),
+    })
+
+    // La pata B queda registrada en `calls` como cualquier otra llamada, y
+    // el emparejamiento se guarda en las dos direcciones: la pata B lleva a
+    // la A en su client_state, y la A apunta a la B aquí — que es lo que
+    // permite colgar la pata huérfana si quien llama cuelga mientras el
+    // navegador todavía suena.
+    await admin.from('calls').upsert(
+      {
+        account_id: accountId,
+        direction: 'outbound',
+        status: 'initiated',
+        from_number: numStr(p.to),
+        to_number: cfg.agentSipUri,
+        telnyx_call_control_id: legB.callControlId,
+        telnyx_call_leg_id: legB.callLegId,
+        telnyx_call_session_id: legB.callSessionId,
+        leg_role: 'webrtc',
+        bridge_peer_control_id: ctrl,
+      },
+      { onConflict: 'telnyx_call_control_id', ignoreDuplicates: true },
+    )
+
+    await admin
+      .from('calls')
+      .update({ bridge_peer_control_id: legB.callControlId })
+      .eq('telnyx_call_control_id', ctrl)
+      .eq('account_id', accountId)
+
+    return
+  }
+
+  // ── Pata B contestada (el navegador cogió) → unir las dos ──
+  if (state.leg === 'webrtc' && state.peer) {
+    await client.bridgeCalls(ctrl, state.peer)
+  }
 }
 
 async function onCallHangup(admin: Admin, accountId: string, p: Payload) {
@@ -214,9 +377,63 @@ async function onCallHangup(admin: Admin, accountId: string, p: Payload) {
   if (isMissed && !alreadyMissed) {
     await dispatchMissed(admin, accountId, ctrl, p)
   }
-  // Anti-486: en Fase 1 (forwarding nativo) cada leg es un call_control_id
-  // distinto y el webhook no conoce el de la leg opuesta de forma fiable;
-  // colgar la leg 2 (softphone) se hace client-side en Fase 2 (§3.3).
+
+  await hangupOrphanLeg(admin, accountId, ctrl, p)
+}
+
+/**
+ * Anti-486. Cuando una pata cuelga, la otra tiene que morir con ella.
+ *
+ * Si ya estaban puenteadas Telnyx suele cerrar las dos, pero el caso que de
+ * verdad deja el registro SIP ocupado es el otro: quien llama cuelga
+ * mientras el navegador todavía está sonando. Ahí la pata B se queda viva,
+ * el softphone sigue "en llamada" y la siguiente entrante recibe 486
+ * `user_busy`. Colgarla explícitamente es lo que hace que la tercera
+ * llamada seguida entre igual que la primera.
+ *
+ * La pareja sale del client_state (pata B → pata A) o de
+ * `calls.bridge_peer_control_id` (pata A → pata B, migración 057). Nunca de
+ * un Map en memoria.
+ */
+async function hangupOrphanLeg(
+  admin: Admin,
+  accountId: string,
+  ctrl: string,
+  p: Payload,
+) {
+  const state = decodeLegState(p.client_state)
+
+  let peer = state?.peer ?? null
+  if (!peer) {
+    const { data: row } = await admin
+      .from('calls')
+      .select('bridge_peer_control_id')
+      .eq('telnyx_call_control_id', ctrl)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    peer = row?.bridge_peer_control_id ?? null
+  }
+  if (!peer) return
+
+  // Si la otra pata ya terminó, no hay nada que colgar — y evitamos un 422
+  // de Telnyx por actuar sobre una llamada muerta.
+  const { data: peerRow } = await admin
+    .from('calls')
+    .select('status')
+    .eq('telnyx_call_control_id', peer)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (peerRow?.status === 'ended') return
+
+  const cfg = await loadTelnyxInboundConfig(accountId)
+  if (!cfg) return
+
+  try {
+    await createTelnyxClient(cfg.apiKey).hangupCall(peer)
+  } catch (err) {
+    // Carrera normal: Telnyx ya la había colgado. No es un fallo.
+    console.warn('[telnyx:webhook] hangup de la pata pareja falló (probablemente ya colgada):', err)
+  }
 }
 
 /** Criterio ÚNICO de missed (§3.4): inbound + leg del agente que no contestó. */
@@ -245,7 +462,6 @@ async function dispatchMissed(admin: Admin, accountId: string, callId: string, p
   }).catch((err) => console.error('[automations] missed_call dispatch failed:', err))
 }
 
-/** Colgar la leg opuesta está out of scope en Fase 1 (ver onCallHangup). */
 
 // ------------------------------------------------------------
 // Grabaciones (Fase 2, DAD §2.4 / call.recording.saved)

@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Conversation, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Conversation, Deal, Tag } from "@/types";
 import {
   Phone,
   Mail,
@@ -14,17 +13,14 @@ import {
   User,
   Tag as TagIcon,
   DollarSign,
-  StickyNote,
-  Plus,
   ShoppingBag,
   BrainCircuit,
   Megaphone,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { ContactNotesPanel } from "./contact-notes-panel";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -37,18 +33,14 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
-  const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   // BLOCO 3/4 — discreet count of pending Central de IA suggestions for
   // this contact (any category — pipeline moves, follow-ups, etc.).
   // Keeps the Inbox itself free of AI clutter: just a small hint here
   // pointing back to the Central de IA, never the suggestions themselves.
   const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
-  const [newNote, setNewNote] = useState("");
-  const [addingNote, setAddingNote] = useState(false);
   const [savingHasPurchased, setSavingHasPurchased] = useState(false);
 
   // Optimistic override for the toggle below, reset on every contact
@@ -73,19 +65,16 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, notes, tags, and the pending-AI-suggestions count in
-    // parallel. The last one excludes snoozed-into-the-future rows so
+    // Fetch deals, tags, and the pending-AI-suggestions count in
+    // parallel. Notes are fetched independently by `ContactNotesPanel`
+    // (shared with the "Abrir notas" dialog off the conversation's ⋮
+    // menu). The last one excludes snoozed-into-the-future rows so
     // "Adiar" in the Central de IA also quiets this hint, same rule as
     // the suggestions list route.
-    const [dealsRes, notesRes, tagsRes, suggestionsRes] = await Promise.all([
+    const [dealsRes, tagsRes, suggestionsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("contact_notes")
-        .select("*")
         .eq("contact_id", contact.id)
         .order("created_at", { ascending: false }),
       supabase
@@ -101,7 +90,6 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
-    if (notesRes.data) setNotes(notesRes.data);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -130,35 +118,6 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
     // React Compiler's inference agrees with the manual dep list —
     // fixes the `preserve-manual-memoization` lint error.
   }, [contact]);
-
-  const handleAddNote = useCallback(async () => {
-    if (!contact || !newNote.trim()) return;
-    if (!accountId) return;
-    setAddingNote(true);
-
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-
-    const { data, error } = await supabase
-      .from("contact_notes")
-      .insert({
-        contact_id: contact.id,
-        account_id: accountId,
-        user_id: user?.id,
-        note_text: newNote.trim(),
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      setNotes((prev) => [data, ...prev]);
-      setNewNote("");
-    }
-    setAddingNote(false);
-  }, [contact, newNote, accountId]);
 
   const handleToggleHasPurchased = useCallback(
     async (value: boolean) => {
@@ -395,48 +354,10 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Notes */}
-          <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <StickyNote className="h-3 w-3" />
-              {tSidebar("notes")}
-            </div>
-            <div className="mt-2">
-              <div className="flex gap-2">
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder={tSidebar("addNotePlaceholder")}
-                  rows={2}
-                  className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
-                />
-                <Button
-                  size="sm"
-                  className="h-auto bg-primary px-2 hover:bg-primary/90"
-                  onClick={handleAddNote}
-                  disabled={!newNote.trim() || addingNote}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-
-              <div className="mt-2 space-y-2">
-                {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
-                    <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-                      {note.note_text}
-                    </p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          {/* Notes — same component the "⋮ → Abrir notas" dialog uses,
+              so mobile (where this sidebar never renders) gets the exact
+              same notes UI/data instead of a second implementation. */}
+          <ContactNotesPanel contact={contact} />
         </div>
       </ScrollArea>
     </div>

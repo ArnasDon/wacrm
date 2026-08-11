@@ -18,15 +18,17 @@ import type {
 } from "@/types";
 import {
   MessageSquare,
-  ChevronDown,
   UserPlus,
   Check,
   Clock,
   ArrowLeft,
-  RefreshCw,
   PanelRightOpen,
   PanelRightClose,
   Megaphone,
+  MoreVertical,
+  StickyNote,
+  CalendarPlus,
+  Images,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -37,8 +39,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
@@ -55,6 +61,9 @@ import { getCtwaFepStatus } from "@/lib/whatsapp/ctwa-fep";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-draft";
+import { ContactNotesPanel } from "./contact-notes-panel";
+import { MediaGallery } from "./media-gallery";
+import { AppointmentFormDialog } from "@/components/appointments/appointment-form-dialog";
 
 interface ReplyDraft {
   id: string;
@@ -108,14 +117,6 @@ interface MessageThreadProps {
    */
   resyncToken?: number;
   /**
-   * Fired by the manual-refresh button in the thread header. The parent
-   * typically bumps the same `resyncToken` it controls — this gives the
-   * user a way to force a refetch when they suspect realtime missed an
-   * event (or they're impatient). Optional so existing callers keep
-   * working; the button is only rendered when this is provided.
-   */
-  onRefresh?: () => void;
-  /**
    * Desktop-only contact-panel toggle. The page owns the open/closed
    * state (it's the one that renders the sidebar), so the thread just
    * reflects it and asks the page to flip it. Both optional so existing
@@ -168,12 +169,6 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
-];
-
 /**
  * WhatsApp-style doodle background applied to the chat area (both the
  * active thread and the empty state). The SVG tile lives at
@@ -199,7 +194,6 @@ export function MessageThread({
   onAssignChange,
   onBack,
   resyncToken = 0,
-  onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
@@ -253,29 +247,14 @@ export function MessageThread({
   }, [conversation?.id]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
-  // Purely visual spin state for the manual-refresh button. The actual
-  // refetch is fire-and-forget through `onRefresh` (which bumps the
-  // parent's resyncToken); the 700ms spin is just feedback so the click
-  // doesn't feel like a no-op. Cleared via the timer ref on unmount.
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (refreshTimerRef.current !== null) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    };
-  }, []);
-  const handleRefreshClick = useCallback(() => {
-    if (isRefreshing || !onRefresh) return;
-    setIsRefreshing(true);
-    onRefresh();
-    refreshTimerRef.current = setTimeout(() => {
-      setIsRefreshing(false);
-      refreshTimerRef.current = null;
-    }, 700);
-  }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  // The 3 dialogs opened from the header's "⋮" menu — Transfer stays a
+  // DropdownMenuSub (it's just the old Assign dropdown's content, one
+  // level deeper), these three are substantial enough to want a real
+  // dialog surface instead.
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false);
+  const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
+  const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -971,14 +950,7 @@ export function MessageThread({
 
   const displayName = contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
-  const currentStatus = STATUS_OPTIONS.find(
-    (s) => s.value === conversation.status
-  );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
-  const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
-  const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? t("assigned"))
-    : t("assign");
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1075,41 +1047,107 @@ export function MessageThread({
             </button>
           )}
 
-          {/* Manual refresh — forces a refetch of the messages + the
-              conversation list (the parent bumps its resyncToken). Useful
-              when realtime missed an event or the agent just wants to be
-              sure nothing's stale. Only rendered when the parent wires
-              up `onRefresh`. */}
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={handleRefreshClick}
-              disabled={isRefreshing}
-              aria-label={t("refreshConversation")}
-              title={t("refresh")}
-              className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
-              )}
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
-              />
-            </button>
-          )}
-
-          {/* Status dropdown */}
+          {/* Single overflow menu — replaces the old refresh button +
+              Status dropdown + Assign dropdown (WACRM inbox redesign
+              task). None of the underlying capabilities were removed:
+              status/assignment/refresh-on-reconnect all still work the
+              same as before, this just collapses their manual UI
+              controls into one "⋮" so the header reads as clean as
+              WhatsApp's own. "Pendente" / "Marcar como não lida" moved
+              in here too (not part of the requested 4 items, but
+              dropping their only UI entry point would be a real
+              regression, not a simplification) — same handlers as
+              before, `handleTogglePending` / `handleMarkUnread`. */}
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
-                )}>
-                {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
+            <DropdownMenuTrigger
+              aria-label={t("moreOptions")}
+              title={t("moreOptions")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             >
+              <MoreVertical className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 border-border bg-popover">
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="text-sm text-popover-foreground">
+                  <UserPlus className="h-3.5 w-3.5" />
+                  {t("menuTransfer")}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56 border-border bg-popover">
+                  {profiles.length === 0 ? (
+                    <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                      {t("noTeammates")}
+                    </DropdownMenuItem>
+                  ) : (
+                    profiles.map((p) => {
+                      const isSelected = p.user_id === assignedAgentId;
+                      const presence = getPresence(p.user_id);
+                      return (
+                        <DropdownMenuItem
+                          key={p.id}
+                          onClick={() => handleAssignChange(p.user_id)}
+                          className={cn(
+                            "text-sm",
+                            isSelected ? "text-primary" : "text-popover-foreground"
+                          )}
+                        >
+                          <PresenceDot
+                            status={presence}
+                            label={presenceLabel(
+                              presence,
+                              getRow(p.user_id)?.last_seen_at ?? null,
+                              now
+                            )}
+                            className="mr-2"
+                          />
+                          <span className="flex-1">
+                            {p.full_name}
+                            {p.user_id === user?.id ? t("me") : ""}
+                          </span>
+                          {isSelected && <Check className="ml-2 h-3 w-3" />}
+                        </DropdownMenuItem>
+                      );
+                    })
+                  )}
+                  {assignedAgentId && (
+                    <>
+                      <DropdownMenuSeparator className="bg-border" />
+                      <DropdownMenuItem
+                        onClick={() => handleAssignChange(null)}
+                        className="text-sm text-muted-foreground"
+                      >
+                        {t("unassign")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuItem
+                onClick={() => setNotesDialogOpen(true)}
+                className="text-sm text-popover-foreground"
+              >
+                <StickyNote className="h-3.5 w-3.5" />
+                {t("menuNotes")}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() => setAppointmentDialogOpen(true)}
+                className="text-sm text-popover-foreground"
+              >
+                <CalendarPlus className="h-3.5 w-3.5" />
+                {t("menuAppointment")}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={() => setMediaGalleryOpen(true)}
+                className="text-sm text-popover-foreground"
+              >
+                <Images className="h-3.5 w-3.5" />
+                {t("menuMedia")}
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator className="bg-border" />
+
               <DropdownMenuCheckboxItem
                 checked={conversation.status === "pending"}
                 onCheckedChange={handleTogglePending}
@@ -1125,73 +1163,42 @@ export function MessageThread({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Assign dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
-              )}
-            >
-              <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{assignLabel}</span>
-              <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
-            >
-              {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  {t("noTeammates")}
-                </DropdownMenuItem>
-              ) : (
-                profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  const presence = getPresence(p.user_id);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn(
-                        "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
-                      )}
-                    >
-                      <PresenceDot
-                        status={presence}
-                        label={presenceLabel(
-                          presence,
-                          getRow(p.user_id)?.last_seen_at ?? null,
-                          now
-                        )}
-                        className="mr-2"
-                      />
-                      <span className="flex-1">
-                        {p.full_name}
-                        {p.user_id === user?.id ? t("me") : ""}
-                      </span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {assignedAgentId && (
-                <>
-                  <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
-                    className="text-sm text-muted-foreground"
-                  >
-                    {t("unassign")}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
+
+      {/* "Abrir notas" — same `ContactNotesPanel` (contact_notes table)
+          `ContactSidebar` uses, in a dialog so it's reachable below the
+          `lg` breakpoint too, where the sidebar never renders. */}
+      <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("notesDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <ContactNotesPanel contact={contact} hideHeading />
+        </DialogContent>
+      </Dialog>
+
+      {/* "Criar agendamento" — the existing Agenda dialog (also used by
+          `agenda-week.tsx`), just pre-filled with this contact so Google
+          Calendar sync (already wired inside the dialog itself) picks up
+          the same event it always has. */}
+      <AppointmentFormDialog
+        open={appointmentDialogOpen}
+        onOpenChange={setAppointmentDialogOpen}
+        defaultContactId={contact.id}
+        defaultClientName={displayName}
+        onSaved={() => {}}
+      />
+
+      {/* "Ver mídias" — derived entirely from `messages`, already loaded
+          for this thread; no separate fetch, no new storage. */}
+      <MediaGallery
+        open={mediaGalleryOpen}
+        onOpenChange={setMediaGalleryOpen}
+        messages={messages}
+        conversationId={conversation.id}
+        contactDisplayName={contactDisplayName}
+      />
 
       {/* CTWA ad origin — tappable on every breakpoint, so it's the
           mobile/PWA discovery point ContactSidebar (desktop-only,

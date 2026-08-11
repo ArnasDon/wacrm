@@ -64,6 +64,18 @@ interface AppointmentFormDialogProps {
   appointment?: Appointment | null;
   /** Pre-fills the date field — the dashboard always creates for today. */
   defaultDate?: string;
+  /**
+   * Pre-fills the client-name field (and, when it resolves to a real
+   * contacts row, the `contact_id` FK) when opened for a known contact —
+   * the Inbox conversation menu's "Criar agendamento" is the first
+   * caller. Ignored when `appointment` is set (editing takes its own
+   * values). `defaultContactId` alone is not enough to seed the visible
+   * input — the field is the free-typed name (see `handleClientNameChange`
+   * below), so callers that know the contact must pass its display name
+   * too.
+   */
+  defaultContactId?: string;
+  defaultClientName?: string;
   onSaved: () => void;
 }
 
@@ -72,6 +84,8 @@ export function AppointmentFormDialog({
   onOpenChange,
   appointment,
   defaultDate,
+  defaultContactId,
+  defaultClientName,
   onSaved,
 }: AppointmentFormDialogProps) {
   const t = useTranslations('Appointments.form');
@@ -120,8 +134,8 @@ export function AppointmentFormDialog({
       setNotes(appointment.notes ?? '');
     } else {
       setTitle('');
-      setContactId('');
-      setClientNameInput('');
+      setContactId(defaultContactId ?? '');
+      setClientNameInput(defaultClientName ?? '');
       setPropertyId('');
       setDate(defaultDate ?? localDayKey(new Date()));
       setTime('');
@@ -132,7 +146,7 @@ export function AppointmentFormDialog({
     }
     setAddingProperty(false);
     setNewPropertyName('');
-  }, [open, appointment, defaultDate]);
+  }, [open, appointment, defaultDate, defaultContactId, defaultClientName]);
 
   useEffect(() => {
     if (!open) return;

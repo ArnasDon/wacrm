@@ -21,7 +21,6 @@ import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -83,17 +82,13 @@ export function ConversationList({
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
 
-  const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
-    { label: t("filterAll"), value: "all" },
-    { label: t("filterUnread"), value: "unread" },
-    { label: t("filterUnanswered"), value: "unanswered" },
-    { label: t("filterOpen"), value: "open" },
-    { label: t("filterPending"), value: "pending" },
-    { label: t("filterClosed"), value: "closed" },
-  ], [t]);
-
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>(initialFilter ?? "all");
+  // The dropdown that used to set this manually is gone from this screen
+  // (WACRM inbox redesign task) — `filter` is now seeded once from the
+  // dashboard's `?filter=unanswered` deep link (`initialFilter`) and
+  // still drives `filtered` below; nothing on this screen calls a setter
+  // for it anymore.
+  const [filter] = useState<InboxFilter>(initialFilter ?? "all");
   const [loading, setLoading] = useState(true);
   // Ids currently matching the "unanswered" rule (same RPC the
   // dashboard's "Leads Não Respondidos" count uses — see
@@ -312,8 +307,6 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
-
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
     // the single pane showing; fixed 320px on desktop where it shares the
@@ -413,75 +406,16 @@ export function ConversationList({
           )}
         </div>
 
+        {/* The "Todas ▼" status filter and "Tags ▼" dropdown that used to
+            sit here were removed from THIS screen only (WACRM inbox
+            redesign task) — Tags themselves, the `tags`/`selectedTagIds`
+            state, and `matchesContactFilters` are all untouched and still
+            drive filtering elsewhere (Broadcasts audience, this list's own
+            `filtered` useMemo if `selectedTagIds` is ever set again, e.g.
+            from a future entry point). `filter` (status/unread/unanswered)
+            is also still live — it's still seeded by the dashboard's
+            `?filter=unanswered` deep link even with its own dropdown gone. */}
         <div className="flex flex-wrap items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-                {activeFilter?.label ?? t("filterAll")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="border-border bg-popover"
-            >
-              {FILTER_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => setFilter(opt.value)}
-                  className={cn(
-                    "text-sm",
-                    filter === opt.value
-                      ? "text-primary"
-                      : "text-popover-foreground"
-                  )}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {tags.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  selectedTagIds.length > 0
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t("tags")}
-                {selectedTagIds.length > 0 && (
-                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                    {selectedTagIds.length}
-                  </span>
-                )}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="max-h-64 w-56 border-border bg-popover"
-              >
-                {tags.map((t) => (
-                  <DropdownMenuCheckboxItem
-                    key={t.id}
-                    checked={selectedTagIds.includes(t.id)}
-                    onCheckedChange={() => toggleTag(t.id)}
-                    className="text-sm text-popover-foreground"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: t.color }}
-                      />
-                      <span className="truncate">{t.name}</span>
-                    </span>
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
           {companies.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger

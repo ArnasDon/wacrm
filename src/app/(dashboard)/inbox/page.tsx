@@ -502,16 +502,6 @@ function InboxPageInner() {
     };
   }, []);
 
-  /**
-   * Manual refresh trigger for the thread-header refresh button.
-   * Bumps the same resyncToken the reconnect / visibility paths use,
-   * so it goes through the existing dedupe & refetch plumbing — no
-   * separate code path to keep in sync.
-   */
-  const handleManualRefresh = useCallback(() => {
-    setResyncToken((n) => n + 1);
-  }, []);
-
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {
       setConversations(loaded);
@@ -829,7 +819,6 @@ function InboxPageInner() {
             onAssignChange={handleAssignChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
-            onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
           />

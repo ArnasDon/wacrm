@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { MediaLightbox } from "./media-lightbox";
+import { useResolvedMediaSrc } from "@/lib/inbox/use-resolved-media-src";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
 
@@ -58,42 +59,8 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
 }
 
 function MediaImage({ url, alt, t }: { url: string; alt: string; t: ReturnType<typeof useTranslations> }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const { src, loading, error, setError } = useResolvedMediaSrc(url);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-
-  const loadImage = useCallback(async () => {
-    if (!url) return;
-
-    // Proxy URLs need auth fetch to create blob URL
-    if (url.startsWith("/api/whatsapp/media/")) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
-  }, [url]);
-
-  useEffect(() => {
-    loadImage();
-    return () => {
-      if (src?.startsWith("blob:")) {
-        URL.revokeObjectURL(src);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
 
   if (error) {
     return (

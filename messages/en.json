@@ -278,7 +278,25 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "moreOptions": "More options",
+      "menuTransfer": "Transfer conversation",
+      "menuNotes": "Open notes",
+      "menuAppointment": "Create appointment",
+      "menuMedia": "View media",
+      "notesDialogTitle": "Contact notes"
+    },
+    "mediaGallery": {
+      "title": "Conversation media",
+      "images": "Images",
+      "videos": "Videos",
+      "documents": "Documents",
+      "links": "Links",
+      "noImages": "No images in this conversation",
+      "noVideos": "No videos in this conversation",
+      "noDocuments": "No documents in this conversation",
+      "noLinks": "No links in this conversation",
+      "you": "You"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -393,6 +411,7 @@
       "noTags": "No tags",
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note...",
+      "noNotesYet": "No notes yet",
       "hasPurchased": "Already purchased?",
       "hasPurchasedYes": "Yes",
       "hasPurchasedNo": "No",

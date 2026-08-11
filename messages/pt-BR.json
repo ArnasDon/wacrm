@@ -278,7 +278,25 @@
       "selectConversation": "Selecione uma conversa",
       "selectConversationHint": "Escolha uma conversa à esquerda para começar a conversar",
       "today": "Hoje",
-      "yesterday": "Ontem"
+      "yesterday": "Ontem",
+      "moreOptions": "Mais opções",
+      "menuTransfer": "Transferir atendimento",
+      "menuNotes": "Abrir notas",
+      "menuAppointment": "Criar agendamento",
+      "menuMedia": "Ver mídias",
+      "notesDialogTitle": "Notas do contato"
+    },
+    "mediaGallery": {
+      "title": "Mídias da conversa",
+      "images": "Imagens",
+      "videos": "Vídeos",
+      "documents": "Documentos",
+      "links": "Links",
+      "noImages": "Nenhuma imagem nesta conversa",
+      "noVideos": "Nenhum vídeo nesta conversa",
+      "noDocuments": "Nenhum documento nesta conversa",
+      "noLinks": "Nenhum link nesta conversa",
+      "you": "Você"
     },
     "sessionTimer": {
       "expired": "Expirado",
@@ -393,6 +411,7 @@
       "noTags": "Nenhuma tag",
       "noDeals": "Nenhum negócio",
       "addNotePlaceholder": "Adicionar uma nota...",
+      "noNotesYet": "Nenhuma nota ainda",
       "hasPurchased": "Já comprou comigo?",
       "hasPurchasedYes": "Sim",
       "hasPurchasedNo": "Não",

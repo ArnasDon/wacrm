@@ -131,9 +131,6 @@ export function PipelineSettings({
   async function handleSave() {
     setSaving(true);
 
-    // One upsert for all stages — batches N stage writes into a single
-    // round-trip. Previous implementation did N sequential UPDATEs which
-    // latency-scaled linearly with stage count.
     const stageRows = localStages.map((s, i) => ({
       id: s.id,
       pipeline_id: s.pipeline_id,
@@ -143,17 +140,39 @@ export function PipelineSettings({
       required_fields: s.required_fields || [],
     }));
 
-    const [renameRes, stagesRes] = await Promise.all([
-      supabase
-        .from("pipelines")
-        .update({ name: name.trim() })
-        .eq("id", pipeline.id),
-      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
-    ]);
+    const renamePromise = supabase
+      .from("pipelines")
+      .update({ name: name.trim() })
+      .eq("id", pipeline.id);
+
+    let stagesRes = await supabase
+      .from("pipeline_stages")
+      .upsert(stageRows, { onConflict: "id" });
+
+    // Fallback: If DB table doesn't have required_fields column yet, retry without required_fields
+    if (stagesRes.error) {
+      console.warn(
+        "Stage upsert with required_fields failed, retrying without required_fields:",
+        stagesRes.error.message
+      );
+      const stageRowsFallback = localStages.map((s, i) => ({
+        id: s.id,
+        pipeline_id: s.pipeline_id,
+        name: s.name,
+        color: s.color,
+        position: i,
+      }));
+      stagesRes = await supabase
+        .from("pipeline_stages")
+        .upsert(stageRowsFallback, { onConflict: "id" });
+    }
+
+    const renameRes = await renamePromise;
 
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
+      console.error("Failed to save pipeline:", renameRes.error || stagesRes.error);
       toast.error(t("toastFailedSave"));
       return;
     }

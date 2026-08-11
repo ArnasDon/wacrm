@@ -3,7 +3,7 @@ import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
 import { searchCatalogues } from '@/lib/catalog/search'
 import type { CatalogProduct } from '@/lib/catalog/types'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
-import { engineSendInteractiveButtons, engineSendMedia } from '@/lib/flows/meta-send'
+import { engineSendMedia } from '@/lib/flows/meta-send'
 import { retrieveKnowledge } from '../knowledge'
 import { extractCurrencyAmounts } from '../guardrails'
 import { generateReply } from '../generate'
@@ -67,7 +67,7 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server presents up to three products with photographs and a selection action attached immediately to each product. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
+    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server sends up to three products as plain WhatsApp photographs, each captioned with its name and price, exactly like a person forwarding photos. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -349,7 +349,7 @@ function buildProductCaption(product: CatalogProduct, visualCard = false): strin
     )
   }
   if (visualCard) {
-    parts.push('Seleccione este produto abaixo para ver os detalhes.')
+    parts.push('Responda a esta mensagem, ou diga-me qual prefere, para escolher este.')
   }
   return parts.join('\n').slice(0, 1024)
 }
@@ -389,14 +389,6 @@ function buildPendingProduct(
     displayImageUrl: directImageUrl,
     caption: buildProductCaption(product, visualCard),
   }
-}
-
-function compactButtonTitle(name: string, index: number): string {
-  const cleaned = name.replace(/\s+/g, ' ').trim()
-  if (cleaned.length <= 20) return cleaned
-  const prefix = `Opção ${index + 1}: `
-  const available = Math.max(1, 20 - prefix.length)
-  return `${prefix}${cleaned.slice(0, available)}`.slice(0, 20)
 }
 
 export function createAutoReplyTools(args: {
@@ -505,7 +497,7 @@ export function createAutoReplyTools(args: {
         found: referencedProducts.length > 0,
         visual_queued: visualQueued,
         instruction: visualQueued
-          ? 'The server queued a visual WhatsApp product selection. Each photograph, product information and its own selection button will be delivered together in sequence. Do not repeat product names or prices in the final text, do not make a numbered list, and do not ask the customer to type a number or product name. Reply only with a very short introduction such as "Veja estas opções:".'
+          ? 'The server queued plain WhatsApp photographs for these products, each captioned with its name and price. The customer can choose one by replying to that photo or by naming/describing it in a normal message — you will see which one they mean from the conversation history, so never ask them to type a number. Do not repeat product names or prices in the final text, do not make a numbered list. Reply only with a very short introduction such as "Veja estas opções:".'
           : 'Only quote prices and availability returned here. To send one photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
       })
     }
@@ -831,12 +823,13 @@ export function createAutoReplyTools(args: {
     dispatchPendingActions: async () => {
       let sent = 0
 
-      // WhatsApp does not visually bind a later multi-button message to the
-      // media messages that precede it. Keep each product atomic instead:
-      // image/caption -> that product's single selection button -> next item.
-      // Awaiting every send also preserves the intended ordering end-to-end.
+      // Plain photo + caption per product, like a person forwarding photos —
+      // no button card. The customer picks one by replying to that photo or
+      // naming/describing it in a normal message; buildConversationContext
+      // already resolves a quoted reply back to the product it names.
+      // Awaiting every send preserves the intended ordering end-to-end.
       for (const gallery of pendingProductGalleries.splice(0)) {
-        for (const [index, item] of gallery.items.entries()) {
+        for (const item of gallery.items) {
           const result = await engineSendMedia({
             accountId,
             userId: configOwnerUserId,
@@ -858,22 +851,6 @@ export function createAutoReplyTools(args: {
               enrichError.message,
             )
           }
-          sent += 1
-
-          await engineSendInteractiveButtons({
-            accountId,
-            userId: configOwnerUserId,
-            conversationId,
-            contactId,
-            bodyText: `Seleccionar ${item.name}`.slice(0, 1024),
-            footerText: 'Toque para ver detalhes, tamanhos e cores.',
-            buttons: [
-              {
-                id: `product:${item.productRef}`,
-                title: compactButtonTitle(item.name, index),
-              },
-            ],
-          })
           sent += 1
         }
       }

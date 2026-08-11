@@ -2034,6 +2034,11 @@
       "saved": "변경 사항이 저장되었습니다",
       "actionError": "작업을 완료하지 못했습니다"
     },
+    "groupAcceptAll": "전체 수락",
+    "groupIgnoreAll": "전체 무시",
+    "groupBulkAcceptSuccess": "{count}개 항목 수락됨",
+    "groupBulkIgnoreSuccess": "{count}개 항목 무시됨",
+    "groupBulkPartial": "{total}개 중 {failed}개를 처리하지 못했습니다",
     "bulkAcceptButton": "모든 단계 이동 수락",
     "bulkAcceptTitle": "모든 단계 이동 수락",
     "bulkAcceptConfirm": "리드 단계 이동 제안 {count}건을 수락하려고 합니다.",

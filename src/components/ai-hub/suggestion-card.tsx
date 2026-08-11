@@ -150,6 +150,23 @@ export function SuggestionCard({
                 )}
                 {t('actions.ignore')}
               </Button>
+              {/* Quick accept — same status transition ("approved") the
+                  "Abrir" dialog's own accept path resolves to; this just
+                  skips straight there without reviewing/editing the
+                  follow-up message first. Central de IA grouping task. */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pendingAction !== null}
+                onClick={() => act('approved')}
+              >
+                {pendingAction === 'approved' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                {t('actions.accept')}
+              </Button>
               <Button size="sm" onClick={() => setFollowupOpen(true)}>
                 {t('followup.open')}
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -175,6 +192,23 @@ export function SuggestionCard({
                   <EyeOff className="h-3.5 w-3.5" />
                 )}
                 {t('actions.ignore')}
+              </Button>
+              {/* Same "approved" transition the learning dialog's own
+                  approve button uses (writes into ai_knowledge_documents,
+                  admin+ only — see /api/ai/suggestions/[id]). Central de
+                  IA grouping task. */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pendingAction !== null}
+                onClick={() => act('approved')}
+              >
+                {pendingAction === 'approved' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                {t('actions.accept')}
               </Button>
               <Button size="sm" onClick={() => setLearningOpen(true)}>
                 {t('learning.open')}

@@ -2034,6 +2034,11 @@
       "saved": "Changes saved",
       "actionError": "Could not complete the action"
     },
+    "groupAcceptAll": "Accept all",
+    "groupIgnoreAll": "Ignore all",
+    "groupBulkAcceptSuccess": "{count} {count, plural, =1 {item accepted} other {items accepted}}",
+    "groupBulkIgnoreSuccess": "{count} {count, plural, =1 {item ignored} other {items ignored}}",
+    "groupBulkPartial": "{failed} of {total} couldn't be processed",
     "bulkAcceptButton": "Accept all stage moves",
     "bulkAcceptTitle": "Accept all stage moves",
     "bulkAcceptConfirm": "You're about to accept {count} lead stage-move {count, plural, =1 {suggestion} other {suggestions}}.",

@@ -2034,6 +2034,11 @@
       "saved": "Alterações salvas",
       "actionError": "Não foi possível concluir a ação"
     },
+    "groupAcceptAll": "Aceitar tudo",
+    "groupIgnoreAll": "Ignorar tudo",
+    "groupBulkAcceptSuccess": "{count} {count, plural, =1 {item aceito} other {itens aceitos}}",
+    "groupBulkIgnoreSuccess": "{count} {count, plural, =1 {item ignorado} other {itens ignorados}}",
+    "groupBulkPartial": "{failed} de {total} não puderam ser processados",
     "bulkAcceptButton": "Aceitar todas as movimentações",
     "bulkAcceptTitle": "Aceitar todas as movimentações",
     "bulkAcceptConfirm": "Você está prestes a aceitar {count} {count, plural, =1 {sugestão de movimentação} other {sugestões de movimentação}} de leads.",

@@ -14,6 +14,14 @@ import { runCtwaRescueForAccount } from '@/lib/whatsapp/ctwa-rescue'
  * cron`. Re-uses `AUTOMATION_CRON_SECRET` so operators only have one
  * secret to manage.
  *
+ * Lives under `/api/ai/` (not `/api/whatsapp/`) deliberately —
+ * `src/middleware.ts` requires an authenticated dashboard session for
+ * every `/api/whatsapp/*` route except `/webhook`, which would 401
+ * this cron call before it ever reached the `x-cron-secret` check
+ * below. Every other cron route in the project (`/api/automations/
+ * cron`, `/api/flows/cron`, `/api/ai/followups/cron`, `/api/ai/
+ * learning/cron`) avoids `/api/whatsapp/*` for the same reason.
+ *
  * An AI config is required (the rescue message is AI-generated, spec
  * section 11) — accounts without one are skipped, same gate the
  * follow-up cron uses.

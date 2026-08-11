@@ -1,4 +1,4 @@
-﻿-- ============================================================
+-- ============================================================
 -- 039_stage_required_fields
 --
 -- Adds `required_fields` JSONB column to pipeline_stages.
@@ -8,5 +8,7 @@
 -- Idempotent -- safe to run multiple times.
 -- ============================================================
 
-ALTER TABLE pipeline_stages
+SET search_path TO public;
+
+ALTER TABLE public.pipeline_stages
   ADD COLUMN IF NOT EXISTS required_fields JSONB DEFAULT '[]'::jsonb;

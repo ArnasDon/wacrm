@@ -404,6 +404,15 @@ export function DealForm({
     const targetStage = availableStages.find((s) => s.id === stageId);
     const selectedContact = contacts.find((c) => c.id === contactId);
 
+    const isWonStage =
+      targetStage &&
+      (targetStage.name.toLowerCase().includes("won") ||
+        targetStage.name.toLowerCase().includes("ganho") ||
+        targetStage.name.toLowerCase().includes("fechado"));
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const finalCloseDate = expectedCloseDate || (isWonStage ? todayStr : null);
+
     if (targetStage) {
       const dealForValidation = {
         title: title.trim(),
@@ -414,7 +423,7 @@ export function DealForm({
         stage_id: stageId,
         assigned_to: assignedTo || null,
         notes: JSON.stringify(metaPayload),
-        expected_close_date: expectedCloseDate || null,
+        expected_close_date: finalCloseDate,
         contact: selectedContact,
       };
 
@@ -441,7 +450,7 @@ export function DealForm({
       stage_id: stageId,
       assigned_to: assignedTo || null,
       notes: JSON.stringify(metaPayload),
-      expected_close_date: expectedCloseDate || null,
+      expected_close_date: finalCloseDate,
     };
 
     if (deal) {
@@ -531,9 +540,16 @@ export function DealForm({
       }
     }
 
+    const todayStr = new Date().toISOString().split("T")[0];
+    const updatePayload: Record<string, any> = { status, stage_id: targetStageId };
+    if (status === "won" && !expectedCloseDate) {
+      updatePayload.expected_close_date = todayStr;
+      setExpectedCloseDate(todayStr);
+    }
+
     const { error } = await supabase
       .from("deals")
-      .update({ status, stage_id: targetStageId })
+      .update(updatePayload)
       .eq("id", deal.id);
 
     setStatusAction(null);

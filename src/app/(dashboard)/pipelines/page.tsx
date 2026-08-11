@@ -247,16 +247,24 @@ export default function PipelinesPage() {
         }
       }
 
+      const todayStr = new Date().toISOString().split("T")[0];
+      const autoCloseDate = newStatus === "won" && !targetDeal?.expected_close_date ? todayStr : targetDeal?.expected_close_date;
+
+      const updatePayload: Record<string, any> = { stage_id: newStageId, status: newStatus };
+      if (newStatus === "won" && !targetDeal?.expected_close_date) {
+        updatePayload.expected_close_date = todayStr;
+      }
+
       // Optimistic update
       setDeals((prev) =>
         prev.map((d) =>
-          d.id === dealId ? { ...d, stage_id: newStageId, status: newStatus } : d,
+          d.id === dealId ? { ...d, stage_id: newStageId, status: newStatus, expected_close_date: autoCloseDate } : d,
         ),
       );
 
       const { error } = await supabase
         .from("deals")
-        .update({ stage_id: newStageId, status: newStatus })
+        .update(updatePayload)
         .eq("id", dealId);
 
       if (error) {

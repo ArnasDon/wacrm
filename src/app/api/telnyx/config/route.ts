@@ -51,6 +51,16 @@ export async function POST(req: NextRequest) {
     if (typeof body.messaging_profile_id === 'string' && body.messaging_profile_id.trim()) {
       payload.messaging_profile_id = body.messaging_profile_id.trim()
     }
+    // Entrante (migración 057): conexión de credenciales + SIP del agente.
+    if (
+      typeof body.credential_connection_id === 'string' &&
+      body.credential_connection_id.trim()
+    ) {
+      payload.credential_connection_id = body.credential_connection_id.trim()
+    }
+    if (typeof body.agent_sip_uri === 'string' && body.agent_sip_uri.trim()) {
+      payload.agent_sip_uri = body.agent_sip_uri.trim()
+    }
 
     const { error } = await ctx.supabase
       .from('telnyx_config')

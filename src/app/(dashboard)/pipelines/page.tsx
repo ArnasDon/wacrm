@@ -41,12 +41,12 @@ import { validateDealStageRequirements } from "@/lib/pipelines/validation";
 // "Ganho" and "Perdido" are always included as the final stages so that
 // handleDealMoved can auto-set deal.status to 'won'/'lost' via keyword match.
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Ganho", color: "#22c55e", position: 4 }, // green — maps to status 'won'
-  { name: "Perdido", color: "#ef4444", position: 5 }, // red — maps to status 'lost'
+  { name: "Novo Lead", color: "#3b82f6", position: 0 },
+  { name: "Qualificado", color: "#eab308", position: 1 },
+  { name: "Proposta Enviada", color: "#f97316", position: 2 },
+  { name: "Negociação", color: "#8b5cf6", position: 3 },
+  { name: "Ganho", color: "#22c55e", position: 4 },
+  { name: "Perdido", color: "#ef4444", position: 5 },
 ];
 
 export default function PipelinesPage() {
@@ -86,7 +86,24 @@ export default function PipelinesPage() {
       console.error("Failed to load pipelines:", error.message);
       return [];
     }
-    return data ?? [];
+    const list = (data ?? []) as Pipeline[];
+    const PIPELINE_NAME_TRANSLATIONS: Record<string, string> = {
+      "Sales Pipeline": "Funil de Vendas",
+      "Pipeline 1": "Funil 1",
+      "Pipeline 2": "Funil 2",
+      "Pipeline 3": "Funil 3",
+      "Pipeline 4": "Funil 4",
+      "Pipeline 5": "Funil 5",
+      "Default Pipeline": "Funil Principal",
+    };
+    for (const p of list) {
+      if (PIPELINE_NAME_TRANSLATIONS[p.name]) {
+        const newName = PIPELINE_NAME_TRANSLATIONS[p.name];
+        p.name = newName;
+        supabase.from("pipelines").update({ name: newName }).eq("id", p.id).then();
+      }
+    }
+    return list;
   }, [supabase]);
 
   const loadStages = useCallback(
@@ -96,7 +113,23 @@ export default function PipelinesPage() {
         .select("*")
         .eq("pipeline_id", pipelineId)
         .order("position");
-      return data ?? [];
+      const list = (data ?? []) as PipelineStage[];
+      const STAGE_NAME_TRANSLATIONS: Record<string, string> = {
+        "New Lead": "Novo Lead",
+        "Qualified": "Qualificado",
+        "Proposal Sent": "Proposta Enviada",
+        "Negotiation": "Negociação",
+        "Won": "Ganho",
+        "Lost": "Perdido",
+      };
+      for (const s of list) {
+        if (STAGE_NAME_TRANSLATIONS[s.name]) {
+          const newName = STAGE_NAME_TRANSLATIONS[s.name];
+          s.name = newName;
+          supabase.from("pipeline_stages").update({ name: newName }).eq("id", s.id).then();
+        }
+      }
+      return list;
     },
     [supabase],
   );
@@ -124,7 +157,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Funil de Vendas" })
       .select()
       .single();
 

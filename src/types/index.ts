@@ -272,6 +272,9 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  /** Manual "pin to top" flag (migration 060) — swipe-right on mobile /
+   *  right-click context menu on desktop, in the conversation list. */
+  pinned: boolean;
   created_at: string;
   updated_at: string;
   contact?: Contact;

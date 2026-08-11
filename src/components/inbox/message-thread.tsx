@@ -54,6 +54,7 @@ import {
   type SendMediaPayload,
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
+import { markConversationUnread } from "@/lib/inbox/conversations";
 import { TemplatePicker, type TemplateSendValues } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { CtwaOrigin } from "./ctwa-origin";
@@ -714,10 +715,7 @@ export function MessageThread({
   const handleMarkUnread = useCallback(async () => {
     if (!conversation) return;
     const supabase = createClient();
-    await supabase
-      .from("conversations")
-      .update({ unread_count: 1 })
-      .eq("id", conversation.id);
+    await markConversationUnread(supabase, conversation.id);
     onMarkUnread(conversation.id);
   }, [conversation, onMarkUnread]);
 

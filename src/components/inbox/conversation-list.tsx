@@ -15,7 +15,16 @@ import {
   type ResponderColor,
 } from "@/lib/responder-color";
 import type { Conversation, ConversationStatus, Profile, Tag } from "@/types";
-import { Search, ChevronDown, X, MoreVertical, Trash2 } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  X,
+  MoreVertical,
+  Trash2,
+  MailOpen,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -27,6 +36,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import {
+  markConversationUnread,
+  toggleConversationPinned,
+} from "@/lib/inbox/conversations";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -48,15 +61,21 @@ interface ConversationListProps {
    */
   initialFilter?: InboxFilter;
   /** Team profiles — builds the "Atendente" filter and resolves the
-   *  responder-indicator color (with `lastAgentSenderMap`). */
+   *  responder-indicator color (with `assignedAgentMap`). */
   profiles: Profile[];
-  /** Conversation id → user id of whoever last sent an internal (agent)
-   *  message on it. See `src/lib/responder-color.ts`. */
-  lastAgentSenderMap: Map<string, string>;
+  /** Conversation id → user id of its persistently assigned agent
+   *  (`conversations.assigned_agent_id`). See `src/lib/responder-color.ts`. */
+  assignedAgentMap: Map<string, string>;
   /** Opens the shared delete-lead confirmation for this conversation's
    *  contact — the parent owns the dialog since it also needs to clear
    *  activeConversation if the deleted one was open. */
   onRequestDelete: (conversation: Conversation) => void;
+  /** Local-state sync after a manual unread mark — same callback the
+   *  thread header's "Marcar como não lida" already uses, reused here so
+   *  both entry points stay in sync (see message-thread.tsx). */
+  onMarkUnread: (conversationId: string) => void;
+  /** Local-state sync after a pin toggle. */
+  onTogglePinned: (conversationId: string, pinned: boolean) => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -77,8 +96,10 @@ export function ConversationList({
   resyncToken = 0,
   initialFilter,
   profiles,
-  lastAgentSenderMap,
+  assignedAgentMap,
   onRequestDelete,
+  onMarkUnread,
+  onTogglePinned,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
 
@@ -268,7 +289,13 @@ export function ConversationList({
       });
     }
 
-    return result;
+    // Pinned conversations float to the top, same as WhatsApp — the only
+    // visible effect of the swipe/right-click "Fixar" action. Stable sort
+    // (Array#sort is guaranteed stable) so relative order within each
+    // group is otherwise untouched.
+    return [...result].sort(
+      (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)
+    );
   }, [
     conversations,
     filter,
@@ -305,6 +332,28 @@ export function ConversationList({
       onSelect(conv);
     },
     [onSelect]
+  );
+
+  // Shared by the swipe-right action and the right-click context menu —
+  // same DB call the thread header's "Marcar como não lida" uses.
+  const handleMarkUnread = useCallback(
+    async (conv: Conversation) => {
+      const supabase = createClient();
+      await markConversationUnread(supabase, conv.id);
+      onMarkUnread(conv.id);
+    },
+    [onMarkUnread]
+  );
+
+  // Shared by the swipe-right action and the right-click context menu.
+  const handleTogglePinned = useCallback(
+    async (conv: Conversation) => {
+      const supabase = createClient();
+      const next = !conv.pinned;
+      await toggleConversationPinned(supabase, conv.id, next);
+      onTogglePinned(conv.id, next);
+    },
+    [onTogglePinned]
   );
 
   return (
@@ -525,10 +574,12 @@ export function ConversationList({
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
                 onRequestDelete={onRequestDelete}
+                onMarkUnread={handleMarkUnread}
+                onTogglePinned={handleTogglePinned}
                 t={t}
                 responderColor={colorForConversation(
                   conv.id,
-                  lastAgentSenderMap,
+                  assignedAgentMap,
                   profiles
                 )}
               />
@@ -545,15 +596,27 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   onRequestDelete: (conversation: Conversation) => void;
+  onMarkUnread: (conversation: Conversation) => void;
+  onTogglePinned: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
   responderColor: ResponderColor;
 }
+
+// Swipe-reveal panel widths (px, iOS Mail-style) — the left panel holds
+// two actions (unread + pin), the right panel holds one (delete).
+const SWIPE_LEFT_WIDTH = 152;
+const SWIPE_RIGHT_WIDTH = 76;
+// Minimum finger movement (px) before a touch gesture commits to
+// horizontal swipe vs. vertical scroll.
+const SWIPE_AXIS_THRESHOLD = 8;
 
 function ConversationItem({
   conversation,
   isActive,
   onSelect,
   onRequestDelete,
+  onMarkUnread,
+  onTogglePinned,
   t,
   responderColor,
 }: ConversationItemProps) {
@@ -562,9 +625,196 @@ function ConversationItem({
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
 
+  // --- Swipe-to-reveal (mobile/PWA) ---------------------------------
+  // `revealed` only changes once per gesture, on touch release — the
+  // drag itself writes straight to the DOM via `contentRef.current
+  // .style.transform` (see applyTransform), bypassing React/setState so
+  // dragging never triggers a re-render. `touch-action: pan-y` lets
+  // vertical scroll pass through to the list untouched; `dragRef.axis`
+  // decides per-gesture, from the first move sample, whether the
+  // finger is scrolling or swiping (mirrors native iOS list rows).
+  const contentRef = useRef<HTMLDivElement>(null);
+  // The action panels sit behind `contentRef` and are only meant to
+  // show once it has actually slid clear of them. They default to
+  // `invisible` (see className below) rather than relying on the
+  // sliding content's opaque background to cover them, because the
+  // row's own `hover:bg-muted/50` is semi-transparent — without this,
+  // hovering a row (mouse, or a touch/click's residual cursor
+  // position) lets the panels bleed through the hover tint. Both are
+  // flipped to `visible` imperatively the instant a drag starts (we
+  // don't yet know which direction), then handed back to the
+  // `revealed`-driven class once the gesture settles.
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const [revealed, setRevealed] = useState<"left" | "right" | null>(null);
+  const dragRef = useRef({
+    active: false,
+    axis: null as "x" | "y" | null,
+    startX: 0,
+    startY: 0,
+    baseX: 0,
+    x: 0,
+  });
+
+  const applyTransform = useCallback((x: number, animate: boolean) => {
+    const el = contentRef.current;
+    if (!el) return;
+    el.style.transition = animate ? "transform 200ms ease-out" : "none";
+    el.style.transform = `translate3d(${x}px,0,0)`;
+  }, []);
+
+  // Keep the DOM transform in sync whenever `revealed` changes outside
+  // a drag (mount, or an action button closing the panel).
+  useEffect(() => {
+    applyTransform(
+      revealed === "left"
+        ? SWIPE_LEFT_WIDTH
+        : revealed === "right"
+          ? -SWIPE_RIGHT_WIDTH
+          : 0,
+      true
+    );
+  }, [revealed, applyTransform]);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      dragRef.current = {
+        active: true,
+        axis: null,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        baseX:
+          revealed === "left"
+            ? SWIPE_LEFT_WIDTH
+            : revealed === "right"
+              ? -SWIPE_RIGHT_WIDTH
+              : 0,
+        x: 0,
+      };
+      if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
+      if (rightPanelRef.current) rightPanelRef.current.style.visibility = "visible";
+    },
+    [revealed]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      const drag = dragRef.current;
+      if (!drag.active) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - drag.startX;
+      const dy = touch.clientY - drag.startY;
+
+      if (drag.axis === null) {
+        if (
+          Math.abs(dx) < SWIPE_AXIS_THRESHOLD &&
+          Math.abs(dy) < SWIPE_AXIS_THRESHOLD
+        )
+          return;
+        drag.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      if (drag.axis === "y") return; // vertical drag — let the list scroll
+
+      const clamped = Math.min(
+        SWIPE_LEFT_WIDTH,
+        Math.max(-SWIPE_RIGHT_WIDTH, drag.baseX + dx)
+      );
+      drag.x = clamped;
+      applyTransform(clamped, false);
+    },
+    [applyTransform]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    const drag = dragRef.current;
+    if (!drag.active) return;
+    drag.active = false;
+    // Hand visibility back to the `revealed`-driven class now that the
+    // gesture is settled — clears the imperative override from
+    // touchstart so a future hover/idle state can't stay stuck visible.
+    if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
+    if (rightPanelRef.current) rightPanelRef.current.style.visibility = "";
+    if (drag.axis !== "x") return;
+
+    setRevealed(
+      drag.x > SWIPE_LEFT_WIDTH / 2
+        ? "left"
+        : drag.x < -SWIPE_RIGHT_WIDTH / 2
+          ? "right"
+          : null
+    );
+  }, []);
+
+  const closeSwipe = useCallback(() => setRevealed(null), []);
+
   const handleClick = useCallback(() => {
+    // A tap while a swipe panel is open closes it instead of opening
+    // the conversation — same as native iOS list rows.
+    if (revealed !== null) {
+      closeSwipe();
+      return;
+    }
     onSelect(conversation);
-  }, [onSelect, conversation]);
+  }, [onSelect, conversation, revealed, closeSwipe]);
+
+  const handleMarkUnreadAction = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      closeSwipe();
+      void onMarkUnread(conversation);
+    },
+    [conversation, onMarkUnread, closeSwipe]
+  );
+
+  const handleTogglePinAction = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      closeSwipe();
+      void onTogglePinned(conversation);
+    },
+    [conversation, onTogglePinned, closeSwipe]
+  );
+
+  const handleDeleteAction = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      closeSwipe();
+      onRequestDelete(conversation);
+    },
+    [conversation, onRequestDelete, closeSwipe]
+  );
+
+  // --- Desktop right-click context menu -----------------------------
+  // Reuses the same DropdownMenu primitive as the "..." button below,
+  // just controlled and anchored to the cursor instead of a trigger
+  // element (Base UI's Positioner accepts a virtual anchor for this).
+  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
+  const ctxAnchorRef = useRef({ x: 0, y: 0 });
+  const ctxAnchor = useMemo(
+    () => ({
+      getBoundingClientRect: () => {
+        const { x, y } = ctxAnchorRef.current;
+        return {
+          x,
+          y,
+          top: y,
+          left: x,
+          right: x,
+          bottom: y,
+          width: 0,
+          height: 0,
+        };
+      },
+    }),
+    []
+  );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    ctxAnchorRef.current = { x: e.clientX, y: e.clientY };
+    setCtxMenuOpen(true);
+  }, []);
 
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
@@ -573,26 +823,87 @@ function ConversationItem({
     : "";
 
   return (
-    // A native <button> can't validly contain the dropdown's own
-    // interactive elements, so this is a div acting as a button
-    // (role + tabIndex + keydown) — same reasoning as DealCard's
-    // delete-lead menu in the Pipeline.
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
-      className={cn(
-        "group relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
-      )}
-    >
-      {/* Avatar */}
+    <div className="relative overflow-hidden">
+      {/* Swipe-right reveal: mark unread + pin */}
+      <div
+        ref={leftPanelRef}
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 left-0 flex",
+          revealed === "left" ? "visible" : "invisible"
+        )}
+        style={{ width: SWIPE_LEFT_WIDTH }}
+      >
+        <button
+          type="button"
+          onClick={handleMarkUnreadAction}
+          className="flex flex-1 flex-col items-center justify-center gap-1 bg-primary text-[11px] text-primary-foreground"
+        >
+          <MailOpen className="h-4 w-4" />
+          {t("markUnread")}
+        </button>
+        <button
+          type="button"
+          onClick={handleTogglePinAction}
+          className="flex flex-1 flex-col items-center justify-center gap-1 bg-amber-500 text-[11px] text-white"
+        >
+          {conversation.pinned ? (
+            <PinOff className="h-4 w-4" />
+          ) : (
+            <Pin className="h-4 w-4" />
+          )}
+          {conversation.pinned ? t("unpin") : t("pin")}
+        </button>
+      </div>
+
+      {/* Swipe-left reveal: delete */}
+      <div
+        ref={rightPanelRef}
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 right-0 flex",
+          revealed === "right" ? "visible" : "invisible"
+        )}
+        style={{ width: SWIPE_RIGHT_WIDTH }}
+      >
+        <button
+          type="button"
+          onClick={handleDeleteAction}
+          className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-[11px] text-destructive-foreground"
+        >
+          <Trash2 className="h-4 w-4" />
+          {t("delete")}
+        </button>
+      </div>
+
+      {/* A native <button> can't validly contain the dropdown's own
+          interactive elements, so this is a div acting as a button
+          (role + tabIndex + keydown) — same reasoning as DealCard's
+          delete-lead menu in the Pipeline. Also the swipe surface and
+          the right-click context-menu surface. */}
+      <div
+        ref={contentRef}
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onContextMenu={handleContextMenu}
+        style={{ touchAction: "pan-y" }}
+        className={cn(
+          "group relative flex w-full items-start gap-3 bg-card px-3 py-3 text-left transition-colors hover:bg-muted/50",
+          isActive && "border-l-2 border-primary bg-muted/70"
+        )}
+      >
+        {/* Avatar */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
         {contact?.avatar_url ? (
           <img
@@ -608,8 +919,13 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1">
+            {conversation.pinned && (
+              <Pin className="h-3 w-3 shrink-0 text-amber-500" />
+            )}
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
           </span>
           <div className="flex shrink-0 items-center gap-0.5">
             <span className="text-[10px] text-muted-foreground">{timeAgo}</span>
@@ -674,6 +990,35 @@ function ConversationItem({
           )}
         />
       </div>
+      </div>
+
+      {/* Desktop right-click context menu — same three actions as the
+          swipe panels, positioned at the cursor via a virtual anchor. */}
+      <DropdownMenu open={ctxMenuOpen} onOpenChange={setCtxMenuOpen}>
+        <DropdownMenuContent
+          anchor={ctxAnchor}
+          align="start"
+          side="bottom"
+          className="border-border bg-popover"
+        >
+          <DropdownMenuItem onClick={handleMarkUnreadAction}>
+            <MailOpen className="h-4 w-4" />
+            {t("markUnread")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleTogglePinAction}>
+            {conversation.pinned ? (
+              <PinOff className="h-4 w-4" />
+            ) : (
+              <Pin className="h-4 w-4" />
+            )}
+            {conversation.pinned ? t("unpin") : t("pin")}
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={handleDeleteAction}>
+            <Trash2 className="h-4 w-4" />
+            {t("delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

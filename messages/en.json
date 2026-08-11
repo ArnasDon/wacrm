@@ -253,7 +253,11 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "markUnread": "Mark as unread",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "delete": "Delete"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",

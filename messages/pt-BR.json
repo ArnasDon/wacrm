@@ -253,7 +253,11 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "markUnread": "Marcar como não lida",
+      "pin": "Fixar",
+      "unpin": "Desafixar",
+      "delete": "Apagar"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",

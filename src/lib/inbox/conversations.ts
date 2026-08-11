@@ -87,3 +87,37 @@ export async function loadUnansweredConversationIds(
   if (error) throw error;
   return new Set((data ?? []) as string[]);
 }
+
+/**
+ * Manual unread marker — shared by the thread header's "Marcar como não
+ * lida" action and the conversation list's swipe/right-click actions, so
+ * both write through the exact same DB call (migration N/A, column
+ * pre-existing). Sets `unread_count` back to 1; MessageThread's own reset
+ * effect clears it again once the conversation is actually reopened.
+ */
+export async function markConversationUnread(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<void> {
+  const { error } = await db
+    .from("conversations")
+    .update({ unread_count: 1 })
+    .eq("id", conversationId);
+  if (error) throw error;
+}
+
+/**
+ * Toggles the manual "pin to top" flag (migration 060) — shared by the
+ * conversation list's swipe and right-click context menu actions.
+ */
+export async function toggleConversationPinned(
+  db: SupabaseClient,
+  conversationId: string,
+  pinned: boolean,
+): Promise<void> {
+  const { error } = await db
+    .from("conversations")
+    .update({ pinned })
+    .eq("id", conversationId);
+  if (error) throw error;
+}

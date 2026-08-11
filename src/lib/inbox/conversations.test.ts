@@ -14,6 +14,7 @@ function makeConversation(
     contact_id: "ct1",
     status: "open",
     unread_count: 0,
+    pinned: false,
     created_at: "",
     updated_at: "",
     contact: contact
@@ -108,6 +109,7 @@ describe("normalizeConversation", () => {
       contact_id: "ct1",
       status: "open" as const,
       unread_count: 0,
+      pinned: false,
       created_at: "",
       updated_at: "",
       contact: {
@@ -135,6 +137,7 @@ describe("normalizeConversation", () => {
       contact_id: "ct1",
       status: "open" as const,
       unread_count: 0,
+      pinned: false,
       created_at: "",
       updated_at: "",
       contact: null,

@@ -1,0 +1,41 @@
+---
+// Rail — carril horizontal en móvil, columnas en escritorio.
+//
+// MOBILE FIRST: el caso base es el carril; las columnas aparecen a 900px.
+//
+// Se usa para secciones que en escritorio quedan bien en columnas pero que
+// apiladas en móvil regalan tres o cuatro pantallas de scroll antes del CTA.
+// Reseñas, testimonios, logotipos, tarjetas de servicio.
+//
+// Accesibilidad: una región que se desplaza tiene que poder recorrerse con
+// teclado, así que lleva `tabindex="0"` y un nombre accesible. Sin eso, quien
+// no usa ratón ni gestos no puede llegar a las tarjetas de la derecha.
+interface Props {
+  /** Nombre accesible de la región (obligatorio: es un contenedor scrollable). */
+  label: string;
+  /** Columnas en escritorio. */
+  cols?: number;
+  /** Ancho de cada tarjeta en móvil. Menos del 100% para que asome la siguiente. */
+  item?: string;
+  /** Pista bajo el carril, visible solo en móvil. */
+  hint?: string;
+  class?: string;
+}
+
+const { label, cols = 4, item = '78%', hint, class: cls } = Astro.props;
+
+// Los índices y medidas van por custom property, que es la única excepción
+// admitida a "nada de estilos en línea": es un token, no un estilo.
+const vars = `--rail-cols:${cols};--rail-item:${item}`;
+---
+
+<div
+  class:list={['rail', cls]}
+  style={vars}
+  role="group"
+  aria-label={label}
+  tabindex="0"
+>
+  <slot />
+</div>
+{hint && <p class="rail-hint">{hint}</p>}

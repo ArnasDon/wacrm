@@ -1,0 +1,311 @@
+---
+// LeadMagnet — el documento descargable como objeto tridimensional (skill §10.3).
+//
+// Un PDF convierte mejor cuando se ve como algo físico: con volumen, peso y
+// luz reflejada. Todo el efecto es CSS, cero JavaScript.
+//
+// MOBILE FIRST: el libro se dimensiona con `min(280px, 62vw)` y la columna
+// ocupa el ancho completo; a partir de 900px se fija a 280px y se reparte en
+// dos columnas.
+import ContactForm from '../ContactForm.astro';
+
+const bullets = [
+  '12 ejercicios con foto, para hacer en casa',
+  'Qué NO hacer las primeras 72 horas',
+  'Cuándo el dolor deja de ser muscular y toca consultar',
+];
+---
+
+<section id="guia" class="section">
+  <div class="container">
+    <div class="row is-vertical-align">
+      <div class="col col-5-md">
+        <figure class="book-stage">
+          {/* La sombra va primero: se pinta debajo del libro sin z-index. */}
+          <span class="book__shadow" aria-hidden="true"></span>
+
+          <div class="book">
+            <div class="book__face">
+              <img
+                src="/landing/guia-cover.svg"
+                alt="Portada de la guía de dolor de espalda"
+                width="280"
+                height="373"
+                loading="lazy"
+                decoding="async"
+              />
+              <span class="book__binding" aria-hidden="true"></span>
+              <span class="book__sheen" aria-hidden="true"></span>
+            </div>
+            <span class="book__edge" aria-hidden="true"></span>
+          </div>
+        </figure>
+      </div>
+
+      <div class="col col-7-md">
+        <p class="label text-primary">Descarga gratuita</p>
+        <h2 class="t-3xl">Guía de dolor de espalda</h2>
+        <p class="lead measure-sm">
+          Lo que damos a los pacientes en la primera sesión, en PDF. Sin registro
+          para leerlo: te lo mandamos y ya.
+        </p>
+
+        <ul class="magnet-meta">
+          <li>18 páginas</li>
+          <li>PDF</li>
+          <li>10 min de lectura</li>
+        </ul>
+
+        <ul class="magnet-list">
+          {bullets.map((b) => <li>{b}</li>)}
+        </ul>
+
+        <div class="card card--lg">
+          <ContactForm formId="magnet" variant="compact" cta="Enviarme la guía" />
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ── Escenario ──
+     La perspectiva vive en el padre: sobre el propio libro le daría un punto
+     de fuga individual en vez del de la escena. */
+  .book-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding-block: var(--space-7);
+    perspective: 1600px;
+    perspective-origin: 50% 40%;
+  }
+
+  /* ── El libro ── */
+  .book {
+    --book-w: min(280px, 62vw);
+    --book-depth: 26px;
+
+    position: relative;
+    width: var(--book-w);
+    aspect-ratio: 3 / 4;
+    transform-style: preserve-3d;
+    will-change: transform, translate;
+
+    /* La inclinación va en `transform`; el flotado en `translate` y `rotate`,
+       que son propiedades independientes. Si el flotado animara `transform`,
+       en el primer fotograma sustituiría a la inclinación y el libro se
+       aplanaría de golpe. */
+    transform: rotateX(6deg) rotateY(-22deg);
+    transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* 7 y 11 segundos no coinciden hasta los 77: el ojo deja de detectar el
+       bucle y el movimiento se percibe orgánico. */
+    animation:
+      book-float 7s ease-in-out infinite,
+      book-tilt 11s ease-in-out infinite;
+  }
+
+  /* ── Cara frontal ──
+     El brillo usa `mix-blend-mode`, que aplana su contenedor. Por eso vive
+     aquí y no dentro del elemento con `preserve-3d`: ahí destruiría el
+     grosor del canto. */
+  .book__face {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 2px 6px 6px 2px;
+    box-shadow:
+      0 2px 6px rgb(16 24 40 / 0.18),
+      0 24px 48px rgb(16 24 40 / 0.22);
+  }
+  .book__face img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Lomo */
+  .book__binding {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 13%;
+    background: linear-gradient(
+      90deg,
+      rgb(0 0 0 / 0.38) 0,
+      rgb(0 0 0 / 0.1) 42%,
+      rgb(255 255 255 / 0.16) 72%,
+      rgb(0 0 0 / 0.06) 100%
+    );
+  }
+
+  /* ── Canto de páginas ──
+     Bisagra en el borde derecho y giro de -90°: la cara se hunde hacia el
+     fondo y forma el grosor. */
+  .book__edge {
+    position: absolute;
+    top: 1.2%;
+    right: 0;
+    width: var(--book-depth);
+    height: 97.6%;
+    transform-origin: right center;
+    transform: rotateY(-90deg);
+    background: repeating-linear-gradient(90deg, #f4f4f0 0 1px, #d9d9d2 1px 2.5px);
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* ── Brillo ──
+     `screen` solo puede aclarar: sobre las zonas claras apenas se nota y
+     sobre las oscuras produce el destello, que es cómo se comporta la luz
+     reflejada. Una capa blanca con opacidad lavaría la portada entera. */
+  .book__sheen {
+    position: absolute;
+    top: -20%;
+    left: 0;
+    width: 35%;
+    height: 140%;
+    mix-blend-mode: screen;
+    filter: blur(2px);
+    rotate: 12deg;
+    background: linear-gradient(
+      100deg,
+      #0000,
+      #ffffff14 35%,
+      #ffffff8c 50%,
+      #ffffff14 65%,
+      #0000
+    );
+    animation: book-sheen 5s linear infinite;
+  }
+
+  /* ── Sombra proyectada ──
+     Hermana del libro, no hija: como hija se inclinaría con él y delataría el
+     truco. Misma duración y curva, así crece y se oscurece cuando el libro
+     baja — la sombra reacciona a la altura, que es lo que da la sensación de
+     peso. */
+  .book__shadow {
+    position: absolute;
+    left: 15%;
+    bottom: var(--space-5);
+    width: 70%;
+    height: 20px;
+    background: radial-gradient(ellipse at center, rgb(16 24 40 / 0.34), #0000 70%);
+    filter: blur(10px);
+    animation: book-shadow 7s ease-in-out infinite;
+  }
+
+  @keyframes book-float {
+    0%,
+    100% {
+      translate: 0 -7px;
+    }
+    50% {
+      translate: 0 7px;
+    }
+  }
+  @keyframes book-tilt {
+    0%,
+    100% {
+      rotate: y 0deg;
+    }
+    50% {
+      rotate: y 3deg;
+    }
+  }
+  @keyframes book-sheen {
+    0% {
+      translate: -180% 0;
+    }
+    55%,
+    100% {
+      translate: 420% 0;
+    }
+  }
+  @keyframes book-shadow {
+    0%,
+    100% {
+      scale: 0.9;
+      opacity: 0.45;
+    }
+    50% {
+      scale: 1.06;
+      opacity: 0.8;
+    }
+  }
+
+  /* Al acercar el cursor el libro se endereza: gesto de entrega. */
+  @media (hover: hover) {
+    .book-stage:hover .book {
+      transform: rotateX(2deg) rotateY(-7deg) scale(1.03);
+    }
+  }
+
+  /* El brillo desaparece del todo: pararlo a medio recorrido dejaría una
+     banda blanca fija sobre la portada, peor que no tenerlo. La inclinación
+     se conserva porque no es movimiento, es la forma del objeto. */
+  @media (prefers-reduced-motion: reduce) {
+    .book,
+    .book__sheen,
+    .book__shadow {
+      animation: none;
+    }
+    .book {
+      transform: rotateY(-10deg);
+      transition: none;
+    }
+    .book__sheen {
+      display: none;
+    }
+  }
+
+  /* ── Contenido lateral ── */
+  .magnet-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: 0;
+    margin: 0 0 var(--space-4);
+    list-style: none;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-grey);
+  }
+  .magnet-meta li + li::before {
+    content: '·';
+    margin-right: var(--space-3);
+  }
+
+  .magnet-list {
+    padding: 0;
+    margin: 0 0 var(--space-5);
+    list-style: none;
+  }
+  .magnet-list li {
+    position: relative;
+    padding-left: var(--space-5);
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+  }
+  .magnet-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 8px;
+    height: 8px;
+    background: var(--color-primary);
+    border-radius: 50%;
+  }
+
+  @media (min-width: 900px) {
+    .book {
+      --book-w: 280px;
+    }
+    .book-stage {
+      padding-block: var(--space-8);
+    }
+  }
+</style>

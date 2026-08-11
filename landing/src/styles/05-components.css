@@ -98,24 +98,30 @@
   flex-shrink: 0;
 }
 
-/* ── Franja de credibilidad ── */
-.proof-strip { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; }
+/* ── Franja de credibilidad ──
+ * MOBILE FIRST: apilada y alineada a la izquierda, separada por líneas
+ * horizontales. En escritorio pasa a fila con separadores verticales.
+ * Antes se escribía la fila primero y se deshacía con un max-width. */
+.proof-strip { display: flex; flex-direction: column; }
 .proof-strip__item {
-  display: flex; align-items: center; justify-content: center;
-  gap: 1.2rem; padding: 1.5rem 3rem;
-  flex: 1; min-width: 180px;
-  border-right: 1px solid var(--border-color);
+  display: flex; align-items: center;
+  gap: 1.2rem; padding: 1.2rem 2rem;
+  border-bottom: 1px solid var(--border-color);
 }
-.proof-strip__item:last-child { border-right: 0; }
+.proof-strip__item:last-child { border-bottom: 0; }
 .proof-strip__num   { font-size: 2.4rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
 .proof-strip__label { font-size: var(--text-xs); color: var(--color-grey); line-height: 1.3; max-width: 120px; }
-@media (max-width: 600px) {
+
+@media (min-width: 900px) {
+  .proof-strip { flex-direction: row; justify-content: center; align-items: center; }
   .proof-strip__item {
-    width: 100%; justify-content: flex-start;
-    padding: 1.2rem 2rem;
-    border-right: 0; border-bottom: 1px solid var(--border-color);
+    flex: 1; min-width: 180px;
+    justify-content: center;
+    padding: 1.5rem 3rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-color);
   }
-  .proof-strip__item:last-child { border-bottom: 0; }
+  .proof-strip__item:last-child { border-right: 0; }
 }
 
 /* ── Lista de pasos ── */
@@ -460,3 +466,78 @@
 }
 .yt-facade:hover .yt-facade__play::before { background: #f00; }
 .yt-facade iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* ============================================================
+ * .rail — carril horizontal en móvil, columnas en escritorio.
+ *
+ * El problema que resuelve: una sección de 4 reseñas puesta en columnas se
+ * convierte en móvil en cuatro bloques apilados que empujan la página hacia
+ * abajo. Si la sección no es crítica, eso es cuatro pantallas de scroll
+ * regaladas antes de llegar al CTA. El carril la deja en UNA pantalla y quien
+ * quiera ver más, desliza.
+ *
+ * MOBILE FIRST de verdad: el caso base —sin ningún media query— es el carril.
+ * Las columnas son la excepción que aparece a partir de 900px.
+ *
+ * Se configura con dos custom properties, sin clases nuevas:
+ *   --rail-cols  columnas en escritorio (por defecto 4)
+ *   --rail-item  ancho de cada tarjeta en móvil (por defecto 78%)
+ * ============================================================ */
+.rail {
+  display: flex;
+  gap: var(--grid-gutter);
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  /* El deslizamiento se detiene encuadrando cada tarjeta. */
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: calc(var(--grid-gutter) / 2);
+
+  /* Sangrado a los bordes de la pantalla: el carril se sale del container
+     para que las tarjetas nazcan y mueran en el borde, como en una app
+     nativa. Sin esto se ve un carril "metido en una caja". */
+  padding-inline: calc(var(--grid-gutter) / 2);
+  margin-inline: calc(var(--grid-gutter) / -2);
+  padding-block: var(--space-1);
+
+  /* Que el gesto no dispare el "atrás" del navegador ni arrastre la página. */
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+
+  /* Ocultar la barra en los tres motores. */
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* Edge antiguo */
+}
+.rail::-webkit-scrollbar { display: none; }  /* WebKit / Blink */
+
+.rail > * {
+  /* Menos del 100% A PROPÓSITO: que asome la siguiente tarjeta es lo único
+     que le dice al usuario que hay más. Con tarjetas a pantalla completa el
+     carril parece una sección de un solo elemento y nadie desliza. */
+  flex: 0 0 var(--rail-item, 78%);
+  scroll-snap-align: start;
+}
+
+@media (min-width: 900px) {
+  .rail {
+    /* Columnas de igual ancho y misma altura — el efecto "tabla" que se
+       pierde con flex-wrap. */
+    display: grid;
+    grid-template-columns: repeat(var(--rail-cols, 4), 1fr);
+    overflow: visible;
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+  .rail > * { flex: none; }
+}
+
+/* Pista visual opcional bajo el carril, solo en móvil. */
+.rail-hint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-grey);
+  text-align: center;
+}
+@media (min-width: 900px) {
+  .rail-hint { display: none; }
+}

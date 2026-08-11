@@ -52,8 +52,12 @@
 
 /* Área segura en iPhone — reserva espacio para que el widget flotante no
  * tape el último CTA. Requiere viewport-fit=cover en el <head>: sin él
- * env() devuelve 0px y esto queda inerte. */
-main { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
-@media (max-width: 767px) {
-  main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+ * env() devuelve 0px y esto queda inerte.
+ *
+ * MOBILE FIRST: el caso base es el móvil, que es donde el widget flota sobre
+ * el contenido y hace falta el hueco. En escritorio se recupera el espacio.
+ * Antes estaba al revés, con un max-width: eso es pensar en escritorio. */
+main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+@media (min-width: 900px) {
+  main { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
 }

@@ -1,0 +1,56 @@
+---
+// Reseñas — cuatro columnas en escritorio, carril horizontal en móvil.
+//
+// Es el caso que motivó el carril: cuatro reseñas apiladas empujan el CTA
+// cuatro pantallas hacia abajo en una sección que no es crítica.
+//
+// No emite AggregateRating en el grafo: declarar una nota media que no
+// corresponde a reseñas verificables es un dato estructurado falso.
+import Rail from '../Rail.astro';
+
+interface Review {
+  name: string;
+  text: string;
+  rating: number;
+}
+
+const reviews: Review[] = [
+  { name: 'María G.', rating: 5, text: 'Llegué con una hernia y en ocho sesiones volví a correr. Explican cada paso.' },
+  { name: 'Javier R.', rating: 5, text: 'Me operaron del hombro y la rehabilitación aquí fue lo que marcó la diferencia.' },
+  { name: 'Lucía M.', rating: 5, text: 'El plan se ajustó cuando vieron que no avanzaba. Eso no lo hacen en todos lados.' },
+  { name: 'Andrés P.', rating: 4, text: 'Buen trato y horarios flexibles. El dolor de espalda bajó desde la segunda semana.' },
+];
+---
+
+<section id="resenas" class="section bg-secondary">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">Lo que dicen los pacientes</h2>
+    </header>
+
+    <Rail label="Reseñas de pacientes" cols={4} hint="Desliza para ver más →">
+      {reviews.map((r) => (
+        <article class="card h-100 flex-col" itemscope itemtype="https://schema.org/Review">
+          <p class="rating" aria-label={`${r.rating} de 5`}>
+            {'★'.repeat(r.rating)}<span class="rating__off">{'★'.repeat(5 - r.rating)}</span>
+          </p>
+          <p class="text-body" itemprop="reviewBody">{r.text}</p>
+          <p class="card__foot t-sm fw-600 is-marginless" itemprop="author">{r.name}</p>
+        </article>
+      ))}
+    </Rail>
+  </div>
+</section>
+
+<style>
+  .rating {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-lg);
+    line-height: 1;
+    color: var(--color-star);
+    letter-spacing: 0.1em;
+  }
+  .rating__off {
+    color: var(--color-lightGrey);
+  }
+</style>

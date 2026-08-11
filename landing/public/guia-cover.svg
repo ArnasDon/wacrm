@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 560" width="420" height="560" role="img" aria-label="Portada de la guía">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#064e3b"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="560" fill="url(#bg)"/>
+  <g fill="#ffffff">
+    <rect x="44" y="60" width="120" height="4" rx="2" opacity=".65"/>
+    <text x="44" y="150" font-family="system-ui,sans-serif" font-size="44" font-weight="800">Guía</text>
+    <text x="44" y="200" font-family="system-ui,sans-serif" font-size="44" font-weight="800">de dolor</text>
+    <text x="44" y="250" font-family="system-ui,sans-serif" font-size="44" font-weight="800">de espalda</text>
+    <text x="44" y="310" font-family="system-ui,sans-serif" font-size="18" opacity=".8">12 ejercicios para las</text>
+    <text x="44" y="336" font-family="system-ui,sans-serif" font-size="18" opacity=".8">primeras dos semanas</text>
+    <rect x="44" y="470" width="80" height="3" rx="1.5" opacity=".5"/>
+    <text x="44" y="505" font-family="system-ui,sans-serif" font-size="15" opacity=".7">Tu Clínica</text>
+  </g>
+</svg>

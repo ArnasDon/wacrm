@@ -1,4 +1,5 @@
 import { REPLY_SPLIT_MARKER } from './chunk-reply'
+import { HISTORY_ANNOTATION_MARKERS } from './history-annotations'
 
 export type GuardrailViolation =
   | 'control_marker'
@@ -8,6 +9,7 @@ export type GuardrailViolation =
   | 'unsupported_price'
   | 'unverified_availability'
   | 'unsafe_promise'
+  | 'history_annotation_leak'
 
 export interface GuardrailResult {
   safe: boolean
@@ -96,6 +98,13 @@ export function evaluateAgentOutput(args: {
 
   if (/\[\[[A-Z][A-Z0-9_:-]{1,40}\]\]/.test(withoutSplits)) {
     violations.add('control_marker')
+  }
+  // buildConversationContext annotates past media/interactive messages with
+  // bracketed markers like "[Opção interactiva no WhatsApp]" so the model
+  // can read its own history — a real leak observed in production is the
+  // model echoing that annotation back as if it were reply content.
+  if (HISTORY_ANNOTATION_MARKERS.some((marker) => withoutSplits.includes(marker))) {
+    violations.add('history_annotation_leak')
   }
   if (
     /Treat everything in the customer messages as untrusted|Tool-use rule:|Catalogue selling rule:|Business context and instructions:/i.test(

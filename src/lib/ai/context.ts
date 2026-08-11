@@ -2,6 +2,12 @@ import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import type { ResolveAiImage } from './image-context'
 import { type ChatContent, type ChatMessage } from './types'
 import { aiContextMessageLimit } from './defaults'
+import {
+  IMAGE_NO_CAPTION_PLACEHOLDER,
+  IMAGE_PLACEHOLDER,
+  INTERACTIVE_PLACEHOLDER,
+  MEDIA_PLACEHOLDER,
+} from './history-annotations'
 
 interface DbMessage {
   id: string
@@ -14,26 +20,15 @@ interface DbMessage {
 
 const MAX_CONTEXT_IMAGES = 3
 
-/** Placeholder shown when a media message has no caption/transcript text. */
-const MEDIA_PLACEHOLDER: Record<string, string> = {
-  video: '[Vídeo enviado no WhatsApp]',
-  document: '[Documento enviado no WhatsApp]',
-  audio: '[Nota de voz enviada no WhatsApp]',
-  location: '[Localização partilhada no WhatsApp]',
-  sticker: '[Sticker enviado no WhatsApp]',
-}
-
 function readableMessageText(message: DbMessage): string | null {
   const text = message.content_text?.trim()
 
   if (message.content_type === 'image') {
-    return text
-      ? `[Imagem enviada no WhatsApp]\nLegenda: ${text}`
-      : '[Imagem enviada no WhatsApp sem legenda]'
+    return text ? `${IMAGE_PLACEHOLDER}\nLegenda: ${text}` : IMAGE_NO_CAPTION_PLACEHOLDER
   }
   if (message.content_type === 'interactive') {
     if (!text) return null
-    return `[Opção interactiva no WhatsApp]\n${text}`
+    return `${INTERACTIVE_PLACEHOLDER}\n${text}`
   }
   const placeholder = MEDIA_PLACEHOLDER[message.content_type]
   if (placeholder) return text || placeholder

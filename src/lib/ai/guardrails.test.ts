@@ -22,6 +22,14 @@ describe('AI output guardrails', () => {
     ).toContain('system_prompt_leak')
   })
 
+  it('blocks a leaked history annotation marker (real production incident)', () => {
+    expect(
+      evaluateAgentOutput({
+        text: 'Veja estas opções:\n\n[Opção interactiva no WhatsApp]\nSeleccione este produto abaixo.',
+      }).violations,
+    ).toContain('history_annotation_leak')
+  })
+
   it('blocks credentials and valid payment-card numbers', () => {
     expect(
       evaluateAgentOutput({

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Conversation, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
@@ -18,6 +18,7 @@ import {
   Plus,
   ShoppingBag,
   BrainCircuit,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -27,9 +28,12 @@ import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Carries `ctwa_referral` (migration 055) for the ad-origin section
+   *  below — optional so existing callers keep compiling. */
+  conversation?: Conversation | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -188,6 +192,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const displayName = contact.name || contact.phone;
   const initials = displayName.charAt(0).toUpperCase();
 
+  // Click-to-WhatsApp ad origin (migration 055). Priority per spec:
+  // image_url, then thumbnail_url for a video ad (we don't embed the
+  // video itself, just its still). Never the media the customer sent
+  // during the conversation — that's `messages.media_url`, a completely
+  // separate concept from this ad-origin metadata.
+  const referral = conversation?.ctwa_referral;
+  const adMediaUrl = referral?.image_url || referral?.thumbnail_url || null;
+  const hasAdOrigin = !!referral && (
+    adMediaUrl || referral.headline || referral.body || referral.source_url
+  );
+
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
       <ScrollArea className="flex-1">
@@ -221,6 +236,44 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </Link>
             )}
           </div>
+
+          {/* Ad origin (Click-to-WhatsApp) — shown first, image-first,
+              since knowing which ad/apartment brought the lead in is
+              the whole point of this section (AGENTS task). */}
+          {hasAdOrigin && (
+            <>
+              <div className="my-4 border-t border-border" />
+              <div>
+                <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <Megaphone className="h-3 w-3" />
+                  {tSidebar("adOrigin")}
+                </div>
+                <div className="mt-2 overflow-hidden rounded-lg bg-muted">
+                  {adMediaUrl && (
+                    <img
+                      src={adMediaUrl}
+                      alt={tSidebar("adOriginImageAlt")}
+                      className="aspect-video w-full object-cover"
+                    />
+                  )}
+                  {(referral?.headline || referral?.body) && (
+                    <div className="space-y-0.5 px-3 py-2">
+                      {referral?.headline && (
+                        <p className="text-xs font-semibold text-foreground">
+                          {referral.headline}
+                        </p>
+                      )}
+                      {referral?.body && (
+                        <p className="text-xs text-muted-foreground">
+                          {referral.body}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Phone */}
           <div className="mt-4 space-y-2">

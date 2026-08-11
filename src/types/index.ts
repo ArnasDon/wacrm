@@ -1,6 +1,9 @@
 import type { AccountRole } from "@/lib/auth/roles";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 import type { ResponderColor } from "@/lib/responder-color";
+import type { CtwaReferral } from "@/lib/whatsapp/ctwa-referral";
+
+export type { CtwaReferral } from "@/lib/whatsapp/ctwa-referral";
 
 export type {
   InteractiveMessagePayload,
@@ -279,6 +282,13 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /**
+   * Click-to-WhatsApp Ad origin (migration 055), captured from the first
+   * inbound message's `referral` object and never overwritten afterward —
+   * see `captureCtwaReferral` in the webhook route. Null when the lead
+   * did not arrive via a CTWA ad. Shape is Meta's, all fields optional.
+   */
+  ctwa_referral?: CtwaReferral | null;
 }
 
 // ============================================================

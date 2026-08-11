@@ -16,6 +16,7 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { captureCtwaReferral, type CtwaReferral } from '@/lib/whatsapp/ctwa-referral'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -62,6 +63,15 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Present on the message that opened a conversation started by tapping
+   * a Click-to-WhatsApp ad (Facebook/Instagram). Identifies which ad
+   * creative sent the lead — see `captureCtwaReferral` below, which
+   * persists this onto `conversations.ctwa_referral` (migration 055) on
+   * first touch only. All fields are optional per Meta's docs; a real
+   * payload may carry only a subset.
+   */
+  referral?: CtwaReferral
 }
 
 interface WhatsAppWebhookEntry {
@@ -561,6 +571,13 @@ async function processMessage(
   )
   if (!convResult) return
   const conversation = convResult.conversation
+
+  // Click-to-WhatsApp Ads (CTWA): capture which ad brought this lead in.
+  // First-touch only — see captureCtwaReferral for why we never overwrite
+  // an already-set origin with a later, referral-less message.
+  if (message.referral) {
+    await captureCtwaReferral(supabaseAdmin(), conversation, message.referral)
+  }
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by

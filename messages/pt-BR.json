@@ -384,7 +384,9 @@
       "hasPurchased": "Já comprou comigo?",
       "hasPurchasedYes": "Sim",
       "hasPurchasedNo": "Não",
-      "pendingAiSuggestions": "{count, plural, =1 {1 sugestão da IA} other {# sugestões da IA}}"
+      "pendingAiSuggestions": "{count, plural, =1 {1 sugestão da IA} other {# sugestões da IA}}",
+      "adOrigin": "Origem do anúncio",
+      "adOriginImageAlt": "Imagem do anúncio que originou este contato"
     },
     "aiBanner": {
       "pausedTitle": "O assistente de IA está pausado aqui",

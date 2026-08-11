@@ -828,7 +828,7 @@ function InboxPageInner() {
           )}
         >
           <div className="h-full w-70">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar contact={activeContact} conversation={activeConversation} />
           </div>
         </div>
       </div>

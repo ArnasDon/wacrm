@@ -384,7 +384,9 @@
       "hasPurchased": "구매 이력이 있나요?",
       "hasPurchasedYes": "예",
       "hasPurchasedNo": "아니요",
-      "pendingAiSuggestions": "AI 제안 {count}건"
+      "pendingAiSuggestions": "AI 제안 {count}건",
+      "adOrigin": "광고 출처",
+      "adOriginImageAlt": "이 연락처를 유입시킨 광고 이미지"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",

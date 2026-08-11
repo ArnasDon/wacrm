@@ -384,7 +384,9 @@
       "hasPurchased": "Already purchased?",
       "hasPurchasedYes": "Yes",
       "hasPurchasedNo": "No",
-      "pendingAiSuggestions": "{count, plural, =1 {1 AI suggestion} other {# AI suggestions}}"
+      "pendingAiSuggestions": "{count, plural, =1 {1 AI suggestion} other {# AI suggestions}}",
+      "adOrigin": "Ad origin",
+      "adOriginImageAlt": "Ad image that originated this contact"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

@@ -191,7 +191,7 @@ export function DealForm({
       // Pre-fill title with the contact's name when opening from the inbox
       setTitle(initialContactName ?? "");
       setValue("");
-      setCurrency(defaultCurrency);
+      setCurrency("BRL");
       setContactId(initialContactId ?? "");
       setStageId(defaultStageId || initialStages[0]?.id || "");
       setAssignedTo("");
@@ -846,26 +846,18 @@ export function DealForm({
                   VALOR DO NEGÓCIO
                 </label>
                 <div className="relative flex items-center">
+                  <span className="absolute left-3 text-xs font-bold text-muted-foreground select-none">
+                    R$
+                  </span>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
-                    placeholder="0.00"
-                    className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary pl-3 pr-24 font-semibold"
+                    placeholder="0,00"
+                    className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary pl-9 font-semibold"
                   />
-                  <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                    className="absolute right-1.5 h-7 rounded border-0 bg-background/80 px-2 text-xs font-bold text-foreground outline-none cursor-pointer hover:bg-muted"
-                  >
-                    {CURRENCIES.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} ({c.symbol})
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
               <div className="space-y-1.5">

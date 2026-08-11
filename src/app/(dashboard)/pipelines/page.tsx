@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { DEAL_SELECT, normalizeDeals } from "@/lib/pipelines/deals";
-import { colorForConversation, fetchLastAgentSenderMap } from "@/lib/responder-color";
+import { colorForConversation, fetchAssignedAgentMap } from "@/lib/responder-color";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
@@ -112,11 +112,11 @@ export default function PipelinesPage() {
   const loadDeals = useCallback(
     async (pipelineId: string) => {
       // The "last internal responder" indicator bar needs, for every
-      // deal, who last answered its conversation — fetched here as one
-      // extra aggregate query (not per-card) and merged in, using the
-      // exact same `colorForConversation` the Inbox uses so a lead's
-      // card shows the same color in both places (see AGENTS task).
-      const [{ data }, { data: profiles }, lastAgentSenderMap] =
+      // deal, its conversation's persistently assigned agent — fetched
+      // here as one extra aggregate query (not per-card) and merged in,
+      // using the exact same `colorForConversation` the Inbox uses so a
+      // lead's card shows the same color in both places (see AGENTS task).
+      const [{ data }, { data: profiles }, assignedAgentMap] =
         await Promise.all([
           supabase
             .from("deals")
@@ -124,8 +124,8 @@ export default function PipelinesPage() {
             .eq("pipeline_id", pipelineId)
             .order("created_at", { ascending: false }),
           supabase.from("profiles").select("*"),
-          fetchLastAgentSenderMap(supabase).catch((error) => {
-            console.error("Failed to load last agent senders:", error);
+          fetchAssignedAgentMap(supabase).catch((error) => {
+            console.error("Failed to load assigned agents:", error);
             return new Map<string, string>();
           }),
         ]);
@@ -133,7 +133,7 @@ export default function PipelinesPage() {
         ...deal,
         responder_color: colorForConversation(
           deal.conversation_id,
-          lastAgentSenderMap,
+          assignedAgentMap,
           profiles ?? [],
         ),
       }));

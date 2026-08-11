@@ -47,6 +47,10 @@ export interface AiConfig {
    *  knowledge base is embedded and semantic retrieval turns on; when
    *  null, retrieval falls back to lexical full-text search. */
   embeddingsApiKey: string | null
+  /** USD-to-MZN rate for the token-spend dashboard. Optional so existing
+   *  callers/fixtures that only need credentials aren't forced to supply
+   *  it; falls back to DEFAULT_USD_TO_MZN_RATE (pricing.ts) when absent. */
+  usdToMznRate?: number
 }
 
 export type AiImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'

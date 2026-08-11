@@ -449,6 +449,8 @@
       "seconds": "segundos",
       "maxReplyChunks": "Máximo de balões por resposta",
       "maxReplyChunksDesc": "Envia uma resposta da IA em até este número de mensagens curtas no WhatsApp.",
+      "usdToMznRate": "Taxa de câmbio USD → MZN",
+      "usdToMznRateDesc": "Usada só para mostrar o gasto de tokens em Metical em Utilização. Actualiza de vez em quando — não é obtida automaticamente.",
       "handoffTo": "Transferir para",
       "handoffToDesc": "Quando o agente não consegue ajudar ou atinge o limite de respostas, entra em pausa e encaminha a conversa para este destino, com uma nota resumida.",
       "handoffQueue": "Fila sem atribuição, disponível para qualquer agente",

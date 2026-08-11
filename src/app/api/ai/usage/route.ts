@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { daysAgoStart, lastNDayKeys, localDayKey } from '@/lib/dashboard/date-utils'
+import { estimateCostUsd, DEFAULT_USD_TO_MZN_RATE } from '@/lib/ai/pricing'
 
 // Rows are aggregated in-process over a bounded window. An active
 // account writes a handful of rows per conversation, so 30 days sits
@@ -85,7 +86,14 @@ export async function GET(request: Request) {
     }
     const modelMap = new Map<
       string,
-      { model: string; provider: string; calls: number; tokens: number }
+      {
+        model: string
+        provider: string
+        calls: number
+        tokens: number
+        promptTokens: number
+        completionTokens: number
+      }
     >()
 
     // Zero-filled daily buckets so the chart shows quiet days as gaps,
@@ -108,9 +116,11 @@ export async function GET(request: Request) {
       const mk = `${r.provider}:${r.model}`
       const m =
         modelMap.get(mk) ??
-        { model: r.model, provider: r.provider, calls: 0, tokens: 0 }
+        { model: r.model, provider: r.provider, calls: 0, tokens: 0, promptTokens: 0, completionTokens: 0 }
       m.calls += 1
       m.tokens += r.total_tokens
+      m.promptTokens += r.prompt_tokens
+      m.completionTokens += r.completion_tokens
       modelMap.set(mk, m)
 
       const bucket = daily.get(localDayKey(r.created_at))
@@ -120,7 +130,30 @@ export async function GET(request: Request) {
       }
     }
 
-    const byModel = [...modelMap.values()].sort((a, b) => b.tokens - a.tokens)
+    const { data: configRow } = await supabase
+      .from('ai_configs')
+      .select('usd_to_mzn_rate')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    const exchangeRate = configRow?.usd_to_mzn_rate ?? DEFAULT_USD_TO_MZN_RATE
+
+    let totalCostUsd = 0
+    let hasUnpricedModels = false
+    const byModel = [...modelMap.values()]
+      .map((m) => {
+        const costUsd = estimateCostUsd(m.model, m.promptTokens, m.completionTokens)
+        if (costUsd === null) hasUnpricedModels = true
+        else totalCostUsd += costUsd
+        return {
+          model: m.model,
+          provider: m.provider,
+          calls: m.calls,
+          tokens: m.tokens,
+          cost_usd: costUsd,
+          cost_mzn: costUsd === null ? null : costUsd * exchangeRate,
+        }
+      })
+      .sort((a, b) => b.tokens - a.tokens)
 
     return NextResponse.json({
       window_days: days,
@@ -130,7 +163,11 @@ export async function GET(request: Request) {
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
         total_tokens: totalTokens,
+        cost_usd: totalCostUsd,
+        cost_mzn: totalCostUsd * exchangeRate,
+        has_unpriced_models: hasUnpricedModels,
       },
+      exchange_rate: exchangeRate,
       by_mode: byMode,
       by_model: byModel,
       daily: [...daily.values()],

@@ -15,6 +15,7 @@ import {
 } from '@/lib/ai/commercial-strategy'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 import { aiContextMessageLimit } from '@/lib/ai/defaults'
+import { DEFAULT_USD_TO_MZN_RATE } from '@/lib/ai/pricing'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -26,7 +27,7 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) return NextResponse.json({ error: 'Failed to load AI configuration' }, { status: 500 })
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
     let maxReplyChunks = Number(body.max_reply_chunks)
     if (!Number.isFinite(maxReplyChunks)) maxReplyChunks = 3
     maxReplyChunks = Math.min(5, Math.max(1, Math.floor(maxReplyChunks)))
+    let usdToMznRate = Number(body.usd_to_mzn_rate)
+    if (!Number.isFinite(usdToMznRate) || usdToMznRate <= 0) usdToMznRate = DEFAULT_USD_TO_MZN_RATE
 
     const rawHandoff = typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
     const handoffProvided = 'handoff_agent_id' in body
@@ -145,6 +148,7 @@ export async function POST(request: Request) {
       auto_reply_max_per_conversation: maxPer,
       buffer_window_seconds: bufferWindowSeconds,
       max_reply_chunks: maxReplyChunks,
+      usd_to_mzn_rate: usdToMznRate,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

@@ -67,3 +67,12 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 <!-- END:karpathy-guidelines -->
+
+<!-- BEGIN:self-optimizing-protocol -->
+# Session memory protocol
+
+- **At the start of every session**, read `learnings.md` in the repo root.
+- **At the end of a session** where something genuinely worth remembering happened — a real bug, a surprising root cause, a dead end, a project-specific gotcha — append a short entry to `learnings.md`. Don't log routine work; this is a memory of mistakes and traps, not a changelog (that's what git commits are for).
+- If the **same class of mistake** shows up a second time, that's a signal to fix the root cause in code (a lint rule, a type, a test) or add a durable rule to this file — not to keep logging it.
+- When resolving a real problem: investigate the actual root cause (not just the symptom) → decide the scope of the fix → make the leanest change that resolves it → verify (typecheck/tests/build, and for anything customer-facing, actually exercise it) → if verification fails, iterate from investigation again, don't guess a second fix blind.
+<!-- END:self-optimizing-protocol -->

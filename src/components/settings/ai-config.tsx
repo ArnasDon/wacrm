@@ -71,6 +71,7 @@ export function AiConfig() {
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   const [bufferWindowSeconds, setBufferWindowSeconds] = useState(12);
   const [maxReplyChunks, setMaxReplyChunks] = useState(3);
+  const [usdToMznRate, setUsdToMznRate] = useState(63.91);
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
@@ -112,6 +113,7 @@ export function AiConfig() {
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setBufferWindowSeconds(data.buffer_window_seconds ?? 12);
         setMaxReplyChunks(data.max_reply_chunks ?? 3);
+        setUsdToMznRate(data.usd_to_mzn_rate ?? 63.91);
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
@@ -181,6 +183,7 @@ export function AiConfig() {
     auto_reply_max_per_conversation: maxPerConversation,
     buffer_window_seconds: bufferWindowSeconds,
     max_reply_chunks: maxReplyChunks,
+    usd_to_mzn_rate: usdToMznRate,
     handoff_agent_id: handoffAgentId || null,
   });
 
@@ -535,6 +538,27 @@ export function AiConfig() {
                 }
                 disabled={disabled || !autoReplyEnabled}
                 className="w-20"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-usd-mzn-rate">{t('usdToMznRate')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('usdToMznRateDesc')}
+                </p>
+              </div>
+              <Input
+                id="ai-usd-mzn-rate"
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={usdToMznRate}
+                onChange={(e) =>
+                  setUsdToMznRate(Math.max(0.01, Number(e.target.value) || 0.01))
+                }
+                disabled={disabled}
+                className="w-24"
               />
             </div>
 

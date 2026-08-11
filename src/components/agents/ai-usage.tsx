@@ -32,7 +32,11 @@ interface UsageResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    cost_usd: number;
+    cost_mzn: number;
+    has_unpriced_models: boolean;
   };
+  exchange_rate: number;
   by_mode: {
     auto_reply: { calls: number; tokens: number };
     draft: { calls: number; tokens: number };
@@ -42,9 +46,17 @@ interface UsageResponse {
     provider: string;
     calls: number;
     tokens: number;
+    cost_usd: number | null;
+    cost_mzn: number | null;
   }[];
   daily: { date: string; tokens: number; calls: number }[];
 }
+
+const MZN_FORMATTER = new Intl.NumberFormat('pt-PT', {
+  style: 'currency',
+  currency: 'MZN',
+  maximumFractionDigits: 2,
+});
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -143,8 +155,11 @@ export function AiUsageCard() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat
+                label="Gasto estimado"
+                value={MZN_FORMATTER.format(data.totals.cost_mzn)}
+              />
               <Stat label="Total tokens" value={formatCompactNumber(data.totals.total_tokens)} />
-              <Stat label="LLM calls" value={String(data.totals.calls)} />
               <Stat
                 label="Auto-reply"
                 value={formatCompactNumber(data.by_mode.auto_reply.tokens)}
@@ -156,6 +171,14 @@ export function AiUsageCard() {
                 icon={PencilLine}
               />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Estimativa a partir do preço público de cada modelo e da taxa de câmbio em Definições (
+              {data.exchange_rate.toFixed(2)} MZN/USD) — {MZN_FORMATTER.format(data.totals.cost_mzn)} ≈ $
+              {data.totals.cost_usd.toFixed(2)}.
+              {data.totals.has_unpriced_models
+                ? ' Alguns modelos usados não têm preço conhecido e ficam de fora deste total.'
+                : ''}
+            </p>
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -193,6 +216,7 @@ export function AiUsageCard() {
                       <span className="flex-shrink-0 tabular-nums text-muted-foreground">
                         {formatCompactNumber(m.tokens)} tok · {m.calls}{' '}
                         {m.calls === 1 ? 'call' : 'calls'}
+                        {m.cost_mzn !== null ? ` · ${MZN_FORMATTER.format(m.cost_mzn)}` : ' · preço desconhecido'}
                       </span>
                     </li>
                   ))}

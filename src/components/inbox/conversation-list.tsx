@@ -608,8 +608,15 @@ interface ConversationItemProps {
 // left-to-right gesture's feel, so there's only ever one direction now.
 const SWIPE_LEFT_WIDTH = 152;
 // Minimum finger movement (px) before a touch gesture commits to
-// horizontal swipe vs. vertical scroll.
-const SWIPE_AXIS_THRESHOLD = 8;
+// horizontal swipe vs. vertical scroll — matches the "10px before
+// committing" rule below.
+const SWIPE_AXIS_THRESHOLD = 10;
+// A gesture only locks to horizontal once it's this many times more
+// horizontal than vertical — a plain `dx > dy` let a near-diagonal
+// drag (very common on a real vertical scroll) commit to swipe by
+// mistake. Above the threshold, ties now favor vertical (native
+// scroll), not horizontal.
+const SWIPE_AXIS_RATIO = 1.5;
 
 function ConversationItem({
   conversation,
@@ -659,7 +666,14 @@ function ConversationItem({
   const applyTransform = useCallback((x: number, animate: boolean) => {
     const el = contentRef.current;
     if (!el) return;
-    el.style.transition = animate ? "transform 200ms ease-out" : "none";
+    // 1:1 with the finger during the drag itself (no transition — see
+    // the `false` callers below). On release, a spring-like decelerate
+    // curve (the same shape iOS sheets/swipe rows settle with) instead
+    // of a linear/plain ease-out, so the snap open/closed reads as a
+    // soft catch rather than a mechanical slide.
+    el.style.transition = animate
+      ? "transform 280ms cubic-bezier(0.32, 0.72, 0, 1)"
+      : "none";
     el.style.transform = `translate3d(${x}px,0,0)`;
   }, []);
 
@@ -699,7 +713,11 @@ function ConversationItem({
           Math.abs(dy) < SWIPE_AXIS_THRESHOLD
         )
           return;
-        drag.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        // Only commits to horizontal when it's clearly more horizontal
+        // than vertical — a near-diagonal drag (routine on a real
+        // vertical scroll) now locks to "y" instead of stealing the
+        // gesture as a swipe.
+        drag.axis = Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO ? "x" : "y";
       }
       if (drag.axis === "y") return; // vertical drag — let the list scroll
 
@@ -868,21 +886,24 @@ function ConversationItem({
         )}
       >
         {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-        {contact?.avatar_url ? (
-          <img
-            src={contact.avatar_url}
-            alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
-          />
-        ) : (
-          initials
-        )}
-      </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          {contact?.avatar_url ? (
+            <img
+              src={contact.avatar_url}
+              alt={displayName}
+              className="h-10 w-10 rounded-full object-cover"
+            />
+          ) : (
+            initials
+          )}
+        </div>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
+        {/* Center: name + preview. min-w-0 is load-bearing — a flex
+            item's default min-width is `auto` (its content's intrinsic
+            width), so without it `truncate` below never actually kicks
+            in and a long preview pushes past its share of the row into
+            the time/badge column. */}
+        <div className="min-w-0 flex-1 pr-2">
           <span className="flex min-w-0 items-center gap-1">
             {conversation.pinned && (
               <Pin className="h-3 w-3 shrink-0 text-amber-500" />
@@ -891,8 +912,34 @@ function ConversationItem({
               {displayName}
             </span>
           </span>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <span className="text-[10px] text-muted-foreground">{timeAgo}</span>
+          <p className="mt-0.5 truncate text-sm text-muted-foreground">
+            {conversation.last_message_text || t("noMessagesYet")}
+          </p>
+          {/* Last-internal-responder indicator — no text/icon, color only
+              (blue = Ronaldo, pink = Tatiana, gray = no internal reply
+              yet). Same source as the Pipeline's DealCard bar. */}
+          <span
+            aria-hidden
+            className={cn(
+              "mt-1.5 block h-1 w-8 rounded-full",
+              RESPONDER_COLOR_CLASS[responderColor]
+            )}
+          />
+        </div>
+
+        {/* Right column: time/menu on top, unread badge on the bottom —
+            self-stretch matches the center block's height so the two
+            rows sit flush with the name and preview lines beside them. */}
+        <div className="flex min-w-[50px] shrink-0 flex-col items-end justify-between self-stretch py-0.5">
+          <div className="flex items-center gap-0.5">
+            <span
+              className={cn(
+                "text-xs font-normal text-muted-foreground",
+                conversation.unread_count > 0 && "font-medium text-primary"
+              )}
+            >
+              {timeAgo}
+            </span>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -921,19 +968,9 @@ function ConversationItem({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-        <div className="mt-0.5 flex items-center justify-between gap-2">
-          {/* min-w-0 + flex-1 are load-bearing here: a flex item's default
-              min-width is `auto` (its content's intrinsic width), so
-              without them `truncate` never actually kicks in and a long
-              preview pushes past its share of the row into the badge/
-              status column next to it. */}
-          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-            {conversation.last_message_text || t("noMessagesYet")}
-          </p>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             {conversation.unread_count > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
                 {conversation.unread_count}
               </span>
             )}
@@ -948,17 +985,6 @@ function ConversationItem({
             )}
           </div>
         </div>
-        {/* Last-internal-responder indicator — no text/icon, color only
-            (blue = Ronaldo, pink = Tatiana, gray = no internal reply
-            yet). Same source as the Pipeline's DealCard bar. */}
-        <span
-          aria-hidden
-          className={cn(
-            "mt-1.5 block h-1 w-8 rounded-full",
-            RESPONDER_COLOR_CLASS[responderColor]
-          )}
-        />
-      </div>
       </div>
 
       {/* Desktop right-click context menu — same three actions as the

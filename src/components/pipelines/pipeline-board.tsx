@@ -17,10 +17,11 @@ import {
 import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, ListChecks } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
+import { getRequiredFieldsArray } from "@/lib/pipelines/validation";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -225,9 +226,20 @@ function StageColumn({
           {deals.length}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {formatCurrency(totalValue, currency)}
-      </p>
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-xs text-muted-foreground">
+          {formatCurrency(totalValue, currency)}
+        </p>
+        {getRequiredFieldsArray(stage.required_fields).length > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20"
+            title={`Campos obrigatórios: ${getRequiredFieldsArray(stage.required_fields).length}`}
+          >
+            <ListChecks className="h-3 w-3" />
+            <span>{getRequiredFieldsArray(stage.required_fields).length} req.</span>
+          </span>
+        )}
+      </div>
 
       <div
         ref={setNodeRef}

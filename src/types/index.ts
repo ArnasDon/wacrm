@@ -294,6 +294,24 @@ export interface Conversation {
    * did not arrive via a CTWA ad. Shape is Meta's, all fields optional.
    */
   ctwa_referral?: CtwaReferral | null;
+  /**
+   * CTWA Free Entry Point 72h clock (migration 059) — independent of
+   * the 24h service window. `ctwa_fep_started_at`/`ctwa_fep_active`
+   * are a historical record ("was the benefit ever granted"), set once
+   * by `maybeActivateCtwaFep` and never updated afterward. Whether the
+   * benefit is *currently* live is derived from `ctwa_fep_expires_at`
+   * vs. now — see `getCtwaFepStatus` in `src/lib/whatsapp/ctwa-fep.ts`.
+   */
+  ctwa_fep_started_at?: string | null;
+  ctwa_fep_expires_at?: string | null;
+  ctwa_fep_active?: boolean;
+  /**
+   * Outcome of the ~23h CTWA rescue nudge (migration 059) — see
+   * `src/lib/whatsapp/ctwa-rescue.ts`. NULL = still a candidate / not
+   * yet evaluated; otherwise terminal (evaluated at most once).
+   */
+  ctwa_rescue_status?: 'sent' | 'cancelled' | 'failed' | null;
+  ctwa_rescue_sent_at?: string | null;
 }
 
 // ============================================================

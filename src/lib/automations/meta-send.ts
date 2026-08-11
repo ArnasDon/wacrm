@@ -5,6 +5,7 @@ import {
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { maybeActivateCtwaFep } from '@/lib/whatsapp/ctwa-fep'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -209,6 +210,8 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     // the send failed. The engine wraps this in a log line.
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
+
+  void maybeActivateCtwaFep(db, input.conversationId)
 
   await db
     .from('conversations')

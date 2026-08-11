@@ -286,6 +286,11 @@
       "xmRemaining": "{minutes}분 남음",
       "noCustomerMessages": "고객 메시지 없음"
     },
+    "ctwaFep": {
+      "xhRemaining": "CTWA 혜택: {hours}시간 남음",
+      "xmRemaining": "CTWA 혜택: {minutes}분 남음",
+      "ended": "CTWA 혜택 종료"
+    },
     "composer": {
       "sessionExpiredHint": "24시간 세션이 만료되었습니다. 다시 연결하려면 템플릿을 사용하세요.",
       "templates": "템플릿",

@@ -36,6 +36,7 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { maybeActivateCtwaFep } from '@/lib/whatsapp/ctwa-fep';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -496,6 +497,12 @@ export async function sendMessageToConversation(
       500
     );
   }
+
+  // Best-effort — an agent reply is a genuine "empresa responde"
+  // event for CTWA leads; see maybeActivateCtwaFep for the activation
+  // rule. Never awaited into the response path beyond this call, and
+  // its own try/catch means it can't throw.
+  void maybeActivateCtwaFep(db, conversationId);
 
   const lastMessageText =
     messageType === 'interactive'

@@ -286,6 +286,11 @@
       "xmRemaining": "{minutes}m remaining",
       "noCustomerMessages": "No customer messages"
     },
+    "ctwaFep": {
+      "xhRemaining": "CTWA benefit: {hours}h remaining",
+      "xmRemaining": "CTWA benefit: {minutes}m remaining",
+      "ended": "CTWA benefit ended"
+    },
     "composer": {
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
       "templates": "Templates",

@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { maybeActivateCtwaFep } from '@/lib/whatsapp/ctwa-fep'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -138,6 +139,11 @@ export async function engineSendText(
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
 
+  // Best-effort — a Flow sending on the business's behalf (including
+  // the CTWA rescue nudge, which also goes through this function) is a
+  // genuine "empresa responde" event for CTWA leads.
+  void maybeActivateCtwaFep(db, args.conversationId)
+
   await db
     .from('conversations')
     .update({
@@ -254,6 +260,8 @@ export async function engineSendMedia(
   if (msgErr) {
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
+
+  void maybeActivateCtwaFep(db, args.conversationId)
 
   await db
     .from('conversations')
@@ -447,6 +455,8 @@ async function sendInteractiveViaMeta(
   if (msgErr) {
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
+
+  void maybeActivateCtwaFep(db, input.conversationId)
 
   await db
     .from('conversations')

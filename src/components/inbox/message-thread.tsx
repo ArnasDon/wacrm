@@ -26,6 +26,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Megaphone,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -50,6 +51,7 @@ import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker, type TemplateSendValues } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { CtwaOrigin } from "./ctwa-origin";
+import { getCtwaFepStatus } from "@/lib/whatsapp/ctwa-fep";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-draft";
@@ -203,6 +205,7 @@ export function MessageThread({
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
+  const tCtwaFep = useTranslations("Inbox.ctwaFep");
   const tQuote = useTranslations("Inbox.replyQuote");
 
   const { user } = useAuth();
@@ -323,6 +326,28 @@ export function MessageThread({
 
     return { expired, remaining };
   }, [messages, tTimer]);
+
+  // CTWA Free Entry Point 72h — independent of the 24h session timer
+  // above (never derived from it, never affects it). Purely a display
+  // concern: current active/expired state is always computed from
+  // ctwa_fep_expires_at vs. now, not the historical ctwa_fep_active
+  // flag — see getCtwaFepStatus. Null when this isn't a CTWA lead, or
+  // the FEP was never activated (business hasn't replied yet).
+  const ctwaFepInfo = useMemo(() => {
+    if (!conversation?.ctwa_referral) return null;
+    const status = getCtwaFepStatus(conversation);
+    if (!status.expiresAt) return null; // never activated
+
+    if (!status.active) {
+      return { active: false, remaining: tCtwaFep("ended") };
+    }
+    const hoursLeft = (status.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60);
+    const remaining =
+      hoursLeft >= 1
+        ? tCtwaFep("xhRemaining", { hours: Math.floor(hoursLeft) })
+        : tCtwaFep("xmRemaining", { minutes: Math.max(0, Math.floor(hoursLeft * 60)) });
+    return { active: true, remaining };
+  }, [conversation, tCtwaFep]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -1000,6 +1025,26 @@ export function MessageThread({
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
           </Badge>
+          {/* CTWA Free Entry Point badge — only for leads that came
+              from a Click-to-WhatsApp ad AND whose FEP was activated
+              (business already replied within the first 24h). A
+              separate badge, never merged into the one above: the 24h
+              badge always means "free-text permission"; this one only
+              ever means "CTWA billing benefit", per the spec's explicit
+              instruction not to present the 72h as if it were a second
+              free-text window. */}
+          {ctwaFepInfo && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-1",
+                ctwaFepInfo.active ? "text-primary" : "text-muted-foreground"
+              )}
+            >
+              <Megaphone className="h-3 w-3" />
+              {ctwaFepInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

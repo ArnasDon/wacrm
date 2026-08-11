@@ -48,6 +48,18 @@ export function AppointmentDetailSheet({
     if (!appointment) return;
     setDeleting(true);
     try {
+      if (appointment.external_calendar_id) {
+        // Best-effort, and deliberately not in its own try/catch that
+        // could short-circuit the function — a failed Google-side
+        // delete (network blip, already-revoked connection) shouldn't
+        // block deleting the appointment locally; it just leaves a
+        // stale event sitting on the agent's Google Calendar.
+        await fetch('/api/calendar/sync', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ externalCalendarId: appointment.external_calendar_id }),
+        }).catch((err) => console.error('[calendar sync] delete request failed:', err));
+      }
       await deleteAppointment(supabase, appointment.id);
       toast.success(t('toastDeleted'));
       setDeleteConfirmOpen(false);

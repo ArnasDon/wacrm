@@ -31,6 +31,32 @@ const APPOINTMENT_TYPES: AppointmentType[] = [
   'other',
 ];
 
+/**
+ * Best-effort push to Google Calendar after a create/update. Never
+ * throws — a network error or a 'sync_failed'/'not_connected' body
+ * both just mean "nothing changed on Google's side"; the appointment
+ * itself already saved successfully by the time this runs. Only
+ * surfaces a toast when the sync was attempted and Google-side
+ * (not the "not connected" no-op case, which is expected for most
+ * agents most of the time).
+ */
+async function syncAppointmentToCalendar(appointmentId: string, failureMessage: string) {
+  try {
+    const res = await fetch('/api/calendar/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appointmentId }),
+    });
+    const data = (await res.json()) as { synced?: boolean; reason?: string };
+    if (!res.ok || (data.synced === false && data.reason === 'sync_failed')) {
+      toast.warning(failureMessage);
+    }
+  } catch (err) {
+    console.error('[calendar sync] request failed:', err);
+    toast.warning(failureMessage);
+  }
+}
+
 interface AppointmentFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -165,15 +191,24 @@ export function AppointmentFormDialog({
         contactId: contactId || null,
         propertyId: propertyId || null,
       };
+      let savedId: string;
       if (appointment) {
         await updateAppointment(supabase, appointment.id, input);
         toast.success(t('toastUpdated'));
+        savedId = appointment.id;
       } else {
-        await createAppointment(supabase, input);
+        const created = await createAppointment(supabase, input);
         toast.success(t('toastCreated'));
+        savedId = created.id;
       }
       onOpenChange(false);
       onSaved();
+      // Best-effort — a Google-side failure shouldn't undo a save
+      // that already succeeded, so this runs after the dialog closes
+      // and never throws into this try/catch. syncAppointmentToCalendar
+      // itself no-ops quietly when the agent hasn't connected a
+      // calendar (see /api/calendar/sync's `not_connected` reason).
+      void syncAppointmentToCalendar(savedId, t('toastCalendarSyncFailed'));
     } catch (err) {
       console.error('Failed to save appointment:', err);
       toast.error(t('toastSaveFailed'));

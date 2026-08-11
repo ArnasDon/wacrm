@@ -1,9 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarSync, Plus } from 'lucide-react'
+import { toast } from 'sonner'
+import { CalendarSync, LogOut, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
 import { listAppointmentsByDateRange } from '@/lib/appointments/queries'
+// Imported from the leaf module, not the '@/lib/calendar' barrel —
+// that barrel also re-exports GoogleCalendarProvider, which pulls in
+// `googleapis` (Node-only: relies on Node's http2/crypto, no browser
+// build). This file is a client component, so it must not import
+// anything that transitively drags that in.
+import { getMyCalendarConnection, disconnectMyCalendar } from '@/lib/calendar/connection-queries'
 import { getWeekDates, localDayKey } from '@/lib/dashboard/date-utils'
 import { AppointmentFormDialog } from '@/components/appointments/appointment-form-dialog'
 import { AppointmentDetailSheet } from '@/components/appointments/appointment-detail-sheet'
@@ -62,10 +70,71 @@ function formatDayLabel(dateKey: string): string {
 export function AgendaWeek() {
   const t = useTranslations('Dashboard.agenda')
   const tDays = useTranslations('Dashboard.agenda.weekdays')
+  const { user } = useAuth()
   const [appointments, setAppointments] = useState<Appointment[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null)
+
+  // null = not connected, undefined = still loading, string = connected email.
+  const [calendarEmail, setCalendarEmail] = useState<string | null | undefined>(undefined)
+  const [disconnecting, setDisconnecting] = useState(false)
+
+  const loadCalendarConnection = useCallback(() => {
+    if (!user) return
+    const db = createClient()
+    getMyCalendarConnection(db)
+      .then((conn) => setCalendarEmail(conn?.googleEmail ?? null))
+      .catch((err) => {
+        console.error('[dashboard] calendar connection lookup failed:', err)
+        setCalendarEmail(null)
+      })
+  }, [user])
+
+  useEffect(() => {
+    loadCalendarConnection()
+  }, [loadCalendarConnection])
+
+  // The OAuth callback (src/app/api/calendar/google/callback) redirects
+  // here with ?calendar=connected|error — surface it once, then strip
+  // the param so a refresh doesn't re-toast. Reads window.location
+  // directly (rather than next/navigation's useSearchParams) so this
+  // stays a plain client-only effect with no Suspense-boundary
+  // requirement — the whole dashboard page is already 'use client',
+  // and this only ever needs to run once, right after landing here.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const status = params.get('calendar')
+    if (!status) return
+    if (status === 'connected') {
+      toast.success(t('calendarConnectedToast'))
+      loadCalendarConnection()
+    } else if (status === 'error') {
+      toast.error(t('calendarConnectError'))
+    }
+    params.delete('calendar')
+    const query = params.toString()
+    window.history.replaceState(null, '', query ? `/dashboard?${query}` : '/dashboard')
+    // Runs once per mount — this param only ever appears right after
+    // the OAuth redirect lands here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleDisconnect() {
+    if (!user) return
+    setDisconnecting(true)
+    try {
+      const db = createClient()
+      await disconnectMyCalendar(db, user.id)
+      setCalendarEmail(null)
+      toast.success(t('calendarDisconnectedToast'))
+    } catch (err) {
+      console.error('[dashboard] calendar disconnect failed:', err)
+      toast.error(t('calendarDisconnectFailed'))
+    } finally {
+      setDisconnecting(false)
+    }
+  }
 
   const todayKey = localDayKey(new Date())
   const weekDates = getWeekDates(new Date())
@@ -100,12 +169,28 @@ export function AgendaWeek() {
           <p className="mt-0.5 text-xs text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Preparation only — no OAuth/API wired up yet, see
-              src/lib/calendar/google-calendar-provider.ts. */}
-          <Button variant="outline" size="sm" disabled title={t('googleCalendarSoon')}>
-            <CalendarSync className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('connectGoogleCalendar')}</span>
-          </Button>
+          {calendarEmail ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              title={t('calendarDisconnect')}
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('calendarConnectedAs', { email: calendarEmail })}</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={calendarEmail === undefined}
+              render={<a href="/api/calendar/google/connect" />}
+            >
+              <CalendarSync className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('connectGoogleCalendar')}</span>
+            </Button>
+          )}
           <Button size="sm" onClick={() => setFormOpen(true)}>
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">{t('newAppointment')}</span>

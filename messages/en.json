@@ -119,7 +119,12 @@
       "noContactShort": "No client",
       "noPropertyShort": "No property",
       "connectGoogleCalendar": "Connect Google Calendar",
-      "googleCalendarSoon": "Coming soon",
+      "calendarConnectedAs": "Connected as {email}",
+      "calendarDisconnect": "Disconnect Google Calendar",
+      "calendarConnectedToast": "Google Calendar connected.",
+      "calendarConnectError": "Couldn't connect to Google Calendar. Please try again.",
+      "calendarDisconnectedToast": "Google Calendar disconnected.",
+      "calendarDisconnectFailed": "Couldn't disconnect. Please try again.",
       "weekdays": {
         "monday": "Monday",
         "tuesday": "Tuesday",
@@ -203,7 +208,8 @@
       "toastCreated": "Appointment created.",
       "toastUpdated": "Appointment updated.",
       "toastSaveFailed": "Couldn't save the appointment.",
-      "toastPropertyCreateFailed": "Couldn't create the property."
+      "toastPropertyCreateFailed": "Couldn't create the property.",
+      "toastCalendarSyncFailed": "Appointment saved, but syncing to Google Calendar failed."
     },
     "detail": {
       "client": "Client",

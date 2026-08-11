@@ -3,8 +3,7 @@ import type { CalendarEvent } from './calendar-event';
 /**
  * Contract any external calendar integration (Google Calendar today,
  * others potentially later) must satisfy. No implementation lives
- * here — see google-calendar-provider.ts for the current (stubbed)
- * one and why it's still not real.
+ * here — see google-calendar-provider.ts.
  */
 export interface CalendarProvider {
   /** Matches AppointmentSyncStatus's implied provider — 'google_calendar'

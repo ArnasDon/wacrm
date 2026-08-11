@@ -119,7 +119,12 @@
       "noContactShort": "고객 없음",
       "noPropertyShort": "매물 없음",
       "connectGoogleCalendar": "Google 캘린더 연결",
-      "googleCalendarSoon": "출시 예정",
+      "calendarConnectedAs": "{email}(으)로 연결됨",
+      "calendarDisconnect": "Google 캘린더 연결 해제",
+      "calendarConnectedToast": "Google 캘린더가 연결되었습니다.",
+      "calendarConnectError": "Google 캘린더에 연결하지 못했습니다. 다시 시도해 주세요.",
+      "calendarDisconnectedToast": "Google 캘린더 연결이 해제되었습니다.",
+      "calendarDisconnectFailed": "연결을 해제하지 못했습니다. 다시 시도해 주세요.",
       "weekdays": {
         "monday": "월요일",
         "tuesday": "화요일",
@@ -203,7 +208,8 @@
       "toastCreated": "일정이 생성되었습니다.",
       "toastUpdated": "일정이 수정되었습니다.",
       "toastSaveFailed": "일정을 저장하지 못했습니다.",
-      "toastPropertyCreateFailed": "매물을 생성하지 못했습니다."
+      "toastPropertyCreateFailed": "매물을 생성하지 못했습니다.",
+      "toastCalendarSyncFailed": "일정은 저장되었지만 Google 캘린더 동기화에 실패했습니다."
     },
     "detail": {
       "client": "고객",

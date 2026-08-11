@@ -119,7 +119,12 @@
       "noContactShort": "Sem cliente",
       "noPropertyShort": "Sem imóvel",
       "connectGoogleCalendar": "Conectar Google Calendar",
-      "googleCalendarSoon": "Em breve",
+      "calendarConnectedAs": "Conectado como {email}",
+      "calendarDisconnect": "Desconectar Google Calendar",
+      "calendarConnectedToast": "Google Calendar conectado.",
+      "calendarConnectError": "Não foi possível conectar ao Google Calendar. Tente novamente.",
+      "calendarDisconnectedToast": "Google Calendar desconectado.",
+      "calendarDisconnectFailed": "Não foi possível desconectar. Tente novamente.",
       "weekdays": {
         "monday": "Segunda-feira",
         "tuesday": "Terça-feira",
@@ -203,7 +208,8 @@
       "toastCreated": "Compromisso criado.",
       "toastUpdated": "Compromisso atualizado.",
       "toastSaveFailed": "Não foi possível salvar o compromisso.",
-      "toastPropertyCreateFailed": "Não foi possível criar o imóvel."
+      "toastPropertyCreateFailed": "Não foi possível criar o imóvel.",
+      "toastCalendarSyncFailed": "Compromisso salvo, mas não foi possível sincronizar com o Google Calendar."
     },
     "detail": {
       "client": "Cliente",

@@ -63,21 +63,30 @@ export interface SaveAppointmentInput {
   propertyId: string | null;
 }
 
-export async function createAppointment(db: DB, input: SaveAppointmentInput): Promise<void> {
-  const { error } = await db.from('appointments').insert({
-    account_id: input.accountId,
-    user_id: input.userId,
-    title: input.title,
-    description: input.description,
-    notes: input.notes,
-    type: input.type,
-    scheduled_date: input.scheduledDate,
-    scheduled_time: input.scheduledTime,
-    scheduled_end_time: input.scheduledEndTime,
-    contact_id: input.contactId,
-    property_id: input.propertyId,
-  });
+/**
+ * Returns the created row's id — needed so the caller (the form
+ * dialog) can fire a POST /api/calendar/sync for it right after.
+ */
+export async function createAppointment(db: DB, input: SaveAppointmentInput): Promise<{ id: string }> {
+  const { data, error } = await db
+    .from('appointments')
+    .insert({
+      account_id: input.accountId,
+      user_id: input.userId,
+      title: input.title,
+      description: input.description,
+      notes: input.notes,
+      type: input.type,
+      scheduled_date: input.scheduledDate,
+      scheduled_time: input.scheduledTime,
+      scheduled_end_time: input.scheduledEndTime,
+      contact_id: input.contactId,
+      property_id: input.propertyId,
+    })
+    .select('id')
+    .single();
   if (error) throw error;
+  return data;
 }
 
 export async function updateAppointment(

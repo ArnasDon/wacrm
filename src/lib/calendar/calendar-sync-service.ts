@@ -8,12 +8,13 @@ import { mapAppointmentToCalendarEvent } from './calendar-event-mapper';
  * persisting the result (sync_status/external_calendar_id/
  * last_synced_at — migration 045).
  *
- * Not wired into any UI or automatic trigger yet — appointments are
- * created/edited today with sync_status staying 'not_synced'.
- * Calling `sync()` before a real provider exists (GoogleCalendarProvider
- * currently throws on every call) will just fail and record
- * sync_status = 'error', which is intentional: better than silently
- * pretending to sync.
+ * Called from `POST /api/calendar/sync` after an appointment is
+ * created/updated (see appointment-form-dialog.tsx), using a
+ * provider built by `createGoogleCalendarProviderForUser`. A failed
+ * sync records sync_status = 'error' rather than throwing silently —
+ * the appointment save itself already succeeded by the time this
+ * runs, so a Google-side failure shouldn't look like the whole save
+ * failed.
  */
 export class CalendarSyncService {
   constructor(

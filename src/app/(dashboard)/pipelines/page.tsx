@@ -37,12 +37,15 @@ import { useTranslations } from "next-intl";
 // not on different copy.
 
 // Spec-defined seed — name and color per the product spec.
+// "Ganho" and "Perdido" are always included as the final stages so that
+// handleDealMoved can auto-set deal.status to 'won'/'lost' via keyword match.
 const SPEC_DEFAULT_STAGES = [
   { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
   { name: "Qualified", color: "#eab308", position: 1 }, // yellow
   { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
   { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "Ganho", color: "#22c55e", position: 4 }, // green — maps to status 'won'
+  { name: "Perdido", color: "#ef4444", position: 5 }, // red — maps to status 'lost'
 ];
 
 export default function PipelinesPage() {

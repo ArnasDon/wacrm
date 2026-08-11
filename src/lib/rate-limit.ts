@@ -167,6 +167,11 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Agent quality evaluation run, per account. Each run is dozens of
+   *  real LLM calls (golden set + optional customer simulations)
+   *  against the account's own BYO key — tight on purpose, this is a
+   *  deliberate "run my tests" click, not a hot conversational path. */
+  aiEvalAccount: { limit: 3, windowMs: 60 * 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

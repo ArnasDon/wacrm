@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { daysAgoStart, lastNDayKeys, localDayKey } from '@/lib/dashboard/date-utils'
-import { estimateCostUsd, DEFAULT_USD_TO_MZN_RATE } from '@/lib/ai/pricing'
+import { estimateCostUsd } from '@/lib/ai/pricing'
+import { getUsdToMznRate } from '@/lib/ai/exchange-rate'
+import { supabaseAdmin } from '@/lib/ai/admin-client'
 
 // Rows are aggregated in-process over a bounded window. An active
 // account writes a handful of rows per conversation, so 30 days sits
@@ -130,12 +132,8 @@ export async function GET(request: Request) {
       }
     }
 
-    const { data: configRow } = await supabase
-      .from('ai_configs')
-      .select('usd_to_mzn_rate')
-      .eq('account_id', accountId)
-      .maybeSingle()
-    const exchangeRate = configRow?.usd_to_mzn_rate ?? DEFAULT_USD_TO_MZN_RATE
+    const exchangeRateInfo = await getUsdToMznRate(supabaseAdmin(), accountId)
+    const exchangeRate = exchangeRateInfo.rate
 
     let totalCostUsd = 0
     let hasUnpricedModels = false
@@ -168,6 +166,8 @@ export async function GET(request: Request) {
         has_unpriced_models: hasUnpricedModels,
       },
       exchange_rate: exchangeRate,
+      exchange_rate_source: exchangeRateInfo.source,
+      exchange_rate_updated_at: exchangeRateInfo.updatedAt,
       by_mode: byMode,
       by_model: byModel,
       daily: [...daily.values()],

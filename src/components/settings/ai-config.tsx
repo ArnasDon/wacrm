@@ -72,6 +72,7 @@ export function AiConfig() {
   const [bufferWindowSeconds, setBufferWindowSeconds] = useState(12);
   const [maxReplyChunks, setMaxReplyChunks] = useState(3);
   const [usdToMznRate, setUsdToMznRate] = useState(63.91);
+  const [usdToMznRateUpdatedAt, setUsdToMznRateUpdatedAt] = useState<string | null>(null);
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
@@ -114,6 +115,7 @@ export function AiConfig() {
         setBufferWindowSeconds(data.buffer_window_seconds ?? 12);
         setMaxReplyChunks(data.max_reply_chunks ?? 3);
         setUsdToMznRate(data.usd_to_mzn_rate ?? 63.91);
+        setUsdToMznRateUpdatedAt(data.usd_to_mzn_rate_updated_at ?? null);
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
@@ -183,7 +185,6 @@ export function AiConfig() {
     auto_reply_max_per_conversation: maxPerConversation,
     buffer_window_seconds: bufferWindowSeconds,
     max_reply_chunks: maxReplyChunks,
-    usd_to_mzn_rate: usdToMznRate,
     handoff_agent_id: handoffAgentId || null,
   });
 
@@ -546,20 +547,14 @@ export function AiConfig() {
                 <Label htmlFor="ai-usd-mzn-rate">{t('usdToMznRate')}</Label>
                 <p className="text-xs text-muted-foreground">
                   {t('usdToMznRateDesc')}
+                  {usdToMznRateUpdatedAt
+                    ? ` ${t('usdToMznRateUpdatedAt', { date: new Date(usdToMznRateUpdatedAt).toLocaleString('pt-PT') })}`
+                    : ''}
                 </p>
               </div>
-              <Input
-                id="ai-usd-mzn-rate"
-                type="number"
-                min={0.01}
-                step={0.01}
-                value={usdToMznRate}
-                onChange={(e) =>
-                  setUsdToMznRate(Math.max(0.01, Number(e.target.value) || 0.01))
-                }
-                disabled={disabled}
-                className="w-24"
-              />
+              <span id="ai-usd-mzn-rate" className="w-24 text-right font-mono text-sm">
+                {usdToMznRate.toFixed(2)}
+              </span>
             </div>
 
             <div className="space-y-2">

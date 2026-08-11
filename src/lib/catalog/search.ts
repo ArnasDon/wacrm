@@ -10,13 +10,38 @@ import type {
 } from './types'
 
 const REQUEST_TIMEOUT_MS = 8_000
-const MAX_SEARCH_VARIANTS = 8
+// A query can legitimately match both a product-category group and a
+// colour group at once ("legging preta"), each contributing several
+// synonyms — 8 was tight enough that colour synonyms got silently
+// crowded out by category ones. This only widens an OR-filter list, no
+// functional downside to a bit more headroom.
+const MAX_SEARCH_VARIANTS = 16
 
 const PRODUCT_SYNONYM_GROUPS = [
   ['legging', 'leggings', 'colante', 'colantes', 'calca de treino', 'calcas de treino', 'calca fitness', 'calcas fitness', 'tights'],
   ['sapatilha', 'sapatilhas', 'tenis', 'calcado desportivo', 'sapato desportivo'],
   ['camisola', 'camisolas', 'camiseta', 'camisetas', 't-shirt', 't-shirts'],
   ['calcoes', 'short', 'shorts'],
+] as const
+
+// Portuguese colour adjectives inflect for gender/number ("branco" vs a
+// catalogue's "Branca") — plain ilike matching never bridges that, so a
+// customer asking for a colour in the "wrong" grammatical form got zero
+// results. Same synonym-group mechanism as PRODUCT_SYNONYM_GROUPS above.
+const COLOR_SYNONYM_GROUPS = [
+  ['branco', 'branca', 'brancos', 'brancas'],
+  ['preto', 'preta', 'pretos', 'pretas', 'negro', 'negra'],
+  ['vermelho', 'vermelha', 'vermelhos', 'vermelhas'],
+  ['amarelo', 'amarela', 'amarelos', 'amarelas'],
+  ['verde', 'verdes'],
+  ['azul', 'azuis', 'azul claro', 'azul escuro', 'azul-claro', 'azul-escuro'],
+  ['roxo', 'roxa', 'roxos', 'roxas', 'lilas', 'lils'],
+  ['cinza', 'cinzento', 'cinzenta', 'cinzentos', 'cinzentas'],
+  ['dourado', 'dourada', 'dourados', 'douradas'],
+  ['prateado', 'prateada', 'prateados', 'prateadas'],
+  ['bege', 'beges'],
+  ['rosa', 'rosas', 'cor de rosa'],
+  ['laranja', 'laranjas'],
 ] as const
 
 function valueAt(input: unknown, path: string | undefined): unknown {
@@ -55,7 +80,7 @@ function normalizeSearchText(value: string): string {
     .trim()
 }
 
-function buildSearchVariants(query: string): string[] {
+export function buildSearchVariants(query: string): string[] {
   const normalized = normalizeSearchText(query)
   const variants = new Set<string>()
   const add = (value: string) => {
@@ -66,7 +91,7 @@ function buildSearchVariants(query: string): string[] {
   add(query)
   normalized.split(' ').filter((word) => word.length >= 3).forEach(add)
 
-  for (const group of PRODUCT_SYNONYM_GROUPS) {
+  for (const group of [...PRODUCT_SYNONYM_GROUPS, ...COLOR_SYNONYM_GROUPS]) {
     const normalizedGroup = group.map(normalizeSearchText)
     const matches = normalizedGroup.some(
       (term) => normalized === term || normalized.includes(term) || term.includes(normalized),

@@ -69,4 +69,41 @@ describe('agent evaluation suite', () => {
     expect(result.passed).toBe(false)
     expect(generate).toHaveBeenCalledTimes(2)
   })
+
+  it('wires the fixture tools in for withTools cases and records what was called', async () => {
+    const generate = vi.fn(async (args: {
+      systemPrompt: string
+      executeTool?: (call: { id: string; name: string; arguments: string }) => Promise<string>
+    }) => {
+      if (args.systemPrompt.includes('strict customer-support response evaluator')) {
+        return {
+          text: JSON.stringify({ scores: [{ criterion_index: 0, score: 1, reason: 'Called the right tool' }] }),
+          handoff: false,
+          usage: null,
+        }
+      }
+      // Simulate the model deciding to search the catalogue before answering.
+      await args.executeTool?.({ id: 'call-1', name: 'search_catalog', arguments: JSON.stringify({ query: 'legging' }) })
+      return { text: 'Aqui estão as opções.', handoff: false, usage: null }
+    })
+
+    const result = await runEvalSuite(
+      config,
+      [
+        {
+          id: 'catalog-case',
+          description: 'Uses the catalogue tool',
+          conversation: [{ role: 'user', content: 'Quero ver leggings' }],
+          criteria: ['Chama search_catalog'],
+          withTools: true,
+        },
+      ],
+      { generate },
+    )
+
+    expect(result.cases[0].toolCalls).toEqual([
+      { name: 'search_catalog', arguments: { query: 'legging' } },
+    ])
+    expect(result.cases[0].score).toBeCloseTo(1)
+  })
 })

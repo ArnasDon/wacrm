@@ -5,6 +5,10 @@ export interface GoldenCase {
   description: string
   conversation: ChatMessage[]
   criteria: string[]
+  /** Wires the fixture catalogue/knowledge tools (`./fixture-tools`) into
+   *  this case, so tool-calling decisions are part of what gets recorded
+   *  and graded — not just the final reply text. */
+  withTools?: boolean
 }
 
 /**
@@ -82,6 +86,90 @@ export const DEFAULT_GOLDEN_SET: GoldenCase[] = [
       'Interpreta sábado, duas pessoas e manhã como um único pedido.',
       'Não afirma disponibilidade sem uma fonte ou ferramenta que a confirme.',
       'Faz no máximo uma pergunta útil ou encaminha quando não pode confirmar.',
+    ],
+  },
+]
+
+/**
+ * Catalogue/tool-decision layer — a small loja de roupa fixture (see
+ * `./fixture-tools`) wired in via `withTools`, so these cases catch a
+ * regression in *which* tool the agent reaches for, not just prose
+ * quality. `run.ts` records every tool call made while answering and
+ * hands the judge that trace alongside the reply text.
+ */
+export const CATALOG_GOLDEN_SET: GoldenCase[] = [
+  {
+    id: 'catalog-browse-shows-options',
+    description: 'Pedido de navegação mostra opções reais em vez de perguntar antes.',
+    conversation: [{ role: 'user', content: 'Quero ver leggings' }],
+    withTools: true,
+    criteria: [
+      'Chama search_catalog antes de responder, sem perguntar mais nada primeiro.',
+      'Não pede à cliente para escolher um número ou repetir o pedido.',
+    ],
+  },
+  {
+    id: 'catalog-color-follow-up',
+    description: 'Pedido de cor diferente reformula a pesquisa em vez de repetir o resultado anterior.',
+    conversation: [
+      { role: 'user', content: 'Quero ver leggings' },
+      {
+        role: 'assistant',
+        content: 'Veja estas opções: Legging Alta Performance (Preta) e Legging Alta Performance (Branca), 1500 MZN cada.',
+      },
+      { role: 'user', content: 'Tens essa em branco?' },
+    ],
+    withTools: true,
+    criteria: [
+      'Reconhece que a legging branca já foi mostrada ou pesquisa de novo por essa cor específica.',
+      'Não responde de forma genérica ignorando a cor pedida.',
+      'Não repete a pergunta sobre o que a cliente procura — ela já disse.',
+    ],
+  },
+  {
+    id: 'catalog-style-opinion',
+    description: 'Pedido de opinião baseado em características pessoais usa a ferramenta certa.',
+    conversation: [
+      { role: 'user', content: 'Quero ver leggings' },
+      {
+        role: 'assistant',
+        content: 'Veja estas opções: Legging Alta Performance (Preta) e Legging Alta Performance (Branca), 1500 MZN cada.',
+      },
+      { role: 'user', content: 'Sou baixinha e prefiro roupa mais reservada, o que me sugere?' },
+    ],
+    withTools: true,
+    criteria: [
+      'Chama get_style_opinion com os produtos já encontrados, em vez de adivinhar da descrição.',
+      'Não comenta o corpo da cliente além do que ela própria disse.',
+      'Responde com confiança, sem tom de julgamento.',
+    ],
+  },
+  {
+    id: 'catalog-visit-funnel',
+    description: 'Interesse claro é conduzido para marcar visita à loja, não só mais perguntas.',
+    conversation: [
+      { role: 'user', content: 'Quero ver leggings' },
+      {
+        role: 'assistant',
+        content: 'Veja estas opções: Legging Alta Performance (Preta) e Legging Alta Performance (Branca), 1500 MZN cada.',
+      },
+      { role: 'user', content: 'Adorei a preta, tamanho M. Como faço?' },
+    ],
+    withTools: true,
+    criteria: [
+      'Conduz para marcar uma visita à loja para experimentar, em vez de só continuar a perguntar.',
+      'Não promete envio, pagamento online, ou confirma stock que não verificou.',
+    ],
+  },
+  {
+    id: 'catalog-no-match-honest',
+    description: 'Produto inexistente é admitido com honestidade, sem repetir a pesquisa às cegas.',
+    conversation: [{ role: 'user', content: 'Tens fatos de banho?' }],
+    withTools: true,
+    criteria: [
+      'Chama search_catalog e, não encontrando nada, diz isso claramente.',
+      'Não inventa um produto que não existe no catálogo.',
+      'Sugere uma alternativa real (outra categoria, ou a visita à loja) em vez de deixar a conversa parada.',
     ],
   },
 ]

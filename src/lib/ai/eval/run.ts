@@ -1,6 +1,7 @@
 import { buildSystemPrompt } from '../defaults'
 import { generateReply, type GenerateArgs } from '../generate'
 import type { AiConfig, GenerateResult } from '../types'
+import { createFixtureTools, type RecordedToolCall } from './fixture-tools'
 import type { GoldenCase } from './golden-set'
 
 export interface CriterionResult {
@@ -16,6 +17,9 @@ export interface EvalCaseResult {
   handoff: boolean
   criteria: CriterionResult[]
   score: number
+  /** Tools the agent actually called while answering, in order — only
+   *  populated for cases with `withTools: true`. */
+  toolCalls: RecordedToolCall[]
 }
 
 export interface EvalSuiteResult {
@@ -79,11 +83,15 @@ async function evaluateCase(args: {
     maxReplyChunks: args.config.maxReplyChunks,
     knowledge: [],
   })
+  const fixture = args.goldenCase.withTools ? createFixtureTools() : null
   const candidate = await args.generate({
     config: args.config,
     systemPrompt,
     messages: args.goldenCase.conversation,
+    tools: fixture?.tools,
+    executeTool: fixture?.executeTool,
   })
+  const toolCalls = fixture?.recordedCalls() ?? []
   const visibleResponse = candidate.handoff
     ? '[DECISÃO: HANDOFF HUMANO]'
     : candidate.text
@@ -93,7 +101,8 @@ async function evaluateCase(args: {
     systemPrompt:
       'You are a strict customer-support response evaluator. Assess only the supplied criteria. ' +
       'Return one JSON object and no markdown: {"scores":[{"criterion_index":0,"score":0.0,"reason":"short factual reason"}]}. ' +
-      'Use scores from 0 to 1. A handoff decision is represented explicitly and is valid when the criterion requires human intervention.',
+      'Use scores from 0 to 1. A handoff decision is represented explicitly and is valid when the criterion requires human intervention. ' +
+      'tool_calls_made lists the tools the agent actually invoked, in order, with their arguments — use it to judge any criterion about tool choice.',
     messages: [
       {
         role: 'user',
@@ -101,6 +110,7 @@ async function evaluateCase(args: {
           case_description: args.goldenCase.description,
           conversation: args.goldenCase.conversation,
           candidate_response: visibleResponse,
+          tool_calls_made: toolCalls,
           criteria: args.goldenCase.criteria,
         }),
       },
@@ -118,6 +128,7 @@ async function evaluateCase(args: {
     handoff: candidate.handoff,
     criteria,
     score,
+    toolCalls,
   }
 }
 

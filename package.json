@@ -38,7 +38,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval:agent": "node --import tsx scripts/eval-agent.ts"
+    "eval:agent": "node --import tsx scripts/eval-agent.ts",
+    "eval:catalog": "node --import tsx scripts/eval-catalog-flow.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

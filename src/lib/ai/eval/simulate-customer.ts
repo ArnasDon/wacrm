@@ -51,6 +51,34 @@ export const DEFAULT_CUSTOMER_PERSONAS: CustomerPersona[] = [
   },
 ]
 
+/**
+ * Store-specific personas — meant to run with `createFixtureTools()`
+ * wired in (see `scripts/eval-catalog-flow.ts`), so the transcript
+ * actually exercises tool-calling decisions: browsing, colour
+ * follow-ups, style opinions, and whether real interest gets steered
+ * toward booking a store visit.
+ */
+export const CATALOG_CUSTOMER_PERSONAS: CustomerPersona[] = [
+  {
+    id: 'browser-to-visit',
+    description: 'Cliente que navega, gosta de uma peça e está pronta a avançar.',
+    goal: 'Ver opções reais, escolher uma, e ser conduzida a marcar uma visita à loja — sem ser pressionada.',
+    maxTurns: 7,
+  },
+  {
+    id: 'color-swap-seeker',
+    description: 'Cliente que pede uma peça, depois pede a mesma numa cor diferente.',
+    goal: 'Obter uma resposta específica sobre a cor pedida, sem a conversa repetir o que já foi mostrado.',
+    maxTurns: 6,
+  },
+  {
+    id: 'style-seeker',
+    description: 'Cliente que descreve o próprio corpo e pede sugestão do que lhe fica bem.',
+    goal: 'Receber uma opinião real sobre peças específicas, com respeito, sem comentários sobre o corpo além do que ela disse.',
+    maxTurns: 6,
+  },
+]
+
 function parseSimulationVerdict(text: string): {
   issues: string[]
   completedGoal: boolean

@@ -343,13 +343,18 @@ export interface Pipeline {
 }
 
 export type StageRequiredField =
+  | 'title'
   | 'value'
   | 'expected_close_date'
   | 'assigned_to'
   | 'notes'
+  | 'temperature'
+  | 'lead_type'
+  | 'last_purchase_date'
+  | 'source'
+  | 'product'
   | 'contact_email'
-  | 'contact_company'
-  | 'product';
+  | 'contact_company';
 
 export interface PipelineStage {
   id: string;

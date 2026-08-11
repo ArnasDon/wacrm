@@ -3,10 +3,15 @@ import type { PipelineStage, StageRequiredField } from "@/types";
 export type { StageRequiredField };
 
 export const AVAILABLE_REQUIRED_FIELDS: { id: StageRequiredField; label: string }[] = [
+  { id: "title", label: "Título do negócio" },
   { id: "value", label: "Valor do negócio (> 0)" },
-  { id: "expected_close_date", label: "Data de fechamento" },
+  { id: "expected_close_date", label: "Data de fechamento esperada" },
   { id: "assigned_to", label: "Responsável atribuído" },
-  { id: "notes", label: "Anotações / Descrição" },
+  { id: "notes", label: "Anotações do negócio" },
+  { id: "temperature", label: "Temperatura (Quente / Morno / Frio)" },
+  { id: "lead_type", label: "Tipo de lead" },
+  { id: "last_purchase_date", label: "Data da última compra" },
+  { id: "source", label: "Origem do lead" },
   { id: "product", label: "Produto / Serviço" },
   { id: "contact_email", label: "E-mail do contato" },
   { id: "contact_company", label: "Empresa do contato" },
@@ -36,12 +41,21 @@ export function validateDealStageRequirements(
   const missing: string[] = [];
 
   // Parse notes if JSON
+  let parsedTemperature = "";
+  let parsedLeadType = "";
+  let parsedLastPurchaseDate = "";
+  let parsedSource = "";
   let parsedProduct = "";
   let parsedUserNotes = "";
+
   if (deal.notes) {
     if (typeof deal.notes === "string" && deal.notes.trim().startsWith("{")) {
       try {
         const json = JSON.parse(deal.notes);
+        parsedTemperature = json.temperature || "";
+        parsedLeadType = json.leadType || "";
+        parsedLastPurchaseDate = json.lastPurchaseDate || "";
+        parsedSource = json.source || "";
         parsedProduct = json.product || "";
         parsedUserNotes = json.userNotes !== undefined ? json.userNotes : "";
       } catch {
@@ -53,13 +67,17 @@ export function validateDealStageRequirements(
   }
 
   for (const field of req) {
-    if (field === "value") {
+    if (field === "title") {
+      if (!deal.title || !String(deal.title).trim()) {
+        missing.push("Título do negócio");
+      }
+    } else if (field === "value") {
       if (deal.value === undefined || deal.value === null || Number(deal.value) <= 0) {
         missing.push("Valor do negócio (> 0)");
       }
     } else if (field === "expected_close_date") {
       if (!deal.expected_close_date) {
-        missing.push("Data de fechamento");
+        missing.push("Data de fechamento esperada");
       }
     } else if (field === "assigned_to") {
       if (!deal.assigned_to) {
@@ -67,7 +85,23 @@ export function validateDealStageRequirements(
       }
     } else if (field === "notes") {
       if (!parsedUserNotes.trim()) {
-        missing.push("Anotações");
+        missing.push("Anotações do negócio");
+      }
+    } else if (field === "temperature") {
+      if (!parsedTemperature.trim() || parsedTemperature === "—") {
+        missing.push("Temperatura do lead");
+      }
+    } else if (field === "lead_type") {
+      if (!parsedLeadType.trim() || parsedLeadType === "—") {
+        missing.push("Tipo de lead");
+      }
+    } else if (field === "last_purchase_date") {
+      if (!parsedLastPurchaseDate.trim()) {
+        missing.push("Data da última compra");
+      }
+    } else if (field === "source") {
+      if (!parsedSource.trim() || parsedSource === "—") {
+        missing.push("Origem do lead");
       }
     } else if (field === "product") {
       if (!parsedProduct.trim()) {

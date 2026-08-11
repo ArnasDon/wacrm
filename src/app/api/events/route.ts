@@ -93,6 +93,12 @@ export async function POST(req: NextRequest) {
         phone,
         name: typeof payload?.name === 'string' ? payload.name : undefined,
         email: typeof payload?.email === 'string' ? payload.email : undefined,
+        // El eslabón que faltaba: la atribución ya estaba aquí y solo se
+        // escribía en `tracking_events`, así que el contacto nacía sin origen
+        // y los informes de adquisición agregaban sobre NULL. Se escribe solo
+        // al crear (primer contacto gana); si el contacto ya existía,
+        // findOrCreateContact la ignora.
+        attribution: attribution ?? null,
       });
     } catch (err) {
       console.error('[api/events] findOrCreateContact error:', err);

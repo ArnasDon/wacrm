@@ -80,7 +80,10 @@ function setCookieFirstParty(name: string, value: string, days: number): void {
 /** Rellena hidden inputs del formulario con la atribución (el viaje al server) */
 export function fillHiddenInputs(form: HTMLFormElement, attr: Attribution): void {
   const set = (name: string, v?: string) => {
-    const input = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+    // `[name="…"]` y no `input[name="…"]`: con el selector viejo un campo que
+    // fuera <textarea> o <select> no se encontraba y viajaba vacío. Misma
+    // familia de bug que el que ya apareció en LeadForm.astro.
+    const input = form.querySelector<HTMLInputElement>(`[name="${name}"]`);
     if (input && v) input.value = v;
   };
   set("utm_source", attr.utm.source); set("utm_medium", attr.utm.medium);
@@ -115,6 +118,47 @@ export function initAttribution(): void {
   // dataLayer page_view (compat GTM)
   W.dataLayer ??= [];
   W.dataLayer.push({ event: "page_view", ...attr, landing_slug: attr.landing_slug, event_id: attr.event_id });
+
+  // Y persistirlo. Antes solo iba al dataLayer, así que `tracking_events` no
+  // tenía una sola fila de visita: sin ellas no hay primera columna de embudo
+  // ni tasa de conversión de la landing. El tipo `page_view` ya estaba
+  // declarado en el CHECK de la tabla (migración 047), esperando.
+  //
+  // sendBeacon y no fetch: no debe retrasar la carga ni competir con el LCP,
+  // y sobrevive a que el usuario navegue fuera inmediatamente.
+  sendPageView(attr);
+}
+
+/**
+ * `page_view` a /api/events. Su `event_id` es propio y distinto del de la
+ * atribución: ese identifica la SESIÓN de atribución y lo reutiliza el
+ * form_submit para deduplicar el lead. Compartirlo haría que el UNIQUE de
+ * `event_id` descartara en silencio el envío del formulario, que es el evento
+ * que de verdad importa.
+ */
+function sendPageView(attr: Attribution): void {
+  try {
+    const body = JSON.stringify({
+      event_id: `pv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      event_type: "page_view",
+      attribution: attr,
+      ref_code: attr.ref_code,
+      landing_slug: attr.landing_slug,
+      payload: { path: location.pathname, referrer: document.referrer || undefined },
+    });
+    const url = `${location.origin}/api/events`;
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+      return;
+    }
+    // Navegadores sin sendBeacon: fetch en segundo plano, sin bloquear.
+    void fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
 }
 
 /** Beacon de clicks (el ref_code viaja en el texto pre-rellenado del WhatsApp) */

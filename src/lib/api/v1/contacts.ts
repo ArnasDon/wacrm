@@ -9,6 +9,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  projectAttributionToCustomFields,
+  type AttributionLike,
+} from '@/lib/analytics/attribution-fields';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
@@ -99,6 +103,13 @@ export interface ContactInput {
   name?: string | null;
   email?: string | null;
   company?: string | null;
+  /**
+   * Origen del lead. Se escribe SOLO al crear: si el contacto ya existía, no
+   * se toca. Es la regla de primer contacto, la misma que aplica god.ts en el
+   * navegador, y es de negocio: el crédito es del canal que trajo a la
+   * persona, no de aquel por el que volvió.
+   */
+  attribution?: AttributionLike | null;
 }
 
 /**
@@ -133,6 +144,12 @@ export async function findOrCreateContact(
       name: input.name ?? sanitized,
       email: input.email ?? null,
       company: input.company ?? null,
+      // Registro canónico del origen. Sin esto, los informes de adquisición
+      // agregan sobre NULL y todo cae en `(sin campaña)` / `direct`: el
+      // ingreso vive en deals → contacts, así que sin atribución en el
+      // contacto la pregunta "cuánto me trajo esta campaña" no tiene
+      // respuesta por ningún camino.
+      attribution: input.attribution ?? null,
     })
     .select('id')
     .single();
@@ -146,6 +163,24 @@ export async function findOrCreateContact(
     }
     console.error('[api/v1/contacts] create error:', error);
     throw new ContactError('Failed to create contact', 500);
+  }
+
+  // Proyección a campos personalizados — ver el encabezado de
+  // attribution-fields.ts para por qué la misma información vive en dos
+  // sitios. Best-effort: el contacto y su `attribution` canónica ya están
+  // guardados, así que un fallo aquí degrada el filtrado, no el dato.
+  if (input.attribution) {
+    try {
+      await projectAttributionToCustomFields(
+        db,
+        accountId,
+        auditUserId,
+        created.id,
+        input.attribution
+      );
+    } catch (err) {
+      console.error('[api/v1/contacts] attribution projection failed:', err);
+    }
   }
 
   return { id: created.id, created: true };

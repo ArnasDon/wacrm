@@ -136,7 +136,20 @@ export function SuggestionCard({
           </div>
 
           {isPending && isFollowup ? (
-            <>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pendingAction !== null}
+                onClick={() => act('ignored')}
+              >
+                {pendingAction === 'ignored' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5" />
+                )}
+                {t('actions.ignore')}
+              </Button>
               <Button size="sm" onClick={() => setFollowupOpen(true)}>
                 {t('followup.open')}
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -147,9 +160,22 @@ export function SuggestionCard({
                 onOpenChange={setFollowupOpen}
                 onResolved={() => onRefresh?.()}
               />
-            </>
+            </div>
           ) : isPending && isLearning ? (
-            <>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pendingAction !== null}
+                onClick={() => act('ignored')}
+              >
+                {pendingAction === 'ignored' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5" />
+                )}
+                {t('actions.ignore')}
+              </Button>
               <Button size="sm" onClick={() => setLearningOpen(true)}>
                 {t('learning.open')}
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -160,7 +186,7 @@ export function SuggestionCard({
                 onOpenChange={setLearningOpen}
                 onResolved={() => onRefresh?.()}
               />
-            </>
+            </div>
           ) : isPending ? (
             <div className="flex items-center gap-1.5">
               <Button

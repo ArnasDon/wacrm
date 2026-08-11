@@ -279,6 +279,10 @@ describe("validateTriggerForActivation", () => {
     ).toEqual([]);
   });
 
+  it("requires no config for appointment_reminder triggers", () => {
+    expect(validateTriggerForActivation("appointment_reminder", {})).toEqual([]);
+  });
+
   it("requires reply_ids on interactive_reply triggers", () => {
     expect(validateTriggerForActivation("interactive_reply", {})).toEqual([
       { path: "trigger.reply_ids", message: "at least one reply id is required" },

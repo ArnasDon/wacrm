@@ -110,6 +110,8 @@ export function DealForm({
   const [stageId, setStageId] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
+  const [appointmentAt, setAppointmentAt] = useState("");
+  const [appointmentReminderSent, setAppointmentReminderSent] = useState(false);
 
   // Print-specific enhanced metadata fields
   const [temperature, setTemperature] = useState("Frio");
@@ -152,6 +154,27 @@ export function DealForm({
       setStageId(deal.stage_id);
       setAssignedTo(deal.assigned_to ?? "");
       setExpectedCloseDate(deal.expected_close_date ?? "");
+
+      if (deal.appointment_at) {
+        try {
+          const d = new Date(deal.appointment_at);
+          if (!isNaN(d.getTime())) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const hours = String(d.getHours()).padStart(2, "0");
+            const minutes = String(d.getMinutes()).padStart(2, "0");
+            setAppointmentAt(`${year}-${month}-${day}T${hours}:${minutes}`);
+          } else {
+            setAppointmentAt("");
+          }
+        } catch {
+          setAppointmentAt("");
+        }
+      } else {
+        setAppointmentAt("");
+      }
+      setAppointmentReminderSent(!!deal.appointment_reminder_sent);
 
       // Parse metadata from notes if available
       let parsedMeta: DealMeta = {
@@ -196,6 +219,8 @@ export function DealForm({
       setStageId(defaultStageId || initialStages[0]?.id || "");
       setAssignedTo("");
       setExpectedCloseDate("");
+      setAppointmentAt("");
+      setAppointmentReminderSent(false);
 
       setTemperature("Frio");
       setLeadType("Lead");
@@ -451,7 +476,17 @@ export function DealForm({
 
     setSaving(true);
 
-    const payload = {
+    const finalAppointmentAt = appointmentAt ? new Date(appointmentAt).toISOString() : null;
+    let isReminderSentResetNeeded = false;
+    if (deal) {
+      const oldTime = deal.appointment_at ? new Date(deal.appointment_at).getTime() : 0;
+      const newTime = finalAppointmentAt ? new Date(finalAppointmentAt).getTime() : 0;
+      if (oldTime !== newTime) {
+        isReminderSentResetNeeded = true;
+      }
+    }
+
+    const payload: Record<string, any> = {
       title: title.trim(),
       value: parseFloat(value) || 0,
       currency,
@@ -461,7 +496,12 @@ export function DealForm({
       assigned_to: assignedTo || null,
       notes: JSON.stringify(metaPayload),
       expected_close_date: finalCloseDate,
+      appointment_at: finalAppointmentAt,
     };
+
+    if (isReminderSentResetNeeded) {
+      payload.appointment_reminder_sent = false;
+    }
 
     if (deal) {
       const { error } = await supabase
@@ -485,7 +525,14 @@ export function DealForm({
       }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open", conversation_id: initialConversationId || null });
+        .insert({
+          ...payload,
+          user_id: user.id,
+          account_id: accountId,
+          status: "open",
+          conversation_id: initialConversationId || null,
+          appointment_reminder_sent: false,
+        });
       if (error) {
         toast.error(t("toastFailedCreate"));
         setSaving(false);
@@ -874,8 +921,7 @@ export function DealForm({
               </div>
             </div>
 
-            {/* VALOR DO NEGÓCIO & DATA DE FECHAMENTO Row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   VALOR DO NEGÓCIO
@@ -903,6 +949,17 @@ export function DealForm({
                   type="date"
                   value={expectedCloseDate}
                   onChange={(e) => setExpectedCloseDate(e.target.value)}
+                  className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  AGENDAMENTO
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={appointmentAt}
+                  onChange={(e) => setAppointmentAt(e.target.value)}
                   className="h-10 w-full border-border bg-muted/50 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                 />
               </div>

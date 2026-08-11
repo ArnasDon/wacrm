@@ -14,6 +14,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { DeleteLeadDialog } from "@/components/contacts/delete-lead-dialog";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -85,6 +86,13 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Delete-lead confirmation — same shared dialog/entry point as the
+  // Pipeline's Kanban card (see AGENTS task). A "lead" is the contact
+  // row; deleting it cascades to this conversation + its messages.
+  const [deleteLeadTarget, setDeleteLeadTarget] = useState<{
+    contactId: string;
+    name: string;
+  } | null>(null);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
@@ -592,6 +600,27 @@ function InboxPageInner() {
     [activeConversation?.id, router]
   );
 
+  const handleRequestDeleteConversation = useCallback((conv: Conversation) => {
+    setDeleteLeadTarget({
+      contactId: conv.contact_id,
+      name: conv.contact?.name || conv.contact?.phone || t("unknownLead"),
+    });
+  }, [t]);
+
+  const handleLeadDeleted = useCallback(
+    (contactId: string) => {
+      setDeleteLeadTarget(null);
+      setConversations((prev) => prev.filter((c) => c.contact_id !== contactId));
+      if (activeConversation?.contact_id === contactId) {
+        setActiveConversation(null);
+        setActiveContact(null);
+        setMessages([]);
+        router.replace("/inbox", { scroll: false });
+      }
+    },
+    [activeConversation, router]
+  );
+
   // Mobile "back" — deselect the conversation so the list pane comes
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
@@ -767,6 +796,7 @@ function InboxPageInner() {
             initialFilter={initialInboxFilter}
             profiles={profiles}
             lastAgentSenderMap={lastAgentSenderMap}
+            onRequestDelete={handleRequestDeleteConversation}
           />
         </div>
 
@@ -832,6 +862,16 @@ function InboxPageInner() {
           </div>
         </div>
       </div>
+
+      <DeleteLeadDialog
+        open={!!deleteLeadTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteLeadTarget(null);
+        }}
+        contactId={deleteLeadTarget?.contactId ?? null}
+        contactName={deleteLeadTarget?.name ?? ""}
+        onDeleted={handleLeadDeleted}
+      />
     </div>
   );
 }

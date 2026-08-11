@@ -8,6 +8,7 @@ import { colorForConversation, fetchLastAgentSenderMap } from "@/lib/responder-c
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
+import { DeleteLeadDialog } from "@/components/contacts/delete-lead-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -70,6 +71,16 @@ export default function PipelinesPage() {
   // no separate "new deal" form state here anymore — DealForm is only
   // reachable as the drawer's "Editar" action.
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+
+  // Delete-lead confirmation — a "lead" is the contact row, not the deal
+  // (see AGENTS task); deleting it cascades to the conversation/messages/
+  // tags/notes and clears (not deletes) this and any other deal linked to
+  // the same contact. Shared with the Inbox's own entry point via
+  // DeleteLeadDialog.
+  const [deleteLeadTarget, setDeleteLeadTarget] = useState<{
+    contactId: string;
+    name: string;
+  } | null>(null);
 
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
@@ -257,6 +268,34 @@ export default function PipelinesPage() {
     setSelectedDeal(deal);
   }, []);
 
+  const handleRequestDeleteDeal = useCallback(
+    (deal: Deal) => {
+      // A deal can outlive its contact (migration 004/057 SET NULL the
+      // link on delete) — nothing left to delete as a "lead" then.
+      if (!deal.contact_id) {
+        toast.error(t("toastNoLeadToDelete"));
+        return;
+      }
+      setDeleteLeadTarget({
+        contactId: deal.contact_id,
+        name: deal.contact?.name || deal.contact?.phone || deal.title,
+      });
+    },
+    [t],
+  );
+
+  const handleLeadDeleted = useCallback(() => {
+    setDeleteLeadTarget(null);
+    // The deleted contact's deal(s) are gone too (contact_tags/contact_notes/
+    // conversations CASCADE; the deal itself isn't a contacts-cascade target,
+    // but with contact_id now null it no longer belongs on this board as a
+    // "lead" card) — simplest correct state is a full refetch.
+    refreshDeals();
+    if (selectedDeal?.contact_id === deleteLeadTarget?.contactId) {
+      setSelectedDeal(null);
+    }
+  }, [refreshDeals, selectedDeal, deleteLeadTarget]);
+
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
     if (!name) return;
@@ -416,8 +455,19 @@ export default function PipelinesPage() {
           deals={deals}
           onDealMoved={handleDealMoved}
           onEditDeal={handleOpenDeal}
+          onRequestDeleteDeal={handleRequestDeleteDeal}
         />
       )}
+
+      <DeleteLeadDialog
+        open={!!deleteLeadTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteLeadTarget(null);
+        }}
+        contactId={deleteLeadTarget?.contactId ?? null}
+        contactName={deleteLeadTarget?.name ?? ""}
+        onDeleted={handleLeadDeleted}
+      />
 
       {/* New Pipeline Dialog */}
       <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>

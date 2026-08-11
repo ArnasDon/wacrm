@@ -15,7 +15,7 @@ import {
   type ResponderColor,
 } from "@/lib/responder-color";
 import type { Conversation, ConversationStatus, Profile, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, MoreVertical, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -53,6 +54,10 @@ interface ConversationListProps {
   /** Conversation id → user id of whoever last sent an internal (agent)
    *  message on it. See `src/lib/responder-color.ts`. */
   lastAgentSenderMap: Map<string, string>;
+  /** Opens the shared delete-lead confirmation for this conversation's
+   *  contact — the parent owns the dialog since it also needs to clear
+   *  activeConversation if the deleted one was open. */
+  onRequestDelete: (conversation: Conversation) => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -74,6 +79,7 @@ export function ConversationList({
   initialFilter,
   profiles,
   lastAgentSenderMap,
+  onRequestDelete,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
 
@@ -584,6 +590,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                onRequestDelete={onRequestDelete}
                 t={t}
                 responderColor={colorForConversation(
                   conv.id,
@@ -603,6 +610,7 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  onRequestDelete: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
   responderColor: ResponderColor;
 }
@@ -611,9 +619,11 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  onRequestDelete,
   t,
   responderColor,
 }: ConversationItemProps) {
+  const tLeads = useTranslations("Leads.deleteDialog");
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
@@ -629,10 +639,22 @@ function ConversationItem({
     : "";
 
   return (
-    <button
+    // A native <button> can't validly contain the dropdown's own
+    // interactive elements, so this is a div acting as a button
+    // (role + tabIndex + keydown) — same reasoning as DealCard's
+    // delete-lead menu in the Pipeline.
+    <div
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
+        "group relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
         isActive && "border-l-2 border-primary bg-muted/70"
       )}
     >
@@ -655,7 +677,36 @@ function ConversationItem({
           <span className="truncate text-sm font-medium text-foreground">
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <span className="text-[10px] text-muted-foreground">{timeAgo}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-5 w-5 text-muted-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={tLeads("menuLabel")}
+                  />
+                }
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-border bg-popover">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestDelete(conversation);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {tLeads("menuLabel")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p className="truncate text-xs text-muted-foreground">
@@ -689,6 +740,6 @@ function ConversationItem({
           )}
         />
       </div>
-    </button>
+    </div>
   );
 }

@@ -23,6 +23,7 @@ interface PipelineBoardProps {
   deals: Deal[];
   onDealMoved: (dealId: string, newStageId: string) => void;
   onEditDeal: (deal: Deal) => void;
+  onRequestDeleteDeal: (deal: Deal) => void;
 }
 
 export function PipelineBoard({
@@ -30,6 +31,7 @@ export function PipelineBoard({
   deals,
   onDealMoved,
   onEditDeal,
+  onRequestDeleteDeal,
 }: PipelineBoardProps) {
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
 
@@ -105,6 +107,7 @@ export function PipelineBoard({
               stage={stage}
               deals={stageDeals}
               onEditDeal={onEditDeal}
+              onRequestDeleteDeal={onRequestDeleteDeal}
             />
           );
         })}
@@ -176,10 +179,12 @@ function StageColumn({
   stage,
   deals,
   onEditDeal,
+  onRequestDeleteDeal,
 }: {
   stage: PipelineStage;
   deals: Deal[];
   onEditDeal: (deal: Deal) => void;
+  onRequestDeleteDeal: (deal: Deal) => void;
 }) {
   const t = useTranslations("Pipelines.board");
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
@@ -225,6 +230,7 @@ function StageColumn({
               deal={deal}
               stage={stage}
               onEdit={onEditDeal}
+              onRequestDelete={onRequestDeleteDeal}
             />
           ))
         )}
@@ -237,10 +243,12 @@ function DraggableDealCard({
   deal,
   stage,
   onEdit,
+  onRequestDelete,
 }: {
   deal: Deal;
   stage: PipelineStage;
   onEdit: (deal: Deal) => void;
+  onRequestDelete: (deal: Deal) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.id,
@@ -253,7 +261,7 @@ function DraggableDealCard({
       {...attributes}
       style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
     >
-      <DealCard deal={deal} stage={stage} onEdit={onEdit} />
+      <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
     </div>
   );
 }

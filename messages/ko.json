@@ -235,7 +235,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요."
+      "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요.",
+      "unknownLead": "알 수 없음"
     },
     "conversationList": {
       "searchPlaceholder": "대화 검색...",
@@ -633,7 +634,7 @@
     "deleteDialog": {
       "menuLabel": "리드 삭제",
       "title": "리드 삭제",
-      "description": "{name}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없으며 이 리드의 대화와 메시지 기록도 함께 삭제됩니다.",
+      "description": "{name}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없으며 이 리드의 대화, 메시지 기록, 파이프라인 카드도 함께 삭제됩니다.",
       "cancel": "취소",
       "deleteBtn": "삭제",
       "toastDeleted": "리드가 삭제되었습니다.",
@@ -657,6 +658,7 @@
       "createPipelineBtn": "파이프라인 만들기",
       "toastFailedLoadPipelines": "파이프라인을 불러오지 못했습니다",
       "toastFailedMoveDeal": "딜을 이동하지 못했습니다",
+      "toastNoLeadToDelete": "이 카드에는 삭제할 연결된 리드가 없습니다.",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
       "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."

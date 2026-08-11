@@ -235,7 +235,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
+      "unknownLead": "Unknown"
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -633,7 +634,7 @@
     "deleteDialog": {
       "menuLabel": "Delete lead",
       "title": "Delete lead",
-      "description": "Are you sure you want to delete {name}? This can't be undone and also removes this lead's conversation and message history.",
+      "description": "Are you sure you want to delete {name}? This can't be undone and also removes this lead's conversation, message history, and Pipeline card(s).",
       "cancel": "Cancel",
       "deleteBtn": "Delete",
       "toastDeleted": "Lead deleted.",
@@ -657,6 +658,7 @@
       "createPipelineBtn": "Create Pipeline",
       "toastFailedLoadPipelines": "Failed to load pipelines",
       "toastFailedMoveDeal": "Failed to move deal",
+      "toastNoLeadToDelete": "This card has no linked lead to delete.",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
       "toastNotLinkedToAccount": "Your profile is not linked to an account."

@@ -1,15 +1,25 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, X, MoreVertical, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { RESPONDER_COLOR_CLASS } from "@/lib/responder-color";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 interface DealCardProps {
   deal: Deal;
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
+  /** Opens the shared delete-lead confirmation — omitted on the drag
+   *  overlay copy, which is a static preview with no menu. */
+  onRequestDelete?: (deal: Deal) => void;
   isOverlay?: boolean;
 }
 
@@ -27,8 +37,9 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const tLeads = useTranslations("Leads.deleteDialog");
   const contact = deal.contact;
   const displayName = contact?.name || contact?.phone || t("noContact");
   // Only show a separate phone line when it isn't already doing double
@@ -37,15 +48,30 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const assigneeLabel = deal.assignee?.full_name || null;
   const tags = contact?.tags ?? [];
 
+  function handleActivate() {
+    if (isOverlay) return;
+    onEdit(deal);
+  }
+
   return (
-    <button
-      type="button"
+    // A native <button> can't validly contain the dropdown's own
+    // interactive elements, so this is a div acting as a button
+    // (role + tabIndex + keydown) — same reasoning applies to
+    // ConversationItem in the Inbox for the same delete-lead menu.
+    <div
+      role="button"
+      tabIndex={isOverlay ? -1 : 0}
       onClick={(e) => {
         // `onClick` still fires after a non-drag tap because the PointerSensor
         // requires 5px movement before it counts as a drag.
-        if (isOverlay) return;
         e.stopPropagation();
-        onEdit(deal);
+        handleActivate();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleActivate();
+        }
       }}
       className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
         isOverlay
@@ -104,6 +130,35 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
             {t("lost")}
           </span>
         )}
+        {!isOverlay && onRequestDelete && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-muted-foreground"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={tLeads("menuLabel")}
+                />
+              }
+            >
+              <MoreVertical className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="border-border bg-popover">
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestDelete(deal);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                {tLeads("menuLabel")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Tags — same pill style as the contact sidebar in the Inbox */}
@@ -141,6 +196,6 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 }

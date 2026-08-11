@@ -31,11 +31,45 @@ export function getRequiredFieldsArray(val: any): StageRequiredField[] {
   return [];
 }
 
+export function parseStageConfig(stage: PipelineStage): {
+  color: string;
+  requiredFields: StageRequiredField[];
+} {
+  let hexColor = stage.color || "#3b82f6";
+  let reqs: StageRequiredField[] = [];
+
+  if (stage.required_fields) {
+    reqs = getRequiredFieldsArray(stage.required_fields);
+  }
+
+  if (hexColor.includes("|req:")) {
+    const parts = hexColor.split("|req:");
+    hexColor = parts[0];
+    if (parts[1]) {
+      const encoded = parts[1].split(",").map((s) => s.trim()).filter(Boolean) as StageRequiredField[];
+      if (reqs.length === 0) {
+        reqs = encoded;
+      }
+    }
+  }
+
+  return { color: hexColor, requiredFields: reqs };
+}
+
+export function encodeStageColorWithReqs(
+  color: string,
+  reqs: StageRequiredField[]
+): string {
+  const cleanColor = (color || "#3b82f6").split("|req:")[0];
+  if (!reqs || reqs.length === 0) return cleanColor;
+  return `${cleanColor}|req:${reqs.join(",")}`;
+}
+
 export function validateDealStageRequirements(
   deal: Record<string, any>,
   stage: PipelineStage
 ): { valid: boolean; missingFields: string[] } {
-  const req = getRequiredFieldsArray(stage.required_fields);
+  const { requiredFields: req } = parseStageConfig(stage);
   if (!req || req.length === 0) return { valid: true, missingFields: [] };
 
   const missing: string[] = [];

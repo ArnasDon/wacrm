@@ -49,6 +49,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   AVAILABLE_REQUIRED_FIELDS,
   getRequiredFieldsArray,
+  parseStageConfig,
+  encodeStageColorWithReqs,
   type StageRequiredField,
 } from "@/lib/pipelines/validation";
 
@@ -132,14 +134,18 @@ export function PipelineSettings({
   async function handleSave() {
     setSaving(true);
 
-    const stageRows = localStages.map((s, i) => ({
-      id: s.id,
-      pipeline_id: s.pipeline_id,
-      name: s.name,
-      color: s.color,
-      position: i,
-      required_fields: getRequiredFieldsArray(s.required_fields),
-    }));
+    const stageRows = localStages.map((s, i) => {
+      const reqs = parseStageConfig(s).requiredFields;
+      const encodedColor = encodeStageColorWithReqs(s.color, reqs);
+      return {
+        id: s.id,
+        pipeline_id: s.pipeline_id,
+        name: s.name,
+        color: encodedColor,
+        position: i,
+        required_fields: reqs,
+      };
+    });
 
     const renamePromise = supabase
       .from("pipelines")
@@ -158,7 +164,6 @@ export function PipelineSettings({
       .upsert(stageRows, { onConflict: "id" });
 
     const initialError = stagesRes.error;
-    let schemaCacheNotice = false;
 
     if (
       initialError &&
@@ -167,15 +172,18 @@ export function PipelineSettings({
         initialError.code === "PGRST204" ||
         initialError.code === "42703")
     ) {
-      console.warn("Supabase upsert error on required_fields, retrying without required_fields:", initialError.message);
-      schemaCacheNotice = true;
-      const stageRowsFallback = localStages.map((s, i) => ({
-        id: s.id,
-        pipeline_id: s.pipeline_id,
-        name: s.name,
-        color: s.color,
-        position: i,
-      }));
+      console.warn("Supabase upsert error on required_fields, saving via hybrid color encoding:", initialError.message);
+      const stageRowsFallback = localStages.map((s, i) => {
+        const reqs = parseStageConfig(s).requiredFields;
+        const encodedColor = encodeStageColorWithReqs(s.color, reqs);
+        return {
+          id: s.id,
+          pipeline_id: s.pipeline_id,
+          name: s.name,
+          color: encodedColor,
+          position: i,
+        };
+      });
       stagesRes = await supabase
         .from("pipeline_stages")
         .upsert(stageRowsFallback, { onConflict: "id" });
@@ -195,12 +203,7 @@ export function PipelineSettings({
     onOpenChange(false);
     onPipelinesChanged();
     onStagesChanged();
-
-    if (schemaCacheNotice && initialError) {
-      toast.warning(`Erro do Supabase: ${initialError.message}`);
-    } else {
-      toast.success(t("toastSaved"));
-    }
+    toast.success(t("toastSaved"));
   }
 
   async function handleAddStage() {
@@ -346,7 +349,12 @@ export function PipelineSettings({
                           }}
                           onRequiredFieldsChange={(reqs) => {
                             const updated = [...localStages];
-                            updated[index] = { ...updated[index], required_fields: reqs };
+                            const hexColor = parseStageConfig(updated[index]).color;
+                            updated[index] = {
+                              ...updated[index],
+                              required_fields: reqs,
+                              color: encodeStageColorWithReqs(hexColor, reqs),
+                            };
                             setLocalStages(updated);
                           }}
                           onRemove={() => handleRemoveStage(stage.id)}
@@ -468,7 +476,7 @@ function SortableStageRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const currentReqs = getRequiredFieldsArray(stage.required_fields);
+  const { color: displayColor, requiredFields: currentReqs } = parseStageConfig(stage);
   const requiredCount = currentReqs.length;
 
   return (
@@ -488,7 +496,16 @@ function SortableStageRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <ColorSwatch value={stage.color} onChange={isProtected ? () => {} : onColorChange} colors={colors} t={t} />
+      <ColorSwatch
+        value={displayColor}
+        onChange={(newColor) => {
+          if (!isProtected) {
+            onColorChange(encodeStageColorWithReqs(newColor, currentReqs));
+          }
+        }}
+        colors={colors}
+        t={t}
+      />
       <Input
         value={stage.name}
         onChange={(e) => !isProtected && onNameChange(e.target.value)}

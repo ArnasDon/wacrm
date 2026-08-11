@@ -21,7 +21,7 @@ import { Plus, ListChecks } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
-import { getRequiredFieldsArray } from "@/lib/pipelines/validation";
+import { getRequiredFieldsArray, parseStageConfig } from "@/lib/pipelines/validation";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -204,6 +204,7 @@ function StageColumn({
 }) {
   const t = useTranslations("Pipelines.board");
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const { color: displayColor, requiredFields } = parseStageConfig(stage);
 
   return (
     // On mobile each column is `w-[85vw]` (with a reasonable min/max)
@@ -216,7 +217,7 @@ function StageColumn({
       {/* 3px colored top border — sits above the column's padding */}
       <div
         className="-mx-4 -mt-4 h-[3px] rounded-t-xl"
-        style={{ backgroundColor: stage.color }}
+        style={{ backgroundColor: displayColor }}
       />
       <div className="flex items-center justify-between pt-3">
         <h3 className="truncate text-sm font-semibold text-foreground">
@@ -230,13 +231,13 @@ function StageColumn({
         <p className="text-xs text-muted-foreground">
           {formatCurrency(totalValue, currency)}
         </p>
-        {getRequiredFieldsArray(stage.required_fields).length > 0 && (
+        {requiredFields.length > 0 && (
           <span
             className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20"
-            title={`Campos obrigatórios: ${getRequiredFieldsArray(stage.required_fields).length}`}
+            title={`Campos obrigatórios: ${requiredFields.length}`}
           >
             <ListChecks className="h-3 w-3" />
-            <span>{getRequiredFieldsArray(stage.required_fields).length} req.</span>
+            <span>{requiredFields.length} req.</span>
           </span>
         )}
       </div>

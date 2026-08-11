@@ -12,11 +12,25 @@ export const AVAILABLE_REQUIRED_FIELDS: { id: StageRequiredField; label: string 
   { id: "contact_company", label: "Empresa do contato" },
 ];
 
+export function getRequiredFieldsArray(val: any): StageRequiredField[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function validateDealStageRequirements(
   deal: Record<string, any>,
   stage: PipelineStage
 ): { valid: boolean; missingFields: string[] } {
-  const req = stage.required_fields || [];
+  const req = getRequiredFieldsArray(stage.required_fields);
   if (!req || req.length === 0) return { valid: true, missingFields: [] };
 
   const missing: string[] = [];

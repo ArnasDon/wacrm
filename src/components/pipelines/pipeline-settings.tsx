@@ -48,6 +48,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   AVAILABLE_REQUIRED_FIELDS,
+  getRequiredFieldsArray,
   type StageRequiredField,
 } from "@/lib/pipelines/validation";
 
@@ -448,7 +449,8 @@ function SortableStageRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const requiredCount = stage.required_fields?.length ?? 0;
+  const currentReqs = getRequiredFieldsArray(stage.required_fields);
+  const requiredCount = currentReqs.length;
 
   return (
     <div
@@ -503,7 +505,7 @@ function SortableStageRow({
           </PopoverHeader>
           <div className="mt-2 space-y-2">
             {AVAILABLE_REQUIRED_FIELDS.map((item) => {
-              const isChecked = (stage.required_fields || []).includes(item.id);
+              const isChecked = currentReqs.includes(item.id);
               return (
                 <label
                   key={item.id}
@@ -512,11 +514,15 @@ function SortableStageRow({
                   <Checkbox
                     checked={isChecked}
                     onCheckedChange={(checked) => {
-                      const current = stage.required_fields || [];
-                      if (checked) {
-                        onRequiredFieldsChange([...current, item.id]);
+                      const isNowChecked = checked === true || Boolean(checked);
+                      if (isNowChecked) {
+                        if (!currentReqs.includes(item.id)) {
+                          onRequiredFieldsChange([...currentReqs, item.id]);
+                        }
                       } else {
-                        onRequiredFieldsChange(current.filter((f) => f !== item.id));
+                        onRequiredFieldsChange(
+                          currentReqs.filter((f) => f !== item.id)
+                        );
                       }
                     }}
                   />

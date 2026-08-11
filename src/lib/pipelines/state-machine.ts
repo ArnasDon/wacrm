@@ -67,11 +67,32 @@ export interface TransitionVerdict {
  * la transición además cambia el status — el checker lo comunica como
  * warning si no se pasa p_new_status.
  */
+/**
+ * Evidencia que NO vive en `tracking_events`.
+ *
+ * `call_logged` y `message_received` son entidades, no eventos: viven en
+ * `calls` y en `messages`. La migración 058 hace que `transition_deal` las
+ * resuelva ahí, y este reflejo tiene que dar el MISMO veredicto o el UI
+ * prometería algo distinto de lo que la RPC va a hacer.
+ *
+ * El caller las resuelve una vez por contacto y las pasa aquí; `undefined`
+ * significa "no lo he mirado" y se trata como ausente, que es el lado
+ * conservador: enseña la lista en vez de ocultarla.
+ */
+export interface NativeEvidence {
+  /** Existe una llamada contestada con el contacto del trato. */
+  call_logged?: boolean
+  /** Existe un mensaje entrante del contacto (sender_type='customer'). */
+  message_received?: boolean
+}
+
 export interface EvaluateTransitionInput {
   deal: DealLike
   toStage: PipelineStageLike
   /** Eventos del timeline del deal (filtrados por deal_id). */
   evidence: TimelineEvidence[]
+  /** Evidencia resuelta contra las tablas nativas (ver NativeEvidence). */
+  nativeEvidence?: NativeEvidence
   /** Status destino cuando la transición es terminal (won/lost). */
   newStatus?: 'won' | 'lost' | 'open'
 }
@@ -102,10 +123,16 @@ export function evaluateTransition(input: EvaluateTransitionInput): TransitionVe
     warnings.push('la transición no cambia nada (mismo stage y status)')
   }
 
-  // Guard: evidencia requerida presente en el timeline.
+  // Guard: evidencia requerida. Las dos nativas se resuelven contra `calls` y
+  // `messages` (migración 058); el resto sigue mirando el timeline. El orden
+  // de comprobación es el mismo que el de la RPC, a propósito.
   if (rules.required_evidence?.length) {
+    const native = input.nativeEvidence ?? {}
     for (const required of rules.required_evidence) {
-      const found = evidence.some((e) => e.event_type === required)
+      const found =
+        required === 'call_logged' || required === 'message_received'
+          ? native[required] === true
+          : evidence.some((e) => e.event_type === required)
       if (!found) missing.push(required)
     }
   }

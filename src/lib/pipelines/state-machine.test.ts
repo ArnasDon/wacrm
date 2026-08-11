@@ -29,14 +29,32 @@ describe('evaluateTransition (DAD §7.1)', () => {
   })
 
   it('GUARDS_MISSING cuando falta evidencia requerida (no-bloqueante por defecto)', () => {
+    // `call_logged` y `message_received` son evidencia NATIVA: viven en
+    // `calls` y `messages`, no en tracking_events (migración 058). Pasarlas
+    // por `evidence` no cuenta — antes sí, y por eso la guarda parecía
+    // funcionar en los tests mientras en producción nunca se cumplía.
     const v = evaluateTransition({
       deal: deal(),
       toStage: stage({ guard_rules: { required_evidence: ['call_logged', 'message_received'] } }),
-      evidence: evidence(['call_logged']),
+      evidence: [],
+      nativeEvidence: { call_logged: true },
     })
     expect(v.allowed).toBe(false)
     expect(v.code).toBe('GUARDS_MISSING')
     expect(v.missing).toEqual(['message_received'])
+  })
+
+  it('la evidencia nativa NO se puede satisfacer desde el timeline', () => {
+    // Blindaje contra una regresión sutil: si alguien vuelve a resolver estas
+    // dos contra tracking_events, el UI diría "puedes avanzar" y la RPC
+    // respondería GUARDS_MISSING. Los dos veredictos tienen que coincidir.
+    const v = evaluateTransition({
+      deal: deal(),
+      toStage: stage({ guard_rules: { required_evidence: ['call_logged'] } }),
+      evidence: evidence(['call_logged']),
+    })
+    expect(v.allowed).toBe(false)
+    expect(v.missing).toEqual(['call_logged'])
   })
 
   it('HARD_GUARD cuando allow_override=false', () => {
@@ -44,6 +62,7 @@ describe('evaluateTransition (DAD §7.1)', () => {
       deal: deal(),
       toStage: stage({ guard_rules: { required_evidence: ['call_logged'], allow_override: false } }),
       evidence: [],
+      nativeEvidence: { call_logged: false },
     })
     expect(v.allowed).toBe(false)
     expect(v.code).toBe('HARD_GUARD')
@@ -54,10 +73,21 @@ describe('evaluateTransition (DAD §7.1)', () => {
     const v = evaluateTransition({
       deal: deal(),
       toStage: stage({ guard_rules: { required_evidence: ['call_logged', 'message_received'] } }),
-      evidence: evidence(['call_logged', 'message_received']),
+      evidence: [],
+      nativeEvidence: { call_logged: true, message_received: true },
     })
     expect(v.allowed).toBe(true)
     expect(v.missing).toEqual([])
+  })
+
+  it('la evidencia no consultada se trata como ausente (lado conservador)', () => {
+    const v = evaluateTransition({
+      deal: deal(),
+      toStage: stage({ guard_rules: { required_evidence: ['message_received'] } }),
+      evidence: [],
+    })
+    expect(v.allowed).toBe(false)
+    expect(v.missing).toEqual(['message_received'])
   })
 
   it('no-op produce warning (mismo stage)', () => {

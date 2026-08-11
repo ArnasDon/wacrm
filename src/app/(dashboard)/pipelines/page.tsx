@@ -30,6 +30,7 @@ import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
+import { validateDealStageRequirements } from "@/lib/pipelines/validation";
 
 // Pipeline creation is admin-class (settings-tier write under
 // the new RLS); deal creation is operational and only requires
@@ -220,6 +221,21 @@ export default function PipelinesPage() {
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
       const targetStage = stages.find((s) => s.id === newStageId);
+      const targetDeal = deals.find((d) => d.id === dealId);
+
+      if (targetStage && targetDeal) {
+        const { valid, missingFields } = validateDealStageRequirements(targetDeal, targetStage);
+        if (!valid) {
+          toast.error(
+            `Para mover para "${targetStage.name}", preencha: ${missingFields.join(", ")}`
+          );
+          setEditingDeal(targetDeal);
+          setDefaultStageId(newStageId);
+          setDealFormOpen(true);
+          return;
+        }
+      }
+
       let newStatus: "open" | "won" | "lost" = "open";
 
       if (targetStage) {
@@ -248,7 +264,7 @@ export default function PipelinesPage() {
         refreshDeals();
       }
     },
-    [supabase, refreshDeals, t, stages],
+    [supabase, refreshDeals, t, stages, deals],
   );
 
   const handleAddDeal = useCallback(

@@ -34,9 +34,22 @@ import {
   GripVertical,
   AlertTriangle,
   Lock,
+  ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AVAILABLE_REQUIRED_FIELDS,
+  type StageRequiredField,
+} from "@/lib/pipelines/validation";
 
 const STAGE_COLORS = [
   "#3b82f6",
@@ -127,6 +140,7 @@ export function PipelineSettings({
       name: s.name,
       color: s.color,
       position: i,
+      required_fields: s.required_fields || [],
     }));
 
     const [renameRes, stagesRes] = await Promise.all([
@@ -291,6 +305,11 @@ export function PipelineSettings({
                             updated[index] = { ...updated[index], color: v };
                             setLocalStages(updated);
                           }}
+                          onRequiredFieldsChange={(reqs) => {
+                            const updated = [...localStages];
+                            updated[index] = { ...updated[index], required_fields: reqs };
+                            setLocalStages(updated);
+                          }}
                           onRemove={() => handleRemoveStage(stage.id)}
                           colors={STAGE_COLORS}
                           t={t}
@@ -386,6 +405,7 @@ function SortableStageRow({
   protected: isProtected,
   onNameChange,
   onColorChange,
+  onRequiredFieldsChange,
   onRemove,
   colors,
   t,
@@ -394,6 +414,7 @@ function SortableStageRow({
   protected: boolean;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
+  onRequiredFieldsChange: (v: StageRequiredField[]) => void;
   onRemove: () => void;
   colors: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -407,6 +428,8 @@ function SortableStageRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  const requiredCount = stage.required_fields?.length ?? 0;
 
   return (
     <div
@@ -434,6 +457,58 @@ function SortableStageRow({
           isProtected ? "cursor-default select-none opacity-80" : ""
         }`}
       />
+
+      {/* Required fields popover trigger */}
+      <Popover>
+        <PopoverTrigger
+          className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
+            requiredCount > 0
+              ? "border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+              : "border-border/60 text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground"
+          }`}
+          title="Campos obrigatórios para mover para esta etapa"
+        >
+          <ListChecks className="h-3.5 w-3.5" />
+          {requiredCount > 0 && (
+            <span className="text-[10px] font-bold">{requiredCount}</span>
+          )}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72 p-3 bg-popover border-border">
+          <PopoverHeader className="pb-2 border-b border-border">
+            <PopoverTitle className="text-xs font-semibold text-foreground">
+              Campos Obrigatórios ({stage.name})
+            </PopoverTitle>
+            <p className="text-[11px] text-muted-foreground">
+              Dados necessários para o deal poder ser movido para esta etapa:
+            </p>
+          </PopoverHeader>
+          <div className="mt-2 space-y-2">
+            {AVAILABLE_REQUIRED_FIELDS.map((item) => {
+              const isChecked = (stage.required_fields || []).includes(item.id);
+              return (
+                <label
+                  key={item.id}
+                  className="flex items-center gap-2 cursor-pointer text-xs text-foreground hover:bg-muted/50 p-1 rounded"
+                >
+                  <Checkbox
+                    checked={isChecked}
+                    onCheckedChange={(checked) => {
+                      const current = stage.required_fields || [];
+                      if (checked) {
+                        onRequiredFieldsChange([...current, item.id]);
+                      } else {
+                        onRequiredFieldsChange(current.filter((f) => f !== item.id));
+                      }
+                    }}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+
       {isProtected ? (
         <span
           title={t("protectedStageTooltip")}

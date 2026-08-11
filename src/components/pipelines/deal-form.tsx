@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { validateDealStageRequirements } from "@/lib/pipelines/validation";
 
 interface DealFormProps {
   open: boolean;
@@ -390,8 +391,6 @@ export function DealForm({
       toast.error(t("toastRequired"));
       return;
     }
-    setSaving(true);
-
     const metaPayload: DealMeta = {
       temperature,
       leadType,
@@ -400,6 +399,37 @@ export function DealForm({
       product,
       userNotes: userNotes.trim(),
     };
+
+    const targetStage = availableStages.find((s) => s.id === stageId);
+    const selectedContact = contacts.find((c) => c.id === contactId);
+
+    if (targetStage) {
+      const dealForValidation = {
+        title: title.trim(),
+        value: parseFloat(value) || 0,
+        currency,
+        contact_id: contactId,
+        pipeline_id: currentPipelineId,
+        stage_id: stageId,
+        assigned_to: assignedTo || null,
+        notes: JSON.stringify(metaPayload),
+        expected_close_date: expectedCloseDate || null,
+        contact: selectedContact,
+      };
+
+      const { valid, missingFields } = validateDealStageRequirements(
+        dealForValidation,
+        targetStage
+      );
+      if (!valid) {
+        toast.error(
+          `Para salvar nesta etapa ("${targetStage.name}"), preencha: ${missingFields.join(", ")}`
+        );
+        return;
+      }
+    }
+
+    setSaving(true);
 
     const payload = {
       title: title.trim(),

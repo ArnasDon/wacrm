@@ -342,6 +342,15 @@ export interface Pipeline {
   created_at: string;
 }
 
+export type StageRequiredField =
+  | 'value'
+  | 'expected_close_date'
+  | 'assigned_to'
+  | 'notes'
+  | 'contact_email'
+  | 'contact_company'
+  | 'product';
+
 export interface PipelineStage {
   id: string;
   pipeline_id: string;
@@ -353,6 +362,10 @@ export interface PipelineStage {
    * Set on "Ganho" and "Perdido" by migration 038.
    */
   is_protected?: boolean;
+  /**
+   * List of deal fields required to move a deal to this stage (migration 039).
+   */
+  required_fields?: StageRequiredField[];
   created_at: string;
 }
 

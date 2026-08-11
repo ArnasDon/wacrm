@@ -824,12 +824,22 @@ function ConversationItem({
 
   return (
     <div className="relative overflow-hidden">
-      {/* Swipe-right reveal: mark unread + pin */}
+      {/* Swipe-right reveal: mark unread + pin.
+          `z-10`: the sliding content row below is also a positioned
+          element (`relative` + a live `transform`), so per CSS stacking
+          rules a later-in-DOM positioned sibling with the same
+          (auto/0) z-index paints over an earlier one whenever their
+          boxes overlap — which they do for most of the drag, not just
+          at rest. Without an explicit z-index here, that made this
+          panel (and the delete one below) stay masked under the
+          content through most of the swipe, only clearing right at the
+          very end — the reported "swipe happens but the icon doesn't
+          show" bug. */}
       <div
         ref={leftPanelRef}
         aria-hidden
         className={cn(
-          "absolute inset-y-0 left-0 flex",
+          "absolute inset-y-0 left-0 z-10 flex",
           revealed === "left" ? "visible" : "invisible"
         )}
         style={{ width: SWIPE_LEFT_WIDTH }}
@@ -856,12 +866,12 @@ function ConversationItem({
         </button>
       </div>
 
-      {/* Swipe-left reveal: delete */}
+      {/* Swipe-left reveal: delete — see z-10 note on the left panel above. */}
       <div
         ref={rightPanelRef}
         aria-hidden
         className={cn(
-          "absolute inset-y-0 right-0 flex",
+          "absolute inset-y-0 right-0 z-10 flex",
           revealed === "right" ? "visible" : "invisible"
         )}
         style={{ width: SWIPE_RIGHT_WIDTH }}
@@ -923,7 +933,7 @@ function ConversationItem({
             {conversation.pinned && (
               <Pin className="h-3 w-3 shrink-0 text-amber-500" />
             )}
-            <span className="truncate text-sm font-medium text-foreground">
+            <span className="truncate text-sm font-semibold text-foreground">
               {displayName}
             </span>
           </span>
@@ -959,7 +969,12 @@ function ConversationItem({
           </div>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">
+          {/* min-w-0 + flex-1 are load-bearing here: a flex item's default
+              min-width is `auto` (its content's intrinsic width), so
+              without them `truncate` never actually kicks in and a long
+              preview pushes past its share of the row into the badge/
+              status column next to it. */}
+          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">

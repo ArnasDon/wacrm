@@ -143,53 +143,16 @@ export function PipelineSettings({
         name: s.name,
         color: encodedColor,
         position: i,
-        required_fields: reqs,
       };
     });
 
-    const renamePromise = supabase
-      .from("pipelines")
-      .update({ name: name.trim() })
-      .eq("id", pipeline.id);
-
-    // Trigger PostgREST schema cache reload if RPC exists
-    try {
-      await supabase.rpc("reload_schema");
-    } catch {
-      /* ignore */
-    }
-
-    let stagesRes = await supabase
-      .from("pipeline_stages")
-      .upsert(stageRows, { onConflict: "id" });
-
-    const initialError = stagesRes.error;
-
-    if (
-      initialError &&
-      (initialError.message.includes("required_fields") ||
-        initialError.message.includes("schema cache") ||
-        initialError.code === "PGRST204" ||
-        initialError.code === "42703")
-    ) {
-      console.warn("Supabase upsert error on required_fields, saving via hybrid color encoding:", initialError.message);
-      const stageRowsFallback = localStages.map((s, i) => {
-        const reqs = parseStageConfig(s).requiredFields;
-        const encodedColor = encodeStageColorWithReqs(s.color, reqs);
-        return {
-          id: s.id,
-          pipeline_id: s.pipeline_id,
-          name: s.name,
-          color: encodedColor,
-          position: i,
-        };
-      });
-      stagesRes = await supabase
-        .from("pipeline_stages")
-        .upsert(stageRowsFallback, { onConflict: "id" });
-    }
-
-    const renameRes = await renamePromise;
+    const [renameRes, stagesRes] = await Promise.all([
+      supabase
+        .from("pipelines")
+        .update({ name: name.trim() })
+        .eq("id", pipeline.id),
+      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
+    ]);
 
     setSaving(false);
 

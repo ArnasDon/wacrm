@@ -520,27 +520,27 @@ function SortableStageRow({
             {AVAILABLE_REQUIRED_FIELDS.map((item) => {
               const isChecked = currentReqs.includes(item.id);
               return (
-                <label
+                <div
                   key={item.id}
-                  className="flex items-center gap-2 cursor-pointer text-xs text-foreground hover:bg-muted/50 p-1 rounded"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isChecked) {
+                      onRequiredFieldsChange(
+                        currentReqs.filter((f) => f !== item.id)
+                      );
+                    } else {
+                      onRequiredFieldsChange([...currentReqs, item.id]);
+                    }
+                  }}
+                  className="flex items-center gap-2.5 cursor-pointer text-xs text-foreground hover:bg-muted/60 p-1.5 rounded transition-colors select-none"
                 >
                   <Checkbox
                     checked={isChecked}
-                    onCheckedChange={(checked) => {
-                      const isNowChecked = checked === true || Boolean(checked);
-                      if (isNowChecked) {
-                        if (!currentReqs.includes(item.id)) {
-                          onRequiredFieldsChange([...currentReqs, item.id]);
-                        }
-                      } else {
-                        onRequiredFieldsChange(
-                          currentReqs.filter((f) => f !== item.id)
-                        );
-                      }
-                    }}
+                    className="pointer-events-none"
                   />
-                  <span>{item.label}</span>
-                </label>
+                  <span className="font-medium">{item.label}</span>
+                </div>
               );
             })}
           </div>

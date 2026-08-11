@@ -14,22 +14,29 @@ import {
   Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { useCan } from '@/hooks/use-can'
+
+interface ToolConfig {
+  enabled: boolean
+  instructions: string | null
+}
 
 interface ToolState {
   configured: boolean
   agent_id: string | null
   tools: {
-    search_catalog: boolean
-    send_product: boolean
-    search_knowledge: boolean
-    add_tag: boolean
-    create_deal: boolean
-    schedule_visit: boolean
-    get_style_opinion: boolean
-    handoff_human: boolean
+    search_catalog: ToolConfig
+    send_product: ToolConfig
+    search_knowledge: ToolConfig
+    add_tag: ToolConfig
+    create_deal: ToolConfig
+    schedule_visit: ToolConfig
+    get_style_opinion: ToolConfig
+    handoff_human: ToolConfig
   }
 }
 
@@ -94,6 +101,7 @@ export function AgentTools() {
   const [state, setState] = useState<ToolState | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<ToolKey | null>(null)
+  const [drafts, setDrafts] = useState<Partial<Record<ToolKey, string>>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -119,7 +127,7 @@ export function AgentTools() {
     const previous = state.tools[toolKey]
     setState((current) =>
       current
-        ? { ...current, tools: { ...current.tools, [toolKey]: enabled } }
+        ? { ...current, tools: { ...current.tools, [toolKey]: { ...previous, enabled } } }
         : current,
     )
     try {
@@ -138,6 +146,32 @@ export function AgentTools() {
           : current,
       )
       toast.error(error instanceof Error ? error.message : 'Não foi possível actualizar a ferramenta.')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const saveInstructions = async (toolKey: ToolKey) => {
+    if (!state || saving) return
+    setSaving(toolKey)
+    const previous = state.tools[toolKey]
+    const instructions = (drafts[toolKey] ?? previous.instructions ?? '').trim() || null
+    try {
+      const response = await fetch('/api/ai/tools', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_key: toolKey, enabled: previous.enabled, instructions }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error ?? 'Não foi possível guardar as instruções.')
+      setState((current) =>
+        current
+          ? { ...current, tools: { ...current.tools, [toolKey]: { ...previous, instructions } } }
+          : current,
+      )
+      toast.success('Instruções guardadas.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível guardar as instruções.')
     } finally {
       setSaving(null)
     }
@@ -176,9 +210,11 @@ export function AgentTools() {
           const item = TOOL_COPY[toolKey]
           const Icon = item.icon
           const dependencyBlocked =
-            toolKey === 'send_product' && !state.tools.search_catalog
+            toolKey === 'send_product' && !state.tools.search_catalog.enabled
           const disabled =
             !canEdit || !state.configured || saving !== null || dependencyBlocked
+          const draftValue = drafts[toolKey] ?? state.tools[toolKey].instructions ?? ''
+          const draftDirty = draftValue !== (state.tools[toolKey].instructions ?? '')
 
           return (
             <Card key={toolKey}>
@@ -195,7 +231,7 @@ export function AgentTools() {
                   </div>
                 </div>
                 <Switch
-                  checked={state.tools[toolKey]}
+                  checked={state.tools[toolKey].enabled}
                   disabled={disabled}
                   onCheckedChange={(enabled) => void toggle(toolKey, enabled)}
                   aria-label={item.title}
@@ -204,6 +240,33 @@ export function AgentTools() {
               {dependencyBlocked && (
                 <CardContent className="pt-0 text-xs text-muted-foreground">
                   Active primeiro “Consultar catálogo”.
+                </CardContent>
+              )}
+              {state.tools[toolKey].enabled && (
+                <CardContent className="space-y-2 pt-0">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Instruções extra para esta ferramenta (opcional)
+                  </label>
+                  <Textarea
+                    value={draftValue}
+                    onChange={(e) =>
+                      setDrafts((current) => ({ ...current, [toolKey]: e.target.value }))
+                    }
+                    placeholder="Ex.: nesta conta, não agendamos visitas à loja aos domingos."
+                    disabled={!canEdit || !state.configured || saving !== null}
+                    rows={2}
+                    className="text-sm"
+                  />
+                  {draftDirty && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving !== null}
+                      onClick={() => void saveInstructions(toolKey)}
+                    >
+                      Guardar instruções
+                    </Button>
+                  )}
                 </CardContent>
               )}
             </Card>

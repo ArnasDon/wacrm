@@ -379,6 +379,67 @@ describe('CRM agent tools', () => {
     expect(tools.wasCatalogueVerified()).toBe(false)
   })
 
+  it('tells the model not to guess when search_knowledge finds nothing relevant', async () => {
+    const { retrieveKnowledge } = await import('../knowledge')
+    vi.mocked(retrieveKnowledge).mockResolvedValue([])
+    const db = {
+      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
+    } as unknown as WacrmSupabaseClient
+    const tools = runtime(db, 'search_knowledge', 'agent-1')
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_knowledge',
+        arguments: JSON.stringify({ query: 'algo obscuro' }),
+      }),
+    )
+
+    expect(result.found).toBe(false)
+    expect(result.instruction).toContain('No matching knowledge found')
+  })
+
+  it('tells the model to prefer excerpts when search_knowledge finds matches', async () => {
+    const { retrieveKnowledge } = await import('../knowledge')
+    vi.mocked(retrieveKnowledge).mockResolvedValue(['Horário: 9h-18h.'])
+    const db = {
+      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
+    } as unknown as WacrmSupabaseClient
+    const tools = runtime(db, 'search_knowledge', 'agent-1')
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_knowledge',
+        arguments: JSON.stringify({ query: 'horário' }),
+      }),
+    )
+
+    expect(result.found).toBe(true)
+    expect(result.instruction).toContain('Prefer these excerpts')
+  })
+
+  it('appends account-specific instructions to a tool description without changing others', () => {
+    const tools = createAutoReplyTools({
+      db: {} as WacrmSupabaseClient,
+      accountId: 'account-1',
+      conversationId: 'conversation-1',
+      contactId: 'contact-1',
+      configOwnerUserId: 'user-1',
+      config: { provider: 'openai', model: 'test-model', apiKey: 'test-key', embeddingsApiKey: null },
+      permissions: {
+        ...Object.fromEntries(Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, true])),
+      } as Record<AgentToolKey, boolean>,
+      toolInstructions: {
+        schedule_visit: 'Nesta conta, não agendamos visitas aos domingos.',
+      },
+    })
+
+    const scheduleVisit = tools.tools.find((tool) => tool.name === 'schedule_visit')
+    const searchCatalog = tools.tools.find((tool) => tool.name === 'search_catalog')
+
+    expect(scheduleVisit?.description).toContain('Account-specific guidance: Nesta conta, não agendamos visitas aos domingos.')
+    expect(searchCatalog?.description).not.toContain('Account-specific guidance')
+  })
+
   it('continues sending remaining product photos when one send fails', async () => {
     vi.mocked(searchCatalogues).mockResolvedValue([
       {

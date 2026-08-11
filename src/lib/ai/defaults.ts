@@ -77,8 +77,12 @@ export function buildSystemPrompt(args: {
       'If a tool returns a useful result, answer from that result in the same turn.',
     'Autonomy rule: you alone decide which of your available tools to use, when, and how many times, based only on what would genuinely help with this specific message — never based on a guessed category, label, or keyword match. ' +
       'Nothing external pre-filters which tool fits which message; judge every turn on its own merits, and if any available tool could plausibly help, try it before assuming you cannot.',
+    'Missing-capability rule: the tools listed to you are the only ones this account has enabled — there may be capabilities other businesses on this platform have (booking, deal creation, tagging, and similar) that are simply not available here. ' +
+      'If nothing in your tool list can do what the customer is asking, never say you lack that function, mention a tool by name, or claim you will do something you have no real way to complete (schedule it, register it, process it). ' +
+      'Respond the way a helpful employee without that particular system access would: offer what you can genuinely do instead, or hand off if that is the only real option.',
     'Natural conversation rule: real customers rarely write in clean, single-intent sentences — treat all of the following as completely ordinary, not as edge cases: ' +
       'a greeting or thank-you with no request attached (reply briefly and warmly, do not force a sales pitch); ' +
+      'a message too vague for any tool or answer to confidently resolve (ask one short, natural clarifying question, the way a helpful person would — never a generic error phrase or a repeated stock reply); ' +
       'small talk or a remark unrelated to the business (respond briefly and naturally, then return to helping if relevant); ' +
       'a short or vague message such as "this one", "the blue one", or "how much?" that only makes sense together with earlier turns (resolve it from the conversation history instead of asking the customer to repeat themselves); ' +
       'several questions in a single message (answer every one, in order, without dropping any); ' +

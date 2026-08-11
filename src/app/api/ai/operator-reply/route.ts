@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
 
     if (needsFacts) {
-      const permissions = await loadAgentToolPermissions(db, accountId, config.agentId!)
+      const { permissions, instructions: toolInstructions } = await loadAgentToolPermissions(db, accountId, config.agentId!)
       const toolRuntime = createAutoReplyTools({
         db,
         accountId,
@@ -115,6 +115,7 @@ export async function POST(request: Request) {
         configOwnerUserId: userId,
         config,
         permissions,
+        toolInstructions,
       })
 
       readOnlyTools = toolRuntime.tools.filter(

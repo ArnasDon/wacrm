@@ -269,7 +269,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     // that judgement call belongs to the model, not to a keyword list
     // that can never anticipate an arbitrary tenant's own vocabulary
     // (see route.ts's module doc for the live bug this replaced).
-    const permissions = await loadAgentToolPermissions(
+    const { permissions, instructions: toolInstructions } = await loadAgentToolPermissions(
       db,
       accountId,
       config.agentId!,
@@ -282,6 +282,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       configOwnerUserId,
       config,
       permissions,
+      toolInstructions,
       onToolCall: (call) => trace?.recordToolCall(call),
     })
 

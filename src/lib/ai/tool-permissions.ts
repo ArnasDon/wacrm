@@ -21,22 +21,32 @@ export const DEFAULT_AGENT_TOOLS: Record<AgentToolKey, boolean> = {
   add_tag: false,
   create_deal: false,
   schedule_visit: false,
-  // Read-only reasoning over products already found by search_catalog —
-  // same risk profile as the other always-on lookup tools.
-  get_style_opinion: true,
+  // Bakes in a fashion-retail assumption (styling opinion on garments) that
+  // doesn't fit every tenant on this multi-business platform — opt-in like
+  // the other business-specific tools above, not an always-on lookup tool.
+  get_style_opinion: false,
   // This replaces the existing handoff sentinel, so preserve the current
   // automatic safety behaviour for every configured agent.
   handoff_human: true,
+}
+
+export interface AgentToolPermissions {
+  permissions: Record<AgentToolKey, boolean>
+  /** Account-specific free text appended to a tool's built-in description,
+   *  keyed by tool — the generic lever for tailoring a fixed tool catalogue
+   *  to a specific business without a code change. Only present for tools
+   *  that have non-empty instructions configured. */
+  instructions: Partial<Record<AgentToolKey, string>>
 }
 
 export async function loadAgentToolPermissions(
   db: WacrmSupabaseClient,
   accountId: string,
   agentId: string,
-): Promise<Record<AgentToolKey, boolean>> {
+): Promise<AgentToolPermissions> {
   const { data, error } = await db
     .from('agent_tools')
-    .select('tool_key, enabled')
+    .select('tool_key, enabled, instructions')
     .eq('account_id', accountId)
     .eq('agent_id', agentId)
 
@@ -45,14 +55,18 @@ export async function loadAgentToolPermissions(
     // agent_tools migration. This preserves the behaviour that existed before
     // permissions became explicit.
     console.warn('[ai tools] permission lookup failed; using legacy defaults:', error.message)
-    return { ...DEFAULT_AGENT_TOOLS }
+    return { permissions: { ...DEFAULT_AGENT_TOOLS }, instructions: {} }
   }
 
-  const result = { ...DEFAULT_AGENT_TOOLS }
+  const permissions = { ...DEFAULT_AGENT_TOOLS }
+  const instructions: Partial<Record<AgentToolKey, string>> = {}
   for (const row of data ?? []) {
     if (AGENT_TOOL_KEYS.includes(row.tool_key as AgentToolKey)) {
-      result[row.tool_key as AgentToolKey] = Boolean(row.enabled)
+      const key = row.tool_key as AgentToolKey
+      permissions[key] = Boolean(row.enabled)
+      const rowInstructions = (row as { instructions?: string | null }).instructions
+      if (rowInstructions && rowInstructions.trim()) instructions[key] = rowInstructions.trim()
     }
   }
-  return result
+  return { permissions, instructions }
 }

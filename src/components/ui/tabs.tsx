@@ -73,7 +73,22 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      className={cn(
+        "flex-1 text-sm outline-none",
+        // Base UI conserva montados los paneles ya visitados y marca los
+        // inactivos con `inert`, esperando que el CSS los oculte. Sin esta
+        // regla nunca se ocultaban: cada pestaña visitada se quedaba apilada
+        // debajo de la anterior, y la página acababa mostrando los tres
+        // paneles a la vez (/email, /agents y /reports por igual).
+        //
+        // Se ancla en `inert` y no en `hidden` porque el atributo `hidden`
+        // solo lo pone Base UI al terminar la transición de salida, y aquí
+        // esa transición no llega a resolverse (los paneles se quedan con
+        // `data-ending-style` puesto). Un panel `inert` es, por definición,
+        // no interactivo: ocultarlo es lo correcto.
+        "[&[inert]]:hidden",
+        className
+      )}
       {...props}
     />
   )

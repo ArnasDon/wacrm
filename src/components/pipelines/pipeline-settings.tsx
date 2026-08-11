@@ -141,13 +141,39 @@ export function PipelineSettings({
       required_fields: getRequiredFieldsArray(s.required_fields),
     }));
 
-    const [renameRes, stagesRes] = await Promise.all([
-      supabase
-        .from("pipelines")
-        .update({ name: name.trim() })
-        .eq("id", pipeline.id),
-      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
-    ]);
+    const renamePromise = supabase
+      .from("pipelines")
+      .update({ name: name.trim() })
+      .eq("id", pipeline.id);
+
+    let stagesRes = await supabase
+      .from("pipeline_stages")
+      .upsert(stageRows, { onConflict: "id" });
+
+    // Handle schema cache or missing column error gracefully
+    let schemaCacheNotice = false;
+    if (
+      stagesRes.error &&
+      (stagesRes.error.message.includes("required_fields") ||
+        stagesRes.error.message.includes("schema cache") ||
+        stagesRes.error.code === "PGRST204" ||
+        stagesRes.error.code === "42703")
+    ) {
+      console.warn("Schema cache error on required_fields, retrying without required_fields:", stagesRes.error.message);
+      schemaCacheNotice = true;
+      const stageRowsFallback = localStages.map((s, i) => ({
+        id: s.id,
+        pipeline_id: s.pipeline_id,
+        name: s.name,
+        color: s.color,
+        position: i,
+      }));
+      stagesRes = await supabase
+        .from("pipeline_stages")
+        .upsert(stageRowsFallback, { onConflict: "id" });
+    }
+
+    const renameRes = await renamePromise;
 
     setSaving(false);
 
@@ -161,7 +187,14 @@ export function PipelineSettings({
     onOpenChange(false);
     onPipelinesChanged();
     onStagesChanged();
-    toast.success(t("toastSaved"));
+
+    if (schemaCacheNotice) {
+      toast.warning(
+        "Pipeline salvo! Para gravar regras de obrigatoriedade, execute no Supabase: NOTIFY pgrst, 'reload schema';"
+      );
+    } else {
+      toast.success(t("toastSaved"));
+    }
   }
 
   async function handleAddStage() {

@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
-import { processAppointmentReminders } from '@/lib/automations/appointment-reminder'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
@@ -29,13 +28,6 @@ export async function GET(request: Request) {
     !timingSafeEqual(suppliedBuf, expectedBuf)
   ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  // Process appointment reminders
-  try {
-    await processAppointmentReminders()
-  } catch (err) {
-    console.error('[cron] Error processing appointment reminders:', err)
   }
 
   const admin = supabaseAdmin()

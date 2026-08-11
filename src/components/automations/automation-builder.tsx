@@ -138,7 +138,6 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "conversation_assigned" },
   { value: "tag_added" },
   { value: "time_based" },
-  { value: "appointment_reminder" },
 ]
 
 function cid(): string {

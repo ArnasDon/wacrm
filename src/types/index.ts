@@ -393,8 +393,6 @@ export interface Deal {
   currency?: string;
   notes?: string;
   expected_close_date?: string;
-  appointment_at?: string;
-  appointment_reminder_sent?: boolean;
   status?: DealStatus;
   created_at: string;
   updated_at?: string;
@@ -465,7 +463,6 @@ export type AutomationTriggerType =
   | 'conversation_assigned'
   | 'tag_added'
   | 'time_based'
-  | 'appointment_reminder'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
   | 'interactive_reply';

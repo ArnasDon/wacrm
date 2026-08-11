@@ -60,6 +60,9 @@ export interface SaveAppointmentInput {
   scheduledTime: string | null;
   scheduledEndTime: string | null;
   contactId: string | null;
+  /** Free-typed client name, saved alongside contactId either way —
+   *  see Appointment.client_name. */
+  clientName: string | null;
   propertyId: string | null;
 }
 
@@ -81,6 +84,7 @@ export async function createAppointment(db: DB, input: SaveAppointmentInput): Pr
       scheduled_time: input.scheduledTime,
       scheduled_end_time: input.scheduledEndTime,
       contact_id: input.contactId,
+      client_name: input.clientName,
       property_id: input.propertyId,
     })
     .select('id')
@@ -105,6 +109,7 @@ export async function updateAppointment(
       scheduled_time: input.scheduledTime,
       scheduled_end_time: input.scheduledEndTime,
       contact_id: input.contactId,
+      client_name: input.clientName,
       property_id: input.propertyId,
     })
     .eq('id', id);

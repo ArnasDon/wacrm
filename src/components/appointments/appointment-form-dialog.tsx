@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Plus } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -79,8 +79,13 @@ export function AppointmentFormDialog({
   const supabase = createClient();
   const { user, accountId } = useAuth();
 
+  const contactsListId = useId();
   const [title, setTitle] = useState('');
+  /** Resolved FK — kept in sync with `clientNameInput` (see
+   *  handleClientNameChange) rather than set directly by the field
+   *  itself, so free typing never requires picking a contacts row. */
   const [contactId, setContactId] = useState('');
+  const [clientNameInput, setClientNameInput] = useState('');
   const [propertyId, setPropertyId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -103,6 +108,9 @@ export function AppointmentFormDialog({
     if (appointment) {
       setTitle(appointment.title);
       setContactId(appointment.contact_id ?? '');
+      setClientNameInput(
+        appointment.contact?.name || appointment.contact?.phone || appointment.client_name || ''
+      );
       setPropertyId(appointment.property_id ?? '');
       setDate(appointment.scheduled_date);
       setTime(appointment.scheduled_time?.slice(0, 5) ?? '');
@@ -113,6 +121,7 @@ export function AppointmentFormDialog({
     } else {
       setTitle('');
       setContactId('');
+      setClientNameInput('');
       setPropertyId('');
       setDate(defaultDate ?? localDayKey(new Date()));
       setTime('');
@@ -135,6 +144,25 @@ export function AppointmentFormDialog({
     listProperties(supabase).then(setProperties);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /**
+   * Free typing is the point (large lead volume — see AGENTS task), so
+   * `contactId` is never set by a direct picker. Instead every keystroke
+   * re-checks whether the current text is an exact match (case/space
+   * insensitive) for an existing contact's display name — true whether
+   * the match came from picking the <datalist> suggestion or just
+   * coincidentally typing the same text — and links it. Anything else
+   * clears the link; the typed text itself is always what gets saved
+   * (see handleSave), so no match is never a blocker.
+   */
+  function handleClientNameChange(value: string) {
+    setClientNameInput(value);
+    const needle = value.trim().toLowerCase();
+    const match = needle
+      ? contacts.find((c) => (c.name || c.phone || '').trim().toLowerCase() === needle)
+      : undefined;
+    setContactId(match?.id ?? '');
+  }
 
   async function handleCreateProperty() {
     const name = newPropertyName.trim();
@@ -189,6 +217,7 @@ export function AppointmentFormDialog({
         scheduledTime: time || null,
         scheduledEndTime: endTime || null,
         contactId: contactId || null,
+        clientName: clientNameInput.trim() || null,
         propertyId: propertyId || null,
       };
       let savedId: string;
@@ -239,19 +268,25 @@ export function AppointmentFormDialog({
 
           <div className="grid gap-2">
             <label className="text-sm font-medium text-foreground">{t('contactLabel')}</label>
-            <select
-              value={contactId}
-              onChange={(e) => setContactId(e.target.value)}
+            {/* Free typing, not a forced pick — see AGENTS task: with a
+                large lead volume, requiring an existing contacts match
+                for every appointment isn't viable. The datalist still
+                suggests existing contacts as the user types; picking one
+                (or just typing its exact name) links contactId via
+                handleClientNameChange, but it's never required to save. */}
+            <Input
+              list={contactsListId}
+              value={clientNameInput}
+              onChange={(e) => handleClientNameChange(e.target.value)}
+              placeholder={t('contactPlaceholder')}
               disabled={saving}
-              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            >
-              <option value="">{tAppt('noContact')}</option>
+              maxLength={120}
+            />
+            <datalist id={contactsListId}>
               {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name || c.phone}
-                </option>
+                <option key={c.id} value={c.name || c.phone} />
               ))}
-            </select>
+            </datalist>
           </div>
 
           <div className="grid gap-2">

@@ -202,6 +202,11 @@ export interface Appointment {
   account_id: string;
   user_id: string;
   contact_id: string | null;
+  /** Free-typed client name (migration 056) — set whenever a client is
+   *  entered, whether or not it resolved to `contact_id`. Lets an
+   *  appointment record who it's with without requiring the client to
+   *  already exist as a `contacts` row. */
+  client_name: string | null;
   property_id: string | null;
   title: string;
   description: string | null;

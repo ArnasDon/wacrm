@@ -74,6 +74,11 @@ export function AgendaWeek() {
   const [appointments, setAppointments] = useState<Appointment[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
+  // undefined = let the dialog fall back to today (its own default,
+  // used by the header "Novo Compromisso" button); set to a specific
+  // dateKey when opened from a day card's own "+" so that exact day
+  // (from weekDates, not "today") is pre-filled — see openNewAppointment.
+  const [formDefaultDate, setFormDefaultDate] = useState<string | undefined>(undefined)
   const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null)
 
   // null = not connected, undefined = still loading, string = connected email.
@@ -157,6 +162,11 @@ export function AgendaWeek() {
     load()
   }, [load])
 
+  function openNewAppointment(dateKey?: string) {
+    setFormDefaultDate(dateKey)
+    setFormOpen(true)
+  }
+
   const byDay = new Map<string, Appointment[]>()
   for (const d of weekDates) byDay.set(d, [])
   for (const a of appointments ?? []) byDay.get(a.scheduled_date)?.push(a)
@@ -191,7 +201,7 @@ export function AgendaWeek() {
               <span className="hidden sm:inline">{t('connectGoogleCalendar')}</span>
             </Button>
           )}
-          <Button size="sm" onClick={() => setFormOpen(true)}>
+          <Button size="sm" onClick={() => openNewAppointment()}>
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">{t('newAppointment')}</span>
           </Button>
@@ -217,11 +227,24 @@ export function AgendaWeek() {
                     isToday ? 'border-border ring-1 ring-primary/40' : 'border-border'
                   }`}
                 >
-                  <div className="border-b border-border px-3 py-2">
-                    <p className={`text-xs font-semibold uppercase tracking-wide ${DAY_TEXT_CLASSES[i]}`}>
-                      {tDays(WEEKDAY_KEYS[i])}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">{formatDayLabel(dateKey)}</p>
+                  <div className="flex items-start justify-between gap-1 border-b border-border px-3 py-2">
+                    <div>
+                      <p className={`text-xs font-semibold uppercase tracking-wide ${DAY_TEXT_CLASSES[i]}`}>
+                        {tDays(WEEKDAY_KEYS[i])}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{formatDayLabel(dateKey)}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => openNewAppointment(dateKey)}
+                      aria-label={t('addAppointment')}
+                      title={t('addAppointment')}
+                      className="shrink-0 text-muted-foreground"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
                   <div className="flex-1 space-y-2 p-2">
                     {dayAppointments.length === 0 ? (
@@ -237,7 +260,7 @@ export function AgendaWeek() {
                           className={`w-full rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
                         >
                           <p className="truncate text-sm font-semibold text-foreground">
-                            {a.contact?.name || a.contact?.phone || t('noContactShort')}
+                            {a.contact?.name || a.contact?.phone || a.client_name || t('noContactShort')}
                           </p>
                           <p className="mt-0.5 text-xs tabular-nums text-foreground/80">
                             {a.scheduled_time ? a.scheduled_time.slice(0, 5) : t('allDay')}
@@ -262,7 +285,7 @@ export function AgendaWeek() {
       <AppointmentFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
-        defaultDate={todayKey}
+        defaultDate={formDefaultDate}
         onSaved={load}
       />
       <AppointmentDetailSheet

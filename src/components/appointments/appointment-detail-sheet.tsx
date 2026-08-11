@@ -85,7 +85,12 @@ export function AppointmentDetailSheet({
           <dl className="space-y-3 text-sm">
             <DetailRow
               label={t('client')}
-              value={appointment.contact?.name || appointment.contact?.phone || tAppt('noContact')}
+              value={
+                appointment.contact?.name ||
+                appointment.contact?.phone ||
+                appointment.client_name ||
+                tAppt('noContact')
+              }
             />
             {appointment.contact?.phone && (
               <DetailRow label={t('phone')} value={appointment.contact.phone} />

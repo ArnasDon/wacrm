@@ -303,7 +303,9 @@
       "recordingPermissionDenied": "마이크 접근이 거부되었거나 사용할 수 없습니다.",
       "recordingTooLong": "녹음이 너무 깁니다 (16MB 초과).",
       "discardRecording": "녹음 삭제",
-      "sendRecording": "음성 메시지 보내기"
+      "sendRecording": "음성 메시지 보내기",
+      "unsupportedVideoType": "이 동영상은 WhatsApp에서 지원하지 않는 형식입니다 (예: 아이폰 .MOV). MP4로 보내주세요 — 아이폰에서는 설정 → 카메라 → 포맷 → 높은 호환성으로 변경하거나, 이미 MP4인 동영상을 선택하세요.",
+      "unsupportedFileType": "지원되지 않는 파일 형식입니다."
     },
     "bubble": {
       "photo": "사진",

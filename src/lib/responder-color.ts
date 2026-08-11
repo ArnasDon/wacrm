@@ -28,7 +28,10 @@ export function resolveResponderColor(
 ): ResponderColor {
   const name = profile?.full_name?.toLowerCase() ?? "";
   if (name.includes("ronaldo")) return "blue";
-  if (name.includes("tati")) return "pink"; // covers "Tatiana" and "Thatianna"
+  // "tati" is NOT a substring of "thatianna" (the "h" breaks the run —
+  // t-h-a-t-i-...), so a bare `includes("tati")` silently misses her real
+  // profile name and falls through to gray. Match both spellings.
+  if (name.includes("tatiana") || name.includes("thatianna")) return "pink";
   return "gray";
 }
 

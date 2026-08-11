@@ -35,6 +35,7 @@ import {
   uploadAccountMedia,
   deleteAccountMedia,
   MEDIA_MAX_BYTES_BY_KIND,
+  ALLOWED_MIME_TYPES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
 import { useTranslations } from "next-intl";
@@ -293,6 +294,19 @@ export function MessageComposer({
         );
         return;
       }
+      // Mirrors the chat-media bucket's allowed_mime_types (migration
+      // 023). The picker's `accept` attribute is only a hint — iOS in
+      // particular still lets the user pick a QuickTime/HEVC (.mov)
+      // video through "Browse"/Files, which Storage then rejects with a
+      // raw, untranslated error. Catching it here gives an actionable
+      // message instead.
+      const allowed = ALLOWED_MIME_TYPES_BY_KIND[kind] as readonly string[];
+      if (!allowed.includes(file.type)) {
+        toast.error(
+          kind === "video" ? t("unsupportedVideoType") : t("unsupportedFileType"),
+        );
+        return;
+      }
       setBusy(true);
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
@@ -305,7 +319,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [removeStaged],
+    [removeStaged, t],
   );
 
   const handlePicked = useCallback(

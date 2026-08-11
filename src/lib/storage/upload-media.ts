@@ -34,6 +34,31 @@ export const MEDIA_MAX_BYTES_BY_KIND = {
 } as const;
 
 /**
+ * Per-kind MIME whitelist, mirrored from the `chat-media` bucket's
+ * `allowed_mime_types` (migration 023). Meta's WhatsApp Cloud API only
+ * accepts `video/mp4` and `video/3gpp` for outbound video — notably NOT
+ * `video/quicktime` (.mov), which is exactly what an iPhone hands over
+ * when a video is picked without going through a transcode. Checking
+ * this client-side, before the upload call, turns Supabase Storage's raw
+ * "mime type ... is not supported" rejection into an actionable message
+ * instead — see `stageUpload` in `message-composer.tsx`.
+ */
+export const ALLOWED_MIME_TYPES_BY_KIND = {
+  image: ["image/png", "image/jpeg", "image/webp"],
+  video: ["video/mp4", "video/3gpp"],
+  document: [
+    "application/pdf",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+  ],
+} as const;
+
+/**
  * Build the account-scoped object path for an upload. Pure + exported so
  * it can be unit-tested without a Supabase client.
  *

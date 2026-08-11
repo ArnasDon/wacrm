@@ -74,8 +74,10 @@ export function formatCurrency(
     }).format(amount);
   } catch {
     // Invalid ISO code — show the raw code + grouped number so the
-    // value is still legible instead of throwing.
-    return `${code} ${amount.toLocaleString()}`;
+    // value stays readable without throwing a RangeError.
+    return `${code} ${new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+    }).format(amount)}`;
   }
 }
 

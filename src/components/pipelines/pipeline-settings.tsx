@@ -157,16 +157,17 @@ export function PipelineSettings({
       .from("pipeline_stages")
       .upsert(stageRows, { onConflict: "id" });
 
-    // Handle schema cache or missing column error gracefully
+    const initialError = stagesRes.error;
     let schemaCacheNotice = false;
+
     if (
-      stagesRes.error &&
-      (stagesRes.error.message.includes("required_fields") ||
-        stagesRes.error.message.includes("schema cache") ||
-        stagesRes.error.code === "PGRST204" ||
-        stagesRes.error.code === "42703")
+      initialError &&
+      (initialError.message.includes("required_fields") ||
+        initialError.message.includes("schema cache") ||
+        initialError.code === "PGRST204" ||
+        initialError.code === "42703")
     ) {
-      console.warn("Schema cache error on required_fields, retrying without required_fields:", stagesRes.error.message);
+      console.warn("Supabase upsert error on required_fields, retrying without required_fields:", initialError.message);
       schemaCacheNotice = true;
       const stageRowsFallback = localStages.map((s, i) => ({
         id: s.id,
@@ -195,10 +196,8 @@ export function PipelineSettings({
     onPipelinesChanged();
     onStagesChanged();
 
-    if (schemaCacheNotice) {
-      toast.warning(
-        "Pipeline salvo! Para gravar regras de obrigatoriedade, execute no Supabase: NOTIFY pgrst, 'reload schema';"
-      );
+    if (schemaCacheNotice && initialError) {
+      toast.warning(`Erro do Supabase: ${initialError.message}`);
     } else {
       toast.success(t("toastSaved"));
     }

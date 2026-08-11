@@ -1,24 +1,44 @@
 ---
-// Specialties — grid de servicios con micro-CTA WhatsApp (DAD §3.5).
-// Cada micro-CTA dispara whatsapp_click (beacon de god.js).
-import WhatsAppCta from "../WhatsAppCta.astro";
-import { specialties } from "../../data/site";
+// Especialidades y precio (skill §15.1, pasos 4 y 5).
+//
+// El precio va visible a propósito: ocultarlo no elimina la objeción, la
+// pospone hasta la llamada y desperdicia presupuesto de medios en leads no
+// calificados. Un precio visible filtra tráfico y mejora la calidad del lead.
+import { site } from "../../data/site";
 ---
 
-<section id="servicios" class="mx-auto max-w-6xl px-6 py-16">
-  <h2 class="text-center text-3xl font-bold text-slate-900">Especialidades</h2>
-  <p class="mx-auto mt-3 max-w-xl text-center text-slate-600">
-    Tratamientos basados en evidencia, con plan personalizado y seguimiento.
-  </p>
-  <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-    {specialties.map((s) => (
-      <div class="flex flex-col rounded-2xl border border-slate-200 p-6 transition-shadow hover:shadow-md">
-        <h3 class="text-lg font-semibold text-slate-900">{s.name}</h3>
-        <p class="mt-2 flex-1 text-sm text-slate-600">{s.desc}</p>
-        <div class="mt-4">
-          <WhatsAppCta label="Consultar" variant="outline" class="w-full px-4 py-2 text-xs" />
-        </div>
-      </div>
-    ))}
+<section id="servicios" class="section" itemscope itemtype="https://schema.org/ItemList">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">Tratamientos y precios</h2>
+      <p class="lead measure-sm mx-auto">
+        Cada sesión incluye valoración de seguimiento y ajustes del plan según tu avance.
+      </p>
+    </header>
+
+    <div class="row">
+      {site.services.map((s, i) => (
+        <article
+          class="col-6-md card h-100 flex-col"
+          itemprop="itemListElement"
+          itemscope
+          itemtype="https://schema.org/Service"
+        >
+          <meta itemprop="position" content={String(i + 1)} />
+          <h3 class="t-xl is-marginless" itemprop="name">{s.name}</h3>
+          <p class="text-body mt-1" itemprop="description">{s.desc}</p>
+          <p
+            class="card__foot t-2xl text-primary"
+            itemprop="offers"
+            itemscope
+            itemtype="https://schema.org/Offer"
+          >
+            <meta itemprop="priceCurrency" content={site.currency} />
+            <span itemprop="price" content={s.price}>${s.price}</span>
+            <span class="t-sm text-grey fw-400"> {site.currency} / sesión</span>
+          </p>
+        </article>
+      ))}
+    </div>
   </div>
 </section>

@@ -1,0 +1,59 @@
+/* Layout y grilla (skill §4).
+ * Solo existen cinco proporciones de columna y un único breakpoint
+ * estructural: 900px. En móvil todo es ancho completo. */
+.container {
+  width: 100%;
+  max-width: var(--grid-maxWidth);
+  margin-inline: auto;
+  padding-inline: calc(var(--grid-gutter) / 2);
+}
+
+.row {
+  display: flex;
+  flex-flow: row wrap;
+  margin-inline: calc(var(--grid-gutter) / -2);
+}
+
+.col,
+[class*="col-"] {
+  flex: 0 1 100%;
+  max-width: 100%;
+  margin: 0 calc(var(--grid-gutter) / 2) var(--grid-gutter);
+}
+
+/* Secciones — ritmo vertical fluido único */
+.section { padding-block: var(--section-y); }
+.section--tight { padding-block: var(--space-6); }
+.section--flush-top { padding-top: 0; }
+.section--dark {
+  background: var(--color-darkGrey);
+  color: var(--color-on-dark);
+  text-align: center;
+}
+.section-header { text-align: center; margin-bottom: var(--space-6); }
+
+.bg-secondary { background: var(--bg-secondary-color); }
+.bg-primary   { background: var(--color-primary); color: var(--color-on-dark); }
+.bg-dark      { background: var(--color-darkGrey); color: var(--color-on-dark); }
+.bordered {
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ── Único breakpoint estructural ── */
+@media (min-width: 900px) {
+  .col    { flex: 1; }
+  .col-4-md { flex: 0 0 calc(33.333% - var(--grid-gutter)); max-width: calc(33.333% - var(--grid-gutter)); }
+  .col-5-md { flex: 0 0 calc(41.666% - var(--grid-gutter)); max-width: calc(41.666% - var(--grid-gutter)); }
+  .col-6-md { flex: 0 0 calc(50%     - var(--grid-gutter)); max-width: calc(50%     - var(--grid-gutter)); }
+  .col-7-md { flex: 0 0 calc(58.333% - var(--grid-gutter)); max-width: calc(58.333% - var(--grid-gutter)); }
+  .col-8-md { flex: 0 0 calc(66.666% - var(--grid-gutter)); max-width: calc(66.666% - var(--grid-gutter)); }
+}
+
+/* Área segura en iPhone — reserva espacio para que el widget flotante no
+ * tape el último CTA. Requiere viewport-fit=cover en el <head>: sin él
+ * env() devuelve 0px y esto queda inerte. */
+main { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
+@media (max-width: 767px) {
+  main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+}

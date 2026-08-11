@@ -1,0 +1,10 @@
+/* Reset (skill §3.3).
+ * font-size: 62.5% fija la raíz en 10px, de modo que 1.6rem = 16px. Toda la
+ * escala del sistema asume esta base. */
+html { box-sizing: border-box; font-size: 62.5%; }
+*, ::before, ::after { box-sizing: inherit; }
+body, h1, h2, h3, h4, p, figure, blockquote, dl, dd { margin: 0; }
+ul[class], ol[class] { list-style: none; padding: 0; }
+img, picture, video, canvas { display: block; max-width: 100%; }
+input, button, textarea, select { font: inherit; }
+iframe { border: 0; }

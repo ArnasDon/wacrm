@@ -1,0 +1,81 @@
+/* Tokens (skill §3.2). Los colores de marca los sobrescribe BaseLayout
+ * desde site.theme, para que ningún dato del negocio viva en el CSS. */
+:root {
+  /* ── Superficies y neutrales ── */
+  --bg-color: #ffffff;
+  --bg-secondary-color: #f7f8fa;
+  --surface: #ffffff;
+  --border-color: #e5e8ec;
+  --color-lightGrey: #e5e8ec;
+  --color-grey: #5a5f6a;        /* contraste AA sobre blanco */
+  --color-darkGrey: #2a2d34;
+  --color-error: #d43939;
+  --color-success: #15a34a;
+  --color-success-soft: #e8f7ee;
+  --color-star: #f59e0b;
+  --color-whatsapp: #25d366;
+
+  /* ── Marca — se sobrescriben por sitio ── */
+  --color-primary: #e7216a;
+  --color-primary-dark: #c2185b;
+  --color-accent: #00a7ce;
+
+  /* ── Sobre fondo oscuro ── */
+  --color-on-dark: #ffffff;
+  --color-on-dark-muted: rgba(255, 255, 255, .82);
+  --color-on-dark-subtle: rgba(255, 255, 255, .70);
+
+  /* ── Tipografía ── */
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                      Inter, system-ui, sans-serif;
+  --font-color: #15171c;
+  --font-size: 1.6rem;
+
+  --text-xs:  1.2rem;
+  --text-sm:  1.4rem;
+  --text-base:1.6rem;
+  --text-lg:  1.8rem;
+  --text-xl:  2.1rem;
+  --text-2xl: 2.6rem;
+  --text-3xl: clamp(2.6rem, 4vw, 3.4rem);
+  --text-4xl: clamp(3.2rem, 5vw, 4.4rem);
+  --text-5xl: clamp(3.8rem, 6vw, 5.4rem);
+
+  --leading-tight:   1.1;
+  --leading-snug:    1.2;
+  --leading-normal:  1.6;
+  --leading-relaxed: 1.7;
+
+  /* ── Espaciado — base 4px ── */
+  --space-1: .4rem;   --space-2: .8rem;   --space-3: 1.2rem;
+  --space-4: 1.6rem;  --space-5: 2.4rem;  --space-6: 3.2rem;
+  --space-7: 4.8rem;  --space-8: 6.4rem;  --space-9: 9.6rem;
+
+  --section-y: clamp(4rem, 7vw, 7.2rem);   /* ritmo vertical unificado */
+
+  /* ── Medidas de línea ── */
+  --measure-xs: 30rem;
+  --measure-sm: 42rem;
+  --measure-md: 70rem;
+  --measure-lg: 80rem;
+  --measure-xl: 90rem;
+
+  /* ── Grilla ── */
+  --grid-maxWidth: 120rem;
+  --grid-gutter: 2rem;
+
+  /* ── Radios ── */
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ── Elevación en capas ── */
+  --shadow-sm: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.07);
+  --shadow-md: 0 4px 16px rgba(16,24,40,.06), 0 2px 6px rgba(16,24,40,.04);
+  --shadow-lg: 0 16px 40px rgba(16,24,40,.10);
+
+  /* ── Breakpoints (referencia; los media queries los repiten literal) ── */
+  --bp-grid: 900px;
+  --bp-art: 768px;
+}

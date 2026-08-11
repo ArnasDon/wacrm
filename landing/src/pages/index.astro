@@ -1,49 +1,68 @@
 ---
-// index.astro — home de la landing (DAD §3.5 machote).
-// Secciones: Hero, SocialProof, Especialidades, CómoFunciona, Video,
-// FAQ, Form, Footer. god.js hace page_view + beacons automáticamente.
+// index.astro — arquetipo transaccional (skill §16).
+//
+// Secuencia: hero → franja de credibilidad → servicios y precio → video →
+// captación → proceso → autoridad → preguntas frecuentes → cierre.
+//
+// Del arquetipo completo se omiten los bloques para los que no hay contenido
+// real (reseñas, testimonios en video, galería, comparativa): inventar
+// calificaciones o testimonios sería un dato estructurado falso, y el skill
+// exige que cada bloque justifique su presencia (§15.2).
 import BaseLayout from "../layouts/BaseLayout.astro";
 import Hero from "../components/sections/Hero.astro";
 import SocialProof from "../components/sections/SocialProof.astro";
 import Specialties from "../components/sections/Specialties.astro";
-import HowItWorks from "../components/sections/HowItWorks.astro";
 import YouTubeLite from "../components/YouTubeLite.astro";
-import Faq from "../components/sections/Faq.astro";
+import LeadSection from "../components/sections/LeadSection.astro";
+import HowItWorks from "../components/sections/HowItWorks.astro";
 import About from "../components/sections/About.astro";
-import LeadForm from "../components/LeadForm.astro";
-import Footer from "../components/sections/Footer.astro";
-import "../scripts/wa-ref";
+import Faq from "../components/sections/Faq.astro";
+import { site } from "../data/site";
+
+const title = "Fisioterapia y rehabilitación en CDMX | Tu Clínica";
+const description =
+  "Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.";
 ---
 
-<BaseLayout vitals>
-  <main>
-    <Hero />
-    <SocialProof />
-    <Specialties />
-    <HowItWorks />
+<BaseLayout
+  title={title}
+  description={description}
+  path="/"
+  hasVideo
+  faq={site.faq}
+  steps={site.steps}
+  breadcrumb={[{ name: site.name, item: `${site.baseUrl}${site.landingBase}/` }]}
+>
+  <Hero />
+  <SocialProof />
+  <Specialties />
 
-    <section id="video" class="mx-auto max-w-6xl px-6 py-16">
-      <h2 class="text-center text-3xl font-bold text-slate-900">Lo que dicen nuestros pacientes</h2>
-      <div class="mt-8">
+  <section id="video" class="section bg-secondary">
+    <div class="container">
+      <header class="section-header">
+        <h2 class="t-3xl">Lo que dicen nuestros pacientes</h2>
+      </header>
+      <div class="measure-md mx-auto">
         <YouTubeLite />
       </div>
-    </section>
+    </div>
+  </section>
 
-    <About />
+  <LeadSection
+    id="agenda"
+    formId="top"
+    heading="Agenda tu valoración"
+    sub="Déjanos tus datos y te contactamos por WhatsApp en menos de 24 h. Sin compromiso."
+  />
 
-    <Faq />
+  <HowItWorks />
+  <About />
+  <Faq />
 
-    <section id="form" class="bg-slate-50 py-16">
-      <div class="mx-auto max-w-6xl px-6">
-        <h2 class="text-center text-3xl font-bold text-slate-900">Empieza hoy</h2>
-        <p class="mx-auto mt-3 max-w-xl text-center text-slate-600">
-          Déjanos tus datos y te contactamos por WhatsApp.
-        </p>
-        <div class="mt-8">
-          <LeadForm />
-        </div>
-      </div>
-    </section>
-  </main>
-  <Footer />
+  <LeadSection
+    id="cierre"
+    formId="bottom"
+    heading="Empieza hoy"
+    sub="Cuanto antes empiece el tratamiento, menos sesiones hacen falta. Te respondemos el mismo día."
+  />
 </BaseLayout>

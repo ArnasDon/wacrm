@@ -1,33 +1,26 @@
 // ============================================================
-// lead-form.ts — envío del formulario de la landing (DAD §3.2).
+// lead-form.ts — envío del formulario (skill §12.3).
 //
 // Vive en un módulo aparte, NO en un `<script define:vars>` dentro del
-// .astro: `define:vars` implica `is:inline`, y Astro no procesa los
-// scripts inline — no los compila, no les quita los tipos y no los
-// empaqueta. El TypeScript llegaba literal al navegador y reventaba con
-// `SyntaxError: Unexpected token ':'` antes de registrar el listener, así
-// que el formulario hacía su submit nativo por GET y no llamaba nunca a
-// /api/events. Como módulo importado desde un `<script>` normal, Astro sí
-// lo transpila y lo empaqueta.
+// .astro: `define:vars` implica `is:inline`, y Astro no procesa los scripts
+// inline — no los compila, no les quita los tipos y no los empaqueta. El
+// TypeScript llegaba literal al navegador y reventaba con `SyntaxError`
+// antes de registrar el listener, así que el formulario hacía su submit
+// nativo por GET y no llamaba nunca a /api/events.
 //
-// `landingBase` ya no viaja por `define:vars` sino en el atributo
-// `data-landing-base` del propio <form>.
+// Gobierna TODOS los formularios `[data-lead-form]` del documento: el de la
+// página y el del widget flotante comparten esta lógica.
 //
-// Flujo: god.js rellena los hidden (utm_*, click-ids, ref_code, event_id,
-// channel, medium, visitor_id) antes del submit → POST JSON a /api/events
-// con event_type=form_submit → el server crea el lead y el tracking_event
-// → redirect a /thank-you?lead=1&event_id=…
+// El destino es /api/events, el flujo de datos que ya existía: el server crea
+// el lead (find-or-create por teléfono) e inserta el tracking_event.
 // ============================================================
 
-const FORM_ID = "lead-form";
-const ERR_ID = "lead-form-error";
-
 /**
- * Lee un campo del formulario por nombre.
+ * Lee un campo por nombre dentro de un formulario concreto.
  *
  * El selector es `[name="…"]`, no `input[name="…"]`: `message` es un
- * `<textarea>` y con el selector viejo el mensaje del lead siempre
- * llegaba vacío.
+ * `<textarea>` y con el selector viejo el mensaje del lead siempre llegaba
+ * vacío.
  */
 function readField(form: HTMLFormElement, name: string): string {
   const el = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -36,26 +29,40 @@ function readField(form: HTMLFormElement, name: string): string {
   return el?.value ?? "";
 }
 
-function showError(msg: string): void {
-  const el = document.getElementById(ERR_ID);
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove("hidden");
-}
-
 function newEventId(): string {
   return `form_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function initLeadForm(): void {
-  const form = document.getElementById(FORM_ID) as HTMLFormElement | null;
-  if (!form) return;
+const CLICK_IDS = [
+  "gclid", "gbraid", "wbraid", "fbclid", "msclkid", "ttclid", "li_fat_id", "gad_source",
+] as const;
+const UTMS = ["source", "medium", "campaign", "term", "content"] as const;
 
+function collectClickIds(form: HTMLFormElement): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const k of CLICK_IDS) out[k] = readField(form, k) || undefined;
+  return out;
+}
+
+function wire(form: HTMLFormElement): void {
+  const errorEl = form.querySelector<HTMLElement>(".form__error");
   const landingBase = form.dataset.landingBase ?? "";
+
+  const showError = (msg: string) => {
+    if (!errorEl) return;
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+    // El mensaje es role="alert" y recibe el foco (skill §20).
+    errorEl.focus();
+  };
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    document.getElementById(ERR_ID)?.classList.add("hidden");
+    if (errorEl) errorEl.hidden = true;
+
+    // Campo trampa: si viene relleno es un bot. Se finge éxito para no
+    // enseñarle al bot cuál fue el motivo del rechazo.
+    if (readField(form, "company_website").trim()) return;
 
     const name = readField(form, "name");
     const phone = readField(form, "phone").trim();
@@ -68,7 +75,7 @@ function initLeadForm(): void {
     }
 
     const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
-    const buttonLabel = button?.textContent ?? "Solicitar información";
+    const buttonLabel = button?.textContent ?? "";
     if (button) {
       button.disabled = true;
       button.textContent = "Enviando...";
@@ -76,23 +83,10 @@ function initLeadForm(): void {
 
     const eventId = readField(form, "event_id") || newEventId();
     const attribution = {
-      utm: {
-        source: readField(form, "utm_source") || undefined,
-        medium: readField(form, "utm_medium") || undefined,
-        campaign: readField(form, "utm_campaign") || undefined,
-        term: readField(form, "utm_term") || undefined,
-        content: readField(form, "utm_content") || undefined,
-      },
-      click_ids: {
-        gclid: readField(form, "gclid") || undefined,
-        gbraid: readField(form, "gbraid") || undefined,
-        wbraid: readField(form, "wbraid") || undefined,
-        fbclid: readField(form, "fbclid") || undefined,
-        msclkid: readField(form, "msclkid") || undefined,
-        ttclid: readField(form, "ttclid") || undefined,
-        li_fat_id: readField(form, "li_fat_id") || undefined,
-        gad_source: readField(form, "gad_source") || undefined,
-      },
+      utm: Object.fromEntries(
+        UTMS.map((k) => [k, readField(form, `utm_${k}`) || undefined]),
+      ),
+      click_ids: collectClickIds(form),
       landing_slug: readField(form, "landing_slug") || undefined,
       ref_code: readField(form, "ref_code") || undefined,
       channel: readField(form, "channel") || undefined,
@@ -126,11 +120,15 @@ function initLeadForm(): void {
   });
 }
 
-// Los `<script>` empaquetados por Astro son `type="module"` (diferidos),
-// así que normalmente el DOM ya está listo. El guard cubre el caso
-// contrario sin depender de que DOMContentLoaded no haya disparado ya.
+function init(): void {
+  document.querySelectorAll<HTMLFormElement>("[data-lead-form]").forEach(wire);
+}
+
+// Los `<script>` empaquetados por Astro son `type="module"` (diferidos), así
+// que el DOM ya está listo. El guard cubre el caso contrario sin depender de
+// que DOMContentLoaded no haya disparado ya.
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initLeadForm, { once: true });
+  document.addEventListener("DOMContentLoaded", init, { once: true });
 } else {
-  initLeadForm();
+  init();
 }

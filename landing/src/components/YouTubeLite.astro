@@ -1,23 +1,70 @@
 ---
-// YouTubeLite — facade on-demand (DAD §3.3, opción A): el iframe se
-// inyecta SOLO al clic (~3 KB vs ~540 KB del player). Import del web
-// component en <script> de Astro → se bundlea desde 'self' (CSP ok).
-// El iframe usa youtube-nocookie (privacy) — CSP frame-src pendiente
-// de añadir cuando se enforce (DAD §9.13).
+// YouTubeLite — fachada de video bajo demanda (skill §12.1).
+//
+// El iframe se inyecta SOLO al clic: ~1 KB en lugar de los ~540 KB del
+// reproductor. Antes esto dependía de @justinribeiro/lite-youtube; ahora es
+// un custom element de menos de 30 líneas, que es lo que el presupuesto de
+// JavaScript permite, y una dependencia menos en package.json.
+//
+// La miniatura se sirve desde el propio dominio de YouTube, así que no hay
+// imagen que empaquetar; lleva width/height explícitos para que el CLS sea 0.
 import { site } from "../data/site";
 
 interface Props {
-  /** Texto del playlabel (accesibilidad) */
   playlabel?: string;
+  videoid?: string;
 }
 
-const { playlabel = "Ver video testimonial" } = Astro.props;
+const { playlabel = "Ver video testimonial", videoid = site.videoId } = Astro.props;
+const thumb = `https://i.ytimg.com/vi/${videoid}/hqdefault.jpg`;
 ---
 
-<div class="mx-auto max-w-3xl overflow-hidden rounded-2xl shadow-lg">
-  <lite-youtube videoid={site.videoId} playlabel={playlabel} nocookie></lite-youtube>
-</div>
+<yt-facade data-id={videoid}>
+  <button type="button" class="yt-facade" data-track="video_play" data-track-label={videoid}>
+    <img
+      class="yt-facade__thumb"
+      src={thumb}
+      width="480"
+      height="360"
+      alt={playlabel}
+      loading="lazy"
+      decoding="async"
+    />
+    <span class="yt-facade__play" aria-hidden="true"></span>
+    <span class="sr-only">{playlabel}</span>
+  </button>
+</yt-facade>
 
 <script>
-  import "@justinribeiro/lite-youtube";
+  // Custom element mínimo: sustituye el botón por el iframe al primer clic.
+  class YtFacade extends HTMLElement {
+    connectedCallback() {
+      this.querySelector("button")?.addEventListener(
+        "click",
+        () => {
+          const id = this.dataset.id;
+          if (!id) return;
+          const iframe = document.createElement("iframe");
+          iframe.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+          iframe.allow =
+            "accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture";
+          iframe.allowFullscreen = true;
+          iframe.title = "Video";
+          this.replaceChildren(iframe);
+        },
+        { once: true },
+      );
+    }
+  }
+  if (!customElements.get("yt-facade")) customElements.define("yt-facade", YtFacade);
 </script>
+
+<style>
+  yt-facade {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+</style>

@@ -1,0 +1,88 @@
+---
+// ContactLauncher — widget de contacto flotante (skill §7.7). Cero JavaScript.
+//
+// Sustituye a Intercom/Tawk/Crisp, que añaden entre 200 y 600 KB de JS de
+// terceros y degradan el LCP en móvil. Dos casillas gobiernan las tres
+// vistas; el CSS vive en 05-components.css.
+//
+// La raíz es <aside> y no <section> porque es cromo del sitio, no un bloque
+// de contenido: no debe entrar en el esquema semántico ni llevar itemtype.
+//
+// Separar Ventas de Soporte en el primer clic es calificación, no estética:
+// quien viene de un anuncio quiere hablar ya y elige WhatsApp; quien quiere
+// cita deja sus datos y entra por el mismo /api/events de siempre.
+import { site, whatsappHref } from "../data/site";
+import ContactForm from "./ContactForm.astro";
+
+const t = site.widget;
+---
+
+<aside class="launcher" aria-label={t.aria}>
+  <input type="checkbox" id="lx-open" class="lx-state" aria-label={t.aria} />
+  <input type="checkbox" id="lx-support" class="lx-state" aria-label={t.support.title} />
+
+  <label for="lx-open" class="lx-pill" data-track="contact_widget_open">
+    <span class="lx-pill__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+        <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"></path>
+      </svg>
+    </span>
+    <span class="lx-pill__body">
+      <span class="lx-pill__status">{t.online}</span>
+      <strong class="lx-pill__label">{t.pill}</strong>
+    </span>
+  </label>
+
+  <div class="lx-panel">
+    <header class="lx-head">
+      <p class="lx-head__title">{t.heading}</p>
+      <label for="lx-open" class="lx-x" data-track="contact_widget_close">
+        <span class="sr-only">{t.close}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             width="20" height="20" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </label>
+    </header>
+
+    <div class="lx-body">
+      <div class="lx-view lx-view--menu">
+        <p class="lx-prompt">{t.prompt}</p>
+
+        <a href={whatsappHref} class="lx-option" target="_blank" rel="noopener"
+           data-wa-cta data-track="whatsapp_click" data-track-label="widget_sales">
+          <span class="lx-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+              <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2Zm5.8 14.2c-.2.7-1.4 1.3-2 1.4-.5.1-1.2.1-1.9-.1a13 13 0 0 1-5.6-4.9c-.4-.6-1-1.5-1-2.9s.7-2 1-2.3c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.7 1.2 1.5 1.9 1 .9 1.8 1.2 2.1 1.3.2.1.4.1.6-.1l.8-1c.2-.2.3-.2.6-.1l1.9.9c.3.1.4.2.5.3v.9Z"></path>
+            </svg>
+          </span>
+          <span class="lx-option__text">
+            <strong>{t.sales.title}</strong>
+            <span>{t.sales.text}</span>
+          </span>
+          <span class="lx-option__chevron" aria-hidden="true">›</span>
+        </a>
+
+        <label for="lx-support" class="lx-option" data-track="contact_widget_support">
+          <span class="lx-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 width="22" height="22">
+              <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+              <path d="M16 2v4M8 2v4M3 10h18"></path>
+            </svg>
+          </span>
+          <span class="lx-option__text">
+            <strong>{t.support.title}</strong>
+            <span>{t.support.text}</span>
+          </span>
+          <span class="lx-option__chevron" aria-hidden="true">›</span>
+        </label>
+      </div>
+
+      <div class="lx-view lx-view--support">
+        <label for="lx-support" class="lx-back">← {t.back}</label>
+        <ContactForm formId="widget" variant="compact" cta="Solicitar llamada" />
+      </div>
+    </div>
+  </div>
+</aside>

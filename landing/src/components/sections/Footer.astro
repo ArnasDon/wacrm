@@ -1,30 +1,37 @@
 ---
-// Footer — tel:, WhatsApp, dirección, legal (DAD §3.5). El tel: dispara
-// phone_click (beacon). El enlace al About se agrega cuando exista la
-// sección (decisión: About como sección de la landing).
-import WhatsAppCta from "../WhatsAppCta.astro";
-import { site } from "../../data/site";
+// Pie — datos de contacto. El nodo del negocio ya viaja en el grafo JSON-LD,
+// así que aquí no se repiten microdatos: duplicar la entidad entre JSON-LD y
+// microdatos es un error de datos estructurados (skill §20).
+import { site, whatsappHref } from "../../data/site";
 ---
 
-<footer class="border-t border-slate-200 bg-white">
-  <div class="mx-auto flex max-w-6xl flex-col items-center gap-4 px-6 py-10 text-center">
-    <div class="text-lg font-bold text-slate-900">{site.clinicName}</div>
-    <div class="flex flex-wrap items-center justify-center gap-4 text-sm text-slate-600">
-      <a href={`tel:+${site.whatsappNumber}`} class="hover:text-emerald-700">
-        Tel: +{site.whatsappNumber}
+<footer class="section section--tight bg-dark">
+  <div class="container text-center">
+    <p class="t-lg fw-700 is-marginless">{site.name}</p>
+    <p class="t-sm is-marginless">
+      {site.address.street}, {site.address.locality}, {site.address.region}
+    </p>
+    <p class="t-sm mt-1">
+      <a href={`tel:${site.phone.replace(/\s/g, "")}`} class="text-white">{site.phone}</a>
+      <span aria-hidden="true"> · </span>
+      <a href={`mailto:${site.email}`} class="text-white">{site.email}</a>
+    </p>
+    <p class="t-sm">
+      <a
+        href={whatsappHref}
+        class="text-white"
+        target="_blank"
+        rel="noopener"
+        data-wa-cta
+        data-track="whatsapp_click"
+        data-track-label="footer"
+      >
+        WhatsApp
       </a>
-      <span aria-hidden="true">·</span>
-      <span>WhatsApp: +{site.whatsappNumber}</span>
-    </div>
-    <WhatsAppCta label="Agendar por WhatsApp" variant="outline" class="mt-2" />
-    <a
-      href="/dashboard"
-      class="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-emerald-600 hover:text-emerald-700"
-    >
-      Admin
-    </a>
-    <div class="mt-4 text-xs text-slate-400">
-      © {new Date().getFullYear()} {site.clinicName}. Todos los derechos reservados.
-    </div>
+    </p>
+    <p class="t-xs mt-2 is-marginless">
+      Los resultados varían según el caso, el diagnóstico y la adherencia al
+      tratamiento. Esta página no sustituye una consulta médica.
+    </p>
   </div>
 </footer>

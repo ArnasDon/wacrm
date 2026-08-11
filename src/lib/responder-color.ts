@@ -36,40 +36,47 @@ export function resolveResponderColor(
 }
 
 /**
- * Conversation id → user id of the last internal (agent) message sender,
- * for every conversation the caller's RLS allows. Backed by a single SQL
- * function (`list_conversation_last_agent_senders`, migration 054) so the
- * Inbox and Pipeline never issue a per-row/per-card query for this.
+ * Conversation id → user id of the conversation's persistently assigned
+ * agent (`conversations.assigned_agent_id`), for every conversation the
+ * caller's RLS allows. This is the CRM's one durable "who owns this
+ * lead" field — set on whichever agent replies first (see
+ * `sendMessageToConversation`) and only ever changed afterward by a
+ * manual transfer via the existing "Atribuir" UI. Deliberately NOT
+ * based on the most recent message's sender — that flips every time a
+ * different teammate replies, which is exactly the bug this fixes.
  */
-export async function fetchLastAgentSenderMap(
+export async function fetchAssignedAgentMap(
   db: SupabaseClient,
 ): Promise<Map<string, string>> {
-  const { data, error } = await db.rpc("list_conversation_last_agent_senders");
+  const { data, error } = await db
+    .from("conversations")
+    .select("id, assigned_agent_id")
+    .not("assigned_agent_id", "is", null);
   if (error) throw error;
   const map = new Map<string, string>();
   for (const row of (data ?? []) as {
-    conversation_id: string;
-    sender_id: string;
+    id: string;
+    assigned_agent_id: string;
   }[]) {
-    map.set(row.conversation_id, row.sender_id);
+    map.set(row.id, row.assigned_agent_id);
   }
   return map;
 }
 
 /**
  * The color for a given conversation, derived from the same
- * `lastAgentSenderMap` + `profiles` pair everywhere it's used — Inbox and
+ * `assignedAgentMap` + `profiles` pair everywhere it's used — Inbox and
  * Pipeline must never compute this independently (they'd risk disagreeing
  * on the same lead's color).
  */
 export function colorForConversation(
   conversationId: string | null | undefined,
-  lastAgentSenderMap: Map<string, string>,
+  assignedAgentMap: Map<string, string>,
   profiles: Profile[],
 ): ResponderColor {
   if (!conversationId) return "gray";
-  const senderId = lastAgentSenderMap.get(conversationId);
-  if (!senderId) return "gray";
-  const profile = profiles.find((p) => p.user_id === senderId);
+  const agentId = assignedAgentMap.get(conversationId);
+  if (!agentId) return "gray";
+  const profile = profiles.find((p) => p.user_id === agentId);
   return resolveResponderColor(profile);
 }

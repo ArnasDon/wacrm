@@ -504,6 +504,28 @@ export async function sendMessageToConversation(
   // its own try/catch means it can't throw.
   void maybeActivateCtwaFep(db, conversationId);
 
+  // First-responder ownership: the conversation's `assigned_agent_id`
+  // is what the "last internal responder" color indicator reads (see
+  // src/lib/responder-color.ts) — it must stick to whichever agent
+  // replies first and never flip when a different teammate replies
+  // later. Only set it here when nobody owns the thread yet; a manual
+  // transfer (the existing "Atribuir" UI) is the only thing allowed to
+  // change it afterward. Guarded by `.is(...)` for the same
+  // first-writer-wins race protection as maybeActivateCtwaFep. Wrapped
+  // in try/catch — this bookkeeping must never turn an otherwise-
+  // successful send (already delivered to Meta) into a 500.
+  if (senderId && !conversation.assigned_agent_id) {
+    try {
+      await db
+        .from('conversations')
+        .update({ assigned_agent_id: senderId })
+        .eq('id', conversationId)
+        .is('assigned_agent_id', null);
+    } catch (err) {
+      console.error('[send-message] first-responder assignment failed:', err);
+    }
+  }
+
   const lastMessageText =
     messageType === 'interactive'
       ? interactivePayloadPreviewText(interactivePayload!)

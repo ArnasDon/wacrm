@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X, MessageCircle } from "lucide-react";
@@ -85,18 +85,25 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
       {/* Unread message badge */}
       {hasUnread && (
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-yellow-500/15 px-2 py-1">
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-400" />
-          </span>
-          <MessageCircle className="h-3 w-3 shrink-0 text-yellow-400" />
-          <span className="text-[10px] font-semibold text-yellow-400">
-            {t("newMessage")}
-            {(deal.conversation!.unread_count ?? 0) > 1
-              ? ` (${deal.conversation!.unread_count})`
-              : ""}
-          </span>
+        <div className="mt-2 flex flex-col gap-1 rounded-lg bg-yellow-500/15 p-2">
+          <div className="flex items-center gap-1.5">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-yellow-400" />
+            </span>
+            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-yellow-400" />
+            <span className="text-[10px] font-semibold text-yellow-400">
+              {t("newMessage")}
+              {(deal.conversation!.unread_count ?? 0) > 1
+                ? ` (${deal.conversation!.unread_count})`
+                : ""}
+            </span>
+          </div>
+          {deal.conversation?.last_message_text && (
+            <p className="line-clamp-2 text-xs font-medium text-yellow-300/90 break-words">
+              "{deal.conversation.last_message_text}"
+            </p>
+          )}
         </div>
       )}
 

@@ -305,7 +305,8 @@
       "discardRecording": "Discard recording",
       "sendRecording": "Send voice message",
       "unsupportedVideoType": "This video is in a format WhatsApp doesn't accept (e.g. iPhone .MOV). Send it as MP4 — on iPhone, switch Settings → Camera → Formats → Most Compatible, or pick a video that's already MP4.",
-      "unsupportedFileType": "This file type isn't supported."
+      "unsupportedFileType": "This file type isn't supported.",
+      "fileTooLarge": "File is {sizeMb} MB — the limit for {kind} is {limitMb} MB."
     },
     "bubble": {
       "photo": "Photo",
@@ -626,6 +627,17 @@
       "toastRenameFailed": "Could not rename field.",
       "toastDeleteFailed": "Could not delete field.",
       "toastDeleted": "Deleted \"{name}\"."
+    }
+  },
+  "Leads": {
+    "deleteDialog": {
+      "menuLabel": "Delete lead",
+      "title": "Delete lead",
+      "description": "Are you sure you want to delete {name}? This can't be undone and also removes this lead's conversation and message history.",
+      "cancel": "Cancel",
+      "deleteBtn": "Delete",
+      "toastDeleted": "Lead deleted.",
+      "toastFailedDelete": "Could not delete the lead."
     }
   },
   "Pipelines": {

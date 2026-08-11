@@ -305,7 +305,8 @@
       "discardRecording": "Excluir gravação",
       "sendRecording": "Enviar áudio",
       "unsupportedVideoType": "Esse vídeo está em um formato que o WhatsApp não aceita (ex.: .MOV do iPhone). Envie em MP4 — no iPhone, mude em Ajustes → Câmera → Formatos → Mais Compatível, ou selecione um vídeo já em MP4.",
-      "unsupportedFileType": "Esse tipo de arquivo não é aceito."
+      "unsupportedFileType": "Esse tipo de arquivo não é aceito.",
+      "fileTooLarge": "Arquivo de {sizeMb} MB — o limite para {kind} é {limitMb} MB."
     },
     "bubble": {
       "photo": "Foto",
@@ -626,6 +627,17 @@
       "toastRenameFailed": "Não foi possível renomear o campo.",
       "toastDeleteFailed": "Não foi possível excluir o campo.",
       "toastDeleted": "\"{name}\" excluído."
+    }
+  },
+  "Leads": {
+    "deleteDialog": {
+      "menuLabel": "Excluir lead",
+      "title": "Excluir lead",
+      "description": "Tem certeza que deseja excluir {name}? Essa ação não pode ser desfeita e remove também a conversa e o histórico de mensagens deste lead.",
+      "cancel": "Cancelar",
+      "deleteBtn": "Excluir",
+      "toastDeleted": "Lead excluído.",
+      "toastFailedDelete": "Não foi possível excluir o lead."
     }
   },
   "Pipelines": {

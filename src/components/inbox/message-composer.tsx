@@ -287,10 +287,19 @@ export function MessageComposer({
       // would then refuse at send.
       const max = MEDIA_MAX_BYTES_BY_KIND[kind];
       if (file.size > max) {
+        // Was a hardcoded English string — silent to a non-English-reading
+        // agent, who'd just see "attaching didn't work" with no clue it
+        // was a size cap. Localized + explicit so a large document (a
+        // common real-estate PDF catalog, easily >16 MB) reads as
+        // "too big", not as a mystery failure.
         toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — ${kind} limit is ${Math.round(
-            max / 1024 / 1024,
-          )} MB.`,
+          t("fileTooLarge", {
+            sizeMb: (file.size / 1024 / 1024).toFixed(1),
+            // "image"'s label key is "photo", not "image" — the other two
+            // kinds happen to share their key name with themselves.
+            kind: t(kind === "image" ? "photo" : kind),
+            limitMb: Math.round(max / 1024 / 1024),
+          }),
         );
         return;
       }

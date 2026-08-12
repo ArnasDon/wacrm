@@ -55,6 +55,7 @@
     "date-fns": "^4.4.0",
     "googleapis": "^174.0.1",
     "lucide-react": "^1.27.0",
+    "mediabunny": "^1.53.1",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
     "opus-recorder": "^8.0.5",

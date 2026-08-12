@@ -1,0 +1,41 @@
+---
+// Testimonios en vídeo — tarjetas con vídeo vertical y cita.
+//
+// El vídeo va FORZADO a vertical (`ratio="vertical"`) porque dentro de una
+// tarjeta un 16:9 se ve aplastado y desperdicia la columna. Es justo el caso
+// que justifica la regla.
+//
+// Emite `Review` SIN `reviewRating`: declarar una calificación que el paciente
+// no otorgó sería un dato estructurado falso.
+import Rail from '../Rail.astro';
+import YouTubeLite from '../YouTubeLite.astro';
+
+interface Item { id: string; name: string; quote: string }
+
+const items: Item[] = [
+  { id: 'guJLfqTFfIw', name: 'Marta L.', quote: 'Volví a caminar sin dolor en seis semanas.' },
+  { id: 'guJLfqTFfIw', name: 'Diego S.', quote: 'Me evitaron una cirugía de rodilla.' },
+  { id: 'guJLfqTFfIw', name: 'Elena V.', quote: 'El seguimiento fue lo que marcó la diferencia.' },
+];
+---
+
+<section id="testimonios" class="section">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">Pacientes que lo cuentan</h2>
+      <p class="lead measure-sm mx-auto">Sin guion. Grabado en la clínica.</p>
+    </header>
+
+    <Rail label="Testimonios en vídeo" cols={3} hint="Desliza para ver más →">
+      {items.map((it) => (
+        <article class="card card--flush h-100 flex-col" itemscope itemtype="https://schema.org/Review">
+          <YouTubeLite id={it.id} ratio="vertical" playlabel={`Testimonio de ${it.name}`} />
+          <div class="card__body">
+            <p class="text-quote text-body is-marginless" itemprop="reviewBody">“{it.quote}”</p>
+            <p class="t-sm fw-600 mt-1 is-marginless" itemprop="author">{it.name}</p>
+          </div>
+        </article>
+      ))}
+    </Rail>
+  </div>
+</section>

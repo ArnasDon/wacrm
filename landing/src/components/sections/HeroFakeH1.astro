@@ -1,0 +1,80 @@
+---
+// Hero con H1 real pequeño (SEM).
+//
+// EL TRUCO: el <h1> de verdad va arriba, pequeño y gris, con la consulta
+// optimizada para buscador. El titular grande que ve el visitante es un <p>.
+// Así el hero se ve como debe y el H1 dice lo que el buscador necesita, sin
+// pelear entre sí.
+import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+
+interface Props {
+  /** El H1 real: la consulta. Pequeño y arriba. */
+  seoTitle?: string;
+  /** El titular visible, grande. Va como <p>, no como encabezado. */
+  displayTitle?: string;
+  subtitle?: string;
+}
+
+const {
+  seoTitle = 'Fisioterapia y rehabilitación en Ciudad de México',
+  displayTitle = 'Recupera el movimiento sin pasar por quirófano',
+  subtitle = 'Valoración con diagnóstico y plan por escrito el mismo día.',
+} = Astro.props;
+---
+
+<section class="section" itemscope itemtype="https://schema.org/WPHeader">
+  <div class="container">
+    {/* El H1 real: pequeño, para el buscador. */}
+    <h1 class="seo-h1" itemprop="headline">{seoTitle}</h1>
+
+    <div class="row is-vertical-align">
+      <div class="col-7-md">
+        <p class="hero-avail-badge">
+          <span class="hero-avail-badge__dot" aria-hidden="true"></span>
+          Agenda disponible esta semana
+        </p>
+
+        {/* El titular visible NO es un encabezado: es texto grande. */}
+        <p class="t-4xl lh-tight is-marginless">{displayTitle}</p>
+        <p class="lead measure-sm mt-1 mb-2">{subtitle}</p>
+
+        <div class="btn-row">
+          <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
+          <a href={whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
+            Escribir por WhatsApp
+          </a>
+        </div>
+
+        <ul class="inline-stats mt-2 list-unstyled">
+          {site.proof.slice(0, 2).map((p) => (
+            <li class="inline-stat">
+              <strong class="inline-stat__num text-primary">{p.num}</strong>
+              <span class="inline-stat__label">{p.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="col-5-md hero-col-img">
+        <img
+          src="https://picsum.photos/seed/wacrmhero/480/580"
+          alt="Fisioterapeuta atendiendo a una paciente"
+          width="480" height="580"
+          class="radius-12 is-full-width obj-cover"
+          loading="eager" fetchpriority="high" decoding="sync"
+        />
+        <div class="card hero-float-card card--sm">
+          <span class="icon-badge" aria-hidden="true">★</span>
+          <span>
+            <strong class="t-xl fw-700 lh-1">4.9</strong>
+            <span class="t-xs text-grey"> · 312 reseñas</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .btn-row { justify-content: flex-start; }
+</style>

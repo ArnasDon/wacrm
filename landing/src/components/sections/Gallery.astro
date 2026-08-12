@@ -1,0 +1,71 @@
+---
+// Galería 3x3 con lightbox — cero JavaScript.
+//
+// El lightbox es `:target`: cada miniatura es un <a href="#lb-n"> y el
+// contenedor se abre solo cuando el hash coincide. Cerrar es <a href="#!">.
+// La misma clase gobierna el popup del formulario del header.
+//
+// MOBILE FIRST: la rejilla es 3x3 desde el móvil —a 1fr cada columna, así que
+// las miniaturas se encogen— porque una galería de antes/después se lee mejor
+// como mosaico que apilada.
+import { site, whatsappHref } from '../../data/site';
+
+interface Props {
+  title?: string;
+  subtitle?: string;
+  count?: number;
+}
+
+const {
+  title = 'Resultados de pacientes',
+  subtitle = 'Casos reales, con su permiso por escrito.',
+  count = 9,
+} = Astro.props;
+
+// Sin fotos reales todavía: se generan marcadores con el color de marca para
+// que la sección se pueda ver y medir. Sustituir por `/landing/gallery-N.webp`.
+const items = Array.from({ length: count }, (_, i) => ({
+  id: `lb-gal-${i + 1}`,
+  src: `https://picsum.photos/seed/wacrm${i + 1}/600/600`,
+  alt: `Resultado de paciente ${i + 1}`,
+}));
+---
+
+<section id="galeria" class="section" itemscope itemtype="https://schema.org/ImageGallery">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">{title}</h2>
+      <p class="lead measure-sm mx-auto">{subtitle}</p>
+    </header>
+
+    <div class="gallery-3x3 mx-auto measure-lg">
+      {items.map((it) => (
+        <a href={`#${it.id}`} aria-label={it.alt} itemprop="contentUrl">
+          <img src={it.src} alt={it.alt} width="600" height="600" loading="lazy" decoding="async" />
+        </a>
+      ))}
+    </div>
+
+    <div class="btn-row mt-2">
+      <a href="#agenda" class="button primary pill">Agenda tu valoración</a>
+      <a
+        href={whatsappHref}
+        class="button outline pill"
+        target="_blank"
+        rel="noopener"
+        data-wa-cta
+      >
+        Preguntar por WhatsApp
+      </a>
+    </div>
+  </div>
+</section>
+
+{/* Los lightbox viven fuera de la sección: son superposiciones a pantalla
+    completa, no contenido del bloque. */}
+{items.map((it) => (
+  <div class="lightbox" id={it.id}>
+    <a href="#!" class="lightbox-close" aria-label="Cerrar">&times;</a>
+    <img src={it.src} alt={it.alt} width="600" height="600" loading="lazy" decoding="async" />
+  </div>
+))}

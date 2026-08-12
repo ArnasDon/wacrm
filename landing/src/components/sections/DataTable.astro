@@ -1,0 +1,27 @@
+---
+// Tabla de datos genérica. MOBILE FIRST: se desplaza en horizontal en vez de
+// romperse; la comparación entre filas es el motivo de existir de una tabla.
+interface Props { title?: string }
+const { title = 'Cuántas sesiones suele necesitar cada caso' } = Astro.props;
+
+const head = ['Caso', 'Sesiones', 'Frecuencia'];
+const rows = [
+  ['Lumbalgia aguda', '4 – 6', '2 por semana'],
+  ['Hernia discal', '8 – 12', '2 por semana'],
+  ['Post-operatorio de rodilla', '12 – 20', '3 por semana'],
+  ['Hombro congelado', '10 – 15', '2 por semana'],
+];
+---
+
+<section class="section bg-secondary">
+  <div class="container measure-lg mx-auto">
+    <header class="section-header"><h2 class="t-3xl">{title}</h2></header>
+    <div class="pricing-table-wrap">
+      <table class="table">
+        <thead><tr>{head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r) => <tr>{r.map((c) => <td>{c}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+    <p class="t-xs text-grey">Rangos orientativos. El plan real sale de la valoración.</p>
+  </div>
+</section>

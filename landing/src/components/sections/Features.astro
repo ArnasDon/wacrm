@@ -1,0 +1,30 @@
+---
+// Beneficios — qué gana el paciente, no qué hacemos nosotros.
+import Rail from '../Rail.astro';
+
+interface Feature { icon: string; title: string; text: string }
+const features: Feature[] = [
+  { icon: '⏱', title: 'Alta cuando toca', text: 'Te damos el alta en cuanto dejas de necesitarnos. No vendemos bonos infinitos.' },
+  { icon: '📋', title: 'Plan por escrito', text: 'Sales de la primera sesión con el diagnóstico y el número de sesiones estimado.' },
+  { icon: '🏠', title: 'Ejercicios en casa', text: 'La mitad del resultado depende de lo que hagas entre sesiones. Te lo dejamos claro.' },
+  { icon: '📞', title: 'Seguimiento real', text: 'Si algo no avanza, se replantea el plan. No se repite la misma sesión doce veces.' },
+];
+---
+
+<section class="section" itemscope itemtype="https://schema.org/ItemList">
+  <div class="container">
+    <header class="section-header">
+      <h2 class="t-3xl">Cómo trabajamos</h2>
+    </header>
+    <Rail label="Cómo trabajamos" cols={4} hint="Desliza para ver más →">
+      {features.map((f, i) => (
+        <article class="card h-100" itemprop="itemListElement" itemscope itemtype="https://schema.org/Thing">
+          <meta itemprop="position" content={String(i + 1)} />
+          <p class="icon-circle t-2xl is-marginless" aria-hidden="true">{f.icon}</p>
+          <h3 class="t-lg fw-700 is-marginless" itemprop="name">{f.title}</h3>
+          <p class="text-body mt-1 is-marginless" itemprop="description">{f.text}</p>
+        </article>
+      ))}
+    </Rail>
+  </div>
+</section>

@@ -1,0 +1,47 @@
+---
+// Vídeo + contenido. El vídeo va en `auto`: vertical en móvil y horizontal en
+// escritorio, que es donde hay ancho para un 16:9.
+//
+// Para una VSL se pasa ratio="horizontal"; para un vídeo junto a un
+// formulario, ratio="vertical".
+import YouTubeLite from '../YouTubeLite.astro';
+import { PRIMARY_CTA } from '../../data/site';
+
+interface Props {
+  id?: string;
+  desktopId?: string;
+  ratio?: 'auto' | 'vertical' | 'horizontal';
+  title?: string;
+  text?: string;
+  videoPosition?: 'left' | 'right';
+}
+const {
+  id,
+  desktopId,
+  ratio = 'auto',
+  title = 'Cómo es la primera sesión',
+  text = 'Cuatro minutos: la exploración, las pruebas de movimiento y cómo sale el plan. Para que llegues sabiendo qué esperar.',
+  videoPosition = 'right',
+} = Astro.props;
+---
+
+<section id="video" class="section bg-secondary" itemscope itemtype="https://schema.org/VideoObject">
+  <div class="container">
+    <div class:list={['row', 'is-vertical-align', videoPosition === 'left' && 'row--video-left']}>
+      <div class="col-6-md">
+        <h2 class="t-3xl" itemprop="name">{title}</h2>
+        <p class="text-body measure-sm" itemprop="description">{text}</p>
+        <a href="#agenda" class="button primary pill mt-1">{PRIMARY_CTA}</a>
+      </div>
+      <div class="col-6-md">
+        <YouTubeLite id={id} desktopId={desktopId} ratio={ratio} playlabel={title} />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  @media (min-width: 900px) {
+    .row--video-left { flex-direction: row-reverse; }
+  }
+</style>

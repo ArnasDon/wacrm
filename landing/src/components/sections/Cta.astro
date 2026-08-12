@@ -1,0 +1,30 @@
+---
+// Cierre — repetición de la acción principal con refuerzo de confianza.
+import { whatsappHref, PRIMARY_CTA } from '../../data/site';
+interface Props { title?: string; text?: string }
+const {
+  title = 'Empieza esta semana',
+  text = 'Cuanto antes empiece el tratamiento, menos sesiones hacen falta.',
+} = Astro.props;
+---
+
+<section class="section section--dark">
+  <div class="container measure-sm mx-auto">
+    <h2 class="t-3xl text-white">{title}</h2>
+    <p class="lead text-white">{text}</p>
+    <div class="btn-row mt-2">
+      <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
+      <a href={whatsappHref} class="button outline pill cta__wa" target="_blank" rel="noopener" data-wa-cta>
+        WhatsApp
+      </a>
+    </div>
+    <p class="t-xs mt-2 is-marginless">Respondemos en menos de 24 h · Sin compromiso</p>
+  </div>
+</section>
+
+<style>
+  /* El outline por defecto usa el color de marca, que sobre fondo oscuro
+     apenas se ve. Aquí se invierte. */
+  .cta__wa { border-color: var(--color-on-dark); color: var(--color-on-dark); }
+  .cta__wa:hover { background: var(--color-on-dark); color: var(--color-darkGrey); }
+</style>

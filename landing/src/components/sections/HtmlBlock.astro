@@ -1,0 +1,14 @@
+---
+// Bloque de HTML libre — el escape hatch del catálogo.
+//
+// Existe para lo que ninguna sección cubre: un embed de terceros, un aviso
+// legal puntual. Va con `set:html`, así que el contenido tiene que venir de
+// una fuente de confianza (el archivo de contenido del sitio), NUNCA de la
+// URL ni de un formulario.
+interface Props { html: string; bg?: 'white' | 'secondary' }
+const { html, bg = 'white' } = Astro.props;
+---
+
+<section class:list={['section', bg === 'secondary' && 'bg-secondary']}>
+  <div class="container measure-md mx-auto" set:html={html}></div>
+</section>

@@ -1,0 +1,41 @@
+---
+// Bloque de texto con imagen — el comodín para contenido de autoridad.
+// MOBILE FIRST: imagen arriba, texto debajo; a 900px van en dos columnas y
+// `imagePosition` decide el lado.
+interface Props {
+  title?: string;
+  text?: string;
+  image?: string;
+  imagePosition?: 'left' | 'right';
+  bg?: 'white' | 'secondary';
+}
+const {
+  title = 'Por qué el diagnóstico va antes que el tratamiento',
+  text = 'Tratar sin valorar es apagar una alarma sin mirar qué la disparó. La primera sesión se dedica entera a entender de dónde viene el dolor: exploración, pruebas de movimiento y revisión de estudios previos si los hay. El plan sale de ahí, no de un protocolo genérico.',
+  image = 'https://picsum.photos/seed/wacrmtext/640/480',
+  imagePosition = 'right',
+  bg = 'white',
+} = Astro.props;
+---
+
+<section class:list={['section', bg === 'secondary' && 'bg-secondary']}>
+  <div class="container">
+    <div class:list={['row', 'is-vertical-align', imagePosition === 'left' && 'row--img-left']}>
+      <div class="col-6-md">
+        <h2 class="t-3xl">{title}</h2>
+        <p class="text-body measure-sm">{text}</p>
+      </div>
+      <div class="col-6-md">
+        <img src={image} alt="" width="640" height="480" class="is-full-width radius-12 obj-cover" loading="lazy" decoding="async" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* En móvil el orden del marcado manda (texto primero). El intercambio de
+     lados solo tiene sentido cuando hay dos columnas. */
+  @media (min-width: 900px) {
+    .row--img-left { flex-direction: row-reverse; }
+  }
+</style>

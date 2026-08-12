@@ -1,0 +1,39 @@
+---
+// Equipo — el bloque que sostiene la señal de experiencia en vertical regulada.
+import Rail from '../Rail.astro';
+
+interface Member { name: string; role: string; bio: string; img: string }
+
+const team: Member[] = [
+  { name: 'Dra. Ana Ruiz', role: 'Directora clínica', bio: '12 años en rehabilitación deportiva.', img: 'https://picsum.photos/seed/team1/300/300' },
+  { name: 'Luis Ortega', role: 'Fisioterapeuta', bio: 'Especialista en terapia manual.', img: 'https://picsum.photos/seed/team2/300/300' },
+  { name: 'Sara Núñez', role: 'Fisioterapeuta', bio: 'Recuperación post-quirúrgica.', img: 'https://picsum.photos/seed/team3/300/300' },
+  { name: 'Iván Prado', role: 'Readaptador', bio: 'Ejercicio terapéutico y prevención.', img: 'https://picsum.photos/seed/team4/300/300' },
+];
+---
+
+<section id="equipo" class="section">
+  <div class="container">
+    <header class="section-header"><h2 class="t-3xl">Quién te atiende</h2></header>
+    <Rail label="Equipo" cols={4} hint="Desliza para ver al equipo →">
+      {team.map((m) => (
+        <article class="card h-100 text-center" itemscope itemtype="https://schema.org/Person">
+          <img
+            src={m.img} alt={`${m.name}, ${m.role}`}
+            width="300" height="300"
+            class="is-rounded obj-cover mx-auto"
+            style="--avatar: 96px"
+            loading="lazy" decoding="async"
+          />
+          <h3 class="t-lg fw-700 mt-1 is-marginless" itemprop="name">{m.name}</h3>
+          <p class="t-xs text-primary is-marginless" itemprop="jobTitle">{m.role}</p>
+          <p class="t-sm text-grey mt-1 is-marginless">{m.bio}</p>
+        </article>
+      ))}
+    </Rail>
+  </div>
+</section>
+
+<style>
+  .card img { width: var(--avatar, 96px); height: var(--avatar, 96px); }
+</style>

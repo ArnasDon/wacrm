@@ -586,3 +586,174 @@
 @media (min-width: 900px) {
   .youtube-video:not(.ratio-vertical):not(.ratio-horizontal) { aspect-ratio: 16 / 9; }
 }
+
+/* ============================================================
+ * Galería 3x3 + lightbox — portado de chota-god.css:253-261.
+ *
+ * El lightbox es `:target`: se abre con un <a href="#id"> y se cierra con
+ * <a href="#!">. Cero JavaScript. La MISMA clase sirve para el popup del
+ * formulario del header, así que estas cuatro reglas cubren dos componentes.
+ * ============================================================ */
+.gallery-3x3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+.gallery-3x3 a { display: block; aspect-ratio: 1; overflow: hidden; }
+.gallery-3x3 img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
+.gallery-3x3 a:hover img { transform: scale(1.05); }
+
+.lightbox {
+  position: fixed; inset: 0;
+  background: rgb(0 0 0 / .92);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;
+  padding: 1rem;
+  overflow-y: auto;
+}
+.lightbox:target { opacity: 1; pointer-events: auto; }
+.lightbox img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: var(--radius); }
+.lightbox-close {
+  position: absolute; top: 1.5rem; right: 1.5rem;
+  color: #fff; font-size: 3rem; text-decoration: none;
+  width: 44px; height: 44px;
+  display: grid; place-items: center; line-height: 1;
+}
+/* Variante del lightbox que contiene un formulario, no una imagen. */
+.lightbox__panel {
+  width: min(480px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lightbox { transition: none; }
+  .gallery-3x3 img { transition: none; }
+}
+
+/* ============================================================
+ * Scroller infinito — portado de chota-god.css:264-310.
+ * MOBILE FIRST: una sola columna; a 900px se abren las demás.
+ * ============================================================ */
+.scroller { overflow: hidden; --gap: 2rem; --speed: 30s; }
+.scroller--h {
+  mask: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent);
+}
+.scroller--v {
+  mask: linear-gradient(180deg, transparent, #000 2%, #000 98%, transparent);
+  -webkit-mask: linear-gradient(180deg, transparent, #000 2%, #000 98%, transparent);
+}
+.scroller-track { display: flex; gap: var(--gap); will-change: transform; }
+.scroller--h .scroller-track { width: max-content; animation: scroll-h var(--speed) linear infinite; }
+.scroller--v .scroller-track { flex-direction: column; height: max-content; animation: scroll-v var(--speed) linear infinite; }
+.scroller:hover .scroller-track { animation-play-state: paused; }
+.scroller-item { flex-shrink: 0; }
+.scroller-item img { display: block; width: 100%; object-fit: cover; }
+.scroller-cols { display: flex; flex-direction: column; gap: var(--gap); }
+.scroller-col { overflow: hidden; max-height: 380px; }
+.scroller-col + .scroller-col { display: none; }
+.scroller-col .scroller-track { animation: scroll-v var(--speed) linear infinite; }
+.scroller--stagger .scroller-col:nth-child(odd) { padding-top: 4rem; }
+.scroller-item--card { background: var(--bg-color); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+.scroller-item--card img { aspect-ratio: 1; }
+.scroller-item-body { padding: var(--space-4); }
+.scroller-item-body h4 { margin: 0 0 .4rem; font-size: var(--text-sm); font-weight: 600; }
+.scroller-item-body p { margin: 0; font-size: var(--text-xs); color: var(--color-grey); }
+.scroller-item--text {
+  padding: 1rem 2.4rem;
+  background: var(--bg-secondary-color);
+  border-radius: var(--radius-pill);
+  white-space: nowrap; font-weight: 600; font-size: var(--text-sm);
+}
+.scroller--fast { --speed: 15s; }
+.scroller--slow { --speed: 60s; }
+
+@media (min-width: 900px) {
+  .scroller-cols { flex-direction: row; }
+  .scroller-col { flex: 1; max-height: 520px; }
+  .scroller-col + .scroller-col { display: block; }
+}
+/* Sin !important: esta regla va después, así que gana por orden. */
+@media (prefers-reduced-motion: reduce) {
+  .scroller-track { animation: none; }
+}
+@keyframes scroll-h { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes scroll-v { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+
+/* ============================================================
+ * Tabla de precios — portado de chota-god.css:597-607.
+ * MOBILE FIRST: se desplaza en horizontal dentro de su envoltorio en vez de
+ * romper la maqueta; a 900px cabe entera.
+ * ============================================================ */
+.pricing-table-wrap { margin-bottom: var(--space-5); overflow-x: auto; scrollbar-width: none; }
+.pricing-table-wrap::-webkit-scrollbar { display: none; }
+.pricing-table { width: 100%; min-width: 420px; border-collapse: separate; border-spacing: 0 5px; font-size: var(--text-sm); }
+.pricing-table caption {
+  background: var(--color-primary); color: var(--color-on-dark);
+  padding: 1rem; font-weight: 700; font-size: var(--text-lg);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pricing-table thead th { background: var(--color-primary); color: var(--color-on-dark); padding: .8rem 1rem; text-align: left; }
+.pricing-table thead th:last-child { text-align: right; }
+.pricing-table tbody tr { background: var(--bg-secondary-color); }
+.pricing-table tbody tr:nth-child(even):not(.pricing-table-category) { background: var(--color-accent); color: var(--color-on-dark); }
+.pricing-table tbody td { padding: .8rem 1rem; }
+.pricing-table tbody td:last-child { text-align: right; font-weight: 600; }
+.pricing-table-category td {
+  background: transparent; color: var(--color-primary);
+  font-weight: 700; padding-top: 1.5rem;
+  border-bottom: 1px solid var(--color-primary);
+}
+.price-compare__badge {
+  background: var(--color-primary); color: var(--color-on-dark);
+  padding: .3rem 1rem; border-radius: var(--radius-pill);
+  font-size: var(--text-xs); font-weight: 700;
+  display: inline-block; margin-bottom: 1rem;
+}
+
+/* ── Micro-elementos que faltaban ── */
+.circle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: var(--color-primary); color: var(--color-on-dark);
+  border-radius: 50%; font-weight: 700; font-size: var(--text-xs);
+  flex-shrink: 0;
+}
+.dot { width: 8px; height: 8px; background: var(--color-primary); border-radius: 50%; }
+.text-quote { font-size: var(--text-sm); font-style: italic; }
+
+/* ── Hero: insignia de disponibilidad y tarjeta flotante ── */
+.hero-avail-badge {
+  display: inline-flex; align-items: center; gap: .6rem;
+  padding: .5rem 1.2rem; margin-bottom: var(--space-4);
+  font-size: var(--text-xs); font-weight: 600;
+  background: var(--color-success-soft); color: var(--color-success);
+  border-radius: var(--radius-pill);
+}
+.hero-avail-badge__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor;
+  animation: hero-pulse 2.4s ease-in-out infinite;
+}
+@keyframes hero-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  .hero-avail-badge__dot { animation: none; }
+}
+
+/* MOBILE FIRST: las tarjetas flotantes se apilan bajo la imagen; solo a
+   partir de 900px flotan encima, donde hay sitio de sobra. */
+.hero-col-img { position: relative; }
+.hero-float-card { display: flex; align-items: center; gap: 1rem; margin-top: var(--space-3); }
+@media (min-width: 900px) {
+  .hero-float-card { position: absolute; right: 0; top: 30%; margin-top: 0; z-index: 2; }
+}
+
+/* ── H1 real, pequeño, para SEO (hero-fakeh1) ── */
+.seo-h1 {
+  margin: 0 0 .5rem;
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-grey);
+  letter-spacing: 0;
+}

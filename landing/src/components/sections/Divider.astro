@@ -1,0 +1,14 @@
+---
+// Separador. Existe para dar aire entre dos secciones del mismo fondo, que si
+// no se leen como una sola.
+interface Props { margin?: 'sm' | 'md' | 'lg' }
+const { margin = 'md' } = Astro.props;
+---
+<div class:list={['divider', `divider--${margin}`]} role="separator"></div>
+
+<style>
+  .divider { border-top: 1px solid var(--border-color); }
+  .divider--sm { margin-block: var(--space-4); }
+  .divider--md { margin-block: var(--space-6); }
+  .divider--lg { margin-block: var(--space-8); }
+</style>

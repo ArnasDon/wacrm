@@ -1,0 +1,25 @@
+---
+// Hero centrado — para páginas de marca o informativas, donde no hay una
+// imagen de producto que sostenga media pantalla.
+import { whatsappHref, PRIMARY_CTA } from '../../data/site';
+interface Props { badge?: string; title?: string; subtitle?: string }
+const {
+  badge = 'Atención el mismo día',
+  title = 'Fisioterapia que resuelve, no que entretiene',
+  subtitle = 'Diagnóstico, plan por escrito y alta cuando toca. No vendemos bonos infinitos.',
+} = Astro.props;
+---
+
+<section class="section text-center">
+  <div class="container measure-md mx-auto">
+    <p class="hero-avail-badge">
+      <span class="hero-avail-badge__dot" aria-hidden="true"></span>{badge}
+    </p>
+    <h2 class="t-4xl lh-tight">{title}</h2>
+    <p class="lead measure-sm mx-auto">{subtitle}</p>
+    <div class="btn-row mt-2">
+      <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
+      <a href={whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>WhatsApp</a>
+    </div>
+  </div>
+</section>

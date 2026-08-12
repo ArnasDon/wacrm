@@ -1,0 +1,52 @@
+---
+// Tabla de precios por categorías.
+//
+// MOBILE FIRST: la tabla no se rompe en móvil — se desplaza en horizontal
+// dentro de su envoltorio, con la barra oculta. Romperla en tarjetas perdería
+// la comparación, que es justo para lo que sirve una tabla de precios.
+import { site } from '../../data/site';
+
+interface Row { name: string; price: string; category?: boolean }
+
+const rows: Row[] = [
+  { name: 'Valoración', price: '', category: true },
+  { name: 'Primera valoración (45–60 min)', price: '$600' },
+  { name: 'Revaloración', price: '$400' },
+  { name: 'Tratamiento', price: '', category: true },
+  { name: 'Sesión de fisioterapia', price: '$600' },
+  { name: 'Rehabilitación post-quirúrgica', price: '$750' },
+  { name: 'Terapia manual', price: '$650' },
+  { name: 'Paquetes', price: '', category: true },
+  { name: 'Bono 5 sesiones', price: '$2.700' },
+  { name: 'Bono 10 sesiones', price: '$5.000' },
+];
+---
+
+<section id="precios" class="section">
+  <div class="container measure-lg mx-auto">
+    <header class="section-header">
+      <span class="price-compare__badge">Precios sin sorpresas</span>
+      <h2 class="t-3xl">Tarifas {new Date().getFullYear()}</h2>
+      <p class="lead">Ocultar el precio no elimina la objeción, la pospone hasta la llamada.</p>
+    </header>
+
+    <div class="pricing-table-wrap">
+      <table class="pricing-table">
+        <caption>Tarifas en {site.currency}</caption>
+        <thead>
+          <tr><th scope="col">Servicio</th><th scope="col">Precio</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) =>
+            r.category ? (
+              <tr class="pricing-table-category"><td colspan="2">{r.name}</td></tr>
+            ) : (
+              <tr><td>{r.name}</td><td>{r.price}</td></tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
+    <p class="t-xs text-grey text-center">Los paquetes no caducan. Sin permanencia.</p>
+  </div>
+</section>

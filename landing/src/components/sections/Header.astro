@@ -1,0 +1,107 @@
+---
+// Cabecera con menú móvil y popup de formulario — cero JavaScript.
+//
+// Dos trucos, ninguno con JS:
+//   · El menú es `input:checked ~ .nav-center` (casilla oculta + label).
+//   · El popup de "Agenda tu cita" es el MISMO `.lightbox:target` que la
+//     galería. Una clase, dos componentes.
+import ContactForm from '../ContactForm.astro';
+import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+
+const links = [
+  { href: '#servicios', text: 'Servicios' },
+  { href: '#galeria', text: 'Resultados' },
+  { href: '#precios', text: 'Precios' },
+  { href: '#faq', text: 'Preguntas' },
+];
+---
+
+<header class="nav">
+  <div class="container nav__inner">
+    <a href={`${site.landingBase}/`} class="nav__brand">{site.name}</a>
+
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Abrir menú" />
+    <label for="nav-toggle" class="nav-toggle-label" aria-hidden="true"><span></span></label>
+
+    <nav class="nav-center" aria-label="Principal">
+      <ul>
+        {links.map((l) => <li><a href={l.href}>{l.text}</a></li>)}
+      </ul>
+    </nav>
+
+    <div class="nav-right">
+      <a href="#form-popup" class="button primary pill nav__cta">{PRIMARY_CTA}</a>
+    </div>
+  </div>
+</header>
+
+{/* El popup: mismo mecanismo que el lightbox de la galería. */}
+<div class="lightbox" id="form-popup">
+  <a href="#!" class="lightbox-close" aria-label="Cerrar">&times;</a>
+  <div class="lightbox__panel">
+    <h2 class="t-xl mb-1">{PRIMARY_CTA}</h2>
+    <p class="t-sm text-grey mb-1">Te contactamos por WhatsApp en menos de 24 h.</p>
+    <ContactForm formId="popup" variant="compact" cta={PRIMARY_CTA} />
+    <p class="t-xs text-center mt-1">
+      <a href={whatsappHref} target="_blank" rel="noopener" data-wa-cta>o escríbenos por WhatsApp</a>
+    </p>
+  </div>
+</div>
+
+<style>
+  /* MOBILE FIRST: el menú está oculto y se despliega con la casilla. A 900px
+     se convierte en barra horizontal y el botón hamburguesa desaparece. */
+  .nav {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .nav__inner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 60px;
+    flex-wrap: wrap;
+  }
+  .nav__brand { font-weight: 800; font-size: var(--text-lg); color: var(--font-color); }
+  .nav-toggle { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .nav-toggle-label {
+    order: 2;
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    cursor: pointer;
+  }
+  .nav-toggle-label span,
+  .nav-toggle-label span::before,
+  .nav-toggle-label span::after {
+    content: ''; display: block;
+    width: 22px; height: 2px;
+    background: var(--font-color);
+    position: relative;
+  }
+  .nav-toggle-label span::before { position: absolute; top: -7px; }
+  .nav-toggle-label span::after  { position: absolute; top: 7px; }
+
+  .nav-center { display: none; order: 4; width: 100%; }
+  .nav-toggle:checked ~ .nav-center { display: block; }
+  .nav-center ul { list-style: none; margin: 0; padding: 0 0 var(--space-3); }
+  .nav-center a {
+    display: block; padding: 1rem 0;
+    color: var(--font-color); font-weight: 500;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .nav-center li:last-child a { border-bottom: 0; }
+  .nav-right { order: 3; }
+  .nav__cta { padding: .8rem 1.6rem; font-size: var(--text-sm); }
+
+  .nav-toggle:focus-visible ~ .nav-toggle-label {
+    outline: 2px solid var(--color-primary); outline-offset: 2px;
+  }
+
+  @media (min-width: 900px) {
+    .nav-toggle-label { display: none; }
+    .nav-center { display: block; order: 2; width: auto; }
+    .nav-center ul { display: flex; gap: var(--space-5); padding: 0; }
+    .nav-center a { padding: 0; border-bottom: 0; }
+    .nav-right { order: 3; }
+  }
+</style>

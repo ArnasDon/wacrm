@@ -1,0 +1,31 @@
+---
+// Páginas relacionadas — enlazado interno hacia otras landings del cluster.
+import Rail from '../Rail.astro';
+
+interface Page { title: string; text: string; href: string }
+const pages: Page[] = [
+  { title: 'Rehabilitación de rodilla', text: 'Post-operatorio y ligamento cruzado.', href: '#' },
+  { title: 'Dolor lumbar', text: 'Lumbalgia aguda y crónica.', href: '#' },
+  { title: 'Hombro congelado', text: 'Recuperar el rango sin cirugía.', href: '#' },
+];
+---
+
+<section class="section bg-secondary">
+  <div class="container">
+    <header class="section-header"><h2 class="t-2xl">Otros tratamientos</h2></header>
+    <Rail label="Otros tratamientos" cols={3}>
+      {pages.map((p) => (
+        <a href={p.href} class="card h-100 related">
+          <h3 class="t-lg fw-700 is-marginless">{p.title}</h3>
+          <p class="t-sm text-grey mt-1 is-marginless">{p.text}</p>
+          <span class="t-sm text-primary card__foot">Ver más →</span>
+        </a>
+      ))}
+    </Rail>
+  </div>
+</section>
+
+<style>
+  .related { display: flex; flex-direction: column; color: inherit; }
+  .related:hover { opacity: 1; border-color: var(--color-primary); }
+</style>

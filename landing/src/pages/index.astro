@@ -1,29 +1,46 @@
 ---
-// index.astro — arquetipo transaccional (skill §16).
+// index.astro — SHOWCASE del catálogo completo.
 //
-// Secuencia: hero → franja de credibilidad → servicios y precio → video →
-// captación → proceso → autoridad → preguntas frecuentes → cierre.
+// Están las 24 secciones del sistema, en el orden del arquetipo transaccional.
+// Esta página existe para verlas todas juntas y decidir cuáles entran en cada
+// landing real: se copia el archivo, se borran las que no aplican y se
+// cambian los textos. Nadie maqueta nada.
 //
-// Del arquetipo completo se omiten los bloques para los que no hay contenido
-// real (reseñas, testimonios en video, galería, comparativa): inventar
-// calificaciones o testimonios sería un dato estructurado falso, y el skill
-// exige que cada bloque justifique su presencia (§15.2).
-import BaseLayout from "../layouts/BaseLayout.astro";
-import Hero from "../components/sections/Hero.astro";
-import SocialProof from "../components/sections/SocialProof.astro";
-import Specialties from "../components/sections/Specialties.astro";
-import YouTubeLite from "../components/YouTubeLite.astro";
-import LeadSection from "../components/sections/LeadSection.astro";
-import HowItWorks from "../components/sections/HowItWorks.astro";
-import About from "../components/sections/About.astro";
-import Reviews from "../components/sections/Reviews.astro";
-import LeadMagnet from "../components/sections/LeadMagnet.astro";
-import Faq from "../components/sections/Faq.astro";
-import { site } from "../data/site";
+// MOBILE FIRST en todo: el caso base es el móvil y el único breakpoint
+// estructural es 900px.
+import BaseLayout from '../layouts/BaseLayout.astro';
 
-const title = "Fisioterapia y rehabilitación en CDMX | Tu Clínica";
+import Header from '../components/sections/Header.astro';
+import Breadcrumb from '../components/sections/Breadcrumb.astro';
+import HeroFakeH1 from '../components/sections/HeroFakeH1.astro';
+import SocialProof from '../components/sections/SocialProof.astro';
+import Scroller from '../components/sections/Scroller.astro';
+import Features from '../components/sections/Features.astro';
+import Video from '../components/sections/Video.astro';
+import LeadSection from '../components/sections/LeadSection.astro';
+import Specialties from '../components/sections/Specialties.astro';
+import PricingTable from '../components/sections/PricingTable.astro';
+import Comparison from '../components/sections/Comparison.astro';
+import DataTable from '../components/sections/DataTable.astro';
+import VideoTestimonials from '../components/sections/VideoTestimonials.astro';
+import Reviews from '../components/sections/Reviews.astro';
+import Gallery from '../components/sections/Gallery.astro';
+import HowItWorks from '../components/sections/HowItWorks.astro';
+import Team from '../components/sections/Team.astro';
+import About from '../components/sections/About.astro';
+import TextSection from '../components/sections/TextSection.astro';
+import LeadMagnet from '../components/sections/LeadMagnet.astro';
+import Faq from '../components/sections/Faq.astro';
+import RelatedPages from '../components/sections/RelatedPages.astro';
+import Divider from '../components/sections/Divider.astro';
+import HeroCentered from '../components/sections/HeroCentered.astro';
+import Cta from '../components/sections/Cta.astro';
+
+import { site } from '../data/site';
+
+const title = 'Fisioterapia y rehabilitación en CDMX | Tu Clínica';
 const description =
-  "Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.";
+  'Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.';
 ---
 
 <BaseLayout
@@ -35,21 +52,24 @@ const description =
   steps={site.steps}
   breadcrumb={[{ name: site.name, item: `${site.baseUrl}${site.landingBase}/` }]}
 >
-  <Hero />
+  {/* Cromo: cabecera con menú móvil y popup de formulario */}
+  <Header />
+  <Breadcrumb />
+
+  {/* 1. Contexto y promesa — H1 real pequeño para SEO */}
+  <HeroFakeH1 />
+
+  {/* 2. Permiso para seguir leyendo */}
   <SocialProof />
-  <Specialties />
+  <Scroller title="Certificaciones y coberturas" />
 
-  <section id="video" class="section bg-secondary">
-    <div class="container">
-      <header class="section-header">
-        <h2 class="t-3xl">Lo que dicen nuestros pacientes</h2>
-      </header>
-      <div class="measure-md mx-auto">
-        <YouTubeLite />
-      </div>
-    </div>
-  </section>
+  {/* 3. Qué gana el paciente */}
+  <Features />
 
+  {/* 4. Prueba visual */}
+  <Video />
+
+  {/* 5. Captación arriba */}
   <LeadSection
     id="agenda"
     formId="top"
@@ -57,16 +77,41 @@ const description =
     sub="Déjanos tus datos y te contactamos por WhatsApp en menos de 24 h. Sin compromiso."
   />
 
-  <HowItWorks />
-  <Reviews />
-  <LeadMagnet />
-  <About />
-  <Faq />
+  {/* 6. Oferta y precio, visibles */}
+  <Specialties />
+  <PricingTable />
 
+  {/* 7. Manejo de objeciones */}
+  <Comparison />
+  <DataTable />
+
+  {/* 8. Prueba social densa */}
+  <VideoTestimonials />
+  <Reviews />
+  <Gallery />
+
+  {/* 9. Proceso y autoridad */}
+  <HowItWorks />
+  <Team />
+  <About />
+  <TextSection />
+
+  {/* 10. Imán de leads */}
+  <LeadMagnet />
+
+  {/* 11. Objeciones residuales */}
+  <Faq />
+  <RelatedPages />
+
+  <Divider margin="lg" />
+
+  {/* 12. Cierre */}
+  <HeroCentered />
   <LeadSection
     id="cierre"
     formId="bottom"
     heading="Empieza hoy"
-    sub="Cuanto antes empiece el tratamiento, menos sesiones hacen falta. Te respondemos el mismo día."
+    sub="Cuanto antes empiece el tratamiento, menos sesiones hacen falta."
   />
+  <Cta />
 </BaseLayout>

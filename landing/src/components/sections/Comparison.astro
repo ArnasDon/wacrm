@@ -1,0 +1,46 @@
+---
+// Comparativa — maneja la objeción dominante de frente.
+//
+// MOBILE FIRST: dos tarjetas apiladas; a 900px van lado a lado. No se usa
+// tabla: en móvil una tabla de dos columnas con texto largo es ilegible.
+interface Props { title?: string }
+const { title = '¿Fisioterapia o infiltraciones?' } = Astro.props;
+
+const cols = [
+  {
+    head: 'Fisioterapia',
+    good: true,
+    items: ['Corrige la causa, no solo el síntoma', 'Sin fármacos ni efectos secundarios', 'Resultados que se sostienen', 'Aprendes a prevenir la recaída'],
+  },
+  {
+    head: 'Solo infiltraciones',
+    good: false,
+    items: ['Alivio inmediato pero temporal', 'Número de aplicaciones limitado', 'No corrige el patrón de movimiento', 'El dolor suele volver'],
+  },
+];
+---
+
+<section class="section bg-secondary" itemscope itemtype="https://schema.org/CreativeWork">
+  <div class="container">
+    <header class="section-header"><h2 class="t-3xl" itemprop="name">{title}</h2></header>
+    <div class="row">
+      {cols.map((c) => (
+        <article class="col-6-md card h-100">
+          <h3 class="t-xl is-marginless">{c.head}</h3>
+          <ul class="step-list mt-1">
+            {c.items.map((it) => (
+              <li>
+                <span class:list={['circle', !c.good && 'circle--muted']} aria-hidden="true">{c.good ? '✓' : '·'}</span>
+                <span>{it}</span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .circle--muted { background: var(--color-grey); }
+</style>

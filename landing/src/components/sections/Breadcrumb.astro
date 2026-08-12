@@ -1,0 +1,24 @@
+---
+// Migas. El nodo BreadcrumbList del grafo lo emite BaseLayout; aquí solo va
+// el marcado visible, sin microdatos, para no duplicar la entidad.
+interface Crumb { name: string; href?: string }
+interface Props { items?: Crumb[] }
+const { items = [{ name: 'Inicio', href: '/landing/' }, { name: 'Fisioterapia' }] } = Astro.props;
+---
+
+<nav class="crumbs container" aria-label="Migas de pan">
+  <ol>
+    {items.map((c, i) => (
+      <li>
+        {c.href && i < items.length - 1 ? <a href={c.href}>{c.name}</a> : <span aria-current="page">{c.name}</span>}
+      </li>
+    ))}
+  </ol>
+</nav>
+
+<style>
+  .crumbs { padding-block: var(--space-3); }
+  .crumbs ol { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; margin: 0; padding: 0; font-size: var(--text-xs); color: var(--color-grey); }
+  .crumbs li + li::before { content: '›'; margin-right: .5rem; }
+  .crumbs a { color: var(--color-grey); }
+</style>

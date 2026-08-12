@@ -20,6 +20,7 @@ export interface ModelPricing {
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5.4-mini': { inputPerMillionUsd: 0.75, outputPerMillionUsd: 4.5 },
+  'gpt-5.4-nano': { inputPerMillionUsd: 0.2, outputPerMillionUsd: 1.25 },
   'claude-haiku-4-5-20251001': { inputPerMillionUsd: 1, outputPerMillionUsd: 5 },
 }
 

@@ -41,6 +41,18 @@ export async function processAppointmentReminders() {
         continue;
       }
 
+      let appointment_at_formatted = '';
+      if (deal.appointment_at) {
+        try {
+          const d = new Date(deal.appointment_at);
+          const dateStr = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+          const timeStr = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+          appointment_at_formatted = `${dateStr} às ${timeStr}`;
+        } catch {
+          appointment_at_formatted = deal.appointment_at;
+        }
+      }
+
       // 2. Fire the automation trigger
       await runAutomationsForTrigger({
         accountId: deal.account_id,
@@ -49,8 +61,25 @@ export async function processAppointmentReminders() {
         context: {
           conversation_id: deal.conversation_id || undefined,
           vars: {
+            deal_id: deal.id,
             deal_title: deal.title,
+            deal_value: deal.value,
+            deal_currency: deal.currency,
+            deal_status: deal.status,
             appointment_at: deal.appointment_at,
+            appointment_at_formatted,
+            agendamento: appointment_at_formatted,
+            data_agendamento: appointment_at_formatted,
+            deal: {
+              id: deal.id,
+              title: deal.title,
+              value: deal.value,
+              currency: deal.currency,
+              status: deal.status,
+              appointment_at: deal.appointment_at,
+              appointment_at_formatted,
+              agendamento: appointment_at_formatted,
+            }
           }
         }
       });

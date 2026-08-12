@@ -33,6 +33,9 @@ import {
   ArrowUp,
   MousePointerClick,
   List,
+  Sparkles,
+  User,
+  Calendar,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -42,7 +45,10 @@ import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type {
@@ -644,19 +650,29 @@ function SendTemplateFields({
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Variáveis do Modelo
           </h4>
-          {bodyVars.map((varNum) => (
-            <FieldBlock key={varNum} label={`Variável {{${varNum}}}`}>
-              <Input
-                value={variables?.[varNum] ?? ""}
-                onChange={(e) => {
-                  const nextVars = { ...variables, [varNum]: e.target.value }
+          {bodyVars.map((varNum) => {
+            const currentVal = variables?.[varNum] ?? ""
+            return (
+              <FieldBlock
+                key={varNum}
+                label={`Variável {{${varNum}}}`}
+                onInsertVariable={(token) => {
+                  const nextVars = { ...variables, [varNum]: appendOrInsertToken(currentVal, token) }
                   onChange({ template_name: templateName, language, variables: nextVars })
                 }}
-                placeholder="Ex: {{contact.name}} ou texto fixo"
-                className="bg-muted text-foreground"
-              />
-            </FieldBlock>
-          ))}
+              >
+                <Input
+                  value={currentVal}
+                  onChange={(e) => {
+                    const nextVars = { ...variables, [varNum]: e.target.value }
+                    onChange({ template_name: templateName, language, variables: nextVars })
+                  }}
+                  placeholder="Ex: {{contact.name}} ou {{agendamento}}"
+                  className="bg-muted text-foreground"
+                />
+              </FieldBlock>
+            )
+          })}
         </div>
       )}
     </div>
@@ -1339,17 +1355,22 @@ function StepEditor({
     onChange({ ...step, step_config: { ...cfg, ...patch } })
 
   switch (step.step_type) {
-    case "send_message":
+    case "send_message": {
+      const currentMsgText = (cfg.text as string) ?? ""
       return (
-        <FieldBlock label={t("config.messageText")}>
+        <FieldBlock
+          label={t("config.messageText")}
+          onInsertVariable={(token) => set({ text: appendOrInsertToken(currentMsgText, token) })}
+        >
           <Textarea
-            value={(cfg.text as string) ?? ""}
+            value={currentMsgText}
             onChange={(e) => set({ text: e.target.value })}
             placeholder={t("config.placeholderMessageText")}
             className="min-h-24 bg-muted text-foreground"
           />
         </FieldBlock>
       )
+    }
     case "send_buttons":
     case "send_list":
       // The whole step_config IS the interactive payload; the shared
@@ -1417,7 +1438,10 @@ function StepEditor({
               t={t}
             />
           </FieldBlock>
-          <FieldBlock label={t("config.valueLabel")}>
+          <FieldBlock
+            label={t("config.valueLabel")}
+            onInsertVariable={(token) => set({ value: appendOrInsertToken((cfg.value as string) ?? "", token) })}
+          >
             <Input
               value={(cfg.value as string) ?? ""}
               onChange={(e) => set({ value: e.target.value })}
@@ -1436,7 +1460,10 @@ function StepEditor({
             onChange={(patch) => set(patch)}
             t={t}
           />
-          <FieldBlock label={t("config.titleLabel")}>
+          <FieldBlock
+            label={t("config.titleLabel")}
+            onInsertVariable={(token) => set({ title: appendOrInsertToken((cfg.title as string) ?? "", token) })}
+          >
             <Input
               value={(cfg.title as string) ?? ""}
               onChange={(e) => set({ title: e.target.value })}
@@ -1530,7 +1557,10 @@ function StepEditor({
               className="bg-muted text-foreground"
             />
           </FieldBlock>
-          <FieldBlock label={t("config.bodyTemplateLabel")}>
+          <FieldBlock
+            label={t("config.bodyTemplateLabel")}
+            onInsertVariable={(token) => set({ body_template: appendOrInsertToken((cfg.body_template as string) ?? "", token) })}
+          >
             <Textarea
               value={(cfg.body_template as string) ?? ""}
               onChange={(e) => set({ body_template: e.target.value })}
@@ -1550,17 +1580,155 @@ function StepEditor({
   }
 }
 
+function appendOrInsertToken(current: string, token: string): string {
+  if (!current) return token
+  return current.endsWith(" ") ? current + token : current + " " + token
+}
+
+function VariablePicker({
+  onInsert,
+  compact = false,
+}: {
+  onInsert: (token: string) => void
+  compact?: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        type="button"
+        className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 hover:border-primary/50 transition-all cursor-pointer"
+        title="Inserir variável dinâmica"
+      >
+        <Sparkles className="h-3 w-3 text-primary" />
+        <span>{compact ? "Variável" : "+ Inserir Variável"}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72 bg-popover text-popover-foreground border border-border shadow-xl z-50">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 px-2 py-1">
+            <Calendar className="h-3 w-3 text-emerald-400" /> Negócio & Agendamento
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{agendamento}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <div className="flex flex-col">
+              <span className="font-medium text-foreground">Data/Hora Agendamento</span>
+              <span className="text-[10px] text-muted-foreground">Ex: 15/08/2026 às 14:00</span>
+            </div>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{agendamento}}"}</code>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{deal.title}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Título do Negócio</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{deal.title}}"}</code>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{deal.value}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Valor do Negócio</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{deal.value}}"}</code>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5 px-2 py-1">
+            <User className="h-3 w-3 text-blue-400" /> Dados do Contato
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{contact.name}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Nome do Contato</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{contact.name}}"}</code>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{contact.phone}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Telefone / WhatsApp</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{contact.phone}}"}</code>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{contact.email}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">E-mail</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{contact.email}}"}</code>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{contact.company}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Empresa</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{contact.company}}"}</code>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5 px-2 py-1">
+            <MessageSquare className="h-3 w-3 text-purple-400" /> Mensagem
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => onInsert("{{message.text}}")}
+            className="cursor-pointer text-xs flex items-center justify-between py-1.5"
+          >
+            <span className="font-medium text-foreground">Texto da Mensagem</span>
+            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-primary font-mono font-semibold">{"{{message.text}}"}</code>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function VariableQuickChips({ onInsert }: { onInsert: (token: string) => void }) {
+  const chips = [
+    { label: "Data Agendamento", token: "{{agendamento}}" },
+    { label: "Título Negócio", token: "{{deal.title}}" },
+    { label: "Nome Contato", token: "{{contact.name}}" },
+    { label: "Telefone", token: "{{contact.phone}}" },
+  ]
+  return (
+    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+      <span className="text-[10px] font-medium text-muted-foreground mr-0.5">Inserir rápida:</span>
+      {chips.map((chip) => (
+        <button
+          key={chip.token}
+          type="button"
+          onClick={() => onInsert(chip.token)}
+          className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted transition-all cursor-pointer"
+        >
+          + {chip.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function FieldBlock({
   label,
+  onInsertVariable,
   children,
 }: {
   label: string
+  onInsertVariable?: (token: string) => void
   children: React.ReactNode
 }) {
   return (
     <div className="mb-2 last:mb-0">
-      <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-muted-foreground">{label}</label>
+        {onInsertVariable && <VariablePicker onInsert={onInsertVariable} compact />}
+      </div>
       {children}
+      {onInsertVariable && <VariableQuickChips onInsert={onInsertVariable} />}
     </div>
   )
 }

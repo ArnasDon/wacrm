@@ -226,7 +226,7 @@ export function AgentTools() {
                     <Icon className="h-5 w-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">{item.title}</CardTitle>
+                    <CardTitle as="h3" className="text-base">{item.title}</CardTitle>
                     <CardDescription className="mt-1 max-w-2xl">
                       {item.description}
                     </CardDescription>

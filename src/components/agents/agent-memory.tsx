@@ -110,6 +110,7 @@ export function AgentMemory() {
                     size="icon"
                     disabled={deletingId !== null}
                     onClick={() => void remove(memory.id)}
+                    aria-label={`Apagar memória de ${memory.contact?.name || memory.contact?.phone || 'contacto desconhecido'}`}
                     className="shrink-0 text-destructive hover:text-destructive"
                   >
                     {deletingId === memory.id ? (

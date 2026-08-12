@@ -43,7 +43,7 @@ export function AgentSecurity({ state }: { state: AgentConfigState }) {
     <div className="max-w-3xl space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('maxAutoReplies')}</CardTitle>
+          <CardTitle as="h3" className="text-base">{t('maxAutoReplies')}</CardTitle>
           <CardDescription>{t('maxAutoRepliesDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
@@ -67,7 +67,7 @@ export function AgentSecurity({ state }: { state: AgentConfigState }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('handoffTo')}</CardTitle>
+          <CardTitle as="h3" className="text-base">{t('handoffTo')}</CardTitle>
           <CardDescription>{t('handoffToDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -93,7 +93,7 @@ export function AgentSecurity({ state }: { state: AgentConfigState }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle as="h3" className="flex items-center gap-2 text-base">
             <ShieldCheck className="h-4 w-4 text-primary" /> Regras de segurança activas
           </CardTitle>
           <CardDescription>

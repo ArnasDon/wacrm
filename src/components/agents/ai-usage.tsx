@@ -116,7 +116,7 @@ export function AiUsageCard() {
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle as="h3" className="flex items-center gap-2 text-base">
               <BarChart3 className="h-4 w-4 text-primary" /> Token usage
             </CardTitle>
             <CardDescription>

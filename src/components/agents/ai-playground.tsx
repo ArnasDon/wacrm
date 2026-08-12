@@ -183,6 +183,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   <button
                     type="button"
                     onClick={() => setExpandedExecution((current) => (current === i ? null : i))}
+                    aria-expanded={expandedExecution === i}
+                    aria-controls={`execution-${i}`}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
                     {expandedExecution === i ? (
@@ -193,7 +195,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                     Execução
                   </button>
                   {expandedExecution === i && (
-                    <dl className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+                    <dl id={`execution-${i}`} className="mt-1.5 space-y-1 text-xs text-muted-foreground">
                       <div className="flex gap-1">
                         <dt className="shrink-0 font-medium text-foreground">Skills activas:</dt>
                         <dd>

@@ -45,7 +45,7 @@ export function AgentRuntime({ state }: { state: AgentConfigState }) {
     <div className="max-w-3xl space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle as="h3" className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-primary" /> {t('providerAndKey')}
           </CardTitle>
           <CardDescription>{t('encryptionNotice')}</CardDescription>
@@ -105,8 +105,8 @@ export function AgentRuntime({ state }: { state: AgentConfigState }) {
                 <button
                   type="button"
                   onClick={() => setShowKey((s) => !s)}
+                  aria-label={showKey ? 'Ocultar chave' : 'Mostrar chave'}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  tabIndex={-1}
                 >
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -156,7 +156,7 @@ export function AgentRuntime({ state }: { state: AgentConfigState }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle as="h3" className="flex items-center gap-2 text-base">
             <Cpu className="h-4 w-4 text-primary" /> Execução
           </CardTitle>
           <CardDescription>

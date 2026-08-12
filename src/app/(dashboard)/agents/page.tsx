@@ -1,23 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  BarChart3,
-  Bot,
-  BookOpen,
-  BrainCog,
-  Cpu,
-  FlaskConical,
-  GraduationCap,
-  LayoutDashboard,
-  Layers,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-  Workflow,
-  Wrench,
-} from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Bot } from 'lucide-react';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AgentTools } from '@/components/agents/agent-tools';
@@ -32,28 +16,14 @@ import { AgentSecurity } from '@/components/agents/agent-security';
 import { AgentMemory } from '@/components/agents/agent-memory';
 import { AiKnowledgeCard } from '@/components/settings/ai-knowledge';
 import { useAgentConfig } from '@/components/agents/use-agent-config';
+import { AgentBuilderShell, type Section } from '@/components/agents/agent-builder-shell';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
-
-type Tab =
-  | 'overview'
-  | 'identity'
-  | 'skills'
-  | 'tools'
-  | 'knowledge'
-  | 'memory'
-  | 'security'
-  | 'runtime'
-  | 'playground'
-  | 'flow'
-  | 'suggestions'
-  | 'eval'
-  | 'usage';
 
 export default function AgentsPage() {
   const { accountId, accountRole } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;
-  const [tab, setTab] = useState<Tab>('overview');
+  const [section, setSection] = useState<Section>('overview');
   const [decided, setDecided] = useState(false);
   const agentConfig = useAgentConfig();
 
@@ -63,9 +33,9 @@ export default function AgentsPage() {
       try {
         const res = await fetch('/api/ai/config');
         const data = await res.json().catch(() => ({}));
-        if (!cancelled) setTab(data?.configured ? 'overview' : 'identity');
+        if (!cancelled) setSection(data?.configured ? 'overview' : 'identity');
       } catch {
-        if (!cancelled) setTab('identity');
+        if (!cancelled) setSection('identity');
       } finally {
         if (!cancelled) setDecided(true);
       }
@@ -88,77 +58,31 @@ export default function AgentsPage() {
       </p>
 
       {decided && (
-        <Tabs
-          value={tab}
-          onValueChange={(value) => setTab(value as Tab)}
-          className="mt-6"
+        <AgentBuilderShell
+          active={section}
+          onNavigate={setSection}
+          agentName={agentConfig.agentName}
+          agentRole={agentConfig.agentRole}
+          isActive={agentConfig.isActive}
+          canViewUsage={canViewUsage}
         >
-          <TabsList className="h-auto flex-wrap justify-start">
-            <TabsTrigger value="overview">
-              <LayoutDashboard className="mr-1.5 h-4 w-4" /> Visão Geral
-            </TabsTrigger>
-            <TabsTrigger value="identity">
-              <UserRound className="mr-1.5 h-4 w-4" /> Identidade & Comportamento
-            </TabsTrigger>
-            <TabsTrigger value="skills">
-              <Layers className="mr-1.5 h-4 w-4" /> Skills
-            </TabsTrigger>
-            <TabsTrigger value="tools">
-              <Wrench className="mr-1.5 h-4 w-4" /> Ferramentas
-            </TabsTrigger>
-            <TabsTrigger value="knowledge">
-              <BookOpen className="mr-1.5 h-4 w-4" /> Conhecimento
-            </TabsTrigger>
-            <TabsTrigger value="memory">
-              <BrainCog className="mr-1.5 h-4 w-4" /> Memória
-            </TabsTrigger>
-            <TabsTrigger value="security">
-              <ShieldCheck className="mr-1.5 h-4 w-4" /> Segurança & Handoff
-            </TabsTrigger>
-            <TabsTrigger value="runtime">
-              <Cpu className="mr-1.5 h-4 w-4" /> Modelo & Runtime
-            </TabsTrigger>
-            <TabsTrigger value="playground">
-              <Sparkles className="mr-1.5 h-4 w-4" /> Playground
-            </TabsTrigger>
-            <TabsTrigger value="flow">
-              <Workflow className="mr-1.5 h-4 w-4" /> Fluxo ao vivo
-            </TabsTrigger>
-            <TabsTrigger value="suggestions">
-              <GraduationCap className="mr-1.5 h-4 w-4" /> Lições
-            </TabsTrigger>
-            {canViewUsage && (
-              <TabsTrigger value="eval">
-                <FlaskConical className="mr-1.5 h-4 w-4" /> Avaliação
-              </TabsTrigger>
-            )}
-            {canViewUsage && (
-              <TabsTrigger value="usage">
-                <BarChart3 className="mr-1.5 h-4 w-4" /> Utilização
-              </TabsTrigger>
-            )}
-          </TabsList>
+          <div hidden={section !== 'overview'}>
+            <AgentOverview state={agentConfig} onNavigate={setSection} />
+          </div>
 
-          <TabsContent value="overview" className="mt-4">
-            <AgentOverview
-              state={agentConfig}
-              onNavigate={(next) => setTab(next)}
-            />
-          </TabsContent>
-
-          <TabsContent value="identity" className="mt-4">
+          <div hidden={section !== 'identity'}>
             <AgentIdentity state={agentConfig} />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="skills" className="mt-4">
+          <div hidden={section !== 'skills'}>
             <AgentSkills />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="tools" className="mt-4">
+          <div hidden={section !== 'tools'}>
             <AgentTools />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="knowledge" className="mt-4">
+          <div hidden={section !== 'knowledge'}>
             <AiKnowledgeCard
               accountId={accountId}
               canEdit={agentConfig.canEdit}
@@ -168,44 +92,44 @@ export default function AgentsPage() {
                   : agentConfig.hasStoredEmbeddingsKey
               }
             />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="memory" className="mt-4">
+          <div hidden={section !== 'memory'}>
             <AgentMemory />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="security" className="mt-4">
+          <div hidden={section !== 'security'}>
             <AgentSecurity state={agentConfig} />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="runtime" className="mt-4">
+          <div hidden={section !== 'runtime'}>
             <AgentRuntime state={agentConfig} />
-          </TabsContent>
+          </div>
 
-          <TabsContent value="playground" className="mt-4">
-            <AiPlayground onGoToSetup={() => setTab('runtime')} />
-          </TabsContent>
+          <div hidden={section !== 'playground'}>
+            <AiPlayground onGoToSetup={() => setSection('runtime')} />
+          </div>
 
-          <TabsContent value="flow" className="mt-4">
-            <AgentFlowPanel onOpenTab={(nextTab) => setTab(nextTab)} />
-          </TabsContent>
+          <div hidden={section !== 'flow'}>
+            <AgentFlowPanel onOpenTab={(next) => setSection(next)} />
+          </div>
 
-          <TabsContent value="suggestions" className="mt-4">
+          <div hidden={section !== 'suggestions'}>
             <AgentSuggestions />
-          </TabsContent>
+          </div>
 
           {canViewUsage && (
-            <TabsContent value="eval" className="mt-4">
+            <div hidden={section !== 'eval'}>
               <AgentEval />
-            </TabsContent>
+            </div>
           )}
 
           {canViewUsage && (
-            <TabsContent value="usage" className="mt-4">
+            <div hidden={section !== 'usage'}>
               <AiUsageCard />
-            </TabsContent>
+            </div>
           )}
-        </Tabs>
+        </AgentBuilderShell>
       )}
     </div>
   );

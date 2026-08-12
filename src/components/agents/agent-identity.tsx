@@ -31,7 +31,7 @@ export function AgentIdentity({ state }: { state: AgentConfigState }) {
     <div className="max-w-3xl space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle as="h3" className="flex items-center gap-2 text-base">
             <UserRound className="h-4 w-4 text-primary" /> Identidade
           </CardTitle>
           <CardDescription>
@@ -93,7 +93,7 @@ export function AgentIdentity({ state }: { state: AgentConfigState }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t('behaviour')}</CardTitle>
+          <CardTitle as="h3" className="text-base">{t('behaviour')}</CardTitle>
           <CardDescription>{t('behaviourDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -113,7 +113,7 @@ export function AgentIdentity({ state }: { state: AgentConfigState }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Estratégia comercial</CardTitle>
+          <CardTitle as="h3" className="text-base">Estratégia comercial</CardTitle>
           <CardDescription>
             Define como o assistente apresenta, recomenda e acompanha produtos durante uma
             conversa. Mantém-se a dials paramétricos — orientação de negócio mais elaborada

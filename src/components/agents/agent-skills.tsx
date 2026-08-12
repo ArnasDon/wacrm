@@ -273,6 +273,7 @@ export function AgentSkills() {
                     size="icon"
                     disabled={disabled}
                     onClick={() => void deleteSkill(skill.id)}
+                    aria-label={`Apagar ${skill.name}`}
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />

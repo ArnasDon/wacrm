@@ -34,7 +34,7 @@ async function loadCounts(): Promise<OverviewCounts> {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between border-b border-border py-2.5 last:border-0">
+    <div className="flex items-center justify-between py-1">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-sm font-medium text-foreground">{value}</span>
     </div>
@@ -71,7 +71,7 @@ export function AgentOverview({
 
   if (!state.configured) {
     return (
-      <Card className="max-w-2xl">
+      <Card className="max-w-3xl">
         <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
           <Bot className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
@@ -86,40 +86,45 @@ export function AgentOverview({
   const modelLabel = `${state.provider === 'openai' ? 'OpenAI' : 'Anthropic'} · ${state.model}`;
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="max-w-3xl space-y-4">
       <Card>
         <CardContent className="space-y-1 pt-6">
           <div className="mb-2 flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-lg font-semibold text-foreground">
+              <h3 className="text-lg font-semibold text-foreground">
                 {state.agentName || 'Agente sem nome'}
-              </p>
+              </h3>
               {state.agentRole && (
                 <p className="text-sm text-muted-foreground">{state.agentRole}</p>
               )}
             </div>
           </div>
 
-          <Row label="Estado" value={state.isActive ? 'Activo' : 'Inactivo'} />
-          <Row label="Modelo" value={modelLabel} />
-          <Row
-            label="Temperatura"
-            value={state.temperatureEnabled ? state.temperature.toFixed(2) : 'Por omissão'}
-          />
-          <Row
-            label="Skills activas"
-            value={counts ? `${counts.skillsActive} / ${counts.skillsTotal}` : '…'}
-          />
-          <Row
-            label="Tools disponíveis"
-            value={counts ? `${counts.toolsEnabled} / ${counts.toolsTotal}` : '…'}
-          />
-          <Row
-            label="Fontes de conhecimento"
-            value={counts ? String(counts.knowledgeDocs) : '…'}
-          />
-          <Row label="Auto-resposta" value={state.autoReplyEnabled ? 'Activa' : 'Inactiva'} />
+          <div className="space-y-1">
+            <Row label="Estado" value={state.isActive ? 'Activo' : 'Inactivo'} />
+            <Row label="Modelo" value={modelLabel} />
+            <Row
+              label="Temperatura"
+              value={state.temperatureEnabled ? state.temperature.toFixed(2) : 'Por omissão'}
+            />
+          </div>
+
+          <div className="mt-4 space-y-1">
+            <Row
+              label="Skills activas"
+              value={counts ? `${counts.skillsActive} / ${counts.skillsTotal}` : '…'}
+            />
+            <Row
+              label="Tools disponíveis"
+              value={counts ? `${counts.toolsEnabled} / ${counts.toolsTotal}` : '…'}
+            />
+            <Row
+              label="Fontes de conhecimento"
+              value={counts ? String(counts.knowledgeDocs) : '…'}
+            />
+            <Row label="Auto-resposta" value={state.autoReplyEnabled ? 'Activa' : 'Inactiva'} />
+          </div>
 
           <div className="flex gap-2 pt-4">
             <Button onClick={() => onNavigate('playground')}>Testar agente</Button>

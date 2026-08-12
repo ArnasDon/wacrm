@@ -147,7 +147,7 @@ export function AgentSuggestions() {
                     {STATUS_BADGE[item.status].label}
                   </Badge>
                 </div>
-                <CardTitle className="text-base font-medium leading-snug">
+                <CardTitle as="h3" className="text-base font-medium leading-snug">
                   {item.content}
                 </CardTitle>
                 {item.evidence?.handoff_summary && (

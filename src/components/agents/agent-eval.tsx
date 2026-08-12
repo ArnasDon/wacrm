@@ -184,7 +184,7 @@ export function AgentEval() {
                   <div className="flex items-center gap-2">
                     {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <div>
-                      <CardTitle className="text-sm">{c.id}</CardTitle>
+                      <CardTitle as="h3" className="text-sm">{c.id}</CardTitle>
                       <CardDescription>{c.description}</CardDescription>
                     </div>
                   </div>
@@ -254,7 +254,7 @@ export function AgentEval() {
                   <div className="flex items-center gap-2">
                     {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     <div>
-                      <CardTitle className="text-sm">{p.id}</CardTitle>
+                      <CardTitle as="h3" className="text-sm">{p.id}</CardTitle>
                       <CardDescription>{p.description}</CardDescription>
                     </div>
                   </div>

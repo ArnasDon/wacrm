@@ -33,9 +33,17 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+/** `as` defaults to "div" (unchanged behaviour everywhere it's already
+ *  used). Pass `as="h2"`/`as="h3"` where the title is genuinely a
+ *  section heading, so it appears in the page's heading outline for
+ *  assistive technology — see Agentes' better-interface audit. */
+function CardTitle({
+  className,
+  as: Component = "div",
+  ...props
+}: React.ComponentProps<"div"> & { as?: React.ElementType }) {
   return (
-    <div
+    <Component
       data-slot="card-title"
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",

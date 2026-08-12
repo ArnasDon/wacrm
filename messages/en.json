@@ -256,6 +256,7 @@
       "yesterday": "Yesterday",
       "unknown": "Unknown",
       "markUnread": "Mark as unread",
+      "markRead": "Mark as read",
       "pin": "Pin",
       "unpin": "Unpin",
       "delete": "Delete"

@@ -256,6 +256,7 @@
       "yesterday": "Ontem",
       "unknown": "Desconhecido",
       "markUnread": "Marcar como não lida",
+      "markRead": "Marcar como lido",
       "pin": "Fixar",
       "unpin": "Desafixar",
       "delete": "Excluir"

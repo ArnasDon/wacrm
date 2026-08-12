@@ -732,6 +732,18 @@ function InboxPageInner() {
     [activeConversation, handleCloseConversation]
   );
 
+  // Three-dot menu's "Marcar como lido" — local-state mirror of the DB
+  // write ConversationList itself performs (via markConversationRead),
+  // same split as handleTogglePinned below. No active-conversation
+  // special case needed (unlike handleMarkUnread above): setting
+  // unread_count to 0 while a conversation is already active is a no-op
+  // either way.
+  const handleMarkRead = useCallback((conversationId: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
+    );
+  }, []);
+
   // Local-state mirror for the conversation list's pin toggle — the DB
   // write happens in ConversationList itself (via toggleConversationPinned),
   // same split as handleMarkUnread/handleStatusChange above.
@@ -863,6 +875,7 @@ function InboxPageInner() {
             assignedAgentMap={assignedAgentMap}
             onRequestDelete={handleRequestDeleteConversation}
             onMarkUnread={handleMarkUnread}
+            onMarkRead={handleMarkRead}
             onTogglePinned={handleTogglePinned}
           />
         </div>

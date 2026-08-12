@@ -1,5 +1,7 @@
 # Status do Projeto — wacrm (CRM WhatsApp)
 
+> ⚠️ **Ação manual pendente em produção:** a migration `061_unanswered_requires_unread.sql` precisa ser colada no SQL Editor do Supabase (projeto `qedptmrcvcbzhucoeznd`) — o `git push`/deploy do Hostinger só publica o código, nunca aplica migrations sozinho neste projeto (sem CLI/CI, ver bullet "Banco" em "Estado atual"). Sem isso, "Leads Não Respondidos" continua com o comportamento antigo mesmo com o código novo já em produção. Ver "Sessão de 2026-08-12 — abrir a conversa remove de Não Respondidos" em "Última alteração realizada".
+
 > Última atualização: **2026-08-12**, suporte a vídeos `.MOV` do iPhone no composer da Caixa de Entrada. Causa raiz: três barreiras em sequência (whitelist de MIME do composer → `allowed_mime_types` do bucket `chat-media`, que não pode ser alterado → só H.264/AAC em MP4/3GPP é aceito pela Meta), e a maioria dos iPhones grava `.mov` em HEVC (padrão desde o iOS 11) — um remux sem reencode não bastaria. Implementado transcode real client-side com `ffmpeg.wasm`, carregado sob demanda só quando um `.mov`/`video/quicktime` é detectado (não afeta o envio de imagem/PDF/áudio/MP4 nativo). Ver "Sessão de 2026-08-12 — suporte a .MOV" em "Última alteração realizada".
 
 > Última atualização anterior: **2026-08-12**, sessão de depuração do swipe/Caixa de Entrada via Mac + Safari Web Inspector conectado ao iPhone real (finalmente com dispositivo físico disponível, não só `TouchEvent`s sintéticos). Três causas raiz reais confirmadas e corrigidas: (1) o swipe usava listeners React sempre passivos, competindo com o scroll nativo — trocado por listeners nativos não-passivos, mesma técnica já usada no menu lateral; (2) a prévia da última mensagem não truncava no Safari real — primeira tentativa mexeu no lugar errado, causa raiz real era `min-w-0` faltando no wrapper da lista em `inbox/page.tsx` (mobile, abaixo do breakpoint `lg:`); (3) o badge de não lida ficava travado em 0 pra sempre em conversas novas (leads via CTWA confirmados), por uma condição de corrida entre eventos de realtime e um `ref` atualizado de forma assíncrona. Depois disso, três rodadas extras a pedido do usuário: horário estilo WhatsApp na lista, swipe trocado de curva CSS fixa pra física de mola real (spring/damping), fechar com flick rápido pra esquerda, e zona de abertura ampliada até a metade da linha. Ver "Sessão de 2026-08-11/12" logo abaixo.
@@ -63,6 +65,23 @@
 - Módulo de Follow-up/Tarefas conforme descrito no roadmap antigo foi essencialmente substituído pelo módulo de Agenda desta sessão (mesma necessidade, nome/escopo diferente).
 
 ## Última alteração realizada
+
+**Sessão de 2026-08-12 — abrir a conversa remove o lead de "Leads Não Respondidos" (não exige mais responder).**
+
+**Causa raiz:** o badge de não lida (`conversations.unread_count`) e o KPI "Leads Não Respondidos" (RPC `list_unanswered_conversation_ids`/`count_unanswered_conversations`, migration 047) sempre foram dois mecanismos completamente independentes. O badge zera ao abrir a conversa (efeito já existente em `message-thread.tsx`). Já "não respondido" só olhava se a **última mensagem** era do cliente — nada a ver com `unread_count` — então só uma resposta enviada tirava o lead da lista, exatamente o sintoma relatado.
+
+**Correção:** reaproveitado `unread_count` (já existe, não é um conceito novo — é literalmente "essa conversa tem coisa não vista") como o sinal de "já visualizado" dentro da própria regra de "não respondido", em vez de criar uma coluna/status novo.
+- `supabase/migrations/061_unanswered_requires_unread.sql` (novo) — `list_unanswered_conversation_ids()` ganha `AND c.unread_count > 0` no WHERE. `count_unanswered_conversations()` delega pra essa função (047), então o KPI do Dashboard e o filtro "Não respondidas" do Inbox corrigem sozinhos, sem tocar em `dashboard/queries.ts` nem no card. **Precisa ser aplicada manualmente no SQL Editor do Supabase — ver aviso no topo deste arquivo.**
+- `src/lib/inbox/conversations.ts` — nova `markConversationRead()`, espelhando a `markConversationUnread()` que já existia: mesmo `.update({ unread_count: 0 })` que o efeito de abrir a conversa (`message-thread.tsx`) já faz — não é lógica nova, só fica exposta pra ser chamada sem precisar abrir a thread.
+- `conversation-list.tsx` — item **"Marcar como lido"** novo no menu de três pontos (antes só tinha "Excluir lead"), chamando `markConversationRead`. `unansweredSignature` (o gatilho que refaz o fetch do RPC quando filtrado por "Não respondidas") ganhou `unread_count` na assinatura — sem isso, abrir uma conversa não tiraria ela da lista filtrada em tempo real, só numa visita futura.
+- `inbox/page.tsx` — `handleMarkRead`, espelhando `handleMarkUnread` (sem o caso especial de fechar a conversa ativa — zerar `unread_count` numa conversa já ativa é inofensivo).
+- `messages/{en,ko,pt-BR}.json` — chave `markRead` nova.
+
+**Arquivos NÃO alterados:** WhatsApp Cloud API, fluxo de envio, Pipeline, Segmentos, Templates, Flow Builder, `message-thread.tsx` (o efeito que zera `unread_count` ao abrir continua exatamente igual — só ganhou uma segunda porta de entrada).
+
+**Validação:** `tsc`, `eslint` (zero erros novos), `vitest run` 758/758, `next build` limpo. **Não testado contra o Postgres real** (a migration ainda não foi aplicada em produção neste momento — ver aviso no topo do arquivo).
+
+---
 
 **Sessão de 2026-08-12 — suporte a .MOV (vídeos gravados em iPhone) na Caixa de Entrada.**
 

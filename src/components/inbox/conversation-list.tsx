@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Trash2,
   MailOpen,
+  CheckCheck,
   Pin,
   PinOff,
 } from "lucide-react";
@@ -45,6 +46,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
   markConversationUnread,
+  markConversationRead,
   toggleConversationPinned,
 } from "@/lib/inbox/conversations";
 
@@ -81,6 +83,9 @@ interface ConversationListProps {
    *  thread header's "Marcar como não lida" already uses, reused here so
    *  both entry points stay in sync (see message-thread.tsx). */
   onMarkUnread: (conversationId: string) => void;
+  /** Local-state sync after the three-dot menu's "Marcar como lido" —
+   *  same shape as onMarkUnread, just the opposite value. */
+  onMarkRead: (conversationId: string) => void;
   /** Local-state sync after a pin toggle. */
   onTogglePinned: (conversationId: string, pinned: boolean) => void;
 }
@@ -130,6 +135,7 @@ export function ConversationList({
   assignedAgentMap,
   onRequestDelete,
   onMarkUnread,
+  onMarkRead,
   onTogglePinned,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
@@ -235,13 +241,17 @@ export function ConversationList({
     };
   }, []);
 
-  // Changes whenever any conversation's last message or status changes —
-  // both are exactly what can flip a conversation in or out of the
-  // "unanswered" rule, so this is the signal to refetch that set.
+  // Changes whenever any conversation's last message, status, or
+  // unread_count changes — all three are exactly what can flip a
+  // conversation in or out of the "unanswered" rule (migration 061 added
+  // unread_count > 0 to it), so this is the signal to refetch that set.
+  // Opening a conversation resets unread_count to 0 in local state
+  // immediately (see inbox/page.tsx), which is what makes that alone
+  // enough to drop a lead out of "Não Respondidos" without a reply.
   const unansweredSignature = useMemo(
     () =>
       conversations
-        .map((c) => `${c.id}:${c.last_message_at ?? ""}:${c.status}`)
+        .map((c) => `${c.id}:${c.last_message_at ?? ""}:${c.status}:${c.unread_count}`)
         .join("|"),
     [conversations],
   );
@@ -374,6 +384,17 @@ export function ConversationList({
       onMarkUnread(conv.id);
     },
     [onMarkUnread]
+  );
+
+  // Three-dot menu's "Marcar como lido" — same DB write MessageThread's
+  // own reset effect performs when the conversation is opened.
+  const handleMarkRead = useCallback(
+    async (conv: Conversation) => {
+      const supabase = createClient();
+      await markConversationRead(supabase, conv.id);
+      onMarkRead(conv.id);
+    },
+    [onMarkRead]
   );
 
   // Shared by the swipe-right action and the right-click context menu.
@@ -606,6 +627,7 @@ export function ConversationList({
                 onSelect={handleSelect}
                 onRequestDelete={onRequestDelete}
                 onMarkUnread={handleMarkUnread}
+                onMarkRead={handleMarkRead}
                 onTogglePinned={handleTogglePinned}
                 t={t}
                 responderColor={colorForConversation(
@@ -628,6 +650,7 @@ interface ConversationItemProps {
   onSelect: (conversation: Conversation) => void;
   onRequestDelete: (conversation: Conversation) => void;
   onMarkUnread: (conversation: Conversation) => void;
+  onMarkRead: (conversation: Conversation) => void;
   onTogglePinned: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
   responderColor: ResponderColor;
@@ -723,6 +746,7 @@ function ConversationItem({
   onSelect,
   onRequestDelete,
   onMarkUnread,
+  onMarkRead,
   onTogglePinned,
   t,
   responderColor,
@@ -1103,6 +1127,14 @@ function ConversationItem({
     [conversation, onMarkUnread, closeSwipe]
   );
 
+  const handleMarkReadAction = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      void onMarkRead(conversation);
+    },
+    [conversation, onMarkRead]
+  );
+
   const handleTogglePinAction = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1311,6 +1343,10 @@ function ConversationItem({
                 <MoreVertical className="h-3.5 w-3.5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="border-border bg-popover">
+                <DropdownMenuItem onClick={handleMarkReadAction}>
+                  <CheckCheck className="h-4 w-4" />
+                  {t("markRead")}
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={(e) => {

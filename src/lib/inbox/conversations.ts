@@ -107,6 +107,25 @@ export async function markConversationUnread(
 }
 
 /**
+ * Manual "mark as read" — the conversation list's three-dot menu action.
+ * Same DB write MessageThread's own reset effect already performs when a
+ * conversation is opened (`unread_count: 0`), just exposed so it can be
+ * triggered without opening the thread. Also the "already viewed" signal
+ * `list_unanswered_conversation_ids` now checks (migration 061), so this
+ * doubles as "remove from Leads Não Respondidos" with no separate call.
+ */
+export async function markConversationRead(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<void> {
+  const { error } = await db
+    .from("conversations")
+    .update({ unread_count: 0 })
+    .eq("id", conversationId);
+  if (error) throw error;
+}
+
+/**
  * Toggles the manual "pin to top" flag (migration 060) — shared by the
  * conversation list's swipe and right-click context menu actions.
  */

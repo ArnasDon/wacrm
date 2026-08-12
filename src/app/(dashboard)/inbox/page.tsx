@@ -409,6 +409,27 @@ function InboxPageInner() {
         // already have the row — that shouldn't happen normally, but
         // out-of-order delivery would have us prepending a duplicate.
         if (!knownConvIdsRef.current.has(conv.id)) {
+          // Mark synchronously — confirmed live via Safari Web Inspector
+          // (2026-08-12) that leaving this to the `useEffect` below was
+          // a real bug, not just theoretical: a brand-new CTWA lead's
+          // first message fires INSERT (conv) → UPDATE (ctwa_referral)
+          // → INSERT (message) → UPDATE (unread_count) in a fast burst
+          // from one webhook request. If any of those later events
+          // arrived before the effect had synced the ref (routine under
+          // that burst), the UPDATE branch below treated the conv as
+          // still-unknown and fell through to `hydrateConversation` —
+          // which was itself a no-op, already in flight for this exact
+          // id from the hydrate call a few lines down (dedup guard). The
+          // conv's `unread_count` UPDATE was silently dropped, and once
+          // the original hydrate finally resolved, its own merge
+          // deliberately *kept* the stale unread_count already in state
+          // (see the comment there) — reasonable on its own, but wrong
+          // here because that "fresher" UPDATE never actually landed.
+          // Net effect: the badge stayed stuck at 0 forever for any
+          // conversation whose realtime events arrived faster than this
+          // effect. Setting the ref here, before any of those events can
+          // arrive, closes the window.
+          knownConvIdsRef.current.add(conv.id);
           setConversations((prev) => {
             if (prev.some((c) => c.id === conv.id)) return prev;
             return [conv, ...prev];

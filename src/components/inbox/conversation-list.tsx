@@ -1014,8 +1014,23 @@ function ConversationItem({
             item's default min-width is `auto` (its content's intrinsic
             width), so without it `truncate` below never actually kicks
             in and a long preview pushes past its share of the row into
-            the time/badge column. */}
-        <div className="min-w-0 flex-1 pr-2">
+            the time/badge column.
+
+            This wrapper is a flex column itself (not a plain block),
+            confirmed load-bearing live via Safari Web Inspector
+            (2026-08-11): on real WebKit, `max-width: 100%` on the `<p>`
+            below was resolving against an *indefinite* containing
+            block — a known WebKit percentage-resolution gap through
+            nested `flex: 1 1 0%` ancestors — so the paragraph rendered
+            at its full unwrapped content width (~2130px measured on
+            device) instead of the row's actual width, with nothing
+            left to ellipsize against; the overflow just ran past the
+            row and got hard-clipped by a distant ancestor's
+            `overflow-hidden`, no "…" ever shown. `align-items: stretch`
+            (this container's flex-col default) sizes each child's
+            width directly through the flex algorithm instead of a CSS
+            percentage, which doesn't hit that gap. */}
+        <div className="flex min-w-0 flex-1 flex-col pr-2">
           <span className="flex min-w-0 items-center gap-1">
             {conversation.pinned && (
               <Pin className="h-3 w-3 shrink-0 text-amber-500" />
@@ -1024,7 +1039,7 @@ function ConversationItem({
               {displayName}
             </span>
           </span>
-          <p className="mt-0.5 min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground">
+          <p className="mt-0.5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           {/* Last-internal-responder indicator — no text/icon, color only

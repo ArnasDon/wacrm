@@ -37,6 +37,7 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
   ALLOWED_MIME_TYPES_BY_KIND,
 } from "@/lib/storage/upload-media";
+import { isQuickTimeVideo, convertMovToMp4 } from "@/lib/media/transcode-mov";
 import { ReplyQuote } from "./reply-quote";
 import { useTranslations } from "next-intl";
 
@@ -81,7 +82,10 @@ interface ReplyDraft {
 // machine further down).
 const PICKER_ACCEPT: Record<"image" | "video" | "document", string> = {
   image: "image/png,image/jpeg,image/webp",
-  video: "video/mp4,video/3gpp",
+  // video/quicktime + .mov: iPhone recordings are transcoded to MP4
+  // client-side before upload (see transcode-mov.ts) — listed here so
+  // they don't get filtered out of the OS picker in the first place.
+  video: "video/mp4,video/3gpp,video/quicktime,.mov",
   document:
     "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain",
 };
@@ -281,7 +285,24 @@ export function MessageComposer({
 
   // Upload a captured file to chat-media and stage it as a draft.
   const stageUpload = useCallback(
-    async (kind: Exclude<ComposerMediaKind, "audio">, file: File) => {
+    async (kind: Exclude<ComposerMediaKind, "audio">, pickedFile: File) => {
+      // iPhone .mov (QuickTime/HEVC by default since iOS 11): neither
+      // the chat-media bucket's MIME whitelist nor Meta's outbound video
+      // codec requirement (H.264/AAC in MP4/3GPP) accept it. Transcode
+      // to a real .mp4 client-side first, so every check and the upload
+      // itself below run completely unchanged, exactly as for a native
+      // .mp4 — see transcode-mov.ts.
+      let file = pickedFile;
+      if (kind === "video" && isQuickTimeVideo(file)) {
+        setBusy(true);
+        try {
+          file = await convertMovToMp4(file);
+        } catch (err) {
+          setBusy(false);
+          toast.error(err instanceof Error ? err.message : t("unsupportedVideoType"));
+          return;
+        }
+      }
       // Per-kind ceiling mirrors Meta's caps (image 5 MB, etc.) so we
       // reject before upload rather than orphaning an object that Meta
       // would then refuse at send.

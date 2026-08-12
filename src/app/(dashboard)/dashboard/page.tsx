@@ -12,10 +12,10 @@ import {
 import {
   loadFirstResponseAvg,
   loadLeadsToday,
-  loadUnansweredCount,
   loadUnclassifiedLeadsCount,
 } from '@/lib/dashboard/queries'
 import type { FirstResponseMetric, LeadsTodayMetric } from '@/lib/dashboard/types'
+import { useTotalUnread } from '@/hooks/use-total-unread'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
@@ -31,8 +31,11 @@ export default function DashboardPage() {
   const [leadsToday, setLeadsToday] = useState<LeadsTodayMetric | null>(null)
   const [leadsLoading, setLeadsLoading] = useState(true)
 
-  const [unanswered, setUnanswered] = useState<number | null>(null)
-  const [unansweredLoading, setUnansweredLoading] = useState(true)
+  // Same live/realtime count the sidebar's Inbox nav dot already uses
+  // (unread_count > 0 across conversations) — reused as-is so the
+  // Dashboard card can never disagree with what the Inbox itself
+  // considers unread. See use-total-unread.ts.
+  const unreadCount = useTotalUnread()
 
   const [firstResponse, setFirstResponse] = useState<FirstResponseMetric | null>(null)
   const [firstResponseLoading, setFirstResponseLoading] = useState(true)
@@ -49,11 +52,6 @@ export default function DashboardPage() {
       .then(setLeadsToday)
       .catch((err) => console.error('[dashboard] leads today failed:', err))
       .finally(() => setLeadsLoading(false))
-
-    void loadUnansweredCount(db)
-      .then(setUnanswered)
-      .catch((err) => console.error('[dashboard] unanswered count failed:', err))
-      .finally(() => setUnansweredLoading(false))
 
     void loadFirstResponseAvg(db)
       .then(setFirstResponse)
@@ -97,20 +95,16 @@ export default function DashboardPage() {
             />
           )}
 
-          {unansweredLoading || unanswered === null ? (
-            <SkeletonCard />
-          ) : (
-            <MetricCard
-              title={t('unansweredLeads')}
-              value={unanswered.toLocaleString()}
-              icon={MessageCircleWarning}
-              tint="orange"
-              highlighted
-              subtitle={t('awaitingService')}
-              href="/inbox?filter=unanswered"
-              tooltip={t('unansweredLeadsTooltip')}
-            />
-          )}
+          <MetricCard
+            title={t('unansweredLeads')}
+            value={unreadCount.toLocaleString()}
+            icon={MessageCircleWarning}
+            tint="orange"
+            highlighted
+            subtitle={t('awaitingService')}
+            href="/inbox?filter=unread"
+            tooltip={t('unansweredLeadsTooltip')}
+          />
 
           {firstResponseLoading || !firstResponse ? (
             <SkeletonCard />

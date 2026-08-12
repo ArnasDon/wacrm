@@ -45,13 +45,17 @@ function InboxPageInner() {
    */
   const deepLinkConvId = searchParams.get("c");
   /**
-   * `?filter=unanswered` drill-through from the dashboard's "Leads Não
-   * Respondidos" card. Only "unanswered" is recognized here — anything
-   * else falls back to ConversationList's own default ("all") rather
-   * than passing through an arbitrary/invalid value.
+   * `?filter=unanswered` (Inbox's own "Não respondidas" status option) and
+   * `?filter=unread` (dashboard's "Mensagens Não Lidas" card) drill-throughs.
+   * Only these two are recognized here — anything else falls back to
+   * ConversationList's own default ("all") rather than passing through an
+   * arbitrary/invalid value.
    */
+  const rawInboxFilter = searchParams.get("filter");
   const initialInboxFilter =
-    searchParams.get("filter") === "unanswered" ? "unanswered" : undefined;
+    rawInboxFilter === "unanswered" || rawInboxFilter === "unread"
+      ? rawInboxFilter
+      : undefined;
 
   // iOS's native "scroll the focused input into view" behavior, on
   // focusing the composer's textarea, can scroll `<main>` (dashboard-

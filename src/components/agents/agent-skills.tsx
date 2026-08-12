@@ -27,6 +27,9 @@ interface Skill {
   id: string
   name: string
   instructions: string
+  objective: string | null
+  when_to_use: string | null
+  when_not_to_use: string | null
   tool_keys: AgentToolKey[]
   enabled: boolean
   sort_order: number
@@ -35,17 +38,30 @@ interface Skill {
 interface SkillDraft {
   name: string
   instructions: string
+  objective: string
+  whenToUse: string
+  whenNotToUse: string
   toolKeys: AgentToolKey[]
 }
 
 function toDraft(skill: Skill): SkillDraft {
-  return { name: skill.name, instructions: skill.instructions, toolKeys: skill.tool_keys }
+  return {
+    name: skill.name,
+    instructions: skill.instructions,
+    objective: skill.objective ?? '',
+    whenToUse: skill.when_to_use ?? '',
+    whenNotToUse: skill.when_not_to_use ?? '',
+    toolKeys: skill.tool_keys,
+  }
 }
 
 function draftsEqual(a: SkillDraft, b: SkillDraft): boolean {
   return (
     a.name === b.name &&
     a.instructions === b.instructions &&
+    a.objective === b.objective &&
+    a.whenToUse === b.whenToUse &&
+    a.whenNotToUse === b.whenNotToUse &&
     a.toolKeys.length === b.toolKeys.length &&
     a.toolKeys.every((key) => b.toolKeys.includes(key))
   )
@@ -118,6 +134,9 @@ export function AgentSkills() {
         body: JSON.stringify({
           name: draft.name,
           instructions: draft.instructions,
+          objective: draft.objective,
+          when_to_use: draft.whenToUse,
+          when_not_to_use: draft.whenNotToUse,
           tool_keys: draft.toolKeys,
         }),
       })
@@ -261,14 +280,53 @@ export function AgentSkills() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 pt-0">
-                <Textarea
-                  value={draft.instructions}
-                  onChange={(e) => updateDraft(skill.id, { instructions: e.target.value })}
-                  placeholder="Ex.: Quando o cliente já escolheu produto e tamanho, conduz para o fecho da venda — resume o pedido e pergunta se quer confirmar."
-                  disabled={disabled}
-                  rows={3}
-                  className="text-sm"
-                />
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Objectivo</label>
+                  <Input
+                    value={draft.objective}
+                    onChange={(e) => updateDraft(skill.id, { objective: e.target.value })}
+                    placeholder="Ex.: Ajudar um cliente com intenção comercial a avançar para uma decisão."
+                    disabled={disabled}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Usa quando</label>
+                    <Textarea
+                      value={draft.whenToUse}
+                      onChange={(e) => updateDraft(skill.id, { whenToUse: e.target.value })}
+                      placeholder="Ex.: Existe interesse real num produto."
+                      disabled={disabled}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Não uses quando
+                    </label>
+                    <Textarea
+                      value={draft.whenNotToUse}
+                      onChange={(e) => updateDraft(skill.id, { whenNotToUse: e.target.value })}
+                      placeholder="Ex.: Cumprimentos ou curiosidade genérica."
+                      disabled={disabled}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Instruções</label>
+                  <Textarea
+                    value={draft.instructions}
+                    onChange={(e) => updateDraft(skill.id, { instructions: e.target.value })}
+                    placeholder="Ex.: Quando o cliente já escolheu produto e tamanho, conduz para o fecho da venda — resume o pedido e pergunta se quer confirmar."
+                    disabled={disabled}
+                    rows={3}
+                    className="text-sm"
+                  />
+                </div>
                 <div>
                   <p className="mb-1.5 text-xs font-medium text-muted-foreground">
                     Ferramentas desta skill

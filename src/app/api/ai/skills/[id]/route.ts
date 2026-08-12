@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { AGENT_TOOL_KEYS, type AgentToolKey } from '@/lib/ai/tool-permissions'
+import { SKILL_COLUMNS, trimmedFieldOrNull } from '@/lib/ai/skills'
 
 function parseToolKeys(raw: unknown): AgentToolKey[] {
   if (!Array.isArray(raw)) return []
@@ -37,6 +38,11 @@ export async function PATCH(
       update.instructions =
         typeof body.instructions === 'string' ? body.instructions.trim().slice(0, 4000) : ''
     }
+    if ('objective' in body) update.objective = trimmedFieldOrNull(body.objective, 500)
+    if ('when_to_use' in body) update.when_to_use = trimmedFieldOrNull(body.when_to_use, 500)
+    if ('when_not_to_use' in body) {
+      update.when_not_to_use = trimmedFieldOrNull(body.when_not_to_use, 500)
+    }
     if ('tool_keys' in body) update.tool_keys = parseToolKeys(body.tool_keys)
     if ('enabled' in body) update.enabled = body.enabled === true
     if ('sort_order' in body) {
@@ -52,7 +58,7 @@ export async function PATCH(
       .update(update)
       .eq('id', id)
       .eq('account_id', accountId)
-      .select('id, name, instructions, tool_keys, enabled, sort_order')
+      .select(SKILL_COLUMNS)
       .maybeSingle()
     if (error) {
       if (error.code === '23505') {

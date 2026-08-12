@@ -26,7 +26,7 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate, usd_to_mzn_rate_updated_at, temperature')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate, usd_to_mzn_rate_updated_at, temperature, agent_name, agent_role, agent_language, agent_description')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) {
@@ -66,6 +66,16 @@ export async function POST(request: Request) {
     if (!model) return bad('model is required')
 
     const systemPrompt = typeof body.system_prompt === 'string' && body.system_prompt.trim() ? body.system_prompt.trim() : null
+
+    const trimmedOrNull = (value: unknown, maxLength: number): string | null => {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      return trimmed ? trimmed.slice(0, maxLength) : null
+    }
+    const agentName = trimmedOrNull(body.agent_name, 80)
+    const agentRole = trimmedOrNull(body.agent_role, 120)
+    const agentLanguage = trimmedOrNull(body.agent_language, 40)
+    const agentDescription = trimmedOrNull(body.agent_description, 500)
     const commercialStrategy = normalizeCommercialStrategy(body.commercial_strategy)
     const isActive = body.is_active === true
     const autoReplyEnabled = body.auto_reply_enabled === true
@@ -159,6 +169,10 @@ export async function POST(request: Request) {
       buffer_window_seconds: bufferWindowSeconds,
       max_reply_chunks: maxReplyChunks,
       temperature,
+      agent_name: agentName,
+      agent_role: agentRole,
+      agent_language: agentLanguage,
+      agent_description: agentDescription,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

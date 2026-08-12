@@ -105,6 +105,7 @@ export async function POST(request: Request) {
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
     })
 
     // Same tool-calling loop the live auto-reply bot uses, scoped down to

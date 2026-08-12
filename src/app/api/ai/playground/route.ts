@@ -10,7 +10,9 @@ import { AiError, type ChatMessage } from '@/lib/ai/types'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { createAutoReplyTools } from '@/lib/ai/tools'
 import { loadAgentToolPermissions, restrictToPreviewSafe } from '@/lib/ai/tool-permissions'
-import { applySkillNarrowing, loadAgentSkills } from '@/lib/ai/skills'
+import { applySkillNarrowing, loadAgentSkills, type AgentSkill } from '@/lib/ai/skills'
+import { evaluateAgentOutput } from '@/lib/ai/guardrails'
+import type { AgentTraceToolCall } from '@/lib/ai/trace'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -87,16 +89,21 @@ export async function POST(request: Request) {
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
     })
 
     const db = supabaseAdmin()
     let tools: ReturnType<typeof createAutoReplyTools>['tools'] | undefined
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
+    let activeSkills: AgentSkill[] = []
+    const toolCalls: AgentTraceToolCall[] = []
+    let getTrustedPriceAmounts: (() => number[]) | undefined
     if (config.agentId) {
       const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
         loadAgentToolPermissions(db, accountId, config.agentId),
         loadAgentSkills(db, accountId, config.agentId),
       ])
+      activeSkills = skills
       const effectivePermissions = restrictToPreviewSafe(applySkillNarrowing(permissions, skills))
       const toolRuntime = createAutoReplyTools({
         db,
@@ -107,9 +114,11 @@ export async function POST(request: Request) {
         config,
         permissions: effectivePermissions,
         toolInstructions,
+        onToolCall: (call) => toolCalls.push(call),
       })
       tools = toolRuntime.tools
       executeTool = tools.length > 0 ? toolRuntime.executeTool : undefined
+      getTrustedPriceAmounts = toolRuntime.getTrustedPriceAmounts
     }
 
     const { text, handoff } = await generateReply({
@@ -119,7 +128,27 @@ export async function POST(request: Request) {
       tools,
       executeTool,
     })
-    return NextResponse.json({ reply: text, handoff })
+
+    // Ephemeral, request-scoped execution trace — never persisted (the
+    // Playground has no real conversationId for agent_traces to attach
+    // to, and this is test data, not a customer turn). Mirrors what
+    // createAgentTraceCollector captures for a live turn, minus storage.
+    const guardrails = evaluateAgentOutput({
+      text,
+      trustedText: config.systemPrompt ?? '',
+      trustedPriceAmounts: getTrustedPriceAmounts?.() ?? [],
+    })
+
+    return NextResponse.json({
+      reply: text,
+      handoff,
+      execution: {
+        skills_active: activeSkills.map((skill) => skill.name),
+        tools_called: toolCalls,
+        knowledge_sources_used: knowledge.length,
+        guardrails: { safe: guardrails.safe, violations: guardrails.violations },
+      },
+    })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })

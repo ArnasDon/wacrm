@@ -56,6 +56,14 @@ export interface AiConfig {
    *  entirely, which is the provider's own default — existing accounts
    *  that never set this see no change in behaviour. */
   temperature?: number | null
+  /** Identity fields, separate from the free-text systemPrompt/persona.
+   *  All optional — buildSystemPrompt only changes its opening line when
+   *  agentName is set. agentDescription is admin-facing only and never
+   *  reaches the model. */
+  agentName?: string | null
+  agentRole?: string | null
+  agentLanguage?: string | null
+  agentDescription?: string | null
 }
 
 export type AiImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'

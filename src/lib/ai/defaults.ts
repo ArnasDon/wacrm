@@ -60,12 +60,26 @@ export function buildSystemPrompt(args: {
   maxReplyChunks?: number
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** Optional identity fields (Agentes -> Identidade). All optional —
+   *  omitting them keeps the generic opening line exactly as before. */
+  identity?: { name?: string | null; role?: string | null; language?: string | null }
 }): string {
-  const { userPrompt, mode, commercialStrategy, maxReplyChunks, knowledge } = args
+  const { userPrompt, mode, commercialStrategy, maxReplyChunks, knowledge, identity } = args
+  const name = identity?.name?.trim()
+  const role = identity?.role?.trim()
+  const language = identity?.language?.trim()
+  const identityLine = name
+    ? `Your name is ${name}${role ? `, ${role}` : ''}. `
+    : ''
+  const languageLine = language
+    ? ` The business's primary language is ${language} — use it as your default only when the customer's own language is genuinely ambiguous; otherwise always match the customer.`
+    : ''
   const parts: string[] = [
-    'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
+    identityLine +
+      'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
-      'Write the next reply the business should send to the customer.',
+      'Write the next reply the business should send to the customer.' +
+      languageLine,
     'Guidelines: reply in the same language the customer is writing in; keep it concise and friendly, suitable for WhatsApp; ' +
       'never invent facts, prices, order numbers, availability, or promises that are not supported by the conversation, business context, or tool results; ' +
       'output only the message text — no quotes, no "Reply:" label, no preamble.',

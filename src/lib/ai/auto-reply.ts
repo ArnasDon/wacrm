@@ -344,6 +344,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       mode: 'auto_reply',
       maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
     })
     const systemPrompt = [
       baseSystemPrompt,

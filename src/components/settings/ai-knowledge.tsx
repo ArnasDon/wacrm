@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Card,
   CardContent,
@@ -19,6 +20,8 @@ import { useTranslations } from 'next-intl';
 interface DocSummary {
   id: string;
   title: string;
+  doc_type: string | null;
+  status: 'active' | 'archived';
   updated_at: string;
 }
 
@@ -39,6 +42,8 @@ export function AiKnowledgeCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [docType, setDocType] = useState('');
+  const [status, setStatus] = useState<'active' | 'archived'>('active');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
@@ -68,6 +73,8 @@ export function AiKnowledgeCard({
     setEditing('new');
     setTitle('');
     setContent('');
+    setDocType('');
+    setStatus('active');
   };
 
   const openEdit = async (id: string) => {
@@ -81,6 +88,8 @@ export function AiKnowledgeCard({
       setEditing(id);
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
+      setDocType(data.doc_type ?? '');
+      setStatus(data.status === 'archived' ? 'archived' : 'active');
     } catch {
       toast.error(t('openFailed'));
     }
@@ -90,6 +99,8 @@ export function AiKnowledgeCard({
     setEditing(null);
     setTitle('');
     setContent('');
+    setDocType('');
+    setStatus('active');
   };
 
   const save = async () => {
@@ -105,7 +116,12 @@ export function AiKnowledgeCard({
         {
           method: isNew ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim(),
+            doc_type: docType.trim() || null,
+            status,
+          }),
         },
       );
       const data = await res.json();
@@ -189,8 +205,20 @@ export function AiKnowledgeCard({
                     key={doc.id}
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
-                    <span className="min-w-0 truncate text-sm text-foreground">
-                      {doc.title}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate text-sm text-foreground">
+                        {doc.title}
+                      </span>
+                      {doc.doc_type && (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {doc.doc_type}
+                        </span>
+                      )}
+                      {doc.status === 'archived' && (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Arquivado
+                        </span>
+                      )}
                     </span>
                     {canEdit && (
                       <span className="flex shrink-0 gap-1">
@@ -221,13 +249,38 @@ export function AiKnowledgeCard({
 
             {editing !== null ? (
               <div className="space-y-3 rounded-md border border-border p-3">
-                <div className="space-y-2">
-                  <Label htmlFor="kb-title">{t('editDocTitle')}</Label>
-                  <Input
-                    id="kb-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder={t('editDocTitlePlaceholder')}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="kb-title">{t('editDocTitle')}</Label>
+                    <Input
+                      id="kb-title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={t('editDocTitlePlaceholder')}
+                      disabled={saving}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="kb-type">Tipo</Label>
+                    <Input
+                      id="kb-type"
+                      value={docType}
+                      onChange={(e) => setDocType(e.target.value)}
+                      placeholder="Ex.: Institucional, Pagamentos..."
+                      disabled={saving}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Arquivado</p>
+                    <p className="text-xs text-muted-foreground">
+                      Continua indexado por agora — arquivar é só uma etiqueta visual.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={status === 'archived'}
+                    onCheckedChange={(checked) => setStatus(checked ? 'archived' : 'active')}
                     disabled={saving}
                   />
                 </div>

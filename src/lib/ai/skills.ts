@@ -1,10 +1,24 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { AGENT_TOOL_KEYS, type AgentToolKey } from './tool-permissions'
 
+/** Columns the skills management API (list/create/update) reads and
+ *  returns — shared so the collection and [id] routes stay in sync. */
+export const SKILL_COLUMNS =
+  'id, name, instructions, objective, when_to_use, when_not_to_use, tool_keys, enabled, sort_order'
+
+export function trimmedFieldOrNull(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed.slice(0, maxLength) : null
+}
+
 export interface AgentSkill {
   id: string
   name: string
   instructions: string
+  objective: string
+  whenToUse: string
+  whenNotToUse: string
   toolKeys: AgentToolKey[]
 }
 
@@ -12,6 +26,9 @@ interface SkillRow {
   id: string
   name: string
   instructions: string | null
+  objective: string | null
+  when_to_use: string | null
+  when_not_to_use: string | null
   tool_keys: string[] | null
 }
 
@@ -28,7 +45,7 @@ export async function loadAgentSkills(
 ): Promise<AgentSkill[]> {
   const { data, error } = await db
     .from('skills')
-    .select('id, name, instructions, tool_keys')
+    .select('id, name, instructions, objective, when_to_use, when_not_to_use, tool_keys')
     .eq('account_id', accountId)
     .eq('agent_id', agentId)
     .eq('enabled', true)
@@ -44,6 +61,9 @@ export async function loadAgentSkills(
       id: r.id,
       name: r.name,
       instructions: r.instructions?.trim() ?? '',
+      objective: r.objective?.trim() ?? '',
+      whenToUse: r.when_to_use?.trim() ?? '',
+      whenNotToUse: r.when_not_to_use?.trim() ?? '',
       toolKeys: (r.tool_keys ?? []).filter((key): key is AgentToolKey =>
         (AGENT_TOOL_KEYS as readonly string[]).includes(key),
       ),
@@ -59,11 +79,22 @@ export async function loadAgentSkills(
  * read the same way to the model.
  */
 export function skillsPrompt(skills: AgentSkill[]): string | null {
-  const withText = skills.filter((skill) => skill.instructions)
-  if (withText.length === 0) return null
+  const withContent = skills.filter(
+    (skill) => skill.instructions || skill.objective || skill.whenToUse || skill.whenNotToUse,
+  )
+  if (withContent.length === 0) return null
   return [
-    'Skills — objectives this account configured for specific situations (e.g. selling, qualifying, after-sales). Follow whichever ones match what the customer needs right now; ignore the rest. These are internal guidance, never mention a skill by name to the customer.',
-    ...withText.map((skill) => `[${skill.name}] ${skill.instructions}`),
+    'Skills — objectives this account configured for specific situations (e.g. selling, qualifying, after-sales). ' +
+      'Each one may include when it applies and when it does not — use that as your own judgement call for THIS turn, not as a menu to announce; nothing external selects a skill for you. ' +
+      'Follow whichever ones genuinely match what the customer needs right now; ignore the rest. These are internal guidance, never mention a skill by name to the customer.',
+    ...withContent.map((skill) => {
+      const lines = [`[${skill.name}]`]
+      if (skill.objective) lines.push(`Objective: ${skill.objective}`)
+      if (skill.whenToUse) lines.push(`Use when: ${skill.whenToUse}`)
+      if (skill.whenNotToUse) lines.push(`Do not use when: ${skill.whenNotToUse}`)
+      if (skill.instructions) lines.push(skill.instructions)
+      return lines.join('\n')
+    }),
   ].join('\n\n')
 }
 

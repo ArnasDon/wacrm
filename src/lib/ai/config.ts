@@ -22,10 +22,14 @@ interface AiConfigRow {
   embeddings_api_key: string | null
   usd_to_mzn_rate: number | null
   temperature: number | null
+  agent_name: string | null
+  agent_role: string | null
+  agent_language: string | null
+  agent_description: string | null
 }
 
 const CONFIG_COLUMNS =
-  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, embeddings_api_key, usd_to_mzn_rate, temperature'
+  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, embeddings_api_key, usd_to_mzn_rate, temperature, agent_name, agent_role, agent_language, agent_description'
 
 export async function loadAiConfig(
   db: WacrmSupabaseClient,
@@ -82,6 +86,10 @@ export async function loadAiConfig(
     embeddingsApiKey,
     usdToMznRate: row.usd_to_mzn_rate ?? undefined,
     temperature: row.temperature,
+    agentName: row.agent_name,
+    agentRole: row.agent_role,
+    agentLanguage: row.agent_language,
+    agentDescription: row.agent_description,
   }
 }
 

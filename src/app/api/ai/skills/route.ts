@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { AGENT_TOOL_KEYS, type AgentToolKey } from '@/lib/ai/tool-permissions'
+import { SKILL_COLUMNS, trimmedFieldOrNull } from '@/lib/ai/skills'
 
 async function resolveAgentId(
   supabase: Awaited<ReturnType<typeof requireRole>>['supabase'],
@@ -36,7 +37,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('skills')
-      .select('id, name, instructions, tool_keys, enabled, sort_order')
+      .select(SKILL_COLUMNS)
       .eq('account_id', accountId)
       .eq('agent_id', agentId)
       .order('sort_order', { ascending: true })
@@ -63,6 +64,9 @@ export async function POST(request: Request) {
     }
     const instructions =
       typeof body.instructions === 'string' ? body.instructions.trim().slice(0, 4000) : ''
+    const objective = trimmedFieldOrNull(body.objective, 500)
+    const whenToUse = trimmedFieldOrNull(body.when_to_use, 500)
+    const whenNotToUse = trimmedFieldOrNull(body.when_not_to_use, 500)
     const toolKeys = parseToolKeys(body.tool_keys)
 
     const agentId = await resolveAgentId(supabase, accountId)
@@ -77,9 +81,12 @@ export async function POST(request: Request) {
         agent_id: agentId,
         name,
         instructions,
+        objective,
+        when_to_use: whenToUse,
+        when_not_to_use: whenNotToUse,
         tool_keys: toolKeys,
       })
-      .select('id, name, instructions, tool_keys, enabled, sort_order')
+      .select(SKILL_COLUMNS)
       .single()
     if (error) {
       if (error.code === '23505') {

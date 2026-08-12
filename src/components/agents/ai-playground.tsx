@@ -2,21 +2,43 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight } from 'lucide-react';
+import {
+  Bot,
+  RotateCcw,
+  Send,
+  Loader2,
+  UserCircle2,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  ShieldAlert,
+  ShieldCheck,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+
+interface ExecutionTrace {
+  skills_active: string[];
+  tools_called: { name: string; ms: number; succeeded: boolean }[];
+  knowledge_sources_used: number;
+  guardrails: { safe: boolean; violations: string[] };
+}
 
 interface Turn {
   role: 'user' | 'assistant';
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
+  /** assistant-only: what actually ran to produce this reply — skills,
+   *  tools, knowledge, guardrail result. Ephemeral, never persisted. */
+  execution?: ExecutionTrace;
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [expandedExecution, setExpandedExecution] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +83,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
+          execution: data.execution as ExecutionTrace | undefined,
         },
       ]);
     } catch {
@@ -154,6 +177,63 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   <UserCircle2 className="h-3.5 w-3.5" />
                   Would hand off to a human here
                 </p>
+              )}
+              {t.role === 'assistant' && t.execution && (
+                <div className="mt-1.5 border-t border-border/50 pt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedExecution((current) => (current === i ? null : i))}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {expandedExecution === i ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                    Execução
+                  </button>
+                  {expandedExecution === i && (
+                    <dl className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+                      <div className="flex gap-1">
+                        <dt className="shrink-0 font-medium text-foreground">Skills activas:</dt>
+                        <dd>
+                          {t.execution.skills_active.length > 0
+                            ? t.execution.skills_active.join(', ')
+                            : '—'}
+                        </dd>
+                      </div>
+                      <div className="flex gap-1">
+                        <dt className="shrink-0 font-medium text-foreground">Tools chamadas:</dt>
+                        <dd>
+                          {t.execution.tools_called.length > 0
+                            ? t.execution.tools_called
+                                .map((call) => `${call.name}${call.succeeded ? '' : ' (falhou)'}`)
+                                .join(', ')
+                            : '—'}
+                        </dd>
+                      </div>
+                      <div className="flex gap-1">
+                        <dt className="shrink-0 font-medium text-foreground">Conhecimento:</dt>
+                        <dd>{t.execution.knowledge_sources_used} fonte(s) usada(s)</dd>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <dt className="shrink-0 font-medium text-foreground">Guardrails:</dt>
+                        <dd className="flex items-center gap-1">
+                          {t.execution.guardrails.safe ? (
+                            <>
+                              <ShieldCheck className="h-3 w-3 text-emerald-500" /> OK
+                            </>
+                          ) : (
+                            <>
+                              <ShieldAlert className="h-3 w-3 text-amber-500" />
+                              {t.execution.guardrails.violations.join(', ')}
+                            </>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </div>
               )}
             </div>
             {t.role === 'user' && (

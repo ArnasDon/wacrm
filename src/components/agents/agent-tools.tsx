@@ -38,6 +38,8 @@ interface ToolState {
     get_style_opinion: ToolConfig
     handoff_human: ToolConfig
   }
+  last_used_at?: Partial<Record<ToolKey, string>>
+  used_by_skills?: Partial<Record<ToolKey, string[]>>
 }
 
 type ToolKey = keyof ToolState['tools']
@@ -228,6 +230,14 @@ export function AgentTools() {
                     <CardDescription className="mt-1 max-w-2xl">
                       {item.description}
                     </CardDescription>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {state.last_used_at?.[toolKey]
+                        ? `Última utilização: ${new Date(state.last_used_at[toolKey]!).toLocaleString('pt-PT')}`
+                        : 'Ainda sem utilização registada'}
+                      {state.used_by_skills?.[toolKey]?.length
+                        ? ` · Usada por: ${state.used_by_skills[toolKey]!.join(', ')}`
+                        : ''}
+                    </p>
                   </div>
                 </div>
                 <Switch

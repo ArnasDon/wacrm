@@ -60,7 +60,7 @@ const CALL_TIME_FORMATTER = new Intl.DateTimeFormat('pt-PT', {
   minute: '2-digit',
 })
 
-type AgentTab = 'setup' | 'tools' | 'usage'
+type AgentTab = 'runtime' | 'tools' | 'usage'
 
 interface ConfigResponse {
   configured: boolean
@@ -269,7 +269,7 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
         description:
           'Agrupa fragmentos rápidos do cliente antes de activar o agente. Ajuste directamente aqui.',
         kind: 'buffer',
-        targetTab: 'setup',
+        targetTab: 'runtime',
         editableField: 'buffer_window_seconds',
         editableValue: config.buffer_window_seconds ?? 12,
       },
@@ -282,7 +282,7 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
         description:
           'Modelo activo, contexto recente, memória CRM e regras do negócio.',
         kind: 'agent',
-        targetTab: 'setup',
+        targetTab: 'runtime',
       },
     },
     // Every known tool gets a node — not just the enabled ones — so the
@@ -318,7 +318,7 @@ export function buildAgentFlowGraph(snapshot: AgentFlowSnapshot): {
         description:
           'Indicador de escrita, pausas naturais e envio ordenado ao cliente. Ajuste directamente aqui.',
         kind: 'response',
-        targetTab: 'setup',
+        targetTab: 'runtime',
         editableField: 'max_reply_chunks',
         editableValue: config.max_reply_chunks ?? 3,
       },
@@ -619,7 +619,7 @@ export function AgentFlowPanel({
         <p className="mt-1 text-sm text-muted-foreground">
           Guarde primeiro o fornecedor, modelo e chave do agente.
         </p>
-        <Button className="mt-4" onClick={() => onOpenTab('setup')}>
+        <Button className="mt-4" onClick={() => onOpenTab('runtime')}>
           Abrir configuração
         </Button>
       </div>

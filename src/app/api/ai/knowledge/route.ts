@@ -19,7 +19,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select('id, title, doc_type, status, updated_at')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -56,10 +56,14 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
+    const docType =
+      typeof body?.doc_type === 'string' && body.doc_type.trim()
+        ? body.doc_type.trim().slice(0, 60)
+        : null
 
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({ account_id: accountId, created_by: userId, title, content, doc_type: docType })
       .select('id')
       .single()
     if (error || !doc) {

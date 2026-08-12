@@ -34,15 +34,32 @@ export async function GET() {
       return NextResponse.json({ configured: false, agent_id: null, tools: defaultToolsResponse() })
     }
 
-    const { data, error } = await supabase
-      .from('agent_tools')
-      .select('tool_key, enabled, instructions')
-      .eq('account_id', accountId)
-      .eq('agent_id', agentId)
-    if (error) throw error
+    const [toolRows, recentCalls, skillRows] = await Promise.all([
+      supabase
+        .from('agent_tools')
+        .select('tool_key, enabled, instructions')
+        .eq('account_id', accountId)
+        .eq('agent_id', agentId),
+      // Ordered desc, capped: the first row per tool_key is its most
+      // recent call. No bespoke aggregate RPC needed for this.
+      supabase
+        .from('agent_tool_calls')
+        .select('tool_key, called_at')
+        .eq('account_id', accountId)
+        .eq('agent_id', agentId)
+        .order('called_at', { ascending: false })
+        .limit(200),
+      supabase
+        .from('skills')
+        .select('name, tool_keys')
+        .eq('account_id', accountId)
+        .eq('agent_id', agentId)
+        .eq('enabled', true),
+    ])
+    if (toolRows.error) throw toolRows.error
 
     const tools = defaultToolsResponse()
-    for (const row of data ?? []) {
+    for (const row of toolRows.data ?? []) {
       if (AGENT_TOOL_KEYS.includes(row.tool_key as AgentToolKey)) {
         tools[row.tool_key as AgentToolKey] = {
           enabled: Boolean(row.enabled),
@@ -51,7 +68,34 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ configured: true, agent_id: agentId, tools })
+    const lastUsedAt: Partial<Record<AgentToolKey, string>> = {}
+    if (!recentCalls.error) {
+      for (const row of recentCalls.data ?? []) {
+        const key = row.tool_key as AgentToolKey
+        if (AGENT_TOOL_KEYS.includes(key) && !lastUsedAt[key]) lastUsedAt[key] = row.called_at
+      }
+    }
+
+    const usedBySkills: Record<AgentToolKey, string[]> = Object.fromEntries(
+      AGENT_TOOL_KEYS.map((key) => [key, [] as string[]]),
+    ) as Record<AgentToolKey, string[]>
+    if (!skillRows.error) {
+      for (const row of skillRows.data ?? []) {
+        for (const key of (row.tool_keys ?? []) as string[]) {
+          if (AGENT_TOOL_KEYS.includes(key as AgentToolKey)) {
+            usedBySkills[key as AgentToolKey].push(row.name)
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      configured: true,
+      agent_id: agentId,
+      tools,
+      last_used_at: lastUsedAt,
+      used_by_skills: usedBySkills,
+    })
   } catch (error) {
     return toErrorResponse(error)
   }

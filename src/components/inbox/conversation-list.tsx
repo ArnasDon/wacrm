@@ -634,9 +634,13 @@ interface ConversationItemProps {
 }
 
 // Swipe-reveal panel width (px, iOS Mail-style) — one panel, two actions
-// (unread + delete). Left-to-right only: a swipe-left/right-side panel
-// (delete-only) was tried and reverted — it fought the original
-// left-to-right gesture's feel, so there's only ever one direction now.
+// (unread + delete), revealed on the left. A swipe-left/right-side panel
+// (delete-only) was tried and reverted — it fought this gesture's feel,
+// so there's only ever one panel. Opens with a left-to-right drag
+// starting over the avatar corner (SWIPE_START_ZONE_PX); once open,
+// closes with a right-to-left drag from anywhere on the row (added
+// 2026-08-12, matching native iOS) — a right-to-left drag while fully
+// closed still does nothing, same as tap-elsewhere/the action buttons.
 const SWIPE_LEFT_WIDTH = 152;
 // Rubber-band past SWIPE_LEFT_WIDTH — UIScrollView's own resistance
 // curve (the constant 0.55 is Apple's), not a linear ratio: resistance
@@ -664,6 +668,13 @@ const SWIPE_AXIS_RATIO = 2.5;
 // preview) open the panel. A touch starting further right than this
 // never locks to "x", no matter how clean the horizontal drag is.
 const SWIPE_START_ZONE_PX = 64;
+// A fast flick commits to opening/closing even if the finger let go
+// before crossing the halfway point — matches native iOS list-row
+// behavior (confirmed with the user, 2026-08-12), where a quick swipe
+// doesn't need to travel as far as a slow drag to register. Only the
+// release's own velocity triggers this; an ordinary tap-speed drag
+// still resolves purely by how far it got.
+const SWIPE_FLING_VELOCITY = 500;
 // Real spring physics (SwiftUI-style response/dampingRatio), not a
 // fixed-duration CSS easing curve — confirmed with the user (2026-08-12)
 // that a canned cubic-bezier can't do what was actually asked for: the
@@ -924,25 +935,31 @@ function ConversationItem({
         // more deliberate swipe. Any movement that's at least as
         // vertical as it is horizontal locks straight to "y", no ratio
         // needed. Horizontal only wins once it's unambiguous (see
-        // SWIPE_AXIS_RATIO — deliberately steep) AND left-to-right AND
-        // started over the avatar corner (SWIPE_START_ZONE_PX) — this
-        // is the *only* gesture that opens the panel.
+        // SWIPE_AXIS_RATIO — deliberately steep) AND is one of the two
+        // gestures this component actually recognizes: left-to-right
+        // starting over the avatar corner (opens, closed → open) OR
+        // right-to-left with the panel already at least partly open
+        // (closes, from anywhere on the row — matches native iOS,
+        // confirmed with the user 2026-08-12). A right-to-left drag
+        // while fully closed still does nothing, same as before.
+        const qualifiesOpen = dx > 0 && drag.zoneOk;
+        const qualifiesClose = dx < 0 && drag.baseX > 0;
         if (Math.abs(dy) >= SWIPE_AXIS_THRESHOLD && Math.abs(dy) >= Math.abs(dx)) {
           drag.axis = "y";
         } else if (
           Math.abs(dx) >= SWIPE_AXIS_THRESHOLD &&
-          dx > 0 &&
-          drag.zoneOk &&
+          (qualifiesOpen || qualifiesClose) &&
           Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO
         ) {
           drag.axis = "x";
           if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
         } else if (Math.abs(dx) >= SWIPE_AXIS_THRESHOLD) {
-          // Horizontal-dominant but disqualified — right-to-left
-          // anywhere on the row, or left-to-right starting outside the
-          // avatar corner. A dead touch as far as this component is
-          // concerned: never becomes a swipe, and (by resolving to "y"
-          // here) never blocks the list's native scroll either.
+          // Horizontal-dominant but disqualified — left-to-right
+          // starting outside the avatar corner, or right-to-left with
+          // nothing open to close. A dead touch as far as this
+          // component is concerned: never becomes a swipe, and (by
+          // resolving to "y" here) never blocks the list's native
+          // scroll either.
           drag.axis = "y";
         } else {
           return; // not enough signal yet either way
@@ -954,12 +971,20 @@ function ConversationItem({
       // sample): if the gesture drifts and vertical overtakes
       // horizontal mid-swipe — a real finger rarely travels in a
       // perfectly straight line — bail out to scroll instead of
-      // fighting the page under it. The spring (not a fixed snap) takes
-      // it back to closed from wherever it currently is.
+      // fighting the page under it. Settles to whichever side (open/
+      // closed) is nearer from wherever it currently is, same rule as
+      // a normal release — NOT always back to closed: that was fine
+      // when the only possible gesture was opening from closed, but
+      // now a close-in-progress that drifts vertical needs to resolve
+      // the same way, or the row could end up visually closed while
+      // `revealed` internally still thinks it's open (breaking the
+      // next tap's close-vs-navigate decision in handleClick).
       if (Math.abs(dy) > Math.abs(dx)) {
         drag.axis = "y";
-        drag.x = 0;
-        settleSpring(0, drag.velocity);
+        const settledX = Math.min(Math.max(drag.x, 0), SWIPE_LEFT_WIDTH);
+        const next = settledX > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
+        settleSpring(next === "left" ? SWIPE_LEFT_WIDTH : 0, drag.velocity);
+        setRevealed(next);
         return;
       }
 
@@ -970,13 +995,17 @@ function ConversationItem({
       e.preventDefault();
 
       const raw = drag.baseX + dx;
-      // Rubber-band once past the fully-open width — Apple's own
-      // resistance curve, see `rubberBand` above — instead of a hard
-      // clamp.
+      // Rubber-band past either end — Apple's own resistance curve, see
+      // `rubberBand` above — instead of a hard clamp: past the fully-open
+      // width when opening/over-pulling, and symmetrically past fully
+      // closed when a close gesture is dragged further left than needed
+      // (the little give a native iOS row has at both extremes).
       const clamped =
-        raw <= SWIPE_LEFT_WIDTH
-          ? Math.max(0, raw)
-          : SWIPE_LEFT_WIDTH + rubberBand(raw - SWIPE_LEFT_WIDTH, SWIPE_LEFT_WIDTH);
+        raw < 0
+          ? -rubberBand(-raw, SWIPE_LEFT_WIDTH)
+          : raw <= SWIPE_LEFT_WIDTH
+            ? raw
+            : SWIPE_LEFT_WIDTH + rubberBand(raw - SWIPE_LEFT_WIDTH, SWIPE_LEFT_WIDTH);
       drag.x = clamped;
       dragTransform(clamped);
     }
@@ -991,11 +1020,19 @@ function ConversationItem({
       if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
       if (drag.axis !== "x") return;
 
-      // The rubber-band means `drag.x` can sit past SWIPE_LEFT_WIDTH —
-      // clamp back to the real width before comparing against the
-      // halfway-open threshold below.
-      const settledX = Math.min(drag.x, SWIPE_LEFT_WIDTH);
-      const next = settledX > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
+      // The rubber-band means `drag.x` can sit past either end — clamp
+      // back to [0, SWIPE_LEFT_WIDTH] before deciding.
+      const settledX = Math.min(Math.max(drag.x, 0), SWIPE_LEFT_WIDTH);
+      let next: "left" | null;
+      if (drag.velocity <= -SWIPE_FLING_VELOCITY) {
+        // Fast flick left — close regardless of how far it actually
+        // got, same as a native iOS list row.
+        next = null;
+      } else if (drag.velocity >= SWIPE_FLING_VELOCITY) {
+        next = "left";
+      } else {
+        next = settledX > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
+      }
       // The real gesture velocity feeds the spring — a fast flick
       // snaps to the target quicker (and can bounce, per
       // SWIPE_SPRING_DAMPING_RATIO) than a slow release. Called

@@ -57,21 +57,34 @@ export function DealCard({
   const inboxHref = deal.conversation_id ? `/inbox?c=${deal.conversation_id}` : `/inbox`;
 
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        // `onClick` still fires after a non-drag tap because the PointerSensor
-        // requires 5px movement before it counts as a drag.
-        if (isOverlay) return;
-        e.stopPropagation();
-        onEdit(deal);
-      }}
-      className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
+    // La raíz es un <div>, no un <button>: la tarjeta contiene enlaces de
+    // correo y teléfono, y anidar elementos interactivos dentro de un <button>
+    // es marcado inválido — React lo avisaba como error de hidratación y, en
+    // la práctica, el botón exterior se tragaba los clics de los interiores.
+    //
+    // La acción de editar pasa a un botón superpuesto que cubre la tarjeta
+    // (patrón "stretched link"): sigue siendo un objetivo grande y accesible
+    // con teclado, pero deja de envolver a los demás.
+    <div
+      className={`group relative w-full rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
         isOverlay
           ? "shadow-xl"
           : "hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg"
       }`}
     >
+      {!isOverlay && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // `onClick` still fires after a non-drag tap because the
+            // PointerSensor requires 5px movement before it counts as a drag.
+            e.stopPropagation();
+            onEdit(deal);
+          }}
+          aria-label={deal.title}
+          className="absolute inset-0 z-0 cursor-pointer rounded-xl"
+        />
+      )}
       {/* 4px left accent bar using stage color */}
       <span
         aria-hidden
@@ -115,7 +128,7 @@ export function DealCard({
             <a
               href={`mailto:${email}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex max-w-[9rem] items-center gap-1 truncate hover:text-foreground"
+              className="relative z-10 flex max-w-[9rem] items-center gap-1 truncate hover:text-foreground"
             >
               <Mail className="h-3 w-3 shrink-0" />
               <span className="truncate">{email}</span>
@@ -128,7 +141,7 @@ export function DealCard({
                 e.stopPropagation();
                 router.push(inboxHref);
               }}
-              className="flex items-center gap-1 hover:text-foreground"
+              className="relative z-10 flex items-center gap-1 hover:text-foreground"
             >
               <MessageSquare className="h-3 w-3 shrink-0" />
               {phone}
@@ -168,6 +181,6 @@ export function DealCard({
       )}
 
       {footer}
-    </button>
+    </div>
   );
 }

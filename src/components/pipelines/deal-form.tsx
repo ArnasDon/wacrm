@@ -540,6 +540,10 @@ export function DealForm({
       }
     }
 
+    if (finalAppointmentAt) {
+      void fetch('/api/automations/cron').catch(() => {});
+    }
+
     setSaving(false);
     toast.success(deal ? t("toastUpdated") : t("toastCreated"));
     onOpenChange(false);

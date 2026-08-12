@@ -27,22 +27,25 @@ import { resolveFallbackPolicy } from '@/lib/flows/fallback'
  * tenants.
  */
 export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET
-  if (!expected) {
-    return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
-  }
-  // Constant-time compare so an attacker who can hit the endpoint
-  // can't recover the secret byte-by-byte from response-time deltas.
-  // Length pre-check is required by timingSafeEqual (throws otherwise)
-  // and leaks only the length itself, which isn't sensitive.
-  const supplied = request.headers.get('x-cron-secret') ?? ''
-  const suppliedBuf = Buffer.from(supplied)
-  const expectedBuf = Buffer.from(expected)
-  if (
-    suppliedBuf.length !== expectedBuf.length ||
-    !timingSafeEqual(suppliedBuf, expectedBuf)
-  ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
+  const expected = process.env.AUTOMATION_CRON_SECRET || process.env.CRON_SECRET
+
+  if (!isVercelCron) {
+    if (!expected) {
+      return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
+    }
+    const authHeader = request.headers.get('authorization')
+    const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    const supplied = request.headers.get('x-cron-secret') ?? bearer ?? ''
+    const suppliedBuf = Buffer.from(supplied)
+    const expectedBuf = Buffer.from(expected)
+
+    if (
+      suppliedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(suppliedBuf, expectedBuf)
+    ) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   const admin = supabaseAdmin()

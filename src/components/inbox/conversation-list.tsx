@@ -607,16 +607,32 @@ interface ConversationItemProps {
 // (delete-only) was tried and reverted — it fought the original
 // left-to-right gesture's feel, so there's only ever one direction now.
 const SWIPE_LEFT_WIDTH = 152;
+// Rubber-band past SWIPE_LEFT_WIDTH: how far the panel can be pulled
+// beyond its resting width, and how much of the extra pull actually
+// moves it — the resistance iOS gives you dragging a list row (or a
+// scroll view) past its natural limit, instead of a hard stop.
+const SWIPE_OVERSHOOT_MAX = 28;
+const SWIPE_OVERSHOOT_RATIO = 0.28;
 // Minimum finger movement (px) before a touch gesture commits to
 // horizontal swipe vs. vertical scroll — matches the "10px before
 // committing" rule below.
 const SWIPE_AXIS_THRESHOLD = 10;
 // A gesture only locks to horizontal once it's this many times more
-// horizontal than vertical — a plain `dx > dy` let a near-diagonal
-// drag (very common on a real vertical scroll) commit to swipe by
-// mistake. Above the threshold, ties now favor vertical (native
-// scroll), not horizontal.
-const SWIPE_AXIS_RATIO = 1.5;
+// horizontal than vertical. Confirmed live on a real iPhone (Safari
+// Web Inspector, 2026-08-11): even 1.5x let plain taps and ordinary
+// vertical scrolling misfire as a swipe — real touch samples wobble
+// diagonally far more than any desktop-simulated TouchEvent ever did.
+// 2.5x is a much stronger bias toward "this is a scroll" (the far more
+// common gesture in a list), matching how conservative WhatsApp's own
+// iOS row swipe is about committing to horizontal.
+const SWIPE_AXIS_RATIO = 2.5;
+// Apple's spring/bounce feel via a cubic-bezier approximation (true
+// spring physics need CSS `linear()` easing, iOS 16.4+ only): a slight
+// overshoot past the resting point before settling, instead of a flat
+// ease-out. This — plus the rubber-band above — is what reads as
+// "elastic" rather than a mechanical slide.
+const SWIPE_SPRING_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+const SWIPE_SPRING_MS = 320;
 
 function ConversationItem({
   conversation,
@@ -637,23 +653,35 @@ function ConversationItem({
   // `revealed` only changes once per gesture, on touch release — the
   // drag itself writes straight to the DOM via `contentRef.current
   // .style.transform` (see applyTransform), bypassing React/setState so
-  // dragging never triggers a re-render. `touch-action: pan-y` lets
-  // vertical scroll pass through to the list untouched; `dragRef.axis`
-  // decides per-gesture, from the first move sample, whether the
-  // finger is scrolling or swiping (mirrors native iOS list rows).
+  // dragging never triggers a re-render.
+  //
+  // Native `addEventListener`/`{ passive: false }` below, NOT React's
+  // touch props — confirmed live on a real iPhone (Mac + Safari Web
+  // Inspector, 2026-08-11) that this was the actual root cause of the
+  // reported "opens on a plain tap, opens scrolling up AND down, no
+  // predictability": React always attaches `onTouchMove` as a passive
+  // listener, so `preventDefault()` inside it is a silent no-op — the
+  // list's native scroll and this component's own transform were both
+  // reacting to the same touch stream with neither ever winning
+  // cleanly. `use-drawer-gesture.ts` (the sidebar menu) already used
+  // native non-passive listeners for exactly this reason; this mirrors
+  // that proven pattern instead of React's touch props.
   const contentRef = useRef<HTMLDivElement>(null);
-  // The action panels sit behind `contentRef` and are only meant to
-  // show once it has actually slid clear of them. They default to
-  // `invisible` (see className below) rather than relying on the
-  // sliding content's opaque background to cover them, because the
-  // row's own `hover:bg-muted/50` is semi-transparent — without this,
-  // hovering a row (mouse, or a touch/click's residual cursor
-  // position) lets the panels bleed through the hover tint. Both are
-  // flipped to `visible` imperatively the instant a drag starts (we
-  // don't yet know which direction), then handed back to the
-  // `revealed`-driven class once the gesture settles.
+  // The action panel sits behind `contentRef` and only needs to be
+  // visible once the drag has actually confirmed horizontal — flipped
+  // to `visible` imperatively the instant the gesture locks to "x" (not
+  // on every touchstart/tap, which is what let a plain tap flash it
+  // open on real hardware), then handed back to the `revealed`-driven
+  // class once the gesture settles.
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [revealed, setRevealed] = useState<"left" | null>(null);
+  // Mirrors `revealed` into a ref so the native-listener effect below
+  // (mounted once, not re-subscribed on every reveal change) always
+  // reads the current value without needing it as a dependency.
+  const revealedRef = useRef(revealed);
+  useEffect(() => {
+    revealedRef.current = revealed;
+  }, [revealed]);
   const dragRef = useRef({
     active: false,
     axis: null as "x" | "y" | null,
@@ -667,12 +695,12 @@ function ConversationItem({
     const el = contentRef.current;
     if (!el) return;
     // 1:1 with the finger during the drag itself (no transition — see
-    // the `false` callers below). On release, a spring-like decelerate
-    // curve (the same shape iOS sheets/swipe rows settle with) instead
-    // of a linear/plain ease-out, so the snap open/closed reads as a
-    // soft catch rather than a mechanical slide.
+    // the `false` callers below). On release, Apple's own spring/bounce
+    // curve (see SWIPE_SPRING_EASE) — a slight overshoot past the
+    // resting point before settling — so the open/close snap reads as
+    // an elastic catch rather than a mechanical slide.
     el.style.transition = animate
-      ? "transform 280ms cubic-bezier(0.32, 0.72, 0, 1)"
+      ? `transform ${SWIPE_SPRING_MS}ms ${SWIPE_SPRING_EASE}`
       : "none";
     el.style.transform = `translate3d(${x}px,0,0)`;
   }, []);
@@ -683,27 +711,28 @@ function ConversationItem({
     applyTransform(revealed === "left" ? SWIPE_LEFT_WIDTH : 0, true);
   }, [revealed, applyTransform]);
 
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    function handleTouchStart(e: TouchEvent) {
       const touch = e.touches[0];
+      if (!touch) return;
       dragRef.current = {
         active: true,
         axis: null,
         startX: touch.clientX,
         startY: touch.clientY,
-        baseX: revealed === "left" ? SWIPE_LEFT_WIDTH : 0,
+        baseX: revealedRef.current === "left" ? SWIPE_LEFT_WIDTH : 0,
         x: 0,
       };
-      if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
-    },
-    [revealed]
-  );
+    }
 
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+    function handleTouchMove(e: TouchEvent) {
       const drag = dragRef.current;
       if (!drag.active) return;
       const touch = e.touches[0];
+      if (!touch) return;
       const dx = touch.clientX - drag.startX;
       const dy = touch.clientY - drag.startY;
 
@@ -713,7 +742,8 @@ function ConversationItem({
         // accidentally eat a scroll than to occasionally need a slightly
         // more deliberate swipe. Any movement that's at least as
         // vertical as it is horizontal locks straight to "y", no ratio
-        // needed. Horizontal only wins once it's unambiguous.
+        // needed. Horizontal only wins once it's unambiguous (see
+        // SWIPE_AXIS_RATIO — deliberately steep).
         if (Math.abs(dy) >= SWIPE_AXIS_THRESHOLD && Math.abs(dy) >= Math.abs(dx)) {
           drag.axis = "y";
         } else if (
@@ -721,6 +751,7 @@ function ConversationItem({
           Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO
         ) {
           drag.axis = "x";
+          if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
         } else {
           return; // not enough signal yet either way
         }
@@ -731,9 +762,7 @@ function ConversationItem({
       // sample): if the gesture drifts and vertical overtakes
       // horizontal mid-swipe — a real finger rarely travels in a
       // perfectly straight line — bail out to scroll instead of
-      // fighting the page under it. This is what actually fixes swipe
-      // misfiring on a real touchscreen/PWA; a one-shot initial
-      // decision alone isn't robust enough against noisy samples.
+      // fighting the page under it.
       if (Math.abs(dy) > Math.abs(dx)) {
         drag.axis = "y";
         drag.x = 0;
@@ -741,38 +770,68 @@ function ConversationItem({
         return;
       }
 
-      // Clamped to [0, SWIPE_LEFT_WIDTH] — left-to-right only. A
-      // right-to-left drag (negative dx) simply can't move the content
-      // at all now, same as it never being wired up.
-      const clamped = Math.min(SWIPE_LEFT_WIDTH, Math.max(0, drag.baseX + dx));
+      // Locked horizontal — this is our gesture now, not the list's.
+      // Cancel the browser's own scroll/pan for this touch so the two
+      // stop competing (only possible because this listener is native
+      // and non-passive; React's touch props can't do this).
+      e.preventDefault();
+
+      const raw = drag.baseX + dx;
+      // Rubber-band once past the fully-open width, instead of a hard
+      // clamp — see SWIPE_OVERSHOOT_MAX/_RATIO.
+      const clamped =
+        raw <= SWIPE_LEFT_WIDTH
+          ? Math.max(0, raw)
+          : Math.min(
+              SWIPE_LEFT_WIDTH + SWIPE_OVERSHOOT_MAX,
+              SWIPE_LEFT_WIDTH + (raw - SWIPE_LEFT_WIDTH) * SWIPE_OVERSHOOT_RATIO
+            );
       drag.x = clamped;
       applyTransform(clamped, false);
-    },
-    [applyTransform]
-  );
+    }
 
-  const handleTouchEnd = useCallback(() => {
-    const drag = dragRef.current;
-    if (!drag.active) return;
-    drag.active = false;
-    // Hand visibility back to the `revealed`-driven class now that the
-    // gesture is settled — clears the imperative override from
-    // touchstart so a future hover/idle state can't stay stuck visible.
-    if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
-    if (drag.axis !== "x") return;
+    function handleTouchEnd() {
+      const drag = dragRef.current;
+      if (!drag.active) return;
+      drag.active = false;
+      // Hand visibility back to the `revealed`-driven class now that the
+      // gesture is settled — clears the imperative override from
+      // touchmove so a future hover/idle state can't stay stuck visible.
+      if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
+      if (drag.axis !== "x") return;
 
-    const next = drag.x > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
-    // Snap explicitly here rather than relying solely on the `revealed`
-    // effect below: when a partial drag resolves back to the SAME value
-    // it already had (the common case — a swipe that doesn't cross the
-    // open threshold resolves to `null`, same as before the gesture),
-    // React bails out of the state update as a no-op and that effect
-    // never re-fires, leaving the card visually stuck wherever the
-    // finger let go instead of snapping back. Calling it directly here
-    // makes the snap unconditional; the effect still covers the other
-    // paths that close it (tap-to-close, action buttons).
-    applyTransform(next === "left" ? SWIPE_LEFT_WIDTH : 0, true);
-    setRevealed(next);
+      // The overshoot rubber-band means `drag.x` can sit slightly past
+      // SWIPE_LEFT_WIDTH — clamp back to the real width before
+      // comparing against the halfway-open threshold below.
+      const settledX = Math.min(drag.x, SWIPE_LEFT_WIDTH);
+      const next = settledX > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
+      // Snap explicitly here rather than relying solely on the `revealed`
+      // effect above: when a partial drag resolves back to the SAME value
+      // it already had (the common case — a swipe that doesn't cross the
+      // open threshold resolves to `null`, same as before the gesture),
+      // React bails out of the state update as a no-op and that effect
+      // never re-fires, leaving the card visually stuck wherever the
+      // finger let go instead of snapping back. Calling it directly here
+      // makes the snap unconditional; the effect still covers the other
+      // paths that close it (tap-to-close, action buttons).
+      applyTransform(next === "left" ? SWIPE_LEFT_WIDTH : 0, true);
+      setRevealed(next);
+    }
+
+    // touchmove is the only listener that ever calls preventDefault, and
+    // only once the gesture is confirmed horizontal — so it can't be
+    // passive. The rest never block the browser's own handling.
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+      el.removeEventListener("touchcancel", handleTouchEnd);
+    };
   }, [applyTransform]);
 
   const closeSwipe = useCallback(() => setRevealed(null), []);
@@ -905,10 +964,6 @@ function ConversationItem({
             handleClick();
           }
         }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
         onContextMenu={handleContextMenu}
         style={{ touchAction: "pan-y" }}
         className={cn(

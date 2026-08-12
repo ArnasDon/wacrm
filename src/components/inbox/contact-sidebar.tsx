@@ -321,50 +321,58 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
               card and the header's "⋮ → Mover para" submenu show; moving
               here calls the same `deals.stage_id` update via
               `useLeadPipelineStage`, so all three stay in sync. */}
-          <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="rounded-xl border border-border bg-muted/50 p-4">
+            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               <Kanban className="h-3 w-3" />
               {tSidebar("pipelineStage")}
             </div>
-            <div className="mt-2 rounded-lg bg-muted px-3 py-2">
-              <p className="text-sm font-medium text-foreground">
+            <div className="mt-3 flex items-center gap-2">
+              {pipelineDeal?.stage && (
+                <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-orange-500" />
+              )}
+              <p
+                className={cn(
+                  "text-base font-semibold",
+                  pipelineDeal?.stage ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
                 {pipelineDeal?.stage?.name ?? tSidebar("noPipelineStage")}
               </p>
-              {pipelineDeal && pipelineStages.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="mt-2 inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
-                    {tSidebar("changeStage")}
-                    <ChevronDown className="h-3 w-3" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48 border-border bg-popover">
-                    {pipelineStages.map((stage) => (
-                      <DropdownMenuItem
-                        key={stage.id}
-                        onClick={async () => {
-                          const { error } = await moveToStage(stage.id);
-                          if (error) toast.error("Failed to update pipeline stage");
-                        }}
-                        className={cn(
-                          "text-sm",
-                          stage.id === pipelineDeal.stage_id
-                            ? "text-primary"
-                            : "text-popover-foreground"
-                        )}
-                      >
-                        <span
-                          className="mr-2 h-2 w-2 rounded-full"
-                          style={{ backgroundColor: stage.color }}
-                        />
-                        <span className="flex-1">{stage.name}</span>
-                        {stage.id === pipelineDeal.stage_id && (
-                          <Check className="ml-2 h-3 w-3" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
             </div>
+            {pipelineDeal && pipelineStages.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="mt-3 flex w-full items-center justify-between rounded-lg border border-orange-500/60 bg-transparent px-3 py-2 text-sm font-medium text-orange-500 transition-colors hover:bg-orange-500/10">
+                  <span>{tSidebar("changeStage")}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48 border-border bg-popover">
+                  {pipelineStages.map((stage) => (
+                    <DropdownMenuItem
+                      key={stage.id}
+                      onClick={async () => {
+                        const { error } = await moveToStage(stage.id);
+                        if (error) toast.error("Failed to update pipeline stage");
+                      }}
+                      className={cn(
+                        "text-sm",
+                        stage.id === pipelineDeal.stage_id
+                          ? "text-primary"
+                          : "text-popover-foreground"
+                      )}
+                    >
+                      <span
+                        className="mr-2 h-2 w-2 rounded-full"
+                        style={{ backgroundColor: stage.color }}
+                      />
+                      <span className="flex-1">{stage.name}</span>
+                      {stage.id === pipelineDeal.stage_id && (
+                        <Check className="ml-2 h-3 w-3" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
           {/* Divider */}

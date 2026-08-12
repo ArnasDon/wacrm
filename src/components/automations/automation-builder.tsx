@@ -145,6 +145,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "tag_added" },
   { value: "time_based" },
   { value: "appointment_reminder" },
+  { value: "appointment_reminder_1h" },
 ]
 
 function cid(): string {

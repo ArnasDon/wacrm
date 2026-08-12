@@ -624,4 +624,15 @@ describe("interpolate — deal and contact variable resolution", () => {
     const text = "Data: {{ agendamento }}";
     expect(interpolate(text, argsWithoutFormatted, dummyContact)).toContain("15/08/2026");
   });
+
+  it("handles appointment_reminder_1h trigger event correctly", () => {
+    const args1h = {
+      ...dummyArgs,
+      triggerEvent: "appointment_reminder_1h",
+    };
+    const text = "Lembrete 1h: {{ deal.title }} às {{ agendamento }}";
+    expect(interpolate(text, args1h, dummyContact)).toBe(
+      "Lembrete 1h: Consulta Dr. Silva às 15/08/2026 às 14:00"
+    );
+  });
 });

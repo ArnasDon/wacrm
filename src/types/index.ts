@@ -466,6 +466,7 @@ export type AutomationTriggerType =
   | 'tag_added'
   | 'time_based'
   | 'appointment_reminder'
+  | 'appointment_reminder_1h'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
   | 'interactive_reply';

@@ -121,9 +121,14 @@ export default function HevcTestPage() {
           : "❌ ausente"}
       </div>
 
+      {/* accept idêntico ao PICKER_ACCEPT.video do composer real
+          (message-composer.tsx) — de propósito. accept="video/*"
+          genérico levou o iOS a entregar o vídeo já convertido pra
+          H.264 antes mesmo de chegar no JS (visto pela diferença de
+          tamanho vs. o original no Fotos), mascarando o cenário real. */}
       <input
         type="file"
-        accept="video/*"
+        accept="video/mp4,video/3gpp,video/quicktime,.mov"
         style={{ marginTop: 16, display: "block" }}
         onChange={(e) => handleFile(e.target.files?.[0])}
       />

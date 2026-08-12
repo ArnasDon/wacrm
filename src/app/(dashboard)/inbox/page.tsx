@@ -819,10 +819,29 @@ function InboxPageInner() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel: Conversation list.
             Hidden on mobile when a conversation is selected so the
-            thread can occupy the full width. Always visible on lg+. */}
+            thread can occupy the full width. Always visible on lg+.
+
+            `min-w-0` is load-bearing — same bug class as the thread
+            panel below (issue #165), confirmed live via Safari Web
+            Inspector (2026-08-12) by walking the ancestor chain from an
+            overflowing message preview: this exact div was the one
+            that jumped from the real 430px screen width to ~2330px.
+            Below `lg:`, this is a `flex-1`/`flex-basis:0%` item — without
+            `min-w-0` its automatic minimum size falls back to its
+            content's intrinsic width, and a long unbroken preview deep
+            inside `ConversationList` (last_message_text, no wrap) was
+            that content. Every truncation fix inside conversation-list.tsx
+            was layered on top of a still-oversized ancestor, so none of
+            them could actually take effect. At `lg:` this div switches to
+            `flex-none` and stops needing to shrink at all — which is
+            exactly why the bug only ever showed up on mobile widths,
+            never on desktop. The same overflow also pushed the unread
+            badge (the list row's rightmost column) off-screen past the
+            visible viewport — it was never failing to render, just
+            invisible past the right edge. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex-none",
+            "flex h-full min-w-0 flex-1 lg:flex-none",
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >

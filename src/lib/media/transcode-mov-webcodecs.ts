@@ -59,13 +59,21 @@ export async function canTranscodeViaWebCodecs(file: File): Promise<boolean> {
 
 /**
  * Transcodes a QuickTime/HEVC .mov file to H.264/AAC .mp4 using the
- * browser's native WebCodecs (via mediabunny), capped at 1280px on the
- * long edge and "medium" quality — WhatsApp-appropriate and, more
- * concretely, small enough to clear the existing MEDIA_MAX_BYTES_BY_KIND
- * video cap (16MB) in message-composer.tsx, which runs unmodified right
- * after this. Throws with a user-facing message on failure or timeout —
- * callers surface it via a toast, same convention as `uploadAccountMedia`
- * and the previous ffmpeg.wasm path.
+ * browser's native WebCodecs (via mediabunny). Deliberately does NOT
+ * pass `width`/`height`/`fit` — an earlier version capped resolution
+ * that way and it broke display dimensions on rotated (portrait)
+ * phone video: the file converted fine and even played, but every
+ * player (this CRM, WhatsApp on both ends) rendered it tiny,
+ * thumbnail-sized, because the resize math and the source's rotation
+ * matrix didn't agree. The exact config below — no resize, source
+ * resolution untouched — is what was validated live on a real iPhone
+ * with correct orientation; only the bitrate is capped (not
+ * resolution) to keep the result under the existing
+ * MEDIA_MAX_BYTES_BY_KIND video cap (16MB) in message-composer.tsx,
+ * which runs unmodified right after this. Throws with a user-facing
+ * message on failure or timeout — callers surface it via a toast,
+ * same convention as `uploadAccountMedia` and the previous ffmpeg.wasm
+ * path.
  */
 export async function convertMovToMp4ViaWebCodecs(
   file: File,
@@ -92,10 +100,12 @@ export async function convertMovToMp4ViaWebCodecs(
       output,
       video: {
         codec: "avc",
-        width: 1280,
-        height: 1280,
-        fit: "contain",
-        quality: new Quality("medium"),
+        // 2 Mbps — a fixed bitrate rather than a named quality preset
+        // (which scales with source resolution and produced ~18 Mbps,
+        // 92.5 MB for a 41s clip in the earlier version) keeps output
+        // size predictable and duration-proportional regardless of
+        // source resolution, without touching width/height/rotation.
+        quality: new Quality({ bitrate: 2_000_000 }),
         hardwareAcceleration: "prefer-hardware",
       },
       audio: { codec: "aac" },

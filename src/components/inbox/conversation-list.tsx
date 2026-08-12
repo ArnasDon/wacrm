@@ -25,8 +25,15 @@ import {
   Pin,
   PinOff,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { useTranslations } from "next-intl";
+import {
+  format,
+  isToday,
+  isYesterday,
+  differenceInCalendarDays,
+  type Locale,
+} from "date-fns";
+import { getDateFnsLocale } from "@/lib/date-fns-locale";
+import { useLocale, useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -84,7 +91,31 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
-
+/**
+ * WhatsApp-style relative timestamp for the conversation list row:
+ * exact time today, "Ontem"/"Yesterday" for yesterday, the weekday
+ * name for the rest of the current week, and a short date beyond
+ * that (matches WhatsApp's own list). Replaces date-fns'
+ * `formatDistanceToNow` ("12 minutes", "about 1 hour"), which also
+ * never respected the app's locale here — always rendered in English
+ * regardless of pt-BR/ko. Pure + exported so it's unit-testable
+ * without mounting the component.
+ */
+export function formatConversationTimestamp(
+  date: Date,
+  yesterdayLabel: string,
+  locale?: Locale,
+  now: Date = new Date(),
+): string {
+  if (isToday(date)) return format(date, "HH:mm", { locale });
+  if (isYesterday(date)) return yesterdayLabel;
+  // Within the current week (but not today/yesterday): weekday name,
+  // e.g. "segunda-feira" — matches WhatsApp's own list.
+  if (differenceInCalendarDays(now, date) < 7) {
+    return format(date, "EEEE", { locale });
+  }
+  return format(date, "dd/MM/yyyy", { locale });
+}
 
 type InboxFilter = ConversationStatus | "all" | "unread" | "unanswered";
 
@@ -652,6 +683,8 @@ function ConversationItem({
   responderColor,
 }: ConversationItemProps) {
   const tLeads = useTranslations("Leads.deleteDialog");
+  const appLocale = useLocale();
+  const dateFnsLocale = getDateFnsLocale(appLocale);
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
@@ -928,12 +961,14 @@ function ConversationItem({
     e.preventDefault();
     ctxAnchorRef.current = { x: e.clientX, y: e.clientY };
     setCtxMenuOpen(true);
-  }, []);
+  }, [setCtxMenuOpen]);
 
   const timeAgo = conversation.last_message_at
-    ? formatDistanceToNow(new Date(conversation.last_message_at), {
-        addSuffix: false,
-      })
+    ? formatConversationTimestamp(
+        new Date(conversation.last_message_at),
+        t("yesterday"),
+        dateFnsLocale,
+      )
     : "";
 
   return (

@@ -13,7 +13,7 @@ import {
   User,
   Tag as TagIcon,
   Kanban,
-  ChevronDown,
+  ChevronRight,
   ShoppingBag,
   BrainCircuit,
   Megaphone,
@@ -321,18 +321,18 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
               card and the header's "⋮ → Mover para" submenu show; moving
               here calls the same `deals.stage_id` update via
               `useLeadPipelineStage`, so all three stay in sync. */}
-          <div className="rounded-xl border border-border bg-muted/50 p-4">
+          <div className="rounded-2xl border border-border bg-muted/50 p-4">
             <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               <Kanban className="h-3 w-3" />
               {tSidebar("pipelineStage")}
             </div>
             <div className="mt-3 flex items-center gap-2">
               {pipelineDeal?.stage && (
-                <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-orange-500" />
+                <span className="h-3 w-3 flex-shrink-0 rounded-full bg-orange-500" />
               )}
               <p
                 className={cn(
-                  "text-base font-semibold",
+                  "text-base font-bold",
                   pipelineDeal?.stage ? "text-foreground" : "text-muted-foreground"
                 )}
               >
@@ -341,9 +341,9 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
             </div>
             {pipelineDeal && pipelineStages.length > 0 && (
               <DropdownMenu>
-                <DropdownMenuTrigger className="mt-3 flex w-full items-center justify-between rounded-lg border border-orange-500/60 bg-transparent px-3 py-2 text-sm font-medium text-orange-500 transition-colors hover:bg-orange-500/10">
+                <DropdownMenuTrigger className="mt-4 flex w-full items-center justify-between rounded-full border border-orange-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-orange-500 transition-colors hover:bg-orange-500/10">
                   <span>{tSidebar("changeStage")}</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48 border-border bg-popover">
                   {pipelineStages.map((stage) => (

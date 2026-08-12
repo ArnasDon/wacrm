@@ -420,7 +420,7 @@
       "noDeals": "딜 없음",
       "pipelineStage": "파이프라인 단계",
       "noPipelineStage": "연결된 파이프라인 없음",
-      "changeStage": "단계 이동",
+      "changeStage": "단계 이동...",
       "addNotePlaceholder": "메모 추가...",
       "noNotesYet": "아직 메모가 없습니다",
       "hasPurchased": "구매 이력이 있나요?",

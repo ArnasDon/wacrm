@@ -14,21 +14,23 @@ import { DatabaseIntegrations } from '@/components/settings/database-integration
 type Product = { id:string; name:string; description:string|null; color:string|null; price:number|string; currency:string; image_url:string|null; product_url:string|null; category:string|null; stock_quantity:number|null; is_active:boolean }
 type Source = { id:string; name:string; source_type:string; base_url:string|null; search_path:string|null; auth_type:string; is_active:boolean }
 type DatabaseStats = { totalProductRecords:number; totalVariantRecords:number; sources:Array<{sourceId:string;sourceName:string;ok:boolean;productRecords:number;variantRecords:number;tables:Array<{table:string;kind:string;count:number}>;error?:string}> }
-// Bulk uploader: each photo gets uploaded then classified by AI (colour +
-// description) as a *suggestion* — name and price are never guessed, the
-// owner always fills those in before saving.
-type BulkItem = { id:string; file:File; imageUrl:string|null; uploading:boolean; classifying:boolean; name:string; price:string; color:string|null; description:string; error?:string }
+// Bulk uploader: each photo gets uploaded then classified by AI (category,
+// colour + description) as a *suggestion* — name and price are never guessed,
+// the owner always fills those in before saving.
+type BulkItem = { id:string; file:File; imageUrl:string|null; uploading:boolean; classifying:boolean; name:string; price:string; category:string|null; color:string|null; description:string; error?:string }
 
 const initialProduct = { name:'', price:'', currency:'MZN', image_url:'', description:'', category:'', product_url:'', stock_quantity:'' }
 const initialSource = { name:'', base_url:'', search_path:'products?search={query}&limit={limit}', auth_type:'none', auth_header:'X-API-Key', auth_secret:'', field_mapping: JSON.stringify({ items:'data.products', id:'id', name:'name', description:'description', price:'price', currency:'currency', imageUrl:'images.0.url', productUrl:'url', category:'category.name', stockQuantity:'stock' }, null, 2) }
 
-// Shows what the AI classified (colour + description) with an inline edit
-// mode — the AI should usually get it right, but the owner can correct it.
-function ProductCard({p,onToggle,onRemove,onSave}:{p:Product;onToggle:()=>void;onRemove:()=>void;onSave:(patch:{color?:string|null;description?:string|null})=>void}){
+// Shows what the AI classified (category + colour + description) with an
+// inline edit mode — the AI should usually get it right, but the owner can
+// correct every suggested field.
+function ProductCard({p,onToggle,onRemove,onSave}:{p:Product;onToggle:()=>void;onRemove:()=>void;onSave:(patch:{category?:string|null;color?:string|null;description?:string|null})=>void}){
   const [editing,setEditing]=useState(false)
+  const [category,setCategory]=useState(p.category??'')
   const [color,setColor]=useState(p.color??'')
   const [description,setDescription]=useState(p.description??'')
-  function startEditing(){ setColor(p.color??''); setDescription(p.description??''); setEditing(true) }
+  function startEditing(){ setCategory(p.category??''); setColor(p.color??''); setDescription(p.description??''); setEditing(true) }
 
   return <Card className={!p.is_active?'opacity-60':''}>
     {p.image_url?<img src={p.image_url} alt={p.name} className="aspect-[4/3] w-full object-cover"/>:<div className="flex aspect-[4/3] items-center justify-center bg-muted"><ImageIcon className="h-10 w-10"/></div>}
@@ -36,9 +38,10 @@ function ProductCard({p,onToggle,onRemove,onSave}:{p:Product;onToggle:()=>void;o
     <CardContent className="space-y-3">
       <p className="text-lg font-semibold">{Number(p.price).toLocaleString('pt-PT')} {p.currency}</p>
       {editing?<div className="space-y-2">
+        <Input placeholder="Categoria" value={category} onChange={e=>setCategory(e.target.value)}/>
         <Input placeholder="Cor" value={color} onChange={e=>setColor(e.target.value)}/>
         <Textarea placeholder="Descrição" value={description} onChange={e=>setDescription(e.target.value)}/>
-        <div className="flex gap-2"><Button size="sm" onClick={()=>{onSave({color:color.trim()||null,description:description.trim()||null});setEditing(false)}}>Guardar</Button><Button size="sm" variant="ghost" onClick={()=>setEditing(false)}>Cancelar</Button></div>
+        <div className="flex gap-2"><Button size="sm" onClick={()=>{onSave({category:category.trim()||null,color:color.trim()||null,description:description.trim()||null});setEditing(false)}}>Guardar</Button><Button size="sm" variant="ghost" onClick={()=>setEditing(false)}>Cancelar</Button></div>
       </div>:<p className="line-clamp-3 text-sm text-muted-foreground">{p.description||'Sem descrição — usa "Reclassificar tudo com IA" ou edita à mão.'}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={onToggle}>{p.is_active?'Desactivar':'Activar'}</Button>
@@ -70,7 +73,7 @@ export default function CatalogPage() {
   async function removeProduct(id:string){ if(!confirm('Remover este produto?')) return; const r=await fetch(`/api/catalog/products/${id}`,{method:'DELETE'}); if(r.ok){setProducts(c=>c.filter(p=>p.id!==id));toast.success('Produto removido.')}else toast.error('Não foi possível remover o produto.') }
 
   async function addBulkFiles(files:FileList){
-    const items:BulkItem[]=Array.from(files).map(file=>({id:crypto.randomUUID(),file,imageUrl:null,uploading:true,classifying:false,name:'',price:'',color:null,description:''}))
+    const items:BulkItem[]=Array.from(files).map(file=>({id:crypto.randomUUID(),file,imageUrl:null,uploading:true,classifying:false,name:'',price:'',category:null,color:null,description:''}))
     setBulkItems(current=>[...current,...items])
     for(const item of items){
       try{
@@ -81,7 +84,7 @@ export default function CatalogPage() {
         setBulkItems(current=>current.map(x=>x.id===item.id?{...x,imageUrl:b.url,uploading:false,classifying:true}:x))
         const cr=await fetch('/api/catalog/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:b.url})})
         const cb=await cr.json().catch(()=>({}))
-        setBulkItems(current=>current.map(x=>x.id===item.id?{...x,classifying:false,color:cr.ok?cb.color:null,description:cr.ok?(cb.description??''):''}:x))
+        setBulkItems(current=>current.map(x=>x.id===item.id?{...x,classifying:false,category:cr.ok?cb.category:null,color:cr.ok?cb.color:null,description:cr.ok?(cb.description??''):''}:x))
       }catch(e){
         setBulkItems(current=>current.map(x=>x.id===item.id?{...x,uploading:false,classifying:false,error:e instanceof Error?e.message:'Erro.'}:x))
       }
@@ -96,7 +99,7 @@ export default function CatalogPage() {
     let saved=0
     for(const item of ready){
       try{
-        const r=await fetch('/api/catalog/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:item.name,price:item.price,image_url:item.imageUrl,description:item.description,color:item.color})})
+        const r=await fetch('/api/catalog/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:item.name,price:item.price,image_url:item.imageUrl,description:item.description,category:item.category,color:item.color})})
         const b=await r.json().catch(()=>({}))
         if(!r.ok) throw new Error(b.error??'Erro ao gravar.')
         setProducts(c=>[b.product,...c]); saved+=1
@@ -109,11 +112,11 @@ export default function CatalogPage() {
     if(saved>0) toast.success(`${saved} produto(s) adicionado(s).`)
   }
   async function toggleProduct(p:Product){ const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!p.is_active})}); const b=await r.json().catch(()=>({})); if(r.ok)setProducts(c=>c.map(x=>x.id===p.id?b.product:x));else toast.error(b.error??'Não foi possível actualizar o produto.') }
-  async function saveProductEdits(p:Product,patch:{color?:string|null;description?:string|null}){ const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}); const b=await r.json().catch(()=>({})); if(r.ok){setProducts(c=>c.map(x=>x.id===p.id?b.product:x));toast.success('Produto actualizado.')}else toast.error(b.error??'Não foi possível actualizar o produto.') }
+  async function saveProductEdits(p:Product,patch:{category?:string|null;color?:string|null;description?:string|null}){ const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}); const b=await r.json().catch(()=>({})); if(r.ok){setProducts(c=>c.map(x=>x.id===p.id?b.product:x));toast.success('Produto actualizado.')}else toast.error(b.error??'Não foi possível actualizar o produto.') }
 
-  // Reclassifies every product that has a photo, AI-generated colour +
-  // description overwriting whatever is there — including hand-written
-  // descriptions, since those turned out to describe colours poorly.
+  // Reclassifies every product that has a photo, AI-generated category,
+  // colour + description overwriting whatever is there. The human can still
+  // edit the three fields afterwards from the product card.
   async function classifyAllMissing(){
     const targets=products.filter(p=>p.image_url)
     if(targets.length===0){ toast.error('Nenhum produto com foto.'); return }
@@ -126,7 +129,7 @@ export default function CatalogPage() {
         const cr=await fetch('/api/catalog/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_url:p.image_url})})
         const cb=await cr.json().catch(()=>({}))
         if(!cr.ok) throw new Error(cb.error??'Erro ao classificar.')
-        const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({color:cb.color??null,description:cb.description??''})})
+        const r=await fetch(`/api/catalog/products/${p.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:cb.category??null,color:cb.color??null,description:cb.description??''})})
         const b=await r.json().catch(()=>({}))
         if(r.ok){ setProducts(c=>c.map(x=>x.id===p.id?b.product:x)); done+=1 }
       }catch(e){
@@ -134,8 +137,8 @@ export default function CatalogPage() {
       }
     }
     setClassifyingAll(false); setClassifyProgress(null)
-    if(done===targets.length) toast.success(`${done} de ${targets.length} produtos classificados. Cor, descrição, preço e foto estão associados em cada produto — o agente já reconhece isto correctamente nas conversas.`)
-    else toast.success(`${done} de ${targets.length} produtos classificados. Os restantes falharam — tenta "Reclassificar tudo com IA" outra vez para repetir só os que faltam.`)
+    if(done===targets.length) toast.success(`${done} de ${targets.length} produtos classificados. Categoria, cor e descrição foram actualizadas pela IA.`)
+    else toast.success(`${done} de ${targets.length} produtos classificados. Os restantes falharam — tenta "Reclassificar tudo com IA" outra vez.`)
   }
 
   function mapping(){ try{return JSON.parse(sourceForm.field_mapping) as Record<string,unknown>}catch{throw new Error('O mapeamento deve ser JSON válido.')} }
@@ -145,7 +148,7 @@ export default function CatalogPage() {
   async function toggleSource(s:Source){ const r=await fetch(`/api/catalog/sources/${s.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!s.is_active})}); const b=await r.json().catch(()=>({})); if(r.ok)setSources(c=>c.map(x=>x.id===s.id?b.source:x));else toast.error(b.error??'Não foi possível actualizar a fonte.') }
 
   return <div className="space-y-6">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><PackageSearch className="h-6 w-6 text-primary"/><h1 className="text-2xl font-bold">Catálogo</h1></div><p className="mt-1 text-sm text-muted-foreground">Produtos internos, APIs e bases de dados externas usados pelo agente no WhatsApp.</p></div><div className="flex gap-2"><Button variant="outline" onClick={()=>{if(confirm('Isto substitui a descrição de TODOS os produtos com foto (mesmo as já escritas) pela sugestão da IA. Continuar?'))void classifyAllMissing()}} disabled={classifyingAll} title="Substitui cor e descrição de todos os produtos com foto pela sugestão da IA"><Sparkles/>{classifyingAll?<Loader2 className="animate-spin"/>:null}Reclassificar tudo com IA</Button><Button variant="outline" onClick={()=>void loadData()} disabled={loading}>{loading?<Loader2 className="animate-spin"/>:<RefreshCw/>}Actualizar</Button></div></div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><PackageSearch className="h-6 w-6 text-primary"/><h1 className="text-2xl font-bold">Catálogo</h1></div><p className="mt-1 text-sm text-muted-foreground">Produtos internos, APIs e bases de dados externas usados pelo agente no WhatsApp.</p></div><div className="flex gap-2"><Button variant="outline" onClick={()=>{if(confirm('Isto substitui categoria, cor e descrição de TODOS os produtos com foto pela sugestão da IA. Continuar?'))void classifyAllMissing()}} disabled={classifyingAll} title="Substitui categoria, cor e descrição de todos os produtos com foto pela sugestão da IA"><Sparkles/>{classifyingAll?<Loader2 className="animate-spin"/>:null}Reclassificar tudo com IA</Button><Button variant="outline" onClick={()=>void loadData()} disabled={loading}>{loading?<Loader2 className="animate-spin"/>:<RefreshCw/>}Actualizar</Button></div></div>
     {classifyProgress?<Card size="sm"><CardContent className="space-y-2 py-3"><div className="flex items-center justify-between text-sm"><span className="flex items-center gap-1.5 text-foreground"><Sparkles className="h-3.5 w-3.5"/>A classificar: {classifyProgress.label}</span><span className="tabular-nums text-muted-foreground">{classifyProgress.current} de {classifyProgress.total}</span></div><div className="h-2 w-full overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{width:`${Math.round((classifyProgress.current/classifyProgress.total)*100)}%`}}/></div></CardContent></Card>:null}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Card size="sm"><CardHeader><CardDescription>Produtos internos activos</CardDescription><CardTitle>{activeProducts.length}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Produtos via base de dados</CardDescription><CardTitle>{loading?'—':databaseStats.totalProductRecords}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Variantes via base de dados</CardDescription><CardTitle>{loading?'—':databaseStats.totalVariantRecords}</CardTitle></CardHeader></Card><Card size="sm"><CardHeader><CardDescription>Fontes externas</CardDescription><CardTitle>{sources.length}</CardTitle></CardHeader></Card></div>
     {databaseStats.sources.length>0?<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{databaseStats.sources.map(stat=><Card key={stat.sourceId} size="sm"><CardHeader><CardDescription>{stat.sourceName}</CardDescription><CardTitle>{stat.ok?`${stat.productRecords} produto(s)`:'Indisponível'}</CardTitle></CardHeader><CardContent className="space-y-1 text-xs text-muted-foreground">{stat.ok?<>{stat.tables.map(table=><div key={`${stat.sourceId}:${table.table}`} className="flex justify-between gap-3"><span>{table.table}</span><span>{table.count}</span></div>)}<div className="flex justify-between gap-3 border-t pt-1"><span>Variantes</span><span>{stat.variantRecords}</span></div></>:<p>{stat.error??'Não foi possível consultar a fonte.'}</p>}</CardContent></Card>)}</div>:null}
@@ -155,7 +158,7 @@ export default function CatalogPage() {
         <div className="space-y-2 md:col-span-2"><Label>Fotografia</Label><div className="flex flex-col gap-2 sm:flex-row"><Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{const f=e.target.files?.[0];if(f)void uploadImage(f)}}/><Input type="url" placeholder="ou cole uma URL pública" value={productForm.image_url} onChange={e=>setProductForm({...productForm,image_url:e.target.value})}/></div>{uploading?<p className="text-xs text-muted-foreground"><Upload className="mr-1 inline h-3 w-3"/>A carregar...</p>:null}</div>
         <div className="space-y-2"><Label>Categoria</Label><Input value={productForm.category} onChange={e=>setProductForm({...productForm,category:e.target.value})}/></div><div className="space-y-2"><Label>Stock</Label><Input type="number" min="0" value={productForm.stock_quantity} onChange={e=>setProductForm({...productForm,stock_quantity:e.target.value})}/></div><div className="space-y-2 md:col-span-2"><Label>Página do produto</Label><Input type="url" value={productForm.product_url} onChange={e=>setProductForm({...productForm,product_url:e.target.value})}/></div><div className="space-y-2 md:col-span-2"><Label>Descrição</Label><Textarea value={productForm.description} onChange={e=>setProductForm({...productForm,description:e.target.value})}/></div><div className="md:col-span-2"><Button type="submit" disabled={savingProduct||uploading}>{savingProduct?<Loader2 className="animate-spin"/>:<Plus/>}Adicionar produto</Button></div>
       </form></CardContent></Card>
-      <Card><CardHeader><CardTitle>Adicionar vários produtos de uma vez</CardTitle><CardDescription>Escolhe várias fotos — a IA sugere cor e descrição para cada uma; tu só confirmas nome e preço antes de gravar.</CardDescription></CardHeader><CardContent className="space-y-4">
+      <Card><CardHeader><CardTitle>Adicionar vários produtos de uma vez</CardTitle><CardDescription>Escolhe várias fotos — a IA sugere categoria, cor e descrição para cada uma; tu só confirmas nome e preço antes de gravar.</CardDescription></CardHeader><CardContent className="space-y-4">
         <Input type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{const f=e.target.files;if(f&&f.length)void addBulkFiles(f)}}/>
         {bulkItems.length>0?<>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{bulkItems.map(item=><Card key={item.id}>
@@ -164,7 +167,8 @@ export default function CatalogPage() {
               <Input placeholder="Nome (obrigatório)" value={item.name} onChange={e=>updateBulkItem(item.id,{name:e.target.value})}/>
               <Input type="number" min="0" step="0.01" placeholder="Preço (obrigatório)" value={item.price} onChange={e=>updateBulkItem(item.id,{price:e.target.value})}/>
               {item.classifying?<p className="text-xs text-muted-foreground"><Loader2 className="mr-1 inline h-3 w-3 animate-spin"/>A IA está a analisar a foto…</p>:null}
-              <Input placeholder="Cor (sugestão da IA — edita se não estiver certo)" value={item.color??''} onChange={e=>updateBulkItem(item.id,{color:e.target.value||null})}/>
+              <Input placeholder="Categoria (sugestão da IA — edita se não estiver certa)" value={item.category??''} onChange={e=>updateBulkItem(item.id,{category:e.target.value||null})}/>
+              <Input placeholder="Cor (sugestão da IA — edita se não estiver certa)" value={item.color??''} onChange={e=>updateBulkItem(item.id,{color:e.target.value||null})}/>
               <Textarea placeholder="Descrição" value={item.description} onChange={e=>updateBulkItem(item.id,{description:e.target.value})}/>
               {item.error?<p className="text-xs text-destructive">{item.error}</p>:null}
               <Button size="sm" variant="ghost" onClick={()=>removeBulkItem(item.id)}><Trash2/>Remover</Button>

@@ -1,9 +1,15 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { buildCatalogueMediaProxyUrl } from '@/lib/catalog/media-proxy'
-import { searchCatalogues } from '@/lib/catalog/search'
+import { catalogProductKey, searchCatalogForAgent } from '@/lib/catalog/agent-search'
 import type { CatalogProduct } from '@/lib/catalog/types'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { engineSendMedia } from '@/lib/flows/meta-send'
+import {
+  loadConversationCatalogState,
+  rememberCatalogSearch,
+  rememberProductsShown,
+  rememberSelectedProduct,
+} from '../catalog-state'
 import { retrieveKnowledge } from '../knowledge'
 import { extractCurrencyAmounts } from '../guardrails'
 import { generateReply } from '../generate'
@@ -18,14 +24,12 @@ import type {
 
 interface PendingProductSend {
   productRef: string
+  productKey: string
+  mediaKey: string
   name: string
   imageUrl: string
   displayImageUrl: string
   caption: string
-}
-
-interface PendingProductGallery {
-  items: PendingProductSend[]
 }
 
 export interface HandoffToolRequest {
@@ -68,25 +72,40 @@ const SEARCH_KNOWLEDGE_TOOL: AgentToolDefinition = {
 const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
   name: 'search_catalog',
   description:
-    'Search all active product catalogues. Returns real names, prices, photos, links, stock and a temporary product_ref. Catalogue searches are visual by default: the server sends up to three products as plain WhatsApp photographs, each captioned with its name and price, exactly like a person forwarding photos. Set visual=false only for a precise internal lookup when no browsing presentation should be sent. Never reproduce visual results as a numbered text list.',
+    'Search active product catalogues and return ranked, real product candidates. This tool NEVER sends WhatsApp media by itself. ' +
+    'Use structured category/colour/size fields whenever the customer stated them; explicit category and colour constraints are enforced together, not treated as loose alternatives. ' +
+    'For browsing, mode=browse excludes products already shown in this conversation. Use mode=lookup when the customer refers to a specific product already shown, asks its price/stock, or asks for another photo of that same product. ' +
+    'After searching, choose only the genuinely relevant products and call send_product for each product you actually want the customer to see.',
   parameters: {
     type: 'object',
     additionalProperties: false,
     properties: {
       query: {
         type: 'string',
-        description: 'Product name, category, colour, size or customer need.',
+        description: 'Concise free-text product query, preferably a product name/type rather than the whole customer sentence.',
+      },
+      category: {
+        type: 'string',
+        description: 'Optional explicit product category, e.g. legging, top, camisola, macacão. Use when the customer stated or clearly requested a category.',
+      },
+      color: {
+        type: 'string',
+        description: 'Optional explicit colour constraint in the customer language.',
+      },
+      size: {
+        type: 'string',
+        description: 'Optional requested size. Size is verified against variants when the catalogue provides size data; unknown size data must never be presented as confirmed.',
+      },
+      mode: {
+        type: 'string',
+        enum: ['browse', 'lookup'],
+        description: 'browse for new alternatives; lookup for a specific product already discussed. Defaults to browse.',
       },
       limit: {
         type: 'integer',
         minimum: 1,
-        maximum: 5,
-        description: 'Maximum number of products to return.',
-      },
-      visual: {
-        type: 'boolean',
-        description:
-          'Optional. Defaults to true. Set false only for a precise lookup that must not present browsing cards to the customer.',
+        maximum: 10,
+        description: 'Maximum number of candidates returned to you. This does not send them to the customer.',
       },
     },
     required: ['query'],
@@ -96,14 +115,26 @@ const SEARCH_CATALOG_TOOL: AgentToolDefinition = {
 const SEND_PRODUCT_TOOL: AgentToolDefinition = {
   name: 'send_product',
   description:
-    'Prepare the WhatsApp delivery of one product photo returned by search_catalog. Call this when the customer explicitly asks to receive or see one specific product. Use the exact temporary product_ref; never pass a URL. If several search results represent the same product, prefer the exact-name result that has a photograph.',
+    'Queue one product photograph for WhatsApp after search_catalog returned it. search_catalog only retrieves candidates; YOU decide which results are worth showing and then call this tool for those exact product_ref values. ' +
+    'For a browsing turn, normally send at most three relevant products. If the customer asks for another photo of the same product, search it with mode=lookup first, then call send_product again; when image_index is omitted the server prefers a photograph of that product not yet shown in this conversation. ' +
+    'Set selected=true only when the customer has explicitly chosen or requested this specific product, not when merely presenting alternatives.',
   parameters: {
     type: 'object',
     additionalProperties: false,
     properties: {
       product_ref: {
         type: 'string',
-        description: 'The exact temporary product_ref returned by search_catalog.',
+        description: 'The exact temporary product_ref returned by search_catalog in the current agent run.',
+      },
+      image_index: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 20,
+        description: 'Optional 1-based photograph index. Omit to prefer the first photograph not yet shown for this product.',
+      },
+      selected: {
+        type: 'boolean',
+        description: 'True only when this is the product the customer explicitly selected/requested; false/omit when showing alternatives.',
       },
     },
     required: ['product_ref'],
@@ -178,7 +209,7 @@ const SCHEDULE_VISIT_TOOL: AgentToolDefinition = {
 const STYLE_OPINION_TOOL: AgentToolDefinition = {
   name: 'get_style_opinion',
   description:
-    'Get an honest opinion on how well specific catalogue products (already found via search_catalog in this conversation) suit what the customer said about their own body, height, or style preference. Looks at the real product photos rather than guessing from the text description alone. Use this whenever the customer asks for a suggestion or "what would suit me" based on something they said about themselves.',
+    'Get an honest visual opinion on catalogue products found via search_catalog in the CURRENT agent run. Product refs are temporary and do not survive to a later turn. If the customer asks about a product from an earlier turn, first call search_catalog with mode=lookup to obtain a fresh product_ref, then call this tool. Looks at real product photos rather than guessing from text alone.',
   parameters: {
     type: 'object',
     additionalProperties: false,
@@ -188,7 +219,7 @@ const STYLE_OPINION_TOOL: AgentToolDefinition = {
         items: { type: 'string' },
         minItems: 1,
         maxItems: 5,
-        description: 'One to five product_ref values returned by an earlier search_catalog call.',
+        description: 'One to five product_ref values returned by search_catalog in this current run.',
       },
       customer_description: {
         type: 'string',
@@ -245,7 +276,7 @@ function parseObject(raw: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function parseSearchInput(input: Record<string, unknown>) {
+function parseKnowledgeSearchInput(input: Record<string, unknown>) {
   const query = typeof input.query === 'string' ? input.query.trim() : ''
   if (!query) throw new Error('query is required.')
   if (query.length > 500) throw new Error('query is too long.')
@@ -256,7 +287,29 @@ function parseSearchInput(input: Record<string, unknown>) {
   return {
     query,
     limit: Math.min(5, Math.max(1, requestedLimit)),
-    visual: input.visual !== false,
+  }
+}
+
+function parseCatalogSearchInput(input: Record<string, unknown>) {
+  const query = typeof input.query === 'string' ? input.query.trim() : ''
+  if (!query) throw new Error('query is required.')
+  if (query.length > 500) throw new Error('query is too long.')
+  const requestedLimit =
+    typeof input.limit === 'number' && Number.isFinite(input.limit)
+      ? Math.floor(input.limit)
+      : 8
+  const textOrNull = (key: string, max: number) => {
+    const value = typeof input[key] === 'string' ? input[key].trim() : ''
+    if (value.length > max) throw new Error(`${key} is too long.`)
+    return value || null
+  }
+  return {
+    query,
+    category: textOrNull('category', 120),
+    color: textOrNull('color', 80),
+    size: textOrNull('size', 40),
+    mode: input.mode === 'lookup' ? ('lookup' as const) : ('browse' as const),
+    limit: Math.min(10, Math.max(1, requestedLimit)),
   }
 }
 
@@ -283,59 +336,58 @@ function optionalText(
   return value
 }
 
-function normalizeProductSearchText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
+interface ResolvedProductImage {
+  url: string
+  source: 'product' | 'variant'
+  variantId: string | null
+  color: string | null
+  size: string | null
 }
 
-function rankCatalogueProducts(products: CatalogProduct[], query: string): CatalogProduct[] {
-  const normalizedQuery = normalizeProductSearchText(query)
-  return products
-    .map((product, index) => {
-      const normalizedName = normalizeProductSearchText(product.name)
-      let score = 0
-      if (normalizedName === normalizedQuery) score += 100
-      else if (normalizedName.startsWith(normalizedQuery)) score += 60
-      else if (normalizedName.includes(normalizedQuery)) score += 30
-      if (resolveProductImage(product)) score += 20
-      if (product.stockQuantity !== null && product.stockQuantity > 0) score += 5
-      return { product, index, score }
-    })
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map(({ product }) => product)
+function resolveProductImages(product: CatalogProduct): ResolvedProductImage[] {
+  const candidates: ResolvedProductImage[] = [
+    {
+      url: product.imageUrl ?? '',
+      source: 'product',
+      variantId: null,
+      color: null,
+      size: null,
+    },
+    ...(product.variants ?? []).map((variant) => ({
+      url: variant.imageUrl ?? '',
+      source: 'variant' as const,
+      variantId: variant.id,
+      color: variant.color,
+      size: variant.size,
+    })),
+  ]
+  const seen = new Set<string>()
+  const resolved: ResolvedProductImage[] = []
+  for (const candidate of candidates) {
+    if (!candidate.url) continue
+    try {
+      const parsed = new URL(candidate.url)
+      if (parsed.protocol !== 'https:') continue
+      const url = parsed.toString()
+      if (seen.has(url)) continue
+      seen.add(url)
+      resolved.push({ ...candidate, url })
+    } catch {
+      // Ignore malformed catalogue media URLs and continue.
+    }
+  }
+  return resolved
 }
 
 function resolveProductImage(product: CatalogProduct): {
   url: string
   source: 'product' | 'variant'
 } | null {
-  const candidates: Array<{ url: string | null | undefined; source: 'product' | 'variant' }> = [
-    { url: product.imageUrl, source: 'product' },
-    ...(product.variants ?? []).map((variant) => ({
-      url: variant.imageUrl,
-      source: 'variant' as const,
-    })),
-  ]
-
-  for (const candidate of candidates) {
-    if (!candidate.url) continue
-    try {
-      const parsed = new URL(candidate.url)
-      if (parsed.protocol === 'https:') {
-        return { url: parsed.toString(), source: candidate.source }
-      }
-    } catch {
-      // Ignore malformed catalogue media URLs and continue to the next candidate.
-    }
-  }
-  return null
+  const [first] = resolveProductImages(product)
+  return first ? { url: first.url, source: first.source } : null
 }
 
-function buildProductCaption(product: CatalogProduct, visualCard = false): string {
+function buildProductCaption(product: CatalogProduct): string {
   const parts = [
     product.name,
     `${Number(product.price).toLocaleString('pt-PT', {
@@ -349,35 +401,35 @@ function buildProductCaption(product: CatalogProduct, visualCard = false): strin
         : 'Actualmente sem stock',
     )
   }
-  if (visualCard) {
-    parts.push('Responda a esta mensagem, ou diga-me qual prefere, para escolher este.')
-  }
   return parts.join('\n').slice(0, 1024)
 }
 
 function buildPendingProduct(
   productRef: string,
   product: CatalogProduct,
-  visualCard = false,
+  imageIndex: number,
 ): PendingProductSend | null {
-  const resolvedImage = resolveProductImage(product)
+  const images = resolveProductImages(product)
+  const resolvedImage = images[imageIndex]
   if (!resolvedImage) {
-    console.info('[ai product gallery] no valid image resolved:', {
+    console.info('[ai send_product] requested image unavailable:', {
       productRef,
       name: product.name,
-      productImageUrl: product.imageUrl,
-      variantImageUrls: (product.variants ?? [])
-        .map((variant) => variant.imageUrl)
-        .filter(Boolean),
+      imageIndex: imageIndex + 1,
+      mediaCount: images.length,
     })
     return null
   }
 
   const directImageUrl = resolvedImage.url
   const deliveryImageUrl = buildCatalogueMediaProxyUrl(directImageUrl) ?? directImageUrl
+  const productKey = catalogProductKey(product)
+  const mediaKey = `${productKey}#${imageIndex + 1}`
 
-  console.info('[ai product gallery] image resolved:', {
+  console.info('[ai send_product] image resolved:', {
     productRef,
+    productKey,
+    mediaKey,
     name: product.name,
     source: resolvedImage.source,
     imageUrl: directImageUrl,
@@ -385,10 +437,12 @@ function buildPendingProduct(
 
   return {
     productRef,
+    productKey,
+    mediaKey,
     name: product.name,
     imageUrl: deliveryImageUrl,
     displayImageUrl: directImageUrl,
-    caption: buildProductCaption(product, visualCard),
+    caption: buildProductCaption(product),
   }
 }
 
@@ -417,7 +471,6 @@ export function createAutoReplyTools(args: {
     onToolCall,
   } = args
   const pendingProductSends: PendingProductSend[] = []
-  const pendingProductGalleries: PendingProductGallery[] = []
   const availableProducts = new Map<string, CatalogProduct>()
   let productRefSequence = 0
   let handoffRequest: HandoffToolRequest | null = null
@@ -434,7 +487,7 @@ export function createAutoReplyTools(args: {
     const input = parseObject(call.arguments)
 
     if (call.name === SEARCH_KNOWLEDGE_TOOL.name) {
-      const search = parseSearchInput(input)
+      const search = parseKnowledgeSearchInput(input)
       const matches = await retrieveKnowledge(
         db,
         accountId,
@@ -455,59 +508,92 @@ export function createAutoReplyTools(args: {
     }
 
     if (call.name === SEARCH_CATALOG_TOOL.name) {
-      const search = parseSearchInput(input)
-      const products = rankCatalogueProducts(
-        await searchCatalogues(db, accountId, search),
-        search.query,
-      )
-      const referencedProducts = products.map((product) => {
+      const search = parseCatalogSearchInput(input)
+      const state = await loadConversationCatalogState({ db, accountId, conversationId })
+      const excluded =
+        search.mode === 'browse'
+          ? Array.from(new Set([...state.shownProductKeys, ...state.rejectedProductKeys]))
+          : []
+      const ranked = await searchCatalogForAgent(db, accountId, {
+        ...search,
+        excludeProductKeys: excluded,
+      })
+      const referencedProducts = ranked.map(({ product, productKey, sizeMatch }) => {
         productRefSequence += 1
         const productRef = `catalog_result_${productRefSequence}`
         availableProducts.set(productRef, product)
-        return { ...product, product_ref: productRef }
+        const images = resolveProductImages(product)
+        return {
+          ...product,
+          product_ref: productRef,
+          product_key: productKey,
+          media_count: images.length,
+          media: images.map((image, index) => ({
+            index: index + 1,
+            source: image.source,
+            variant_id: image.variantId,
+            color: image.color,
+            size: image.size,
+          })),
+          available_sizes: Array.from(
+            new Set((product.variants ?? []).map((variant) => variant.size).filter(Boolean)),
+          ),
+          available_colors: Array.from(
+            new Set((product.variants ?? []).map((variant) => variant.color).filter(Boolean)),
+          ),
+          requested_size_match: sizeMatch,
+        }
       })
       catalogueVerified = referencedProducts.length > 0
 
-      console.info('[ai product gallery] catalogue candidates:',
-        referencedProducts.slice(0, 5).map((product) => ({
+      await rememberCatalogSearch({
+        db,
+        accountId,
+        conversationId,
+        query: search.query,
+        filters: {
+          category: search.category,
+          color: search.color,
+          size: search.size,
+          mode: search.mode,
+        },
+      })
+
+      console.info('[ai catalogue retrieval] candidates:', {
+        conversationId,
+        query: search.query,
+        category: search.category,
+        color: search.color,
+        size: search.size,
+        mode: search.mode,
+        excludedCount: excluded.length,
+        returned: referencedProducts.map((product) => ({
           productRef: product.product_ref,
+          productKey: product.product_key,
           name: product.name,
-          productImageUrl: product.imageUrl,
-          variantImageUrls: (product.variants ?? [])
-            .map((variant) => variant.imageUrl)
-            .filter(Boolean),
-          resolvedImage: resolveProductImage(product)?.url ?? null,
+          category: product.category,
+          mediaCount: product.media_count,
         })),
-      )
-
-      let visualQueued = false
-      if (search.visual && referencedProducts.length > 0) {
-        const visualItems = referencedProducts
-          .slice(0, 3)
-          .map((product) =>
-            buildPendingProduct(
-              product.product_ref,
-              product as CatalogProduct,
-              true,
-            ),
-          )
-          .filter((item): item is PendingProductSend => Boolean(item))
-
-        if (visualItems.length > 0) {
-          pendingProductGalleries.push({ items: visualItems })
-          visualQueued = true
-        }
-      }
+      })
 
       return JSON.stringify({
         ok: true,
         query: search.query,
+        filters: {
+          category: search.category,
+          color: search.color,
+          size: search.size,
+          mode: search.mode,
+        },
         products: referencedProducts,
         found: referencedProducts.length > 0,
-        visual_queued: visualQueued,
-        instruction: visualQueued
-          ? 'The server queued plain WhatsApp photographs for these products, each captioned with its name and price. The customer can choose one by replying to that photo or by naming/describing it in a normal message — you will see which one they mean from the conversation history, so never ask them to type a number. Do not repeat product names or prices in the final text, do not make a numbered list. Reply only with a very short introduction such as "Veja estas opções:".'
-          : 'Only quote prices and availability returned here. To send one photograph, call send_product with the exact product_ref. Do not use a product id or URL.',
+        excluded_previously_shown: search.mode === 'browse' ? excluded.length : 0,
+        instruction:
+          referencedProducts.length > 0
+            ? 'Retrieval only: no product has been sent to the customer. Select only the genuinely relevant results and call send_product for each photograph you want to show (normally at most three). Do not send an item merely because it was returned. For a previously shown specific product use mode=lookup.'
+            : search.mode === 'browse' && excluded.length > 0
+              ? 'No unseen product matched these constraints. Do not resend earlier products automatically. Say honestly that there are no new matching options, or ask whether the customer wants to change a constraint.'
+              : 'No matching product was found with these constraints. Do not substitute a different category silently; explain that no exact match was found and ask whether alternatives are acceptable.',
       })
     }
 
@@ -525,21 +611,69 @@ export function createAutoReplyTools(args: {
       const product = availableProducts.get(productRef)
       if (!product) {
         throw new Error(
-          'Unknown or expired product_ref. Call search_catalog before send_product.',
+          'Unknown or expired product_ref. Call search_catalog in this turn before send_product.',
         )
       }
-      const pending = buildPendingProduct(productRef, product)
-      if (!pending) {
+      const images = resolveProductImages(product)
+      if (images.length === 0) {
         throw new Error('This product has no valid HTTPS photograph to send.')
       }
+
+      const state = await loadConversationCatalogState({ db, accountId, conversationId })
+      const productKey = catalogProductKey(product)
+      const requestedImageIndex =
+        typeof input.image_index === 'number' && Number.isFinite(input.image_index)
+          ? Math.floor(input.image_index) - 1
+          : null
+      let imageIndex = requestedImageIndex
+      if (imageIndex === null) {
+        imageIndex = images.findIndex(
+          (_image, index) => !state.shownMediaKeys.includes(`${productKey}#${index + 1}`),
+        )
+        if (imageIndex < 0) {
+          return JSON.stringify({
+            ok: true,
+            queued: false,
+            no_new_media: true,
+            product: { product_ref: productRef, product_key: productKey, name: product.name },
+            media_count: images.length,
+            instruction:
+              'Every known photograph of this product has already been shown in this conversation. Do not pretend there is another photo; tell the customer honestly and offer a different product only if useful.',
+          })
+        }
+      }
+      if (imageIndex < 0 || imageIndex >= images.length) {
+        throw new Error(`image_index must be between 1 and ${images.length}.`)
+      }
+
+      const pending = buildPendingProduct(productRef, product, imageIndex)
+      if (!pending) {
+        throw new Error('This product photograph could not be prepared for sending.')
+      }
       pendingProductSends.push(pending)
+
+      if (input.selected === true) {
+        await rememberSelectedProduct({
+          db,
+          accountId,
+          conversationId,
+          productKey,
+          productName: product.name,
+        })
+      }
 
       return JSON.stringify({
         ok: true,
         queued: true,
-        product: { product_ref: productRef, name: product.name },
+        product: {
+          product_ref: productRef,
+          product_key: productKey,
+          name: product.name,
+          image_index: imageIndex + 1,
+          media_count: images.length,
+        },
         instruction:
-          'The photograph is queued and will be sent after server-side conversation checks pass. Do not repeat the full caption in the final text.',
+          'The chosen photograph is queued and will be sent after server-side conversation checks pass. Keep any accompanying text natural and do not repeat the full photo caption.',
       })
     }
 
@@ -736,7 +870,7 @@ export function createAutoReplyTools(args: {
         labels.push(`${images.length}. ${product.name}`)
       }
       if (images.length === 0) {
-        throw new Error('None of the given product_refs have a usable photograph.')
+        throw new Error('None of the given product_refs have a usable photograph. Re-run search_catalog in this turn before get_style_opinion.')
       }
 
       const opinion = await generateReply({
@@ -837,58 +971,19 @@ export function createAutoReplyTools(args: {
     getScheduledVisit: () => scheduledVisit,
     getTrustedPriceAmounts: () => Array.from(trustedPriceAmounts),
     wasCatalogueVerified: () => catalogueVerified,
-    hasPendingActions: () =>
-      pendingProductSends.length > 0 || pendingProductGalleries.length > 0,
+    hasPendingActions: () => pendingProductSends.length > 0,
     dispatchPendingActions: async () => {
       let sent = 0
       let failed = 0
 
-      // Plain photo + caption per product, like a person forwarding photos —
-      // no button card. The customer picks one by replying to that photo or
-      // naming/describing it in a normal message; buildConversationContext
-      // already resolves a quoted reply back to the product it names.
-      // Awaiting every send preserves the intended ordering end-to-end.
-      // Each send is isolated so one bad photo (broken URL, WhatsApp API
-      // error) doesn't abort the rest of the batch — see auto-reply.ts's
-      // handling of the returned counts for what the customer sees.
-      for (const gallery of pendingProductGalleries.splice(0)) {
-        for (const item of gallery.items) {
-          try {
-            const result = await engineSendMedia({
-              accountId,
-              userId: configOwnerUserId,
-              conversationId,
-              contactId,
-              kind: 'image',
-              link: item.imageUrl,
-              caption: item.caption,
-            })
-
-            const { error: enrichError } = await db
-              .from('messages')
-              .update({ media_url: item.displayImageUrl, ai_generated: true })
-              .eq('conversation_id', conversationId)
-              .eq('message_id', result.whatsapp_message_id)
-            if (enrichError) {
-              console.warn(
-                '[ai product gallery] media sent but inbox metadata update failed:',
-                enrichError.message,
-              )
-            }
-            sent += 1
-          } catch (error) {
-            failed += 1
-            console.error(
-              '[ai product gallery] media send failed, continuing with remaining items:',
-              { productRef: item.productRef, name: item.name, imageUrl: item.imageUrl, error },
-            )
-          }
-        }
-      }
-
+      // Only send products the model explicitly selected with send_product.
+      // Search is retrieval-only; this queue is therefore the single media
+      // presentation path for the agent.
       for (const item of pendingProductSends.splice(0)) {
         console.info('[ai send_product] sending product image:', {
           productRef: item.productRef,
+          productKey: item.productKey,
+          mediaKey: item.mediaKey,
           name: item.name,
           deliveryUrl: item.imageUrl,
           sourceUrl: item.displayImageUrl,
@@ -917,6 +1012,13 @@ export function createAutoReplyTools(args: {
             )
           }
           sent += 1
+          await rememberProductsShown({
+            db,
+            accountId,
+            conversationId,
+            productKeys: [item.productKey],
+            mediaKeys: [item.mediaKey],
+          })
         } catch (error) {
           failed += 1
           console.error(

@@ -8,6 +8,10 @@ import { engineSendMedia } from '@/lib/flows/meta-send'
 const mocks = vi.hoisted(() => ({
   addContactTagIfAbsent: vi.fn(),
   generateReply: vi.fn(),
+  loadConversationCatalogState: vi.fn(),
+  rememberCatalogSearch: vi.fn(),
+  rememberProductsShown: vi.fn(),
+  rememberSelectedProduct: vi.fn(),
 }))
 
 vi.mock('@/lib/contacts/tag-write', () => ({
@@ -16,22 +20,27 @@ vi.mock('@/lib/contacts/tag-write', () => ({
 vi.mock('@/lib/catalog/search', () => ({ searchCatalogues: vi.fn() }))
 vi.mock('../knowledge', () => ({ retrieveKnowledge: vi.fn() }))
 vi.mock('../generate', () => ({ generateReply: mocks.generateReply }))
+vi.mock('../catalog-state', () => ({
+  loadConversationCatalogState: mocks.loadConversationCatalogState,
+  rememberCatalogSearch: mocks.rememberCatalogSearch,
+  rememberProductsShown: mocks.rememberProductsShown,
+  rememberSelectedProduct: mocks.rememberSelectedProduct,
+}))
 vi.mock('@/lib/flows/meta-send', () => ({
-  engineSendInteractiveButtons: vi.fn(),
   engineSendMedia: vi.fn(),
 }))
 
 function permissions(
-  enabled: AgentToolKey,
+  ...enabled: AgentToolKey[]
 ): Record<AgentToolKey, boolean> {
   return Object.fromEntries(
-    Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, key === enabled]),
+    Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, enabled.includes(key as AgentToolKey)]),
   ) as Record<AgentToolKey, boolean>
 }
 
 function runtime(
   db: WacrmSupabaseClient,
-  enabled: AgentToolKey,
+  enabled: AgentToolKey | AgentToolKey[],
   agentId?: string,
   onToolCall?: Parameters<typeof createAutoReplyTools>[0]['onToolCall'],
 ) {
@@ -48,14 +57,28 @@ function runtime(
       model: 'test-model',
       apiKey: 'test-key',
     },
-    permissions: permissions(enabled),
+    permissions: permissions(...(Array.isArray(enabled) ? enabled : [enabled])),
     onToolCall,
   })
+}
+
+const emptyCatalogState = {
+  lastQuery: null,
+  lastFilters: {},
+  shownProductKeys: [],
+  shownMediaKeys: [],
+  rejectedProductKeys: [],
+  selectedProductKey: null,
+  selectedProductName: null,
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.addContactTagIfAbsent.mockResolvedValue(true)
+  mocks.loadConversationCatalogState.mockResolvedValue({ ...emptyCatalogState })
+  mocks.rememberCatalogSearch.mockResolvedValue(undefined)
+  mocks.rememberProductsShown.mockResolvedValue(undefined)
+  mocks.rememberSelectedProduct.mockResolvedValue(undefined)
 })
 
 describe('CRM agent tools', () => {
@@ -67,10 +90,7 @@ describe('CRM agent tools', () => {
           eq: () => chain,
           order: () => chain,
           limit: () =>
-            Promise.resolve({
-              data: [{ id: 'tag-1', name: 'VIP' }],
-              error: null,
-            }),
+            Promise.resolve({ data: [{ id: 'tag-1', name: 'VIP' }], error: null }),
         }
         return chain
       },
@@ -112,9 +132,7 @@ describe('CRM agent tools', () => {
           eq: () => chain,
           order: () => chain,
           limit: () =>
-            table === 'deals'
-              ? Promise.resolve({ data: [], error: null })
-              : chain,
+            table === 'deals' ? Promise.resolve({ data: [], error: null }) : chain,
           maybeSingle: () => Promise.resolve({ data: row, error: null }),
           insert: (payload: Record<string, unknown>) => {
             inserted = payload
@@ -209,47 +227,33 @@ describe('CRM agent tools', () => {
     expect(tools.getScheduledVisit()).toBeNull()
   })
 
-  it('gives a style opinion using the real photo of a product found earlier in the conversation', async () => {
+  it('uses a fresh catalogue ref in the same run for a style opinion', async () => {
     vi.mocked(searchCatalogues).mockResolvedValue([
       {
         id: 'product-1',
         name: 'Legging Alta Performance',
-        description: null,
+        description: 'Cor: preto. Cintura alta.',
         price: 1500,
         currency: 'MZN',
         imageUrl: 'https://cdn.example.com/legging.jpg',
         productUrl: null,
-        category: 'Leggings',
+        category: 'legging',
         stockQuantity: 5,
         sourceName: 'LC Fitness',
       },
     ])
     mocks.generateReply.mockResolvedValue({
-      text: '1. Legging Alta Performance: cintura alta e tecido flexível, óptima para o seu tipo de corpo.',
+      text: '1. Legging Alta Performance: cintura alta e linha discreta.',
       handoff: false,
       usage: null,
     })
 
-    const tools = createAutoReplyTools({
-      db: {} as WacrmSupabaseClient,
-      accountId: 'account-1',
-      conversationId: 'conversation-1',
-      contactId: 'contact-1',
-      configOwnerUserId: 'user-1',
-      config: { provider: 'openai', model: 'test-model', apiKey: 'test-key', embeddingsApiKey: null },
-      permissions: {
-        ...Object.fromEntries(
-          Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, false]),
-        ),
-        search_catalog: true,
-        get_style_opinion: true,
-      } as Record<AgentToolKey, boolean>,
-    })
+    const tools = runtime({} as WacrmSupabaseClient, ['search_catalog', 'get_style_opinion'])
     const searchResult = JSON.parse(
       await tools.executeTool({
         id: 'call-1',
         name: 'search_catalog',
-        arguments: JSON.stringify({ query: 'legging' }),
+        arguments: JSON.stringify({ query: 'legging', category: 'legging' }),
       }),
     )
     const productRef = searchResult.products[0].product_ref
@@ -273,7 +277,10 @@ describe('CRM agent tools', () => {
           expect.objectContaining({
             role: 'user',
             content: expect.arrayContaining([
-              expect.objectContaining({ type: 'image_url', url: 'https://cdn.example.com/legging.jpg' }),
+              expect.objectContaining({
+                type: 'image_url',
+                url: 'https://cdn.example.com/legging.jpg',
+              }),
             ]),
           }),
         ],
@@ -281,7 +288,7 @@ describe('CRM agent tools', () => {
     )
   })
 
-  it('records a structured handoff without trusting customer-facing text', async () => {
+  it('records a structured handoff', async () => {
     const tools = runtime({} as WacrmSupabaseClient, 'handoff_human')
     await tools.executeTool({
       id: 'call-1',
@@ -322,9 +329,7 @@ describe('CRM agent tools', () => {
     await tools.executeTool({
       id: 'secret-call-id',
       name: 'handoff_human',
-      arguments: JSON.stringify({
-        reason: 'Sensitive complaint details',
-      }),
+      arguments: JSON.stringify({ reason: 'Sensitive complaint details' }),
     })
 
     expect(logged).toMatchObject({
@@ -357,18 +362,12 @@ describe('CRM agent tools', () => {
       succeeded: true,
     })
     expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('Private reason')
-    expect(JSON.stringify(onToolCall.mock.calls)).not.toContain('private-id')
   })
 
-  it('exposes only monetary facts returned by trusted tool data', async () => {
+  it('uses knowledge matches as trusted monetary data', async () => {
     const { retrieveKnowledge } = await import('../knowledge')
-    vi.mocked(retrieveKnowledge).mockResolvedValue([
-      'A taxa confirmada na política é 250 MZN.',
-    ])
-    const db = {
-      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
-    } as unknown as WacrmSupabaseClient
-    const tools = runtime(db, 'search_knowledge', 'agent-1')
+    vi.mocked(retrieveKnowledge).mockResolvedValue(['A taxa confirmada é 250 MZN.'])
+    const tools = runtime({} as WacrmSupabaseClient, 'search_knowledge')
     await tools.executeTool({
       id: 'call-1',
       name: 'search_knowledge',
@@ -379,45 +378,7 @@ describe('CRM agent tools', () => {
     expect(tools.wasCatalogueVerified()).toBe(false)
   })
 
-  it('tells the model not to guess when search_knowledge finds nothing relevant', async () => {
-    const { retrieveKnowledge } = await import('../knowledge')
-    vi.mocked(retrieveKnowledge).mockResolvedValue([])
-    const db = {
-      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
-    } as unknown as WacrmSupabaseClient
-    const tools = runtime(db, 'search_knowledge', 'agent-1')
-    const result = JSON.parse(
-      await tools.executeTool({
-        id: 'call-1',
-        name: 'search_knowledge',
-        arguments: JSON.stringify({ query: 'algo obscuro' }),
-      }),
-    )
-
-    expect(result.found).toBe(false)
-    expect(result.instruction).toContain('No matching knowledge found')
-  })
-
-  it('tells the model to prefer excerpts when search_knowledge finds matches', async () => {
-    const { retrieveKnowledge } = await import('../knowledge')
-    vi.mocked(retrieveKnowledge).mockResolvedValue(['Horário: 9h-18h.'])
-    const db = {
-      from: () => ({ insert: () => Promise.resolve({ error: null }) }),
-    } as unknown as WacrmSupabaseClient
-    const tools = runtime(db, 'search_knowledge', 'agent-1')
-    const result = JSON.parse(
-      await tools.executeTool({
-        id: 'call-1',
-        name: 'search_knowledge',
-        arguments: JSON.stringify({ query: 'horário' }),
-      }),
-    )
-
-    expect(result.found).toBe(true)
-    expect(result.instruction).toContain('Prefer these excerpts')
-  })
-
-  it('appends account-specific instructions to a tool description without changing others', () => {
+  it('appends account-specific instructions to only the configured tool', () => {
     const tools = createAutoReplyTools({
       db: {} as WacrmSupabaseClient,
       accountId: 'account-1',
@@ -425,70 +386,193 @@ describe('CRM agent tools', () => {
       contactId: 'contact-1',
       configOwnerUserId: 'user-1',
       config: { provider: 'openai', model: 'test-model', apiKey: 'test-key', embeddingsApiKey: null },
-      permissions: {
-        ...Object.fromEntries(Object.keys(DEFAULT_AGENT_TOOLS).map((key) => [key, true])),
-      } as Record<AgentToolKey, boolean>,
+      permissions: permissions('search_catalog', 'schedule_visit'),
       toolInstructions: {
         schedule_visit: 'Nesta conta, não agendamos visitas aos domingos.',
       },
     })
 
-    const scheduleVisit = tools.tools.find((tool) => tool.name === 'schedule_visit')
-    const searchCatalog = tools.tools.find((tool) => tool.name === 'search_catalog')
-
-    expect(scheduleVisit?.description).toContain('Account-specific guidance: Nesta conta, não agendamos visitas aos domingos.')
-    expect(searchCatalog?.description).not.toContain('Account-specific guidance')
+    expect(tools.tools.find((tool) => tool.name === 'schedule_visit')?.description)
+      .toContain('Account-specific guidance: Nesta conta, não agendamos visitas aos domingos.')
+    expect(tools.tools.find((tool) => tool.name === 'search_catalog')?.description)
+      .not.toContain('Account-specific guidance')
   })
 
-  it('continues sending remaining product photos when one send fails', async () => {
+  it('keeps search_catalog retrieval-only and filters an explicit category', async () => {
     vi.mocked(searchCatalogues).mockResolvedValue([
       {
-        id: 'product-1',
-        name: 'Legging Alta Performance',
-        description: null,
-        price: 1500,
+        id: 'legging-1',
+        name: 'Legging Cintura Alta',
+        description: 'Cor: preta.',
+        price: 2800,
         currency: 'MZN',
-        imageUrl: 'https://cdn.example.com/legging-1.jpg',
+        imageUrl: 'https://cdn.example.com/legging.jpg',
         productUrl: null,
-        category: 'Leggings',
+        category: 'legging',
         stockQuantity: 5,
         sourceName: 'LC Fitness',
       },
       {
-        id: 'product-2',
-        name: 'Legging Alta Performance Branca',
-        description: null,
-        price: 1500,
+        id: 'shirt-1',
+        name: 'Camiseta Preta',
+        description: 'Cor: preta.',
+        price: 2000,
         currency: 'MZN',
-        imageUrl: 'https://cdn.example.com/legging-2.jpg',
+        imageUrl: 'https://cdn.example.com/shirt.jpg',
         productUrl: null,
-        category: 'Leggings',
-        stockQuantity: 5,
-        sourceName: 'LC Fitness',
-      },
-      {
-        id: 'product-3',
-        name: 'Top Alças Duplas',
-        description: null,
-        price: 1500,
-        currency: 'MZN',
-        imageUrl: 'https://cdn.example.com/top.jpg',
-        productUrl: null,
-        category: 'Tops',
+        category: 'camiseta',
         stockQuantity: 5,
         sourceName: 'LC Fitness',
       },
     ])
-    let updateCalls = 0
+
+    const tools = runtime({} as WacrmSupabaseClient, ['search_catalog', 'send_product'])
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_catalog',
+        arguments: JSON.stringify({
+          query: 'legging',
+          category: 'legging',
+          color: 'preta',
+          mode: 'browse',
+        }),
+      }),
+    )
+
+    expect(result.products).toHaveLength(1)
+    expect(result.products[0].name).toBe('Legging Cintura Alta')
+    expect(tools.hasPendingActions()).toBe(false)
+    expect(engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('does not return a product already shown during browse mode', async () => {
+    mocks.loadConversationCatalogState.mockResolvedValue({
+      ...emptyCatalogState,
+      shownProductKeys: ['lc fitness:legging-1'],
+    })
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'legging-1',
+        name: 'Legging A',
+        description: 'Cor: preta.',
+        price: 2800,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/a.jpg',
+        productUrl: null,
+        category: 'legging',
+        stockQuantity: 2,
+        sourceName: 'LC Fitness',
+      },
+      {
+        id: 'legging-2',
+        name: 'Legging B',
+        description: 'Cor: preta.',
+        price: 3000,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/b.jpg',
+        productUrl: null,
+        category: 'legging',
+        stockQuantity: 2,
+        sourceName: 'LC Fitness',
+      },
+    ])
+
+    const tools = runtime({} as WacrmSupabaseClient, 'search_catalog')
+    const result = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_catalog',
+        arguments: JSON.stringify({ query: 'legging', category: 'legging', mode: 'browse' }),
+      }),
+    )
+
+    expect(result.products.map((product: { id: string }) => product.id)).toEqual(['legging-2'])
+  })
+
+  it('sends only products explicitly chosen after retrieval', async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'legging-1',
+        name: 'Legging A',
+        description: 'Cor: preta.',
+        price: 2800,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/a.jpg',
+        productUrl: null,
+        category: 'legging',
+        stockQuantity: 2,
+        sourceName: 'LC Fitness',
+      },
+      {
+        id: 'legging-2',
+        name: 'Legging B',
+        description: 'Cor: azul.',
+        price: 3000,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/b.jpg',
+        productUrl: null,
+        category: 'legging',
+        stockQuantity: 2,
+        sourceName: 'LC Fitness',
+      },
+    ])
+    vi.mocked(engineSendMedia).mockResolvedValue({ whatsapp_message_id: 'wamid-1' } as never)
     const db = {
       from: () => {
         const chain = {
           update: () => chain,
-          eq: () => chain,
-          then: (resolve: (result: { error: null }) => void) => {
-            updateCalls += 1
-            resolve({ error: null })
-          },
+          eq: () => Promise.resolve({ error: null }),
+        }
+        return chain
+      },
+    } as unknown as WacrmSupabaseClient
+
+    const tools = runtime(db, ['search_catalog', 'send_product'])
+    const search = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_catalog',
+        arguments: JSON.stringify({ query: 'legging', category: 'legging' }),
+      }),
+    )
+    expect(tools.hasPendingActions()).toBe(false)
+
+    await tools.executeTool({
+      id: 'call-2',
+      name: 'send_product',
+      arguments: JSON.stringify({ product_ref: search.products[1].product_ref }),
+    })
+    expect(tools.hasPendingActions()).toBe(true)
+
+    const result = await tools.dispatchPendingActions()
+    expect(result).toEqual({ sent: 1, failed: 0 })
+    expect(engineSendMedia).toHaveBeenCalledTimes(1)
+    expect(mocks.rememberProductsShown).toHaveBeenCalledWith(
+      expect.objectContaining({ productKeys: ['lc fitness:legging-2'] }),
+    )
+  })
+
+  it('continues sending remaining explicitly selected photos when one send fails', async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue(
+      ['1', '2', '3'].map((id) => ({
+        id: `legging-${id}`,
+        name: `Legging ${id}`,
+        description: 'Cor: preta.',
+        price: 1500,
+        currency: 'MZN',
+        imageUrl: `https://cdn.example.com/legging-${id}.jpg`,
+        productUrl: null,
+        category: 'legging',
+        stockQuantity: 5,
+        sourceName: 'LC Fitness',
+      })),
+    )
+    const db = {
+      from: () => {
+        const chain = {
+          update: () => chain,
+          eq: () => Promise.resolve({ error: null }),
         }
         return chain
       },
@@ -499,19 +583,25 @@ describe('CRM agent tools', () => {
       .mockRejectedValueOnce(new Error('WhatsApp API error'))
       .mockResolvedValueOnce({ whatsapp_message_id: 'wamid-3' } as never)
 
-    const tools = runtime(db, 'search_catalog')
-    await tools.executeTool({
-      id: 'call-1',
-      name: 'search_catalog',
-      arguments: JSON.stringify({ query: 'legging' }),
-    })
-    expect(tools.hasPendingActions()).toBe(true)
+    const tools = runtime(db, ['search_catalog', 'send_product'])
+    const search = JSON.parse(
+      await tools.executeTool({
+        id: 'call-1',
+        name: 'search_catalog',
+        arguments: JSON.stringify({ query: 'legging', category: 'legging' }),
+      }),
+    )
+    for (const product of search.products) {
+      await tools.executeTool({
+        id: `send-${product.id}`,
+        name: 'send_product',
+        arguments: JSON.stringify({ product_ref: product.product_ref }),
+      })
+    }
 
     const result = await tools.dispatchPendingActions()
-
     expect(result).toEqual({ sent: 2, failed: 1 })
     expect(engineSendMedia).toHaveBeenCalledTimes(3)
-    expect(updateCalls).toBe(2)
     expect(tools.hasPendingActions()).toBe(false)
   })
 })

@@ -24,6 +24,10 @@ import { loadAgentToolPermissions } from './tool-permissions'
 import { applySkillNarrowing, loadAgentSkills, skillsPrompt } from './skills'
 import { classifyIntent } from './route'
 import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
+import {
+  conversationCatalogStatePrompt,
+  loadConversationCatalogState,
+} from './catalog-state'
 import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { triggerMatches } from '@/lib/automations/engine'
@@ -291,7 +295,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       onToolCall: (call) => trace?.recordToolCall(call),
     })
 
-    const [prefetch, crmContext, memories, lessons] = await Promise.all([
+    const [prefetch, crmContext, memories, lessons, catalogueState] = await Promise.all([
       effectivePermissions.search_catalog
         ? prefetchCatalogueForConversation({
             db,
@@ -324,9 +328,18 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
         console.error('[ai auto-reply] lessons lookup failed:', error)
         return []
       }),
+      effectivePermissions.search_catalog
+        ? loadConversationCatalogState({ db, accountId, conversationId }).catch((error) => {
+            console.error('[ai auto-reply] catalogue state lookup failed:', error)
+            return null
+          })
+        : Promise.resolve(null),
     ])
     const catalogueGrounding = prefetch
       ? cataloguePrefetchPrompt(prefetch)
+      : null
+    const catalogueStateContext = catalogueState
+      ? conversationCatalogStatePrompt(catalogueState)
       : null
     if (prefetch?.attempted) {
       console.info('[ai auto-reply] catalogue prefetch:', {
@@ -352,6 +365,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       crmContext,
       memoryContext,
       lessonsContext,
+      catalogueStateContext,
       catalogueGrounding,
     ]
       .filter((part): part is string => Boolean(part))
@@ -459,9 +473,9 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       return
     }
 
-    // For structured catalogue replies, the short model introduction belongs
-    // before the cards. Sending it after the media made the WhatsApp thread
-    // read backwards (cards first, then "Veja estas opções").
+    // When the model explicitly queued catalogue media, its accompanying
+    // natural text belongs before the photographs so the WhatsApp thread
+    // reads in the intended order.
     if (hasPendingActions && text) {
       await sendReplyChunks(args, text, config.maxReplyChunks)
     }

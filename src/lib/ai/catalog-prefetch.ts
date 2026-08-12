@@ -168,13 +168,9 @@ export async function prefetchCatalogueForConversation(args: {
 }
 
 /**
- * Prefetch is intentionally NOT a catalogue answer source.
- *
- * It only tells the model that the current turn is catalogue-related and
- * which concise query was successful. Product names/prices are deliberately
- * omitted so the model cannot bypass search_catalog and fall back to an old
- * numbered text list. search_catalog owns current product data and, in visual
- * mode, queues the WhatsApp photographs + interactive selection buttons.
+ * Prefetch is advisory only. It helps recover very short/legacy continuations
+ * before the model runs, but it never selects a skill/tool and never becomes
+ * a catalogue answer source. Product data must still come from search_catalog.
  */
 export function cataloguePrefetchPrompt(result: CataloguePrefetchResult): string | null {
   if (!result.attempted) return null
@@ -183,39 +179,33 @@ export function cataloguePrefetchPrompt(result: CataloguePrefetchResult): string
     ? [
         `The customer's latest numeric reply selected option ${result.selection.number} from a legacy numbered product list.`,
         `The selected product name is exactly: ${JSON.stringify(result.selection.productName)}.`,
-        'Keep this selection fixed and migrate the interaction to the visual catalogue tools.',
+        'Keep that product as the current referent instead of restarting discovery.',
         ...(result.selection.photoChoice
           ? [
-              'This selection is already a request for that product photograph.',
-              'Call search_catalog with the exact selected product name and then call send_product with the best exact-name result that has a photograph. Do not ask for confirmation again.',
+              'The customer is already asking to see that specific product. If a fresh catalogue reference is needed, search it with mode=lookup and then use send_product.',
             ]
           : [
-              'If a catalogue response is required, call search_catalog with this exact product name rather than quoting an older list.',
+              'If fresh product data is needed, search that exact product with mode=lookup rather than reconstructing an older list.',
             ]),
       ]
     : []
 
   if (result.products.length === 0) {
     return [
-      'CATALOGUE TOOL ROUTING:',
+      'CATALOGUE CONTEXT (advisory):',
       ...selectionInstruction,
-      `A server-side intent check for ${JSON.stringify(result.query ?? '')} did not find a result.`,
-      'Do not assume the catalogue is empty. Call search_catalog with a concise product term before concluding that nothing is available.',
-      'Never reconstruct or repeat an older numbered product list from conversation history.',
+      `A lightweight prefetch for ${JSON.stringify(result.query ?? '')} found no candidate.`,
+      'This is not proof that the catalogue is empty. Use search_catalog if current product data is needed, with concise structured category/colour/size constraints when the customer supplied them.',
+      'Never reconstruct an old numbered product list from history.',
     ].join('\n')
   }
 
-  const withPhotos = result.products.filter((product) =>
-    Boolean(product.imageUrl || product.variants?.some((variant) => variant.imageUrl)),
-  ).length
-
   return [
-    'CATALOGUE TOOL ROUTING — PRODUCT INTENT DETECTED:',
+    'CATALOGUE CONTEXT (advisory):',
     ...selectionInstruction,
-    `A server-side intent check found ${result.products.length} possible current result(s) for query ${JSON.stringify(result.query ?? '')}; ${withPhotos} have a directly resolvable photograph at this stage.`,
-    'You MUST call search_catalog before answering with product names, prices, availability or recommendations.',
-    'For browsing/recommendation requests, call search_catalog with visual=true (or omit visual, since true is the default). The server will queue photographs and clickable WhatsApp selection buttons.',
-    'When visual_queued=true, do NOT reproduce product names/prices as bullets or numbered text. Reply only with a very short introduction such as "Veja estas opções:".',
-    'Never ask the customer to type a number or product name when interactive product buttons are available.',
+    `A lightweight prefetch found possible catalogue data for ${JSON.stringify(result.query ?? '')}.`,
+    'Decide yourself whether a catalogue lookup is useful for this turn. search_catalog is retrieval-only and never sends a product automatically.',
+    'When searching, pass explicit category/colour/size constraints separately instead of embedding every customer word in one broad query.',
+    'After search_catalog, call send_product only for the products you deliberately choose to show. For "more/other" requests use browse mode; for a specific previously shown product use lookup mode.',
   ].join('\n')
 }

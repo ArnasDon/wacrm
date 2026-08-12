@@ -541,3 +541,48 @@
 @media (min-width: 900px) {
   .rail-hint { display: none; }
 }
+
+/* ============================================================
+ * Vídeo — MOBILE FIRST: vertical 9:16 por defecto.
+ *
+ * Un vídeo vertical al lado de un formulario o dentro de una tarjeta ocupa
+ * mejor la columna que un 16:9 aplastado. El horizontal es la excepción, y
+ * la única sección que lo exige a pantalla completa es la VSL.
+ * ============================================================ */
+.youtube-video {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--color-darkGrey);
+  border-radius: var(--radius-lg);
+  aspect-ratio: 9 / 16;   /* vertical por defecto */
+}
+
+/* Forzados, cuando la sección lo pide */
+.youtube-video.ratio-vertical   { aspect-ratio: 9 / 16; }
+.youtube-video.ratio-horizontal { aspect-ratio: 16 / 9; }
+
+.youtube-video picture { position: absolute; inset: 0; display: block; }
+.youtube-video img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Vertical SIN RECORTE: se ve el encuadre completo en vez de comerse los
+   bordes. Es el "sin fall off". */
+.youtube-video.ratio-vertical img {
+  object-fit: contain;
+  background: var(--color-darkGrey);
+}
+
+.youtube-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.youtube-iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* El disparador es un <button> de verdad para que funcione con teclado: hay
+   que quitarle la piel de botón. */
+.play-button { appearance: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+
+/* Solo el que NO declara proporción pasa a horizontal en escritorio. */
+@media (min-width: 900px) {
+  .youtube-video:not(.ratio-vertical):not(.ratio-horizontal) { aspect-ratio: 16 / 9; }
+}

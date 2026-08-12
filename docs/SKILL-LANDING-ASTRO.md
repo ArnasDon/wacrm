@@ -3,6 +3,144 @@
 
 ---
 
+## LÉEME PRIMERO — el error que comete toda IA con este documento
+
+Este documento **no es un framework para maquetar**. Es una **biblioteca de secciones terminadas**.
+
+La diferencia decide si el resultado sirve o no:
+
+| Si lo lees como… | Construyes… | Resultado |
+|---|---|---|
+| Un sistema de utilidades | Tokens, grilla y utilidades, y luego escribes cada sección a mano combinándolas | Un Tailwind casero. **Mal.** |
+| Una biblioteca de secciones | Las secciones del catálogo, completas y reutilizables, apoyadas en los tokens | Una landing que se repite sin volver a maquetar. **Bien.** |
+
+La misma landing se va a repetir decenas de veces cambiando textos e imágenes. **Nadie va a maquetar nada.** Se elige una sección del catálogo, se rellena y se pasa a la siguiente. Por eso las secciones 3 a 6 (tokens, layout, utilidades, componentes) son **el sustrato**, no el entregable. El entregable es el catálogo de secciones.
+
+Si al terminar tienes un sistema de estilos elegante y tres secciones escritas a mano, has fallado.
+
+### El catálogo mínimo
+
+Toda landing construida con este sistema tiene disponibles estas secciones. Constrúyelas todas: son el producto.
+
+`hero-centered` · `hero-split` · `hero-fakeh1` · `stats-strip` · `features` · `text-section` · `video` · `gallery` · `testimonials` · `reviews` · `scroller` · `pricing` · `pricing-table` · `comparison` · `table` · `steps` · `team` · `faq` · `cta` · `form` · `lead-magnet` · `related-pages` · `breadcrumb` · `divider`
+
+### Reglas que no se negocian
+
+**1. Mobile-first literal.** El caso base, sin ningún media query, es el móvil. El único breakpoint estructural es `@media (min-width: 900px)`. **Nunca uses `max-width` para layout**: escribir el escritorio y deshacerlo para móvil es exactamente el error que este sistema evita. Si te encuentras escribiendo `@media (max-width: …)`, tienes la lógica invertida.
+
+**2. Trucos de CSS antes que JavaScript.** El sistema entero se apoya en cuatro:
+
+| Truco | Resuelve |
+|---|---|
+| `.lightbox:target` | La galería **y** el popup de formulario del header — la misma clase para las dos |
+| `input:checked ~ …` | Menú móvil, y el widget de contacto flotante |
+| `<details>/<summary>` | Preguntas frecuentes y pestañas |
+| `scroll-snap` + barra oculta | El carril horizontal (ver abajo) |
+
+**3. Una sección que no aporta se borra.** Longitud no persuade.
+
+---
+
+## 0-bis. Dos patrones que faltaban en este documento
+
+Los dos salieron de producción y son obligatorios. Sin ellos las secciones se sienten de escritorio adaptado, no de móvil.
+
+### A. El carril: columnas en escritorio, deslizamiento horizontal en móvil
+
+**El problema.** Cuatro reseñas en columnas quedan bien en escritorio. Apiladas en móvil son cuatro pantallas de scroll antes del CTA, en una sección que casi nunca es crítica.
+
+**La regla.** Toda sección de 3 o más tarjetas equivalentes —reseñas, testimonios, logotipos, tarjetas de servicio, equipo— usa carril. **Mobile-first: el carril es el caso base; las columnas son la excepción a 900px.**
+
+```css
+.rail {
+  display: flex;
+  gap: var(--grid-gutter);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: calc(var(--grid-gutter) / 2);
+
+  /* Sangrado a los bordes: las tarjetas nacen y mueren en el borde de la
+     pantalla. Sin esto el carril parece metido en una caja. */
+  padding-inline: calc(var(--grid-gutter) / 2);
+  margin-inline: calc(var(--grid-gutter) / -2);
+
+  overscroll-behavior-x: contain;   /* que el gesto no dispare el "atrás" */
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* Edge antiguo */
+}
+.rail::-webkit-scrollbar { display: none; }
+
+.rail > * {
+  /* MENOS del 100% a propósito: que asome la siguiente tarjeta es lo ÚNICO
+     que le dice al usuario que hay más. A pantalla completa nadie desliza. */
+  flex: 0 0 var(--rail-item, 78%);
+  scroll-snap-align: start;
+}
+
+@media (min-width: 900px) {
+  .rail {
+    display: grid;                                        /* grid, no flex-wrap:  */
+    grid-template-columns: repeat(var(--rail-cols, 4), 1fr); /* así quedan del mismo */
+    overflow: visible;                                    /* alto — efecto tabla  */
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+  .rail > * { flex: none; }
+}
+```
+
+El contenedor lleva `tabindex="0"`, `role="group"` y `aria-label`: una región que se desplaza tiene que poder recorrerse con teclado, o quien no usa gestos no llega a las tarjetas de la derecha.
+
+Se configura con `--rail-cols` y `--rail-item`. No se crean clases nuevas por cada variante.
+
+### B. Vídeo: vertical por defecto, horizontal solo cuando toca
+
+**La regla, en una frase: en móvil el vídeo es vertical 9:16 siempre.** El horizontal es la excepción.
+
+Por qué importa: un vídeo vertical al lado de un formulario, o dentro de una tarjeta, ocupa mejor la columna y se ve mucho mejor que un 16:9 aplastado. La única sección que exige horizontal a pantalla completa en escritorio es la VSL.
+
+**Dos IDs de YouTube, no uno:**
+
+| Atributo | Contenido | Obligatorio |
+|---|---|---|
+| `data-video-id` | El vídeo **vertical** (móvil) | Sí |
+| `data-desktop-video-id` | El **horizontal** (escritorio) | No — si falta, se reutiliza el vertical |
+
+Esa es la regla que pediste: si existe versión horizontal se usa en escritorio; si no, el vertical sirve para los dos.
+
+```css
+/* MOBILE FIRST: vertical por defecto */
+.youtube-video { position: relative; overflow: hidden; aspect-ratio: 9 / 16; }
+
+/* Forzados, cuando la sección lo exige */
+.youtube-video.ratio-vertical   { aspect-ratio: 9 / 16; }  /* junto a un form, en card */
+.youtube-video.ratio-horizontal { aspect-ratio: 16 / 9; }  /* VSL */
+
+/* Vertical SIN RECORTE: se ve el encuadre completo, no se come los bordes */
+.youtube-video.ratio-vertical picture img {
+  object-fit: contain;
+  background: var(--bg-secondary-color);
+}
+
+/* Solo el que no declara proporción pasa a horizontal en escritorio */
+@media (min-width: 900px) {
+  .youtube-video:not(.ratio-vertical):not(.ratio-horizontal) { aspect-ratio: 16 / 9; }
+}
+```
+
+La miniatura también es mobile-first: el `<img>` lleva la vertical y el `<source media="(min-width:900px)">` la horizontal.
+
+```html
+<picture>
+  <source media="(min-width: 900px)" srcset="/thumb-desktop.webp" width="960" height="540">
+  <img src="/thumb-mobile.webp" width="1080" height="1920" alt="…" loading="lazy">
+</picture>
+```
+
+El iframe **no existe hasta el clic** (fachada, §12.1). Al pulsar se elige el id según el viewport, se retiran miniatura y botón, y se inserta el reproductor.
+
+---
+
 ## 0. Qué construye este documento
 
 Un sistema para producir landing pages de alto rendimiento en Astro, orientadas a campañas de búsqueda pagada (SEM), SEO local y clusters de autoridad.
@@ -34,7 +172,9 @@ Estos son los criterios con los que se acepta o se rechaza cada línea de códig
 
 **2. Sin frameworks de UI.** Astro renderiza a HTML. Nada de React, Vue, Svelte, shadcn, Material, Bootstrap o DaisyUI. Si algo requiere interactividad, es un custom element de menos de 30 líneas.
 
-**3. Sin estilos inline.** Ningún `style="..."` en el markup. Si un valor se repite, es una clase o un token. Si es específico de un componente, va en su `<style>` con scope. Única excepción permitida: `style="--i: 3"` para pasar un índice a una animación CSS — eso es un token, no un estilo.
+**3. Sin estilos inline… con un matiz que hay que conocer.** Ningún `style="..."` en el markup de una sección del catálogo: si un valor se repite es una clase o un token, y si es específico de un componente va en su `<style>` con scope. Sí se permite pasar **tokens** por atributo —`style="--i: 3"`, `style="--rail-cols: 4"`— porque eso es un dato, no un estilo.
+
+  El matiz: la implementación de referencia en producción (el tema de WordPress) sí usa `style="top:30%;right:0"` para ajustes de una sola vez, porque el dueño edita el marcado a mano. **Para una sección nueva del catálogo, no los uses**: una sección que se va a repetir decenas de veces no puede llevar decisiones sueltas en el marcado. Si estás retocando una landing concreta ya construida, el criterio del dueño manda.
 
 **4. Sin `!important`.** El sistema de capas hace innecesaria la escalada de especificidad. Un `!important` significa que la capa está mal elegida.
 

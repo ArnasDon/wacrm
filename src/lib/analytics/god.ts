@@ -6,10 +6,16 @@
 import { UTM_TTL_MS, genEventId, buildAttribution, type Attribution } from "./attribution";
 
 /** Interfaz mínima del window que god.js toca (compat GTM + consent hook). */
+interface YTPlayerCtor {
+  new (el: Element, opts: Record<string, unknown>): unknown;
+}
 interface GodWindow extends Window {
   dataLayer?: unknown[];
   getConsent?: (feature: string) => string;
   __WACRM_SITE_URL__?: string;
+  /** API de YouTube, presente solo tras cargarla bajo demanda. */
+  YT?: { Player: YTPlayerCtor };
+  onYouTubeIframeAPIReady?: () => void;
 }
 
 const W = window as GodWindow;
@@ -178,11 +184,93 @@ export function wireClickBeacons(siteUrl: string): void {
   }, true);
 }
 
+
+// ============================================================
+// YouTube diferido — portado de adwebcrm-theme/assets/god.js §1.
+//
+// El iframe no existe hasta el clic. Se usa la API de YouTube (YT.Player)
+// cargada bajo demanda, no un iframe suelto, para poder controlar el
+// reproductor y arrancar la reproducción sin un segundo gesto.
+//
+// Dos ids por vídeo: `data-video-id` es el VERTICAL (móvil) y
+// `data-desktop-video-id` el horizontal. Si el segundo falta, se reutiliza el
+// vertical — la regla es "vertical siempre salvo que haya versión horizontal".
+// La elección se hace EN EL CLIC, no al cargar, para que girar el móvil no
+// sirva el vídeo equivocado.
+// ============================================================
+
+const ytPlayers = new WeakMap<Element, unknown>();
+let ytApiPromise: Promise<void> | undefined;
+
+function loadYTApi(): Promise<void> {
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise<void>((resolve) => {
+    if (W.YT?.Player) return resolve();
+    const previous = W.onYouTubeIframeAPIReady;
+    W.onYouTubeIframeAPIReady = () => {
+      if (typeof previous === "function") { try { previous(); } catch {} }
+      resolve();
+    };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.async = true;
+    document.head.appendChild(s);
+  });
+  return ytApiPromise;
+}
+
+export function wireYouTubeFacades(): void {
+  document.addEventListener("click", (e) => {
+    const target = e.target as Element | null;
+    const wrap = target?.closest<HTMLElement>(".youtube-video");
+    const btn = target?.closest(".play-button");
+    // Hacen falta LOS DOS: sin exigir el botón, cualquier clic dentro del
+    // bloque arrancaría el vídeo.
+    if (!wrap || !btn) return;
+
+    const isMobile = window.matchMedia("(max-width:767px)").matches;
+    const videoId = isMobile
+      ? wrap.dataset.videoId
+      : wrap.dataset.desktopVideoId || wrap.dataset.videoId;
+
+    if (!videoId || ytPlayers.has(wrap)) return;
+
+    // 1) Quitar primero lo que se va a borrar: una sola pasada de layout.
+    wrap.querySelector("picture")?.remove();
+    btn.remove();
+    wrap.classList.add("is-playing");
+
+    // 2) Contenedor del reproductor.
+    let container = wrap.querySelector<HTMLElement>(".youtube-iframe");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "youtube-iframe";
+      wrap.appendChild(container);
+    }
+
+    // 3) Dejar que el navegador pinte y luego cargar YouTube.
+    requestAnimationFrame(() => {
+      void loadYTApi().then(() => {
+        const player = new W.YT!.Player(container!, {
+          videoId,
+          playerVars: {
+            autoplay: 1, controls: 1, rel: 0,
+            playsinline: 1, modestbranding: 1, iv_load_policy: 3,
+          },
+          events: { onReady: (ev: { target: { playVideo(): void } }) => ev.target.playVideo() },
+        });
+        ytPlayers.set(wrap, player);
+      });
+    });
+  }, { passive: true });
+}
+
 // God entry — se ejecuta en cada página que carga /god.js
 (function main(): void {
   try {
     const siteUrl = W.__WACRM_SITE_URL__ ?? location.origin;
     initAttribution();
     wireClickBeacons(siteUrl);
+    wireYouTubeFacades();
   } catch {}
 })();

@@ -348,21 +348,28 @@ function InboxPageInner() {
         // knownConvIdsRef for why a closure flag inside the updater would
         // always read false here.
         if (knownConvIdsRef.current.has(newMsg.conversation_id)) {
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === newMsg.conversation_id
-                ? {
-                    ...c,
-                    last_message_text: newMsg.content_text ?? "",
-                    last_message_at: newMsg.created_at,
-                    unread_count:
-                      activeConversation?.id === newMsg.conversation_id
-                        ? 0
-                        : c.unread_count + 1,
-                  }
-                : c,
-            ),
-          );
+          // Move the conversation to the top of the list, same as
+          // WhatsApp — a plain `.map()` only patched the preview in
+          // place, leaving the row wherever it already was.
+          setConversations((prev) => {
+            const idx = prev.findIndex(
+              (c) => c.id === newMsg.conversation_id,
+            );
+            if (idx === -1) return prev;
+            const updated: Conversation = {
+              ...prev[idx],
+              last_message_text: newMsg.content_text ?? "",
+              last_message_at: newMsg.created_at,
+              unread_count:
+                activeConversation?.id === newMsg.conversation_id
+                  ? 0
+                  : prev[idx].unread_count + 1,
+            };
+            const next = prev.slice();
+            next.splice(idx, 1);
+            next.unshift(updated);
+            return next;
+          });
         } else {
           // First time we're seeing this conv: the conv-INSERT event
           // hasn't landed yet, or was missed. Hydrate from the DB so

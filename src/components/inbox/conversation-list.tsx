@@ -671,7 +671,10 @@ const SWIPE_AXIS_RATIO = 2.5;
 // this line never locks to "x" for opening, no matter how clean the
 // horizontal drag is — it can still *close* an already-open panel,
 // which has no start-zone restriction (see qualifiesClose below).
-const SWIPE_START_ZONE_RATIO = 0.5;
+// Widened to 70% at the user's request (2026-08-12) once the axis-lock
+// and start-zone combination proved reliable enough on-device to open
+// up further without reintroducing the original bug.
+const SWIPE_START_ZONE_RATIO = 0.7;
 // A fast flick commits to opening/closing even if the finger let go
 // before crossing the halfway point — matches native iOS list-row
 // behavior (confirmed with the user, 2026-08-12), where a quick swipe
@@ -801,6 +804,17 @@ function ConversationItem({
     }
   }, []);
 
+  // Mirrors the content's current x onto the reveal panel's clip width
+  // (0..SWIPE_LEFT_WIDTH) every frame, so the action panel is uncovered
+  // proportionally to the drag instead of popping in at full size the
+  // instant the axis locks — same "mask sliding open" feel as the
+  // native WhatsApp/iOS row swipe.
+  const syncPanelWidth = useCallback((x: number) => {
+    const panel = leftPanelRef.current;
+    if (!panel) return;
+    panel.style.width = `${Math.min(Math.max(x, 0), SWIPE_LEFT_WIDTH)}px`;
+  }, []);
+
   // Writes straight to the DOM with no CSS transition — used during an
   // active drag, 1:1 with the finger every frame.
   const dragTransform = useCallback(
@@ -811,8 +825,9 @@ function ConversationItem({
       el.style.transition = "none";
       el.style.transform = `translate3d(${x}px,0,0)`;
       currentXRef.current = x;
+      syncPanelWidth(x);
     },
-    [cancelSpring],
+    [cancelSpring, syncPanelWidth],
   );
 
   // Drives the panel to `target` via a real mass-spring-damper
@@ -859,18 +874,20 @@ function ConversationItem({
         if (settled) {
           currentXRef.current = target;
           el!.style.transform = `translate3d(${target}px,0,0)`;
+          syncPanelWidth(target);
           springFrameRef.current = null;
           return;
         }
 
         currentXRef.current = pos;
         el!.style.transform = `translate3d(${pos}px,0,0)`;
+        syncPanelWidth(pos);
         springFrameRef.current = requestAnimationFrame(frame);
       }
 
       springFrameRef.current = requestAnimationFrame(frame);
     },
-    [cancelSpring],
+    [cancelSpring, syncPanelWidth],
   );
 
   // Keep the DOM transform in sync whenever `revealed` changes outside
@@ -1158,27 +1175,32 @@ function ConversationItem({
         ref={leftPanelRef}
         aria-hidden
         className={cn(
-          "absolute inset-y-0 left-0 z-10 flex",
+          "absolute inset-y-0 left-0 z-10 overflow-hidden",
           revealed === "left" ? "visible" : "invisible"
         )}
-        style={{ width: SWIPE_LEFT_WIDTH }}
+        style={{ width: 0 }}
       >
-        <button
-          type="button"
-          onClick={handleMarkUnreadAction}
-          className="flex flex-1 flex-col items-center justify-center gap-1 bg-primary text-[11px] text-primary-foreground"
-        >
-          <MailOpen className="h-4 w-4" />
-          {t("markUnread")}
-        </button>
-        <button
-          type="button"
-          onClick={handleDeleteAction}
-          className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-[11px] text-destructive-foreground"
-        >
-          <Trash2 className="h-4 w-4" />
-          {t("delete")}
-        </button>
+        {/* Fixed-width inner row, clipped by the wrapper above — keeps
+            both buttons at their real size throughout the drag instead
+            of shrinking as the clip width grows. */}
+        <div className="flex h-full" style={{ width: SWIPE_LEFT_WIDTH }}>
+          <button
+            type="button"
+            onClick={handleMarkUnreadAction}
+            className="flex flex-1 flex-col items-center justify-center gap-1 bg-primary text-[11px] text-primary-foreground"
+          >
+            <MailOpen className="h-4 w-4" />
+            {t("markUnread")}
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteAction}
+            className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-[11px] text-destructive-foreground"
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("delete")}
+          </button>
+        </div>
       </div>
 
       {/* A native <button> can't validly contain the dropdown's own

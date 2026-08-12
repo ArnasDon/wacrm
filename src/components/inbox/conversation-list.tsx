@@ -626,6 +626,13 @@ const SWIPE_AXIS_THRESHOLD = 10;
 // common gesture in a list), matching how conservative WhatsApp's own
 // iOS row swipe is about committing to horizontal.
 const SWIPE_AXIS_RATIO = 2.5;
+// The gesture only qualifies as "open" if it starts over the avatar
+// corner (avatar is 40px + the row's 12px left padding) — confirmed
+// with the user (2026-08-11) after the axis-ratio fix alone still let
+// a swipe starting anywhere on the row (photo, name, or message
+// preview) open the panel. A touch starting further right than this
+// never locks to "x", no matter how clean the horizontal drag is.
+const SWIPE_START_ZONE_PX = 64;
 // Apple's spring/bounce feel via a cubic-bezier approximation (true
 // spring physics need CSS `linear()` easing, iOS 16.4+ only): a slight
 // overshoot past the resting point before settling, instead of a flat
@@ -689,6 +696,10 @@ function ConversationItem({
     startY: 0,
     baseX: 0,
     x: 0,
+    // Whether this gesture started within SWIPE_START_ZONE_PX of the
+    // row's left edge (the avatar corner) — computed once at
+    // touchstart, since only the starting point matters.
+    zoneOk: false,
   });
 
   const applyTransform = useCallback((x: number, animate: boolean) => {
@@ -718,6 +729,9 @@ function ConversationItem({
     function handleTouchStart(e: TouchEvent) {
       const touch = e.touches[0];
       if (!touch) return;
+      // Non-null: `el` was already checked above, before this closure
+      // was defined; it's a `const` capture, never reassigned.
+      const rect = el!.getBoundingClientRect();
       dragRef.current = {
         active: true,
         axis: null,
@@ -725,6 +739,7 @@ function ConversationItem({
         startY: touch.clientY,
         baseX: revealedRef.current === "left" ? SWIPE_LEFT_WIDTH : 0,
         x: 0,
+        zoneOk: touch.clientX - rect.left <= SWIPE_START_ZONE_PX,
       };
     }
 
@@ -743,20 +758,31 @@ function ConversationItem({
         // more deliberate swipe. Any movement that's at least as
         // vertical as it is horizontal locks straight to "y", no ratio
         // needed. Horizontal only wins once it's unambiguous (see
-        // SWIPE_AXIS_RATIO — deliberately steep).
+        // SWIPE_AXIS_RATIO — deliberately steep) AND left-to-right AND
+        // started over the avatar corner (SWIPE_START_ZONE_PX) — this
+        // is the *only* gesture that opens the panel.
         if (Math.abs(dy) >= SWIPE_AXIS_THRESHOLD && Math.abs(dy) >= Math.abs(dx)) {
           drag.axis = "y";
         } else if (
           Math.abs(dx) >= SWIPE_AXIS_THRESHOLD &&
+          dx > 0 &&
+          drag.zoneOk &&
           Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO
         ) {
           drag.axis = "x";
           if (leftPanelRef.current) leftPanelRef.current.style.visibility = "visible";
+        } else if (Math.abs(dx) >= SWIPE_AXIS_THRESHOLD) {
+          // Horizontal-dominant but disqualified — right-to-left
+          // anywhere on the row, or left-to-right starting outside the
+          // avatar corner. A dead touch as far as this component is
+          // concerned: never becomes a swipe, and (by resolving to "y"
+          // here) never blocks the list's native scroll either.
+          drag.axis = "y";
         } else {
           return; // not enough signal yet either way
         }
       }
-      if (drag.axis === "y") return; // vertical drag — let the list scroll
+      if (drag.axis === "y") return; // vertical drag, or a disqualified swipe — let the list scroll
 
       // Safety net, re-checked on every move (not just the first
       // sample): if the gesture drifts and vertical overtakes
@@ -911,7 +937,7 @@ function ConversationItem({
     : "";
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative min-w-0 overflow-hidden">
       {/* Swipe reveal (left-to-right only): mark unread + delete.
           `z-10`: the sliding content row below is also a positioned
           element (`relative` + a live `transform`), so per CSS stacking
@@ -967,7 +993,7 @@ function ConversationItem({
         onContextMenu={handleContextMenu}
         style={{ touchAction: "pan-y" }}
         className={cn(
-          "group relative flex w-full items-start gap-3 bg-card px-3 py-3 text-left transition-colors hover:bg-muted/50",
+          "group relative flex w-full min-w-0 items-start gap-3 bg-card px-3 py-3 text-left transition-colors hover:bg-muted/50",
           isActive && "border-l-2 border-primary bg-muted/70"
         )}
       >
@@ -998,7 +1024,7 @@ function ConversationItem({
               {displayName}
             </span>
           </span>
-          <p className="mt-0.5 truncate text-sm text-muted-foreground">
+          <p className="mt-0.5 min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           {/* Last-internal-responder indicator — no text/icon, color only

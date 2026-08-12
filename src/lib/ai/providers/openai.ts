@@ -94,7 +94,7 @@ function toOpenAiMessage(message: ChatMessage): OpenAiMessage {
  * customer-facing answer is accepted.
  */
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, tools = [], executeTool } = args
+  const { apiKey, model, systemPrompt, messages, timeoutMs, tools = [], executeTool, temperature } = args
 
   if (tools.length > 0 && !executeTool) {
     throw new AiError('AI tools were configured without a server executor.', {
@@ -119,6 +119,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
         model,
         messages: requestMessages,
         max_completion_tokens: MAX_OUTPUT_TOKENS,
+        ...(typeof temperature === 'number' ? { temperature } : {}),
         ...(tools.length > 0
           ? {
               tools: tools.map((tool) => ({

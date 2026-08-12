@@ -26,7 +26,7 @@ export async function GET() {
     const db = supabaseAdmin()
     const { data, error } = await db
       .from('ai_configs')
-      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate, usd_to_mzn_rate_updated_at')
+      .select('provider, model, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, api_key, embeddings_api_key, usd_to_mzn_rate, usd_to_mzn_rate_updated_at, temperature')
       .eq('account_id', accountId)
       .maybeSingle()
     if (error) {
@@ -78,6 +78,16 @@ export async function POST(request: Request) {
     let maxReplyChunks = Number(body.max_reply_chunks)
     if (!Number.isFinite(maxReplyChunks)) maxReplyChunks = 3
     maxReplyChunks = Math.min(5, Math.max(1, Math.floor(maxReplyChunks)))
+
+    // null/omitted means "use the provider's own default" — the field is
+    // simply left out of the request body (see providers/openai.ts and
+    // providers/anthropic.ts).
+    let temperature: number | null = null
+    if (typeof body.temperature === 'number' && Number.isFinite(body.temperature)) {
+      temperature = Math.round(Math.min(2, Math.max(0, body.temperature)) * 100) / 100
+    } else if (body.temperature !== undefined && body.temperature !== null) {
+      return bad('temperature must be a number between 0 and 2')
+    }
 
     const rawHandoff = typeof body.handoff_agent_id === 'string' ? body.handoff_agent_id.trim() : ''
     const handoffProvided = 'handoff_agent_id' in body
@@ -148,6 +158,7 @@ export async function POST(request: Request) {
       auto_reply_max_per_conversation: maxPer,
       buffer_window_seconds: bufferWindowSeconds,
       max_reply_chunks: maxReplyChunks,
+      temperature,
     }
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
     if (rawEmbeddingsKey) shared.embeddings_api_key = encrypt(rawEmbeddingsKey)

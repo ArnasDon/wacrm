@@ -13,6 +13,36 @@ export const AGENT_TOOL_KEYS = [
 
 export type AgentToolKey = (typeof AGENT_TOOL_KEYS)[number]
 
+/**
+ * Tools with no CRM side effect — they only read or queue a WhatsApp send
+ * that a caller may choose never to dispatch. Used to scope tool access
+ * down for surfaces that generate text a human reviews before it becomes
+ * real (draft, playground): a preview turn must never silently create a
+ * deal, tag a contact, or book a visit before anyone decided to send
+ * anything. `handoff_human` is excluded too — there is no live dispatch
+ * for it to affect on these surfaces.
+ */
+export const PREVIEW_SAFE_TOOL_KEYS: readonly AgentToolKey[] = [
+  'search_catalog',
+  'send_product',
+  'search_knowledge',
+  'get_style_opinion',
+]
+
+/** Zeroes out every permission not in PREVIEW_SAFE_TOOL_KEYS — used by the
+ *  draft and Playground routes, which run the real tool-calling loop but
+ *  must never let a mutating tool fire before a human decides to send
+ *  anything. */
+export function restrictToPreviewSafe(
+  permissions: Record<AgentToolKey, boolean>,
+): Record<AgentToolKey, boolean> {
+  const restricted = { ...permissions }
+  for (const key of AGENT_TOOL_KEYS) {
+    if (!PREVIEW_SAFE_TOOL_KEYS.includes(key)) restricted[key] = false
+  }
+  return restricted
+}
+
 export const DEFAULT_AGENT_TOOLS: Record<AgentToolKey, boolean> = {
   search_catalog: true,
   send_product: true,

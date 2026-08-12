@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BarChart3, Bot, FlaskConical, GraduationCap, Settings2, Sparkles, Workflow, Wrench } from 'lucide-react';
+import { BarChart3, Bot, FlaskConical, GraduationCap, Layers, Settings2, Sparkles, Workflow, Wrench } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AgentTools } from '@/components/agents/agent-tools';
+import { AgentSkills } from '@/components/agents/agent-skills';
 import { AgentFlowPanel } from '@/components/agents/agent-flow-panel';
 import { AgentSuggestions } from '@/components/agents/agent-suggestions';
 import { AgentEval } from '@/components/agents/agent-eval';
@@ -13,7 +14,7 @@ import { AiConfig } from '@/components/settings/ai-config';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 
-type Tab = 'playground' | 'setup' | 'tools' | 'flow' | 'suggestions' | 'eval' | 'usage';
+type Tab = 'playground' | 'setup' | 'tools' | 'skills' | 'flow' | 'suggestions' | 'eval' | 'usage';
 
 export default function AgentsPage() {
   const { accountRole } = useAuth();
@@ -67,6 +68,9 @@ export default function AgentsPage() {
             <TabsTrigger value="tools">
               <Wrench className="mr-1.5 h-4 w-4" /> Ferramentas
             </TabsTrigger>
+            <TabsTrigger value="skills">
+              <Layers className="mr-1.5 h-4 w-4" /> Skills
+            </TabsTrigger>
             <TabsTrigger value="flow">
               <Workflow className="mr-1.5 h-4 w-4" /> Fluxo ao vivo
             </TabsTrigger>
@@ -95,6 +99,10 @@ export default function AgentsPage() {
 
           <TabsContent value="tools" className="mt-4">
             <AgentTools />
+          </TabsContent>
+
+          <TabsContent value="skills" className="mt-4">
+            <AgentSkills />
           </TabsContent>
 
           <TabsContent value="flow" className="mt-4">

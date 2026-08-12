@@ -21,6 +21,8 @@ export interface ProviderArgs {
   /** Optional agent tools. Providers without tool support may ignore them. */
   tools?: AgentToolDefinition[]
   executeTool?: AgentToolExecutor
+  /** Sampling temperature. Omitted from the provider request when null/undefined. */
+  temperature?: number | null
 }
 
 /**

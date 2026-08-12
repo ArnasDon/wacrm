@@ -11,6 +11,9 @@ import { latestUserMessage } from '@/lib/ai/query'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
+import { createAutoReplyTools } from '@/lib/ai/tools'
+import { loadAgentToolPermissions, restrictToPreviewSafe } from '@/lib/ai/tool-permissions'
+import { applySkillNarrowing, loadAgentSkills } from '@/lib/ai/skills'
 
 /**
  * POST /api/ai/draft  (agent+)
@@ -18,8 +21,11 @@ import { AiError } from '@/lib/ai/types'
  * Body: { conversation_id }
  * Returns: { draft } — a suggested reply for the agent to edit + send.
  *
- * Uses the account's configured provider/key (BYO). Read-only: it never
- * sends or stores anything, just hands text back to the composer.
+ * Uses the account's configured provider/key (BYO). Never sends a WhatsApp
+ * message or writes CRM data — it only hands text back to the composer for
+ * a human to review. May call read-only/informational tools (catalogue and
+ * knowledge search, style opinion — see PREVIEW_SAFE_TOOL_KEYS) the same
+ * way the live auto-reply bot does; mutating tools are always excluded.
  */
 export async function POST(request: Request) {
   try {
@@ -42,7 +48,7 @@ export async function POST(request: Request) {
     // row means "not yours / not found" either way.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr) {
@@ -101,10 +107,39 @@ export async function POST(request: Request) {
       knowledge,
     })
 
+    // Same tool-calling loop the live auto-reply bot uses, scoped down to
+    // PREVIEW_SAFE_TOOL_KEYS: a draft is text a human reviews before it
+    // becomes a real message, so nothing here may create a deal, tag a
+    // contact, or book a visit before anyone decided to send anything.
+    const db = supabaseAdmin()
+    let tools: ReturnType<typeof createAutoReplyTools>['tools'] | undefined
+    let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
+    if (config.agentId) {
+      const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
+        loadAgentToolPermissions(db, accountId, config.agentId),
+        loadAgentSkills(db, accountId, config.agentId),
+      ])
+      const effectivePermissions = restrictToPreviewSafe(applySkillNarrowing(permissions, skills))
+      const toolRuntime = createAutoReplyTools({
+        db,
+        accountId,
+        conversationId,
+        contactId: conversation.contact_id,
+        configOwnerUserId: userId,
+        config,
+        permissions: effectivePermissions,
+        toolInstructions,
+      })
+      tools = toolRuntime.tools
+      executeTool = tools.length > 0 ? toolRuntime.executeTool : undefined
+    }
+
     const { text, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+      tools,
+      executeTool,
     })
 
     // Record spend on the account's BYO key. Best-effort + via the

@@ -7,6 +7,10 @@ import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
+import { supabaseAdmin } from '@/lib/ai/admin-client'
+import { createAutoReplyTools } from '@/lib/ai/tools'
+import { loadAgentToolPermissions, restrictToPreviewSafe } from '@/lib/ai/tool-permissions'
+import { applySkillNarrowing, loadAgentSkills } from '@/lib/ai/skills'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -15,11 +19,15 @@ const MAX_TURNS = 20
  * POST /api/ai/playground  (agent+)
  *
  * Test-chat with the account's agent WITHOUT touching WhatsApp. Runs the
- * exact same path the auto-reply bot uses — knowledge-base retrieval +
- * `auto_reply` system prompt + the configured provider — so what you see
- * here is what a real customer would get. Reads the config even when the
- * master switch is off (requireActive:false) so you can try it before
- * going live. Stateless: the client sends the running transcript each turn.
+ * same `auto_reply` system prompt, skills and tool-calling loop the live
+ * bot uses, scoped to PREVIEW_SAFE_TOOL_KEYS (read/informational tools
+ * only) since there is no real conversation or contact here for a
+ * mutating tool (create_deal, add_tag, schedule_visit) to attach to.
+ * Reads the config even when the master switch is off (requireActive:
+ * false) so you can try it before going live. Stateless: the client sends
+ * the running transcript each turn; there is no conversationId/contactId,
+ * so per-call telemetry (agent_tool_calls) is skipped for this surface —
+ * see the conversationId guard in tools/index.ts's executeTool wrapper.
  */
 export async function POST(request: Request) {
   try {
@@ -81,10 +89,35 @@ export async function POST(request: Request) {
       knowledge,
     })
 
+    const db = supabaseAdmin()
+    let tools: ReturnType<typeof createAutoReplyTools>['tools'] | undefined
+    let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
+    if (config.agentId) {
+      const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
+        loadAgentToolPermissions(db, accountId, config.agentId),
+        loadAgentSkills(db, accountId, config.agentId),
+      ])
+      const effectivePermissions = restrictToPreviewSafe(applySkillNarrowing(permissions, skills))
+      const toolRuntime = createAutoReplyTools({
+        db,
+        accountId,
+        conversationId: '',
+        contactId: '',
+        configOwnerUserId: userId,
+        config,
+        permissions: effectivePermissions,
+        toolInstructions,
+      })
+      tools = toolRuntime.tools
+      executeTool = tools.length > 0 ? toolRuntime.executeTool : undefined
+    }
+
     const { text, handoff } = await generateReply({
       config,
       systemPrompt,
       messages,
+      tools,
+      executeTool,
     })
     return NextResponse.json({ reply: text, handoff })
   } catch (err) {

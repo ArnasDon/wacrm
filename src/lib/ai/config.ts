@@ -21,10 +21,11 @@ interface AiConfigRow {
   handoff_agent_id: string | null
   embeddings_api_key: string | null
   usd_to_mzn_rate: number | null
+  temperature: number | null
 }
 
 const CONFIG_COLUMNS =
-  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, embeddings_api_key, usd_to_mzn_rate'
+  'id, provider, model, api_key, system_prompt, commercial_strategy, is_active, auto_reply_enabled, auto_reply_max_per_conversation, buffer_window_seconds, max_reply_chunks, handoff_agent_id, embeddings_api_key, usd_to_mzn_rate, temperature'
 
 export async function loadAiConfig(
   db: WacrmSupabaseClient,
@@ -80,6 +81,7 @@ export async function loadAiConfig(
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
     usdToMznRate: row.usd_to_mzn_rate ?? undefined,
+    temperature: row.temperature,
   }
 }
 

@@ -61,3 +61,21 @@ twice, turn it into a rule in `AGENTS.md` instead of a third log entry.
   authenticated` block; older (pre-`wacrm.` schema) migrations may be
   missing this and are worth checking if a "permission denied" bug
   shows up on something old.
+
+- **`auto-reply.test.ts`'s mocked `supabaseAdmin().from(table)` has no
+  default case that returns `{data, error}` for an unrecognised table —
+  its fallback branch returns a `select().eq()` chain with no second
+  `.eq()` and no `.order()`.** Adding a new `db.from('some_new_table')`
+  call inside `dispatchInboundToAiReply` (e.g. `loadAgentSkills`, added
+  alongside `skills`) without also adding an explicit branch for it in
+  this mock throws a synchronous `TypeError` while building the query
+  chain — *before* any `await`, so the callee's own `if (error)`
+  handling never runs. That throw escapes the `Promise.all([...])` and
+  lands in `dispatchInboundToAiReply`'s outer `catch`, which sends the
+  generic "não consegui concluir esta consulta" notice instead of
+  calling `markHandoff` — so every test asserting a *specific* handoff
+  message or `updatePayload` fails with "received null", which reads
+  like the production handoff logic broke rather than "the test double
+  doesn't know about a new table." Whenever a new table gets queried
+  from `auto-reply.ts`, add a matching branch to this mock (mirroring
+  the existing `agent_tools`/`agent_traces` ones) in the same change.

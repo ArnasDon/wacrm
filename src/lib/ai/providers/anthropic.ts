@@ -129,7 +129,13 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
     timeoutMs,
     tools = [],
     executeTool,
+    temperature,
   } = args
+  // Anthropic's range is 0-1, narrower than the 0-2 stored on ai_configs
+  // (sized for OpenAI); clamp rather than adding a second provider-specific
+  // column for one dial.
+  const anthropicTemperature =
+    typeof temperature === 'number' ? Math.min(1, Math.max(0, temperature)) : undefined
 
   if (tools.length > 0 && !executeTool) {
     throw new AiError('AI tools were configured without a server executor.', {
@@ -153,6 +159,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
         messages: requestMessages,
+        ...(anthropicTemperature !== undefined ? { temperature: anthropicTemperature } : {}),
         ...(tools.length > 0
           ? {
               tools: tools.map((tool) => ({

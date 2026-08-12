@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
     toolHandoff: null as { reason: string; summary: string | null } | null,
     tracePayload: null as Record<string, unknown> | null,
     agentToolRows: [] as Array<{ tool_key: string; enabled: boolean }>,
+    skillRows: [] as Array<{ id: string; name: string; instructions: string; tool_keys: string[] }>,
     toolsCalledWithPermissions: null as Record<string, boolean> | null,
     hasPendingActions: false as boolean,
     dispatchResult: { sent: 0, failed: 0 } as { sent: number; failed: number },
@@ -92,6 +93,16 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'skills') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          then: (resolve: (value: { data: unknown[]; error: null }) => unknown) =>
+            Promise.resolve({ data: h.state.skillRows, error: null }).then(resolve),
+        }
+        return chain
+      }
       if (table === 'notifications') {
         return { insert: () => Promise.resolve({ error: null }) }
       }
@@ -148,6 +159,7 @@ beforeEach(() => {
   h.state.toolHandoff = null
   h.state.tracePayload = null
   h.state.agentToolRows = []
+  h.state.skillRows = []
   h.state.toolsCalledWithPermissions = null
   h.state.hasPendingActions = false
   h.state.dispatchResult = { sent: 0, failed: 0 }

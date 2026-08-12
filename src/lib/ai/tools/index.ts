@@ -796,7 +796,10 @@ export function createAutoReplyTools(args: {
       } catch (error) {
         console.error('[ai tools] trace callback failed:', error)
       }
-      if (config.agentId) {
+      // conversationId is empty for surfaces with no real conversation row
+      // (the Playground) — skip the FK-bound telemetry insert rather than
+      // logging a doomed write on every tool call.
+      if (config.agentId && conversationId) {
         try {
           const { error } = await db.from('agent_tool_calls').insert({
             account_id: accountId,

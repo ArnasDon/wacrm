@@ -74,6 +74,8 @@ export function AiConfig() {
   const [usdToMznRate, setUsdToMznRate] = useState(63.91);
   const [usdToMznRateUpdatedAt, setUsdToMznRateUpdatedAt] = useState<string | null>(null);
   const [handoffAgentId, setHandoffAgentId] = useState('');
+  const [temperatureEnabled, setTemperatureEnabled] = useState(false);
+  const [temperature, setTemperature] = useState(0.7);
   const [members, setMembers] = useState<AccountMember[]>([]);
 
   const [maxProducts, setMaxProducts] = useState(3);
@@ -117,6 +119,8 @@ export function AiConfig() {
         setUsdToMznRate(data.usd_to_mzn_rate ?? 63.91);
         setUsdToMznRateUpdatedAt(data.usd_to_mzn_rate_updated_at ?? null);
         setHandoffAgentId(data.handoff_agent_id ?? '');
+        setTemperatureEnabled(typeof data.temperature === 'number');
+        setTemperature(typeof data.temperature === 'number' ? data.temperature : 0.7);
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
         setKeyEdited(false);
@@ -186,6 +190,7 @@ export function AiConfig() {
     buffer_window_seconds: bufferWindowSeconds,
     max_reply_chunks: maxReplyChunks,
     handoff_agent_id: handoffAgentId || null,
+    temperature: temperatureEnabled ? temperature : null,
   });
 
   const handleTest = async () => {
@@ -256,6 +261,8 @@ export function AiConfig() {
         setMaxReplyChunks(3);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setTemperatureEnabled(false);
+        setTemperature(0.7);
         resetCommercialStrategy();
       } else {
         const data = await res.json();
@@ -584,6 +591,44 @@ export function AiConfig() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('temperature')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('temperatureDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={temperatureEnabled}
+                onCheckedChange={setTemperatureEnabled}
+                disabled={disabled}
+              />
+            </div>
+            {temperatureEnabled && (
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="ai-temperature" className="text-xs text-muted-foreground">
+                  {t('temperatureValue')}
+                </Label>
+                <Input
+                  id="ai-temperature"
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={temperature}
+                  onChange={(e) =>
+                    setTemperature(
+                      Math.min(2, Math.max(0, Number(e.target.value) || 0)),
+                    )
+                  }
+                  disabled={disabled}
+                  className="w-20"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -21,6 +21,7 @@ import {
   type AgentTraceCollector,
 } from './trace'
 import { loadAgentToolPermissions } from './tool-permissions'
+import { applySkillNarrowing, loadAgentSkills, skillsPrompt } from './skills'
 import { classifyIntent } from './route'
 import { cataloguePrefetchPrompt, prefetchCatalogueForConversation } from './catalog-prefetch'
 import { engineSendText, engineSendTypingIndicator } from '@/lib/flows/meta-send'
@@ -269,11 +270,15 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     // that judgement call belongs to the model, not to a keyword list
     // that can never anticipate an arbitrary tenant's own vocabulary
     // (see route.ts's module doc for the live bug this replaced).
-    const { permissions, instructions: toolInstructions } = await loadAgentToolPermissions(
-      db,
-      accountId,
-      config.agentId!,
-    )
+    const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
+      loadAgentToolPermissions(db, accountId, config.agentId!),
+      loadAgentSkills(db, accountId, config.agentId!),
+    ])
+    // Skills only ever narrow what agent_tools already allows (handoff_human
+    // is exempt, see applySkillNarrowing) — an agent with zero skills
+    // configured gets `permissions` back unchanged, so this is a no-op for
+    // every account that hasn't opted into skills yet.
+    const effectivePermissions = applySkillNarrowing(permissions, skills)
     const agentTools = createAutoReplyTools({
       db,
       accountId,
@@ -281,13 +286,13 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       contactId,
       configOwnerUserId,
       config,
-      permissions,
+      permissions: effectivePermissions,
       toolInstructions,
       onToolCall: (call) => trace?.recordToolCall(call),
     })
 
     const [prefetch, crmContext, memories, lessons] = await Promise.all([
-      permissions.search_catalog
+      effectivePermissions.search_catalog
         ? prefetchCatalogueForConversation({
             db,
             accountId,
@@ -332,6 +337,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     trace?.setMemoryMatchCount(memories.length)
     const memoryContext = contactMemoryPrompt(memories)
     const lessonsContext = lessonsPrompt(lessons)
+    const skillsContext = skillsPrompt(skills)
 
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -341,6 +347,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     })
     const systemPrompt = [
       baseSystemPrompt,
+      skillsContext,
       crmContext,
       memoryContext,
       lessonsContext,
@@ -352,6 +359,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
     console.info('[ai auto-reply] tools enabled:', {
       conversationId,
       provider: config.provider,
+      skills: skills.map((skill) => skill.name),
       tools: agentTools.tools.map((tool) => tool.name),
     })
 

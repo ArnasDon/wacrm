@@ -16,7 +16,7 @@ export interface GenerateArgs {
   // caller that only has provider/model/apiKey (e.g. a tool executor
   // making its own nested vision call) doesn't need to fabricate a full
   // AiConfig just to satisfy the type.
-  config: Pick<AiConfig, 'provider' | 'model' | 'apiKey'>
+  config: Pick<AiConfig, 'provider' | 'model' | 'apiKey' | 'temperature'>
   /** Fully-built system prompt (see `buildSystemPrompt`). */
   systemPrompt: string
   /** Recent conversation turns, oldest first. */
@@ -43,6 +43,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     timeoutMs,
     tools,
     executeTool,
+    temperature: config.temperature,
   }
 
   let result: { text: string; usage: AiUsage | null }

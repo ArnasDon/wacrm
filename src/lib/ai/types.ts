@@ -51,6 +51,11 @@ export interface AiConfig {
    *  callers/fixtures that only need credentials aren't forced to supply
    *  it; falls back to DEFAULT_USD_TO_MZN_RATE (pricing.ts) when absent. */
   usdToMznRate?: number
+  /** Sampling temperature, 0-2 (OpenAI range; Anthropic adapters clamp to
+   *  1). Null/undefined omits the field from the provider request
+   *  entirely, which is the provider's own default — existing accounts
+   *  that never set this see no change in behaviour. */
+  temperature?: number | null
 }
 
 export type AiImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'

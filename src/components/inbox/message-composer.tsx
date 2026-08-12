@@ -37,7 +37,10 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
   ALLOWED_MIME_TYPES_BY_KIND,
 } from "@/lib/storage/upload-media";
-import { isQuickTimeVideo, convertMovToMp4 } from "@/lib/media/transcode-mov";
+import {
+  isQuickTimeVideo,
+  convertMovToMp4ViaWebCodecs,
+} from "@/lib/media/transcode-mov-webcodecs";
 import { ReplyQuote } from "./reply-quote";
 import { useTranslations } from "next-intl";
 
@@ -291,12 +294,15 @@ export function MessageComposer({
       // codec requirement (H.264/AAC in MP4/3GPP) accept it. Transcode
       // to a real .mp4 client-side first, so every check and the upload
       // itself below run completely unchanged, exactly as for a native
-      // .mp4 — see transcode-mov.ts.
+      // .mp4 — see transcode-mov-webcodecs.ts (native WebCodecs, not
+      // ffmpeg.wasm — validated live on iPhone: a 41s/116MB 4K HEVC
+      // clip converted in 24.9s; the old ffmpeg.wasm path could hang
+      // indefinitely on the same class of file).
       let file = pickedFile;
       if (kind === "video" && isQuickTimeVideo(file)) {
         setBusy(true);
         try {
-          file = await convertMovToMp4(file);
+          file = await convertMovToMp4ViaWebCodecs(file);
         } catch (err) {
           setBusy(false);
           toast.error(err instanceof Error ? err.message : t("unsupportedVideoType"));

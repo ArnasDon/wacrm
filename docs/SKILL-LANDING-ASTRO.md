@@ -3906,7 +3906,50 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 
 ## 21. Directrices para agentes de IA
 
-Al construir con este sistema, estas reglas son absolutas.
+Empieza aquí si no tienes contexto previo. Estas reglas son absolutas.
+
+### Orden de trabajo
+
+Sigue esta secuencia. No la reordenes.
+
+| # | Haz esto | Termina cuando |
+|---|---|---|
+| 1 | Lee §0 y confirma que vas a construir **secciones**, no un sistema de utilidades | Puedes nombrar las 24 secciones del catálogo |
+| 2 | Copia el sustrato de §3–§6 tal cual: capas, tokens, layout, utilidades, componentes | `@layer` declarado y los tokens en `:root` |
+| 3 | Construye el cromo: cabecera con menú y popup, pie, widget flotante (§7.7) | El menú abre con `input:checked`, el popup con `:target` |
+| 4 | Construye las 24 secciones del catálogo (§10) | Cada una existe como archivo propio y se monta sin tocar CSS global |
+| 5 | Monta la página con el arquetipo que toque (§16) y la anatomía de §15 | Un solo `<h1>`, la acción principal 3–5 veces con el mismo texto |
+| 6 | Cablea formulario, atribución y medición (§12–§14) | Un envío de prueba genera exactamente una conversión |
+| 7 | Pasa la lista de §20 **ejecutando los comandos**, no leyéndolos | Cero fallos |
+
+### Las cinco decisiones que se equivocan siempre
+
+Contrástalas antes de escribir cada sección.
+
+| Decisión | Correcto | Incorrecto |
+|---|---|---|
+| Punto de partida del CSS | Móvil, sin media query | Escritorio, deshecho con `max-width` |
+| 3+ tarjetas equivalentes | Carril horizontal en móvil (§7.8) | Apiladas, cuatro pantallas de scroll |
+| Proporción de video | Vertical 9:16 en móvil (§12.1) | 16:9 aplastado en una columna |
+| Tabla en móvil | Se desplaza dentro de su envoltorio (§7.9) | Se rompe en tarjetas |
+| Página de gracias | Cuelga de la raíz, una por conversión (§12-bis) | Bajo la base de Astro, compartida |
+
+### Antes de dar nada por hecho
+
+Que el build pase no prueba que el JavaScript llegue al navegador. Verifica sobre el HTML emitido, no sobre el código fuente:
+
+```bash
+grep -c '<iframe' dist/index.html                  # 0 antes del clic
+grep -rn '@media (max-width' src/                  # vacío, salvo no-layout
+grep -rn 'style="' src/ | grep -v '\-\-'           # vacío
+node --check <script-extraído-del-html>            # JavaScript válido
+```
+
+Las tres trampas de Astro de §12.6 no dan error de build y solo se ven así.
+
+### Si algo no encaja con este documento
+
+Para y pregunta. No inventes una sección nueva ni instales una dependencia para esquivar el problema: §19 explica cuándo se crea un módulo y cuándo no.
 
 ### Prohibido
 

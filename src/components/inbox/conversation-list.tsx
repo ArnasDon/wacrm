@@ -638,12 +638,12 @@ interface ConversationItemProps {
 // (delete-only) was tried and reverted — it fought the original
 // left-to-right gesture's feel, so there's only ever one direction now.
 const SWIPE_LEFT_WIDTH = 152;
-// Rubber-band past SWIPE_LEFT_WIDTH: how far the panel can be pulled
-// beyond its resting width, and how much of the extra pull actually
-// moves it — the resistance iOS gives you dragging a list row (or a
-// scroll view) past its natural limit, instead of a hard stop.
-const SWIPE_OVERSHOOT_MAX = 28;
-const SWIPE_OVERSHOOT_RATIO = 0.28;
+// Rubber-band past SWIPE_LEFT_WIDTH — UIScrollView's own resistance
+// curve (the constant 0.55 is Apple's), not a linear ratio: resistance
+// grows smoothly the further past the limit you pull, asymptotically,
+// instead of a fixed-rate slowdown or a hard stop. See `rubberBand`
+// below.
+const SWIPE_RUBBER_BAND_CONSTANT = 0.55;
 // Minimum finger movement (px) before a touch gesture commits to
 // horizontal swipe vs. vertical scroll — matches the "10px before
 // committing" rule below.
@@ -664,13 +664,40 @@ const SWIPE_AXIS_RATIO = 2.5;
 // preview) open the panel. A touch starting further right than this
 // never locks to "x", no matter how clean the horizontal drag is.
 const SWIPE_START_ZONE_PX = 64;
-// Apple's spring/bounce feel via a cubic-bezier approximation (true
-// spring physics need CSS `linear()` easing, iOS 16.4+ only): a slight
-// overshoot past the resting point before settling, instead of a flat
-// ease-out. This — plus the rubber-band above — is what reads as
-// "elastic" rather than a mechanical slide.
-const SWIPE_SPRING_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-const SWIPE_SPRING_MS = 320;
+// Real spring physics (SwiftUI-style response/dampingRatio), not a
+// fixed-duration CSS easing curve — confirmed with the user (2026-08-12)
+// that a canned cubic-bezier can't do what was actually asked for: the
+// settle animation's speed and shape need to depend on how fast the
+// finger was moving at release, which a pre-baked curve/duration
+// structurally cannot do (the duration is fixed before the gesture's
+// velocity is even known). `response` is roughly the period of one
+// oscillation in seconds (lower = snappier); `dampingRatio` 1 = no
+// bounce (critically damped), <1 = the slight overshoot iOS list rows
+// settle with. See `settleSpring` below — it runs the actual
+// mass-spring-damper simulation every frame via requestAnimationFrame.
+const SWIPE_SPRING_RESPONSE = 0.32;
+const SWIPE_SPRING_DAMPING_RATIO = 0.86;
+const SWIPE_SPRING_MASS = 1;
+// "Close enough" thresholds (px, px/s) below which the spring simulation
+// stops and snaps exactly to the target — without this it would
+// oscillate asymptotically forever and never truly settle.
+const SWIPE_SPRING_REST_DISPLACEMENT = 0.5;
+const SWIPE_SPRING_REST_VELOCITY = 20;
+
+/**
+ * Apple's UIScrollView rubber-band curve: smooth, ever-growing
+ * resistance past a limit — never a hard stop, never a fixed-rate
+ * slowdown. `overshoot` is how far past the limit the raw drag distance
+ * would put it; `dimension` sets the curve's scale (how much distance
+ * "feels" like a natural pull before resistance dominates). Pure +
+ * exported so the curve shape is unit-testable without a DOM.
+ */
+export function rubberBand(overshoot: number, dimension: number): number {
+  return (
+    (overshoot * dimension * SWIPE_RUBBER_BAND_CONSTANT) /
+    (dimension + SWIPE_RUBBER_BAND_CONSTANT * overshoot)
+  );
+}
 
 function ConversationItem({
   conversation,
@@ -692,8 +719,8 @@ function ConversationItem({
   // --- Swipe-to-reveal (mobile/PWA) ---------------------------------
   // `revealed` only changes once per gesture, on touch release — the
   // drag itself writes straight to the DOM via `contentRef.current
-  // .style.transform` (see applyTransform), bypassing React/setState so
-  // dragging never triggers a re-render.
+  // .style.transform` (see `dragTransform`/`settleSpring` below),
+  // bypassing React/setState so dragging never triggers a re-render.
   //
   // Native `addEventListener`/`{ passive: false }` below, NOT React's
   // touch props — confirmed live on a real iPhone (Mac + Safari Web
@@ -733,27 +760,114 @@ function ConversationItem({
     // row's left edge (the avatar corner) — computed once at
     // touchstart, since only the starting point matters.
     zoneOk: false,
+    // Smoothed velocity (px/s) — an exponential moving average over
+    // real elapsed time between touchmove samples, not just the last
+    // delta (a single noisy sample right at release would otherwise
+    // dominate). Seeds the release spring so a fast flick and a slow
+    // drag animate differently, instead of every release looking the
+    // same. Sign follows screen coordinates: positive = rightward.
+    velocity: 0,
+    lastMoveX: 0,
+    lastMoveT: 0,
   });
 
-  const applyTransform = useCallback((x: number, animate: boolean) => {
-    const el = contentRef.current;
-    if (!el) return;
-    // 1:1 with the finger during the drag itself (no transition — see
-    // the `false` callers below). On release, Apple's own spring/bounce
-    // curve (see SWIPE_SPRING_EASE) — a slight overshoot past the
-    // resting point before settling — so the open/close snap reads as
-    // an elastic catch rather than a mechanical slide.
-    el.style.transition = animate
-      ? `transform ${SWIPE_SPRING_MS}ms ${SWIPE_SPRING_EASE}`
-      : "none";
-    el.style.transform = `translate3d(${x}px,0,0)`;
+  // Live, always-current transform value — updated every frame by both
+  // the drag itself and the settle spring below. Lets a new touch
+  // interrupt an in-flight spring and continue from wherever it
+  // actually is on screen (currentXRef), rather than jumping to
+  // `revealed`'s theoretical resting value.
+  const currentXRef = useRef(0);
+  const springFrameRef = useRef<number | null>(null);
+
+  const cancelSpring = useCallback(() => {
+    if (springFrameRef.current !== null) {
+      cancelAnimationFrame(springFrameRef.current);
+      springFrameRef.current = null;
+    }
   }, []);
 
+  // Writes straight to the DOM with no CSS transition — used during an
+  // active drag, 1:1 with the finger every frame.
+  const dragTransform = useCallback(
+    (x: number) => {
+      const el = contentRef.current;
+      if (!el) return;
+      cancelSpring();
+      el.style.transition = "none";
+      el.style.transform = `translate3d(${x}px,0,0)`;
+      currentXRef.current = x;
+    },
+    [cancelSpring],
+  );
+
+  // Drives the panel to `target` via a real mass-spring-damper
+  // simulation stepped every requestAnimationFrame, seeded with
+  // `initialVelocity` (px/s) — NOT a fixed-duration CSS transition. A
+  // fast release reaches the target quicker (and can overshoot/settle
+  // back, per SWIPE_SPRING_DAMPING_RATIO) than a slow one, because the
+  // physics — not a pre-baked curve — determine the motion frame by
+  // frame. Interruptible: calling this again (e.g. a new touch grabs
+  // the row mid-bounce) cancels the running loop first.
+  const settleSpring = useCallback(
+    (target: number, initialVelocity: number) => {
+      const el = contentRef.current;
+      if (!el) return;
+      cancelSpring();
+      el.style.transition = "none";
+
+      let pos = currentXRef.current;
+      let vel = initialVelocity;
+      let lastTime: number | null = null;
+
+      // response/dampingRatio (SwiftUI-style) → stiffness/damping for
+      // the underlying F = -stiffness·x - damping·v equation.
+      const angularFreq = (2 * Math.PI) / SWIPE_SPRING_RESPONSE;
+      const stiffness = angularFreq * angularFreq * SWIPE_SPRING_MASS;
+      const damping = 2 * SWIPE_SPRING_DAMPING_RATIO * angularFreq * SWIPE_SPRING_MASS;
+
+      function frame(time: number) {
+        if (lastTime === null) lastTime = time;
+        // Clamp dt so a dropped/backgrounded frame (tab switch, a slow
+        // frame) can't make the spring jump wildly on the next tick.
+        const dt = Math.min((time - lastTime) / 1000, 1 / 30);
+        lastTime = time;
+
+        const displacement = pos - target;
+        const accel = (-stiffness * displacement - damping * vel) / SWIPE_SPRING_MASS;
+        vel += accel * dt;
+        pos += vel * dt;
+
+        const settled =
+          Math.abs(pos - target) < SWIPE_SPRING_REST_DISPLACEMENT &&
+          Math.abs(vel) < SWIPE_SPRING_REST_VELOCITY;
+
+        if (settled) {
+          currentXRef.current = target;
+          el!.style.transform = `translate3d(${target}px,0,0)`;
+          springFrameRef.current = null;
+          return;
+        }
+
+        currentXRef.current = pos;
+        el!.style.transform = `translate3d(${pos}px,0,0)`;
+        springFrameRef.current = requestAnimationFrame(frame);
+      }
+
+      springFrameRef.current = requestAnimationFrame(frame);
+    },
+    [cancelSpring],
+  );
+
   // Keep the DOM transform in sync whenever `revealed` changes outside
-  // a drag (mount, or an action button closing the panel).
+  // a drag (mount, or an action button closing the panel) — velocity 0,
+  // these aren't gesture releases.
   useEffect(() => {
-    applyTransform(revealed === "left" ? SWIPE_LEFT_WIDTH : 0, true);
-  }, [revealed, applyTransform]);
+    settleSpring(revealed === "left" ? SWIPE_LEFT_WIDTH : 0, 0);
+  }, [revealed, settleSpring]);
+
+  // Belt-and-suspenders: cancel any running spring loop on unmount so
+  // it never writes to a detached node.
+  useEffect(() => cancelSpring, [cancelSpring]);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -765,14 +879,21 @@ function ConversationItem({
       // Non-null: `el` was already checked above, before this closure
       // was defined; it's a `const` capture, never reassigned.
       const rect = el!.getBoundingClientRect();
+      // Grabbing the row while it's mid-bounce from a previous gesture
+      // continues from wherever it actually is (currentXRef), not a
+      // jump to the settled 0/SWIPE_LEFT_WIDTH value.
+      cancelSpring();
       dragRef.current = {
         active: true,
         axis: null,
         startX: touch.clientX,
         startY: touch.clientY,
-        baseX: revealedRef.current === "left" ? SWIPE_LEFT_WIDTH : 0,
+        baseX: currentXRef.current,
         x: 0,
         zoneOk: touch.clientX - rect.left <= SWIPE_START_ZONE_PX,
+        velocity: 0,
+        lastMoveX: touch.clientX,
+        lastMoveT: e.timeStamp,
       };
     }
 
@@ -783,6 +904,18 @@ function ConversationItem({
       if (!touch) return;
       const dx = touch.clientX - drag.startX;
       const dy = touch.clientY - drag.startY;
+
+      // Smoothed velocity (px/s), tracked on every sample regardless of
+      // axis — an exponential moving average so a single noisy sample
+      // right before release doesn't dominate the value fed to the
+      // settle spring.
+      const dt = e.timeStamp - drag.lastMoveT;
+      if (dt > 0) {
+        const instVelocity = ((touch.clientX - drag.lastMoveX) / dt) * 1000;
+        drag.velocity = drag.velocity * 0.7 + instVelocity * 0.3;
+      }
+      drag.lastMoveX = touch.clientX;
+      drag.lastMoveT = e.timeStamp;
 
       if (drag.axis === null) {
         // Vertical wins on the first sign of doubt — a real touchscreen's
@@ -821,11 +954,12 @@ function ConversationItem({
       // sample): if the gesture drifts and vertical overtakes
       // horizontal mid-swipe — a real finger rarely travels in a
       // perfectly straight line — bail out to scroll instead of
-      // fighting the page under it.
+      // fighting the page under it. The spring (not a fixed snap) takes
+      // it back to closed from wherever it currently is.
       if (Math.abs(dy) > Math.abs(dx)) {
         drag.axis = "y";
         drag.x = 0;
-        applyTransform(0, true);
+        settleSpring(0, drag.velocity);
         return;
       }
 
@@ -836,17 +970,15 @@ function ConversationItem({
       e.preventDefault();
 
       const raw = drag.baseX + dx;
-      // Rubber-band once past the fully-open width, instead of a hard
-      // clamp — see SWIPE_OVERSHOOT_MAX/_RATIO.
+      // Rubber-band once past the fully-open width — Apple's own
+      // resistance curve, see `rubberBand` above — instead of a hard
+      // clamp.
       const clamped =
         raw <= SWIPE_LEFT_WIDTH
           ? Math.max(0, raw)
-          : Math.min(
-              SWIPE_LEFT_WIDTH + SWIPE_OVERSHOOT_MAX,
-              SWIPE_LEFT_WIDTH + (raw - SWIPE_LEFT_WIDTH) * SWIPE_OVERSHOOT_RATIO
-            );
+          : SWIPE_LEFT_WIDTH + rubberBand(raw - SWIPE_LEFT_WIDTH, SWIPE_LEFT_WIDTH);
       drag.x = clamped;
-      applyTransform(clamped, false);
+      dragTransform(clamped);
     }
 
     function handleTouchEnd() {
@@ -859,21 +991,20 @@ function ConversationItem({
       if (leftPanelRef.current) leftPanelRef.current.style.visibility = "";
       if (drag.axis !== "x") return;
 
-      // The overshoot rubber-band means `drag.x` can sit slightly past
-      // SWIPE_LEFT_WIDTH — clamp back to the real width before
-      // comparing against the halfway-open threshold below.
+      // The rubber-band means `drag.x` can sit past SWIPE_LEFT_WIDTH —
+      // clamp back to the real width before comparing against the
+      // halfway-open threshold below.
       const settledX = Math.min(drag.x, SWIPE_LEFT_WIDTH);
       const next = settledX > SWIPE_LEFT_WIDTH / 2 ? "left" : null;
-      // Snap explicitly here rather than relying solely on the `revealed`
-      // effect above: when a partial drag resolves back to the SAME value
-      // it already had (the common case — a swipe that doesn't cross the
-      // open threshold resolves to `null`, same as before the gesture),
-      // React bails out of the state update as a no-op and that effect
-      // never re-fires, leaving the card visually stuck wherever the
-      // finger let go instead of snapping back. Calling it directly here
-      // makes the snap unconditional; the effect still covers the other
-      // paths that close it (tap-to-close, action buttons).
-      applyTransform(next === "left" ? SWIPE_LEFT_WIDTH : 0, true);
+      // The real gesture velocity feeds the spring — a fast flick
+      // snaps to the target quicker (and can bounce, per
+      // SWIPE_SPRING_DAMPING_RATIO) than a slow release. Called
+      // directly here (not left to the `revealed` effect above) so a
+      // release that resolves back to the SAME value it already had —
+      // the common case, a swipe that doesn't cross the open threshold
+      // — still animates: `setRevealed` would be a no-op state update
+      // in that case and the effect wouldn't re-fire.
+      settleSpring(next === "left" ? SWIPE_LEFT_WIDTH : 0, drag.velocity);
       setRevealed(next);
     }
 
@@ -891,7 +1022,7 @@ function ConversationItem({
       el.removeEventListener("touchend", handleTouchEnd);
       el.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [applyTransform]);
+  }, [dragTransform, settleSpring, cancelSpring]);
 
   const closeSwipe = useCallback(() => setRevealed(null), []);
 

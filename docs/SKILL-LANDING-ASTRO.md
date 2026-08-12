@@ -3,149 +3,34 @@
 
 ---
 
-## LÉEME PRIMERO — el error que comete toda IA con este documento
-
-Este documento **no es un framework para maquetar**. Es una **biblioteca de secciones terminadas**.
-
-La diferencia decide si el resultado sirve o no:
-
-| Si lo lees como… | Construyes… | Resultado |
-|---|---|---|
-| Un sistema de utilidades | Tokens, grilla y utilidades, y luego escribes cada sección a mano combinándolas | Un Tailwind casero. **Mal.** |
-| Una biblioteca de secciones | Las secciones del catálogo, completas y reutilizables, apoyadas en los tokens | Una landing que se repite sin volver a maquetar. **Bien.** |
-
-La misma landing se va a repetir decenas de veces cambiando textos e imágenes. **Nadie va a maquetar nada.** Se elige una sección del catálogo, se rellena y se pasa a la siguiente. Por eso las secciones 3 a 6 (tokens, layout, utilidades, componentes) son **el sustrato**, no el entregable. El entregable es el catálogo de secciones.
-
-Si al terminar tienes un sistema de estilos elegante y tres secciones escritas a mano, has fallado.
-
-### El catálogo mínimo
-
-Toda landing construida con este sistema tiene disponibles estas secciones. Constrúyelas todas: son el producto.
-
-`hero-centered` · `hero-split` · `hero-fakeh1` · `stats-strip` · `features` · `text-section` · `video` · `gallery` · `testimonials` · `reviews` · `scroller` · `pricing` · `pricing-table` · `comparison` · `table` · `steps` · `team` · `faq` · `cta` · `form` · `lead-magnet` · `related-pages` · `breadcrumb` · `divider`
-
-### Reglas que no se negocian
-
-**1. Mobile-first literal.** El caso base, sin ningún media query, es el móvil. El único breakpoint estructural es `@media (min-width: 900px)`. **Nunca uses `max-width` para layout**: escribir el escritorio y deshacerlo para móvil es exactamente el error que este sistema evita. Si te encuentras escribiendo `@media (max-width: …)`, tienes la lógica invertida.
-
-**2. Trucos de CSS antes que JavaScript.** El sistema entero se apoya en cuatro:
-
-| Truco | Resuelve |
-|---|---|
-| `.lightbox:target` | La galería **y** el popup de formulario del header — la misma clase para las dos |
-| `input:checked ~ …` | Menú móvil, y el widget de contacto flotante |
-| `<details>/<summary>` | Preguntas frecuentes y pestañas |
-| `scroll-snap` + barra oculta | El carril horizontal (ver abajo) |
-
-**3. Una sección que no aporta se borra.** Longitud no persuade.
-
----
-
-## 0-bis. Dos patrones que faltaban en este documento
-
-Los dos salieron de producción y son obligatorios. Sin ellos las secciones se sienten de escritorio adaptado, no de móvil.
-
-### A. El carril: columnas en escritorio, deslizamiento horizontal en móvil
-
-**El problema.** Cuatro reseñas en columnas quedan bien en escritorio. Apiladas en móvil son cuatro pantallas de scroll antes del CTA, en una sección que casi nunca es crítica.
-
-**La regla.** Toda sección de 3 o más tarjetas equivalentes —reseñas, testimonios, logotipos, tarjetas de servicio, equipo— usa carril. **Mobile-first: el carril es el caso base; las columnas son la excepción a 900px.**
-
-```css
-.rail {
-  display: flex;
-  gap: var(--grid-gutter);
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-inline: calc(var(--grid-gutter) / 2);
-
-  /* Sangrado a los bordes: las tarjetas nacen y mueren en el borde de la
-     pantalla. Sin esto el carril parece metido en una caja. */
-  padding-inline: calc(var(--grid-gutter) / 2);
-  margin-inline: calc(var(--grid-gutter) / -2);
-
-  overscroll-behavior-x: contain;   /* que el gesto no dispare el "atrás" */
-  scrollbar-width: none;            /* Firefox */
-  -ms-overflow-style: none;         /* Edge antiguo */
-}
-.rail::-webkit-scrollbar { display: none; }
-
-.rail > * {
-  /* MENOS del 100% a propósito: que asome la siguiente tarjeta es lo ÚNICO
-     que le dice al usuario que hay más. A pantalla completa nadie desliza. */
-  flex: 0 0 var(--rail-item, 78%);
-  scroll-snap-align: start;
-}
-
-@media (min-width: 900px) {
-  .rail {
-    display: grid;                                        /* grid, no flex-wrap:  */
-    grid-template-columns: repeat(var(--rail-cols, 4), 1fr); /* así quedan del mismo */
-    overflow: visible;                                    /* alto — efecto tabla  */
-    padding-inline: 0;
-    margin-inline: 0;
-  }
-  .rail > * { flex: none; }
-}
-```
-
-El contenedor lleva `tabindex="0"`, `role="group"` y `aria-label`: una región que se desplaza tiene que poder recorrerse con teclado, o quien no usa gestos no llega a las tarjetas de la derecha.
-
-Se configura con `--rail-cols` y `--rail-item`. No se crean clases nuevas por cada variante.
-
-### B. Vídeo: vertical por defecto, horizontal solo cuando toca
-
-**La regla, en una frase: en móvil el vídeo es vertical 9:16 siempre.** El horizontal es la excepción.
-
-Por qué importa: un vídeo vertical al lado de un formulario, o dentro de una tarjeta, ocupa mejor la columna y se ve mucho mejor que un 16:9 aplastado. La única sección que exige horizontal a pantalla completa en escritorio es la VSL.
-
-**Dos IDs de YouTube, no uno:**
-
-| Atributo | Contenido | Obligatorio |
-|---|---|---|
-| `data-video-id` | El vídeo **vertical** (móvil) | Sí |
-| `data-desktop-video-id` | El **horizontal** (escritorio) | No — si falta, se reutiliza el vertical |
-
-Esa es la regla que pediste: si existe versión horizontal se usa en escritorio; si no, el vertical sirve para los dos.
-
-```css
-/* MOBILE FIRST: vertical por defecto */
-.youtube-video { position: relative; overflow: hidden; aspect-ratio: 9 / 16; }
-
-/* Forzados, cuando la sección lo exige */
-.youtube-video.ratio-vertical   { aspect-ratio: 9 / 16; }  /* junto a un form, en card */
-.youtube-video.ratio-horizontal { aspect-ratio: 16 / 9; }  /* VSL */
-
-/* Vertical SIN RECORTE: se ve el encuadre completo, no se come los bordes */
-.youtube-video.ratio-vertical picture img {
-  object-fit: contain;
-  background: var(--bg-secondary-color);
-}
-
-/* Solo el que no declara proporción pasa a horizontal en escritorio */
-@media (min-width: 900px) {
-  .youtube-video:not(.ratio-vertical):not(.ratio-horizontal) { aspect-ratio: 16 / 9; }
-}
-```
-
-La miniatura también es mobile-first: el `<img>` lleva la vertical y el `<source media="(min-width:900px)">` la horizontal.
-
-```html
-<picture>
-  <source media="(min-width: 900px)" srcset="/thumb-desktop.webp" width="960" height="540">
-  <img src="/thumb-mobile.webp" width="1080" height="1920" alt="…" loading="lazy">
-</picture>
-```
-
-El iframe **no existe hasta el clic** (fachada, §12.1). Al pulsar se elige el id según el viewport, se retiran miniatura y botón, y se inserta el reproductor.
-
----
-
 ## 0. Qué construye este documento
 
 Un sistema para producir landing pages de alto rendimiento en Astro, orientadas a campañas de búsqueda pagada (SEM), SEO local y clusters de autoridad.
 
-El resultado esperado de cada página construida con este sistema:
+### Qué ES y qué NO es
+
+**Es una biblioteca de secciones terminadas. No es un framework para maquetar.**
+
+Esta distinción decide si el resultado sirve. La misma landing se repite decenas de veces cambiando textos e imágenes; nadie maqueta nada. Se elige una sección del catálogo, se rellena y se pasa a la siguiente.
+
+| Si lo lees como… | Construyes… | Resultado |
+|---|---|---|
+| Un sistema de utilidades | Tokens, grilla y utilidades, y luego escribes cada sección a mano combinándolas | Un Tailwind casero. **Mal.** |
+| Una biblioteca de secciones | Las secciones del catálogo, completas y reutilizables, sobre esos tokens | Una landing que se repite sin volver a maquetar. **Bien.** |
+
+Por eso las secciones 3 a 6 —tokens, layout, utilidades, componentes— son **el sustrato**, no el entregable. El entregable es el catálogo de la sección 10.
+
+**Si al terminar tienes un sistema de estilos elegante y tres secciones escritas a mano, has fallado.**
+
+### El catálogo
+
+Toda landing dispone de estas 24 secciones. Constrúyelas todas: son el producto.
+
+`hero-centered` · `hero-split` · `hero-fakeh1` · `stats-strip` · `features` · `text-section` · `video` · `gallery` · `testimonials` · `reviews` · `scroller` · `pricing` · `pricing-table` · `comparison` · `table` · `steps` · `team` · `faq` · `cta` · `form` · `lead-magnet` · `related-pages` · `breadcrumb` · `divider`
+
+Más el cromo del sitio: cabecera con menú y popup, pie, y widget de contacto flotante.
+
+### El resultado esperado de cada página
 
 | Métrica | Objetivo |
 |---|---|
@@ -180,7 +65,9 @@ Estos son los criterios con los que se acepta o se rechaza cada línea de códig
 
 **5. `<section>` como raíz de todo bloque.** Nunca un `<div>`. Cada sección lleva su `itemscope`/`itemtype`. Los motores de búsqueda y los modelos de lenguaje segmentan el documento por secciones semánticas; un muro de `<div>` no comunica estructura.
 
-**6. Mobile-first con un solo breakpoint estructural: `900px`.** Por debajo, todo apila a ancho completo. Por encima, aparece la grilla. No existe una categoría intermedia de "tablet". Los media queries que no son de grilla (movimiento reducido, área segura, dirección de arte de imágenes) no cuentan y viven en tokens.
+**6. Mobile-first literal, con un solo breakpoint estructural: `900px`.** El caso base —sin ningún media query— es el móvil. Por encima de 900px aparece la grilla. No existe una categoría intermedia de "tablet".
+
+  **Nunca uses `max-width` para layout.** Escribir el escritorio y deshacerlo para móvil es la lógica invertida, y es el error más frecuente al usar este sistema. Si te encuentras escribiendo `@media (max-width: …)` para colocar algo, reescríbelo al revés. Los media queries que no son de grilla —movimiento reducido, área segura, dirección de arte de imágenes— no cuentan.
 
 **7. JavaScript solo donde el CSS no llega.** El comportamiento por defecto de un componente es cero JavaScript. Cualquier `client:*` requiere un comentario que justifique por qué el CSS no resuelve el caso.
 
@@ -1565,6 +1452,74 @@ Los atributos `data-track` no ejecutan nada por sí mismos. Un único escuchador
 
 ---
 
+### 7.8 Carril: columnas en escritorio, deslizamiento horizontal en móvil
+
+**El problema.** Cuatro reseñas en columnas quedan bien en escritorio. Apiladas en móvil son cuatro pantallas de scroll antes del CTA, en una sección que casi nunca es crítica.
+
+**La regla.** Toda sección de tres o más tarjetas equivalentes —reseñas, testimonios, logotipos, tarjetas de servicio, equipo, páginas relacionadas— usa carril. **El carril es el caso base; las columnas son la excepción a 900px.**
+
+```css
+.rail {
+  display: flex;
+  gap: var(--grid-gutter);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: calc(var(--grid-gutter) / 2);
+
+  /* Sangrado a los bordes: las tarjetas nacen y mueren en el borde de la
+     pantalla. Sin esto el carril se ve metido en una caja. */
+  padding-inline: calc(var(--grid-gutter) / 2);
+  margin-inline: calc(var(--grid-gutter) / -2);
+
+  overscroll-behavior-x: contain;   /* que el gesto no dispare el "atrás" */
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* Edge antiguo */
+}
+.rail::-webkit-scrollbar { display: none; }
+
+.rail > * {
+  /* MENOS del 100% a propósito: que asome la siguiente tarjeta es lo ÚNICO
+     que le dice al usuario que hay más. A pantalla completa nadie desliza. */
+  flex: 0 0 var(--rail-item, 78%);
+  scroll-snap-align: start;
+}
+
+@media (min-width: 900px) {
+  .rail {
+    display: grid;                                            /* grid, no flex-wrap: */
+    grid-template-columns: repeat(var(--rail-cols, 4), 1fr);  /* así quedan del mismo */
+    overflow: visible;                                        /* alto — efecto tabla  */
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+  .rail > * { flex: none; }
+}
+```
+
+El contenedor lleva `tabindex="0"`, `role="group"` y `aria-label`: una región que se desplaza tiene que poder recorrerse con teclado, o quien no usa gestos no llega a las tarjetas de la derecha.
+
+Se configura con `--rail-cols` y `--rail-item`. **No se crean clases nuevas por cada variante.**
+
+#### Por qué `grid` y no `flex-wrap` en escritorio
+
+Con `flex-wrap` cada tarjeta se estira a su propio contenido y quedan de alturas distintas. Con `grid` y columnas `1fr` todas comparten alto, que es el "efecto tabla" que hace que una fila de tarjetas se lea como una comparación y no como un collage.
+
+---
+
+### 7.9 Tablas en móvil: se desplazan, no se rompen
+
+La tentación es convertir una tabla en tarjetas apiladas en móvil. **No lo hagas en tablas de precios ni de datos comparables.** Una tabla existe para comparar filas entre sí; partirla en tarjetas destruye justo eso.
+
+```css
+.table-wrap { overflow-x: auto; scrollbar-width: none; }
+.table-wrap::-webkit-scrollbar { display: none; }
+.table-wrap > table { min-width: 420px; }
+```
+
+El envoltorio se desplaza con la barra oculta, igual que el carril. La tabla conserva su forma.
+
+---
+
 ## 8. Sistema de imágenes
 
 ### 8.1 Dirección de arte frente a cambio de resolución
@@ -2843,47 +2798,86 @@ Presupuesto total del sitio: **cinco scripts, menos de 5 KB comprimidos**. Ningu
 
 | Script | Función | Sin él |
 |---|---|---|
-| `yt-facade.js` | Carga de video bajo demanda | El enlace al video sigue funcionando |
+| Fachada de video | Carga bajo demanda, vertical/horizontal | El enlace al video sigue funcionando |
 | `attribution.js` | Captura de origen de campaña | El lead llega sin datos de campaña |
 | `form.js` | Envío sin recarga y estados | El formulario envía con POST nativo |
 | `track.js` | Eventos de interacción | Solo se miden vistas de página y la conversión |
 | Verificación diferida | Antispam de terceros | El honeypot y la validación de servidor siguen activos |
 
-### 12.1 Reproductor de video bajo demanda
+### 12.1 Video: vertical por defecto, horizontal solo cuando toca
 
-Ningún video carga hasta que el usuario lo solicita. Un `<iframe>` de YouTube sin esta técnica añade cerca de 900 KB y varios hilos de terceros a la carga inicial.
+Dos reglas, y la primera es la que más se incumple.
 
-```js
-// src/scripts/yt-facade.js
-class YtFacade extends HTMLElement {
-  connectedCallback() {
-    this.addEventListener('click', () => this.load(), { once: true });
-    this.setAttribute('role', 'button');
-    this.setAttribute('tabindex', '0');
-    this.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.load(); }
-    }, { once: true });
-  }
+#### Regla 1 — En móvil el video es VERTICAL 9:16. Siempre.
 
-  load() {
-    const desktop = this.dataset.videoIdDesktop;
-    const id = (desktop && window.matchMedia('(min-width: 900px)').matches)
-      ? desktop
-      : this.dataset.videoId;
+El horizontal es la excepción, no al revés. Un video vertical junto a un formulario, o dentro de una tarjeta, ocupa la columna entera y se lee; un 16:9 en ese hueco queda aplastado y desperdicia el espacio. La única sección que exige horizontal a pantalla completa en escritorio es la VSL.
 
-    const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
-    iframe.allow = 'accelerometer; autoplay; encrypted-media; picture-in-picture; web-share';
-    iframe.allowFullscreen = true;
-    iframe.title = this.dataset.title || 'Video';
-    iframe.loading = 'lazy';
-    this.querySelector('[data-yt-slot]').replaceWith(iframe);
-  }
+```css
+/* MOBILE FIRST: vertical por defecto */
+.youtube-video { position: relative; overflow: hidden; aspect-ratio: 9 / 16; }
+
+/* Forzados, cuando la sección lo pide */
+.youtube-video.ratio-vertical   { aspect-ratio: 9 / 16; }  /* junto a un form, en card */
+.youtube-video.ratio-horizontal { aspect-ratio: 16 / 9; }  /* VSL */
+
+/* Vertical SIN RECORTE: se ve el encuadre completo en vez de comerse los
+   bordes. Un video vertical recortado pierde justo lo que lo hace vertical. */
+.youtube-video.ratio-vertical img {
+  object-fit: contain;
+  background: var(--color-darkGrey);
 }
-customElements.define('yt-facade', YtFacade);
+
+/* Solo el que NO declara proporción pasa a horizontal en escritorio */
+@media (min-width: 900px) {
+  .youtube-video:not(.ratio-vertical):not(.ratio-horizontal) { aspect-ratio: 16 / 9; }
+}
 ```
 
-Se usa `youtube-nocookie.com` y el `embed` directo, sin cargar la API de iframes de YouTube. El elemento es operable con teclado.
+#### Regla 2 — Dos ids de YouTube, no uno
+
+| Atributo | Contenido | Obligatorio |
+|---|---|---|
+| `data-video-id` | El video **vertical** (móvil) | Sí |
+| `data-desktop-video-id` | El **horizontal** (escritorio) | No — si falta, se reutiliza el vertical |
+
+Si existe versión horizontal se usa en escritorio; si no, el vertical sirve para los dos. **La elección se hace en el clic, no al cargar**, para que girar el móvil no sirva el video equivocado.
+
+La miniatura también es mobile-first: el `<img>` lleva la vertical y el `<source media="(min-width: 900px)">` la horizontal.
+
+```html
+<div class="youtube-video" data-video-id="VERTICAL" data-desktop-video-id="HORIZONTAL">
+  <picture>
+    <source media="(min-width: 900px)" srcset="/thumb-desktop.webp" width="960" height="540">
+    <img src="/thumb-mobile.webp" width="1080" height="1920" alt="…" loading="lazy">
+  </picture>
+  <button type="button" class="play-button" aria-label="Ver video">…</button>
+  <div class="youtube-iframe"></div>
+</div>
+```
+
+#### El disparador es el botón, no el bloque
+
+```js
+const wrap = e.target.closest('.youtube-video');
+const btn  = e.target.closest('.play-button');
+if (!wrap || !btn) return;          // hacen falta LOS DOS
+```
+
+Sin exigir `.play-button`, **cualquier** clic dentro del bloque arranca el video —incluido el que da el navegador al enfocar la página— y aparecen reproductores fantasma. Es un fallo real y difícil de diagnosticar.
+
+El `.play-button` es un `<button>`, no un `<div>`: así se activa con teclado sin añadir `role` ni manejadores.
+
+#### El envoltorio no puede ser un `<button>`
+
+Al reproducir se inserta un `<iframe>` dentro. Un `<iframe>` dentro de un `<button>` es marcado inválido y, peor, el botón se traga los clics: los controles de YouTube quedan inutilizables. El envoltorio es un `<div>`.
+
+#### Dónde vive esta lógica
+
+**En el script único del sitio, no en un script por componente.** Una landing con seis videos no debe cargar seis copias del mismo escuchador. El delegado va en el mismo archivo que la atribución y los beacons.
+
+Se carga la API de YouTube bajo demanda (`YT.Player`) en lugar de insertar un iframe suelto, para poder arrancar la reproducción sin exigir un segundo gesto al usuario. Orden que evita un reflow doble: retirar miniatura y botón primero, marcar el estado, crear el contenedor y solo entonces —dentro de `requestAnimationFrame`— cargar el reproductor.
+
+Un `WeakMap` de instancias evita inicializar dos veces el mismo bloque.
 
 ### 12.2 Atribución de campaña
 
@@ -3074,7 +3068,65 @@ document.addEventListener('focusin', e => {
 
 El script de verificación se carga en la primera interacción real con un formulario, no en la carga de la página.
 
-### 12.6 Qué no se implementa
+### 12.6 Tres trampas de Astro que rompen el JavaScript en silencio
+
+Las tres producen código que **no llega al navegador** sin dar ningún error de build. Se detectan solo mirando el HTML emitido.
+
+#### 1. Un `import` en el frontmatter NO llega al navegador
+
+```astro
+---
+import "../scripts/wa-ref";   // ❌ se ejecuta en BUILD, no en el cliente
+---
+```
+
+El frontmatter corre en el servidor durante la generación. Si el script toca `document` o `localStorage`, o falla en build, o —si tiene `try/catch`— no hace nada y desaparece sin rastro. Para que llegue al cliente tiene que ir en un `<script>` del marcado:
+
+```astro
+<script>
+  import "../scripts/wa-ref";   // ✅ Astro lo compila y lo empaqueta
+</script>
+```
+
+#### 2. `define:vars` convierte el script en `is:inline`
+
+```astro
+<script define:vars={{ base }}>
+  function leer(form: HTMLFormElement) { … }   // ❌ TypeScript literal al navegador
+</script>
+```
+
+`define:vars` implica `is:inline`, y **Astro no procesa los scripts inline**: no los compila, no les quita los tipos y no los empaqueta. El navegador recibe TypeScript y lanza `SyntaxError` antes de ejecutar la primera línea. El listener nunca se registra y el formulario hace su submit nativo por GET.
+
+La forma correcta: el script va en un módulo aparte y los datos viajan por `data-*`.
+
+```astro
+<form data-base={base}>…</form>
+<script>import "../scripts/lead-form";</script>
+```
+
+#### 3. `input[name="…"]` no encuentra `<textarea>` ni `<select>`
+
+```js
+form.querySelector(`input[name="${n}"]`)   // ❌ el mensaje llega siempre vacío
+form.querySelector(`[name="${n}"]`)        // ✅
+```
+
+Es el bug más silencioso de los tres: el formulario envía, el lead se crea, y solo falta un campo.
+
+#### Cómo verificarlo
+
+No basta con que el build pase. Sobre el HTML emitido:
+
+```bash
+node --check <script-extraído>          # ¿es JavaScript válido?
+grep -c '<iframe' dist/index.html       # 0 antes del clic
+grep -o 'function [a-z]*([^)]*)' dist/index.html   # ¿quedan tipos?
+```
+
+---
+
+### 12.7 Qué no se implementa
 
 | Necesidad | Solución |
 |---|---|
@@ -3088,6 +3140,37 @@ El script de verificación se carga en la primera interacción real con un formu
 | Widget de contacto o chat | Casillas de verificación en CSS (sección 7.7) |
 | Validación de campos | Atributos nativos `required`, `type`, `pattern` más validación de servidor |
 | Animación al hacer scroll | No se implementa: perjudica el LCP y la percepción de velocidad |
+
+---
+
+## 12-bis. Requisitos del sitio que se olvidan siempre
+
+Tres cosas que no son de ninguna sección y que, si faltan, se detectan tarde.
+
+### Las páginas de gracias cuelgan de la raíz, no de la base de Astro
+
+Si Astro se monta con `base: '/landing'`, sus páginas salen en `/landing/thank-you`. **Eso está mal para una página de gracias.** Es una URL de conversión: se comparte, se pega en la plataforma de anuncios y se mide. Tiene que ser `/thank-you`, colgando del dominio.
+
+La base de Astro existe para que los assets hasheados resuelvan; no debe filtrarse a las URLs que ve el usuario. Se resuelve con una reescritura en el servidor que sirva `/thank-you` desde el archivo generado, y el redirect del formulario apunta a la URL limpia.
+
+**Una página de gracias por tipo de conversión**, no una compartida:
+
+| Formulario | Destino | Por qué |
+|---|---|---|
+| Contacto / presupuesto | `/thank-you` | Conversión comercial |
+| Descarga de documento | `/thank-you-download` | Intención y valor distintos; además ahí se entrega el archivo |
+
+Mezclarlas hace que la puja automática optimice hacia la conversión más barata, que es siempre la descarga.
+
+**La entrega del documento ocurre en la página de gracias**, disparada al cargar, nunca como enlace público en la landing. Si la URL es adivinable, el documento circula sin dejar un dato.
+
+### Sitemap
+
+Se genera en build con las URLs reales —las limpias, no las de la base de Astro— y excluye las páginas de gracias, que van con `noindex`. Sin sitemap, un sitio de varias landings depende de que el buscador las descubra por enlaces internos.
+
+### Favicon
+
+Un `<link rel="icon">` que apunta a un archivo que no existe es un 404 en cada carga de cada página. Es el error más barato de arreglar y el que más tiempo sobrevive.
 
 ---
 
@@ -3727,13 +3810,22 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 ## 20. Lista de comprobación
 
 ### Marcado y estilo
+- [ ] `grep -rn '@media (max-width' src/` no devuelve nada de layout
+- [ ] Ningún elemento interactivo dentro de otro (`button button`, `button a`, `a button`)
+- [ ] Toda sección de 3+ tarjetas equivalentes usa carril, no apilado
+- [ ] Las tablas se desplazan en móvil, no se rompen en tarjetas
 - [ ] Toda sección tiene `<section>` como raíz, con `itemscope` e `itemtype`
 - [ ] `grep -r 'style="' src/` devuelve únicamente `--i` y `--count`
 - [ ] `grep -r '!important' src/` no devuelve resultados
 - [ ] Un solo `<h1>` por página
 - [ ] Jerarquía de encabezados sin saltos de nivel
 
-### Imágenes
+### Imágenes y video
+- [ ] El video es vertical 9:16 en móvil salvo que la sección exija lo contrario
+- [ ] `.ratio-vertical` usa `object-fit: contain` (no recorta el encuadre)
+- [ ] Hay id vertical; el horizontal es opcional y cae al vertical
+- [ ] El envoltorio del video es un `<div>`, no un `<button>`
+- [ ] El disparador exige clic en `.play-button`, no en todo el bloque
 - [ ] Toda `<img>` tiene `width` y `height`
 - [ ] Todo `<source>` tiene `width` y `height`
 - [ ] La imagen LCP tiene `loading="eager"`, `fetchpriority="high"` y precarga
@@ -3742,6 +3834,11 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 - [ ] Todo `alt` describe el contenido, sin acumulación de palabras clave
 
 ### JavaScript
+- [ ] Ningún `import` de script de cliente en el frontmatter (no llega al navegador)
+- [ ] Ningún `<script define:vars>` con TypeScript dentro
+- [ ] El script emitido pasa `node --check`
+- [ ] Los selectores de formulario usan `[name="…"]`, no `input[name="…"]`
+- [ ] Un solo escuchador delegado por comportamiento, no uno por componente
 - [ ] La página funciona con JavaScript deshabilitado
 - [ ] El formulario envía y entrega el lead con JavaScript deshabilitado
 - [ ] El total transferido es inferior a 5 KB comprimidos
@@ -3759,6 +3856,10 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 - [ ] El mensaje de error es `role="alert"` y recibe el foco
 
 ### SEO y datos estructurados
+- [ ] Existe sitemap con las URLs limpias, y excluye las páginas de gracias
+- [ ] El favicon existe (no es un 404 en cada carga)
+- [ ] Las páginas de gracias cuelgan de la raíz, no de la base de Astro
+- [ ] Hay una página de gracias por tipo de conversión
 - [ ] Título entre 50 y 60 caracteres
 - [ ] Descripción entre 140 y 160 caracteres
 - [ ] Canónica correcta

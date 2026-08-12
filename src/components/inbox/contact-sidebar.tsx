@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { Contact, Conversation, Deal, Tag } from "@/types";
+import type { Contact, Conversation, Tag } from "@/types";
 import {
   Phone,
   Mail,
@@ -12,15 +12,24 @@ import {
   Check,
   User,
   Tag as TagIcon,
-  DollarSign,
+  Kanban,
+  ChevronDown,
   ShoppingBag,
   BrainCircuit,
   Megaphone,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { ContactNotesPanel } from "./contact-notes-panel";
+import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -34,8 +43,11 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const tThread = useTranslations("Inbox.messageThread");
 
   const [copied, setCopied] = useState(false);
-  const [deals, setDeals] = useState<Deal[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  // Same hook the header's "⋮ → Mover para" submenu uses (message-thread.tsx)
+  // — one fetch/update implementation for both entry points.
+  const { deal: pipelineDeal, stages: pipelineStages, moveToStage } =
+    useLeadPipelineStage(contact?.id);
   // BLOCO 3/4 — discreet count of pending Central de IA suggestions for
   // this contact (any category — pipeline moves, follow-ups, etc.).
   // Keeps the Inbox itself free of AI clutter: just a small hint here
@@ -65,18 +77,14 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, tags, and the pending-AI-suggestions count in
-    // parallel. Notes are fetched independently by `ContactNotesPanel`
-    // (shared with the "Abrir notas" dialog off the conversation's ⋮
-    // menu). The last one excludes snoozed-into-the-future rows so
-    // "Adiar" in the Central de IA also quiets this hint, same rule as
-    // the suggestions list route.
-    const [dealsRes, tagsRes, suggestionsRes] = await Promise.all([
-      supabase
-        .from("deals")
-        .select("*, stage:pipeline_stages(*)")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
+    // Fetch tags and the pending-AI-suggestions count in parallel. Notes
+    // are fetched independently by `ContactNotesPanel` (shared with the
+    // "Abrir notas" dialog off the conversation's ⋮ menu), and the
+    // pipeline deal/stage by `useLeadPipelineStage`. The suggestions
+    // query excludes snoozed-into-the-future rows so "Adiar" in the
+    // Central de IA also quiets this hint, same rule as the suggestions
+    // list route.
+    const [tagsRes, suggestionsRes] = await Promise.all([
       supabase
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
@@ -89,7 +97,6 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
         .or(`snoozed_until.is.null,snoozed_until.lte.${new Date().toISOString()}`),
     ]);
 
-    if (dealsRes.data) setDeals(dealsRes.data);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -310,43 +317,52 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Active Deals */}
+          {/* Etapa da Pipeline — same deal/stage this contact's Kanban
+              card and the header's "⋮ → Mover para" submenu show; moving
+              here calls the same `deals.stage_id` update via
+              `useLeadPipelineStage`, so all three stay in sync. */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
+              <Kanban className="h-3 w-3" />
+              {tSidebar("pipelineStage")}
             </div>
-            <div className="mt-2 space-y-2">
-              {deals.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
-              ) : (
-                deals.map((deal) => (
-                  <div
-                    key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
-                    <p className="text-sm font-medium text-foreground">
-                      {deal.title}
-                    </p>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
-                      </span>
-                      {deal.stage && (
+            <div className="mt-2 rounded-lg bg-muted px-3 py-2">
+              <p className="text-sm font-medium text-foreground">
+                {pipelineDeal?.stage?.name ?? tSidebar("noPipelineStage")}
+              </p>
+              {pipelineDeal && pipelineStages.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="mt-2 inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+                    {tSidebar("changeStage")}
+                    <ChevronDown className="h-3 w-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48 border-border bg-popover">
+                    {pipelineStages.map((stage) => (
+                      <DropdownMenuItem
+                        key={stage.id}
+                        onClick={async () => {
+                          const { error } = await moveToStage(stage.id);
+                          if (error) toast.error("Failed to update pipeline stage");
+                        }}
+                        className={cn(
+                          "text-sm",
+                          stage.id === pipelineDeal.stage_id
+                            ? "text-primary"
+                            : "text-popover-foreground"
+                        )}
+                      >
                         <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            backgroundColor: `${deal.stage.color}20`,
-                            color: deal.stage.color,
-                          }}
-                        >
-                          {deal.stage.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
+                          className="mr-2 h-2 w-2 rounded-full"
+                          style={{ backgroundColor: stage.color }}
+                        />
+                        <span className="flex-1">{stage.name}</span>
+                        {stage.id === pipelineDeal.stage_id && (
+                          <Check className="ml-2 h-3 w-3" />
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>

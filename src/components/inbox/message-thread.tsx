@@ -29,6 +29,7 @@ import {
   StickyNote,
   CalendarPlus,
   Images,
+  Kanban,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -65,6 +66,7 @@ import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-d
 import { ContactNotesPanel } from "./contact-notes-panel";
 import { MediaGallery } from "./media-gallery";
 import { AppointmentFormDialog } from "@/components/appointments/appointment-form-dialog";
+import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
 
 interface ReplyDraft {
   id: string;
@@ -256,6 +258,11 @@ export function MessageThread({
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
   const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+  // "Mover para" submenu — same hook the sidebar's "Etapa da Pipeline"
+  // card uses (contact-sidebar.tsx), so both entry points share one
+  // fetch/update implementation and stay in sync with each other.
+  const { deal: pipelineDeal, stages: pipelineStages, moveToStage } =
+    useLeadPipelineStage(contact?.id);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -927,6 +934,17 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  const handleMoveStage = useCallback(
+    async (stageId: string) => {
+      const { error } = await moveToStage(stageId);
+      if (error) {
+        console.error("Failed to update pipeline stage:", error);
+        toast.error("Failed to update pipeline stage");
+      }
+    },
+    [moveToStage],
+  );
+
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
@@ -1116,6 +1134,41 @@ export function MessageThread({
                         {t("unassign")}
                       </DropdownMenuItem>
                     </>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="text-sm text-popover-foreground">
+                  <Kanban className="h-3.5 w-3.5" />
+                  {t("menuMoveStage")}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56 border-border bg-popover">
+                  {pipelineStages.length === 0 ? (
+                    <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                      {t("noPipelineStages")}
+                    </DropdownMenuItem>
+                  ) : (
+                    pipelineStages.map((stage) => {
+                      const isSelected = stage.id === pipelineDeal?.stage_id;
+                      return (
+                        <DropdownMenuItem
+                          key={stage.id}
+                          onClick={() => handleMoveStage(stage.id)}
+                          className={cn(
+                            "text-sm",
+                            isSelected ? "text-primary" : "text-popover-foreground"
+                          )}
+                        >
+                          <span
+                            className="mr-2 h-2 w-2 rounded-full"
+                            style={{ backgroundColor: stage.color }}
+                          />
+                          <span className="flex-1">{stage.name}</span>
+                          {isSelected && <Check className="ml-2 h-3 w-3" />}
+                        </DropdownMenuItem>
+                      );
+                    })
                   )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

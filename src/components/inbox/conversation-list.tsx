@@ -637,7 +637,7 @@ interface ConversationItemProps {
 // (unread + delete), revealed on the left. A swipe-left/right-side panel
 // (delete-only) was tried and reverted — it fought this gesture's feel,
 // so there's only ever one panel. Opens with a left-to-right drag
-// starting over the avatar corner (SWIPE_START_ZONE_PX); once open,
+// starting in the row's left half (SWIPE_START_ZONE_RATIO); once open,
 // closes with a right-to-left drag from anywhere on the row (added
 // 2026-08-12, matching native iOS) — a right-to-left drag while fully
 // closed still does nothing, same as tap-elsewhere/the action buttons.
@@ -661,13 +661,17 @@ const SWIPE_AXIS_THRESHOLD = 10;
 // common gesture in a list), matching how conservative WhatsApp's own
 // iOS row swipe is about committing to horizontal.
 const SWIPE_AXIS_RATIO = 2.5;
-// The gesture only qualifies as "open" if it starts over the avatar
-// corner (avatar is 40px + the row's 12px left padding) — confirmed
-// with the user (2026-08-11) after the axis-ratio fix alone still let
-// a swipe starting anywhere on the row (photo, name, or message
-// preview) open the panel. A touch starting further right than this
-// never locks to "x", no matter how clean the horizontal drag is.
-const SWIPE_START_ZONE_PX = 64;
+// The gesture only qualifies as "open" if it starts within the left
+// half of the row (a ratio of the row's own measured width, not a
+// fixed px value, so it scales the same on any screen size) — widened
+// from a tight 64px avatar-only corner after confirming on-device
+// (2026-08-11) that the axis-ratio fix alone was reliable enough to
+// safely open up the start area (2026-08-12) without reintroducing the
+// original "opens on literally any touch" bug. A touch starting past
+// this line never locks to "x" for opening, no matter how clean the
+// horizontal drag is — it can still *close* an already-open panel,
+// which has no start-zone restriction (see qualifiesClose below).
+const SWIPE_START_ZONE_RATIO = 0.5;
 // A fast flick commits to opening/closing even if the finger let go
 // before crossing the halfway point — matches native iOS list-row
 // behavior (confirmed with the user, 2026-08-12), where a quick swipe
@@ -767,9 +771,9 @@ function ConversationItem({
     startY: 0,
     baseX: 0,
     x: 0,
-    // Whether this gesture started within SWIPE_START_ZONE_PX of the
-    // row's left edge (the avatar corner) — computed once at
-    // touchstart, since only the starting point matters.
+    // Whether this gesture started within the row's left half
+    // (SWIPE_START_ZONE_RATIO) — computed once at touchstart, since
+    // only the starting point matters.
     zoneOk: false,
     // Smoothed velocity (px/s) — an exponential moving average over
     // real elapsed time between touchmove samples, not just the last
@@ -901,7 +905,7 @@ function ConversationItem({
         startY: touch.clientY,
         baseX: currentXRef.current,
         x: 0,
-        zoneOk: touch.clientX - rect.left <= SWIPE_START_ZONE_PX,
+        zoneOk: touch.clientX - rect.left <= rect.width * SWIPE_START_ZONE_RATIO,
         velocity: 0,
         lastMoveX: touch.clientX,
         lastMoveT: e.timeStamp,

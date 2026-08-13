@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -328,7 +329,10 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
             </div>
             <div className="mt-3 flex items-center gap-2">
               {pipelineDeal?.stage && (
-                <span className="h-3 w-3 flex-shrink-0 rounded-full bg-orange-500" />
+                <span
+                  className="h-3 w-3 flex-shrink-0 rounded-full"
+                  style={{ backgroundColor: pipelineDeal.stage.color }}
+                />
               )}
               <p
                 className={cn(
@@ -341,9 +345,26 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
             </div>
             {pipelineDeal && pipelineStages.length > 0 && (
               <DropdownMenu>
-                <DropdownMenuTrigger className="mt-4 flex w-full items-center justify-between rounded-full border border-orange-500/60 bg-transparent px-4 py-2.5 text-sm font-medium text-orange-500 transition-colors hover:bg-orange-500/10">
+                {/* Border/text/icon color track the active stage's own
+                    `color` (same field the dot above and the dropdown's
+                    per-stage swatches already use) — generic to however
+                    many stages/colors get added later, no per-color class
+                    list to maintain. Border and hover-bg reuse the same
+                    hex-plus-alpha-suffix trick the tag chips above use
+                    (`${color}NN`), just as CSS custom properties so the
+                    Tailwind arbitrary-value hover selector can reach them. */}
+                <DropdownMenuTrigger
+                  className="mt-3 flex w-full items-center justify-between rounded-full border bg-transparent px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--stage-hover-bg)]"
+                  style={
+                    {
+                      borderColor: `${pipelineDeal.stage?.color}60`,
+                      color: pipelineDeal.stage?.color,
+                      "--stage-hover-bg": `${pipelineDeal.stage?.color}1A`,
+                    } as CSSProperties
+                  }
+                >
                   <span>{tSidebar("changeStage")}</span>
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight className="h-3 w-3" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48 border-border bg-popover">
                   {pipelineStages.map((stage) => (

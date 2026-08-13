@@ -159,6 +159,20 @@ export function PipelineBoard({
       snapshot[stage.id] = (dealsByStage.get(stage.id) ?? []).map((d) => d.id);
     }
     setDragState(snapshot);
+
+    // Haptic tick on long-press-confirmed drag, touch-origin only (mouse/
+    // keyboard drags never vibrate). iOS Safari/WebKit — including a
+    // standalone home-screen PWA — has never implemented the Vibration
+    // API; this silently no-ops there and fires normally on Android
+    // Chrome. That's a platform limitation, not a bug in this code.
+    if (
+      typeof navigator !== "undefined" &&
+      "vibrate" in navigator &&
+      typeof window !== "undefined" &&
+      window.matchMedia("(pointer: coarse)").matches
+    ) {
+      navigator.vibrate(15);
+    }
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -253,6 +267,13 @@ export function PipelineBoard({
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
+      // `threshold` is a fraction of each scrollable container's own
+      // size (not raw px) — dnd-kit walks every scrollable ancestor of
+      // the pointer each frame, so the horizontal row and whichever
+      // column the pointer is over both auto-scroll independently,
+      // simultaneously, with no extra wiring once each column is a real
+      // scroll container (see StageColumn below).
+      autoScroll={{ enabled: true, threshold: { x: 0.15, y: 0.15 }, acceleration: 15 }}
     >
       {/* snap-x + snap-mandatory on mobile so swipes land the next
           stage cleanly at the viewport edge instead of mid-column.
@@ -291,12 +312,31 @@ export function PipelineBoard({
 
       <DragOverlay
         dropAnimation={{
+          // Already within the 180–220ms "Snap" spec — unchanged.
           duration: 200,
           easing: "cubic-bezier(0.2, 0, 0, 1)",
+          // Mirrors the lift-in below: scale/shadow ease back down to
+          // resting as the card glides to its drop position, instead of
+          // just the position animating and the scale/shadow snapping
+          // off instantly.
+          keyframes: ({ transform }) => [
+            {
+              transform: `${CSS.Transform.toString(transform.initial)} scale(1.03)`,
+              boxShadow: "0 12px 24px -4px rgba(0, 0, 0, 0.35)",
+            },
+            {
+              transform: `${CSS.Transform.toString(transform.final)} scale(1)`,
+              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.08)",
+            },
+          ],
         }}
       >
         {activeDeal ? (
-          <div className="opacity-90">
+          // `deal-lift` (defined below) plays once on mount — a fresh
+          // DragOverlay is mounted per drag, so there's no prior state to
+          // `transition` from; a CSS animation is what runs a one-shot
+          // "grew into place" effect instead.
+          <div className="deal-lift">
             <DealCard
               deal={activeDeal}
               stage={
@@ -350,6 +390,24 @@ export function PipelineBoard({
            the browser re-snapping to the nearest column mid-scroll. */
         .pipeline-scroll.dragging {
           scroll-snap-type: none !important;
+        }
+        /* "Lift" — plays once when the DragOverlay mounts (a fresh drag),
+           giving the card a brief, physical-feeling elevation off the
+           column before it starts following the pointer. Kept local to
+           this component (not globals.css) since nothing outside this
+           file's JSX ever references the class name. */
+        @keyframes deal-lift {
+          from {
+            transform: scale(1);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+          }
+          to {
+            transform: scale(1.03);
+            box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.35);
+          }
+        }
+        .deal-lift {
+          animation: deal-lift 180ms cubic-bezier(0.2, 0, 0, 1) forwards;
         }
       `}</style>
     </DndContext>
@@ -462,11 +520,24 @@ function SortableDealCard({
       style={{
         transform: CSS.Transform.toString(transform),
         transition: transition ?? undefined,
-        opacity: isDragging ? 0.3 : 1,
         touchAction: "pan-y",
       }}
+      className={
+        isDragging
+          ? "rounded-xl border-2 border-dashed border-primary/40 bg-primary/5"
+          : undefined
+      }
     >
-      <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
+      {/* The dragged card's own slot becomes a same-size placeholder
+          (the wrapper above) with the real card hidden — `invisible`
+          (not `hidden`/unmounted) so it keeps occupying exactly its
+          normal layout space, which is what makes the placeholder match
+          the card's real height/width without measuring anything. The
+          actual moving copy the pointer follows is the DragOverlay
+          instance above, not this one. */}
+      <div className={isDragging ? "invisible" : undefined}>
+        <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
+      </div>
     </div>
   );
 }

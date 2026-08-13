@@ -235,6 +235,21 @@ export default function ProduitsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Produit | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // States pour le dropdown Google Product Category
+  const [gpcLevel1Options, setGpcLevel1Options] = useState<string[]>([])
+  const [gpcLevel2Options, setGpcLevel2Options] = useState<string[]>([])
+  const [gpcLevel3Options, setGpcLevel3Options] = useState<{label: string, full_path: string}[]>([])
+  const [gpcLevel1, setGpcLevel1] = useState('')
+  const [gpcLevel2, setGpcLevel2] = useState('')
+
+  // States pour le dropdown facebook Product Category
+  const [fbpcLevel1Options, setFbpcLevel1Options] = useState<string[]>([])
+  const [fbpcLevel2Options, setFbpcLevel2Options] = useState<string[]>([])
+  const [fbpcLevel3Options, setFbpcLevel3Options] = useState<{label: string, full_path: string}[]>([])
+  const [fbpcLevel1, setFbpcLevel1] = useState('')
+  const [fbpcLevel2, setFbpcLevel2] = useState('')
+
+
   // -------------------------------------------------------------------
   // Fetch (table only needs 5 display columns)
   // -------------------------------------------------------------------
@@ -273,6 +288,110 @@ export default function ProduitsPage() {
   useEffect(() => {
     setPage(0)
   }, [search])
+
+  useEffect(() => {
+  async function fetchLevel1() {
+    const { data } = await supabase
+      .from('google_product_categories')
+      .select('level_1')
+      .not('level_1', 'is', null)
+      .order('level_1')
+    
+    const unique = [...new Set((data ?? []).map((d: any) => d.level_1))]
+    setGpcLevel1Options(unique)
+  }
+  fetchLevel1()
+}, [supabase])
+
+useEffect(() => {
+  if (!gpcLevel1) return
+  async function fetchLevel2() {
+    const { data } = await supabase
+      .from('google_product_categories')
+      .select('level_2')
+      .eq('level_1', gpcLevel1)
+      .not('level_2', 'is', null)
+      .order('level_2')
+    
+    const unique = [...new Set((data ?? []).map((d: any) => d.level_2))]
+    setGpcLevel2Options(unique)
+    setGpcLevel2('')
+    setField('google_product_category', '')
+  }
+  fetchLevel2()
+}, [gpcLevel1, supabase])
+
+useEffect(() => {
+  if (!gpcLevel1 || !gpcLevel2) return
+  async function fetchLevel3() {
+    const { data } = await supabase
+      .from('google_product_categories')
+      .select('level_3, full_path')
+      .eq('level_1', gpcLevel1)
+      .eq('level_2', gpcLevel2)
+      .not('level_3', 'is', null)
+      .order('level_3')
+    
+    setGpcLevel3Options((data ?? []).map((d: any) => ({
+      label: d.level_3,
+      full_path: d.full_path
+    })))
+    setField('google_product_category', '')
+  }
+  fetchLevel3()
+}, [gpcLevel1, gpcLevel2, supabase])
+
+useEffect(() => {
+  async function fetchLevel1() {
+    const { data } = await supabase
+      .from('fb_product_categories')
+      .select('level_1')
+      .not('level_1', 'is', null)
+      .order('level_1')
+    
+    const unique = [...new Set((data ?? []).map((d: any) => d.level_1))]
+    setFbpcLevel1Options(unique)
+  }
+  fetchLevel1()
+}, [supabase])
+
+useEffect(() => {
+  if (!fbpcLevel1) return
+  async function fetchLevel2() {
+    const { data } = await supabase
+      .from('fb_product_categories')
+      .select('level_2')
+      .eq('level_1', fbpcLevel1)
+      .not('level_2', 'is', null)
+      .order('level_2')
+    
+    const unique = [...new Set((data ?? []).map((d: any) => d.level_2))]
+    setFbpcLevel2Options(unique)
+    setFbpcLevel2('')
+    setField('fb_product_category', '')
+  }
+  fetchLevel2()
+}, [fbpcLevel1, supabase])
+
+useEffect(() => {
+  if (!fbpcLevel1 || !fbpcLevel2) return
+  async function fetchLevel3() {
+    const { data } = await supabase
+      .from('fb_product_categories')
+      .select('level_3, full_path')
+      .eq('level_1', fbpcLevel1)
+      .eq('level_2', fbpcLevel2)
+      .not('level_3', 'is', null)
+      .order('level_3')
+    
+    setFbpcLevel3Options((data ?? []).map((d: any) => ({
+      label: d.level_3,
+      full_path: d.full_path
+    })))
+    setField('fb_product_category', '')
+  }
+  fetchLevel3()
+}, [fbpcLevel1, fbpcLevel2, supabase])
 
   // -------------------------------------------------------------------
   // Short helper to update a single form field
@@ -897,21 +1016,98 @@ export default function ProduitsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="f-gpc">Catégorie Google</Label>
-                    <Input
-                      id="f-gpc"
-                      placeholder="Google Product Category"
-                      value={formData.google_product_category}
-                      onChange={(e) => setField('google_product_category', e.target.value)}
-                    />
+                      <div className="flex flex-col gap-1">
+                          {/* Niveau 1 */}
+                        <select
+                          value={gpcLevel1}
+                          onChange={(e) => { setGpcLevel1(e.target.value); setGpcLevel2(''); }}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          {gpcLevel1Options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                        {/* Niveau 2 */}
+                      {gpcLevel1 && (
+                        <select
+                          value={gpcLevel2}
+                          onChange={(e) => setGpcLevel2(e.target.value)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          {gpcLevel2Options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      )}
+                        {/* Niveau 3 */}
+                      {gpcLevel2 && (
+                        <select
+                          value={formData.google_product_category}
+                          onChange={(e) => {
+                            const selected = gpcLevel3Options.find(opt => opt.full_path === e.target.value)
+                            setField('google_product_category', selected?.label ?? e.target.value)
+                          }}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          {gpcLevel3Options.map((opt) => (
+                            <option key={opt.full_path} value={opt.full_path}>{opt.label}</option>
+                          ))}
+                        </select>
+                      )}
+                      {/* Valeur finale sélectionnée */}
+                      {formData.google_product_category && (
+                        <p className="text-xs text-muted-foreground">{formData.google_product_category}</p>
+                      )}
+                      </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="f-fpc">Catégorie Facebook</Label>
-                    <Input
-                      id="f-fpc"
-                      placeholder="FB Product Category"
-                      value={formData.fb_product_category}
-                      onChange={(e) => setField('fb_product_category', e.target.value)}
-                    />
+                      <div className="flex flex-col gap-1">
+                          {/* Niveau 1 */}
+                        <select
+                          value={fbpcLevel1}
+                          onChange={(e) => { setFbpcLevel1(e.target.value); setFbpcLevel2(''); }}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          
+                          {fbpcLevel1Options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                        {/* Niveau 2 */}
+                      {fbpcLevel1 && (
+                        <select
+                          value={fbpcLevel2}
+                          onChange={(e) => setFbpcLevel2(e.target.value)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          
+                          {fbpcLevel2Options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      )}
+                        {/* Niveau 3 */}
+                      {fbpcLevel2 && (
+                        <select
+                          value={formData.fb_product_category}
+                          onChange={(e) => {
+                            const selected = fbpcLevel3Options.find(opt => opt.full_path === e.target.value)
+                            setField('fb_product_category', selected?.label ?? e.target.value)
+                          }}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          
+                          {fbpcLevel3Options.map((opt) => (
+                            <option key={opt.full_path} value={opt.full_path}>{opt.label}</option>
+                          ))}
+                        </select>
+                      )}
+                      {/* Valeur finale sélectionnée */}
+                      {formData.fb_product_category && (
+                        <p className="text-xs text-muted-foreground">{formData.fb_product_category}</p>
+                      )}
+                      </div>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">

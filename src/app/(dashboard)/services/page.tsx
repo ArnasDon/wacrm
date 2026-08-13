@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,28 +15,52 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, Pencil, ToggleLeft, ToggleRight, Wrench } from 'lucide-react'
+import { Loader2, Pencil, Plus, ToggleLeft, ToggleRight, Wrench } from 'lucide-react'
 
 interface ServiceRecord {
   id: string
-  title: string | null
   vertical: string | null
+  booking_mode?: string | null
+  title: string | null
+  description?: string | null
   price: number | null
+  currency?: string | null
+  image_url?: string | null
+  attributes?: Record<string, unknown> | string | null
+  status?: string | null
+  created_at?: string | null
+  cal_event_slug?: string | null
+  cal_username?: string | null
   is_active?: boolean | null
   active?: boolean | null
-  status?: string | null
 }
 
 interface ServiceFormState {
-  title: string
   vertical: string
+  booking_mode: string
+  title: string
+  description: string
   price: string
+  currency: string
+  image_url: string
+  attributes: string
+  status: string
+  cal_event_slug: string
+  cal_username: string
 }
 
 const EMPTY_FORM: ServiceFormState = {
-  title: '',
   vertical: '',
+  booking_mode: 'appointment',
+  title: '',
+  description: '',
   price: '',
+  currency: 'EUR',
+  image_url: '',
+  attributes: '',
+  status: 'active',
+  cal_event_slug: '',
+  cal_username: '',
 }
 
 function fmtCurrency(value: number | null) {
@@ -45,6 +70,17 @@ function fmtCurrency(value: number | null) {
     currency: 'EUR',
     minimumFractionDigits: 2,
   })
+}
+
+function normalizeAttributes(raw: string): unknown {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return trimmed
+  }
 }
 
 function getActiveValue(service: ServiceRecord) {
@@ -74,6 +110,7 @@ function getUpdatePayloadForActivation(service: ServiceRecord, active: boolean) 
 
 export default function ServicesPage() {
   const supabase = createClient()
+  const { accountId } = useAuth()
   const [services, setServices] = useState<ServiceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -83,8 +120,19 @@ export default function ServicesPage() {
   const [saving, setSaving] = useState(false)
 
   const fetchServices = useCallback(async () => {
+    if (!accountId) {
+      setServices([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
-    const { data, error } = await supabase.from('services').select('*').order('vertical', { ascending: true }).order('title', { ascending: true })
+    const { data, error } = await supabase
+      .from('services')
+      .select('*')
+      .eq('account_id', accountId)
+      .order('vertical', { ascending: true })
+      .order('title', { ascending: true })
 
     if (error) {
       console.error('Failed to fetch services:', error)
@@ -95,26 +143,56 @@ export default function ServicesPage() {
 
     setServices((data ?? []) as ServiceRecord[])
     setLoading(false)
-  }, [supabase])
+  }, [accountId, supabase])
 
   useEffect(() => {
     void fetchServices()
   }, [fetchServices])
 
+  function openCreateModal() {
+    setEditingService(null)
+    setFormData(EMPTY_FORM)
+    setFormOpen(true)
+  }
+
   function openEditModal(service: ServiceRecord) {
     setEditingService(service)
     setFormData({
-      title: service.title ?? '',
       vertical: service.vertical ?? '',
+      booking_mode: service.booking_mode ?? 'appointment',
+      title: service.title ?? '',
+      description: service.description ?? '',
       price: service.price != null ? String(service.price) : '',
+      currency: service.currency ?? 'EUR',
+      image_url: service.image_url ?? '',
+      attributes: typeof service.attributes === 'string' ? service.attributes : service.attributes ? JSON.stringify(service.attributes, null, 2) : '',
+      status: service.status ?? 'active',
+      cal_event_slug: service.cal_event_slug ?? '',
+      cal_username: service.cal_username ?? '',
     })
     setFormOpen(true)
   }
 
   async function handleSave() {
-    if (!editingService) return
-
+    const title = formData.title.trim()
+    const vertical = formData.vertical.trim()
     const price = Number(formData.price)
+
+    if (!accountId) {
+      toast.error('Aucun compte actif')
+      return
+    }
+
+    if (!title) {
+      toast.error('Le titre du service est requis')
+      return
+    }
+
+    if (!vertical) {
+      toast.error('La vertical est requise')
+      return
+    }
+
     if (!Number.isFinite(price)) {
       toast.error('Le prix doit être un nombre valide')
       return
@@ -122,25 +200,40 @@ export default function ServicesPage() {
 
     setSaving(true)
     try {
-      const { error } = await supabase
-        .from('services')
-        .update({
-          title: formData.title.trim() || null,
-          vertical: formData.vertical.trim() || null,
-          price,
-        })
-        .eq('id', editingService.id)
+      const payload = {
+        account_id: accountId,
+        vertical: vertical || null,
+        booking_mode: formData.booking_mode.trim() || null,
+        title: title || null,
+        description: formData.description.trim() || null,
+        price,
+        currency: formData.currency.trim() || 'EUR',
+        image_url: formData.image_url.trim() || null,
+        attributes: normalizeAttributes(formData.attributes),
+        status: formData.status.trim() || 'active',
+        cal_event_slug: formData.cal_event_slug.trim() || null,
+        cal_username: formData.cal_username.trim() || null,
+        ...(editingService ? {} : { created_at: new Date().toISOString() }),
+      }
+
+      const { error } = editingService
+        ? await supabase
+            .from('services')
+            .update(payload)
+            .eq('id', editingService.id)
+            .eq('account_id', accountId)
+        : await supabase.from('services').insert([payload])
 
       if (error) throw error
 
-      toast.success('Service mis à jour')
+      toast.success(editingService ? 'Service mis à jour' : 'Service ajouté')
       setFormOpen(false)
       setEditingService(null)
       setFormData(EMPTY_FORM)
       await fetchServices()
     } catch (error: any) {
       console.error('Service save error:', error)
-      toast.error(error?.message || 'Erreur lors de la mise à jour du service')
+      toast.error(error?.message || (editingService ? 'Erreur lors de la mise à jour du service' : 'Erreur lors de l’ajout du service'))
     } finally {
       setSaving(false)
     }
@@ -168,6 +261,10 @@ export default function ServicesPage() {
     }
   }
 
+  const verticalOptions = Array.from(
+    new Set(services.map((service) => service.vertical).filter((value): value is string => Boolean(value && value.trim()))),
+  ).sort((a, b) => a.localeCompare(b))
+
   const groupedServices = services.reduce<Record<string, ServiceRecord[]>>((acc, service) => {
     const vertical = (service.vertical ?? '').toString().trim() || 'Autre'
     if (!acc[vertical]) acc[vertical] = []
@@ -181,6 +278,10 @@ export default function ServicesPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Services</h1>
         </div>
+        <Button type="button" onClick={openCreateModal} className="gap-2">
+          <Plus className="h-4 w-4" />
+          Ajouter un service
+        </Button>
       </div>
 
       {loading ? (
@@ -256,14 +357,44 @@ export default function ServicesPage() {
       )}
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Modifier le service</DialogTitle>
-            <DialogDescription>Modifiez le nom, la vertical et le prix du service.</DialogDescription>
+            <DialogTitle>{editingService ? 'Modifier le service' : 'Ajouter un service'}</DialogTitle>
+            <DialogDescription>
+              {editingService
+                ? 'Modifiez les informations du service. Le champ date de création est géré automatiquement.'
+                : 'Remplissez uniquement les champs utiles. La date de création est ajoutée automatiquement.'}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
+          <div className="grid gap-4 py-2 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-1">
+              <Label htmlFor="service-vertical">Vertical</Label>
+              <Input
+                id="service-vertical"
+                list="service-vertical-options"
+                value={formData.vertical}
+                onChange={(event) => setFormData((current) => ({ ...current, vertical: event.target.value }))}
+                placeholder="Ex. Santé"
+              />
+              <datalist id="service-vertical-options">
+                {verticalOptions.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
+            </div>
+
+            <div className="space-y-2 md:col-span-1">
+              <Label htmlFor="service-booking-mode">Booking mode</Label>
+              <Input
+                id="service-booking-mode"
+                value={formData.booking_mode}
+                onChange={(event) => setFormData((current) => ({ ...current, booking_mode: event.target.value }))}
+                placeholder="appointment"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
               <Label htmlFor="service-title">Titre</Label>
               <Input
                 id="service-title"
@@ -273,17 +404,18 @@ export default function ServicesPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="service-vertical">Vertical</Label>
-              <Input
-                id="service-vertical"
-                value={formData.vertical}
-                onChange={(event) => setFormData((current) => ({ ...current, vertical: event.target.value }))}
-                placeholder="Ex. Santé"
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="service-description">Description</Label>
+              <textarea
+                id="service-description"
+                value={formData.description}
+                onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
+                placeholder="Décrivez le service"
+                className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-1">
               <Label htmlFor="service-price">Prix</Label>
               <Input
                 id="service-price"
@@ -295,6 +427,67 @@ export default function ServicesPage() {
                 placeholder="0"
               />
             </div>
+
+            <div className="space-y-2 md:col-span-1">
+              <Label htmlFor="service-currency">Devise</Label>
+              <Input
+                id="service-currency"
+                value={formData.currency}
+                onChange={(event) => setFormData((current) => ({ ...current, currency: event.target.value }))}
+                placeholder="EUR"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="service-image">Image URL</Label>
+              <Input
+                id="service-image"
+                value={formData.image_url}
+                onChange={(event) => setFormData((current) => ({ ...current, image_url: event.target.value }))}
+                placeholder="https://..."
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="service-attributes">Attributes</Label>
+              <textarea
+                id="service-attributes"
+                value={formData.attributes}
+                onChange={(event) => setFormData((current) => ({ ...current, attributes: event.target.value }))}
+                placeholder='{"duration": "30 min"}'
+                className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-1">
+              <Label htmlFor="service-status">Status</Label>
+              <Input
+                id="service-status"
+                value={formData.status}
+                onChange={(event) => setFormData((current) => ({ ...current, status: event.target.value }))}
+                placeholder="active"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-1">
+              <Label htmlFor="service-cal-event">Cal event slug</Label>
+              <Input
+                id="service-cal-event"
+                value={formData.cal_event_slug}
+                onChange={(event) => setFormData((current) => ({ ...current, cal_event_slug: event.target.value }))}
+                placeholder="service-slug"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="service-cal-username">Cal username</Label>
+              <Input
+                id="service-cal-username"
+                value={formData.cal_username}
+                onChange={(event) => setFormData((current) => ({ ...current, cal_username: event.target.value }))}
+                placeholder="your-calendar-username"
+              />
+            </div>
           </div>
 
           <DialogFooter>
@@ -302,7 +495,7 @@ export default function ServicesPage() {
               Annuler
             </Button>
             <Button type="button" onClick={() => void handleSave()} disabled={saving}>
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
+              {saving ? 'Enregistrement…' : editingService ? 'Enregistrer' : 'Créer le service'}
             </Button>
           </DialogFooter>
         </DialogContent>

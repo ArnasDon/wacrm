@@ -54,10 +54,10 @@ export function AgentSecurity({ state }: { state: AgentConfigState }) {
             id="ai-max"
             type="number"
             min={1}
-            max={20}
+            max={100}
             value={state.maxPerConversation}
             onChange={(e) =>
-              state.setMaxPerConversation(Math.min(20, Math.max(1, Number(e.target.value) || 1)))
+              state.setMaxPerConversation(Math.min(100, Math.max(1, Number(e.target.value) || 1)))
             }
             disabled={disabled || !state.autoReplyEnabled}
             className="w-20"

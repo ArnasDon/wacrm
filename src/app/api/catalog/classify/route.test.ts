@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   supabaseAdmin: vi.fn(),
   loadAiConfig: vi.fn(),
-  loadAccountCategoryTerms: vi.fn(),
+  loadCatalogTaxonomy: vi.fn(),
   generateReply: vi.fn(),
 }))
 
@@ -17,16 +17,18 @@ vi.mock('@/lib/auth/account', () => ({
 vi.mock('@/lib/ai/admin-client', () => ({ supabaseAdmin: mocks.supabaseAdmin }))
 vi.mock('@/lib/ai/config', () => ({ loadAiConfig: mocks.loadAiConfig }))
 vi.mock('@/lib/ai/generate', () => ({ generateReply: mocks.generateReply }))
-vi.mock('@/lib/catalog/taxonomy', () => ({ loadAccountCategoryTerms: mocks.loadAccountCategoryTerms }))
+vi.mock('@/lib/catalog/taxonomy', () => ({ loadCatalogTaxonomy: mocks.loadCatalogTaxonomy }))
 
-import { buildClassificationSystemPrompt, POST } from './route'
+import { buildClassificationSystemPrompt, POST, snapToCanonicalValue } from './route'
 
 const FASHION_WORDS = ['legging', 'camisola', 'macacão', 'saia-calção', 'sapatilha']
+const EMPTY_TAXONOMY = { categoryGroups: [], colorGroups: [] }
 
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.supabaseAdmin.mockReturnValue({})
   mocks.loadAiConfig.mockResolvedValue({ provider: 'openai', model: 'test-model' })
+  mocks.loadCatalogTaxonomy.mockResolvedValue(EMPTY_TAXONOMY)
   mocks.generateReply.mockResolvedValue({ text: '{"color":null,"category":null,"description":"ok"}' })
 })
 
@@ -58,26 +60,59 @@ describe('buildClassificationSystemPrompt', () => {
   })
 })
 
-describe('POST /api/catalog/classify — tenant-driven schema', () => {
-  it("passes LC's own configured categories (including pantalona) into the classification prompt", async () => {
-    mocks.requireRole.mockResolvedValue({ accountId: 'lc-account' })
-    mocks.loadAccountCategoryTerms.mockResolvedValue(['legging', 'pantalona'])
+describe('snapToCanonicalValue', () => {
+  const groups = [
+    ['pantalona', 'pantalonas', 'wide leg'],
+    ['legging', 'leggings', 'colante'],
+  ]
 
-    await POST(
+  it('snaps a differently-cased alias to the canonical value', () => {
+    expect(snapToCanonicalValue('PANTALONA', groups)).toBe('pantalona')
+    expect(snapToCanonicalValue('Wide Leg', groups)).toBe('pantalona')
+  })
+
+  it('leaves an unmatched value unchanged', () => {
+    expect(snapToCanonicalValue('camisola', groups)).toBe('camisola')
+  })
+
+  it('passes through null and empty groups without throwing', () => {
+    expect(snapToCanonicalValue(null, [])).toBeNull()
+    expect(snapToCanonicalValue('SUV', [])).toBe('SUV')
+  })
+})
+
+describe('POST /api/catalog/classify — tenant-driven schema', () => {
+  it("passes LC's own configured categories (including pantalona) into the classification prompt and snaps the AI output to the canonical value", async () => {
+    mocks.requireRole.mockResolvedValue({ accountId: 'lc-account' })
+    mocks.loadCatalogTaxonomy.mockResolvedValue({
+      categoryGroups: [['pantalona', 'pantalonas', 'wide leg'], ['legging', 'leggings']],
+      colorGroups: [['preto', 'preta']],
+    })
+    mocks.generateReply.mockResolvedValue({
+      text: '{"color":"Preta","category":"Pantalona","description":"ok"}',
+    })
+
+    const response = await POST(
       new Request('https://crm.test/api/catalog/classify', {
         method: 'POST',
         body: JSON.stringify({ image_url: 'https://cdn.example.com/photo.jpg' }),
       }),
     )
+    const body = await response.json()
 
-    expect(mocks.loadAccountCategoryTerms).toHaveBeenCalledWith(expect.anything(), 'lc-account')
+    expect(mocks.loadCatalogTaxonomy).toHaveBeenCalledWith(expect.anything(), 'lc-account')
     const [[call]] = mocks.generateReply.mock.calls
     expect(call.systemPrompt).toContain('pantalona')
+    expect(body.category).toBe('pantalona')
+    expect(body.color).toBe('preto')
   })
 
   it("classifies a car-rental tenant's photo using only its own configured vehicle categories, no code change", async () => {
     mocks.requireRole.mockResolvedValue({ accountId: 'car-rental-account' })
-    mocks.loadAccountCategoryTerms.mockResolvedValue(['SUV', 'sedan', 'van'])
+    mocks.loadCatalogTaxonomy.mockResolvedValue({
+      categoryGroups: [['SUV', 'jipe', 'crossover'], ['sedan'], ['van']],
+      colorGroups: [],
+    })
 
     await POST(
       new Request('https://crm.test/api/catalog/classify', {
@@ -101,7 +136,7 @@ describe('POST /api/catalog/classify — tenant-driven schema', () => {
     )
 
     expect(response.status).toBe(400)
-    expect(mocks.loadAccountCategoryTerms).not.toHaveBeenCalled()
+    expect(mocks.loadCatalogTaxonomy).not.toHaveBeenCalled()
     expect(mocks.generateReply).not.toHaveBeenCalled()
   })
 })

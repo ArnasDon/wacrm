@@ -3,12 +3,40 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { loadAiConfig } from '@/lib/ai/config'
 import { generateReply } from '@/lib/ai/generate'
-import { loadAccountCategoryTerms } from '@/lib/catalog/taxonomy'
+import { loadCatalogTaxonomy, type CatalogTaxonomyGroups } from '@/lib/catalog/taxonomy'
 
 interface Classification {
   color: string | null
   category: string | null
   description: string
+}
+
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+/**
+ * Snaps a free-text value the vision model returned to this account's
+ * own canonical taxonomy value when it (or one of its configured
+ * aliases) matches — so "Pantalona"/"pantalona"/"PANTALONA" all become
+ * the one canonical_value the account defined, instead of becoming
+ * three different category strings on different products. Returns the
+ * raw value unchanged when nothing in the account's taxonomy matches
+ * (including when the account has none configured).
+ */
+export function snapToCanonicalValue(raw: string | null, groups: readonly (readonly string[])[]): string | null {
+  if (!raw) return raw
+  const normalizedRaw = normalizeForMatch(raw)
+  for (const group of groups) {
+    if (group.some((alias) => normalizeForMatch(alias) === normalizedRaw)) {
+      return group[0]
+    }
+  }
+  return raw
 }
 
 /**
@@ -90,7 +118,8 @@ export async function POST(request: Request) {
       )
     }
 
-    const knownCategories = await loadAccountCategoryTerms(db, accountId)
+    const taxonomy: CatalogTaxonomyGroups = await loadCatalogTaxonomy(db, accountId)
+    const knownCategories = taxonomy.categoryGroups.map((group) => group[0]).filter(Boolean)
 
     const generated = await generateReply({
       config,
@@ -104,7 +133,12 @@ export async function POST(request: Request) {
     })
 
     const classification = parseClassification(generated.text)
-    return NextResponse.json(classification)
+    const snapped: Classification = {
+      ...classification,
+      category: snapToCanonicalValue(classification.category, taxonomy.categoryGroups),
+      color: snapToCanonicalValue(classification.color, taxonomy.colorGroups),
+    }
+    return NextResponse.json(snapped)
   } catch (error) {
     return toErrorResponse(error)
   }

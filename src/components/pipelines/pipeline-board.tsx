@@ -483,9 +483,19 @@ export function PipelineBoard({
           }
         }
         /* Active drag: let JS-driven auto-scroll own scrollLeft without
-           the browser re-snapping to the nearest column mid-scroll. */
+           the browser re-snapping to the nearest column mid-scroll, and
+           without the browser's own smooth-scroll easing fighting the
+           rAF loop above. scroll-behavior: smooth (default state, right
+           above) makes every scrollLeft += on a frame restart a ~300ms
+           native easing animation before the previous one finishes — 60
+           restarts a second reads as exactly the "truncating /
+           stuttering / barely usable" auto-scroll being fixed here.
+           auto makes each increment apply instantly, so the rAF loop's
+           own 60fps cadence is what produces the continuous motion
+           instead of fighting the browser for it. */
         .pipeline-scroll.dragging {
           scroll-snap-type: none !important;
+          scroll-behavior: auto !important;
         }
         /* "Lift" — plays once when the DragOverlay mounts (a fresh drag),
            giving the card a brief, physical-feeling elevation off the

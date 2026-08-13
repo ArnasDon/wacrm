@@ -283,9 +283,20 @@ export function DealDetailDrawer({
 
           <DialogFooter className="gap-2 sm:justify-between">
             {conversation ? (
+              // `conversation` only resolves once its async Supabase fetch
+              // (above) finishes, which lands independently of — and often
+              // slightly after — the FLIP entrance animation. Without this,
+              // the link's mount is a hard DOM swap from the empty `<span>`
+              // placeholder straight to full opacity, which reads as a
+              // stutter right as the rest of the open sequence is settling.
+              // `animate-in fade-in` just gives *this* element its own
+              // 200ms entrance regardless of when it actually mounts, so a
+              // late resolve looks like an intentional soft reveal instead
+              // of a pop-in — the FLIP animation's own duration/curve/
+              // transform are untouched.
               <Link
                 href={`/inbox?c=${conversation.id}`}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground hover:bg-muted"
+                className="inline-flex animate-in items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground fade-in duration-200 hover:bg-muted"
               >
                 <MessageSquare className="h-4 w-4" />
                 {t("openConversation")}

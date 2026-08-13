@@ -35,6 +35,14 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Time-Based',
     pillClass: 'border-slate-500/30 bg-slate-500/10 text-muted-foreground',
   },
+  appointment_reminder: {
+    label: 'Lembrete de Agendamento (24h)',
+    pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  },
+  appointment_reminder_1h: {
+    label: 'Lembrete de Agendamento (1h)',
+    pillClass: 'border-teal-500/30 bg-teal-500/10 text-teal-300',
+  },
   interactive_reply: {
     label: 'Button / List Reply',
     pillClass: 'border-pink-500/30 bg-pink-500/10 text-pink-300',

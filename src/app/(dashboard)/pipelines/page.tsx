@@ -30,6 +30,7 @@ import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
+import { validateDealStageRequirements } from "@/lib/pipelines/validation";
 
 // Pipeline creation is admin-class (settings-tier write under
 // the new RLS); deal creation is operational and only requires
@@ -37,12 +38,15 @@ import { useTranslations } from "next-intl";
 // not on different copy.
 
 // Spec-defined seed — name and color per the product spec.
+// "Ganho" and "Perdido" are always included as the final stages so that
+// handleDealMoved can auto-set deal.status to 'won'/'lost' via keyword match.
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "Novo Lead", color: "#3b82f6", position: 0 },
+  { name: "Qualificado", color: "#eab308", position: 1 },
+  { name: "Proposta Enviada", color: "#f97316", position: 2 },
+  { name: "Negociação", color: "#8b5cf6", position: 3 },
+  { name: "Ganho", color: "#22c55e", position: 4 },
+  { name: "Perdido", color: "#ef4444", position: 5 },
 ];
 
 export default function PipelinesPage() {
@@ -82,7 +86,24 @@ export default function PipelinesPage() {
       console.error("Failed to load pipelines:", error.message);
       return [];
     }
-    return data ?? [];
+    const list = (data ?? []) as Pipeline[];
+    const PIPELINE_NAME_TRANSLATIONS: Record<string, string> = {
+      "Sales Pipeline": "Funil de Vendas",
+      "Pipeline 1": "Funil 1",
+      "Pipeline 2": "Funil 2",
+      "Pipeline 3": "Funil 3",
+      "Pipeline 4": "Funil 4",
+      "Pipeline 5": "Funil 5",
+      "Default Pipeline": "Funil Principal",
+    };
+    for (const p of list) {
+      if (PIPELINE_NAME_TRANSLATIONS[p.name]) {
+        const newName = PIPELINE_NAME_TRANSLATIONS[p.name];
+        p.name = newName;
+        supabase.from("pipelines").update({ name: newName }).eq("id", p.id).then();
+      }
+    }
+    return list;
   }, [supabase]);
 
   const loadStages = useCallback(
@@ -92,7 +113,23 @@ export default function PipelinesPage() {
         .select("*")
         .eq("pipeline_id", pipelineId)
         .order("position");
-      return data ?? [];
+      const list = (data ?? []) as PipelineStage[];
+      const STAGE_NAME_TRANSLATIONS: Record<string, string> = {
+        "New Lead": "Novo Lead",
+        "Qualified": "Qualificado",
+        "Proposal Sent": "Proposta Enviada",
+        "Negotiation": "Negociação",
+        "Won": "Ganho",
+        "Lost": "Perdido",
+      };
+      for (const s of list) {
+        if (STAGE_NAME_TRANSLATIONS[s.name]) {
+          const newName = STAGE_NAME_TRANSLATIONS[s.name];
+          s.name = newName;
+          supabase.from("pipeline_stages").update({ name: newName }).eq("id", s.id).then();
+        }
+      }
+      return list;
     },
     [supabase],
   );
@@ -101,7 +138,7 @@ export default function PipelinesPage() {
     async (pipelineId: string) => {
       const { data } = await supabase
         .from("deals")
-        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*), conversation:conversations(id,unread_count,last_message_at,last_message_text)")
         .eq("pipeline_id", pipelineId)
         .order("created_at", { ascending: false });
       return (data ?? []) as Deal[];
@@ -120,7 +157,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Funil de Vendas" })
       .select()
       .single();
 
@@ -216,20 +253,59 @@ export default function PipelinesPage() {
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
-      // Optimistic update — board already animated; just persist.
+      const targetStage = stages.find((s) => s.id === newStageId);
+      const targetDeal = deals.find((d) => d.id === dealId);
+
+      if (targetStage && targetDeal) {
+        const { valid, missingFields } = validateDealStageRequirements(targetDeal, targetStage);
+        if (!valid) {
+          toast.error(
+            `Para mover para "${targetStage.name}", preencha: ${missingFields.join(", ")}`
+          );
+          setEditingDeal(targetDeal);
+          setDefaultStageId(newStageId);
+          setDealFormOpen(true);
+          return;
+        }
+      }
+
+      let newStatus: "open" | "won" | "lost" = "open";
+
+      if (targetStage) {
+        const nameLower = targetStage.name.toLowerCase();
+        if (nameLower.includes("won") || nameLower.includes("ganho") || nameLower.includes("fechado")) {
+          newStatus = "won";
+        } else if (nameLower.includes("lost") || nameLower.includes("perdido") || nameLower.includes("cancelado")) {
+          newStatus = "lost";
+        }
+      }
+
+      const todayStr = new Date().toISOString().split("T")[0];
+      const autoCloseDate = newStatus === "won" && !targetDeal?.expected_close_date ? todayStr : targetDeal?.expected_close_date;
+
+      const updatePayload: Record<string, any> = { stage_id: newStageId, status: newStatus };
+      if (newStatus === "won" && !targetDeal?.expected_close_date) {
+        updatePayload.expected_close_date = todayStr;
+      }
+
+      // Optimistic update
       setDeals((prev) =>
-        prev.map((d) => (d.id === dealId ? { ...d, stage_id: newStageId } : d)),
+        prev.map((d) =>
+          d.id === dealId ? { ...d, stage_id: newStageId, status: newStatus, expected_close_date: autoCloseDate } : d,
+        ),
       );
+
       const { error } = await supabase
         .from("deals")
-        .update({ stage_id: newStageId })
+        .update(updatePayload)
         .eq("id", dealId);
+
       if (error) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
       }
     },
-    [supabase, refreshDeals, t],
+    [supabase, refreshDeals, t, stages, deals],
   );
 
   const handleAddDeal = useCallback(
@@ -485,6 +561,7 @@ export default function PipelinesPage() {
         onOpenChange={setDealFormOpen}
         deal={editingDeal}
         pipelineId={selectedPipelineId}
+        pipelines={pipelines}
         stages={stages}
         defaultStageId={defaultStageId}
         onSaved={refreshDeals}

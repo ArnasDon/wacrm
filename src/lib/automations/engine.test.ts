@@ -550,3 +550,89 @@ describe("triggerMatches — keyword_match", () => {
     expect(on(automation({ keywords: ["hi"], match_type: "word" }), "")).toBe(false);
   });
 });
+
+import { interpolate } from "./engine";
+
+describe("interpolate — deal and contact variable resolution", () => {
+  const dummyArgs = {
+    automation: { id: "a1", account_id: "acct-1", user_id: "u1" } as any,
+    contactId: "c1",
+    context: {
+      message_text: "Olá",
+      vars: {
+        deal_id: "d1",
+        deal_title: "Consulta Dr. Silva",
+        deal_value: 250,
+        appointment_at: "2026-08-15T14:00:00.000Z",
+        appointment_at_formatted: "15/08/2026 às 14:00",
+        deal: {
+          id: "d1",
+          title: "Consulta Dr. Silva",
+          value: 250,
+          appointment_at: "2026-08-15T14:00:00.000Z",
+          appointment_at_formatted: "15/08/2026 às 14:00",
+        },
+      },
+    },
+    parentStepId: null,
+    branch: null,
+    startPosition: 0,
+    logId: "l1",
+    triggerEvent: "appointment_reminder",
+  };
+
+  const dummyContact = {
+    id: "c1",
+    name: "Maria Oliveira",
+    phone: "+5511999999999",
+    email: "maria@example.com",
+  };
+
+  it("resolves explicit deal namespace variables {{ deal.title }} and {{ deal.appointment_at_formatted }}", () => {
+    const text = "Lembrete: {{ deal.title }} agendado para {{ deal.appointment_at_formatted }}";
+    expect(interpolate(text, dummyArgs, dummyContact)).toBe(
+      "Lembrete: Consulta Dr. Silva agendado para 15/08/2026 às 14:00"
+    );
+  });
+
+  it("resolves un-namespaced deal aliases {{ deal_title }} and {{ agendamento }}", () => {
+    const text = "Olá {{ nome }}, seu negócio {{ deal_title }} é em {{ agendamento }}.";
+    expect(interpolate(text, dummyArgs, dummyContact)).toBe(
+      "Olá Maria Oliveira, seu negócio Consulta Dr. Silva é em 15/08/2026 às 14:00."
+    );
+  });
+
+  it("resolves contact variables {{ contact.name }} and aliases {{ nome }}, {{ telefone }}", () => {
+    const text = "Cliente {{ contact.name }} ({{ nome }}) - Tel: {{ telefone }}";
+    expect(interpolate(text, dummyArgs, dummyContact)).toBe(
+      "Cliente Maria Oliveira (Maria Oliveira) - Tel: +5511999999999"
+    );
+  });
+
+  it("formats ISO date strings when {{ appointment_at }} is supplied directly", () => {
+    const argsWithoutFormatted = {
+      ...dummyArgs,
+      context: {
+        vars: {
+          deal: {
+            title: "Tratamento",
+            appointment_at: "2026-08-15T14:00:00Z",
+          },
+        },
+      },
+    };
+    const text = "Data: {{ agendamento }}";
+    expect(interpolate(text, argsWithoutFormatted, dummyContact)).toContain("15/08/2026");
+  });
+
+  it("handles appointment_reminder_1h trigger event correctly", () => {
+    const args1h = {
+      ...dummyArgs,
+      triggerEvent: "appointment_reminder_1h",
+    };
+    const text = "Lembrete 1h: {{ deal.title }} às {{ agendamento }}";
+    expect(interpolate(text, args1h, dummyContact)).toBe(
+      "Lembrete 1h: Consulta Dr. Silva às 15/08/2026 às 14:00"
+    );
+  });
+});

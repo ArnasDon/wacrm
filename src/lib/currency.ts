@@ -64,18 +64,19 @@ export function formatCurrency(
 ): string {
   const code = (currency || DEFAULT_CURRENCY).trim();
   const amount = Number(value) || 0;
+  const locale = code === "BRL" ? "pt-BR" : "en-US";
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
       currency: code,
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch {
     // Invalid ISO code — show the raw code + grouped number so the
-    // value is still legible instead of throwing.
-    return `${code} ${new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: 0,
+    // value stays readable without throwing a RangeError.
+    return `${code} ${new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
     }).format(amount)}`;
   }
 }

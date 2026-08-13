@@ -74,6 +74,9 @@
       "activeConversations": "진행 중인 대화",
       "newContactsToday": "오늘의 신규 연락처",
       "openDealsValue": "진행 중인 딜 금액",
+      "avgClosingTime": "평균 딜 종결 시간",
+      "avgClosingTimeSub": "종결된 딜 {count}건",
+      "noClosedDeals": "종결된 딜 없음",
       "messagesSentToday": "오늘 보낸 메시지",
       "newTodayVsYesterday": "어제 대비 신규",
       "vsYesterday": "어제 대비",
@@ -286,7 +289,8 @@
       "deals": "딜",
       "noTags": "태그 없음",
       "noDeals": "딜 없음",
-      "addNotePlaceholder": "메모 추가..."
+      "addNotePlaceholder": "메모 추가...",
+      "createDeal": "딜 만들기"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
@@ -529,7 +533,8 @@
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
-      "lost": "실패"
+      "lost": "실패",
+      "newMessage": "새 메시지"
     },
     "form": {
       "editDeal": "딜 수정",
@@ -595,7 +600,9 @@
       "toastMoveOrDeleteDeals": "먼저 이 단계의 딜을 이동하거나 삭제하세요",
       "toastFailedDeleteStage": "단계를 삭제하지 못했습니다",
       "toastFailedDeletePipeline": "파이프라인을 삭제하지 못했습니다",
-      "toastDeleted": "파이프라인이 삭제되었습니다"
+      "toastDeleted": "파이프라인이 삭제되었습니다",
+      "toastCannotDeleteProtectedStage": "\"Ganho\" 및 \"Perdido\" 단계는 삭제할 수 없습니다",
+      "protectedStageTooltip": "이 단계는 보호되어 삭제하거나 이름을 변경할 수 없습니다"
     },
     "analytics": {
       "totalDeals": "전체 딜",
@@ -904,6 +911,10 @@
         "time_based": {
           "label": "시간 기반",
           "hint": "반복 일정에 따라"
+        },
+        "appointment_reminder": {
+          "label": "일정 리마인더 (24시간 전)",
+          "hint": "거래의 예약된 일정 시간 24시간 전에 자동으로 실행됩니다."
         }
       },
       "trigger": "트리거",

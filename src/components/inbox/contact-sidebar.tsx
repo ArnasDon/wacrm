@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, Pipeline, PipelineStage } from "@/types";
 import {
   Phone,
   Mail,
@@ -20,12 +20,17 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { DealForm } from "@/components/pipelines/deal-form";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** ID of the currently open conversation — passed into DealForm so the
+   *  new deal is linked to the thread from creation. Optional for backward
+   *  compat (the sidebar is also used in the contacts detail view). */
+  conversationId?: string;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversationId }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -36,6 +41,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+
+  // Deal form state
+  const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
+  const [firstPipelineId, setFirstPipelineId] = useState("");
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -73,12 +84,37 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     }
   }, [contact]);
 
+  // Load pipelines once (for the DealForm)
+  const fetchPipelines = useCallback(async () => {
+    if (!accountId) return;
+    const supabase = createClient();
+    const { data: pls } = await supabase
+      .from("pipelines")
+      .select("*")
+      .eq("account_id", accountId)
+      .order("created_at", { ascending: true });
+    if (!pls || pls.length === 0) return;
+    setPipelines(pls);
+    setFirstPipelineId(pls[0].id);
+    const { data: stages } = await supabase
+      .from("pipeline_stages")
+      .select("*")
+      .eq("pipeline_id", pls[0].id)
+      .order("position", { ascending: true });
+    setPipelineStages(stages ?? []);
+  }, [accountId]);
+
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchPipelines();
+  }, [fetchPipelines]);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -212,9 +248,22 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Active Deals */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <DollarSign className="h-3 w-3" />
+                {tSidebar("deals")}
+              </div>
+              {firstPipelineId && pipelineStages.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setDealFormOpen(true)}
+                  className="h-5 w-5 text-muted-foreground hover:text-primary"
+                  title={tSidebar("createDeal")}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              )}
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
@@ -298,6 +347,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
         </div>
       </ScrollArea>
+
+      {/* Deal creation form — rendered outside ScrollArea so it
+          isn't clipped by the overflow container */}
+      <DealForm
+        open={dealFormOpen}
+        onOpenChange={setDealFormOpen}
+        deal={null}
+        pipelineId={firstPipelineId}
+        pipelines={pipelines}
+        stages={pipelineStages}
+        defaultStageId={pipelineStages.find(
+          (s) => !s.is_protected &&
+            s.name.toLowerCase() !== 'ganho' &&
+            s.name.toLowerCase() !== 'perdido'
+        )?.id ?? pipelineStages[0]?.id ?? ""}
+        initialContactId={contact?.id}
+        initialContactName={contact?.name || contact?.phone || ""}
+        initialConversationId={conversationId}
+        onSaved={() => {
+          setDealFormOpen(false);
+          fetchContactData();
+        }}
+      />
     </div>
   );
 }

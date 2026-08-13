@@ -33,9 +33,26 @@ import {
   Plus,
   GripVertical,
   AlertTriangle,
+  Lock,
+  ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AVAILABLE_REQUIRED_FIELDS,
+  getRequiredFieldsArray,
+  parseStageConfig,
+  encodeStageColorWithReqs,
+  type StageRequiredField,
+} from "@/lib/pipelines/validation";
 
 const STAGE_COLORS = [
   "#3b82f6",
@@ -49,6 +66,16 @@ const STAGE_COLORS = [
   "#14b8a6",
   "#06b6d4",
 ];
+
+/** A stage is protected if the DB flag is set OR the name is one of the
+ * reserved outcome stages. The name check is a belt-and-suspenders guard
+ * for rows fetched before migration 038 ran.
+ */
+function isStageProtected(stage: PipelineStage): boolean {
+  if (stage.is_protected) return true;
+  const n = stage.name.toLowerCase();
+  return n === "ganho" || n === "perdido";
+}
 
 interface PipelineSettingsProps {
   open: boolean;
@@ -107,16 +134,17 @@ export function PipelineSettings({
   async function handleSave() {
     setSaving(true);
 
-    // One upsert for all stages — batches N stage writes into a single
-    // round-trip. Previous implementation did N sequential UPDATEs which
-    // latency-scaled linearly with stage count.
-    const stageRows = localStages.map((s, i) => ({
-      id: s.id,
-      pipeline_id: s.pipeline_id,
-      name: s.name,
-      color: s.color,
-      position: i,
-    }));
+    const stageRows = localStages.map((s, i) => {
+      const reqs = parseStageConfig(s).requiredFields;
+      const encodedColor = encodeStageColorWithReqs(s.color, reqs);
+      return {
+        id: s.id,
+        pipeline_id: s.pipeline_id,
+        name: s.name,
+        color: encodedColor,
+        position: i,
+      };
+    });
 
     const [renameRes, stagesRes] = await Promise.all([
       supabase
@@ -129,7 +157,9 @@ export function PipelineSettings({
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
-      toast.error(t("toastFailedSave"));
+      const err = stagesRes.error || renameRes.error;
+      console.error("Failed to save pipeline:", err);
+      toast.error(err?.message || t("toastFailedSave"));
       return;
     }
 
@@ -162,6 +192,11 @@ export function PipelineSettings({
   }
 
   async function handleRemoveStage(stageId: string) {
+    const stage = localStages.find((s) => s.id === stageId);
+    if (stage && isStageProtected(stage)) {
+      toast.error(t("toastCannotDeleteProtectedStage"));
+      return;
+    }
     // Refuse to delete if deals still reference the stage (FK would fail).
     const { count } = await supabase
       .from("deals")
@@ -264,6 +299,7 @@ export function PipelineSettings({
                         <SortableStageRow
                           key={stage.id}
                           stage={stage}
+                          protected={isStageProtected(stage)}
                           onNameChange={(v) => {
                             const updated = [...localStages];
                             updated[index] = { ...updated[index], name: v };
@@ -272,6 +308,16 @@ export function PipelineSettings({
                           onColorChange={(v) => {
                             const updated = [...localStages];
                             updated[index] = { ...updated[index], color: v };
+                            setLocalStages(updated);
+                          }}
+                          onRequiredFieldsChange={(reqs) => {
+                            const updated = [...localStages];
+                            const hexColor = parseStageConfig(updated[index]).color;
+                            updated[index] = {
+                              ...updated[index],
+                              required_fields: reqs,
+                              color: encodeStageColorWithReqs(hexColor, reqs),
+                            };
                             setLocalStages(updated);
                           }}
                           onRemove={() => handleRemoveStage(stage.id)}
@@ -366,15 +412,19 @@ export function PipelineSettings({
 
 function SortableStageRow({
   stage,
+  protected: isProtected,
   onNameChange,
   onColorChange,
+  onRequiredFieldsChange,
   onRemove,
   colors,
   t,
 }: {
   stage: PipelineStage;
+  protected: boolean;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
+  onRequiredFieldsChange: (v: StageRequiredField[]) => void;
   onRemove: () => void;
   colors: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -389,11 +439,16 @@ function SortableStageRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const { color: displayColor, requiredFields: currentReqs } = parseStageConfig(stage);
+  const requiredCount = currentReqs.length;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2"
+      className={`flex items-center gap-2 rounded-lg border bg-muted p-2 ${
+        isProtected ? "border-primary/30" : "border-border"
+      }`}
     >
       <button
         type="button"
@@ -404,20 +459,97 @@ function SortableStageRow({
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <ColorSwatch value={stage.color} onChange={onColorChange} colors={colors} t={t} />
+      <ColorSwatch
+        value={displayColor}
+        onChange={(newColor) => {
+          if (!isProtected) {
+            onColorChange(encodeStageColorWithReqs(newColor, currentReqs));
+          }
+        }}
+        colors={colors}
+        t={t}
+      />
       <Input
         value={stage.name}
-        onChange={(e) => onNameChange(e.target.value)}
-        className="h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border"
+        onChange={(e) => !isProtected && onNameChange(e.target.value)}
+        readOnly={isProtected}
+        className={`h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border ${
+          isProtected ? "cursor-default select-none opacity-80" : ""
+        }`}
       />
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onRemove}
-        className="text-muted-foreground hover:text-red-400"
-      >
-        <Trash2 className="h-3 w-3" />
-      </Button>
+
+      {/* Required fields popover trigger */}
+      <Popover>
+        <PopoverTrigger
+          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+            requiredCount > 0
+              ? "border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+              : "border-border bg-background/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+          title="Configurar campos obrigatórios para mover para esta etapa"
+        >
+          <ListChecks className="h-3.5 w-3.5 text-current" />
+          <span>
+            {requiredCount > 0 ? `${requiredCount} req.` : "Obrigatoriedade"}
+          </span>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72 p-3 bg-popover border-border">
+          <PopoverHeader className="pb-2 border-b border-border">
+            <PopoverTitle className="text-xs font-semibold text-foreground">
+              Campos Obrigatórios ({stage.name})
+            </PopoverTitle>
+            <p className="text-[11px] text-muted-foreground">
+              Dados necessários para o deal poder ser movido para esta etapa:
+            </p>
+          </PopoverHeader>
+          <div className="mt-2 space-y-2">
+            {AVAILABLE_REQUIRED_FIELDS.map((item) => {
+              const isChecked = currentReqs.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isChecked) {
+                      onRequiredFieldsChange(
+                        currentReqs.filter((f) => f !== item.id)
+                      );
+                    } else {
+                      onRequiredFieldsChange([...currentReqs, item.id]);
+                    }
+                  }}
+                  className="flex items-center gap-2.5 cursor-pointer text-xs text-foreground hover:bg-muted/60 p-1.5 rounded transition-colors select-none"
+                >
+                  <Checkbox
+                    checked={isChecked}
+                    className="pointer-events-none"
+                  />
+                  <span className="font-medium">{item.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {isProtected ? (
+        <span
+          title={t("protectedStageTooltip")}
+          className="flex items-center justify-center text-primary/60"
+        >
+          <Lock className="h-3.5 w-3.5" />
+        </span>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          className="text-muted-foreground hover:text-red-400"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 }

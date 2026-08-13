@@ -572,6 +572,106 @@ async function handleReaction(
   }
 }
 
+/**
+ * Auto-create a deal in the account's first pipeline (first stage) whenever
+ * a brand-new conversation thread is opened from the inbox.
+ *
+ * Best-effort — errors are logged but never rethrown so they cannot break
+ * the webhook's message-processing flow.
+ */
+async function autoCreateDealForNewConversation(
+  accountId: string,
+  configOwnerUserId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  contact: any,
+  conversationId: string
+) {
+  try {
+    // 1. Find the account's first pipeline (oldest by created_at)
+    const { data: pipelines, error: pipelineErr } = await supabaseAdmin()
+      .from('pipelines')
+      .select('id')
+      .eq('account_id', accountId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (pipelineErr || !pipelines || pipelines.length === 0) {
+      // No pipeline configured yet — skip silently
+      return
+    }
+    const pipelineId = pipelines[0].id
+
+    // 2. Find the first stage of that pipeline (lowest position,
+    //    excluding protected outcome stages Ganho/Perdido)
+    const { data: stages, error: stageErr } = await supabaseAdmin()
+      .from('pipeline_stages')
+      .select('id, name, is_protected')
+      .eq('pipeline_id', pipelineId)
+      .order('position', { ascending: true })
+
+    if (stageErr || !stages || stages.length === 0) {
+      console.warn('[webhook] autoCreateDeal: no stages found for pipeline', pipelineId)
+      return
+    }
+
+    // Pick the first non-protected stage (Ganho/Perdido are always at the end,
+    // but guard by name too for belt-and-suspenders)
+    const firstStage = stages.find(
+      (s: { id: string; name: string; is_protected: boolean }) =>
+        !s.is_protected &&
+        s.name.toLowerCase() !== 'ganho' &&
+        s.name.toLowerCase() !== 'perdido'
+    ) ?? stages[0]
+
+    // 3. Check whether a deal for this contact+pipeline already exists
+    //    so re-opened conversations (closed → re-opened) don't duplicate.
+    const { count: existingCount } = await supabaseAdmin()
+      .from('deals')
+      .select('id', { count: 'exact', head: true })
+      .eq('pipeline_id', pipelineId)
+      .eq('contact_id', contact.id)
+
+    if (existingCount && existingCount > 0) {
+      // Deal already exists for this contact in this pipeline
+      return
+    }
+
+    // 4. Create the deal
+    const dealTitle = contact.name && contact.name !== contact.phone
+      ? contact.name
+      : contact.phone ?? 'New Lead'
+
+    // Use the account's default currency (migration 021), same as the
+    // automations engine does for create_deal steps.
+    const { data: acct } = await supabaseAdmin()
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+
+    const { error: dealErr } = await supabaseAdmin()
+      .from('deals')
+      .insert({
+        account_id: accountId,
+        user_id: configOwnerUserId,
+        pipeline_id: pipelineId,
+        stage_id: firstStage.id,
+        contact_id: contact.id,
+        conversation_id: conversationId,
+        title: dealTitle,
+        value: 0,
+        currency: acct?.default_currency ?? 'USD',
+        status: 'open',
+      })
+
+    if (dealErr) {
+      console.error('[webhook] autoCreateDeal: insert failed:', dealErr.message)
+    }
+  } catch (err) {
+    console.error('[webhook] autoCreateDeal: unexpected error:', err)
+  }
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
@@ -619,6 +719,14 @@ async function processMessage(
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
     })
+    // Auto-create a deal in the first pipeline's first stage so every
+    // new conversation thread automatically appears on the sales board.
+    await autoCreateDealForNewConversation(
+      accountId,
+      configOwnerUserId,
+      contactRecord,
+      conversation.id
+    )
   }
 
   // Reactions short-circuit here — they aren't messages. We never insert

@@ -244,6 +244,31 @@ interface ExecuteArgs {
 async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   const db = supabaseAdmin()
 
+  let contact: any = null
+  if (args.contactId) {
+    const { data } = await db
+      .from('contacts')
+      .select('*')
+      .eq('id', args.contactId)
+      .maybeSingle()
+    contact = data
+  }
+
+  let deal: any = args.context.vars?.deal ?? null
+  if (!deal && args.contactId) {
+    const { data: latestDeal } = await db
+      .from('deals')
+      .select('*')
+      .eq('contact_id', args.contactId)
+      .eq('account_id', args.automation.account_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (latestDeal) {
+      deal = latestDeal
+    }
+  }
+
   const baseQuery = db
     .from('automation_steps')
     .select('*')
@@ -326,7 +351,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         continue
       }
 
-      const detail = await runStep(step, args)
+      const detail = await runStep(step, args, contact, deal)
       results.push({
         step_id: step.id,
         step_type: step.step_type,
@@ -355,14 +380,14 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 }
 
-async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {
+async function runStep(step: AutomationStep, args: ExecuteArgs, contact?: any, deal?: any): Promise<string> {
   const db = supabaseAdmin()
 
   switch (step.step_type) {
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
       if (!args.contactId) throw new Error('send_message needs a contact')
-      const text = interpolate(cfg.text, args)
+      const text = interpolate(cfg.text, args, contact, deal)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendText({
@@ -416,7 +441,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
               if (bNum) return 1
               return a.localeCompare(b)
             })
-            .map((k) => String(cfg.variables![k]))
+            .map((k) => interpolate(String(cfg.variables![k]), args, contact, deal))
         : []
       const { whatsapp_message_id } = await engineSendTemplate({
         accountId: args.automation.account_id,
@@ -509,7 +534,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('update_contact_field needs a contact')
       // Resolve workflow variables ({{ vars.* }}, {{ message.text }}) so custom
       // values can be populated dynamically from the triggering context.
-      const value = interpolate(cfg.value, args)
+      const value = interpolate(cfg.value, args, contact, deal)
 
       // Custom fields are encoded as `custom:<custom_field_id>`; anything else
       // is a built-in contact column.
@@ -576,7 +601,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         pipeline_id: cfg.pipeline_id,
         stage_id: cfg.stage_id,
         contact_id: args.contactId,
-        title: interpolate(cfg.title, args),
+        title: interpolate(cfg.title, args, contact, deal),
         value: cfg.value ?? 0,
         currency: acct?.default_currency ?? 'USD',
         status: 'open',
@@ -594,7 +619,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!(await isDeliverableUrl(cfg.url))) {
         throw new Error('send_webhook: destination not allowed')
       }
-      const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
+      const body = cfg.body_template ? interpolate(cfg.body_template, args, contact, deal) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
@@ -790,11 +815,117 @@ function waitMs(cfg: WaitStepConfig): number {
   return Math.max(1_000, cfg.amount * unitMs)
 }
 
-function interpolate(s: string, args: ExecuteArgs): string {
+export function formatAppointmentDate(isoOrStr: unknown): string {
+  if (!isoOrStr) return ''
+  try {
+    const d = new Date(String(isoOrStr))
+    if (isNaN(d.getTime())) return String(isoOrStr)
+    const dateStr = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    const timeStr = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+    return `${dateStr} às ${timeStr}`
+  } catch {
+    return String(isoOrStr)
+  }
+}
+
+export function interpolate(s: string, args: ExecuteArgs, contact?: any, deal?: any): string {
+  if (!s) return ''
+  const vars = args.context?.vars ?? {}
+  const dealObj = (vars.deal as Record<string, any> | undefined) ?? deal ?? null
+
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
-    const [ns, prop] = String(key).split('.')
-    if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
-    if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
+    const keyStr = String(key).trim()
+    const parts = keyStr.split('.')
+    const ns = parts[0]
+    const prop = parts.slice(1).join('.')
+
+    // 1. Explicit namespaces (e.g. {{ contact.name }}, {{ deal.title }}, {{ vars.something }}, {{ message.text }})
+    if (parts.length > 1) {
+      if (ns === 'message' && prop === 'text') {
+        return String(args.context.message_text ?? '')
+      }
+      if (ns === 'vars' && prop in vars) {
+        return vars[prop] != null ? String(vars[prop]) : ''
+      }
+      if (ns === 'contact' && contact) {
+        if (prop in contact) return contact[prop] != null ? String(contact[prop]) : ''
+        if (prop === 'nome') return contact.name != null ? String(contact.name) : ''
+        if (prop === 'telefone') return contact.phone != null ? String(contact.phone) : ''
+      }
+      if (ns === 'deal' || ns === 'negocio') {
+        if (dealObj) {
+          if (prop in dealObj) return dealObj[prop] != null ? String(dealObj[prop]) : ''
+          if (['appointment_at_formatted', 'agendamento', 'data_agendamento'].includes(prop)) {
+            if (dealObj.appointment_at_formatted) return String(dealObj.appointment_at_formatted)
+            if (vars.appointment_at_formatted) return String(vars.appointment_at_formatted)
+            if (dealObj.appointment_at) return formatAppointmentDate(dealObj.appointment_at)
+          }
+          if (['title', 'titulo'].includes(prop)) return dealObj.title != null ? String(dealObj.title) : ''
+          if (['value', 'valor'].includes(prop)) return dealObj.value != null ? String(dealObj.value) : ''
+        }
+        if (`deal_${prop}` in vars) return vars[`deal_${prop}`] != null ? String(vars[`deal_${prop}`]) : ''
+        if (prop in vars) return vars[prop] != null ? String(vars[prop]) : ''
+      }
+    }
+
+    // 2. Direct keys without namespace (or fallback for custom tokens)
+    if (keyStr in vars) {
+      return vars[keyStr] != null ? String(vars[keyStr]) : ''
+    }
+
+    // Deal title aliases
+    if (['deal_title', 'title', 'titulo', 'titulo_negocio', 'deal.title'].includes(keyStr)) {
+      if (dealObj?.title) return String(dealObj.title)
+      if (vars.deal_title) return String(vars.deal_title)
+    }
+
+    // Appointment / agendamento aliases
+    if ([
+      'appointment_at_formatted',
+      'appointment_at',
+      'agendamento',
+      'data_agendamento',
+      'data_hora_agendamento',
+      'deal_appointment_at',
+      'deal.appointment_at',
+      'deal.appointment_at_formatted'
+    ].includes(keyStr)) {
+      if (vars.appointment_at_formatted) return String(vars.appointment_at_formatted)
+      if (dealObj?.appointment_at_formatted) return String(dealObj.appointment_at_formatted)
+      if (dealObj?.appointment_at) return formatAppointmentDate(dealObj.appointment_at)
+      if (vars.appointment_at) return formatAppointmentDate(vars.appointment_at)
+    }
+
+    // Deal value aliases
+    if (['deal_value', 'value', 'valor', 'valor_negocio', 'deal.value'].includes(keyStr)) {
+      if (dealObj?.value != null) return String(dealObj.value)
+      if (vars.deal_value != null) return String(vars.deal_value)
+    }
+
+    // Contact field aliases
+    if (['nome', 'name', 'contact_name', 'nome_cliente', 'cliente', 'contact.name'].includes(keyStr)) {
+      if (contact?.name) return String(contact.name)
+    }
+    if (['telefone', 'phone', 'contact_phone', 'whatsapp', 'celular', 'contact.phone'].includes(keyStr)) {
+      if (contact?.phone) return String(contact.phone)
+    }
+    if (['email', 'contact_email', 'contact.email'].includes(keyStr)) {
+      if (contact?.email) return String(contact.email)
+    }
+    if (['empresa', 'company', 'contact_company', 'contact.company'].includes(keyStr)) {
+      if (contact?.company) return String(contact.company)
+    }
+
+    // Direct property lookup on contact object
+    if (contact && keyStr in contact) {
+      return contact[keyStr] != null ? String(contact[keyStr]) : ''
+    }
+
+    // Direct property lookup on deal object
+    if (dealObj && keyStr in dealObj) {
+      return dealObj[keyStr] != null ? String(dealObj[keyStr]) : ''
+    }
+
     return ''
   })
 }

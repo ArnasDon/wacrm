@@ -355,12 +355,35 @@ export interface Pipeline {
   created_at: string;
 }
 
+export type StageRequiredField =
+  | 'title'
+  | 'value'
+  | 'expected_close_date'
+  | 'assigned_to'
+  | 'notes'
+  | 'temperature'
+  | 'lead_type'
+  | 'last_purchase_date'
+  | 'source'
+  | 'product'
+  | 'contact_email'
+  | 'contact_company';
+
 export interface PipelineStage {
   id: string;
   pipeline_id: string;
   name: string;
   position: number;
   color: string;
+  /**
+   * When true, the stage cannot be deleted from the UI.
+   * Set on "Ganho" and "Perdido" by migration 038.
+   */
+  is_protected?: boolean;
+  /**
+   * List of deal fields required to move a deal to this stage (migration 039).
+   */
+  required_fields?: StageRequiredField[];
   created_at: string;
 }
 
@@ -383,12 +406,17 @@ export interface Deal {
   currency?: string;
   notes?: string;
   expected_close_date?: string;
+  appointment_at?: string;
+  appointment_reminder_sent?: boolean;
   status?: DealStatus;
   created_at: string;
   updated_at?: string;
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+  /** Hydrated when the deal query joins conversations. Carries unread_count
+   *  so the pipeline board can show the yellow "new message" badge. */
+  conversation?: Pick<Conversation, 'id' | 'unread_count' | 'last_message_at' | 'last_message_text'> | null;
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
@@ -463,6 +491,8 @@ export type AutomationTriggerType =
   | 'conversation_assigned'
   | 'tag_added'
   | 'time_based'
+  | 'appointment_reminder'
+  | 'appointment_reminder_1h'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
   | 'interactive_reply';

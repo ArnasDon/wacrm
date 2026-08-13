@@ -21,6 +21,7 @@ import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
+import { parseStageConfig } from "@/lib/pipelines/validation";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -203,6 +204,7 @@ function StageColumn({
 }) {
   const t = useTranslations("Pipelines.board");
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const { color: displayColor, requiredFields } = parseStageConfig(stage);
 
   return (
     // On mobile each column is `w-[85vw]` (with a reasonable min/max)
@@ -215,7 +217,7 @@ function StageColumn({
       {/* 3px colored top border — sits above the column's padding */}
       <div
         className="-mx-4 -mt-4 h-[3px] rounded-t-xl"
-        style={{ backgroundColor: stage.color }}
+        style={{ backgroundColor: displayColor }}
       />
       <div className="flex items-center justify-between pt-3">
         <h3 className="truncate text-sm font-semibold text-foreground">

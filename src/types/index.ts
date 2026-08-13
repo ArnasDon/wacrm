@@ -533,8 +533,11 @@ export type DealStatus = 'open' | 'won' | 'lost';
 export interface Deal {
   id: string;
   user_id: string;
+  account_id: string;
   pipeline_id: string;
   stage_id: string;
+  /** Order within its stage column (migration 063) — lower sorts first. */
+  position: number;
   /**
    * Nullable after migration 004 — becomes NULL when the referenced
    * contact is deleted (ON DELETE SET NULL). History preserved.

@@ -5,7 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage, Deal } from "@/types";
 import { DEAL_SELECT, normalizeDeals } from "@/lib/pipelines/deals";
 import { colorForConversation, fetchAssignedAgentMap } from "@/lib/responder-color";
-import { PipelineBoard } from "@/components/pipelines/pipeline-board";
+import {
+  PipelineBoard,
+  type DealPositionUpdate,
+} from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
 import { DeleteLeadDialog } from "@/components/contacts/delete-lead-dialog";
@@ -141,7 +144,7 @@ export default function PipelinesPage() {
             .from("deals")
             .select(DEAL_SELECT)
             .eq("pipeline_id", pipelineId)
-            .order("created_at", { ascending: false }),
+            .order("position", { ascending: true }),
           supabase.from("profiles").select("*"),
           fetchAssignedAgentMap(supabase).catch((error) => {
             console.error("Failed to load assigned agents:", error);
@@ -265,16 +268,33 @@ export default function PipelinesPage() {
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
 
-  const handleDealMoved = useCallback(
-    async (dealId: string, newStageId: string) => {
-      // Optimistic update — board already animated; just persist.
+  const handleDealsReordered = useCallback(
+    async (rows: DealPositionUpdate[]) => {
+      // Optimistic update — the board already animated the drag live;
+      // this just persists the final `stage_id`/`position` for whichever
+      // deals actually moved (source + destination column).
+      const patchById = new Map(rows.map((r) => [r.id, r]));
       setDeals((prev) =>
-        prev.map((d) => (d.id === dealId ? { ...d, stage_id: newStageId } : d)),
+        prev.map((d) => {
+          const patch = patchById.get(d.id);
+          return patch ? { ...d, stage_id: patch.stage_id, position: patch.position } : d;
+        }),
       );
-      const { error } = await supabase
-        .from("deals")
-        .update({ stage_id: newStageId })
-        .eq("id", dealId);
+      // Per-row UPDATE, not a batched upsert: `deals` has several other
+      // NOT NULL columns (user_id/pipeline_id/title) plus an RLS INSERT
+      // policy requiring `account_id` in the payload, and Postgres's
+      // `ON CONFLICT DO UPDATE` validates that INSERT branch even though
+      // every row here already exists and only ever updates. A plain
+      // UPDATE has no insert branch to satisfy.
+      const results = await Promise.all(
+        rows.map((r) =>
+          supabase
+            .from("deals")
+            .update({ stage_id: r.stage_id, position: r.position })
+            .eq("id", r.id),
+        ),
+      );
+      const error = results.find((r) => r.error)?.error;
       if (error) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
@@ -475,7 +495,7 @@ export default function PipelinesPage() {
         <PipelineBoard
           stages={stages}
           deals={deals}
-          onDealMoved={handleDealMoved}
+          onDealsReordered={handleDealsReordered}
           onEditDeal={handleOpenDeal}
           onRequestDeleteDeal={handleRequestDeleteDeal}
         />

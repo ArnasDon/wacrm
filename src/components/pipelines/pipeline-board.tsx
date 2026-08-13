@@ -10,37 +10,95 @@ import {
   useSensor,
   useSensors,
   useDroppable,
-  useDraggable,
-  closestCorners,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  sortableKeyboardCoordinates,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
 import { useTranslations } from "next-intl";
 
+/** Row shape persisted on drop — `handleDealsReordered` writes exactly
+ *  these two columns per deal (see pipelines/page.tsx). Deliberately not
+ *  an upsert: `deals` has several other NOT NULL columns
+ *  (user_id/pipeline_id/title) and an RLS INSERT policy that requires
+ *  `account_id` in the payload — `INSERT ... ON CONFLICT DO UPDATE`
+ *  validates the INSERT branch (both the NOT NULL constraints and the
+ *  INSERT policy's WITH CHECK) even though every one of these rows
+ *  already exists and only the UPDATE branch ever actually runs. A plain
+ *  per-row UPDATE has no insert branch to satisfy, so it only needs
+ *  these two columns. */
+export interface DealPositionUpdate {
+  id: string;
+  stage_id: string;
+  position: number;
+}
+
 interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: Deal[];
-  onDealMoved: (dealId: string, newStageId: string) => void;
+  onDealsReordered: (rows: DealPositionUpdate[]) => void;
   onEditDeal: (deal: Deal) => void;
   onRequestDeleteDeal: (deal: Deal) => void;
 }
 
+/** Per-stage ordered id lists — the only thing that mutates at drag speed.
+ *  Keeping this to ids (not full `Deal` objects) is what keeps onDragOver
+ *  cheap: no re-deriving/re-sorting the real `deals` array every time the
+ *  pointer crosses into a new column. */
+type DragState = Record<string, string[]>;
+
+function findContainer(state: DragState, id: string): string | undefined {
+  // Hovering a column's own empty-state droppable reports `id` as the
+  // stage id directly (see StageColumn's `useDroppable`) — a hit there
+  // resolves the container in one step, no scan needed.
+  if (id in state) return id;
+  return Object.keys(state).find((stageId) => state[stageId].includes(id));
+}
+
+// Standard dnd-kit "multiple containers" recipe: try a pointer-based hit
+// first (accurate once cards + the empty-column droppable coexist in the
+// same pass — `closestCorners`/`closestCenter` alone get unstable there),
+// falling back to rect intersection only when the pointer isn't over
+// anything (e.g. it's out past the last card in a short column).
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  return rectIntersection(args);
+};
+
 export function PipelineBoard({
   stages,
   deals,
-  onDealMoved,
+  onDealsReordered,
   onEditDeal,
   onRequestDeleteDeal,
 }: PipelineBoardProps) {
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
+  // Non-null only for the duration of a drag — see handleDragStart/End.
+  const [dragState, setDragState] = useState<DragState | null>(null);
 
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
     [stages],
   );
+
+  const dealsById = useMemo(() => {
+    const map = new Map<string, Deal>();
+    for (const deal of deals) map.set(deal.id, deal);
+    return map;
+  }, [deals]);
 
   const dealsByStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
@@ -49,8 +107,26 @@ export function PipelineBoard({
       const bucket = map.get(deal.stage_id);
       if (bucket) bucket.push(deal);
     }
+    // The page's initial fetch is already `order("position")`, but the
+    // optimistic patch after a drop (page.tsx) only updates each moved
+    // deal's fields in place — it doesn't re-sort the `deals` array — so
+    // this has to sort on every render for the reordered result to show
+    // immediately instead of only after the next full refetch.
+    for (const bucket of map.values()) bucket.sort((a, b) => a.position - b.position);
     return map;
   }, [sortedStages, deals]);
+
+  // What each column actually renders: the live drag snapshot while a
+  // drag is in flight (so the target column shows the card immediately,
+  // before drop), the server-ordered list otherwise.
+  const columnIds = useMemo(() => {
+    if (dragState) return dragState;
+    const map: DragState = {};
+    for (const stage of sortedStages) {
+      map[stage.id] = (dealsByStage.get(stage.id) ?? []).map((d) => d.id);
+    }
+    return map;
+  }, [dragState, sortedStages, dealsByStage]);
 
   const sensors = useSensors(
     // Mouse: click-and-drag starts immediately (small 4px threshold just
@@ -62,44 +138,119 @@ export function PipelineBoard({
     // (Trello's long-press). `tolerance: 8` cancels the pending drag the
     // moment the finger moves more than 8px before that delay elapses —
     // that cancellation, not `touch-action`, is what hands a normal swipe
-    // straight back to native scrolling (see DraggableDealCard below).
+    // straight back to native scrolling (see SortableDealCard below).
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
     // Keyboard drag support: focus a card, Space to pick up, arrows to move,
-    // Space to drop, Escape to cancel.
+    // Space to drop, Escape to cancel. `sortableKeyboardCoordinates` (vs.
+    // the plain default) is what makes arrow keys understand sortable-list
+    // semantics instead of raw pixel deltas.
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const activeDeal = activeDealId
-    ? deals.find((d) => d.id === activeDealId) ?? null
-    : null;
+  const activeDeal = activeDealId ? dealsById.get(activeDealId) ?? null : null;
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveDealId(String(event.active.id));
+    const id = String(event.active.id);
+    setActiveDealId(id);
+    // Snapshot the current order into drag-local state — everything
+    // during the drag reads/writes this, not the server-derived `deals`.
+    const snapshot: DragState = {};
+    for (const stage of sortedStages) {
+      snapshot[stage.id] = (dealsByStage.get(stage.id) ?? []).map((d) => d.id);
+    }
+    setDragState(snapshot);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    setDragState((prev) => {
+      if (!prev) return prev;
+      const activeId = String(active.id);
+      const overId = String(over.id);
+      const activeContainer = findContainer(prev, activeId);
+      const overContainer = findContainer(prev, overId);
+      if (!activeContainer || !overContainer || activeContainer === overContainer) {
+        return prev;
+      }
+      const activeItems = prev[activeContainer];
+      const overItems = prev[overContainer];
+      const activeIndex = activeItems.indexOf(activeId);
+      if (activeIndex === -1) return prev;
+      const overIndex = overItems.indexOf(overId);
+      const newIndex = overIndex >= 0 ? overIndex : overItems.length;
+      return {
+        ...prev,
+        [activeContainer]: activeItems.filter((id) => id !== activeId),
+        [overContainer]: [
+          ...overItems.slice(0, newIndex),
+          activeId,
+          ...overItems.slice(newIndex),
+        ],
+      };
+    });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveDealId(null);
+    const finalState = dragState;
+    setDragState(null);
+
     const { active, over } = event;
-    if (!over) return;
-    const dealId = String(active.id);
-    const targetStageId = String(over.id);
+    if (!finalState || !over) return;
 
-    const deal = deals.find((d) => d.id === dealId);
-    if (!deal || deal.stage_id === targetStageId) return;
-    if (!sortedStages.some((s) => s.id === targetStageId)) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const container = findContainer(finalState, activeId);
+    if (!container) return;
 
-    onDealMoved(dealId, targetStageId);
+    // Cross-column moves already landed `activeId` in the right container
+    // via handleDragOver above; this only still needs to settle its exact
+    // position *within* that container against whatever it was dropped on.
+    let finalIds = finalState[container];
+    const overContainer = findContainer(finalState, overId);
+    if (overContainer === container && activeId !== overId) {
+      const oldIndex = finalIds.indexOf(activeId);
+      const newIndex = finalIds.indexOf(overId);
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        finalIds = arrayMove(finalIds, oldIndex, newIndex);
+      }
+    }
+
+    // Persist every column whose membership actually changed: the
+    // destination (new order, possibly a new member) and — if different
+    // — the origin (lost a member, remaining order unchanged but its
+    // positions are recomputed anyway since 1000-stepping is cheap and
+    // avoids ever needing a "insert between two adjacent ints" special
+    // case later).
+    const originalStageId = deals.find((d) => d.id === activeId)?.stage_id;
+    const stagesToPersist = new Set([container]);
+    if (originalStageId && originalStageId !== container) {
+      stagesToPersist.add(originalStageId);
+    }
+
+    const rows: DealPositionUpdate[] = [];
+    for (const stageId of stagesToPersist) {
+      const ids = stageId === container ? finalIds : finalState[stageId];
+      ids.forEach((id, index) => {
+        rows.push({ id, stage_id: stageId, position: (index + 1) * 1000 });
+      });
+    }
+
+    if (rows.length > 0) onDealsReordered(rows);
   }
 
   function handleDragCancel() {
     setActiveDealId(null);
+    setDragState(null);
   }
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
@@ -122,7 +273,10 @@ export function PipelineBoard({
         }`}
       >
         {sortedStages.map((stage) => {
-          const stageDeals = dealsByStage.get(stage.id) ?? [];
+          const ids = columnIds[stage.id] ?? [];
+          const stageDeals = ids
+            .map((id) => dealsById.get(id))
+            .filter((d): d is Deal => !!d);
           return (
             <StageColumn
               key={stage.id}
@@ -214,6 +368,9 @@ function StageColumn({
   onRequestDeleteDeal: (deal: Deal) => void;
 }) {
   const t = useTranslations("Pipelines.board");
+  // Fallback drop target for an empty column — SortableContext has
+  // nothing to sort against with zero items, so this is what lets a
+  // card be dropped into an empty stage at all.
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
   return (
@@ -251,22 +408,27 @@ function StageColumn({
             {t("dropDealHere")}
           </div>
         ) : (
-          deals.map((deal) => (
-            <DraggableDealCard
-              key={deal.id}
-              deal={deal}
-              stage={stage}
-              onEdit={onEditDeal}
-              onRequestDelete={onRequestDeleteDeal}
-            />
-          ))
+          <SortableContext
+            items={deals.map((d) => d.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {deals.map((deal) => (
+              <SortableDealCard
+                key={deal.id}
+                deal={deal}
+                stage={stage}
+                onEdit={onEditDeal}
+                onRequestDelete={onRequestDeleteDeal}
+              />
+            ))}
+          </SortableContext>
         )}
       </div>
     </div>
   );
 }
 
-function DraggableDealCard({
+function SortableDealCard({
   deal,
   stage,
   onEdit,
@@ -277,9 +439,8 @@ function DraggableDealCard({
   onEdit: (deal: Deal) => void;
   onRequestDelete: (deal: Deal) => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: deal.id,
-  });
+  const { attributes, listeners, setNodeRef, isDragging, transform, transition } =
+    useSortable({ id: deal.id });
 
   return (
     <div
@@ -294,7 +455,16 @@ function DraggableDealCard({
       // own native scroll that wins, untouched. Horizontal panning isn't
       // granted here on purpose — swiping between columns doesn't start on
       // a card, same as real Trello.
-      style={{ opacity: isDragging ? 0.3 : 1, touchAction: "pan-y" }}
+      //
+      // `transform`/`transition` come from `useSortable` — this is what
+      // makes the other cards in the column glide out of the way live as
+      // the dragged one moves through, no manual animation code needed.
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: transition ?? undefined,
+        opacity: isDragging ? 0.3 : 1,
+        touchAction: "pan-y",
+      }}
     >
       <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
     </div>

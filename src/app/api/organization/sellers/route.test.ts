@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
   newUserProfileAccountId: 'acc-seller-1' as string | null,
   adminUpdates: [] as { table: string; payload: unknown; filters: [string, unknown][] }[],
   inviteCalls: [] as { email: string; options: unknown }[],
+  createUserCalls: [] as { args: Record<string, unknown> }[],
 }))
 
 class FakeForbiddenError extends Error {
@@ -83,6 +84,11 @@ vi.mock('@supabase/supabase-js', () => ({
           if (h.inviteError) return Promise.resolve({ data: null, error: h.inviteError })
           return Promise.resolve({ data: { user: { id: h.invitedUserId } }, error: null })
         },
+        createUser: (args: Record<string, unknown>) => {
+          h.createUserCalls.push({ args })
+          if (h.inviteError) return Promise.resolve({ data: null, error: h.inviteError })
+          return Promise.resolve({ data: { user: { id: h.invitedUserId } }, error: null })
+        },
       },
     },
     from: (table: string) => {
@@ -138,6 +144,7 @@ function resetState() {
   h.newUserProfileAccountId = 'acc-seller-1'
   h.adminUpdates = []
   h.inviteCalls = []
+  h.createUserCalls = []
 }
 
 describe('POST /api/organization/sellers', () => {
@@ -192,5 +199,42 @@ describe('POST /api/organization/sellers', () => {
     expect(h.adminUpdates[0].filters).toEqual([['id', 'acc-seller-1']])
 
     expect(json.account).toMatchObject({ id: 'acc-seller-1', name: 'João', isOwnerAccount: false })
+    expect(json.mode).toBe('email')
+  })
+
+  it('rejects a password shorter than 6 characters before calling any Supabase API', async () => {
+    const res = await postSeller({ name: 'João', email: 'joao@example.com', password: 'abc' })
+    expect(res.status).toBe(400)
+    expect(h.inviteCalls).toHaveLength(0)
+    expect(h.createUserCalls).toHaveLength(0)
+  })
+
+  it('creates the account directly via createUser (email_confirm: true) when a password is given, never calling inviteUserByEmail', async () => {
+    const res = await postSeller({ name: 'João', email: 'joao@example.com', password: 'senha123' })
+    const json = await res.json()
+
+    expect(res.status).toBe(201)
+    expect(h.inviteCalls).toHaveLength(0)
+    expect(h.createUserCalls).toHaveLength(1)
+    expect(h.createUserCalls[0].args).toMatchObject({
+      email: 'joao@example.com',
+      password: 'senha123',
+      email_confirm: true,
+      user_metadata: { full_name: 'João' },
+    })
+
+    // Same downstream linking as the email path.
+    expect(h.adminUpdates).toHaveLength(1)
+    expect(h.adminUpdates[0].payload).toMatchObject({ name: 'João', organization_id: 'org-1' })
+
+    expect(json.account).toMatchObject({ id: 'acc-seller-1', name: 'João', isOwnerAccount: false })
+    expect(json.mode).toBe('direct')
+  })
+
+  it('surfaces a clear 409 for an already-registered email in direct-password mode too', async () => {
+    h.inviteError = { message: 'User already registered' }
+    const res = await postSeller({ name: 'João', email: 'joao@example.com', password: 'senha123' })
+    expect(res.status).toBe(409)
+    expect(h.adminUpdates).toHaveLength(0)
   })
 })

@@ -364,7 +364,7 @@ Eventos manejados:
 
 ### 3.3 Anti-486 (`user_busy`) — lección de policyjar
 
-Bug real documentado en `TELNYX_SOLUTION.md:16` y fix en policyjar `handlers.ts:3956-3972`:
+Bug real documentado en `docs/archive/TELNYX_SOLUTION.md:16` y fix en policyjar `handlers.ts:3956-3972`:
 
 **Aplica YA en Fase 1 (server-side, en el webhook):**
 - En **hangup**: colgar **ambas** legs (leg 1 = quien llama, leg 2 = tu celular) para no dejar el leg 2 sonando huérfano / sesión zombie SIP.

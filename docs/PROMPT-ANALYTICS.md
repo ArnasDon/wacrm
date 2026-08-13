@@ -2,7 +2,7 @@
 
 Trabajas sobre mi fork de wacrm. Este documento es la especificación completa: no hace falta que redescubras nada, ya está verificado con archivo y línea.
 
-Lee antes de escribir código: `docs/ANALISIS-ANALYTICS.md` (el diagnóstico) y `AGENTS.md`.
+Lee antes de escribir código: `docs/archive/ANALISIS-ANALYTICS.md` (el diagnóstico) y `AGENTS.md`.
 
 ---
 

@@ -3,7 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -143,14 +143,13 @@ export async function POST(request: Request) {
     // the loop would N+1 against Supabase for every recipient.
     // Guard against a malformed local row crashing every send in
     // the loop with the same opaque TypeError — fail loudly once.
-    const { data: rawTemplateRow } = await supabase
-      .from('message_templates')
-      .select('*')
-      .eq('account_id', accountId)
-      .eq('name', template_name)
-      .eq('language', template_language || 'en_US')
-      .maybeSingle()
-    if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+    const resolvedTemplate = await resolveTemplateRow(
+      supabase,
+      accountId,
+      template_name,
+      template_language,
+    )
+    if (resolvedTemplate.malformed) {
       return NextResponse.json(
         {
           error:
@@ -159,7 +158,7 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
-    const templateRow = rawTemplateRow ?? null
+    const templateRow = resolvedTemplate.row
 
     const results: BroadcastResult[] = []
     let sentCount = 0
@@ -191,7 +190,7 @@ export async function POST(request: Request) {
             accessToken,
             to: variant,
             templateName: template_name,
-            language: template_language || 'en_US',
+            language: resolvedTemplate.language,
             template: templateRow ?? undefined,
             messageParams: recipient.messageParams,
             params: recipient.params ?? [],

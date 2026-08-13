@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
   KeyboardEvent,
 } from "react";
 import {
@@ -43,6 +44,7 @@ import {
 } from "@/lib/media/transcode-mov-webcodecs";
 import { ReplyQuote } from "./reply-quote";
 import { useTranslations } from "next-intl";
+import type { QuickReply } from "@/types";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -124,6 +126,43 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Accent/case-insensitive comparison for shortcut matching ("apres" must
+// match "apresentação").
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function stripLeadingSlash(value: string): string {
+  return value.startsWith("/") ? value.slice(1) : value;
+}
+
+/** Finds the "/shortcut" token touching the caret, if any — mirrors
+ *  WhatsApp Business: the slash must start a word (string start or right
+ *  after whitespace) and nothing between it and the caret may contain
+ *  whitespace, otherwise it's just a literal "/" in running text. */
+function findSlashToken(
+  value: string,
+  caret: number,
+): { start: number; query: string } | null {
+  let i = caret - 1;
+  while (i >= 0) {
+    const ch = value[i];
+    if (ch === "/") {
+      const before = i === 0 ? undefined : value[i - 1];
+      if (before === undefined || /\s/.test(before)) {
+        return { start: i, query: value.slice(i, caret) };
+      }
+      return null;
+    }
+    if (/\s/.test(ch)) return null;
+    i--;
+  }
+  return null;
+}
+
 /** Worker that encodes mic input to Ogg/Opus entirely in the browser
  *  (vendored from opus-recorder into /public). Recording client-side in a
  *  Meta-accepted format means no server ffmpeg / transcode step. */
@@ -168,6 +207,54 @@ export function MessageComposer({
       textareaRef.current?.focus();
     }
   }, [initialText]);
+
+  // ---- "/shortcut" quick-reply autocomplete ---------------------------
+  //
+  // Only `kind === "text"` replies are eligible: their content is a plain
+  // string that can drop straight into the textarea. Interactive quick
+  // replies (buttons/list payloads) have no scalar text form and the
+  // composer's onSend contract only carries a string, so they're left out
+  // of suggestions rather than lossily flattened into text.
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [slashToken, setSlashToken] = useState<{ start: number; query: string } | null>(
+    null,
+  );
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+  // Caret position to restore after a suggestion is inserted — the text
+  // update itself is async (setState), so the actual focus/selection call
+  // happens in the effect below once the new value has committed to the DOM.
+  const pendingCaretRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/quick-replies", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setQuickReplies((data.quick_replies as QuickReply[]) ?? []);
+        }
+      } catch {
+        // Best-effort — the composer works fine without suggestions.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const suggestions = useMemo(() => {
+    if (!slashToken) return [];
+    const query = normalizeForMatch(stripLeadingSlash(slashToken.query));
+    return quickReplies
+      .filter(
+        (qr) =>
+          qr.kind === "text" &&
+          !!qr.content_text &&
+          normalizeForMatch(stripLeadingSlash(qr.title)).startsWith(query),
+      )
+      .slice(0, 8);
+  }, [slashToken, quickReplies]);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // image/video/document; `busy` covers the upload window. Voice notes
@@ -260,6 +347,7 @@ export function MessageComposer({
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
+      setSlashToken(null);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
@@ -268,22 +356,81 @@ export function MessageComposer({
     }
   }, [text, sending, sessionExpired, onSend, replyTo?.id]);
 
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setText(value);
+      adjustHeight();
+      setSlashToken(findSlashToken(value, e.target.selectionStart ?? value.length));
+      setActiveSuggestion(0);
+    },
+    [adjustHeight]
+  );
+
+  // Replaces just the "/shortcut" token with the saved content, leaving
+  // everything before/after it untouched — the caret lands right after
+  // the inserted text so the agent can keep editing before sending.
+  const applySuggestion = useCallback(
+    (qr: QuickReply) => {
+      if (!slashToken) return;
+      const insertion = qr.content_text ?? "";
+      const before = text.slice(0, slashToken.start);
+      const after = text.slice(slashToken.start + slashToken.query.length);
+      pendingCaretRef.current = before.length + insertion.length;
+      setText(`${before}${insertion}${after}`);
+      setSlashToken(null);
+      setActiveSuggestion(0);
+    },
+    [slashToken, text],
+  );
+
+  // Re-measures height and restores the caret after a suggestion insert —
+  // deferred here (rather than inline in applySuggestion) because the
+  // textarea's DOM value only reflects the new text after this effect
+  // runs, one render after the setText() call above.
+  useEffect(() => {
+    adjustHeight();
+    if (pendingCaretRef.current !== null) {
+      const pos = pendingCaretRef.current;
+      pendingCaretRef.current = null;
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      }
+    }
+  }, [text, adjustHeight]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (slashToken && suggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setActiveSuggestion((i) => (i + 1) % suggestions.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveSuggestion((i) => (i - 1 + suggestions.length) % suggestions.length);
+          return;
+        }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          applySuggestion(suggestions[activeSuggestion]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setSlashToken(null);
+          return;
+        }
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
-  );
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value);
-      adjustHeight();
-    },
-    [adjustHeight]
+    [slashToken, suggestions, activeSuggestion, applySuggestion, handleSend]
   );
 
   // Upload a captured file to chat-media and stage it as a draft.
@@ -774,34 +921,73 @@ export function MessageComposer({
                 <textarea> on iOS Safari auto-zooms the viewport, which is
                 exactly the "screen jumps around while typing" behavior
                 WhatsApp/Telegram/iMessage don't have. */}
-            <textarea
-              ref={textareaRef}
-              value={text}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              // Empty when there's nothing to type into — no placeholder
-              // text sits in the field itself, matching WhatsApp/Telegram/
-              // iMessage. The read-only/session-expired placeholders stay:
-              // those aren't decorative, they're the only way the agent
-              // learns *why* the field is disabled.
-              placeholder={
-                readOnly
-                  ? t("readOnlyPlaceholder")
-                  : sessionExpired
-                    ? t("sessionExpiredPlaceholder")
-                    : undefined
-              }
-              disabled={sessionExpired || readOnly}
-              rows={1}
-              // Textarea keeps its own inline title — the GatedButton
-              // wrapping pattern doesn't apply to non-button inputs.
-              // The placeholder text also surfaces the read-only state.
-              title={readOnly ? t("readOnlyTitle") : undefined}
-              className={cn(
-                "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-                (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                // Losing focus without picking a suggestion (e.g. tapping
+                // elsewhere) closes the dropdown. A suggestion click itself
+                // uses onMouseDown+preventDefault below, so it never gets
+                // here — the textarea never actually blurs in that case.
+                onBlur={() => setSlashToken(null)}
+                // Empty when there's nothing to type into — no placeholder
+                // text sits in the field itself, matching WhatsApp/Telegram/
+                // iMessage. The read-only/session-expired placeholders stay:
+                // those aren't decorative, they're the only way the agent
+                // learns *why* the field is disabled.
+                placeholder={
+                  readOnly
+                    ? t("readOnlyPlaceholder")
+                    : sessionExpired
+                      ? t("sessionExpiredPlaceholder")
+                      : undefined
+                }
+                disabled={sessionExpired || readOnly}
+                rows={1}
+                // Textarea keeps its own inline title — the GatedButton
+                // wrapping pattern doesn't apply to non-button inputs.
+                // The placeholder text also surfaces the read-only state.
+                title={readOnly ? t("readOnlyTitle") : undefined}
+                className={cn(
+                  "w-full resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+                  (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+                )}
+              />
+
+              {/* "/shortcut" quick-reply suggestions — anchored above the
+                  field so it never covers the messages above. */}
+              {slashToken && suggestions.length > 0 && (
+                <div className="absolute bottom-full left-0 z-20 mb-2 max-h-56 w-full max-w-sm overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+                  {suggestions.map((qr, index) => (
+                    <button
+                      key={qr.id}
+                      type="button"
+                      // mousedown (not click) + preventDefault so the tap
+                      // never blurs the textarea first — the onBlur above
+                      // would otherwise close this dropdown before the
+                      // click even registers.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applySuggestion(qr);
+                      }}
+                      className={cn(
+                        "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left",
+                        index === activeSuggestion
+                          ? "bg-accent text-accent-foreground"
+                          : "text-foreground hover:bg-muted"
+                      )}
+                    >
+                      <span className="text-sm font-medium">{qr.title}</span>
+                      <span className="line-clamp-1 text-xs text-muted-foreground">
+                        {qr.content_text}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               )}
-            />
+            </div>
 
             {/* Right — record audio. Press-and-hold (Pointer Events cover
                 touch + mouse identically), drag up to lock. */}

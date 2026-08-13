@@ -3,10 +3,10 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 
-// Update / delete a single quick reply. Quick replies are account-
-// shared, so every mutation is scoped by `account_id` (the service-role
-// client bypasses the agent-gated RLS, so both the role check and the
-// account scope are enforced here).
+// Update / delete a single quick reply. Quick replies are private per
+// user (migration 062), so every mutation is scoped by both `account_id`
+// and `user_id` (the service-role client bypasses RLS, so the role
+// check and the account/owner scope are enforced here explicitly).
 
 export async function PATCH(
   request: Request,
@@ -77,6 +77,7 @@ export async function PATCH(
     .update(update)
     .eq('id', id)
     .eq('account_id', ctx.accountId)
+    .eq('user_id', ctx.userId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
@@ -98,6 +99,7 @@ export async function DELETE(
     .delete()
     .eq('id', id)
     .eq('account_id', ctx.accountId)
+    .eq('user_id', ctx.userId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

@@ -79,3 +79,17 @@ twice, turn it into a rule in `AGENTS.md` instead of a third log entry.
   doesn't know about a new table." Whenever a new table gets queried
   from `auto-reply.ts`, add a matching branch to this mock (mirroring
   the existing `agent_tools`/`agent_traces` ones) in the same change.
+
+- **A field can exist in the type system and in the read/merge logic
+  and still be dead, because nothing ever writes it.** LC Fitness
+  catalogue products were showing `category: null` in production. The
+  cause wasn't the taxonomy/matching layer — `ExternalFieldMapping.
+  catalogCategory` and its use in `search.ts`'s `mergeCatalogueProduct`
+  were already correct and had been for a while. The actual bug was
+  that `src/components/settings/database-integrations.tsx` (the only
+  place an admin can edit `field_mapping`) never had a form field for
+  `catalogCategory` — so it was structurally impossible to ever set it,
+  no matter how correct the read path was. When a `field_mapping.*` (or
+  any admin-configured JSON) key is read somewhere but the data looks
+  wrong/missing, check whether the settings UI actually exposes that
+  key before assuming the bug is in the code that reads it.

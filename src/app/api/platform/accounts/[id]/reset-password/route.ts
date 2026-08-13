@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from '@/lib/auth/platform';
 import { toErrorResponse } from '@/lib/auth/account';
 import { logPlatformAdminAction } from '@/lib/platform/audit-log';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+import { resolveBaseUrl } from '@/lib/http/base-url';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null;
@@ -15,14 +16,6 @@ function supabaseAdmin() {
     );
   }
   return _adminClient;
-}
-
-function getBaseUrl(request: Request): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, '');
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  const proto = request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol.replace(':', '');
-  return `${proto}://${host}`;
 }
 
 const MIN_PASSWORD_LEN = 6;
@@ -110,7 +103,7 @@ export async function POST(
       return NextResponse.json({ error: 'Could not resolve this account\'s email.' }, { status: 404 });
     }
 
-    const baseUrl = getBaseUrl(request);
+    const baseUrl = resolveBaseUrl(request);
     const { error } = await admin.auth.resetPasswordForEmail(email, {
       redirectTo: `${baseUrl}/auth/callback?next=/reset-password`,
     });

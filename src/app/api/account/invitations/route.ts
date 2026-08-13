@@ -93,7 +93,21 @@ function isHostAllowed(
 
 function getBaseUrl(request: Request): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
+  if (explicit) {
+    const trimmed = explicit.replace(/\/+$/, "");
+    // NEXT_PUBLIC_SITE_URL always wins over the (correct) request-derived
+    // host below — so a misconfigured value here silently breaks every
+    // invite link this route issues. This exact failure mode broke
+    // seller-invite emails (and the uazapi/Z-API webhook URLs built the
+    // same way — see src/lib/http/base-url.ts) when this var pointed at
+    // localhost in production. Loud and early beats silent.
+    if (process.env.VERCEL_ENV === "production" && /localhost|127\.0\.0\.1/i.test(trimmed)) {
+      console.error(
+        `[account/invitations] NEXT_PUBLIC_SITE_URL resolved to "${trimmed}" in production — check the env var`,
+      );
+    }
+    return trimmed;
+  }
 
   const allowList = parseAllowedHosts();
   const forwardedHost = request.headers

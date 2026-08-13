@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from '@/lib/auth/platform';
 import { toErrorResponse } from '@/lib/auth/account';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
 import { bootstrapStoreOrganization, BootstrapOrganizationError } from '@/lib/organizations/bootstrap';
+import { resolveBaseUrl } from '@/lib/http/base-url';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null;
@@ -15,14 +16,6 @@ function supabaseAdmin() {
     );
   }
   return _adminClient;
-}
-
-function getBaseUrl(request: Request): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, '');
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  const proto = request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol.replace(':', '');
-  return `${proto}://${host}`;
 }
 
 const MAX_NAME_LEN = 120;
@@ -148,7 +141,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'A valid owner email is required.' }, { status: 400 });
     }
 
-    const baseUrl = getBaseUrl(request);
+    const baseUrl = resolveBaseUrl(request);
     const { data: invited, error: inviteError } = await supabaseAdmin().auth.admin.inviteUserByEmail(
       ownerEmail,
       {

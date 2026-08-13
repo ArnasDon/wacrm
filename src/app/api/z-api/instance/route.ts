@@ -4,21 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { getInstanceStatus, disconnectInstance, configureWebhook } from '@/lib/whatsapp/zapi-api'
-
-/**
- * Same self-referential-URL resolution as the uazapi instance route
- * (src/app/api/uazapi/instance/route.ts::getBaseUrl) — kept as its own
- * copy rather than a shared helper since it's a small, self-contained
- * snippet and the two providers' instance routes otherwise have
- * nothing else in common worth factoring out.
- */
-function getBaseUrl(request: Request): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (explicit) return explicit.replace(/\/+$/, '')
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
-  const proto = request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol.replace(':', '')
-  return `${proto}://${host}`
-}
+import { resolveBaseUrl } from '@/lib/http/base-url'
 
 // Service-role client — needed to check whether a zapi_instance_id is
 // already claimed by a DIFFERENT account. Under RLS the caller's own
@@ -109,7 +95,7 @@ export async function POST(request: Request) {
     }
 
     const webhookSecret = crypto.randomBytes(32).toString('hex')
-    const webhookUrl = `${getBaseUrl(request)}/api/z-api/webhook/${accountId}/${webhookSecret}`
+    const webhookUrl = `${resolveBaseUrl(request)}/api/z-api/webhook/${accountId}/${webhookSecret}`
 
     // Best-effort — the connect screen still works even if this fails;
     // it just means inbound messages/status/connection events won't

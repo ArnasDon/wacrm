@@ -4,24 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { createInstance, deleteInstance, configureWebhook } from '@/lib/whatsapp/uazapi-api'
 import { resolveUazapiPlatformCredentials, UazapiNotConfiguredError } from '@/lib/whatsapp/uazapi-platform-config'
-
-/**
- * Resolve this deployment's public base URL for building the uazapi
- * webhook callback. `NEXT_PUBLIC_SITE_URL` wins when set (recommended
- * for production); otherwise falls back to the incoming request's own
- * host, same idea as `getBaseUrl` in
- * src/app/api/account/invitations/route.ts but without that route's
- * allow-list (a wrong host here just means uazapi can't reach us — a
- * self-correcting failure, not a security exposure the way a spoofed
- * invite link would be).
- */
-function getBaseUrl(request: Request): string {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (explicit) return explicit.replace(/\/+$/, '')
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
-  const proto = request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol.replace(':', '')
-  return `${proto}://${host}`
-}
+import { resolveBaseUrl } from '@/lib/http/base-url'
 
 /**
  * POST /api/uazapi/instance
@@ -74,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const webhookSecret = crypto.randomBytes(32).toString('hex')
-    const webhookUrl = `${getBaseUrl(request)}/api/uazapi/webhook/${accountId}/${webhookSecret}`
+    const webhookUrl = `${resolveBaseUrl(request)}/api/uazapi/webhook/${accountId}/${webhookSecret}`
 
     const { error: insertError } = await supabase.from('whatsapp_config').insert({
       account_id: accountId,

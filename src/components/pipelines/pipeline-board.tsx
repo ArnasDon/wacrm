@@ -12,6 +12,7 @@ import {
   useDroppable,
   pointerWithin,
   rectIntersection,
+  AutoScrollActivator,
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
@@ -276,7 +277,28 @@ export function PipelineBoard({
       // column the pointer is over both auto-scroll independently,
       // simultaneously, with no extra wiring once each column is a real
       // scroll container (see StageColumn below).
-      autoScroll={{ enabled: true, threshold: { x: 0.15, y: 0.15 }, acceleration: 15 }}
+      //
+      // `activator: DraggableRect` — edge-proximity is measured against
+      // the dragged CARD's own bounding box, not the bare pointer pixel
+      // (dnd-kit's default). A card is much bigger than a point, so its
+      // nearest edge reaches the threshold zone sooner — you don't have
+      // to drag the cursor itself all the way to the screen/column edge
+      // for scrolling to kick in, same feel as Trello.
+      //
+      // `interval: 16` (dnd-kit's own default is 5ms, ~200 scroll ticks/
+      // sec) — each tick re-runs collision detection and re-renders
+      // every useSortable-subscribed card in the column, so on a column
+      // with 20+ leads the default tick rate is measurably more main-
+      // thread work than it needs to be. 16ms matches a 60fps frame
+      // budget — same visual scroll smoothness, ~3x fewer recalculation
+      // passes.
+      autoScroll={{
+        enabled: true,
+        activator: AutoScrollActivator.DraggableRect,
+        threshold: { x: 0.2, y: 0.2 },
+        acceleration: 15,
+        interval: 16,
+      }}
     >
       {/* snap-x + snap-mandatory on mobile so swipes land the next
           stage cleanly at the viewport edge instead of mid-column.

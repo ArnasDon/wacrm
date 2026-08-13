@@ -173,11 +173,8 @@ export function DealDetailDrawer({
             render={
               <Button
                 variant="ghost"
-                // `z-10` — the content wrapper's own entrance animation
-                // (`.deal-flip-content`, animating opacity) creates its
-                // own stacking context, which — being later in DOM order
-                // than this absolutely-positioned button — would
-                // otherwise paint over it and swallow its clicks.
+                // `z-10` — cheap safety margin so this absolutely-positioned
+                // button always stays above the content flowing beneath it.
                 className="absolute top-2 right-2 z-10"
                 size="icon-sm"
               />
@@ -186,10 +183,6 @@ export function DealDetailDrawer({
             <XIcon />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
-          {/* Content fades in slightly after the panel shape itself
-              starts moving — "conteúdo surge progressivamente" without
-              staggering every individual field. */}
-          <div className="deal-flip-content grid gap-4">
           <DialogHeader>
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold text-foreground">
@@ -305,7 +298,6 @@ export function DealDetailDrawer({
               {t("edit")}
             </Button>
           </DialogFooter>
-          </div>
           </DialogPrimitive.Popup>
         </DialogPortal>
       </Dialog>
@@ -333,9 +325,19 @@ export function DealDetailDrawer({
            gets from its -translate-x-1/2/-translate-y-1/2 utilities,
            just written as one explicit \`transform\` here so the open/
            close keyframes below (which also animate \`transform\`) have
-           a single, unambiguous property to interpolate. */
+           a single, unambiguous property to interpolate.
+           \`will-change\` promotes this to its own GPU compositor layer
+           up front, before the animation starts, instead of leaving that
+           to the browser's own heuristics — on iOS/WKWebView (PWA)
+           especially, promotion decided *during* the first animated
+           frame is a common source of a visible stutter on that frame.
+           Safe to leave on permanently here since the whole element only
+           exists while a deal is open (short-lived), not sitting in the
+           tree indefinitely. Single layer, single animated element — no
+           separate content sub-animation anymore (see below). */
         :global(.deal-flip-popup) {
           transform: translate(-50%, -50%);
+          will-change: transform, opacity;
         }
         @media (prefers-reduced-motion: no-preference) {
           :global(.deal-flip-popup[data-open]) {
@@ -344,14 +346,20 @@ export function DealDetailDrawer({
           :global(.deal-flip-popup[data-closed]) {
             animation: deal-flip-out 240ms cubic-bezier(0.4, 0, 1, 1) both;
           }
-          :global(.deal-flip-content) {
-            animation: deal-flip-content-in 200ms ease-out 90ms both;
-          }
         }
         /* Falls back to var(...,0px)/var(...,1) — i.e. no motion beyond
            the opacity fade — on the rare open with no captured origin
            (e.g. keyboard activation landing before layout settles), so
-           it never animates from garbage/unset values. */
+           it never animates from garbage/unset values. Only \`transform\`
+           and \`opacity\` are animated — both are compositor-only
+           properties (no layout, no paint per frame), which is what
+           keeps this cheap even on a modest PWA WebView. The content
+           (header/tags/footer) no longer has its own separate fade-in:
+           that was a second, nested animated layer — extra compositing
+           work every frame for a purely cosmetic staggered reveal, and
+           the actual cause of an earlier close-button click bug (its
+           own stacking context painted over the button). It now simply
+           appears together with the panel, same single layer. */
         @keyframes deal-flip-in {
           from {
             transform: translate(-50%, -50%) translate(var(--flip-x, 0px), var(--flip-y, 0px))
@@ -372,14 +380,6 @@ export function DealDetailDrawer({
             transform: translate(-50%, -50%) translate(var(--flip-x, 0px), var(--flip-y, 0px))
               scale(var(--flip-scale-x, 1), var(--flip-scale-y, 1));
             opacity: 0.5;
-          }
-        }
-        @keyframes deal-flip-content-in {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
           }
         }
       `}</style>

@@ -1364,7 +1364,19 @@
       "inviteFailedToast": "Failed to invite the seller",
       "passwordMismatchToast": "Passwords don't match",
       "serverUnreachableToast": "Could not reach the server",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "editDialogTitle": "Edit seller",
+      "editDialogDesc": "Only the label shown here changes — the seller's own login and data are untouched.",
+      "saving": "Saving…",
+      "saveChanges": "Save changes",
+      "editedToast": "Seller updated",
+      "editFailedToast": "Failed to update the seller",
+      "removeDialogTitle": "Remove access?",
+      "removeDialogDesc": "This unlinks <bold>{name}</bold> from your organization. Their account, login, and data stay intact — you just stop seeing their conversations here, and they stop appearing in this list.",
+      "removing": "Removing…",
+      "removeBtn": "Remove access",
+      "removedToast": "{name} removed from your organization",
+      "removeFailedToast": "Failed to remove the seller"
     },
     "billing": {
       "title": "Billing",

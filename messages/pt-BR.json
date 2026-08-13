@@ -1364,7 +1364,19 @@
       "inviteFailedToast": "Falha ao convidar o vendedor",
       "passwordMismatchToast": "As senhas não coincidem",
       "serverUnreachableToast": "Não foi possível conectar ao servidor",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "editDialogTitle": "Editar vendedor",
+      "editDialogDesc": "Só o nome exibido aqui muda — o login e os dados do vendedor continuam intactos.",
+      "saving": "Salvando…",
+      "saveChanges": "Salvar alterações",
+      "editedToast": "Vendedor atualizado",
+      "editFailedToast": "Falha ao atualizar o vendedor",
+      "removeDialogTitle": "Remover acesso?",
+      "removeDialogDesc": "Isso desvincula <bold>{name}</bold> da sua organização. A conta, o login e os dados dele continuam intactos — você só deixa de ver as conversas dele aqui, e ele deixa de aparecer nesta lista.",
+      "removing": "Removendo…",
+      "removeBtn": "Remover acesso",
+      "removedToast": "{name} removido da sua organização",
+      "removeFailedToast": "Falha ao remover o vendedor"
     },
     "billing": {
       "title": "Faturamento",

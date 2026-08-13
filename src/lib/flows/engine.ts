@@ -133,31 +133,6 @@ export function entryTriggerTexts(message: ParsedInbound): string[] {
   );
 }
 
-/** Nodes that advance to a next_node_key without waiting for input. */
-export function isAutoAdvancing(node_type: string): boolean {
-  return (
-    node_type === "start" ||
-    node_type === "send_message" ||
-    node_type === "send_media" ||
-    node_type === "condition" ||
-    node_type === "set_tag"
-  );
-}
-
-/** Nodes that send a prompt and suspend awaiting a customer reply. */
-export function isSuspending(node_type: string): boolean {
-  return (
-    node_type === "send_buttons" ||
-    node_type === "send_list" ||
-    node_type === "collect_input"
-  );
-}
-
-/** Nodes that end the run. */
-export function isTerminal(node_type: string): boolean {
-  return node_type === "handoff" || node_type === "end";
-}
-
 /**
  * Evaluate a `condition` node's predicate against the current run
  * state. Exported pure for unit testing — the engine wraps it with a

@@ -254,51 +254,53 @@ describe("createTelnyxClient", () => {
 })
 
 describe("loadTelnyxApiKey", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
+  /**
+   * Registra el mock de admin-client para UN test y recarga el registro.
+   *
+   * Antes el caso "hay config" se registraba en el `beforeEach` y el caso
+   * "no hay config" lo pisaba desde dentro del test: dos `doMock` sobre la
+   * misma ruta compitiendo, y cuál ganaba dependía del orden en que vitest
+   * resolvía el registro bajo carga en paralelo. El test de "no hay config"
+   * fallaba de higos a brevas resolviendo "decrypted-key" en vez de
+   * rechazar. Cada test registra ahora el suyo y solo el suyo.
+   */
+  function mockTelnyxConfigRow(row: { api_key_encrypted: string } | null) {
     vi.doMock("@/lib/telnyx/admin-client", () => ({
       supabaseAdmin: () => ({
         from: () => ({
           select: () => ({
             eq: () => ({
-              maybeSingle: () =>
-                Promise.resolve({
-                  data: { api_key_encrypted: "iv:cipher:tag" },
-                  error: null,
-                }),
+              maybeSingle: () => Promise.resolve({ data: row, error: null }),
             }),
           }),
         }),
       }),
     }))
+    vi.resetModules()
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
     vi.doMock("@/lib/whatsapp/encryption", () => ({
       decrypt: (s: string) => (s === "iv:cipher:tag" ? "decrypted-key" : "?"),
     }))
     vi.resetModules()
   })
   afterEach(() => {
+    vi.doUnmock("@/lib/telnyx/admin-client")
+    vi.doUnmock("@/lib/whatsapp/encryption")
     vi.resetModules()
     vi.restoreAllMocks()
   })
 
   it("lee la key encriptada de telnyx_config y la desencripta", async () => {
+    mockTelnyxConfigRow({ api_key_encrypted: "iv:cipher:tag" })
     const { loadTelnyxApiKey } = await import("./api")
     await expect(loadTelnyxApiKey("acct-1")).resolves.toBe("decrypted-key")
   })
 
   it("lanza TelnyxApiError cuando no hay config", async () => {
-    vi.doMock("@/lib/telnyx/admin-client", () => ({
-      supabaseAdmin: () => ({
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              maybeSingle: () => Promise.resolve({ data: null, error: null }),
-            }),
-          }),
-        }),
-      }),
-    }))
-    vi.resetModules()
+    mockTelnyxConfigRow(null)
     const { loadTelnyxApiKey } = await import("./api")
     // resetModules() crea una nueva copia de la clase; validamos por nombre.
     await expect(loadTelnyxApiKey("acct-x")).rejects.toMatchObject({

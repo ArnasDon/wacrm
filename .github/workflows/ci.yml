@@ -39,7 +39,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # pnpm 11 requires Node >= 22.13 — it loads `node:sqlite`, which
+          # does not exist on 20, so `pnpm install` crashed before running
+          # a single check. CI was red on every branch, main included.
+          node-version: 22
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

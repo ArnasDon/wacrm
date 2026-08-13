@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   matchReplyId,
   matchesKeywordTrigger,
-  isAutoAdvancing,
-  isSuspending,
-  isTerminal,
   evaluateConditionPredicate,
 } from "./engine";
 
@@ -140,61 +137,6 @@ describe("matchesKeywordTrigger", () => {
     const cfg = { keywords: ["", "support", ""] };
     expect(matchesKeywordTrigger("support center", cfg)).toBe(true);
     expect(matchesKeywordTrigger("nope", cfg)).toBe(false);
-  });
-});
-
-describe("node classification helpers", () => {
-  it("isAutoAdvancing covers start + send_message + send_media + condition + set_tag", () => {
-    expect(isAutoAdvancing("start")).toBe(true);
-    expect(isAutoAdvancing("send_message")).toBe(true);
-    expect(isAutoAdvancing("send_media")).toBe(true);
-    expect(isAutoAdvancing("condition")).toBe(true);
-    expect(isAutoAdvancing("set_tag")).toBe(true);
-    expect(isAutoAdvancing("send_buttons")).toBe(false);
-    expect(isAutoAdvancing("send_list")).toBe(false);
-    expect(isAutoAdvancing("collect_input")).toBe(false);
-    expect(isAutoAdvancing("handoff")).toBe(false);
-    expect(isAutoAdvancing("end")).toBe(false);
-  });
-
-  it("isSuspending covers the input-requiring nodes", () => {
-    expect(isSuspending("send_buttons")).toBe(true);
-    expect(isSuspending("send_list")).toBe(true);
-    expect(isSuspending("collect_input")).toBe(true);
-    expect(isSuspending("start")).toBe(false);
-    expect(isSuspending("send_message")).toBe(false);
-    expect(isSuspending("condition")).toBe(false);
-    expect(isSuspending("set_tag")).toBe(false);
-    expect(isSuspending("handoff")).toBe(false);
-    expect(isSuspending("end")).toBe(false);
-  });
-
-  it("isTerminal covers handoff + end", () => {
-    expect(isTerminal("handoff")).toBe(true);
-    expect(isTerminal("end")).toBe(true);
-    expect(isTerminal("start")).toBe(false);
-    expect(isTerminal("send_buttons")).toBe(false);
-    expect(isTerminal("condition")).toBe(false);
-  });
-
-  it("the three classifications are mutually exclusive for known node types", () => {
-    const types = [
-      "start",
-      "send_message",
-      "send_buttons",
-      "send_list",
-      "send_media",
-      "collect_input",
-      "condition",
-      "set_tag",
-      "handoff",
-      "end",
-    ];
-    for (const t of types) {
-      const flags = [isAutoAdvancing(t), isSuspending(t), isTerminal(t)];
-      // Exactly one of the three should be true for every known node.
-      expect(flags.filter(Boolean).length).toBe(1);
-    }
   });
 });
 

@@ -32,6 +32,12 @@ const eslintConfig = defineConfig([
     // landing package's own tooling, not the Next.js app rules).
     "landing/.astro/**",
     "landing/dist/**",
+    // Build output that `pnpm build` drops into public/ — the minified
+    // god.js bundle and the copied Astro site. Both are gitignored and
+    // machine-generated, so linting them only produces warnings about
+    // code nobody edits. Same rationale as landing/dist above.
+    "public/god.js",
+    "public/landing/**",
   ]),
 ]);
 

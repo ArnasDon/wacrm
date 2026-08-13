@@ -860,6 +860,12 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  // Memoized above the early return so hook order stays stable. Presence
+  // re-derives every 15s, re-rendering this component even on an idle tab;
+  // without this the whole thread is regrouped (Date + format per message)
+  // on each tick.
+  const messageGroups = useMemo(() => groupMessagesByDate(messages), [messages]);
+
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
@@ -880,7 +886,6 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone;
-  const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );

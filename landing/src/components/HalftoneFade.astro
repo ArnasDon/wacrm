@@ -1,0 +1,118 @@
+---
+// HalftoneFade — tramado de puntos que disuelve un bloque en el color de la
+// sección siguiente (port de letigre.run a CSS nativo, sin Tailwind).
+//
+// Rejilla densa de píxeles diminutos del mismo tamaño de arriba abajo: lo que
+// cambia es su OPACIDAD, controlada por el canal alfa de la máscara. Son dos
+// rejillas idénticas desfasadas media celda (la segunda rellena los huecos de
+// la primera duplicando la densidad sin engordar el píxel) más un degradado
+// de cierre que enlaza con el color sólido.
+interface Props {
+  /** Lado de la celda de la rejilla en píxeles */
+  pitch?: number;
+  /** Lado del píxel dentro de la celda */
+  dot?: number;
+  /** Borde hacia el que el tramado termina en color sólido */
+  direction?: 'bottom' | 'left';
+  /** Color sólido del cierre (hex) */
+  color?: string;
+  class?: string;
+}
+
+const {
+  pitch = 4,
+  dot = 2,
+  direction = 'bottom',
+  color = '#0d1116',
+  class: className = '',
+} = Astro.props;
+
+const isHorizontal = direction === 'left';
+const maskDirection = isHorizontal ? 'to left' : 'to bottom';
+
+const LAYERS = [
+  {
+    offset: '0 0',
+    // Arranca en transparente: si empezara con opacidad ya puesta, el borde
+    // superior del bloque se vería como un corte recto
+    mask:
+      'transparent 0%, rgb(0 0 0 / 0.06) 8%, rgb(0 0 0 / 0.2) 20%, rgb(0 0 0 / 0.5) 38%, rgb(0 0 0 / 0.82) 52%, rgb(0 0 0) 66%',
+  },
+  {
+    offset: `${pitch / 2}px ${pitch / 2}px`,
+    mask:
+      'transparent 12%, rgb(0 0 0 / 0.12) 26%, rgb(0 0 0 / 0.42) 42%, rgb(0 0 0 / 0.78) 58%, rgb(0 0 0) 76%',
+  },
+];
+
+// Un <rect> en un SVG del tamaño de la celda da un cuadrado nítido de verdad;
+// con radial-gradient los píxeles saldrían redondos y difuminados.
+const offsetInCell = (pitch - dot) / 2;
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pitch}" height="${pitch}" shape-rendering="crispEdges"><rect x="${offsetInCell}" y="${offsetInCell}" width="${dot}" height="${dot}" fill="${color}"/></svg>`;
+const pixelTile = `url("data:image/svg+xml,${svg
+  .replace(/#/g, '%23')
+  .replace(/"/g, "'")
+  .replace(/</g, '%3C')
+  .replace(/>/g, '%3E')}")`;
+---
+
+<div
+  aria-hidden="true"
+  class:list={[
+    'halftone-fade',
+    isHorizontal && 'halftone-fade--left',
+    className,
+  ]}
+>
+  {
+    LAYERS.map(({ offset, mask }) => (
+      <div
+        class="halftone-fade__layer"
+        style={`--tile-image: ${pixelTile}; --tile-size: ${pitch}px; --tile-direction: ${maskDirection}; --tile-offset: ${offset}; --tile-mask: ${mask};`}
+      />
+    ))
+  }
+  {/* Degradado de cierre: enlaza el tramado con el color sólido */}
+  <div
+    class="halftone-fade__close"
+    style={`--tile-close: ${isHorizontal ? `linear-gradient(to right, ${color}, ${color}99 60%, transparent)` : `linear-gradient(to bottom, transparent, ${color}99 60%, ${color})`};`}
+  />
+</div>
+
+<style>
+  .halftone-fade {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+  .halftone-fade--left {
+    inset: 0;
+  }
+  .halftone-fade__layer {
+    position: absolute;
+    inset: 0;
+    background-image: var(--tile-image);
+    background-size: var(--tile-size);
+    background-position: var(--tile-offset);
+    image-rendering: pixelated;
+    -webkit-mask-image: linear-gradient(var(--tile-direction), var(--tile-mask));
+    mask-image: linear-gradient(var(--tile-direction), var(--tile-mask));
+  }
+  /* Cierre 45%: la mitad de la superficie son píxeles; este degradado cubre el
+     último tramo y enlaza con el color de la sección siguiente */
+  .halftone-fade__close {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 45%;
+    background: var(--tile-close);
+  }
+  .halftone-fade--left .halftone-fade__close {
+    inset-block: 0;
+    left: 0;
+    right: auto;
+    width: 45%;
+    height: auto;
+  }
+</style>

@@ -1,0 +1,163 @@
+---
+// ScrollerCards — scroll infinito VERTICAL de dos columnas de tarjetas.
+//
+// Reutiliza el scroller del sistema (05-components.css §scroller): keyframes
+// scroll-v (0 → -50%, bucle perfecto por duplicado), máscara vertical, pause
+// on hover y prefers-reduced-motion ya resueltos. Solo añade:
+//   - variante --always: la 2ª columna se ve también en móvil (el sistema la
+//     oculta por defecto) — en móvil quedan apiladas, en ≥900px lado a lado;
+//   - la columna 2 baja: animation-direction: reverse del mismo keyframe
+//     (cero keyframes nuevos);
+//   - cards con retrato 3:3.6 y enlace clickeable.
+//
+// Cero JavaScript. Los duplicados del carril llevan aria-hidden (el contenido
+// real está una sola vez), como hace el Scroller horizontal.
+interface Card {
+  name: string;
+  meta: string;
+  img: string;
+  href?: string;
+}
+
+interface Props {
+  title?: string;
+  heading?: string;
+  subtitle?: string;
+  speed?: 'fast' | 'normal' | 'slow';
+  cards?: Card[];
+}
+
+const {
+  title = 'Formación',
+  heading = 'Aprende con los mejores',
+  subtitle = 'Prepárate con una formación adaptada a la realidad profesional de las empresas.',
+  speed = 'normal',
+  cards = [
+    { name: 'BRAIS MOURE', meta: '+920 MIL.', img: 'https://picsum.photos/id/1011/400/500' },
+    { name: 'ROMUALD FONS', meta: '+1.5 MILL.', img: 'https://picsum.photos/id/1027/400/500' },
+    { name: 'JON HERNANDEZ', meta: '+710 MIL.', img: 'https://picsum.photos/id/1012/400/500' },
+    { name: 'CARLOS BARRERA', meta: '+205 MIL.', img: 'https://picsum.photos/id/1025/400/500' },
+  ],
+} = Astro.props;
+
+// Duplicado por columna: es lo que hace que el bucle no dé el salto.
+const up = [...cards, ...cards];
+const down = [...[...cards].reverse(), ...[...cards].reverse()];
+---
+
+<section class="section section--tight bg-secondary">
+  <div class="container">
+    <div class="row is-vertical-align">
+      {/* Col texto */}
+      <div class="col-5-md">
+        {title && <p class="label text-grey mb-1">{title}</p>}
+        <h2 class="t-4xl lh-tight is-marginless">{heading}</h2>
+        {subtitle && <p class="lead measure-sm mt-1">{subtitle}</p>}
+      </div>
+
+      {/* Col scroller: 2 columnas siempre */}
+      <div class="col-7-md">
+        <div
+          class:list={[
+            'scroller scroller--v scroller-cols--always',
+            speed === 'fast' && 'scroller--fast',
+            speed === 'slow' && 'scroller--slow',
+          ]}
+          aria-label={heading}
+        >
+          <div class="scroller-cols">
+            {/* Columna 1 — sube */}
+            <div class="scroller-col">
+              <div class="scroller-track">
+                {up.map((c, i) => (
+                  <a
+                    class="scroller-item scroller-item--card scroller-card"
+                    href={c.href ?? '#'}
+                    aria-hidden={i >= cards.length ? 'true' : undefined}
+                    tabindex={i >= cards.length ? -1 : undefined}
+                  >
+                    <img src={c.img} alt={c.name} loading="lazy" decoding="async" />
+                    <div class="scroller-item-body">
+                      <h4>{c.name}</h4>
+                      <p>{c.meta}</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* Columna 2 — baja (misma pista, dirección inversa) */}
+            <div class="scroller-col scroller-col--down">
+              <div class="scroller-track">
+                {down.map((c, i) => (
+                  <a
+                    class="scroller-item scroller-item--card scroller-card"
+                    href={c.href ?? '#'}
+                    aria-hidden={i >= cards.length ? 'true' : undefined}
+                    tabindex={i >= cards.length ? -1 : undefined}
+                  >
+                    <img src={c.img} alt={c.name} loading="lazy" decoding="async" />
+                    <div class="scroller-item-body">
+                      <h4>{c.name}</h4>
+                      <p>{c.meta}</p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* MOBILE FIRST, como el sistema: la base ya es la maqueta móvil y los
+     media queries (del sistema) son para desktop.
+     La variante --always hace que las DOS columnas se vean desde el primer
+     píxel: el sistema en base pone una sola columna (oculta la 2ª y las
+     apila); aquí, en móvil, las dos columnas van en la MISMA row, cada una
+     la mitad del ancho. A ≥900px el sistema ya pone flex-direction: row y
+     flex: 1, así que no hace falta media query: se hereda tal cual. */
+
+  /* Dentro de una columna, el carril ocupa todo el ancho disponible (el
+     .scroller global centra con width 90% pensando en carriles de página
+     completa). */
+  .scroller-cols--always {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  /* Móvil: las dos columnas en la misma row, mitad del ancho cada una.
+     La 2ª columna el sistema la oculta con `.scroller-col + .scroller-col
+     { display: none }` y apila con flex-direction: column; esto gana por
+     especificidad (2 clases + data-astro-cid vs 1 clase). */
+  .scroller-cols--always .scroller-cols {
+    flex-direction: row;
+  }
+  .scroller-cols--always .scroller-col {
+    flex: 1;
+    min-width: 0;
+  }
+  .scroller-cols--always .scroller-col + .scroller-col {
+    display: block;
+  }
+
+  /* La columna 2 baja reusando el keyframe scroll-v (0 → -50%) en reverse. */
+  .scroller-cols--always .scroller-col--down .scroller-track {
+    animation-direction: reverse;
+  }
+
+  /* Card retrato 3:3.6 (el sistema trae 1:1) + enlace como bloque */
+  .scroller-card {
+    display: block;
+  }
+  .scroller-card img {
+    aspect-ratio: 3 / 3.6;
+  }
+  .scroller-card:hover {
+    opacity: 1;
+  }
+</style>

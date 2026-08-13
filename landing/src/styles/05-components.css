@@ -770,11 +770,4 @@
   .hero-float-card { position: absolute; right: 0; top: 30%; margin-top: 0; z-index: 2; }
 }
 
-/* ── H1 real, pequeño, para SEO (hero-fakeh1) ── */
-.seo-h1 {
-  margin: 0 0 .5rem;
-  font-size: var(--text-sm);
-  font-weight: 400;
-  color: var(--color-grey);
-  letter-spacing: 0;
-}
+/* ── Hero: insignia de disponibilidad y tarjeta flotante ── */

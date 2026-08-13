@@ -274,6 +274,93 @@ export function wireYouTubeFacades(): void {
   }, { passive: true });
 }
 
+// ============================================================
+// Video de fondo del hero — autoplay con poster como LCP.
+//
+// Port del truco de letigre.run a YouTube: el poster <img> (con
+// fetchpriority=high) es el LCP y va ENCIMA del video; el reproductor se
+// monta DESPUÉS del primer pintado (requestIdleCallback) para no competir
+// con el LCP, y cuando tiene frame real (onReady → playVideo) el poster se
+// retira SIN FADE — swap instantáneo, sin transición.
+//
+// Guardas: con ahorro de datos, red 2g o animaciones reducidas se queda el
+// poster: el hero se ve igual de bien y no se gastan megas. En pestaña
+// oculta el video se pausa (batería).
+// ============================================================
+export function wireHeroVideo(): void {
+  const wrap = document.querySelector<HTMLElement>("[data-hero-video]");
+  if (!wrap) return;
+
+  const poster = document.querySelector<HTMLElement>("[data-hero-poster]");
+
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  const savesData = conn?.saveData === true;
+  const slowNetwork = /^(slow-)?2g$/.test(conn?.effectiveType ?? "");
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const handoffPoster = (): void => {
+    if (!poster || poster.dataset.handedOff === "1") return;
+    poster.dataset.handedOff = "1";
+    // Sin fade: el frame del video ya está; swap instantáneo.
+    poster.hidden = true;
+  };
+
+  const start = (): void => {
+    if (ytPlayers.has(wrap)) return;
+
+    const isMobile = window.matchMedia("(max-width:899px)").matches;
+    const videoId = isMobile
+      ? wrap.dataset.videoId
+      : wrap.dataset.desktopVideoId || wrap.dataset.videoId;
+    if (!videoId) return;
+
+    void loadYTApi().then(() => {
+      const player = new W.YT!.Player(wrap, {
+        videoId,
+        playerVars: {
+          autoplay: 1, controls: 0, loop: 1, playlist: videoId,
+          playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3,
+          mute: 1,
+        },
+        events: {
+          // El poster se retira cuando el video TIENE FRAME REAL, no antes:
+          // onReady puede disparar antes de pintar, PLAYING es la señal de
+          // que ya se está reproduciendo. Ambos llaman al mismo handoff
+          // (idempotente), por si uno no llega.
+          onReady: (ev: { target: { playVideo(): void } }) => {
+            ev.target.playVideo();
+          },
+          onStateChange: (ev: { data: number }) => {
+            if (ev.data === 1) handoffPoster();
+          },
+        },
+      });
+      ytPlayers.set(wrap, player);
+    });
+  };
+
+  // Con ahorro de datos, red lenta o animaciones reducidas se queda el poster
+  if (!savesData && !slowNetwork && !reducedMotion) {
+    // Se arranca tras el primer pintado para no competir con el LCP
+    if ("requestIdleCallback" in window) {
+      (window as Window & { requestIdleCallback: (cb: () => void, o?: { timeout: number }) => void })
+        .requestIdleCallback(start, { timeout: 2000 });
+    } else {
+      addEventListener("load", start, { once: true });
+    }
+  }
+
+  // Un video de fondo que sigue corriendo en una pestaña oculta sólo gasta batería
+  document.addEventListener("visibilitychange", () => {
+    const player = ytPlayers.get(wrap) as
+      | { pauseVideo(): void; playVideo(): void }
+      | undefined;
+    if (!player) return;
+    if (document.hidden) player.pauseVideo();
+    else if (!savesData && !slowNetwork && !reducedMotion) player.playVideo();
+  });
+}
+
 // God entry — se ejecuta en cada página que carga /god.js
 (function main(): void {
   try {
@@ -281,5 +368,6 @@ export function wireYouTubeFacades(): void {
     initAttribution();
     wireClickBeacons(siteUrl);
     wireYouTubeFacades();
+    wireHeroVideo();
   } catch {}
 })();

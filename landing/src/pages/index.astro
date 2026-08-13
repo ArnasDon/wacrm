@@ -12,9 +12,11 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 
 import Header from '../components/sections/Header.astro';
 import Breadcrumb from '../components/sections/Breadcrumb.astro';
+import HeroVideo from '../components/sections/HeroVideo.astro';
 import HeroFakeH1 from '../components/sections/HeroFakeH1.astro';
 import SocialProof from '../components/sections/SocialProof.astro';
 import Scroller from '../components/sections/Scroller.astro';
+import ScrollerCards from '../components/sections/ScrollerCards.astro';
 import Features from '../components/sections/Features.astro';
 import Video from '../components/sections/Video.astro';
 import LeadSection from '../components/sections/LeadSection.astro';
@@ -41,6 +43,12 @@ import { site } from '../data/site';
 const title = 'Fisioterapia y rehabilitación en CDMX | Tu Clínica';
 const description =
   'Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.';
+
+// El hero con video de fondo: el poster es el LCP. Las miniaturas van en
+// preloadHero (BaseLayout las precarga con el MISMO media que el <picture>
+// del hero) y se pasan también al componente: una sola fuente de verdad.
+const heroThumbMobile = `https://i.ytimg.com/vi/${site.videoId}/hqdefault.jpg`;
+const heroThumbDesktop = `https://i.ytimg.com/vi/${site.videoId}/maxresdefault.jpg`;
 ---
 
 <BaseLayout
@@ -48,6 +56,7 @@ const description =
   description={description}
   path="/"
   hasVideo
+  preloadHero={{ mobile: heroThumbMobile, desktop: heroThumbDesktop, breakpoint: 900 }}
   faq={site.faq}
   steps={site.steps}
   breadcrumb={[{ name: site.name, item: `${site.baseUrl}${site.landingBase}/` }]}
@@ -56,12 +65,16 @@ const description =
   <Header />
   <Breadcrumb />
 
-  {/* 1. Contexto y promesa — H1 real pequeño para SEO */}
+  {/* 1. Hero con video de fondo autoplay (YouTube, poster como LCP) */}
+  <HeroVideo thumbMobile={heroThumbMobile} thumbDesktop={heroThumbDesktop} />
+
+  {/* 2. Hero con H1 real en la chapita */}
   <HeroFakeH1 />
 
-  {/* 2. Permiso para seguir leyendo */}
+  {/* 3. Permiso para seguir leyendo */}
   <SocialProof />
   <Scroller title="Certificaciones y coberturas" />
+  <ScrollerCards />
 
   {/* 3. Qué gana el paciente */}
   <Features />

@@ -1,22 +1,23 @@
 ---
-// Hero con H1 real pequeño (SEM).
+// Hero con H1 real visible: la chapita "Agenda disponible esta semana".
 //
-// EL TRUCO: el <h1> de verdad va arriba, pequeño y gris, con la consulta
-// optimizada para buscador. El titular grande que ve el visitante es un <p>.
-// Así el hero se ve como debe y el H1 dice lo que el buscador necesita, sin
-// pelear entre sí.
+// EL TRUCO (decidido con el dueño): el <h1> de verdad es la línea-chapita del
+// badge, con su dot pulsante — es la primera línea que ve el visitante y tiene
+// sentido visual. El titular grande que parece un H1 es un <p> con bold (un
+// claim), no un encabezado. La frase SEO "Fisioterapia y rehabilitación…" se
+// eliminó del hero: vive en el <title>, meta tags y JSON-LD de la página.
 import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
 
 interface Props {
-  /** El H1 real: la consulta. Pequeño y arriba. */
-  seoTitle?: string;
+  /** El H1 real: la chapita de disponibilidad. */
+  badge?: string;
   /** El titular visible, grande. Va como <p>, no como encabezado. */
   displayTitle?: string;
   subtitle?: string;
 }
 
 const {
-  seoTitle = 'Fisioterapia y rehabilitación en Ciudad de México',
+  badge = 'Agenda disponible esta semana',
   displayTitle = 'Recupera el movimiento sin pasar por quirófano',
   subtitle = 'Valoración con diagnóstico y plan por escrito el mismo día.',
 } = Astro.props;
@@ -24,17 +25,15 @@ const {
 
 <section class="section" itemscope itemtype="https://schema.org/WPHeader">
   <div class="container">
-    {/* El H1 real: pequeño, para el buscador. */}
-    <h1 class="seo-h1" itemprop="headline">{seoTitle}</h1>
-
     <div class="row is-vertical-align">
       <div class="col-7-md">
-        <p class="hero-avail-badge">
+        {/* El H1 real: la chapita, con el dot pulsante. */}
+        <h1 class="hero-avail-badge" itemprop="headline">
           <span class="hero-avail-badge__dot" aria-hidden="true"></span>
-          Agenda disponible esta semana
-        </p>
+          {badge}
+        </h1>
 
-        {/* El titular visible NO es un encabezado: es texto grande. */}
+        {/* El titular visible NO es un encabezado: es texto grande con bold. */}
         <p class="t-4xl lh-tight is-marginless">{displayTitle}</p>
         <p class="lead measure-sm mt-1 mb-2">{subtitle}</p>
 
@@ -77,4 +76,10 @@ const {
 
 <style>
   .btn-row { justify-content: flex-start; }
+  /* El reset base da al h1 genérico letter-spacing/margen: la chapita se
+     normaliza para que quede igual que antes de ser un h1. */
+  h1.hero-avail-badge {
+    margin: 0 0 var(--space-4);
+    letter-spacing: 0;
+  }
 </style>

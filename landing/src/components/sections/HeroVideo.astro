@@ -1,0 +1,242 @@
+---
+// HeroVideo — hero a pantalla completa con video de fondo AUTOPLAY.
+//
+// Port del hero de letigre.run (midudev) adaptado a la landing y al skill:
+//  - El video es de YouTube con id (site.videoId), autoplay mute silencioso,
+//    montado por god.js (wireHeroVideo) tras el LCP. NO es un mp4 local.
+//  - El poster <img> es el LCP (fetchpriority=high, decoding=sync) y va
+//    ENCIMA del video; cuando el reproductor tiene frame real (onReady →
+//    playVideo) god.js lo retira SIN FADE (swap instantáneo).
+//  - El video se difiere hasta después del primer pintado (requestIdleCallback
+//    en god.js) para no competir con el LCP; con saveData / 2g /
+//    prefers-reduced-motion se queda solo el poster.
+//
+// Contenido = fisioterapia actual. El H1 real es la chapita "Agenda disponible
+// esta semana" (patrón decidido con el dueño); el claim grande es un <p> bold.
+import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+import HalftoneFade from '../HalftoneFade.astro';
+
+interface Props {
+  /** Id del video de fondo (vertical en móvil). Default: site.videoId */
+  videoId?: string;
+  /** Id horizontal para escritorio. Opcional. */
+  desktopVideoId?: string;
+  /** Miniaturas propias del poster (LCP). Si faltan, las de YouTube. */
+  thumbMobile?: string;
+  thumbDesktop?: string;
+  /** H1 real (chapita) */
+  badge?: string;
+  /** Claim visible — es un <p> bold, no un encabezado. */
+  displayTitle?: string;
+  subtitle?: string;
+}
+
+const {
+  videoId = site.videoId,
+  desktopVideoId,
+  thumbMobile,
+  thumbDesktop,
+  badge = 'Agenda disponible esta semana',
+  displayTitle = 'Recupera el movimiento sin pasar por quirófano',
+  subtitle = 'Valoración con diagnóstico y plan por escrito el mismo día.',
+} = Astro.props;
+
+const ytThumb = (v: string) => `https://i.ytimg.com/vi/${v}/hqdefault.jpg`;
+const ytThumbHd = (v: string) => `https://i.ytimg.com/vi/${v}/maxresdefault.jpg`;
+const mobileThumb = thumbMobile ?? ytThumb(videoId);
+const desktopThumb = thumbDesktop ?? ytThumbHd(desktopVideoId ?? videoId);
+
+// 3 stats (móvil 2 columnas, escritorio 3): mismo estilo que el original
+const stats = site.proof.slice(0, 3);
+---
+
+<header id="inicio" class="hero-video" itemscope itemtype="https://schema.org/WPHeader">
+  {/* Fondo: el video. El poster es el LCP y va ENCIMA del video; god.js lo
+      retira sin fade cuando hay frame real. El iframe no existe hasta que
+      god.js lo monta (wireHeroVideo), así que aquí solo hay un contenedor. */}
+  <div class="hero-video__media" aria-hidden="true">
+    <div
+      class="hero-video__frame"
+      data-hero-video
+      data-video-id={videoId}
+      data-desktop-video-id={desktopVideoId}
+    />
+    <picture class="hero-video__poster" data-hero-poster>
+      {desktopThumb !== mobileThumb && (
+        <source media="(min-width: 900px)" srcset={desktopThumb} />
+      )}
+      <img
+        src={mobileThumb}
+        alt=""
+        fetchpriority="high"
+        decoding="sync"
+        draggable="false"
+      />
+    </picture>
+  </div>
+
+  {/* Velos suaves: solo lo necesario para que el texto se lea sobre el video */}
+  <div class="hero-video__veil hero-video__veil--bottom" aria-hidden="true"></div>
+  <div class="hero-video__veil hero-video__veil--left" aria-hidden="true"></div>
+
+  {/* El video se disuelve en un tramado de puntos hasta el color del fondo */}
+  <HalftoneFade direction="bottom" color="#0d1116" class="hero-video__fade" />
+
+  <div class="container hero-video__content">
+    {/* H1 real: la chapita de disponibilidad. */}
+    <h1 class="hero-avail-badge" itemprop="headline">
+      <span class="hero-avail-badge__dot" aria-hidden="true"></span>
+      {badge}
+    </h1>
+
+    {/* El claim visible NO es encabezado: texto grande con bold. */}
+    <p class="t-4xl lh-tight is-marginless">{displayTitle}</p>
+    <p class="lead hero-video__lead measure-sm mt-1 mb-2">{subtitle}</p>
+
+    <div class="btn-row hero-video__btn-row">
+      <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
+      <a href={whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
+        Escribir por WhatsApp
+      </a>
+    </div>
+
+    {/* Datos clave del tratamiento. */}
+    <dl class="hero-video__stats">
+      {stats.map((p) => (
+        <div class="hero-video__stat">
+          <dt class="hero-video__stat-label">{p.label}</dt>
+          <dd class="hero-video__stat-value" data-tabular>{p.num}</dd>
+        </div>
+      ))}
+    </dl>
+  </div>
+</header>
+
+<style>
+  .hero-video {
+    position: relative;
+    isolation: isolate;
+    min-height: 100svh;
+    overflow: hidden;
+    background: #0d1116;
+    color: var(--color-on-dark);
+  }
+
+  /* Fondo del video: contenedor + poster encima (LCP). El iframe lo monta
+     god.js dentro de .hero-video__frame. */
+  .hero-video__media {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+  }
+  .hero-video__frame,
+  .hero-video__frame > div {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  /* Cover 16:9 real: el iframe se agranda al menor tamaño que cubre la
+     pantalla y se centra; los sobrantes se recortan con overflow hidden. */
+  .hero-video__frame iframe {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: max(100vw, 177.78vh);
+    height: max(100svh, 56.25vw);
+  }
+  .hero-video__poster {
+    position: absolute;
+    inset: 0;
+  }
+  .hero-video__poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Velos de legibilidad (colores del ink del hero) */
+  .hero-video__veil {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .hero-video__veil--bottom {
+    background: linear-gradient(to bottom, rgb(13 17 22 / 0.75), rgb(13 17 22 / 0.35), transparent);
+  }
+  .hero-video__veil--left {
+    background: linear-gradient(to right, rgb(13 17 22 / 0.8), rgb(13 17 22 / 0.25), transparent);
+  }
+
+  /* Tramado de puntos que disuelve el video en el color del fondo */
+  .hero-video__fade {
+    z-index: -1;
+    height: 80%;
+  }
+
+  /* Contenido: columna centrada verticalmente sobre el video */
+  .hero-video__content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100svh;
+    padding-block: var(--space-8);
+  }
+
+  /* El H1 de la casa (badge) sobre video: el reset base le pone margen y
+     letter-spacing de h1 genérico, aquí se normalizan. */
+  .hero-video h1.hero-avail-badge {
+    margin: 0 0 var(--space-4);
+    letter-spacing: 0;
+  }
+
+  .hero-video__lead {
+    color: var(--color-on-dark-muted);
+  }
+  .hero-video__btn-row {
+    justify-content: flex-start;
+  }
+  .hero-video .button.outline {
+    border-color: var(--color-on-dark-subtle);
+    color: var(--color-on-dark);
+  }
+
+  /* Stats: mismo patrón que el original (dl con borde superior) */
+  .hero-video__stats {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: var(--space-5) var(--space-7);
+    margin: var(--space-7) 0 0;
+    padding-top: var(--space-5);
+    border-top: 2px solid rgb(255 255 255 / 0.25);
+  }
+  .hero-video__stat {
+    display: flex;
+    flex-direction: column;
+  }
+  .hero-video__stat-label {
+    font-size: var(--text-xs);
+    color: var(--color-on-dark-subtle);
+  }
+  .hero-video__stat-value {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 800;
+    line-height: 1;
+    color: var(--color-on-dark);
+  }
+
+  @media (min-width: 900px) {
+    .hero-video__stats {
+      grid-template-columns: repeat(3, auto);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-video__poster img {
+      /* Con animaciones reducidas el video no arranca (god.js): el poster
+         es el LCP y se queda. Nada que animar. */
+    }
+  }
+</style>

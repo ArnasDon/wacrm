@@ -82,7 +82,12 @@ function LoginPageInner() {
             {inviteToken ? (
               <UsersRound className="h-6 w-6 text-primary" />
             ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
+              /* CHATCHACHA CUSTOM — brand logo */
+              <img
+                src="/logo.png"
+                alt="Chat Chacha"
+                className="h-8 w-8 object-contain"
+              />
             )}
           </div>
           <CardTitle className="text-xl text-foreground">

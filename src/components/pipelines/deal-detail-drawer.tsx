@@ -340,8 +340,11 @@ export function DealDetailDrawer({
           will-change: transform, opacity;
         }
         @media (prefers-reduced-motion: no-preference) {
+          /* 320ms → 384ms (~20% slower) — a deliberate "premium" refinement
+             pass; feel only, curve/keyframes untouched. Close (below) is
+             intentionally left at its original 240ms. */
           :global(.deal-flip-popup[data-open]) {
-            animation: deal-flip-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+            animation: deal-flip-in 384ms cubic-bezier(0.16, 1, 0.3, 1) both;
           }
           :global(.deal-flip-popup[data-closed]) {
             animation: deal-flip-out 240ms cubic-bezier(0.4, 0, 1, 1) both;

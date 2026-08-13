@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -92,6 +92,69 @@ export function PipelineBoard({
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
   // Non-null only for the duration of a drag — see handleDragStart/End.
   const [dragState, setDragState] = useState<DragState | null>(null);
+
+  // Horizontal auto-scroll — hand-rolled and kept fully separate from
+  // dnd-kit's own `autoScroll` (below), which stays exactly as configured
+  // for the columns' vertical scroll (untouched, already working well).
+  // dnd-kit's single `interval`/`acceleration`/`threshold` apply uniformly
+  // to every scrollable ancestor it manages, so tuning the row to feel
+  // fast enough to cross several columns would have meant re-tuning
+  // vertical too. Excluding the row from dnd-kit's own autoscroll (via
+  // `canScroll` below) and driving it from this rAF loop instead lets the
+  // two axes have completely independent feel with zero risk of the two
+  // mechanisms fighting over the same element's scrollLeft.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const pointerXRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!activeDealId) {
+      pointerXRef.current = null;
+      return;
+    }
+
+    // Track the raw pointer position via a native listener (not React
+    // props) — this only needs the latest X, so there's nothing to
+    // re-render on and no reason to route it through dnd-kit's own event
+    // callbacks. Pointer Events cover mouse and touch alike.
+    function handlePointerMove(e: PointerEvent) {
+      pointerXRef.current = e.clientX;
+    }
+    document.addEventListener("pointermove", handlePointerMove);
+
+    // Distance from the row's edge (px) where scrolling starts, and the
+    // fastest speed reached right at the edge — both tuned so a drag can
+    // cross several 260px columns in well under a second without feeling
+    // twitchy near the threshold's outer edge.
+    const EDGE_ZONE_PX = 120;
+    const MAX_SPEED_PX_PER_FRAME = 26;
+
+    let rafId: number;
+    function tick() {
+      const row = rowRef.current;
+      const x = pointerXRef.current;
+      if (row && x != null) {
+        const rect = row.getBoundingClientRect();
+        let speed = 0;
+        if (x < rect.left + EDGE_ZONE_PX) {
+          // Proximity ramps 0 → 1 as the pointer nears the edge, so
+          // acceleration is progressive, not a flat on/off speed.
+          const proximity = 1 - Math.max(0, x - rect.left) / EDGE_ZONE_PX;
+          speed = -MAX_SPEED_PX_PER_FRAME * proximity;
+        } else if (x > rect.right - EDGE_ZONE_PX) {
+          const proximity = 1 - Math.max(0, rect.right - x) / EDGE_ZONE_PX;
+          speed = MAX_SPEED_PX_PER_FRAME * proximity;
+        }
+        if (speed !== 0) row.scrollLeft += speed;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      cancelAnimationFrame(rafId);
+    };
+  }, [activeDealId]);
 
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -292,12 +355,19 @@ export function PipelineBoard({
       // thread work than it needs to be. 16ms matches a 60fps frame
       // budget — same visual scroll smoothness, ~3x fewer recalculation
       // passes.
+      //
+      // `canScroll` excludes the horizontal row specifically — that axis
+      // is driven by the standalone rAF loop above instead (tuned
+      // independently for "cross several columns fast"), so dnd-kit's
+      // own autoscroll here only ever touches the columns' vertical
+      // scroll, exactly as before.
       autoScroll={{
         enabled: true,
         activator: AutoScrollActivator.DraggableRect,
         threshold: { x: 0.2, y: 0.2 },
         acceleration: 15,
         interval: 16,
+        canScroll: (element) => element !== rowRef.current,
       }}
     >
       {/* snap-x + snap-mandatory on mobile so swipes land the next
@@ -314,6 +384,7 @@ export function PipelineBoard({
           for the duration of a drag — CSS scroll-snap (especially iOS's)
           fights programmatic auto-scroll by re-snapping mid-scroll. */}
       <div
+        ref={rowRef}
         className={`pipeline-scroll flex h-full snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none ${
           activeDealId ? "dragging" : ""
         }`}

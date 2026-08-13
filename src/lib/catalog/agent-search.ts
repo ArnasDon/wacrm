@@ -1,5 +1,6 @@
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { searchCatalogues } from './search'
+import { loadCatalogTaxonomy, type CatalogTaxonomyGroups } from './taxonomy'
 import type { CatalogProduct } from './types'
 
 export type AgentCatalogSearchMode = 'browse' | 'lookup'
@@ -23,35 +24,6 @@ export interface RankedAgentCatalogProduct {
 
 const MAX_CANDIDATES = 60
 const CANDIDATE_MULTIPLIER = 8
-
-const CATEGORY_ALIASES = [
-  ['legging', 'leggings', 'colante', 'colantes', 'calca de treino', 'calcas de treino', 'calca fitness', 'calcas fitness', 'tights'],
-  ['camisola', 'camisolas', 'camiseta', 'camisetas', 't shirt', 't shirts', 'tshirt', 'tshirts'],
-  ['top', 'tops'],
-  ['saia calcao', 'saia calcoes', 'skort'],
-  ['calcao', 'calcoes', 'short', 'shorts'],
-  ['macacao', 'macacoes', 'jumpsuit'],
-  ['conjunto', 'conjuntos', 'set'],
-  ['sapatilha', 'sapatilhas', 'tenis', 'calcado desportivo', 'sapato desportivo'],
-  ['saia', 'saias'],
-  ['acessorio', 'acessorios'],
-] as const
-
-const COLOR_ALIASES = [
-  ['preto', 'preta', 'pretos', 'pretas', 'negro', 'negra'],
-  ['branco', 'branca', 'brancos', 'brancas'],
-  ['azul', 'azuis'],
-  ['vermelho', 'vermelha', 'vermelhos', 'vermelhas'],
-  ['verde', 'verdes'],
-  ['amarelo', 'amarela', 'amarelos', 'amarelas'],
-  ['roxo', 'roxa', 'roxos', 'roxas', 'lilas'],
-  ['rosa', 'rosas', 'cor de rosa'],
-  ['cinza', 'cinzento', 'cinzenta', 'cinzentos', 'cinzentas'],
-  ['bege', 'beges'],
-  ['laranja', 'laranjas'],
-  ['dourado', 'dourada', 'dourados', 'douradas'],
-  ['prateado', 'prateada', 'prateados', 'prateadas'],
-] as const
 
 function normalize(value: string | null | undefined): string {
   return (value ?? '')
@@ -111,23 +83,31 @@ function matchesAliases(
   return textIncludesAll(haystack, tokens(normalizedRequested))
 }
 
-function categoryMatches(product: CatalogProduct, category: string | null | undefined): boolean {
+function categoryMatches(
+  product: CatalogProduct,
+  category: string | null | undefined,
+  taxonomy: CatalogTaxonomyGroups,
+): boolean {
   if (!normalize(category)) return true
   const explicitCategory = normalize(product.category)
   const fallback = normalize(`${product.name} ${product.description ?? ''}`)
   return (
-    matchesAliases(explicitCategory, category, CATEGORY_ALIASES) ||
-    matchesAliases(fallback, category, CATEGORY_ALIASES)
+    matchesAliases(explicitCategory, category, taxonomy.categoryGroups) ||
+    matchesAliases(fallback, category, taxonomy.categoryGroups)
   )
 }
 
-function colorMatches(product: CatalogProduct, color: string | null | undefined): boolean {
+function colorMatches(
+  product: CatalogProduct,
+  color: string | null | undefined,
+  taxonomy: CatalogTaxonomyGroups,
+): boolean {
   if (!normalize(color)) return true
   const values = [
     product.description ?? '',
     ...(product.variants ?? []).map((variant) => variant.color ?? ''),
   ]
-  return matchesAliases(normalize(values.join(' ')), color, COLOR_ALIASES)
+  return matchesAliases(normalize(values.join(' ')), color, taxonomy.colorGroups)
 }
 
 function productSizeMatch(
@@ -143,7 +123,11 @@ function productSizeMatch(
   return sizes.includes(wanted) ? 'match' : 'mismatch'
 }
 
-function relevanceScore(product: CatalogProduct, input: AgentCatalogSearchInput): number {
+function relevanceScore(
+  product: CatalogProduct,
+  input: AgentCatalogSearchInput,
+  taxonomy: CatalogTaxonomyGroups,
+): number {
   const name = normalize(product.name)
   const category = normalize(product.category)
   const description = normalize(product.description)
@@ -160,9 +144,9 @@ function relevanceScore(product: CatalogProduct, input: AgentCatalogSearchInput)
   }
   if (wantedCategory) {
     if (category === wantedCategory) score += 120
-    else if (categoryMatches(product, input.category)) score += 80
+    else if (categoryMatches(product, input.category, taxonomy)) score += 80
   }
-  if (input.color && colorMatches(product, input.color)) score += 45
+  if (input.color && colorMatches(product, input.color, taxonomy)) score += 45
   if (product.imageUrl || product.variants?.some((variant) => variant.imageUrl)) score += 20
   if (product.stockQuantity !== null && product.stockQuantity > 0) score += 10
 
@@ -209,8 +193,17 @@ export async function searchCatalogForAgent(
   const queries = retrievalQueries(input)
   if (queries.length === 0) return []
 
+  const taxonomy = await loadCatalogTaxonomy(db, accountId)
+
   const settled = await Promise.allSettled(
-    queries.map((query) => searchCatalogues(db, accountId, { query, limit: candidateLimit })),
+    queries.map((query) =>
+      searchCatalogues(db, accountId, {
+        query,
+        limit: candidateLimit,
+        categoryGroups: taxonomy.categoryGroups,
+        colorGroups: taxonomy.colorGroups,
+      }),
+    ),
   )
   const candidates = uniqueProducts(
     settled.flatMap((result) => {
@@ -223,14 +216,14 @@ export async function searchCatalogForAgent(
   const excluded = new Set(input.excludeProductKeys ?? [])
   return candidates
     .filter((product) => !excluded.has(catalogProductKey(product)))
-    .filter((product) => categoryMatches(product, input.category))
-    .filter((product) => colorMatches(product, input.color))
+    .filter((product) => categoryMatches(product, input.category, taxonomy))
+    .filter((product) => colorMatches(product, input.color, taxonomy))
     .map((product) => ({ product, sizeMatch: productSizeMatch(product, input.size) }))
     .filter(({ sizeMatch }) => sizeMatch !== 'mismatch')
     .map(({ product, sizeMatch }) => ({
       product,
       productKey: catalogProductKey(product),
-      score: relevanceScore(product, input),
+      score: relevanceScore(product, input, taxonomy),
       sizeMatch,
     }))
     .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, 'pt'))

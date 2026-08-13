@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { DEFAULT_CATEGORY_GROUPS, DEFAULT_COLOR_GROUPS } from './taxonomy'
 import type {
   CatalogProduct,
   CatalogProductVariant,
@@ -16,33 +17,6 @@ const REQUEST_TIMEOUT_MS = 8_000
 // crowded out by category ones. This only widens an OR-filter list, no
 // functional downside to a bit more headroom.
 const MAX_SEARCH_VARIANTS = 16
-
-const PRODUCT_SYNONYM_GROUPS = [
-  ['legging', 'leggings', 'colante', 'colantes', 'calca de treino', 'calcas de treino', 'calca fitness', 'calcas fitness', 'tights'],
-  ['sapatilha', 'sapatilhas', 'tenis', 'calcado desportivo', 'sapato desportivo'],
-  ['camisola', 'camisolas', 'camiseta', 'camisetas', 't-shirt', 't-shirts'],
-  ['calcoes', 'short', 'shorts'],
-] as const
-
-// Portuguese colour adjectives inflect for gender/number ("branco" vs a
-// catalogue's "Branca") — plain ilike matching never bridges that, so a
-// customer asking for a colour in the "wrong" grammatical form got zero
-// results. Same synonym-group mechanism as PRODUCT_SYNONYM_GROUPS above.
-const COLOR_SYNONYM_GROUPS = [
-  ['branco', 'branca', 'brancos', 'brancas'],
-  ['preto', 'preta', 'pretos', 'pretas', 'negro', 'negra'],
-  ['vermelho', 'vermelha', 'vermelhos', 'vermelhas'],
-  ['amarelo', 'amarela', 'amarelos', 'amarelas'],
-  ['verde', 'verdes'],
-  ['azul', 'azuis', 'azul claro', 'azul escuro', 'azul-claro', 'azul-escuro'],
-  ['roxo', 'roxa', 'roxos', 'roxas', 'lilas', 'lils'],
-  ['cinza', 'cinzento', 'cinzenta', 'cinzentos', 'cinzentas'],
-  ['dourado', 'dourada', 'dourados', 'douradas'],
-  ['prateado', 'prateada', 'prateados', 'prateadas'],
-  ['bege', 'beges'],
-  ['rosa', 'rosas', 'cor de rosa'],
-  ['laranja', 'laranjas'],
-] as const
 
 // Bare size tokens ("M", "P", "G") are too short and too common as
 // substrings of ordinary words ("co-M-prar") to treat like the product/
@@ -89,7 +63,17 @@ function normalizeSearchText(value: string): string {
     .trim()
 }
 
-export function buildSearchVariants(query: string): string[] {
+/**
+ * categoryGroups/colorGroups default to the built-in generic vocabulary
+ * so every existing call site (and every test) keeps working unchanged;
+ * pass an account's own taxonomy (see ./taxonomy.ts) to search with its
+ * configured vocabulary instead.
+ */
+export function buildSearchVariants(
+  query: string,
+  categoryGroups: readonly (readonly string[])[] = DEFAULT_CATEGORY_GROUPS,
+  colorGroups: readonly (readonly string[])[] = DEFAULT_COLOR_GROUPS,
+): string[] {
   const normalized = normalizeSearchText(query)
   const variants = new Set<string>()
   const add = (value: string) => {
@@ -100,7 +84,7 @@ export function buildSearchVariants(query: string): string[] {
   add(query)
   normalized.split(' ').filter((word) => word.length >= 3).forEach(add)
 
-  for (const group of [...PRODUCT_SYNONYM_GROUPS, ...COLOR_SYNONYM_GROUPS]) {
+  for (const group of [...categoryGroups, ...colorGroups]) {
     const normalizedGroup = group.map(normalizeSearchText)
     const matches = normalizedGroup.some(
       (term) => normalized === term || normalized.includes(term) || term.includes(normalized),
@@ -303,7 +287,7 @@ async function searchExternalSupabaseSource(
   const searchColumns = (mapping.searchColumns?.length ? mapping.searchColumns : [mapping.name || 'name'])
     .map((column) => safeIdentifier(column))
     .slice(0, 6)
-  const variants = buildSearchVariants(input.query)
+  const variants = buildSearchVariants(input.query, input.categoryGroups, input.colorGroups)
   const terms = variants.length ? variants.slice(0, 4) : [normalizeSearchText(input.query)]
 
   const client = createClient(baseUrl, key, {
@@ -490,7 +474,7 @@ async function searchInternal(
   accountId: string,
   input: CatalogSearchInput,
 ): Promise<CatalogProduct[]> {
-  const variants = buildSearchVariants(input.query)
+  const variants = buildSearchVariants(input.query, input.categoryGroups, input.colorGroups)
   if (variants.length === 0) return []
 
   const filters = variants
@@ -552,7 +536,7 @@ export async function searchCatalogues(
   if (sourcesError) throw new Error(`External catalogue source lookup failed: ${sourcesError.message}`)
 
   const sources = (sourceRows ?? []) as CatalogSourceRow[]
-  const variants = buildSearchVariants(input.query)
+  const variants = buildSearchVariants(input.query, input.categoryGroups, input.colorGroups)
   const externalQueries = variants.length > 0 ? variants.slice(0, 4) : [input.query]
 
   const tasks = sources.flatMap((source) => {

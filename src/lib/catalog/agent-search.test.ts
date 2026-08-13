@@ -145,3 +145,131 @@ describe('searchCatalogForAgent', () => {
     expect(result.map(({ product }) => product.id)).toEqual(['skort-1'])
   })
 })
+
+type TermRow = { account_id: string; kind: string; canonical_value: string; aliases: string[]; enabled: boolean }
+
+function dbWithTaxonomy(rows: TermRow[]): WacrmSupabaseClient {
+  return {
+    from: () => {
+      const state: { accountId?: string } = {}
+      const chain = {
+        select: () => chain,
+        eq: (column: string, value: string | boolean) => {
+          if (column === 'account_id') state.accountId = value as string
+          return chain
+        },
+        then: (resolve: (result: { data: TermRow[]; error: null }) => unknown) =>
+          resolve({ data: rows.filter((row) => row.account_id === state.accountId && row.enabled), error: null }),
+      }
+      return chain
+    },
+  } as unknown as WacrmSupabaseClient
+}
+
+describe('searchCatalogForAgent — per-account taxonomy', () => {
+  it("lets LC find 'pantalona' through its own configured taxonomy, not a hardcoded core list", async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'pantalona-1',
+        name: 'Pantalona Wide Leg',
+        description: 'Cor: preta.',
+        price: 3200,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/pantalona.jpg',
+        productUrl: null,
+        category: 'pantalona',
+        stockQuantity: 4,
+        sourceName: 'LC Fitness',
+      },
+    ])
+    const db = dbWithTaxonomy([
+      { account_id: 'lc-account', kind: 'category', canonical_value: 'pantalona', aliases: ['pantalonas', 'wide leg'], enabled: true },
+    ])
+
+    const result = await searchCatalogForAgent(db, 'lc-account', {
+      query: 'pantalona',
+      category: 'pantalona',
+      mode: 'browse',
+      limit: 8,
+    })
+
+    expect(result.map(({ product }) => product.id)).toEqual(['pantalona-1'])
+  })
+
+  it("lets a car-rental tenant match 'SUV' with zero code changes, using only its own configured taxonomy", async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'suv-1',
+        name: 'Toyota RAV4',
+        description: 'SUV automático.',
+        price: 4500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/rav4.jpg',
+        productUrl: null,
+        category: 'SUV',
+        stockQuantity: 2,
+        sourceName: 'Aluguer de Carros Maputo',
+      },
+      {
+        id: 'sedan-1',
+        name: 'Toyota Corolla',
+        description: 'Sedan automático.',
+        price: 3000,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/corolla.jpg',
+        productUrl: null,
+        category: 'sedan',
+        stockQuantity: 3,
+        sourceName: 'Aluguer de Carros Maputo',
+      },
+    ])
+    const db = dbWithTaxonomy([
+      { account_id: 'car-rental-account', kind: 'category', canonical_value: 'SUV', aliases: ['jipe', 'crossover'], enabled: true },
+      { account_id: 'car-rental-account', kind: 'category', canonical_value: 'sedan', aliases: [], enabled: true },
+    ])
+
+    const result = await searchCatalogForAgent(db, 'car-rental-account', {
+      query: 'jipe',
+      category: 'jipe',
+      mode: 'browse',
+      limit: 8,
+    })
+
+    expect(result.map(({ product }) => product.id)).toEqual(['suv-1'])
+  })
+
+  it('never lets one tenant taxonomy match another tenant products', async () => {
+    vi.mocked(searchCatalogues).mockResolvedValue([
+      {
+        id: 'suv-1',
+        name: 'Toyota RAV4',
+        description: 'SUV automático.',
+        price: 4500,
+        currency: 'MZN',
+        imageUrl: 'https://cdn.example.com/rav4.jpg',
+        productUrl: null,
+        category: 'SUV',
+        stockQuantity: 2,
+        sourceName: 'Aluguer de Carros Maputo',
+      },
+    ])
+    // Only tenant B (car rental) has a "jipe" alias configured — tenant A
+    // (LC, fashion) has none, and must never inherit it.
+    const db = dbWithTaxonomy([
+      { account_id: 'car-rental-account', kind: 'category', canonical_value: 'SUV', aliases: ['jipe'], enabled: true },
+    ])
+
+    const result = await searchCatalogForAgent(db, 'lc-account', {
+      query: 'jipe',
+      category: 'jipe',
+      mode: 'browse',
+      limit: 8,
+    })
+
+    // lc-account has no taxonomy rows of its own, so it falls back to the
+    // generic defaults — which do not know "jipe" either — and the
+    // unrelated SUV product from another tenant's catalogue must not
+    // surface as a match just because a *different* account configured it.
+    expect(result.map(({ product }) => product.id)).not.toContain('suv-1')
+  })
+})

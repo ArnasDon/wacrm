@@ -23,6 +23,10 @@ export interface CatalogProduct {
 export interface CatalogSearchInput {
   query: string
   limit: number
+  /** Account-specific category/colour vocabulary (see ./taxonomy.ts).
+   *  Omit to fall back to the built-in generic defaults. */
+  categoryGroups?: readonly (readonly string[])[]
+  colorGroups?: readonly (readonly string[])[]
 }
 
 export interface ExternalFieldMapping {
@@ -89,4 +93,5 @@ export interface CatalogSourceRow {
   auth_header: string | null
   auth_secret_encrypted: string | null
   field_mapping: ExternalFieldMapping | null
+  meta_feed_token?: string | null
 }

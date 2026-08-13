@@ -245,6 +245,9 @@ export function MessageComposer({
 
   const suggestions = useMemo(() => {
     if (!slashToken) return [];
+    // A bare "/" (nothing typed yet) shouldn't dump every quick reply —
+    // only start suggesting once there's at least one character to filter by.
+    if (slashToken.query.length < 2) return [];
     const query = normalizeForMatch(stripLeadingSlash(slashToken.query));
     return quickReplies
       .filter(

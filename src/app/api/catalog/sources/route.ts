@@ -22,7 +22,7 @@ export async function GET() {
     const { supabase, accountId } = await requireRole('admin')
     const { data, error } = await supabase
       .from('catalog_sources')
-      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping, created_at, updated_at')
+      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping, meta_feed_token, created_at, updated_at')
       .eq('account_id', accountId)
       .order('created_at', { ascending: false })
     if (error) throw error
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
         auth_secret_encrypted: secret ? encrypt(secret) : null,
         field_mapping: mapping,
       })
-      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping')
+      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping, meta_feed_token')
       .single()
     if (error) throw error
     return NextResponse.json({ source: data }, { status: 201 })

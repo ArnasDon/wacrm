@@ -46,7 +46,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       update.field_mapping = input.field_mapping
     }
     const { data, error } = await supabase.from('catalog_sources').update(update).eq('id', id).eq('account_id', accountId)
-      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping').single()
+      .select('id, name, source_type, is_active, base_url, search_path, auth_type, auth_header, field_mapping, meta_feed_token').single()
     if (error) throw error
     return NextResponse.json({ source: data })
   } catch (error) { return toErrorResponse(error) }

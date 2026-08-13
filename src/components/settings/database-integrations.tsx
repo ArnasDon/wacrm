@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Database, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { Copy, Database, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +15,7 @@ type Source = {
   is_active: boolean
   base_url: string | null
   field_mapping: Record<string, unknown> | null
+  meta_feed_token: string | null
 }
 
 const initialForm = {
@@ -45,6 +46,7 @@ const initialForm = {
   variantActiveColumn: '',
   catalogTable: '',
   catalogSearchColumns: '',
+  catalogCategory: '',
   catalogVariantsTable: '',
   catalogVariantId: 'id',
   catalogVariantProductId: 'product_id',
@@ -102,6 +104,7 @@ function formFromSource(source: Source): IntegrationForm {
     variantActiveColumn: mappingString(mapping, 'variantActiveColumn'),
     catalogTable: mappingString(mapping, 'catalogTable'),
     catalogSearchColumns: mappingList(mapping, 'catalogSearchColumns'),
+    catalogCategory: mappingString(mapping, 'catalogCategory'),
     catalogVariantsTable: mappingString(mapping, 'catalogVariantsTable'),
     catalogVariantId: mappingString(mapping, 'catalogVariantId', 'id'),
     catalogVariantProductId: mappingString(mapping, 'catalogVariantProductId', 'product_id'),
@@ -171,6 +174,7 @@ export function DatabaseIntegrations() {
       variantActiveColumn: form.variantActiveColumn.trim() || undefined,
       catalogTable: form.catalogTable.trim() || undefined,
       catalogSearchColumns: form.catalogSearchColumns.split(',').map((value) => value.trim()).filter(Boolean),
+      catalogCategory: form.catalogCategory.trim() || undefined,
       catalogVariantsTable: form.catalogVariantsTable.trim() || undefined,
       catalogVariantId: form.catalogVariantId.trim() || undefined,
       catalogVariantProductId: form.catalogVariantProductId.trim() || undefined,
@@ -278,6 +282,18 @@ export function DatabaseIntegrations() {
     }
   }
 
+  function feedUrl(source: Source): string | null {
+    if (!source.meta_feed_token || typeof window === 'undefined') return null
+    return `${window.location.origin}/api/meta/catalog-feed/${source.meta_feed_token}`
+  }
+
+  async function copyFeedUrl(source: Source) {
+    const url = feedUrl(source)
+    if (!url) return
+    await navigator.clipboard.writeText(url)
+    toast.success('URL do feed copiado.')
+  }
+
   async function toggle(source: Source) {
     const response = await fetch(`/api/catalog/sources/${source.id}`, {
       method: 'PATCH',
@@ -342,6 +358,7 @@ export function DatabaseIntegrations() {
             <div className="space-y-2 md:col-span-2"><p className="text-sm font-medium">Produtos apenas de catálogo (opcional)</p><p className="text-xs text-muted-foreground">Na LC Fitness, <code>products</code> e <code>product_variants</code> podem enriquecer a pesquisa e fornecer fotografias sem interferir no stock. O stock continua a vir exclusivamente das tabelas de stock.</p></div>
             <div className="space-y-2"><Label>Tabela de catálogo</Label><Input placeholder="products" value={form.catalogTable} onChange={(e) => setForm({ ...form, catalogTable: e.target.value })} /></div>
             <div className="space-y-2"><Label>Colunas de pesquisa do catálogo</Label><Input placeholder="vazio = detecção tolerante" value={form.catalogSearchColumns} onChange={(e) => setForm({ ...form, catalogSearchColumns: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Coluna categoria do catálogo</Label><Input placeholder="category (opcional — preencha se esta tabela tiver categoria e a tabela principal não tiver)" value={form.catalogCategory} onChange={(e) => setForm({ ...form, catalogCategory: e.target.value })} /></div>
             <div className="space-y-2"><Label>Tabela de variações do catálogo</Label><Input placeholder="product_variants" value={form.catalogVariantsTable} onChange={(e) => setForm({ ...form, catalogVariantsTable: e.target.value })} /></div>
             <div className="space-y-2"><Label>FK da variação para produto</Label><Input placeholder="product_id" value={form.catalogVariantProductId} onChange={(e) => setForm({ ...form, catalogVariantProductId: e.target.value })} /></div>
             <div className="space-y-2"><Label>ID da variação de catálogo</Label><Input value={form.catalogVariantId} onChange={(e) => setForm({ ...form, catalogVariantId: e.target.value })} /></div>
@@ -364,7 +381,7 @@ export function DatabaseIntegrations() {
       <Card>
         <CardHeader><CardTitle>Integrações ligadas</CardTitle><CardDescription>Somente as fontes de base de dados desta organização.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
-          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}{source.field_mapping?.catalogTable ? ` + ${String(source.field_mapping.catalogTable)}` : ''}{source.field_mapping?.catalogVariantsTable ? ` + ${String(source.field_mapping.catalogVariantsTable)}` : ''}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
+          {loading ? <p className="text-sm text-muted-foreground">A carregar...</p> : databaseSources.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma base de dados ligada.</p> : databaseSources.map((source) => <div key={source.id} className={`flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${editingId === source.id ? 'ring-1 ring-primary' : ''}`}><div><p className="font-medium">{source.name}</p><p className="text-xs text-muted-foreground">{source.base_url} · {String(source.field_mapping?.schema ?? 'public')}.{String(source.field_mapping?.table ?? '')}{source.field_mapping?.catalogTable ? ` + ${String(source.field_mapping.catalogTable)}` : ''}{source.field_mapping?.catalogVariantsTable ? ` + ${String(source.field_mapping.catalogVariantsTable)}` : ''}</p>{feedUrl(source) ? <p className="mt-1 truncate text-xs text-muted-foreground">Feed Meta: <code className="rounded bg-muted px-1">{feedUrl(source)}</code></p> : null}</div><div className="flex flex-wrap gap-2">{feedUrl(source) ? <Button size="sm" variant="outline" onClick={() => void copyFeedUrl(source)}><Copy />Copiar feed</Button> : null}<Button size="sm" variant="outline" onClick={() => startEdit(source)}><Pencil />Editar</Button><Button size="sm" variant="outline" onClick={() => void toggle(source)}>{source.is_active ? 'Desactivar' : 'Activar'}</Button><Button size="sm" variant="destructive" onClick={() => void remove(source.id)}><Trash2 />Remover</Button></div></div>)}
         </CardContent>
       </Card>
     </div>

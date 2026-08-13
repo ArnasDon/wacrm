@@ -10,7 +10,8 @@ const h = vi.hoisted(() => ({
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
     messageUpsertResult: [{ id: 'msg-1' }] as { id: string }[],
-    priorCustomerMsgCount: 0,
+    /** Rows the first-inbound probe sees; empty means this is the first. */
+    priorCustomerMsgs: [] as { id: string }[],
     /** Row `lookupInternalIdByMetaId` resolves for a `context.id`. */
     replyContextParent: null as { id: string } | null,
     conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
@@ -97,33 +98,26 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'messages':
           return {
-            // Two different chains land here, told apart by the count
-            // option: the prior-message count (head request) and the
-            // reply-context parent lookup.
-            select: (_columns: string, options?: { head?: boolean }) =>
-              options?.head
-                ? // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
-                  {
-                    eq: () => ({
-                      eq: () =>
-                        Promise.resolve({
-                          count: h.state.priorCustomerMsgCount,
-                          error: null,
-                        }),
+            // Two chains land here, both `select('id').eq().eq()`. They
+            // are told apart by their tail: `.limit(1)` is the
+            // first-inbound probe, `.maybeSingle()` the reply-context
+            // parent lookup.
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  limit: () =>
+                    Promise.resolve({
+                      data: h.state.priorCustomerMsgs,
+                      error: null,
                     }),
-                  }
-                : // lookupInternalIdByMetaId: select('id').eq().eq().maybeSingle()
-                  {
-                    eq: () => ({
-                      eq: () => ({
-                        maybeSingle: () =>
-                          Promise.resolve({
-                            data: h.state.replyContextParent,
-                            error: null,
-                          }),
-                      }),
+                  maybeSingle: () =>
+                    Promise.resolve({
+                      data: h.state.replyContextParent,
+                      error: null,
                     }),
-                  },
+                }),
+              }),
+            }),
             // Idempotent insert: upsert(...).select('id')
             upsert: (row: Record<string, unknown>, options: unknown) => {
               h.state.upsertCalls.push({ row, options })
@@ -249,7 +243,7 @@ async function runWebhook(message?: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   h.state.messageUpsertResult = [{ id: 'msg-1' }]
-  h.state.priorCustomerMsgCount = 0
+  h.state.priorCustomerMsgs = []
   h.state.replyContextParent = null
   h.state.conversation = { id: 'conv-1', unread_count: 0, account_id: 'acc-1' }
   h.state.upsertCalls = []

@@ -56,6 +56,14 @@ import {
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
 const HEADER_FORMATS: HeaderFormat[] = ['none', 'text', 'image', 'video', 'document'];
+/** Translation key per header format — keyed so a new format is a build error. */
+const HEADER_LABEL_KEY: Record<HeaderFormat, string> = {
+  none: 'headerNone',
+  text: 'headerText',
+  image: 'headerImage',
+  video: 'headerVideo',
+  document: 'headerDocument',
+};
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
@@ -757,15 +765,7 @@ export function TemplateManager() {
                       value={type}
                       className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
                     >
-                      {type === 'none'
-                        ? t('headerNone')
-                        : type === 'text'
-                          ? t('headerText')
-                          : type === 'image'
-                            ? t('headerImage')
-                            : type === 'video'
-                              ? t('headerVideo')
-                              : t('headerDocument')}
+                      {t(HEADER_LABEL_KEY[type])}
                     </SelectItem>
                   ))}
                 </SelectContent>

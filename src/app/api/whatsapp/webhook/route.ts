@@ -1,5 +1,5 @@
 import { NextResponse, after } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
@@ -22,19 +22,6 @@ import { dispatchConversion, loadCapiCreds } from '@/lib/analytics/meta-capi'
 // give it headroom beyond the platform default (Vercel clamps this to the
 // plan's ceiling). Tune as needed.
 export const maxDuration = 60
-
-// Lazy-initialized to avoid build-time crash when env vars are missing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminClient: any = null
-function supabaseAdmin() {
-  if (!_adminClient) {
-    _adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-  }
-  return _adminClient
-}
 
 interface WhatsAppMessage {
   id: string
@@ -383,6 +370,13 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
+/** Timestamp column stamped when a recipient reaches each ladder state. */
+const RECIPIENT_TS_COLUMN: Record<string, string> = {
+  sent: 'sent_at',
+  delivered: 'delivered_at',
+  read: 'read_at',
+}
+
 async function handleStatusUpdate(status: {
   id: string
   status: string
@@ -428,9 +422,8 @@ async function handleStatusUpdate(status: {
     isValidStatusTransition(recipient.status, status.status)
   ) {
     const update: Record<string, unknown> = { status: status.status }
-    if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
-    if (status.status === 'delivered') update.delivered_at = tsIso
-    if (status.status === 'read') update.read_at = tsIso
+    const tsColumn = RECIPIENT_TS_COLUMN[status.status]
+    if (tsColumn) update[tsColumn] = tsIso
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')
@@ -454,7 +447,12 @@ async function handleStatusUpdate(status: {
     .maybeSingle()
 
   if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null
+    // A many-to-one embed returns an object at runtime, but without
+    // generated DB types supabase-js infers the array shape, hence the
+    // double cast. Revisit once `SupabaseClient<Database>` lands.
+    const conv = msgRow.conversations as unknown as {
+      account_id: string
+    } | null
     const accountId = conv?.account_id
     if (accountId) {
       // 3a) Trigger de automatización `message_read` (DAD §8.3 — decision
@@ -796,12 +794,16 @@ async function processMessage(
   // BEFORE we insert, so the count is accurate. Covers the case where
   // the contact row already exists (manual add / CSV import) but they've
   // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
+  // `limit(1)` rather than an exact count: the answer is a yes/no, and an
+  // exact count walks every customer message in the thread to produce a
+  // number we only compare against zero.
+  const { data: priorCustomerMsgs } = await supabaseAdmin()
     .from('messages')
-    .select('id', { count: 'exact', head: true })
+    .select('id')
     .eq('conversation_id', conversation.id)
     .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
+    .limit(1)
+  const isFirstInboundMessage = (priorCustomerMsgs?.length ?? 0) === 0
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The

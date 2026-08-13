@@ -383,6 +383,25 @@ async function getContactForSend(
 }
 
 /**
+ * Ordena claves de variable numéricamente primero, alfabéticamente después.
+ *
+ * Meta usa marcadores posicionales `{{1}}`, `{{2}}`, … así que los params
+ * DEBEN emitirse en orden numérico estricto. El orden lexicográfico de
+ * "1", "2", …, "10" da "1", "10", "2", … y descoloca en silencio toda
+ * plantilla con ≥10 variables.
+ */
+function byVariableKey(a: string, b: string): number {
+  const na = Number(a)
+  const nb = Number(b)
+  const aNum = Number.isFinite(na)
+  const bNum = Number.isFinite(nb)
+  if (aNum && bNum) return na - nb
+  if (aNum) return -1
+  if (bNum) return 1
+  return a.localeCompare(b)
+}
+
+/**
  * Interpola `{{ field }}` del contacto en `text`, reusando `resolveVariables`
  * (broadcasts) como ÚNICA fuente de campos — no se copia lógica ni se inventa
  * una tercera sintaxis de plantillas (§9.3.1). `{{ vars.* }}` / `{{ message.text }}`
@@ -406,16 +425,7 @@ export function contactText(
 
   if (variables && Object.keys(variables).length > 0) {
     const resolved = resolveVariables(variables, contact as Contact, undefined)
-    const keys = Object.keys(variables).sort((a, b) => {
-      const na = Number(a)
-      const nb = Number(b)
-      const aNum = Number.isFinite(na)
-      const bNum = Number.isFinite(nb)
-      if (aNum && bNum) return na - nb
-      if (aNum) return -1
-      if (bNum) return 1
-      return a.localeCompare(b)
-    })
+    const keys = Object.keys(variables).sort(byVariableKey)
     keys.forEach((k, i) => map.set(String(k), resolved[i] ?? ''))
   }
 
@@ -545,22 +555,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('send_template needs a contact')
       if (!cfg.template_name) throw new Error('send_template needs template_name')
       const conversationId = await resolveConversationId(args)
-      // Meta templates use positional {{1}}, {{2}}, … placeholders, so
-      // we MUST emit params in strict numeric order. Lexicographic sort
-      // of "1", "2", …, "10" yields "1", "10", "2", … which silently
-      // scrambles every template with ≥10 variables.
       const params = cfg.variables
         ? Object.keys(cfg.variables)
-            .sort((a, b) => {
-              const na = Number(a)
-              const nb = Number(b)
-              const aNum = Number.isFinite(na)
-              const bNum = Number.isFinite(nb)
-              if (aNum && bNum) return na - nb
-              if (aNum) return -1
-              if (bNum) return 1
-              return a.localeCompare(b)
-            })
+            .sort(byVariableKey)
             .map((k) => String(cfg.variables![k]))
         : []
 

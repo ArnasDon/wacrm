@@ -242,7 +242,7 @@ function NewTermForm({
             <Input
               autoFocus
               required
-              placeholder={kind === 'color' ? 'Preto' : 'Pantalona'}
+              placeholder={kind === 'color' ? 'Ex.: Cor principal' : 'Ex.: Categoria principal'}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
@@ -250,7 +250,7 @@ function NewTermForm({
           <div className="space-y-1.5">
             <Label>Aliases (opcional)</Label>
             <Input
-              placeholder={kind === 'color' ? 'preta, black' : 'pantalonas, calça pantalona, wide leg'}
+              placeholder="sinónimo 1, sinónimo 2"
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}
             />

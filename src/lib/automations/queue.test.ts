@@ -57,7 +57,7 @@ vi.mock("./admin-client", () => {
   };
 });
 
-vi.mock("./meta-send", () => ({
+vi.mock("@/lib/flows/meta-send", () => ({
   engineSendTemplate: h.sendTemplate,
   engineSendText: h.sendText,
 }));

@@ -217,7 +217,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       string,
       unknown
     >
-    // Meta wants the bare E.164 digits — sanitizePhoneForMeta strips the '+'.
+    // Meta wants the bare E.164 digits — normalizePhone strips the '+'.
     expect(args.to).toBe('15551234567')
     expect(args.templateName).toBe('order_update')
 

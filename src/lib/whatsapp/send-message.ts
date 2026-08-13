@@ -37,7 +37,7 @@ import {
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
-  sanitizePhoneForMeta,
+  normalizePhone,
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
@@ -242,7 +242,7 @@ export async function sendMessageToConversation(
     );
   }
 
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
+  const sanitizedPhone = normalizePhone(contact.phone);
   if (!isValidE164(sanitizedPhone)) {
     throw new SendMessageError(
       'bad_request',

@@ -6,7 +6,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
-  sanitizePhoneForMeta,
+  normalizePhone,
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
     let failedCount = 0
 
     for (const recipient of recipients) {
-      const sanitized = sanitizePhoneForMeta(recipient.phone)
+      const sanitized = normalizePhone(recipient.phone)
 
       if (!isValidE164(sanitized)) {
         results.push({

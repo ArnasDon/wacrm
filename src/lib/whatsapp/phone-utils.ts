@@ -1,16 +1,8 @@
 /**
- * Sanitize phone number for Meta WhatsApp API.
- * Meta requires digits only — no + prefix, no spaces, no dashes.
- * e.g. "+370 63949836" → "37063949836"
- */
-export function sanitizePhoneForMeta(phone: string): string {
-  if (!phone) return ''
-  return phone.replace(/\D/g, '')
-}
-
-/**
  * Normalize phone number by removing all non-digit characters.
  * Used for comparing phone numbers in different formats.
+ * Meta requires digits only — no + prefix, no spaces, no dashes.
+ * e.g. "+370 63949836" → "37063949836"
  */
 export function normalizePhone(phone: string): string {
   if (!phone) return ''
@@ -58,7 +50,7 @@ export function isValidE164(phone: string): boolean {
  * Country-code lengths of 1, 2, and 3 digits are tried because we
  * don't know the user's country ahead of time.
  *
- * @param sanitized - digits-only phone number (from sanitizePhoneForMeta)
+ * @param sanitized - digits-only phone number (from normalizePhone)
  * @returns deduplicated list of variants, original first
  */
 export function phoneVariants(sanitized: string): string[] {

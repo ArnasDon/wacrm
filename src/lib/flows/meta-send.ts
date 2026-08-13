@@ -2,6 +2,7 @@ import {
   sendInteractiveButtons,
   sendInteractiveList,
   sendMediaMessage,
+  sendTemplateMessage,
   sendTextMessage,
   type InteractiveButton,
   type InteractiveListSection,
@@ -10,7 +11,11 @@ import {
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
-  sanitizePhoneForMeta,
+  resolveTemplateRow,
+  templateContentText,
+} from '@/lib/whatsapp/template-body'
+import {
+  normalizePhone,
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
@@ -20,12 +25,11 @@ import { supabaseAdmin } from './admin-client'
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
 //
-// Mirrors src/lib/automations/meta-send.ts (engineSendText /
-// engineSendTemplate) but emits interactive button + list messages.
-// Kept separate from the automations file so the two engines don't
-// fight over each other's shape — once both stabilize, the
-// phone-variant retry + DB persistence are obvious extraction
-// candidates into a shared base.
+// Single Meta send layer for both engines (Flows + Automations):
+// text, template, media, interactive buttons and lists. The former
+// automations/meta-send.ts was consolidated here (it duplicated the
+// account-scoped lookup + phone-variant retry + DB persistence;
+// engineSendTemplate + engineSendInteractive now live here too).
 //
 // PR #1 ships this in isolation: callers don't exist yet. PR #2
 // brings the flow runner online and wires it up. Shipping it now
@@ -77,7 +81,7 @@ export async function engineSendText(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
+  const sanitized = normalizePhone(contact.phone)
   if (!isValidE164(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
@@ -187,7 +191,7 @@ export async function engineSendMedia(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
+  const sanitized = normalizePhone(contact.phone)
   if (!isValidE164(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
@@ -327,7 +331,7 @@ async function sendInteractiveViaMeta(
   const db = supabaseAdmin()
 
   // Scope the contact + whatsapp_config lookups by account_id —
-  // same defense-in-depth rationale as automations/meta-send.ts.
+  // same defense-in-depth rationale as the other senders here.
   // Migration 017 moved both tables to account-scoped tenancy.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
@@ -339,7 +343,7 @@ async function sendInteractiveViaMeta(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
+  const sanitized = normalizePhone(contact.phone)
   if (!isValidE164(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
@@ -381,7 +385,7 @@ async function sendInteractiveViaMeta(
     return r.messageId
   }
 
-  // Same phone-variant retry as automations/meta-send.ts. Numbers
+  // Same phone-variant retry as the other senders here. Numbers
   // registered with/without a trunk 0 + Meta's sandbox quirks all
   // need this to reliably land a message.
   const variants = phoneVariants(sanitized)
@@ -458,4 +462,171 @@ async function sendInteractiveViaMeta(
     .eq('id', input.conversationId)
 
   return { whatsapp_message_id: waMessageId }
+}
+
+interface SendTemplateEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  templateName: string
+  language?: string
+  params?: string[]
+}
+
+/**
+ * Send a WhatsApp template message (Meta-approved, 24h window or
+ * pre-approved template) from the Flows/Automations engine.
+ *
+ * Same account-scoped lookup + phone-variant retry + DB persistence
+ * as the other senders, but persists the substituted body
+ * (`templateContentText`) so the inbox renders the real text the
+ * customer saw (issue #483), plus `template_name` for reference.
+ */
+export async function engineSendTemplate(
+  args: SendTemplateEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const db = supabaseAdmin()
+
+  const { data: contact, error: contactErr } = await db
+    .from('contacts')
+    .select('id, phone')
+    .eq('id', args.contactId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (contactErr || !contact?.phone) {
+    throw new Error('contact not found for this account')
+  }
+
+  const sanitized = normalizePhone(contact.phone)
+  if (!isValidE164(sanitized)) {
+    throw new Error(`contact phone invalid: ${contact.phone}`)
+  }
+
+  const { data: config, error: configErr } = await db
+    .from('whatsapp_config')
+    .select('*')
+    .eq('account_id', args.accountId)
+    .single()
+  if (configErr || !config) {
+    throw new Error('WhatsApp not configured for this account')
+  }
+
+  const accessToken = decrypt(config.access_token)
+
+  // Local template row — read for the body we persist below, not for
+  // the Meta payload (the wire shape is deliberately unchanged).
+  const templateRow = (
+    await resolveTemplateRow(
+      db,
+      args.accountId,
+      args.templateName,
+      args.language,
+    )
+  ).row
+
+  const attempt = async (phone: string): Promise<string> => {
+    const r = await sendTemplateMessage({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+      to: phone,
+      templateName: args.templateName,
+      language: args.language,
+      params: args.params,
+    })
+    return r.messageId
+  }
+
+  const variants = phoneVariants(sanitized)
+  let workingPhone = sanitized
+  let waMessageId = ''
+  let lastError: unknown = null
+  for (const v of variants) {
+    try {
+      waMessageId = await attempt(v)
+      workingPhone = v
+      lastError = null
+      break
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!isRecipientNotAllowedError(msg)) throw err
+      lastError = err
+    }
+  }
+  if (lastError) throw lastError
+
+  if (workingPhone !== sanitized) {
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+  }
+
+  // Templates persist the substituted body — the manual and public-API
+  // send paths do the same; null content would render as an empty bubble.
+  const content_text = templateContentText(templateRow, args.params ?? [])
+
+  const { error: msgErr } = await db.from('messages').insert({
+    conversation_id: args.conversationId,
+    sender_type: 'bot',
+    content_type: 'template',
+    content_text,
+    template_name: args.templateName,
+    message_id: waMessageId,
+    status: 'sent',
+  })
+  if (msgErr) {
+    // Meta already has the message; record the DB error but don't pretend
+    // the send failed. The engine wraps this in a log line.
+    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+  }
+
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: content_text ?? `[template:${args.templateName}]`,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.conversationId)
+
+  return { whatsapp_message_id: waMessageId }
+}
+
+interface SendInteractiveEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  payload: InteractiveMessagePayload
+}
+
+/**
+ * Send an interactive (reply-buttons or list) message from the
+ * automation engine.
+ *
+ * Delegates to the button/list senders above, which own the
+ * account-scoped lookup, phone-variant retry, and the `messages`
+ * insert with `interactive_payload` + `sender_type='bot'`. One
+ * implementation for both engines — no second hand-rolled copy.
+ */
+export async function engineSendInteractive(
+  args: SendInteractiveEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const { payload, accountId, userId, conversationId, contactId } = args
+  const common = { accountId, userId, conversationId, contactId }
+  if (payload.kind === 'buttons') {
+    return engineSendInteractiveButtons({
+      ...common,
+      bodyText: payload.body,
+      headerText: payload.header,
+      footerText: payload.footer,
+      buttons: payload.buttons,
+    })
+  }
+  return engineSendInteractiveList({
+    ...common,
+    bodyText: payload.body,
+    buttonLabel: payload.button_label,
+    headerText: payload.header,
+    footerText: payload.footer,
+    sections: payload.sections,
+  })
 }

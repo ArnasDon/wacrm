@@ -1,5 +1,5 @@
 import { supabaseAdmin } from './admin-client'
-import { engineSendTemplate, engineSendText } from './meta-send'
+import { engineSendTemplate, engineSendText } from '@/lib/flows/meta-send'
 
 // ------------------------------------------------------------
 // Fase 2 Mautic P1.4 — frequency_rules + message_queue (DAD §8.3)

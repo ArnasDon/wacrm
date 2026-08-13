@@ -5,34 +5,32 @@ import {
   normalizePhone,
   phoneVariants,
   phonesMatch,
-  sanitizePhoneForMeta,
 } from "./phone-utils";
 
-describe("sanitizePhoneForMeta", () => {
+describe("normalizePhone", () => {
   it("strips +, spaces, and dashes leaving only digits", () => {
-    expect(sanitizePhoneForMeta("+370 639 49836")).toBe("37063949836");
-    expect(sanitizePhoneForMeta("+1 (415) 555-1212")).toBe("14155551212");
+    expect(normalizePhone("+370 639 49836")).toBe("37063949836");
+    expect(normalizePhone("+1 (415) 555-1212")).toBe("14155551212");
   });
 
   it("returns an empty string for falsy input", () => {
-    expect(sanitizePhoneForMeta("")).toBe("");
+    expect(normalizePhone("")).toBe("");
     // Defensive: existing call sites occasionally pass through nullable
     // contact phones. The function early-returns on the falsy check.
-    expect(sanitizePhoneForMeta(undefined as unknown as string)).toBe("");
+    expect(normalizePhone(undefined as unknown as string)).toBe("");
   });
 
-  it("is idempotent on already-sanitized input", () => {
+  it("is idempotent on already-normalized input", () => {
     const cleaned = "14155551212";
-    expect(sanitizePhoneForMeta(cleaned)).toBe(cleaned);
+    expect(normalizePhone(cleaned)).toBe(cleaned);
   });
-});
 
-describe("normalizePhone", () => {
-  it("matches sanitizePhoneForMeta byte-for-byte (shared canonical form)", () => {
+  it("removes non-digit characters (shared canonical form)", () => {
     const samples = ["+370 12345", "abc-555-DEF", "", "0044 7000 0000 0000"];
-    for (const s of samples) {
-      expect(normalizePhone(s)).toBe(sanitizePhoneForMeta(s));
-    }
+    const expected = ["37012345", "555", "", "0044700000000000"];
+    samples.forEach((s, i) => {
+      expect(normalizePhone(s)).toBe(expected[i]);
+    });
   });
 });
 

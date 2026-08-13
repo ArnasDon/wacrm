@@ -8,7 +8,35 @@
 
 import { z } from 'zod';
 
-/** Tipos aceptados por la API (reducido v8, DAD §4) */
+/**
+ * Tipos aceptados por la API (reducido v8, DAD §4).
+ *
+ * /api/events es ANÓNIMO (solo rate limit), así que esta lista es la
+ * superficie de escritura pública sobre `tracking_events`: todo tipo que
+ * aparezca aquí lo puede insertar cualquiera. Por eso solo entra lo que un
+ * cliente nuestro emite de verdad.
+ *
+ * Quién produce cada uno de los 7 tipos que llegan hoy a la tabla:
+ *
+ *   form_submit    → landing (lead-form.ts + las dos páginas de gracias)
+ *   page_view      → god.js, vía sendPageView                    ← esta API
+ *   whatsapp_click → /api/track (beacon GET, beaconSchema)
+ *   phone_click    → /api/track
+ *   scroll_depth   → /api/track
+ *   ctwa_lead      → webhook de WhatsApp, server-side con service role
+ *   state_changed  → RPC transition_deal (migraciones 049/058) y
+ *                    /api/deals/[id]/reactivate
+ *
+ * `utm_recorded` e `identity_merged` estaban admitidos aquí y no los emite
+ * NADA — ni cliente, ni servidor, ni migración. Eran dos tipos que cualquiera
+ * podía insertar de forma anónima sin que ningún código los leyera nunca.
+ * Fuera.
+ *
+ * El CHECK de la tabla (migración 047) sigue admitiendo 23 tipos y se deja
+ * como está a propósito: su trabajo es atrapar erratas, no ser el catálogo, y
+ * estrechar un CHECK en producción es de ida y difícil vuelta. Esta lista, que
+ * es código, es la que manda para lo que entra desde fuera.
+ */
 export const EVENT_TYPES = [
   'form_submit',
   'ctwa_lead',
@@ -16,8 +44,6 @@ export const EVENT_TYPES = [
   'whatsapp_click',
   'phone_click',
   'scroll_depth',
-  'utm_recorded',
-  'identity_merged',
 ] as const;
 
 export type TrackEventType = (typeof EVENT_TYPES)[number];

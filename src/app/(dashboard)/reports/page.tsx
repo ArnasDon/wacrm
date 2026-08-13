@@ -16,6 +16,7 @@ import {
   GROUP_BY_OPTIONS,
   type AcquisitionReport,
   type AcquisitionRow,
+  type FunnelStep,
   type GroupBy,
 } from '@/lib/reporting/acquisition';
 
@@ -87,6 +88,82 @@ function Kpi({
         <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{value}</p>
         <div className="mt-1">
           <Delta now={now} before={before} invert={invert} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * El embudo: Visitas → Leads → Contactados → Ganados.
+ *
+ * Los `page_view` llevaban desde la migración 047 guardándose sin que
+ * ninguna pantalla los leyera. La primera columna es lo que convierte al
+ * resto en un embudo y no en cuatro cifras sueltas: sin denominador, «12
+ * leads» no dice si la landing va bien o mal.
+ *
+ * Lo que se mira aquí es la CAÍDA, no los totales — por eso el porcentaje
+ * entre peldaños tiene más peso visual que el acumulado, y por eso hay una
+ * línea explícita de cuántos se quedan por el camino en cada escalón.
+ */
+function Funnel({ steps }: { steps: FunnelStep[] }) {
+  const top = steps[0]?.count ?? 0;
+  if (steps.length === 0) return null;
+
+  return (
+    <Card className="mt-6">
+      <CardContent className="pt-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm font-medium text-foreground">Embudo</p>
+          <p className="text-xs text-muted-foreground">
+            Porcentajes sobre {steps[0].label.toLowerCase()}
+          </p>
+        </div>
+
+        <div className="mt-4 space-y-1">
+          {steps.map((step, i) => {
+            const next = steps[i + 1];
+            // Sin Math.max un pipeline con las etapas reordenadas a mano
+            // podría dar un peldaño mayor que el anterior y enseñar una
+            // pérdida negativa, que no significa nada para quien lo lee.
+            const dropped = next ? Math.max(0, step.count - next.count) : 0;
+
+            return (
+              <div key={step.key}>
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="text-foreground">{step.label}</span>
+                  <span className="flex items-baseline gap-3">
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {step.count.toLocaleString()}
+                    </span>
+                    <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                      {step.fromTop}%
+                    </span>
+                  </span>
+                </div>
+
+                <div
+                  className="mt-1 h-2 overflow-hidden rounded-full bg-muted"
+                  aria-hidden="true"
+                >
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${top > 0 ? (step.count / top) * 100 : 0}%` }}
+                  />
+                </div>
+
+                {next && (
+                  <p className="py-1.5 pl-3 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {next.fromPrev}%
+                    </span>{' '}
+                    sigue a {next.label.toLowerCase()}
+                    {dropped > 0 && <> · se quedan {dropped.toLocaleString()}</>}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -250,6 +327,8 @@ export default function ReportsPage() {
               before={data.previous.revenue}
             />
           </div>
+
+          <Funnel steps={data.funnel} />
 
           <div className="mt-6 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Agrupar por</span>

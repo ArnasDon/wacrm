@@ -2,9 +2,10 @@
 // POST /api/events — enrutador de eventos de tracking (REDUCIDO v8).
 //
 // Acepta solo eventos SIN hogar (DAD §4): form_submit, ctwa_lead,
-// page_view, whatsapp_click, phone_click, scroll_depth, utm_recorded,
-// identity_merged. Los eventos nativos viven en sus tablas; los
-// internos (state_changed/score_changed) solo los escribe RPC/trigger.
+// page_view, whatsapp_click, phone_click, scroll_depth. Los eventos
+// nativos viven en sus tablas; los internos (state_changed/
+// score_changed) solo los escribe RPC/trigger. La lista viva, con quién
+// produce cada tipo, está en EVENT_TYPES (track-event-schema.ts).
 //
 // form_submit crea el lead reutilizando el ingest existente
 // (findOrCreateContact — DAD §3.2 "reutilizar el ingest existente"),

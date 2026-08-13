@@ -55,10 +55,25 @@ export interface AcquisitionRow {
 }
 
 export interface AcquisitionTotals {
+  /** `page_view` del rango. Ver loadPageViews para qué cuenta y qué no. */
+  visits: number;
   leads: number;
+  /** Leads cuyo trato llegó a «Contactado» o más allá. */
+  contacted: number;
   won: number;
   lost: number;
   revenue: number;
+}
+
+/** Un peldaño del embudo, ya con sus porcentajes calculados. */
+export interface FunnelStep {
+  key: 'visits' | 'leads' | 'contacted' | 'won';
+  label: string;
+  count: number;
+  /** % sobre el peldaño anterior — la caída. `null` en el primero. */
+  fromPrev: number | null;
+  /** % sobre el primer peldaño. */
+  fromTop: number;
 }
 
 export interface AcquisitionReport {
@@ -66,6 +81,8 @@ export interface AcquisitionReport {
   totals: AcquisitionTotals;
   /** Mismas cifras del periodo inmediatamente anterior, de igual duración. */
   previous: AcquisitionTotals;
+  /** Visitas → Leads → Contactados → Ganados. */
+  funnel: FunnelStep[];
 }
 
 type AttributionJson = {
@@ -144,7 +161,54 @@ interface DealRow {
   contact_id: string | null;
   status: string;
   value: unknown;
-  stage: { name: string } | null;
+  stage: { name: string; position: number | null } | null;
+}
+
+/**
+ * Posición de «Contactado» en DEFAULT_STAGES: 0 Lead creado, 1 Contacto
+ * intentado, 2 Contactado. Se mide por posición y no por nombre porque las
+ * etapas son editables y renombrarlas es lo primero que hace todo el mundo;
+ * el ORDEN, en cambio, se conserva casi siempre.
+ *
+ * La distinción con la posición 1 es la que da sentido al peldaño: «Contacto
+ * intentado» es que le escribimos, «Contactado» es que respondió. Un embudo
+ * que cuenta intentos como contactos esconde justo el escalón que hay que
+ * arreglar.
+ */
+const CONTACTED_POSITION = 2;
+
+/** ¿Este lead llegó a hablar con alguien? */
+function wasContacted(deals: DealRow[]): boolean {
+  return deals.some(
+    (d) =>
+      d.status === 'won' || (d.stage?.position ?? 0) >= CONTACTED_POSITION
+  );
+}
+
+/**
+ * `page_view` del rango.
+ *
+ * Cuenta filas, no visitantes únicos: `visitor_id` acaba de empezar a viajar
+ * en el evento (god.ts) y las filas anteriores no lo llevan, así que un
+ * DISTINCT hoy daría una cifra que va creciendo sola según se renueva el
+ * histórico — peor que una definición simple y estable. Cuando haya
+ * suficiente historia con visitor_id, esto pasa a ser un RPC con DISTINCT:
+ * traerse las filas al proceso para contarlas no escala.
+ *
+ * `head: true` no descarga ninguna fila; solo pide el recuento.
+ */
+async function loadPageViews(
+  accountId: string,
+  range: DateRange
+): Promise<number> {
+  const { count } = await supabaseAdmin()
+    .from('tracking_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId)
+    .eq('event_type', 'page_view')
+    .gte('created_at', range.from)
+    .lte('created_at', range.to);
+  return count ?? 0;
 }
 
 /**
@@ -163,7 +227,7 @@ async function loadDealsForContacts(
   for (let i = 0; i < contactIds.length; i += CHUNK) {
     const { data } = await supabaseAdmin()
       .from('deals')
-      .select('contact_id, status, value, stage:pipeline_stages(name)')
+      .select('contact_id, status, value, stage:pipeline_stages(name, position)')
       .eq('account_id', accountId)
       .in('contact_id', contactIds.slice(i, i + CHUNK));
     out.push(...((data ?? []) as unknown as DealRow[]));
@@ -206,11 +270,24 @@ async function totalsFor(
   accountId: string,
   range: DateRange
 ): Promise<AcquisitionTotals> {
-  const contacts = await loadContacts(accountId, range);
+  const [contacts, visits] = await Promise.all([
+    loadContacts(accountId, range),
+    loadPageViews(accountId, range),
+  ]);
   const deals = await loadDealsForContacts(
     accountId,
     contacts.map((c) => c.id)
   );
+
+  const dealsByContact = new Map<string, DealRow[]>();
+  for (const d of deals) {
+    if (!d.contact_id) continue;
+    dealsByContact.set(d.contact_id, [
+      ...(dealsByContact.get(d.contact_id) ?? []),
+      d,
+    ]);
+  }
+
   let won = 0;
   let lost = 0;
   let revenue = 0;
@@ -222,7 +299,46 @@ async function totalsFor(
       lost += 1;
     }
   }
-  return { leads: contacts.length, won, lost, revenue };
+
+  // Por contacto y no por trato: un lead con tres tratos es un contactado,
+  // no tres.
+  let contacted = 0;
+  for (const c of contacts) {
+    if (wasContacted(dealsByContact.get(c.id) ?? [])) contacted += 1;
+  }
+
+  return { visits, leads: contacts.length, contacted, won, lost, revenue };
+}
+
+/** Redondea a un decimal; 0 cuando el denominador es 0 (y no NaN). */
+function pct(part: number, whole: number): number {
+  if (whole <= 0) return 0;
+  return Math.round((part / whole) * 1000) / 10;
+}
+
+/**
+ * Los cuatro peldaños, con la caída entre cada par.
+ *
+ * Las visitas solo entran si hay alguna: una cuenta que aún no ha desplegado
+ * la landing tiene 0 `page_view`, y arrancar el embudo en cero convierte
+ * todos los porcentajes siguientes en 0 % y hace parecer que no se convierte
+ * nada. En ese caso el embudo empieza en Leads, que es la verdad disponible.
+ */
+function buildFunnel(t: AcquisitionTotals): FunnelStep[] {
+  const raw: { key: FunnelStep['key']; label: string; count: number }[] = [
+    { key: 'visits', label: 'Visitas', count: t.visits },
+    { key: 'leads', label: 'Leads', count: t.leads },
+    { key: 'contacted', label: 'Contactados', count: t.contacted },
+    { key: 'won', label: 'Ganados', count: t.won },
+  ];
+  const steps = t.visits > 0 ? raw : raw.slice(1);
+  const top = steps[0]?.count ?? 0;
+
+  return steps.map((s, i) => ({
+    ...s,
+    fromPrev: i === 0 ? null : pct(s.count, steps[i - 1].count),
+    fromTop: pct(s.count, top),
+  }));
 }
 
 /**
@@ -234,7 +350,10 @@ export async function loadAcquisition(
   range: DateRange,
   groupBy: GroupBy
 ): Promise<AcquisitionReport> {
-  const contacts = await loadContacts(accountId, range);
+  const [contacts, visits] = await Promise.all([
+    loadContacts(accountId, range),
+    loadPageViews(accountId, range),
+  ]);
   const deals = await loadDealsForContacts(
     accountId,
     contacts.map((c) => c.id)
@@ -249,7 +368,14 @@ export async function loadAcquisition(
   }
 
   const byGroup = new Map<string, AcquisitionRow>();
-  const totals: AcquisitionTotals = { leads: 0, won: 0, lost: 0, revenue: 0 };
+  const totals: AcquisitionTotals = {
+    visits,
+    leads: 0,
+    contacted: 0,
+    won: 0,
+    lost: 0,
+    revenue: 0,
+  };
 
   for (const contact of contacts) {
     const key = groupValue(contact.attribution, groupBy);
@@ -259,6 +385,7 @@ export async function loadAcquisition(
     addDetail(row, contact.attribution);
 
     const contactDeals = dealsByContact.get(contact.id) ?? [];
+    if (wasContacted(contactDeals)) totals.contacted += 1;
     // Un contacto cuenta una sola vez en cada columna de resultado: si tiene
     // un trato ganado es ganado, aunque arrastre otros abiertos.
     const hasWon = contactDeals.some((d) => d.status === 'won');
@@ -298,5 +425,5 @@ export async function loadAcquisition(
 
   const previous = await totalsFor(accountId, previousRange(range));
 
-  return { rows, totals, previous };
+  return { rows, totals, previous, funnel: buildFunnel(totals) };
 }

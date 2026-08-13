@@ -147,7 +147,16 @@ function sendPageView(attr: Attribution): void {
     const body = JSON.stringify({
       event_id: `pv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       event_type: "page_view",
-      attribution: attr,
+      // visitor_id se compone AQUÍ y no dentro de `attr`: `attr` es lo que se
+      // persiste en la cookie de atribución, y el visitante ya tiene su propia
+      // cookie de un año — duplicarlo sería dos fuentes de verdad para el
+      // mismo dato. Es el mismo sitio donde lo añade lead-form.ts al enviar.
+      //
+      // Sin esto la visita se guarda anónima y no hay forma de unirla con el
+      // form_submit que llega después: el embudo de /reports puede contar
+      // visitas y leads, pero no decir que ESTA visita se convirtió en ESTE
+      // lead. El campo ya estaba admitido por attributionInputSchema.
+      attribution: { ...attr, visitor_id: getVisitorId() },
       ref_code: attr.ref_code,
       landing_slug: attr.landing_slug,
       payload: { path: location.pathname, referrer: document.referrer || undefined },

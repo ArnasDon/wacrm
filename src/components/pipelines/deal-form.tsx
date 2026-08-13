@@ -164,7 +164,6 @@ export function DealForm({
       currency,
       contact_id: contactId,
       pipeline_id: pipelineId,
-      stage_id: stageId,
       assigned_to: assignedTo || null,
       notes: notes.trim() || null,
       expected_close_date: expectedCloseDate || null,
@@ -173,7 +172,10 @@ export function DealForm({
     if (deal) {
       // Cambio de stage = transición atómica → transition_deal primero
       // (DAD §7.1: guard_rules + optimistic locking). Los demás campos son
-      // datos planos y siguen por update directo.
+      // datos planos y siguen por update directo. stage_id se excluye del
+      // update directo a propósito: transition_deal es la ÚNICA vía que
+      // escribe el stage (emite state_changed; un update directo no deja
+      // huella y rompería la derivación de time-in-stage).
       if (stageId !== deal.stage_id) {
         const { data, error } = await supabase.rpc("transition_deal", {
           p_deal_id: deal.id,
@@ -218,7 +220,13 @@ export function DealForm({
       }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+        .insert({
+          ...payload,
+          stage_id: stageId,
+          user_id: user.id,
+          account_id: accountId,
+          status: "open",
+        });
       if (error) {
         toast.error(t("toastFailedCreate"));
         setSaving(false);

@@ -10,6 +10,7 @@ import {
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
+import { classifyWhatsAppChat, isNonIndividualChat } from '@/lib/whatsapp/chat-classify'
 
 // ============================================================
 // uazapi inbound webhook.
@@ -304,6 +305,24 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   // the live-payload capture above.
   const chatPhoneJid = data.chatid ?? data.sender_pn ?? data.sender
   if (!externalId || !chatPhoneJid) return
+
+  // Group / community / channel messages are NOT customer contacts —
+  // uazapi (like every WhatsApp-Web-based provider) forwards these
+  // through the same "messages" event as a real 1:1 chat, and the
+  // group/community's numeric id looks superficially like a phone
+  // number once naively parsed. Classify BEFORE any DB work so these
+  // never create a contact/conversation (issue: group & community
+  // chats were polluting the inbox — see chat-classify.ts for the
+  // detection rules and their confidence caveats).
+  const chatKind = classifyWhatsAppChat(chatPhoneJid, {
+    explicitIsCommunity: Boolean((event as { isCommunity?: boolean }).isCommunity),
+  })
+  if (isNonIndividualChat(chatKind)) {
+    console.log(`[uazapi webhook] skipping ${chatKind} chat (not a customer contact):`, {
+      chatid: chatPhoneJid,
+    })
+    return
+  }
 
   const chatPhone = stripJidSuffix(chatPhoneJid)
   const contentType = mapUazapiTypeToContentType(data.type, data.messageType)

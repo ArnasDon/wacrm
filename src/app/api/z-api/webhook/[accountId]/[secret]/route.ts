@@ -9,6 +9,7 @@ import {
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
+import { classifyWhatsAppChat, isNonIndividualChat } from '@/lib/whatsapp/chat-classify'
 
 // ============================================================
 // Z-API inbound webhook.
@@ -64,6 +65,17 @@ interface ZapiReceivedEvent {
   momment: number
   connectedPhone?: string
   interactiveReplyId?: never
+  /**
+   * Z-API's own "this chat is a group" flag, per its webhook docs.
+   * Optional/defensive here — not yet confirmed against a live group
+   * payload from this account (no test instance was available when
+   * this filter was added). `phone` itself becomes the group's id
+   * (not a real number) on a group message, which the digit-length
+   * fallback in chat-classify.ts also catches independently.
+   */
+  isGroup?: boolean
+  /** Group/community display name, when Z-API includes one — group messages only. */
+  chatName?: string
   text?: { message: string }
   image?: { imageUrl: string; caption?: string }
   video?: { videoUrl: string; caption?: string }
@@ -251,6 +263,24 @@ async function processZapiEvent(config: ZapiConfigRow, event: ZapiWebhookEvent):
   // active Z-API test instance available at implementation time). See
   // mirrorAgentSentMessage's own comment for the full rationale.
   if (!data.messageId || !data.phone) return
+
+  // Group / community / channel messages are NOT customer contacts —
+  // Z-API forwards these through the same ReceivedCallback as a real
+  // 1:1 chat, and `phone` becomes the group/community's id (which
+  // looks superficially like a phone number once naively parsed).
+  // Classify BEFORE any DB work — and before the profile-photo
+  // lookup below, so a group message doesn't waste an API call
+  // either. See chat-classify.ts for the detection rules and their
+  // confidence caveats (Z-API's `isGroup` flag is unconfirmed against
+  // a live payload; the digit-length fallback catches it either way).
+  const chatKind = classifyWhatsAppChat(data.phone, { explicitIsGroup: data.isGroup })
+  if (isNonIndividualChat(chatKind)) {
+    console.log(`[z-api webhook] skipping ${chatKind} chat (not a customer contact):`, {
+      phone: data.phone,
+      chatName: data.chatName,
+    })
+    return
+  }
 
   const contentType = mapZapiEventToContentType(data)
 

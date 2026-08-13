@@ -24,7 +24,7 @@ export interface CatalogSearchInput {
   query: string
   limit: number
   /** Account-specific category/colour vocabulary (see ./taxonomy.ts).
-   *  Omit to fall back to the built-in generic defaults. */
+   *  Omit for plain textual matching with no synonym expansion. */
   categoryGroups?: readonly (readonly string[])[]
   colorGroups?: readonly (readonly string[])[]
 }

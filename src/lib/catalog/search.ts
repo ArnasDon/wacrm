@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { WacrmSupabaseClient } from '@/lib/supabase/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { DEFAULT_CATEGORY_GROUPS, DEFAULT_COLOR_GROUPS } from './taxonomy'
 import type {
   CatalogProduct,
   CatalogProductVariant,
@@ -64,15 +63,16 @@ function normalizeSearchText(value: string): string {
 }
 
 /**
- * categoryGroups/colorGroups default to the built-in generic vocabulary
- * so every existing call site (and every test) keeps working unchanged;
- * pass an account's own taxonomy (see ./taxonomy.ts) to search with its
- * configured vocabulary instead.
+ * categoryGroups/colorGroups default to empty — no built-in vocabulary
+ * lives here. Without an account's own taxonomy (see ./taxonomy.ts),
+ * this still does plain textual matching (the raw query plus its
+ * individual words, see below); passing an account's configured groups
+ * additionally expands synonyms/gender-inflected forms.
  */
 export function buildSearchVariants(
   query: string,
-  categoryGroups: readonly (readonly string[])[] = DEFAULT_CATEGORY_GROUPS,
-  colorGroups: readonly (readonly string[])[] = DEFAULT_COLOR_GROUPS,
+  categoryGroups: readonly (readonly string[])[] = [],
+  colorGroups: readonly (readonly string[])[] = [],
 ): string[] {
   const normalized = normalizeSearchText(query)
   const variants = new Set<string>()

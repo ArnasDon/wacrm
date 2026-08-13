@@ -45,6 +45,35 @@ export function aiContextMessageLimit(): number {
 }
 
 /**
+ * Catalogue/commerce capability instructions: how to use search_catalog
+ * and send_product, and how to talk about stock/size/product photos.
+ * Deliberately NOT part of the universal core scaffold — an account
+ * with no catalogue tools enabled has no product, stock, size, or photo
+ * to be honest or dishonest about, so it should never see this text.
+ * Only injected by buildSystemPrompt when hasCatalogueCapability is
+ * true (see below).
+ */
+export function catalogueCapabilityPrompt(): string {
+  return [
+    'Catalogue selling rule: search_catalog is retrieval only — it finds current candidates but never sends a photograph by itself. ' +
+      'When the customer gives a product category, colour or size, pass those as separate structured constraints so an explicit category is never silently replaced by another category that merely shares a colour or generic word. ' +
+      'For browsing, comparing, discovering or asking for more/new options, use search_catalog in browse mode; products already shown in the live conversation are excluded server-side. ' +
+      'After retrieval, evaluate the returned candidates and call send_product only for the specific products genuinely worth showing. Do not send an item merely because search_catalog returned it. ' +
+      'Follow the account commercial strategy for how many products to present and whether photographs are preferred. If photographs are preferred, use send_product for the chosen candidates; if the customer only needs a factual lookup, concise text from trusted tool data may be enough. ' +
+      'For a specific product already discussed — price, stock, size, colour, or another photograph — search that product in lookup mode to get a fresh product_ref instead of restarting broad discovery. ' +
+      'Do not repeat prior options the customer has already seen unless they explicitly ask to see that same product again. When they ask for more or other options and no unseen exact matches remain, say so honestly rather than resending old results or substituting another category without consent. ' +
+      'When the request is about a colour or variant of a specific item already discussed, keep that product as the referent and look up its real variants rather than changing to an unrelated product. ' +
+      'When the customer asks for another photo of the same product, keep the same product and use send_product again after a lookup; the server will prefer an unshown known photograph and will tell you if every known photo has already been shown. ' +
+      'Ask at most one useful follow-up question at a time — and if the customer answers the same question again, or asks you to skip ahead (repeating "quanto custa", saying "só quero o preço"), stop asking it and answer with the best information you already have.',
+    'Stock honesty rule: catalogue tool results include a stock/availability field per product. Before describing or recommending a specific product, check that value. If it is zero or otherwise shows the product is unavailable, say so plainly instead of continuing to sell it, and offer a real alternative from the same or a new search instead of leaving the customer with something they cannot get. Never contradict a stock value a tool has already returned.',
+    'Size honesty rule: catalogue tool results do not reliably include size information for every product. If the customer asks whether a specific size is available and the product data returned does not state it, say so honestly — never guess or imply a size is or is not in stock. Offer a real next step instead: ask for measurements or a reference photo, or say you will confirm the exact size before they commit, rather than inventing a size answer.',
+    'Image handling rule: when the customer sends a photograph of a product, or something similar to what they want — including a low-quality, cropped, or context-free photo used purely as a visual reference — do not just describe what the image shows. ' +
+      'Look at the image yourself, form a short concrete description of the item (type, colour, pattern, style), and call search_catalog with the most specific visible product type as query/category plus a separate colour constraint when visible. ' +
+      'Then choose and send only the closest real catalogue matches for comparison. If nothing in the catalogue is a reasonable match, say so honestly rather than inventing a similar product.',
+  ].join('\n\n')
+}
+
+/**
  * Build the system prompt shared by draft + auto-reply. The account's
  * own `system_prompt` (business context / persona / tone) is appended
  * to a fixed scaffold so behaviour stays predictable regardless of what
@@ -63,8 +92,13 @@ export function buildSystemPrompt(args: {
   /** Optional identity fields (Agentes -> Identidade). All optional —
    *  omitting them keeps the generic opening line exactly as before. */
   identity?: { name?: string | null; role?: string | null; language?: string | null }
+  /** Whether this account/turn actually has search_catalog or
+   *  send_product available. Only then is catalogueCapabilityPrompt()
+   *  injected — a support-only or booking-only account never sees
+   *  product/stock/size/photo instructions it has no tool to act on. */
+  hasCatalogueCapability?: boolean
 }): string {
-  const { userPrompt, mode, commercialStrategy, maxReplyChunks, knowledge, identity } = args
+  const { userPrompt, mode, commercialStrategy, maxReplyChunks, knowledge, identity, hasCatalogueCapability } = args
   const name = identity?.name?.trim()
   const role = identity?.role?.trim()
   const language = identity?.language?.trim()
@@ -109,22 +143,11 @@ export function buildSystemPrompt(args: {
       'a request to negotiate a price or ask for a discount (engage naturally using only what you actually know; never invent a discount, deadline, or promotion you cannot confirm); ' +
       'a brusque, blunt, or mildly rude tone with no actual complaint behind it (stay calm, professional, and helpful; never mirror the tone back — tone alone is never a reason to hand off, only a real complaint is, per the handoff rules below); ' +
       'and a conversation that resumes after a pause, sometimes days later (pick it back up naturally from the existing history, without demanding the customer re-explain everything from scratch).',
-    'Catalogue selling rule: search_catalog is retrieval only — it finds current candidates but never sends a photograph by itself. ' +
-      'When the customer gives a product category, colour or size, pass those as separate structured constraints so an explicit category is never silently replaced by another category that merely shares a colour or generic word. ' +
-      'For browsing, comparing, discovering or asking for more/new options, use search_catalog in browse mode; products already shown in the live conversation are excluded server-side. ' +
-      'After retrieval, evaluate the returned candidates and call send_product only for the specific products genuinely worth showing. Do not send an item merely because search_catalog returned it. ' +
-      'Follow the account commercial strategy for how many products to present and whether photographs are preferred. If photographs are preferred, use send_product for the chosen candidates; if the customer only needs a factual lookup, concise text from trusted tool data may be enough. ' +
-      'For a specific product already discussed — price, stock, size, colour, or another photograph — search that product in lookup mode to get a fresh product_ref instead of restarting broad discovery. ' +
-      'Do not repeat prior options the customer has already seen unless they explicitly ask to see that same product again. When they ask for more or other options and no unseen exact matches remain, say so honestly rather than resending old results or substituting another category without consent. ' +
-      'When the request is about a colour or variant of a specific item already discussed, keep that product as the referent and look up its real variants rather than changing to an unrelated product. ' +
-      'When the customer asks for another photo of the same product, keep the same product and use send_product again after a lookup; the server will prefer an unshown known photograph and will tell you if every known photo has already been shown. ' +
-      'Ask at most one useful follow-up question at a time — and if the customer answers the same question again, or asks you to skip ahead (repeating "quanto custa", saying "só quero o preço"), stop asking it and answer with the best information you already have.',
-    'Stock honesty rule: catalogue tool results include a stock/availability field per product. Before describing or recommending a specific product, check that value. If it is zero or otherwise shows the product is unavailable, say so plainly instead of continuing to sell it, and offer a real alternative from the same or a new search instead of leaving the customer with something they cannot get. Never contradict a stock value a tool has already returned.',
-    'Size honesty rule: catalogue tool results do not reliably include size information for every product. If the customer asks whether a specific size is available and the product data returned does not state it, say so honestly — never guess or imply a size is or is not in stock. Offer a real next step instead: ask for measurements or a reference photo, or say you will confirm the exact size before they commit, rather than inventing a size answer.',
-    'Image handling rule: when the customer sends a photograph of a product, or something similar to what they want — including a low-quality, cropped, or context-free photo used purely as a visual reference — do not just describe what the image shows. ' +
-      'Look at the image yourself, form a short concrete description of the item (type, colour, pattern, style), and call search_catalog with the most specific visible product type as query/category plus a separate colour constraint when visible. ' +
-      'Then choose and send only the closest real catalogue matches for comparison. If nothing in the catalogue is a reasonable match, say so honestly rather than inventing a similar product.',
   ]
+
+  if (hasCatalogueCapability) {
+    parts.push(catalogueCapabilityPrompt())
+  }
 
   if (commercialStrategy) {
     parts.push(commercialStrategyPrompt(commercialStrategy))

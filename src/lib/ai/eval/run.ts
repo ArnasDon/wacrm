@@ -82,6 +82,7 @@ async function evaluateCase(args: {
     commercialStrategy: args.config.commercialStrategy,
     maxReplyChunks: args.config.maxReplyChunks,
     knowledge: [],
+    hasCatalogueCapability: Boolean(args.goldenCase.withTools),
   })
   const fixture = args.goldenCase.withTools ? createFixtureTools() : null
   const candidate = await args.generate({

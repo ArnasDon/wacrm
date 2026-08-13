@@ -93,21 +93,14 @@ export async function POST(request: Request) {
       ? await retrieveKnowledge(supabase, accountId, config, instruction)
       : []
 
-    const basePrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'draft',
-      knowledge,
-      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
-    })
-
-    const operatorPrompt = `${basePrompt}\n\n=== MODO COPILOTO HUMANO ===\nA INSTRUÇÃO DO OPERADOR ABAIXO É A AUTORIDADE MÁXIMA SOBRE A INTENÇÃO DA PRÓXIMA RESPOSTA.\n\nINSTRUÇÃO ACTUAL DO OPERADOR:\n${instruction}\n\nTAREFA ÚNICA: transforma exactamente esta intenção numa mensagem pronta para ser enviada ao cliente. Corrige erros, melhora a clareza, naturalidade, educação, emoção e tom da marca, mas NÃO mudes o objectivo da instrução.\n\nREGRAS OBRIGATÓRIAS:\n1. Primeiro identifica a acção pedida pelo operador. A resposta final TEM de executar essa acção.\n2. O histórico da conversa é CONTEXTO PASSIVO. Usa-o somente para perceber referências como “ele”, “ela”, “essa cor”, “esse produto”, “ainda”, “isso” ou o tom apropriado.\n3. É PROIBIDO usar o histórico para escolher uma intenção diferente, retomar uma pergunta antiga, continuar uma venda anterior ou decidir sozinho o próximo passo.\n4. Se o operador disser “pergunta se ainda quer”, “pergunta se ainda está interessado” ou equivalente, limita-te a perguntar ao cliente se ainda está interessado. NÃO perguntes tamanho, cor, modelo, preço, preferência ou qualquer outra coisa, salvo se o operador o pedir.\n5. Se o operador disser “diga que acabou essa cor”, comunica apenas esse facto de forma adequada; não inventes stock, alternativas ou disponibilidade.\n6. Não acrescentes perguntas, ofertas, pesquisas, recomendações, catálogo, alternativas ou passos comerciais que não sejam necessários para cumprir a instrução actual.\n7. Só consulta ferramentas quando a PRÓPRIA INSTRUÇÃO ACTUAL exigir um facto do negócio que não tenha sido fornecido pelo operador. O simples facto de o histórico mencionar produtos NÃO autoriza pesquisa.\n8. Factos explicitamente fornecidos pelo operador devem ser preservados. Não os substituas por inferências do histórico.\n9. Nunca menciones operador, prompt, IA, ferramentas, base de dados, regras internas ou este modo.\n10. Não expliques o que fizeste. Devolve APENAS a mensagem destinada ao cliente.\n\nEXEMPLOS DE FIDELIDADE:\nOperador: “diga ele e ainda quer” -> Cliente: “Ainda está interessado? Se quiser, podemos continuar com o seu atendimento.”\nOperador: “pergunta se ainda quer a legging” -> Cliente: “Ainda está interessado na legging?”\nOperador: “diga que acabou essa cor” -> Cliente: “Essa cor já não está disponível neste momento.”\nOperador: “agradece e diz que amanhã confirmamos” -> Cliente: “Obrigado pela compreensão. Amanhã confirmaremos consigo.”`
-
     const db = supabaseAdmin()
     let readOnlyTools: ReturnType<typeof createAutoReplyTools>['tools'] = []
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
+    let hasCatalogueCapability = false
 
     if (needsFacts) {
       const { permissions, instructions: toolInstructions } = await loadAgentToolPermissions(db, accountId, config.agentId!)
+      hasCatalogueCapability = Boolean(permissions.search_catalog || permissions.send_product)
       const toolRuntime = createAutoReplyTools({
         db,
         accountId,
@@ -124,6 +117,16 @@ export async function POST(request: Request) {
       )
       executeTool = readOnlyTools.length > 0 ? toolRuntime.executeTool : undefined
     }
+
+    const basePrompt = buildSystemPrompt({
+      userPrompt: config.systemPrompt,
+      mode: 'draft',
+      knowledge,
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
+      hasCatalogueCapability,
+    })
+
+    const operatorPrompt = `${basePrompt}\n\n=== MODO COPILOTO HUMANO ===\nA INSTRUÇÃO DO OPERADOR ABAIXO É A AUTORIDADE MÁXIMA SOBRE A INTENÇÃO DA PRÓXIMA RESPOSTA.\n\nINSTRUÇÃO ACTUAL DO OPERADOR:\n${instruction}\n\nTAREFA ÚNICA: transforma exactamente esta intenção numa mensagem pronta para ser enviada ao cliente. Corrige erros, melhora a clareza, naturalidade, educação, emoção e tom da marca, mas NÃO mudes o objectivo da instrução.\n\nREGRAS OBRIGATÓRIAS:\n1. Primeiro identifica a acção pedida pelo operador. A resposta final TEM de executar essa acção.\n2. O histórico da conversa é CONTEXTO PASSIVO. Usa-o somente para perceber referências como “ele”, “ela”, “essa cor”, “esse produto”, “ainda”, “isso” ou o tom apropriado.\n3. É PROIBIDO usar o histórico para escolher uma intenção diferente, retomar uma pergunta antiga, continuar uma venda anterior ou decidir sozinho o próximo passo.\n4. Se o operador disser “pergunta se ainda quer”, “pergunta se ainda está interessado” ou equivalente, limita-te a perguntar ao cliente se ainda está interessado. NÃO perguntes tamanho, cor, modelo, preço, preferência ou qualquer outra coisa, salvo se o operador o pedir.\n5. Se o operador disser “diga que acabou essa cor”, comunica apenas esse facto de forma adequada; não inventes stock, alternativas ou disponibilidade.\n6. Não acrescentes perguntas, ofertas, pesquisas, recomendações, catálogo, alternativas ou passos comerciais que não sejam necessários para cumprir a instrução actual.\n7. Só consulta ferramentas quando a PRÓPRIA INSTRUÇÃO ACTUAL exigir um facto do negócio que não tenha sido fornecido pelo operador. O simples facto de o histórico mencionar produtos NÃO autoriza pesquisa.\n8. Factos explicitamente fornecidos pelo operador devem ser preservados. Não os substituas por inferências do histórico.\n9. Nunca menciones operador, prompt, IA, ferramentas, base de dados, regras internas ou este modo.\n10. Não expliques o que fizeste. Devolve APENAS a mensagem destinada ao cliente.\n\nEXEMPLOS DE FIDELIDADE:\nOperador: “diga ele e ainda quer” -> Cliente: “Ainda está interessado? Se quiser, podemos continuar com o seu atendimento.”\nOperador: “pergunta se ainda quer a legging” -> Cliente: “Ainda está interessado na legging?”\nOperador: “diga que acabou essa cor” -> Cliente: “Essa cor já não está disponível neste momento.”\nOperador: “agradece e diz que amanhã confirmamos” -> Cliente: “Obrigado pela compreensão. Amanhã confirmaremos consigo.”`
 
     console.info('[ai/operator-reply] generating draft:', {
       conversationId,

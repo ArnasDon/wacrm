@@ -101,13 +101,6 @@ export async function POST(request: Request) {
       latestUserMessage(messages),
     )
 
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'draft',
-      knowledge,
-      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
-    })
-
     // Same tool-calling loop the live auto-reply bot uses, scoped down to
     // PREVIEW_SAFE_TOOL_KEYS: a draft is text a human reviews before it
     // becomes a real message, so nothing here may create a deal, tag a
@@ -115,12 +108,14 @@ export async function POST(request: Request) {
     const db = supabaseAdmin()
     let tools: ReturnType<typeof createAutoReplyTools>['tools'] | undefined
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
+    let hasCatalogueCapability = false
     if (config.agentId) {
       const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
         loadAgentToolPermissions(db, accountId, config.agentId),
         loadAgentSkills(db, accountId, config.agentId),
       ])
       const effectivePermissions = restrictToPreviewSafe(applySkillNarrowing(permissions, skills))
+      hasCatalogueCapability = Boolean(effectivePermissions.search_catalog || effectivePermissions.send_product)
       const toolRuntime = createAutoReplyTools({
         db,
         accountId,
@@ -134,6 +129,14 @@ export async function POST(request: Request) {
       tools = toolRuntime.tools
       executeTool = tools.length > 0 ? toolRuntime.executeTool : undefined
     }
+
+    const systemPrompt = buildSystemPrompt({
+      userPrompt: config.systemPrompt,
+      mode: 'draft',
+      knowledge,
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
+      hasCatalogueCapability,
+    })
 
     const { text, usage } = await generateReply({
       config,

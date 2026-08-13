@@ -358,6 +358,7 @@ export async function dispatchInboundToAiReply(args: DispatchArgs): Promise<void
       maxReplyChunks: config.maxReplyChunks,
       knowledge: [],
       identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
+      hasCatalogueCapability: Boolean(effectivePermissions.search_catalog || effectivePermissions.send_product),
     })
     const systemPrompt = [
       baseSystemPrompt,

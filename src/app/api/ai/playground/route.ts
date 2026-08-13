@@ -85,19 +85,13 @@ export async function POST(request: Request) {
       config,
       latestUserMessage(messages),
     )
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'auto_reply',
-      knowledge,
-      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
-    })
-
     const db = supabaseAdmin()
     let tools: ReturnType<typeof createAutoReplyTools>['tools'] | undefined
     let executeTool: ReturnType<typeof createAutoReplyTools>['executeTool'] | undefined
     let activeSkills: AgentSkill[] = []
     const toolCalls: AgentTraceToolCall[] = []
     let getTrustedPriceAmounts: (() => number[]) | undefined
+    let hasCatalogueCapability = false
     if (config.agentId) {
       const [{ permissions, instructions: toolInstructions }, skills] = await Promise.all([
         loadAgentToolPermissions(db, accountId, config.agentId),
@@ -105,6 +99,7 @@ export async function POST(request: Request) {
       ])
       activeSkills = skills
       const effectivePermissions = restrictToPreviewSafe(applySkillNarrowing(permissions, skills))
+      hasCatalogueCapability = Boolean(effectivePermissions.search_catalog || effectivePermissions.send_product)
       const toolRuntime = createAutoReplyTools({
         db,
         accountId,
@@ -120,6 +115,14 @@ export async function POST(request: Request) {
       executeTool = tools.length > 0 ? toolRuntime.executeTool : undefined
       getTrustedPriceAmounts = toolRuntime.getTrustedPriceAmounts
     }
+
+    const systemPrompt = buildSystemPrompt({
+      userPrompt: config.systemPrompt,
+      mode: 'auto_reply',
+      knowledge,
+      identity: { name: config.agentName, role: config.agentRole, language: config.agentLanguage },
+      hasCatalogueCapability,
+    })
 
     const { text, handoff } = await generateReply({
       config,

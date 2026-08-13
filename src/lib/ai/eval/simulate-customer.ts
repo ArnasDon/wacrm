@@ -124,6 +124,9 @@ export async function simulateCustomerConversation(
     commercialStrategy: config.commercialStrategy,
     maxReplyChunks: config.maxReplyChunks,
     knowledge: [],
+    hasCatalogueCapability: (options.tools ?? []).some(
+      (tool) => tool.name === 'search_catalog' || tool.name === 'send_product',
+    ),
   })
   const agentTurn =
     options.agentTurn ??

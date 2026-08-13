@@ -3,11 +3,36 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { loadAiConfig } from '@/lib/ai/config'
 import { generateReply } from '@/lib/ai/generate'
+import { loadAccountCategoryTerms } from '@/lib/catalog/taxonomy'
 
 interface Classification {
   color: string | null
   category: string | null
   description: string
+}
+
+/**
+ * Builds the vision-classification system prompt for one account. The
+ * category vocabulary comes entirely from that account's own configured
+ * taxonomy (wacrm.catalog_taxonomy_terms, kind='category') — this
+ * function has no built-in domain knowledge (no fashion terms, no
+ * vehicle terms, ...). An account with no configured categories still
+ * gets a fully working, domain-neutral classifier: it just proposes its
+ * own concise category instead of matching one from a suggested list.
+ */
+export function buildClassificationSystemPrompt(knownCategories: string[]): string {
+  const categoryGuidance =
+    knownCategories.length > 0
+      ? `Prefer one of this business's own known categories when it genuinely matches what is visible: ${knownCategories.join(', ')}. ` +
+        'If none of them genuinely fit, propose a new concise category instead of forcing a mismatch.'
+      : 'Propose a concise, reusable category based only on what is visibly true in the photo — you do not know this business\'s category vocabulary in advance, so infer one from the image itself.'
+
+  return (
+    'You look at one product photograph and describe only what is visibly true in the image. ' +
+    'Respond with nothing but a JSON object: {"color": "<main colour, one or two words, in Portuguese>", "category": "<short product category in Portuguese>", "description": "<2-3 short sentences in Portuguese covering style, fit, pattern and notable details actually visible in the photo>"}. ' +
+    `${categoryGuidance} Do not invent a more specific category than the photograph supports. ` +
+    'Never invent size, price, stock, brand or material you cannot see. If the colour or category is not clear, use null for that field.'
+  )
 }
 
 function parseClassification(raw: string): Classification {
@@ -65,13 +90,11 @@ export async function POST(request: Request) {
       )
     }
 
+    const knownCategories = await loadAccountCategoryTerms(db, accountId)
+
     const generated = await generateReply({
       config,
-      systemPrompt:
-        'You look at one product photograph and describe only what is visibly true in the image. ' +
-        'Respond with nothing but a JSON object: {"color": "<main colour, one or two words, in Portuguese>", "category": "<short product category in Portuguese>", "description": "<2-3 short sentences in Portuguese covering style, fit, pattern and notable details actually visible in the photo>"}. ' +
-        'Use a concise reusable category that customers would naturally search for, for example legging, top, camisola, t-shirt, calção, saia-calção, macacão, conjunto, sapatilha or acessório when that is genuinely visible. Do not invent a more specific category than the photograph supports. ' +
-        'Never invent size, price, stock, brand or material you cannot see. If the colour or category is not clear, use null for that field.',
+      systemPrompt: buildClassificationSystemPrompt(knownCategories),
       messages: [
         {
           role: 'user',

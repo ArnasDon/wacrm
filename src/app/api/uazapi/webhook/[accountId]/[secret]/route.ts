@@ -4,13 +4,13 @@ import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { downloadMessageMedia } from '@/lib/whatsapp/uazapi-api'
 import { resolveUazapiPlatformCredentials } from '@/lib/whatsapp/uazapi-platform-config'
+import { maybeSyncContactNames } from '@/lib/whatsapp/contact-name-sync'
 import {
   processInboundMessage,
   mirrorAgentSentMessage,
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
-import { classifyWhatsAppChat, isNonIndividualChat } from '@/lib/whatsapp/chat-classify'
 
 // ============================================================
 // uazapi inbound webhook.
@@ -245,6 +245,24 @@ interface UazapiConfigRow {
 }
 
 async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookEvent): Promise<void> {
+  // Opportunistic contact-name backfill/refresh — no cron job and no
+  // manual "sync" button. maybeSyncContactNames throttles itself (at
+  // most once every 6h per account), so it's cheap to check on every
+  // event uazapi delivers here; whichever one arrives after the
+  // window opens ends up doing the actual work. Never allowed to
+  // block/break the event's own processing below.
+  try {
+    const { baseUrl } = await resolveUazapiPlatformCredentials()
+    await maybeSyncContactNames({
+      supabaseAdmin: supabaseAdmin(),
+      accountId: config.account_id,
+      baseUrl,
+      token: decrypt(config.uazapi_token),
+    })
+  } catch (err) {
+    console.error('[uazapi webhook] contact name sync check failed:', err)
+  }
+
   if (event.EventType === 'connection') {
     // Only the coarse status is trustworthy from the webhook payload
     // alone. The paired phone number is filled in by the Settings
@@ -305,24 +323,6 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   // the live-payload capture above.
   const chatPhoneJid = data.chatid ?? data.sender_pn ?? data.sender
   if (!externalId || !chatPhoneJid) return
-
-  // Group / community / channel messages are NOT customer contacts —
-  // uazapi (like every WhatsApp-Web-based provider) forwards these
-  // through the same "messages" event as a real 1:1 chat, and the
-  // group/community's numeric id looks superficially like a phone
-  // number once naively parsed. Classify BEFORE any DB work so these
-  // never create a contact/conversation (issue: group & community
-  // chats were polluting the inbox — see chat-classify.ts for the
-  // detection rules and their confidence caveats).
-  const chatKind = classifyWhatsAppChat(chatPhoneJid, {
-    explicitIsCommunity: Boolean((event as { isCommunity?: boolean }).isCommunity),
-  })
-  if (isNonIndividualChat(chatKind)) {
-    console.log(`[uazapi webhook] skipping ${chatKind} chat (not a customer contact):`, {
-      chatid: chatPhoneJid,
-    })
-    return
-  }
 
   const chatPhone = stripJidSuffix(chatPhoneJid)
   const contentType = mapUazapiTypeToContentType(data.type, data.messageType)

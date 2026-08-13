@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getInstanceStatus } from '@/lib/whatsapp/uazapi-api'
 import { resolveUazapiPlatformCredentials } from '@/lib/whatsapp/uazapi-platform-config'
+import { maybeSyncContactNames } from '@/lib/whatsapp/contact-name-sync'
 
 /**
  * GET /api/uazapi/instance/status
@@ -47,6 +48,19 @@ export async function GET() {
       .update(patch)
       .eq('account_id', accountId)
       .eq('provider', 'uazapi')
+
+    // Fire the same automatic contact-name sync the webhook route
+    // uses (see contact-name-sync.ts) right at the moment a number
+    // finishes pairing — no need to wait for the next webhook event.
+    // Still throttled internally, so this is a no-op once already
+    // synced recently. Never allowed to fail the status response.
+    if (status.status === 'connected') {
+      try {
+        await maybeSyncContactNames({ supabaseAdmin: supabase, accountId, baseUrl, token })
+      } catch (err) {
+        console.error('[uazapi/instance/status] contact name sync check failed:', err)
+      }
+    }
 
     return NextResponse.json(status)
   } catch (err) {

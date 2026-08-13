@@ -321,6 +321,43 @@ export async function downloadMessageMedia(args: {
   return { fileUrl: data.fileURL || null, mimetype: data.mimetype }
 }
 
+// ============================================================
+// Contacts
+// ============================================================
+
+export interface UazapiContact {
+  jid: string
+  contact_name?: string
+  contact_FirstName?: string
+}
+
+/**
+ * GET /contacts?contactScope=address_book — the WhatsApp numbers this
+ * instance's connected phone has saved to its own address book, with
+ * the name saved for each (`contact_name`) — confirmed against
+ * uazapi's published response example (docs.uazapi.com/tag/Contatos).
+ * `contactScope` also accepts `outside_address_book`/`all`, but
+ * `address_book` is the one that actually matches "a name this phone
+ * saved for this contact" rather than a self-reported WhatsApp
+ * display name — see contact-name-sync.ts, which is the only caller.
+ */
+export async function listContacts(args: {
+  baseUrl: string
+  token: string
+  contactScope?: 'address_book' | 'outside_address_book' | 'all'
+}): Promise<UazapiContact[]> {
+  const scope = args.contactScope ?? 'address_book'
+  const response = await fetch(
+    `${args.baseUrl}/contacts?contactScope=${encodeURIComponent(scope)}`,
+    { headers: { token: args.token } },
+  )
+  if (!response.ok) {
+    await throwUazapiError(response, `HTTP ${response.status}`)
+  }
+  const data = await response.json()
+  return Array.isArray(data) ? (data as UazapiContact[]) : []
+}
+
 /**
  * POST /send/menu — covers both interactive buttons and lists. The
  * caller (UazapiProvider) is responsible for encoding `choices` into

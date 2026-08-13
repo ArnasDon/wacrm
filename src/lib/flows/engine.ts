@@ -111,6 +111,28 @@ export function matchesKeywordTrigger(
   return false;
 }
 
+/**
+ * The strings an inbound message offers to a flow's *entry* trigger.
+ *
+ * Typed text offers itself. A button / list tap offers two: the visible
+ * title — what the customer would have typed had the button not been
+ * there — and the stable reply_id, because the automation engine's
+ * `interactive_reply` trigger routes on the id, so an author moving a
+ * menu into a flow reaches for the same value.
+ *
+ * Matching the id does mean a keyword that happens to be a substring of
+ * an id can fire (ids are author-controlled slugs, defaulting to
+ * `btn_1`). That is the same substring semantic keyword triggers
+ * already have for typed text, and the alternative — ignoring the id —
+ * silently breaks the author who keyed on it.
+ */
+export function entryTriggerTexts(message: ParsedInbound): string[] {
+  if (message.kind === "text") return [message.text];
+  return [...new Set([message.reply_title, message.reply_id])].filter(
+    (v): v is string => Boolean(v && v.trim()),
+  );
+}
+
 /** Nodes that advance to a next_node_key without waiting for input. */
 export function isAutoAdvancing(node_type: string): boolean {
   return (
@@ -316,9 +338,15 @@ async function findEntryFlow(
   message: ParsedInbound,
   isFirstInbound: boolean,
 ): Promise<FlowRow | null> {
-  // Only text messages can match an entry trigger. Interactive replies
-  // are responses to existing prompts; they never start a new flow.
-  if (message.kind !== "text") return null;
+  // A tap used to be rejected outright here, on the reasoning that
+  // interactive replies are responses to existing prompts. That holds
+  // only while a prompt is outstanding — and this function runs solely
+  // when the contact has NO active run, so there is nothing the tap
+  // could be answering. What it actually blocked was issue #490: an
+  // *automation* sends the buttons, the customer taps one, and the flow
+  // whose keyword matches that button never starts. Retyping the label
+  // by hand worked, which is the tell — same words, different envelope.
+  const candidates = entryTriggerTexts(message);
 
   // Pull all active flows for this account. Active set is bounded
   // (the builder discourages double-trigger overlap; partial index
@@ -334,13 +362,17 @@ async function findEntryFlow(
   const typed = flows as FlowRow[];
   for (const flow of typed) {
     if (flow.trigger_type === "keyword") {
-      if (matchesKeywordTrigger(
-        message.text,
-        flow.trigger_config as KeywordTriggerConfig,
-      )) {
+      const cfg = flow.trigger_config as KeywordTriggerConfig;
+      if (candidates.some((text) => matchesKeywordTrigger(text, cfg))) {
         return flow;
       }
     } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
+      // Also reachable by a tap now: a broadcast template with a
+      // quick-reply button can genuinely be what prompts a contact's
+      // first-ever inbound. The automations dispatcher has always
+      // treated a tap that way (the webhook pushes
+      // `first_inbound_message` regardless of envelope) — flows were
+      // the inconsistent half.
       return flow;
     }
     // 'manual' triggers do not auto-start from inbound messages.

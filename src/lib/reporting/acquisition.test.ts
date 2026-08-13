@@ -66,7 +66,8 @@ vi.mock('@/lib/automations/admin-client', () => ({
   supabaseAdmin: () => adminMock,
 }))
 
-import { loadAcquisition, type DateRange } from './acquisition'
+import { loadAcquisition } from './acquisition'
+import type { DateRange } from './queries'
 
 const ACCOUNT = 'acct-1'
 const RANGE: DateRange = {

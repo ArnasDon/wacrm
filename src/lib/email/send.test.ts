@@ -22,8 +22,17 @@ function mockAdminClient(data: unknown = CONFIG_ROW) {
 }
 
 describe("sendEmail", () => {
+  // El mock de admin-client se registra DENTRO de cada test, no aquí.
+  //
+  // Estaba en el beforeEach con la fila poblada, y el tercer test volvía a
+  // registrarlo con `null` para probar el caso "sin config". Registrar dos
+  // veces la misma ruta y confiar en que gana la segunda hacía el test
+  // intermitente: cuando ganaba la del beforeEach, sendEmail sí encontraba
+  // config, llegaba hasta Resend —simulado ahí como `class {}`, sin
+  // `emails`— y reventaba con un TypeError en vez del EmailError esperado.
+  // Fallaba una de cada seis pasadas del suite completo y nunca en
+  // solitario, que es el perfil clásico de dependencia del orden.
   beforeEach(() => {
-    vi.doMock("@/lib/telnyx/admin-client", () => mockAdminClient())
     vi.doMock("@/lib/whatsapp/encryption", () => ({
       decrypt: (s: string) => (s === "iv:x:t" ? "resend-key" : "?"),
     }))
@@ -36,6 +45,7 @@ describe("sendEmail", () => {
 
   it("carga config, desencripta la key y envía vía Resend", async () => {
     const send = vi.fn().mockResolvedValue({ data: { id: "email-1" }, error: null })
+    vi.doMock("@/lib/telnyx/admin-client", () => mockAdminClient())
     vi.doMock("resend", () => ({ Resend: class { emails = { send } } }))
     vi.resetModules()
 
@@ -53,6 +63,7 @@ describe("sendEmail", () => {
   })
 
   it("lanza EmailError cuando Resend devuelve un error", async () => {
+    vi.doMock("@/lib/telnyx/admin-client", () => mockAdminClient())
     vi.doMock("resend", () => ({
       Resend: class {
         emails = {
@@ -70,7 +81,17 @@ describe("sendEmail", () => {
 
   it("lanza EmailError cuando no hay config del account", async () => {
     vi.doMock("@/lib/telnyx/admin-client", () => mockAdminClient(null))
-    vi.doMock("resend", () => ({ Resend: class {} }))
+    // Sin config no se debe llegar a Resend. Si se llega, que lo diga con
+    // esas palabras en vez de con un TypeError sobre `undefined.send`.
+    vi.doMock("resend", () => ({
+      Resend: class {
+        emails = {
+          send: () => {
+            throw new Error("sendEmail llegó a Resend sin config del account")
+          },
+        }
+      },
+    }))
     vi.resetModules()
 
     const { sendEmail } = await import("./send")

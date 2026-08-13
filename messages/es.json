@@ -244,7 +244,12 @@
       "interactiveReply": "[Respuesta interactiva]",
       "unsupported": "[Tipo de mensaje no compatible]",
       "aiBadge": "IA",
-      "aiBadgeTitle": "Enviado automáticamente por el asistente de IA"
+      "aiBadgeTitle": "Enviado automáticamente por el asistente de IA",
+      "download": "Descargar",
+      "downloadFailed": "No se pudo descargar el archivo",
+      "expandVideo": "Ampliar el video",
+      "imageAlt": "Imagen compartida",
+      "viewImage": "Ver la imagen"
     },
     "actions": {
       "reply": "Responder",
@@ -305,6 +310,19 @@
       "resumed": "IA reanudada.",
       "updateError": "No se pudo actualizar el asistente de IA.",
       "networkError": "No se pudo contactar el servidor."
+    },
+    "mediaViewer": {
+      "counter": "{index} de {total}",
+      "download": "Descargar",
+      "downloadFailed": "No se pudo descargar el archivo",
+      "failed": "Este archivo ya no está disponible",
+      "imageAlt": "Imagen compartida",
+      "next": "Siguiente",
+      "openOriginal": "Abrir el original",
+      "previous": "Anterior",
+      "you": "Tú",
+      "zoomIn": "Ver a tamaño completo",
+      "zoomOut": "Ajustar a la pantalla"
     }
   },
   "Contacts": {
@@ -705,7 +723,16 @@
         "failed": "Con error"
       },
       "toastFailedDelete": "No se pudo eliminar: {error}",
-      "toastDeleted": "Transmisión eliminada"
+      "toastDeleted": "Transmisión eliminada",
+      "resumeTitle": "Algunos destinatarios necesitan otro intento",
+      "resumeHint": "Fallaron {count} destinatarios. Al reintentar se les envía de nuevo desde el servidor.",
+      "resumePending": "Reanudar el envío ({count})",
+      "resumeStalledTitle": "Esta transmisión se quedó a medias",
+      "resumeStalledHint": "{count} destinatarios no llegaron a recibirla: la pestaña que estaba ejecutando esta campaña se cerró antes de terminar. Al reanudar, el servidor la completa.",
+      "retryFailed": "Reintentar los fallidos ({count})",
+      "toastResumeFailed": "No se pudo reanudar: {error}",
+      "toastResumeStarted": "Enviando a {count} destinatarios en segundo plano.",
+      "toastResumeStartedCapped": "Enviando a {count} destinatarios en segundo plano. Quedarán {remaining} para otra pasada."
     },
     "new": {
       "title": "Nueva transmisión",
@@ -1034,13 +1061,16 @@
         "matchExact": "Exacta",
         "closeConversationHint": "Establece el estado de la conversación a \"cerrada\". No requiere configuración.",
         "smsTextLabel": "Texto del SMS",
-        "emailTemplateLabel": "Plantilla de correo"
+        "emailTemplateLabel": "Plantilla de correo",
+        "matchWord": "Palabra completa",
+        "matchWordHint": "Busca la palabra clave solo como palabra suelta, así «si» deja de dispararse dentro de «casi». Va bien con palabras cortas en idiomas que separan con espacios; usa Contiene para los que se escriben sin espacios."
       },
       "emailTemplates": {
         "select": "Selecciona una plantilla…",
         "placeholder": "Nombre de la plantilla",
         "unknown": "{name} — no está en Ajustes › Email"
-      }
+      },
+      "delete": "Eliminar"
     }
   },
   "Flows": {
@@ -1549,7 +1579,13 @@
       "step4_3": "Pega la <strong>URL del callback del webhook</strong> de arriba",
       "step4_4": "Introduce el mismo <strong>Token de verificación</strong> que configuraste aquí",
       "step4_5": "Suscríbete al campo de webhook \"messages\"",
-      "metaDocs": "Documentación de la API de WhatsApp de Meta"
+      "metaDocs": "Documentación de la API de WhatsApp de Meta",
+      "mediaTitle": "Almacenamiento de adjuntos",
+      "mediaDesc": "Meta borra los archivos recibidos unos 30 días después de que llegan. Los adjuntos se pueden copiar a tu propio almacenamiento para que sigan viéndose.",
+      "mirrorInbound": "Conservar los adjuntos recibidos",
+      "mirrorInboundDesc": "Guarda una copia de cada foto, video, nota de voz y documento que envíen los clientes. Usa tu almacenamiento de Supabase; los archivos de más de 16 MB se omiten.",
+      "mirrorInboundOffWarning": "Los adjuntos nuevos dejarán de copiarse y quedarán no disponibles unos 30 días después de llegar.",
+      "mirrorInboundSaveFailed": "No se pudo actualizar el ajuste de adjuntos."
     },
     "sections": {
       "overview": "Resumen",
@@ -1978,5 +2014,12 @@
       "toastFailedDelete": "Error al eliminar: {error}",
       "toastDeleted": "Campaña eliminada"
     }
+  },
+  "AccountAccess": {
+    "errorTitle": "No se pudieron cargar tus permisos",
+    "errorBody": "No se pudo cargar tu rol en la cuenta, así que toda acción se trata como de solo lectura y los cambios no se guardarán. Revisa tu conexión e inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "unlinkedTitle": "Este usuario no está vinculado a ninguna cuenta",
+    "unlinkedBody": "Nada de lo que cambies se guardará mientras esto siga sin resolverse: la base de datos rechaza toda escritura de un usuario sin cuenta ni rol. Si te invitaron a un equipo, pide al propietario que te reenvíe la invitación. En una instalación autoalojada, comprueba que la migración de arranque de cuentas se ejecutó para este usuario."
   }
 }

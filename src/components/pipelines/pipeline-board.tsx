@@ -5,7 +5,8 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -14,6 +15,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
 import { useTranslations } from "next-intl";
@@ -51,11 +53,20 @@ export function PipelineBoard({
   }, [sortedStages, deals]);
 
   const sensors = useSensors(
-    // 5px activation distance avoids clicks being interpreted as drags.
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Mouse: click-and-drag starts immediately (small 4px threshold just
+    // filters out a stationary click's natural jitter) — Trello's desktop
+    // behavior. Only arms on `mousedown`, so it never competes with
+    // TouchSensor below for the same physical gesture.
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    // Touch: nothing starts until the finger has held still for ~350ms
+    // (Trello's long-press). `tolerance: 8` cancels the pending drag the
+    // moment the finger moves more than 8px before that delay elapses —
+    // that cancellation, not `touch-action`, is what hands a normal swipe
+    // straight back to native scrolling (see DraggableDealCard below).
+    useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
     // Keyboard drag support: focus a card, Space to pick up, arrows to move,
     // Space to drop, Escape to cancel.
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const activeDeal = activeDealId
@@ -97,8 +108,19 @@ export function PipelineBoard({
           Disabled on lg+ where snapping would interfere with the
           natural layout. The board can still overflow horizontally on
           lg+ once a pipeline has many stages (columns keep a 260px
-          min-width), so a thin scrollbar stays visible on desktop. */}
-      <div className="pipeline-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none">
+          min-width), so a thin scrollbar stays visible on desktop.
+          `h-full` so it fills the bounded-height wrapper the page gives
+          it (see pipelines/page.tsx) — columns below stretch to match
+          (flex row default `align-items: stretch`), which is what lets
+          each column size its own internal vertical scroll area instead
+          of the whole page growing. `dragging` suppresses scroll-snap
+          for the duration of a drag — CSS scroll-snap (especially iOS's)
+          fights programmatic auto-scroll by re-snapping mid-scroll. */}
+      <div
+        className={`pipeline-scroll flex h-full snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none ${
+          activeDealId ? "dragging" : ""
+        }`}
+      >
         {sortedStages.map((stage) => {
           const stageDeals = dealsByStage.get(stage.id) ?? [];
           return (
@@ -170,6 +192,11 @@ export function PipelineBoard({
             background-color: var(--muted-foreground);
           }
         }
+        /* Active drag: let JS-driven auto-scroll own scrollLeft without
+           the browser re-snapping to the nearest column mid-scroll. */
+        .pipeline-scroll.dragging {
+          scroll-snap-type: none !important;
+        }
       `}</style>
     </DndContext>
   );
@@ -213,7 +240,7 @@ function StageColumn({
 
       <div
         ref={setNodeRef}
-        className={`mt-3 flex flex-1 flex-col gap-2 rounded-lg transition-all ${
+        className={`mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-lg transition-all ${
           isOver
             ? "bg-primary/5 outline outline-2 outline-dashed outline-primary outline-offset-2"
             : ""
@@ -259,7 +286,15 @@ function DraggableDealCard({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
+      // `pan-y` (never `none`) — the browser decides how to handle a touch
+      // gesture at its very start, not reactively, so native vertical
+      // scroll must stay available on the card at all times. TouchSensor's
+      // delay+tolerance (above) is what actually gates the drag: a real
+      // swipe never holds still long enough to arm it, so it's the browser's
+      // own native scroll that wins, untouched. Horizontal panning isn't
+      // granted here on purpose — swiping between columns doesn't start on
+      // a card, same as real Trello.
+      style={{ opacity: isDragging ? 0.3 : 1, touchAction: "pan-y" }}
     >
       <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
     </div>

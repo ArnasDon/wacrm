@@ -59,6 +59,25 @@ export default function PipelinesPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // `<main>` (dashboard-shell.tsx) is `overflow-y-auto` by default, needed
+  // for pages taller than the viewport. This page instead wants each
+  // column to own its own vertical scroll (so a long column doesn't just
+  // grow the whole page — see the board wrapper below), so `<main>` has
+  // nothing left to legitimately scroll while Pipeline is open. Same
+  // opt-out technique already used by inbox/page.tsx: find `<main>` via
+  // the root ref, hide its scroll for as long as this page is mounted,
+  // restore on unmount — every other route is unaffected.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const main = rootRef.current?.closest("main");
+    if (!main) return;
+    const previousOverflow = main.style.overflowY;
+    main.style.overflowY = "hidden";
+    return () => {
+      main.style.overflowY = previousOverflow;
+    };
+  }, []);
+
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
   const [newPipelineName, setNewPipelineName] = useState("");
@@ -348,7 +367,7 @@ export default function PipelinesPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div ref={rootRef} className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="h-8 w-48 animate-pulse rounded bg-muted" />
           <div className="h-9 w-28 animate-pulse rounded-lg bg-muted" />
@@ -363,7 +382,7 @@ export default function PipelinesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col gap-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -429,7 +448,10 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {/* Board */}
+      {/* Board — bounded to the remaining page height so each column can
+          own its own vertical scroll instead of the whole page growing
+          (see the `<main>` opt-out above). */}
+      <div className="min-h-0 flex-1 overflow-hidden">
       {pipelines.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
           <GitBranch className="h-12 w-12 text-muted-foreground" />
@@ -458,6 +480,7 @@ export default function PipelinesPage() {
           onRequestDeleteDeal={handleRequestDeleteDeal}
         />
       )}
+      </div>
 
       <DeleteLeadDialog
         open={!!deleteLeadTarget}

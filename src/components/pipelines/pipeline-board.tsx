@@ -49,7 +49,10 @@ interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: Deal[];
   onDealsReordered: (rows: DealPositionUpdate[]) => void;
-  onEditDeal: (deal: Deal) => void;
+  // `originRect` (the clicked card's own bounding box) rides along so the
+  // deal detail panel can open with a FLIP animation that visually grows
+  // out of the card instead of just fading/zooming in centered.
+  onEditDeal: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDeleteDeal: (deal: Deal) => void;
 }
 
@@ -422,7 +425,10 @@ function StageColumn({
 }: {
   stage: PipelineStage;
   deals: Deal[];
-  onEditDeal: (deal: Deal) => void;
+  // `originRect` (the clicked card's own bounding box) rides along so the
+  // deal detail panel can open with a FLIP animation that visually grows
+  // out of the card instead of just fading/zooming in centered.
+  onEditDeal: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDeleteDeal: (deal: Deal) => void;
 }) {
   const t = useTranslations("Pipelines.board");
@@ -494,7 +500,7 @@ function SortableDealCard({
 }: {
   deal: Deal;
   stage: PipelineStage;
-  onEdit: (deal: Deal) => void;
+  onEdit: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDelete: (deal: Deal) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } =

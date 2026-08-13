@@ -16,7 +16,10 @@ import {
 interface DealCardProps {
   deal: Deal;
   stage: PipelineStage | null;
-  onEdit: (deal: Deal) => void;
+  /** `originRect` (the clicked card's own bounding box) lets the deal
+   *  detail panel open with a FLIP animation that grows out of the card
+   *  instead of just fading/zooming in centered. */
+  onEdit: (deal: Deal, originRect?: DOMRect) => void;
   /** Opens the shared delete-lead confirmation — omitted on the drag
    *  overlay copy, which is a static preview with no menu. */
   onRequestDelete?: (deal: Deal) => void;
@@ -48,9 +51,9 @@ export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: De
   const assigneeLabel = deal.assignee?.full_name || null;
   const tags = contact?.tags ?? [];
 
-  function handleActivate() {
+  function handleActivate(originRect?: DOMRect) {
     if (isOverlay) return;
-    onEdit(deal);
+    onEdit(deal, originRect);
   }
 
   return (
@@ -65,12 +68,12 @@ export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: De
         // `onClick` still fires after a non-drag tap because the PointerSensor
         // requires 5px movement before it counts as a drag.
         e.stopPropagation();
-        handleActivate();
+        handleActivate(e.currentTarget.getBoundingClientRect());
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          handleActivate();
+          handleActivate(e.currentTarget.getBoundingClientRect());
         }
       }}
       className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${

@@ -93,6 +93,10 @@ export default function PipelinesPage() {
   // no separate "new deal" form state here anymore — DealForm is only
   // reachable as the drawer's "Editar" action.
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
+  // The clicked card's own bounding box — lets the detail panel open with
+  // a FLIP animation that grows out of the card instead of a plain
+  // centered fade/zoom. Null just falls back to that plain fade/zoom.
+  const [dealOriginRect, setDealOriginRect] = useState<DOMRect | null>(null);
 
   // Delete-lead confirmation — a "lead" is the contact row, not the deal
   // (see AGENTS task); deleting it cascades to the conversation/messages/
@@ -303,8 +307,9 @@ export default function PipelinesPage() {
     [supabase, refreshDeals, t],
   );
 
-  const handleOpenDeal = useCallback((deal: Deal) => {
+  const handleOpenDeal = useCallback((deal: Deal, originRect?: DOMRect) => {
     setSelectedDeal(deal);
+    setDealOriginRect(originRect ?? null);
   }, []);
 
   const handleRequestDeleteDeal = useCallback(
@@ -575,6 +580,7 @@ export default function PipelinesPage() {
         stage={stages.find((s) => s.id === selectedDeal?.stage_id) ?? null}
         pipelineId={selectedPipelineId}
         stages={stages}
+        originRect={dealOriginRect}
         onClose={() => setSelectedDeal(null)}
         onChanged={refreshDeals}
       />

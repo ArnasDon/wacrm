@@ -17,6 +17,16 @@ interface Props {
   description: string;
   /** Ruta relativa dentro de landingBase, con barra final. */
   path?: string;
+  /**
+   * La página se sirve desde la raíz del sitio, no bajo landingBase.
+   *
+   * Solo afecta al canonical. El HTML se sigue construyendo bajo /landing/
+   * (el `base` de Astro resuelve ahí los assets hasheados) y es un rewrite
+   * de Next el que lo publica en la raíz; sin esto el canonical apuntaría a
+   * una URL que ahora redirige, que es justo lo que un canonical no debe
+   * hacer.
+   */
+  rootPath?: boolean;
   /** Precarga del LCP: la sintaxis debe coincidir con la del elemento (§8.4). */
   preloadHero?: { mobile: string; desktop: string; breakpoint: number };
   /** La página contiene una fachada de video → preconnect condicional. */
@@ -31,6 +41,7 @@ const {
   title,
   description,
   path = "/",
+  rootPath = false,
   preloadHero,
   hasVideo = false,
   noindex = false,
@@ -39,7 +50,7 @@ const {
   breadcrumb,
 } = Astro.props;
 
-const canonical = `${site.baseUrl}${site.landingBase}${path}`;
+const canonical = `${site.baseUrl}${rootPath ? "" : site.landingBase}${path}`;
 // Noindex mientras site.ts conserve placeholders (el fork es una plantilla,
 // no una clínica real todavía). Ver landing/public/robots.txt.
 const robots = noindex || !site.indexable
@@ -69,7 +80,12 @@ const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-d
     <meta name="description" content={description} />
     <meta name="robots" content={robots} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" href="/favicon.ico" />
+    {/* Sin prefijo /landing: los dos archivos viven en el public/ de Next,
+        no en el de Astro, porque el mismo icono lo usan la landing y el
+        dashboard. Hasta ahora este href apuntaba a un archivo que no
+        existía y devolvía 404. */}
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={site.name} />

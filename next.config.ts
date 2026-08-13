@@ -181,9 +181,32 @@ const nextConfig: NextConfig = {
       afterFiles: [
         // URLs limpias → index.html (sin redirect 308)
         { source: "/landing", destination: "/landing/index.html" },
-        { source: "/landing/thank-you", destination: "/landing/thank-you/index.html" },
+        // Las páginas de gracias cuelgan del home, no de /landing: son el
+        // final del embudo de la raíz y `/landing/...` en la barra de
+        // direcciones delata la mecánica interna. El HTML se sigue
+        // construyendo bajo /landing/ — el `base` de Astro es lo que hace
+        // resolver los `_astro/*` hasheados — y esto solo cambia la URL
+        // pública. Un rewrite, no un redirect: sin salto visible.
+        { source: "/thank-you", destination: "/landing/thank-you/index.html" },
+        {
+          source: "/thank-you-download",
+          destination: "/landing/thank-you-download/index.html",
+        },
       ],
     };
+  },
+
+  /**
+   * La ruta vieja de la página de gracias.
+   *
+   * `permanent: false` (307) a propósito: un 308 se queda cacheado en el
+   * navegador de forma prácticamente irreversible, y esta ruta es joven —
+   * si hubiera que deshacerlo, un 307 se deshace y un 308 no.
+   */
+  async redirects() {
+    return [
+      { source: "/landing/thank-you", destination: "/thank-you", permanent: false },
+    ];
   },
 };
 

@@ -46,7 +46,10 @@ function collectClickIds(form: HTMLFormElement): Record<string, string | undefin
 
 function wire(form: HTMLFormElement): void {
   const errorEl = form.querySelector<HTMLElement>(".form__error");
-  const landingBase = form.dataset.landingBase ?? "";
+  // Destino tras el envío, por formulario: el de captación va a /thank-you y
+  // el del imán de leads a /thank-you-download, que dispara la descarga. Las
+  // dos cuelgan de la raíz, no de /landing (rewrites en next.config.ts).
+  const thankYou = form.dataset.thankYou ?? "/thank-you";
 
   const showError = (msg: string) => {
     if (!errorEl) return;
@@ -109,7 +112,7 @@ function wire(form: HTMLFormElement): void {
       });
       if (!res.ok) throw new Error("request failed");
       const qs = new URLSearchParams({ lead: "1", event_id: eventId });
-      window.location.href = `${location.origin}${landingBase}/thank-you?${qs}`;
+      window.location.href = `${location.origin}${thankYou}?${qs}`;
     } catch {
       showError("Hubo un problema. Intenta de nuevo o escríbenos por WhatsApp.");
       if (button) {

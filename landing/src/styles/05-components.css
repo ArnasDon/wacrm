@@ -635,14 +635,35 @@
  * Scroller infinito — portado de chota-god.css:264-310.
  * MOBILE FIRST: una sola columna; a 900px se abren las demás.
  * ============================================================ */
-.scroller { overflow: hidden; --gap: 2rem; --speed: 30s; }
+.scroller {
+  overflow: hidden;
+  --gap: 2rem;
+  --speed: 30s;
+  /* Centrado. Sin esto el carril nace pegado al borde izquierdo del viewport
+     porque la pista es `width: max-content`: no hay nada que lo empuje al
+     medio. El ancho relativo con techo deja aire a los lados en pantallas
+     grandes, que es donde el fundido de los extremos se lee de verdad. */
+  width: 90%;
+  max-width: 1536px;
+  margin-inline: auto;
+}
+
+/* El fundido de los extremos.
+ *
+ * Estaba en 2% / 98%, es decir: la zona de degradado medía el 2% del ancho
+ * y a 1200px eran 24px — se percibía como un corte seco, no como un
+ * desvanecido. 20% / 80% es la proporción del patrón de referencia y la que
+ * hace que el elemento parezca disolverse en el fondo en vez de recortarse.
+ *
+ * `mask-image` y no la abreviatura `mask`: la abreviatura reinicia de paso
+ * mask-repeat, mask-size y compañía, y aquí solo queremos poner la imagen. */
 .scroller--h {
-  mask: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent);
-  -webkit-mask: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 20%, #000 80%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 20%, #000 80%, transparent);
 }
 .scroller--v {
-  mask: linear-gradient(180deg, transparent, #000 2%, #000 98%, transparent);
-  -webkit-mask: linear-gradient(180deg, transparent, #000 2%, #000 98%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
 }
 .scroller-track { display: flex; gap: var(--gap); will-change: transform; }
 .scroller--h .scroller-track { width: max-content; animation: scroll-h var(--speed) linear infinite; }

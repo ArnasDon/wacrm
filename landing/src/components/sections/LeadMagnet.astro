@@ -61,7 +61,15 @@ const bullets = [
         </ul>
 
         <div class="card card--lg">
-          <ContactForm formId="magnet" variant="compact" cta="Enviarme la guía" />
+          {/* thankYou propio: la descarga arranca sola en esa página y el
+              lead se registra con su propio landing_slug, así el informe de
+              adquisición no mezcla una descarga con una petición comercial. */}
+          <ContactForm
+            formId="magnet"
+            variant="compact"
+            cta="Enviarme la guía"
+            thankYou="/thank-you-download"
+          />
         </div>
       </div>
     </div>

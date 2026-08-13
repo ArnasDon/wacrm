@@ -9,13 +9,14 @@
 // Lleva noindex siempre: una página de agradecimiento indexada genera
 // conversiones falsas desde búsqueda orgánica.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { site, whatsappHref } from "../data/site";
+import { whatsappHref } from "../data/site";
 ---
 
 <BaseLayout
   title="Gracias — te contactamos pronto"
   description="Recibimos tu solicitud. Te contactamos por WhatsApp en menos de 24 horas."
   path="/thank-you/"
+  rootPath
   noindex
 >
   <section class="section text-center">
@@ -39,7 +40,7 @@ import { site, whatsappHref } from "../data/site";
         </a>
       </div>
       <p class="mt-2">
-        <a href={`${site.landingBase}/`} class="t-sm text-grey">Volver al inicio</a>
+        <a href="/" class="t-sm text-grey">Volver al inicio</a>
       </p>
     </div>
   </section>

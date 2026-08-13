@@ -10,8 +10,6 @@
 // datos que ya existía en el fork y que no se toca: el server crea el lead
 // (find-or-create por teléfono) e inserta el tracking_event con la
 // atribución que god.js dejó en los campos ocultos.
-import { site } from "../data/site";
-
 interface Props {
   formId: string;
   variant?: "default" | "compact";
@@ -19,6 +17,12 @@ interface Props {
   heading?: string;
   sub?: string;
   cta?: string;
+  /**
+   * A dónde va el navegador tras un envío correcto. El imán de leads manda a
+   * /thank-you-download, que dispara la descarga del PDF; el resto al
+   * /thank-you normal. Ruta absoluta desde la raíz, no desde landingBase.
+   */
+  thankYou?: string;
 }
 
 const {
@@ -27,6 +31,7 @@ const {
   heading,
   sub,
   cta = "Solicitar información",
+  thankYou = "/thank-you",
 } = Astro.props;
 
 const id = (name: string) => `${formId}-${name}`;
@@ -36,7 +41,7 @@ const id = (name: string) => `${formId}-${name}`;
   id={`lead-form-${formId}`}
   class:list={["form", variant === "compact" && "form--compact"]}
   data-lead-form
-  data-landing-base={site.landingBase}
+  data-thank-you={thankYou}
   novalidate
 >
   {heading && <h3 class="t-xl mb-1">{heading}</h3>}

@@ -73,7 +73,13 @@ export const site = {
   videoId: "guJLfqTFfIw",
   /** Indexación SEO. Mientras los placeholders de arriba sigan siendo TODOs
    *  del fork, la landing se sirve con noindex + robots.txt Disallow.
-   *  Poner en true SOLO cuando se despliegue con datos reales. */
+   *  Poner en true SOLO cuando se despliegue con datos reales.
+   *
+   *  Esto gobierna la etiqueta <meta name="robots"> de cada página. El
+   *  /robots.txt del host lo gobierna NEXT_PUBLIC_SITE_INDEXABLE, en
+   *  src/app/robots.ts — los dos tienen que decir lo mismo y se cambian
+   *  juntos. (El robots.txt que había aquí en public/ se servía bajo
+   *  /landing/ por el `base` de Astro, así que no lo leía nadie.) */
   indexable: false,
 
   // ── Widget de contacto flotante (skill §7.7) ──

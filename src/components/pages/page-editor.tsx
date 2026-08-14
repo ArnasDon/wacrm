@@ -16,6 +16,9 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronLeft,
+  Copy,
+  ExternalLink,
+  Eye,
   GripVertical,
   Plus,
   Save,
@@ -96,6 +99,20 @@ const ARRAY_BLOCK_TYPES = new Set([
   'related-pages',
 ]);
 
+// URL del preview de una landing.
+// - Por defecto apunta al estático servido por el propio Next: /landing/ para
+//   home y /landing/<slug>.html para el resto (así lo deja el build de Astro
+//   copiado a public/landing).
+// - Si hay NEXT_PUBLIC_LANDING_URL (ej: http://localhost:4321/landing con el
+//   dev server de Astro), se usa esa base y los slugs no llevan extensión.
+function previewUrl(slug: string): string {
+  const devServerUrl = process.env.NEXT_PUBLIC_LANDING_URL;
+  const base = (devServerUrl || '/landing').replace(/\/+$/, '');
+  const devServer = typeof devServerUrl === 'string' && devServerUrl.length > 0;
+  if (slug === 'home') return `${base}/`;
+  return `${base}/${slug}${devServer ? '' : '.html'}`;
+}
+
 export function PageEditor({ slug }: Props) {
   const router = useRouter();
   const [page, setPage] = useState<LandingPage | null>(null);
@@ -103,6 +120,10 @@ export function PageEditor({ slug }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +165,7 @@ export function PageEditor({ slug }: Props) {
         return;
       }
       setSaved(true);
+      setPreviewKey((k) => k + 1); // recarga el preview con el contenido guardado
       setTimeout(() => setSaved(false), 2500);
     } catch {
       setError('No se pudo guardar la página.');
@@ -167,6 +189,47 @@ export function PageEditor({ slug }: Props) {
     const blocks = page.blocks.filter((_, i) => i !== index);
     setPage({ ...page, blocks });
     setSelected(null);
+  };
+
+  const duplicateBlock = (index: number) => {
+    if (!page) return;
+    const blocks = [...page.blocks];
+    blocks.splice(index + 1, 0, {
+      ...blocks[index],
+      // copia profunda para no compartir referencia con el original
+      data: JSON.parse(JSON.stringify(blocks[index].data)),
+    });
+    setPage({ ...page, blocks });
+    setSelected(index + 1);
+  };
+
+  // Drag-and-drop nativo (HTML5) para reordenar bloques.
+  const handleDragStart = (index: number) => (e: React.DragEvent) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (index: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (overIndex !== index) setOverIndex(index);
+  };
+
+  const handleDrop = (index: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === index || !page) return;
+    const blocks = [...page.blocks];
+    const [moved] = blocks.splice(dragIndex, 1);
+    blocks.splice(index, 0, moved);
+    setPage({ ...page, blocks });
+    setSelected(index);
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setOverIndex(null);
   };
 
   const addBlock = (type: string) => {
@@ -205,6 +268,16 @@ export function PageEditor({ slug }: Props) {
         </div>
         <div className="flex items-center gap-2">
           {saved && <span className="text-xs text-emerald-600">Guardado ✓</span>}
+          <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
+            <Eye className="mr-2 h-4 w-4" />
+            {showPreview ? 'Ocultar preview' : 'Vista previa'}
+          </Button>
+          <a href={previewUrl(slug)} target="_blank" rel="noreferrer">
+            <Button variant="outline" type="button">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Abrir
+            </Button>
+          </a>
           <Button onClick={save} disabled={saving}>
             <Save className="mr-2 h-4 w-4" />
             {saving ? 'Guardando...' : 'Guardar'}
@@ -254,14 +327,23 @@ export function PageEditor({ slug }: Props) {
           )}
           {page.blocks.map((block, i) => {
             const meta = BLOCK_TYPES.find((b) => b.type === block.type);
+            const isDragging = dragIndex === i;
+            const isOver = overIndex === i && dragIndex !== null && dragIndex !== i;
             return (
               <Card
                 key={`${block.type}-${i}`}
+                draggable
+                onDragStart={handleDragStart(i)}
+                onDragOver={handleDragOver(i)}
+                onDrop={handleDrop(i)}
+                onDragEnd={handleDragEnd}
                 className={`flex items-center gap-2 p-3 transition-colors ${
                   selected === i ? 'border-primary ring-1 ring-primary' : ''
-                }`}
+                } ${isDragging ? 'opacity-50' : ''} ${
+                  isOver ? 'border-dashed border-primary/60 ring-1 ring-primary/30' : ''
+                } ${dragIndex !== null ? 'cursor-grabbing' : 'cursor-grab'}`}
               >
-                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" />
                 <button
                   type="button"
                   className="flex flex-1 items-center gap-2 text-left"
@@ -273,6 +355,9 @@ export function PageEditor({ slug }: Props) {
                     <p className="text-xs text-muted-foreground">#{i + 1}</p>
                   </div>
                 </button>
+                <Button variant="ghost" size="icon" onClick={() => duplicateBlock(i)} title="Duplicar">
+                  <Copy className="h-4 w-4" />
+                </Button>
                 <Button variant="ghost" size="icon" disabled={i === 0} onClick={() => move(i, -1)}>
                   <ArrowUp className="h-4 w-4" />
                 </Button>
@@ -364,6 +449,32 @@ export function PageEditor({ slug }: Props) {
           </div>
         )}
       </div>
+
+      {/* Preview embebido */}
+      {showPreview && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between border-b px-4 py-2">
+            <h2 className="text-sm font-semibold text-muted-foreground">Vista previa</h2>
+            <a href={previewUrl(slug)} target="_blank" rel="noreferrer">
+              <Button variant="ghost" size="sm" type="button">
+                <ExternalLink className="mr-1 h-3 w-3" />
+                Abrir en pestaña nueva
+              </Button>
+            </a>
+          </div>
+          <iframe
+            key={previewKey}
+            src={previewUrl(slug)}
+            title={`Preview de ${slug}`}
+            className="h-[70vh] w-full border-0 bg-white"
+          />
+          <p className="border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+            El HTML estático se regenera en el build de la landing. El preview se recarga al
+            guardar: muestra el último build servido. En desarrollo (astro dev con
+            NEXT_PUBLIC_LANDING_URL) se actualiza al instante.
+          </p>
+        </Card>
+      )}
     </div>
   );
 }

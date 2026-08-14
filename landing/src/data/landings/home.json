@@ -3,6 +3,14 @@
   "description": "Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.",
   "blocks": [
     {
+      "type": "text-section",
+      "data": {
+        "title": "El textp",
+        "text": "con imagen",
+        "image": "https://gbdozyprjbjqftczqbkx.supabase.co/storage/v1/object/public/media/account-973bdd6d-5cf2-45c7-9f2f-f370a11bb975/1786721237043-spa_woman_relaxing.webp"
+      }
+    },
+    {
       "type": "hero-video",
       "data": {
         "videoId": "YO9j71cUvO4",

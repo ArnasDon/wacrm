@@ -1,0 +1,93 @@
+---
+// ThankYouDownload — confirmación del imán de leads (skill §14.4).
+//
+// Hermana de ThankYou, con dos diferencias que importan:
+//   1. Dispara la descarga del PDF sola al cargar (el usuario ya dejó su
+//      teléfono; un clic más pierde gente en el último metro).
+//   2. El script de re-emisión registra landing_slug "thank-you-download",
+//      no "thank-you": un lead que viene a por un PDF y uno que pide
+//      presupuesto tienen intención y valor distintos.
+import { whatsappHref } from '../../data/site';
+
+interface Props {
+  /** Icono de confirmación (emoji). */
+  icon?: string;
+  heading?: string;
+  text?: string;
+  /** Texto del botón de descarga (visible y real: salva la conversión si
+   *  el navegador bloquea la descarga automática). */
+  downloadCta?: string;
+  /** Nombre con el que el archivo se guarda en el disco. */
+  downloadName?: string;
+  /** URL del PDF (ruta bajo /landing/, sin fecha a propósito). */
+  pdfHref?: string;
+  waCta?: string;
+  backText?: string;
+  backHref?: string;
+}
+
+const {
+  icon = '✓',
+  heading = '¡Listo! Tu guía va en camino',
+  text = 'La descarga empieza sola en un segundo. Te escribimos por WhatsApp por si tienes dudas mientras la lees.',
+  downloadCta = 'Descargar la guía',
+  downloadName = 'guia-dolor-de-espalda.pdf',
+  pdfHref = '/landing/guia.pdf',
+  waCta = '¿Prefieres hablar ahora?',
+  backText = 'Volver al inicio',
+  backHref = '/',
+} = Astro.props;
+---
+
+<section class="section text-center">
+  <div class="container measure-sm mx-auto">
+    <p class="icon-circle t-2xl" aria-hidden="true">{icon}</p>
+    <h1 class="t-3xl">{heading}</h1>
+    <p class="lead">{text}</p>
+
+    {/* El enlace es real y visible, no solo el gancho del script: si el
+        navegador bloquea la descarga automática (Safari lo hace a veces
+        sin gesto del usuario), esto es lo único que salva la conversión.
+        Por eso es un <a> de verdad y no un <button>. */}
+    <div class="btn-row mt-2">
+      <a
+        id="magnet-download"
+        href={pdfHref}
+        download={downloadName}
+        class="button primary pill"
+        data-track="magnet_download"
+        data-track-label="thank_you_download"
+      >
+        {downloadCta}
+      </a>
+    </div>
+
+    <p class="mt-2">
+      <a
+        href={whatsappHref}
+        target="_blank"
+        rel="noopener"
+        data-wa-cta
+        data-track="whatsapp_click"
+        data-track-label="thank_you_download"
+        class="t-sm"
+      >
+        {waCta}
+      </a>
+    </p>
+    <p class="mt-1">
+      <a href={backHref} class="t-sm text-grey">{backText}</a>
+    </p>
+  </div>
+</section>
+
+<script>
+  // ── Descarga automática ──
+  // Un clic sintético sobre el <a download> en vez de `location.href`: con
+  // location el navegador NAVEGA al PDF y la página de gracias desaparece de
+  // la pantalla y del historial. El retardo deja que la página pinte antes.
+  const link = document.querySelector<HTMLAnchorElement>("#magnet-download");
+  if (link) {
+    setTimeout(() => link.click(), 800);
+  }
+</script>

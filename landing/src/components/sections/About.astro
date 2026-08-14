@@ -4,22 +4,44 @@
 // experiencia y confiabilidad. El nodo Person del grafo sale de site.author,
 // así que el marcado y los datos estructurados no pueden divergir.
 import { site } from "../../data/site";
+
+interface Props {
+  heading?: string;
+  name?: string;
+  jobTitle?: string;
+  bio?: string;
+  /** Áreas de conocimiento (nodo knowsAbout del grafo). */
+  knowsAbout?: string[];
+  /** Cifra destacada de la tarjeta. Default: site.proof[1] */
+  statNum?: string;
+  statLabel?: string;
+  statText?: string;
+}
+
+const {
+  heading = 'Quién te atiende',
+  name = site.author.name,
+  jobTitle = site.author.jobTitle,
+  bio = 'Más de una década tratando lesiones deportivas, dolor crónico y recuperación post-quirúrgica. Cada plan se construye sobre una valoración presencial: no hay protocolos genéricos ni sesiones que no aporten.',
+  knowsAbout = site.author.knowsAbout,
+  statNum = site.proof[1].num,
+  statLabel = site.proof[1].label,
+  statText = 'El tratamiento se ajusta sesión a sesión. Si no hay avance medible, se replantea el plan.',
+} = Astro.props;
 ---
 
 <section id="autoridad" class="section" itemscope itemtype="https://schema.org/Person">
   <div class="container">
     <div class="row is-vertical-align">
       <div class="col-7-md">
-        <h2 class="t-3xl">Quién te atiende</h2>
-        <p class="t-xl text-primary is-marginless" itemprop="name">{site.author.name}</p>
-        <p class="t-sm text-grey" itemprop="jobTitle">{site.author.jobTitle}</p>
+        <h2 class="t-3xl">{heading}</h2>
+        <p class="t-xl text-primary is-marginless" itemprop="name">{name}</p>
+        <p class="t-sm text-grey" itemprop="jobTitle">{jobTitle}</p>
         <p class="text-body measure-sm mt-1">
-          Más de una década tratando lesiones deportivas, dolor crónico y recuperación
-          post-quirúrgica. Cada plan se construye sobre una valoración presencial: no
-          hay protocolos genéricos ni sesiones que no aporten.
+          {bio}
         </p>
         <ul class="step-list mt-2">
-          {site.author.knowsAbout.map((k) => (
+          {knowsAbout.map((k) => (
             <li>
               <span class="step-num" aria-hidden="true">✓</span>
               <span itemprop="knowsAbout">{k}</span>
@@ -30,11 +52,10 @@ import { site } from "../../data/site";
 
       <div class="col-5-md">
         <div class="card card--lg text-center">
-          <p class="stat-num">{site.proof[1].num}</p>
-          <p class="stat-label">{site.proof[1].label}</p>
+          <p class="stat-num">{statNum}</p>
+          <p class="stat-label">{statLabel}</p>
           <p class="text-body mt-2 is-marginless">
-            El tratamiento se ajusta sesión a sesión. Si no hay avance medible,
-            se replantea el plan.
+            {statText}
           </p>
         </div>
       </div>

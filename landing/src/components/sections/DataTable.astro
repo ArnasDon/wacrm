@@ -1,16 +1,22 @@
 ---
 // Tabla de datos genérica. MOBILE FIRST: se desplaza en horizontal en vez de
 // romperse; la comparación entre filas es el motivo de existir de una tabla.
-interface Props { title?: string }
-const { title = 'Cuántas sesiones suele necesitar cada caso' } = Astro.props;
+interface Props {
+  title?: string;
+  head?: string[];
+  rows?: string[][];
+}
 
-const head = ['Caso', 'Sesiones', 'Frecuencia'];
-const rows = [
-  ['Lumbalgia aguda', '4 – 6', '2 por semana'],
-  ['Hernia discal', '8 – 12', '2 por semana'],
-  ['Post-operatorio de rodilla', '12 – 20', '3 por semana'],
-  ['Hombro congelado', '10 – 15', '2 por semana'],
-];
+const {
+  title = 'Cuántas sesiones suele necesitar cada caso',
+  head = ['Caso', 'Sesiones', 'Frecuencia'],
+  rows = [
+    ['Lumbalgia aguda', '4 – 6', '2 por semana'],
+    ['Hernia discal', '8 – 12', '2 por semana'],
+    ['Post-operatorio de rodilla', '12 – 20', '2 por semana'],
+    ['Hombro congelado', '10 – 15', '2 por semana'],
+  ],
+} = Astro.props;
 ---
 
 <section class="section bg-secondary">

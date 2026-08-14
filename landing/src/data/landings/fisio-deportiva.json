@@ -1,0 +1,12 @@
+{
+  "title": "Fisioterapia deportiva",
+  "description": "Desc",
+  "blocks": [
+    {
+      "type": "hero-centered",
+      "data": {
+        "title": "Fisioterapia deportiva"
+      }
+    }
+  ]
+}

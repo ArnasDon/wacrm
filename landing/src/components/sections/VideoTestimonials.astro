@@ -12,11 +12,17 @@ import YouTubeLite from '../YouTubeLite.astro';
 
 interface Item { id: string; name: string; quote: string }
 
-const items: Item[] = [
-  { id: 'guJLfqTFfIw', name: 'Marta L.', quote: 'Volví a caminar sin dolor en seis semanas.' },
-  { id: 'guJLfqTFfIw', name: 'Diego S.', quote: 'Me evitaron una cirugía de rodilla.' },
-  { id: 'guJLfqTFfIw', name: 'Elena V.', quote: 'El seguimiento fue lo que marcó la diferencia.' },
-];
+interface Props {
+  items?: Item[];
+}
+
+const {
+  items = [
+    { id: 'guJLfqTFfIw', name: 'Marta L.', quote: 'Volví a caminar sin dolor en seis semanas.' },
+    { id: 'guJLfqTFfIw', name: 'Diego S.', quote: 'Me evitaron una cirugía de rodilla.' },
+    { id: 'guJLfqTFfIw', name: 'Elena V.', quote: 'El seguimiento fue lo que marcó la diferencia.' },
+  ],
+} = Astro.props;
 ---
 
 <section id="testimonios" class="section">

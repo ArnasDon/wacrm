@@ -1,20 +1,24 @@
 ---
 // thank-you-download.astro — confirmación del imán de leads (skill §14.4).
 //
-// Hermana de thank-you.astro, con dos diferencias que importan:
-//
-//   1. Dispara la descarga del PDF sola al cargar. El usuario dejó su
-//      teléfono para conseguir el archivo; obligarle a un clic más es
-//      perder gente en el último metro.
-//   2. Registra `landing_slug: "thank-you-download"`, no "thank-you". Un
-//      lead que viene a por un PDF y uno que pide presupuesto tienen
-//      intención y valor distintos: mezclarlos en el informe de adquisición
-//      infla el recuento de leads comerciales con descargas.
+// Textos y bloque editables desde src/data/landings/thank-you-download.json.
+// La descarga automática y el script de re-emisión son lógica de atribución
+// y viven aquí, no en el bloque.
 //
 // Lleva noindex siempre, igual que su hermana: una página de agradecimiento
 // indexada genera conversiones falsas desde búsqueda orgánica.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { site, whatsappHref } from "../data/site";
+import BlockRenderer from "../components/BlockRenderer.astro";
+import { site } from "../data/site";
+import { getCollection } from "astro:content";
+
+const [page] = await getCollection("landing", ({ id }) => id === "thank-you-download");
+
+if (!page) {
+  throw new Error('landing: falta src/data/landings/thank-you-download.json');
+}
+
+const { title, description, blocks } = page.data;
 
 // El PDF vive en landing/public/, que Astro emite bajo `base` — de ahí que
 // la URL lleve el prefijo aunque la página se sirva desde la raíz.
@@ -31,79 +35,16 @@ const pdfHref = `${site.landingBase}/guia.pdf`;
 ---
 
 <BaseLayout
-  title="Tu guía está descargándose"
-  description="La guía de dolor de espalda en PDF. Si la descarga no empieza sola, el enlace está en la página."
+  title={title}
+  description={description}
   path="/thank-you-download/"
   rootPath
   noindex
 >
-  <section class="section text-center">
-    <div class="container measure-sm mx-auto">
-      <p class="icon-circle t-2xl" aria-hidden="true">✓</p>
-      <h1 class="t-3xl">¡Listo! Tu guía va en camino</h1>
-      <p class="lead">
-        La descarga empieza sola en un segundo. Te escribimos por WhatsApp por
-        si tienes dudas mientras la lees.
-      </p>
-
-      {/* El enlace es real y visible, no solo el gancho del script: si el
-          navegador bloquea la descarga automática (Safari lo hace a veces
-          sin gesto del usuario), esto es lo único que salva la conversión.
-          Por eso es un <a> de verdad y no un <button>.
-
-          `download` es el nombre con el que el archivo se guarda en el disco,
-          que NO es la URL: por eso aquí sí describe el contenido — lo que
-          importa es que el lead sepa qué tiene en Descargas dentro de un mes. */}
-      <div class="btn-row mt-2">
-        <a
-          id="magnet-download"
-          href={pdfHref}
-          download="guia-dolor-de-espalda.pdf"
-          class="button primary pill"
-          data-track="magnet_download"
-          data-track-label="thank_you_download"
-        >
-          Descargar la guía
-        </a>
-      </div>
-
-      <p class="mt-2">
-        <a
-          href={whatsappHref}
-          target="_blank"
-          rel="noopener"
-          data-wa-cta
-          data-track="whatsapp_click"
-          data-track-label="thank_you_download"
-          class="t-sm"
-        >
-          ¿Prefieres hablar ahora?
-        </a>
-      </p>
-      <p class="mt-1">
-        <a href="/" class="t-sm text-grey">Volver al inicio</a>
-      </p>
-    </div>
-  </section>
+  <BlockRenderer blocks={blocks} showChrome={false} />
 </BaseLayout>
 
 <script>
-  // ── Descarga automática ──
-  //
-  // Un clic sintético sobre el <a download> en vez de `location.href`: con
-  // location el navegador NAVEGA al PDF y la página de gracias desaparece de
-  // la pantalla y del historial, así que el CTA de WhatsApp y el registro de
-  // abajo no llegan a verse. El atributo `download` sobre un recurso del
-  // mismo origen descarga sin salir de aquí.
-  //
-  // El retardo deja que la página pinte antes: una descarga que arranca a la
-  // vez que el primer render parece que ha fallado, porque el usuario aún no
-  // ve dónde está.
-  const link = document.querySelector<HTMLAnchorElement>("#magnet-download");
-  if (link) {
-    setTimeout(() => link.click(), 800);
-  }
-
   // ── Re-emisión idempotente del form_submit ──
   //
   // Mismo event_id → UNIQUE en tracking_events → no duplica. Recargar esta

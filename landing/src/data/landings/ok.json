@@ -1,0 +1,12 @@
+{
+  "title": "OK",
+  "description": "",
+  "blocks": [
+    {
+      "type": "hero-centered",
+      "data": {
+        "title": "OK"
+      }
+    }
+  ]
+}

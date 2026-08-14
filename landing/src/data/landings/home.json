@@ -1,0 +1,494 @@
+{
+  "title": "Fisioterapia y rehabilitación en CDMX | Tu Clínica",
+  "description": "Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.",
+  "blocks": [
+    {
+      "type": "hero-video",
+      "data": {
+        "videoId": "guJLfqTFfIw",
+        "desktopVideoId": "guJLfqTFfIw",
+        "badge": "Agenda disponible esta semana",
+        "displayTitle": "Recupera el movimiento sin pasar por quirófano",
+        "subtitle": "Valoración con diagnóstico y plan por escrito el mismo día."
+      }
+    },
+    {
+      "type": "hero-fake-h1",
+      "data": {
+        "badge": "Agenda disponible esta semana",
+        "displayTitle": "Recupera el movimiento sin pasar por quirófano",
+        "subtitle": "Valoración con diagnóstico y plan por escrito el mismo día."
+      }
+    },
+    {
+      "type": "social-proof",
+      "data": {
+        "stats": [
+          {
+            "num": "12",
+            "label": "años de experiencia"
+          },
+          {
+            "num": "4.000+",
+            "label": "pacientes atendidos"
+          },
+          {
+            "num": "24 h",
+            "label": "tiempo de respuesta"
+          },
+          {
+            "num": "95%",
+            "label": "continúan su tratamiento"
+          }
+        ]
+      }
+    },
+    {
+      "type": "scroller",
+      "data": {
+        "title": "Certificaciones y coberturas",
+        "items": [
+          "Seguros aceptados",
+          "COFEPRIS",
+          "Colegio de Fisioterapia",
+          "Equipo certificado",
+          "12 años",
+          "4.000+ pacientes"
+        ]
+      }
+    },
+    {
+      "type": "features",
+      "data": {
+        "features": [
+          {
+            "icon": "⏱",
+            "title": "Alta cuando toca",
+            "text": "Te damos el alta en cuanto dejas de necesitarnos. No vendemos bonos infinitos."
+          },
+          {
+            "icon": "📋",
+            "title": "Plan por escrito",
+            "text": "Sales de la primera sesión con el diagnóstico y el número de sesiones estimado."
+          },
+          {
+            "icon": "🏠",
+            "title": "Ejercicios en casa",
+            "text": "La mitad del resultado depende de lo que hagas entre sesiones. Te lo dejamos claro."
+          },
+          {
+            "icon": "📞",
+            "title": "Seguimiento real",
+            "text": "Si algo no avanza, se replantea el plan. No se repite la misma sesión doce veces."
+          }
+        ]
+      }
+    },
+    {
+      "type": "video",
+      "data": {
+        "id": "guJLfqTFfIw",
+        "desktopId": "guJLfqTFfIw",
+        "ratio": "auto",
+        "title": "Cómo es la primera sesión",
+        "text": "Cuatro minutos: la exploración, las pruebas de movimiento y cómo sale el plan. Para que llegues sabiendo qué esperar.",
+        "videoPosition": "right"
+      }
+    },
+    {
+      "type": "lead-section",
+      "data": {
+        "id": "agenda",
+        "formId": "top",
+        "heading": "Agenda tu valoración",
+        "sub": "Déjanos tus datos y te contactamos por WhatsApp en menos de 24 h. Sin compromiso."
+      }
+    },
+    {
+      "type": "specialties",
+      "data": {
+        "heading": "Tratamientos y precios",
+        "sub": "Cada sesión incluye valoración de seguimiento y ajustes del plan según tu avance.",
+        "services": [
+          {
+            "name": "Fisioterapia",
+            "desc": "Recupera tu movilidad y elimina el dolor con tratamientos personalizados.",
+            "price": "600"
+          },
+          {
+            "name": "Rehabilitación",
+            "desc": "Programas de recuperación tras lesiones o cirugías, con seguimiento.",
+            "price": "750"
+          },
+          {
+            "name": "Terapia manual",
+            "desc": "Técnicas de precisión para contracturas y dolencias crónicas.",
+            "price": "650"
+          },
+          {
+            "name": "Ejercicio terapéutico",
+            "desc": "Fortalece y previene recaídas con un plan a tu medida.",
+            "price": "550"
+          }
+        ]
+      }
+    },
+    {
+      "type": "pricing-table",
+      "data": {
+        "rows": [
+          {
+            "name": "Valoración",
+            "price": "",
+            "category": true
+          },
+          {
+            "name": "Primera valoración (45–60 min)",
+            "price": "$600"
+          },
+          {
+            "name": "Revaloración",
+            "price": "$400"
+          },
+          {
+            "name": "Tratamiento",
+            "price": "",
+            "category": true
+          },
+          {
+            "name": "Sesión de fisioterapia",
+            "price": "$600"
+          },
+          {
+            "name": "Rehabilitación post-quirúrgica",
+            "price": "$750"
+          },
+          {
+            "name": "Terapia manual",
+            "price": "$650"
+          },
+          {
+            "name": "Paquetes",
+            "price": "",
+            "category": true
+          },
+          {
+            "name": "Bono 5 sesiones",
+            "price": "$2.700"
+          },
+          {
+            "name": "Bono 10 sesiones",
+            "price": "$5.000"
+          }
+        ]
+      }
+    },
+    {
+      "type": "comparison",
+      "data": {
+        "title": "¿Fisioterapia o infiltraciones?",
+        "cols": [
+          {
+            "head": "Fisioterapia",
+            "good": true,
+            "items": [
+              "Corrige la causa, no solo el síntoma",
+              "Sin fármacos ni efectos secundarios",
+              "Resultados que se sostienen",
+              "Aprendes a prevenir la recaída"
+            ]
+          },
+          {
+            "head": "Solo infiltraciones",
+            "good": false,
+            "items": [
+              "Alivio inmediato pero temporal",
+              "Número de aplicaciones limitado",
+              "No corrige el patrón de movimiento",
+              "El dolor suele volver"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "data-table",
+      "data": {
+        "title": "Cuántas sesiones suele necesitar cada caso",
+        "head": [
+          "Caso",
+          "Sesiones",
+          "Frecuencia"
+        ],
+        "rows": [
+          [
+            "Lumbalgia aguda",
+            "4 – 6",
+            "2 por semana"
+          ],
+          [
+            "Hernia discal",
+            "8 – 12",
+            "2 por semana"
+          ],
+          [
+            "Post-operatorio de rodilla",
+            "12 – 20",
+            "2 por semana"
+          ],
+          [
+            "Hombro congelado",
+            "10 – 15",
+            "2 por semana"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "video-testimonials",
+      "data": {
+        "items": [
+          {
+            "id": "guJLfqTFfIw",
+            "name": "Marta L.",
+            "quote": "Volví a caminar sin dolor en seis semanas."
+          },
+          {
+            "id": "guJLfqTFfIw",
+            "name": "Diego S.",
+            "quote": "Me evitaron una cirugía de rodilla."
+          },
+          {
+            "id": "guJLfqTFfIw",
+            "name": "Elena V.",
+            "quote": "El seguimiento fue lo que marcó la diferencia."
+          }
+        ]
+      }
+    },
+    {
+      "type": "reviews",
+      "data": {
+        "reviews": [
+          {
+            "name": "María G.",
+            "rating": 5,
+            "text": "Llegué con una hernia y en ocho sesiones volví a correr. Explican cada paso."
+          },
+          {
+            "name": "Javier R.",
+            "rating": 5,
+            "text": "Me operaron del hombro y la rehabilitación aquí fue lo que marcó la diferencia."
+          },
+          {
+            "name": "Lucía M.",
+            "rating": 5,
+            "text": "El plan se ajustó cuando vieron que no avanzaba. Eso no lo hacen en todos lados."
+          },
+          {
+            "name": "Andrés P.",
+            "rating": 4,
+            "text": "Buen trato y horarios flexibles. El dolor de espalda bajó desde la segunda semana."
+          }
+        ]
+      }
+    },
+    {
+      "type": "gallery",
+      "data": {
+        "title": "Resultados de pacientes",
+        "subtitle": "Casos reales, con su permiso por escrito.",
+        "images": [
+          "https://picsum.photos/seed/wacrm1/600/600",
+          "https://picsum.photos/seed/wacrm2/600/600",
+          "https://picsum.photos/seed/wacrm3/600/600",
+          "https://picsum.photos/seed/wacrm4/600/600",
+          "https://picsum.photos/seed/wacrm5/600/600",
+          "https://picsum.photos/seed/wacrm6/600/600",
+          "https://picsum.photos/seed/wacrm7/600/600",
+          "https://picsum.photos/seed/wacrm8/600/600",
+          "https://picsum.photos/seed/wacrm9/600/600"
+        ]
+      }
+    },
+    {
+      "type": "how-it-works",
+      "data": {
+        "heading": "Qué pasa cuando nos escribes",
+        "steps": [
+          {
+            "title": "Nos escribes",
+            "text": "Por WhatsApp o dejando tus datos en el formulario."
+          },
+          {
+            "title": "Te llamamos",
+            "text": "En menos de 24 horas, para entender tu caso."
+          },
+          {
+            "title": "Valoración",
+            "text": "45–60 minutos: diagnóstico y plan de tratamiento."
+          },
+          {
+            "title": "Tratamiento",
+            "text": "Sesiones con seguimiento y ajustes según tu avance."
+          }
+        ]
+      }
+    },
+    {
+      "type": "team",
+      "data": {
+        "team": [
+          {
+            "name": "Dra. Ana Ruiz",
+            "role": "Directora clínica",
+            "bio": "12 años en rehabilitación deportiva.",
+            "img": "https://picsum.photos/seed/team1/300/300"
+          },
+          {
+            "name": "Luis Ortega",
+            "role": "Fisioterapeuta",
+            "bio": "Especialista en terapia manual.",
+            "img": "https://picsum.photos/seed/team2/300/300"
+          },
+          {
+            "name": "Sara Núñez",
+            "role": "Fisioterapeuta",
+            "bio": "Recuperación post-quirúrgica.",
+            "img": "https://picsum.photos/seed/team3/300/300"
+          },
+          {
+            "name": "Iván Prado",
+            "role": "Readaptador",
+            "bio": "Ejercicio terapéutico y prevención.",
+            "img": "https://picsum.photos/seed/team4/300/300"
+          }
+        ]
+      }
+    },
+    {
+      "type": "about",
+      "data": {
+        "heading": "Quién te atiende",
+        "name": "Dra. Nombre Apellido",
+        "jobTitle": "Fisioterapeuta",
+        "bio": "Más de una década tratando lesiones deportivas, dolor crónico y recuperación post-quirúrgica. Cada plan se construye sobre una valoración presencial: no hay protocolos genéricos ni sesiones que no aporten.",
+        "knowsAbout": [
+          "Fisioterapia",
+          "Rehabilitación",
+          "Terapia manual"
+        ],
+        "statNum": "4.000+",
+        "statLabel": "pacientes atendidos",
+        "statText": "El tratamiento se ajusta sesión a sesión. Si no hay avance medible, se replantea el plan."
+      }
+    },
+    {
+      "type": "text-section",
+      "data": {
+        "title": "Por qué el diagnóstico va antes que el tratamiento",
+        "text": "Tratar sin valorar es apagar una alarma sin mirar qué la disparó. La primera sesión se dedica entera a entender de dónde viene el dolor: exploración, pruebas de movimiento y revisión de estudios previos si los hay. El plan sale de ahí, no de un protocolo genérico.",
+        "image": "https://picsum.photos/seed/wacrmtext/640/480",
+        "imagePosition": "right",
+        "bg": "white"
+      }
+    },
+    {
+      "type": "lead-magnet",
+      "data": {
+        "label": "Descarga gratuita",
+        "title": "Guía de dolor de espalda",
+        "text": "Lo que damos a los pacientes en la primera sesión, en PDF. Sin registro para leerlo: te lo mandamos y ya.",
+        "bullets": [
+          "12 ejercicios con foto, para hacer en casa",
+          "Qué NO hacer las primeras 72 horas",
+          "Cuándo el dolor deja de ser muscular y toca consultar"
+        ],
+        "meta": [
+          "18 páginas",
+          "PDF",
+          "10 min de lectura"
+        ],
+        "cover": "/landing/guia-cover.svg",
+        "cta": "Enviarme la guía",
+        "thankYou": "/thank-you-download"
+      }
+    },
+    {
+      "type": "faq",
+      "data": {
+        "heading": "Preguntas frecuentes",
+        "faq": [
+          {
+            "q": "¿Cómo agendo una cita?",
+            "a": "Escríbenos por WhatsApp con el botón de abajo y coordinamos el horario que mejor te convenga."
+          },
+          {
+            "q": "¿Cuánto dura la primera sesión?",
+            "a": "La primera valoración dura entre 45 y 60 minutos e incluye el diagnóstico y el plan de tratamiento."
+          },
+          {
+            "q": "¿Aceptan seguros?",
+            "a": "Trabajamos con la mayoría de los seguros. Escríbenos y te confirmamos tu cobertura."
+          },
+          {
+            "q": "¿Qué llevo a la primera cita?",
+            "a": "Ropa cómoda y, si los tienes, estudios previos como radiografías o resonancias."
+          }
+        ]
+      }
+    },
+    {
+      "type": "related-pages",
+      "data": {
+        "pages": [
+          {
+            "title": "Rehabilitación de rodilla",
+            "text": "Post-operatorio y ligamento cruzado.",
+            "href": "#"
+          },
+          {
+            "title": "Dolor lumbar",
+            "text": "Lumbalgia aguda y crónica.",
+            "href": "#"
+          },
+          {
+            "title": "Hombro congelado",
+            "text": "Recuperar el rango sin cirugía.",
+            "href": "#"
+          }
+        ]
+      }
+    },
+    {
+      "type": "divider",
+      "data": {
+        "margin": "lg"
+      }
+    },
+    {
+      "type": "hero-centered",
+      "data": {
+        "badge": "Atención el mismo día",
+        "title": "Fisioterapia que resuelve, no que entretiene",
+        "subtitle": "Diagnóstico, plan por escrito y alta cuando toca. No vendemos bonos infinitos."
+      }
+    },
+    {
+      "type": "lead-section",
+      "data": {
+        "id": "cierre",
+        "formId": "bottom",
+        "heading": "Empieza hoy",
+        "sub": "Cuanto antes empiece el tratamiento, menos sesiones hacen falta."
+      }
+    },
+    {
+      "type": "cta",
+      "data": {
+        "title": "Empieza esta semana",
+        "text": "Cuanto antes empiece el tratamiento, menos sesiones hacen falta."
+      }
+    }
+  ]
+}

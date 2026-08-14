@@ -1,0 +1,54 @@
+---
+// ThankYou — confirmación de lead (skill §14.4). El script de re-emisión
+// idempotente del form_submit vive en la PÁGINA (thank-you.astro), no aquí:
+// es lógica de atribución, no contenido. Este bloque solo pinta textos.
+import { whatsappHref } from '../../data/site';
+
+interface Props {
+  /** Icono de confirmación (emoji). */
+  icon?: string;
+  /** Título (el H1 de la página). */
+  heading?: string;
+  /** Párrafo de confirmación. */
+  text?: string;
+  /** Texto del botón de WhatsApp. */
+  waCta?: string;
+  /** Texto del enlace de volver. */
+  backText?: string;
+  /** Destino del enlace de volver. */
+  backHref?: string;
+}
+
+const {
+  icon = '✓',
+  heading = '¡Gracias!',
+  text = 'Recibimos tu solicitud. Te contactaremos por WhatsApp en menos de 24 h.',
+  waCta = '¿Prefieres hablar ahora?',
+  backText = 'Volver al inicio',
+  backHref = '/',
+} = Astro.props;
+---
+
+<section class="section text-center">
+  <div class="container measure-sm mx-auto">
+    <p class="icon-circle t-2xl" aria-hidden="true">{icon}</p>
+    <h1 class="t-3xl">{heading}</h1>
+    <p class="lead">{text}</p>
+    <div class="btn-row mt-2">
+      <a
+        href={whatsappHref}
+        class="button primary pill"
+        target="_blank"
+        rel="noopener"
+        data-wa-cta
+        data-track="whatsapp_click"
+        data-track-label="thank_you"
+      >
+        {waCta}
+      </a>
+    </div>
+    <p class="mt-2">
+      <a href={backHref} class="t-sm text-grey">{backText}</a>
+    </p>
+  </div>
+</section>

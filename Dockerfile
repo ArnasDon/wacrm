@@ -53,6 +53,12 @@ RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# Page editor: las landings JSON viven en landing/src/data/landings y son
+# la fuente de verdad de la Content Collection de Astro (ver landing-pages.ts).
+# El runner standalone las necesita para que /api/pages pueda listar/editar.
+# Persisten en el fs del contenedor; el próximo `up --build` las re-sincroniza
+# desde el host.
+COPY --from=builder --chown=nextjs:nextjs /app/landing/src/data/landings ./landing/src/data/landings
 
 USER nextjs
 EXPOSE 3000

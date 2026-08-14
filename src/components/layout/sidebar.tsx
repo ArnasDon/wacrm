@@ -12,6 +12,7 @@ import {
   Bell,
   Bot,
   Crown,
+  FileText,
   GitBranch,
   LayoutDashboard,
   LogOut,
@@ -105,6 +106,7 @@ const navItems: NavItem[] = [
   { href: "/calls", labelKey: "calls", icon: Phone },
   { href: "/email", labelKey: "email", icon: Mail },
   { href: "/reports", labelKey: "reports", icon: BarChart3 },
+  { href: "/pages", labelKey: "pages", icon: FileText },
 ];
 
 const bottomNavItems = [

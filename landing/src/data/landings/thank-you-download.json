@@ -1,0 +1,19 @@
+{
+  "title": "Tu guía está descargándose",
+  "description": "La guía de dolor de espalda en PDF. Si la descarga no empieza sola, el enlace está en la página.",
+  "blocks": [
+    {
+      "type": "thank-you-download",
+      "data": {
+        "icon": "✓",
+        "heading": "¡Listo! Tu guía va en camino",
+        "text": "La descarga empieza sola en un segundo. Te escribimos por WhatsApp por si tienes dudas mientras la lees.",
+        "downloadCta": "Descargar la guía",
+        "downloadName": "guia-dolor-de-espalda.pdf",
+        "waCta": "¿Prefieres hablar ahora?",
+        "backText": "Volver al inicio",
+        "backHref": "/"
+      }
+    }
+  ]
+}

@@ -1,24 +1,35 @@
 ---
-// Scroller infinito — marquesina de logos o frases.
+// Scroller infinito — marquesina de logos (imágenes) o frases.
 //
 // El truco: el contenido se duplica y la animación va de 0 a -50%, así que al
 // terminar el ciclo la segunda copia está exactamente donde estaba la primera
 // y el salto es invisible. Se pausa al pasar el cursor y se detiene entero con
 // `prefers-reduced-motion`.
+interface ScrollerImage {
+  /** URL del logo (puede ser ruta dentro de /landing/ o URL absoluta). */
+  src: string;
+  alt: string;
+}
+
 interface Props {
+  /** Textos (modo frases). Se ignora si se pasan `images`. */
   items?: string[];
+  /** Logos (modo imágenes). Si vienen, la marquesina usa imágenes. */
+  images?: ScrollerImage[];
   speed?: 'fast' | 'normal' | 'slow';
   title?: string;
 }
 
 const {
   items = ['Seguros aceptados', 'COFEPRIS', 'Colegio de Fisioterapia', 'Equipo certificado', '12 años', '4.000+ pacientes'],
+  images,
   speed = 'normal',
   title,
 } = Astro.props;
 
 // Duplicado: es lo que hace que el bucle no dé el salto.
-const loop = [...items, ...items];
+const useImages = Boolean(images && images.length > 0);
+const loop = useImages ? [...(images as ScrollerImage[]), ...(images as ScrollerImage[])] : [...items, ...items];
 ---
 
 <section class="section section--tight bg-secondary">
@@ -30,9 +41,43 @@ const loop = [...items, ...items];
     aria-label={title ?? 'Certificaciones'}
   >
     <div class="scroller-track">
-      {loop.map((t, i) => (
-        <div class="scroller-item scroller-item--text" aria-hidden={i >= items.length ? 'true' : undefined}>{t}</div>
-      ))}
+      {loop.map((t, i) =>
+        useImages ? (
+          <div class="scroller-item" aria-hidden={i >= (images as ScrollerImage[]).length ? 'true' : undefined}>
+            <img
+              src={(t as ScrollerImage).src}
+              alt={(t as ScrollerImage).alt}
+              loading="lazy"
+              decoding="async"
+              class="scroller-item--logo"
+            />
+          </div>
+        ) : (
+          <div class="scroller-item scroller-item--text" aria-hidden={i >= items.length ? 'true' : undefined}>{t}</div>
+        ),
+      )}
     </div>
   </div>
 </section>
+
+<style>
+  /* Logos en la marquesina: altura uniforme y escala de grises con opacidad,
+     que recuperan color al hover — patrón estándar de logos de confianza. */
+  .scroller-item--logo {
+    height: 40px;
+    width: auto;
+    max-width: 160px;
+    object-fit: contain;
+    filter: grayscale(1) opacity(0.65);
+    transition: filter 0.2s ease;
+  }
+  .scroller:hover .scroller-item--logo {
+    filter: grayscale(0) opacity(1);
+  }
+  @media (min-width: 900px) {
+    .scroller-item--logo {
+      height: 48px;
+      max-width: 200px;
+    }
+  }
+</style>

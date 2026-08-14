@@ -9,11 +9,35 @@
 // dos columnas.
 import ContactForm from '../ContactForm.astro';
 
-const bullets = [
-  '12 ejercicios con foto, para hacer en casa',
-  'Qué NO hacer las primeras 72 horas',
-  'Cuándo el dolor deja de ser muscular y toca consultar',
-];
+interface Props {
+  label?: string;
+  title?: string;
+  text?: string;
+  bullets?: string[];
+  /** Metadatos del documento (18 páginas · PDF · ...) */
+  meta?: string[];
+  /** Portada del libro (ruta dentro de /landing/) */
+  cover?: string;
+  /** Texto del botón del formulario */
+  cta?: string;
+  /** Página de gracias (ruta relativa de la landing) */
+  thankYou?: string;
+}
+
+const {
+  label = 'Descarga gratuita',
+  title = 'Guía de dolor de espalda',
+  text = 'Lo que damos a los pacientes en la primera sesión, en PDF. Sin registro para leerlo: te lo mandamos y ya.',
+  bullets = [
+    '12 ejercicios con foto, para hacer en casa',
+    'Qué NO hacer las primeras 72 horas',
+    'Cuándo el dolor deja de ser muscular y toca consultar',
+  ],
+  meta = ['18 páginas', 'PDF', '10 min de lectura'],
+  cover = '/landing/guia-cover.svg',
+  cta = 'Enviarme la guía',
+  thankYou = '/thank-you-download',
+} = Astro.props;
 ---
 
 <section id="guia" class="section">
@@ -27,8 +51,8 @@ const bullets = [
           <div class="book">
             <div class="book__face">
               <img
-                src="/landing/guia-cover.svg"
-                alt="Portada de la guía de dolor de espalda"
+                src={cover}
+                alt={`Portada de ${title}`}
                 width="280"
                 height="373"
                 loading="lazy"
@@ -43,17 +67,14 @@ const bullets = [
       </div>
 
       <div class="col col-7-md">
-        <p class="label text-primary">Descarga gratuita</p>
-        <h2 class="t-3xl">Guía de dolor de espalda</h2>
+        <p class="label text-primary">{label}</p>
+        <h2 class="t-3xl">{title}</h2>
         <p class="lead measure-sm">
-          Lo que damos a los pacientes en la primera sesión, en PDF. Sin registro
-          para leerlo: te lo mandamos y ya.
+          {text}
         </p>
 
         <ul class="magnet-meta">
-          <li>18 páginas</li>
-          <li>PDF</li>
-          <li>10 min de lectura</li>
+          {meta.map((m) => <li>{m}</li>)}
         </ul>
 
         <ul class="magnet-list">
@@ -67,8 +88,8 @@ const bullets = [
           <ContactForm
             formId="magnet"
             variant="compact"
-            cta="Enviarme la guía"
-            thankYou="/thank-you-download"
+            cta={cta}
+            thankYou={thankYou}
           />
         </div>
       </div>

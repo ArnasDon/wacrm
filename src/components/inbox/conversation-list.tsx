@@ -44,14 +44,6 @@ interface ConversationListProps {
   accountFilter?: string | null;
 }
 
-const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-primary",
-  pending: "bg-amber-500",
-  closed: "bg-muted-foreground",
-};
-
-
-
 type InboxFilter = ConversationStatus | "all" | "unread" | "groups";
 
 /** True for a group/community/channel "contact" — see Contact.kind (migration 047). */
@@ -529,13 +521,6 @@ function ConversationItem({
                 {conversation.unread_count}
               </span>
             )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
-            />
           </div>
         </div>
       </div>

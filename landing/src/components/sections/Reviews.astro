@@ -14,12 +14,18 @@ interface Review {
   rating: number;
 }
 
-const reviews: Review[] = [
-  { name: 'María G.', rating: 5, text: 'Llegué con una hernia y en ocho sesiones volví a correr. Explican cada paso.' },
-  { name: 'Javier R.', rating: 5, text: 'Me operaron del hombro y la rehabilitación aquí fue lo que marcó la diferencia.' },
-  { name: 'Lucía M.', rating: 5, text: 'El plan se ajustó cuando vieron que no avanzaba. Eso no lo hacen en todos lados.' },
-  { name: 'Andrés P.', rating: 4, text: 'Buen trato y horarios flexibles. El dolor de espalda bajó desde la segunda semana.' },
-];
+interface Props {
+  reviews?: Review[];
+}
+
+const {
+  reviews = [
+    { name: 'María G.', rating: 5, text: 'Llegué con una hernia y en ocho sesiones volví a correr. Explican cada paso.' },
+    { name: 'Javier R.', rating: 5, text: 'Me operaron del hombro y la rehabilitación aquí fue lo que marcó la diferencia.' },
+    { name: 'Lucía M.', rating: 5, text: 'El plan se ajustó cuando vieron que no avanzaba. Eso no lo hacen en todos lados.' },
+    { name: 'Andrés P.', rating: 4, text: 'Buen trato y horarios flexibles. El dolor de espalda bajó desde la segunda semana.' },
+  ],
+} = Astro.props;
 ---
 
 <section id="resenas" class="section bg-secondary">

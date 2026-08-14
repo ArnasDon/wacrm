@@ -184,12 +184,16 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        // Raíz = landing (antes redirigía a /dashboard)
-        { source: "/", destination: "/landing/index.html" },
+        // TODO /landing/* (y la raíz) → route handler dinámico
+        // (/api/landing/[...path]) que lee public/landing del FILESYSTEM
+        // REAL en cada request. El servidor estático de Next solo sirve
+        // archivos del build del contenedor; el live update del page editor
+        // regenera el HTML en runtime y el fs estático daba 404 (o lo
+        // congelaba). beforeFiles gana al filesystem de public/.
+        { source: "/", destination: "/api/landing/index.html" },
+        { source: "/landing/:path*", destination: "/api/landing/:path*" },
       ],
       afterFiles: [
-        // URLs limpias → index.html (sin redirect 308)
-        { source: "/landing", destination: "/landing/index.html" },
         // Las páginas de gracias cuelgan del home, no de /landing: son el
         // final del embudo de la raíz y `/landing/...` en la barra de
         // direcciones delata la mecánica interna. El HTML se sigue
@@ -221,6 +225,9 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/landing/thank-you", destination: "/thank-you", permanent: false },
+      // URLs viejas con extensión que generaba una versión anterior del
+      // page editor (el build de Astro emite directorios, no .html).
+      { source: "/landing/:slug.html", destination: "/landing/:slug", permanent: false },
       {
         source: "/landing/guia-dolor-de-espalda.pdf",
         destination: "/landing/guia.pdf",

@@ -4,16 +4,25 @@
 // siguiente paso es una de las causas principales de abandono.
 // Emite el nodo HowTo del grafo desde el layout (site.steps).
 import { site } from "../../data/site";
+
+interface Props {
+  /** Título de la sección. */
+  heading?: string;
+  /** Pasos del proceso. Default: site.steps */
+  steps?: { title: string; text: string }[];
+}
+
+const { heading = 'Qué pasa cuando nos escribes', steps = site.steps } = Astro.props;
 ---
 
 <section id="proceso" class="section bg-secondary">
   <div class="container">
     <header class="section-header">
-      <h2 class="t-3xl">Qué pasa cuando nos escribes</h2>
+      <h2 class="t-3xl">{heading}</h2>
     </header>
 
     <div class="row">
-      {site.steps.map((s, i) => (
+      {steps.map((s, i) => (
         <article class="col-6-md card h-100">
           <p class="step-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</p>
           <h3 class="t-lg fw-700 is-marginless mt-1">{s.title}</h3>

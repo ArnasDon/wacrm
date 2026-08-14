@@ -1,0 +1,36 @@
+---
+// [slug].astro — página genérica para landings creadas desde el dashboard.
+//
+// El page editor crea landings custom (landing/src/data/landings/<slug>.json)
+// y el live update las recompila en runtime: esta página las publica en
+// /landing/<slug>/ con el mismo shell (SEO + grafo + cromo + ajustes del
+// sitio) que las páginas fijas.
+//
+// home, thank-you y thank-you-download tienen su propia página estática
+// (index/thank-you/thank-you-download.astro) con ajustes específicos
+// (rewrite a la raíz, noindex, re-emisión del evento…); se excluyen aquí
+// para no duplicar rutas.
+import { getCollection } from "astro:content";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import BlockRenderer from "../components/BlockRenderer.astro";
+
+export async function getStaticPaths() {
+  const pages = await getCollection("landing");
+  const reserved = new Set(["home", "thank-you", "thank-you-download"]);
+  return pages
+    .filter((p) => !reserved.has(p.id))
+    .map((p) => ({ params: { slug: p.id }, props: { entry: p } }));
+}
+
+const { entry } = Astro.props;
+const { title, description, blocks, settings } = entry.data;
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  path={`/${entry.id}/`}
+  settings={settings}
+>
+  <BlockRenderer blocks={blocks} settings={settings} />
+</BaseLayout>

@@ -8,25 +8,44 @@
 // MOBILE FIRST: la rejilla es 3x3 desde el móvil —a 1fr cada columna, así que
 // las miniaturas se encogen— porque una galería de antes/después se lee mejor
 // como mosaico que apilada.
-import { site, whatsappHref } from '../../data/site';
+import { site } from '../../data/site';
+import { resolveSite } from '../../lib/site-context';
+import type { SiteSettings } from '../../lib/site-context';
 
 interface Props {
   title?: string;
   subtitle?: string;
-  count?: number;
+  /** URLs de las imágenes. Default: marcadores picsum (sustituir por /landing/gallery-N.webp) */
+  images?: string[];
+  /** Ajustes del sitio (opcional). */
+  settings?: SiteSettings | null;
 }
 
 const {
   title = 'Resultados de pacientes',
   subtitle = 'Casos reales, con su permiso por escrito.',
-  count = 9,
+  images = [
+    'https://picsum.photos/seed/wacrm1/600/600',
+    'https://picsum.photos/seed/wacrm2/600/600',
+    'https://picsum.photos/seed/wacrm3/600/600',
+    'https://picsum.photos/seed/wacrm4/600/600',
+    'https://picsum.photos/seed/wacrm5/600/600',
+    'https://picsum.photos/seed/wacrm6/600/600',
+    'https://picsum.photos/seed/wacrm7/600/600',
+    'https://picsum.photos/seed/wacrm8/600/600',
+    'https://picsum.photos/seed/wacrm9/600/600',
+  ],
+  settings = null,
 } = Astro.props;
+
+// Valores efectivos del sitio (defaults globales + overrides del dashboard).
+const s = resolveSite(settings);
 
 // Sin fotos reales todavía: se generan marcadores con el color de marca para
 // que la sección se pueda ver y medir. Sustituir por `/landing/gallery-N.webp`.
-const items = Array.from({ length: count }, (_, i) => ({
+const items = images.map((src, i) => ({
   id: `lb-gal-${i + 1}`,
-  src: `https://picsum.photos/seed/wacrm${i + 1}/600/600`,
+  src,
   alt: `Resultado de paciente ${i + 1}`,
 }));
 ---
@@ -49,7 +68,7 @@ const items = Array.from({ length: count }, (_, i) => ({
     <div class="btn-row mt-2">
       <a href="#agenda" class="button primary pill">Agenda tu valoración</a>
       <a
-        href={whatsappHref}
+        href={s.whatsappHref}
         class="button outline pill"
         target="_blank"
         rel="noopener"

@@ -3,11 +3,18 @@
 import Rail from '../Rail.astro';
 
 interface Page { title: string; text: string; href: string }
-const pages: Page[] = [
-  { title: 'Rehabilitación de rodilla', text: 'Post-operatorio y ligamento cruzado.', href: '#' },
-  { title: 'Dolor lumbar', text: 'Lumbalgia aguda y crónica.', href: '#' },
-  { title: 'Hombro congelado', text: 'Recuperar el rango sin cirugía.', href: '#' },
-];
+
+interface Props {
+  pages?: Page[];
+}
+
+const {
+  pages = [
+    { title: 'Rehabilitación de rodilla', text: 'Post-operatorio y ligamento cruzado.', href: '#' },
+    { title: 'Dolor lumbar', text: 'Lumbalgia aguda y crónica.', href: '#' },
+    { title: 'Hombro congelado', text: 'Recuperar el rango sin cirugía.', href: '#' },
+  ],
+} = Astro.props;
 ---
 
 <section class="section bg-secondary">

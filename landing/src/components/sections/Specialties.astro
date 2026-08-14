@@ -5,19 +5,32 @@
 // pospone hasta la llamada y desperdicia presupuesto de medios en leads no
 // calificados. Un precio visible filtra tráfico y mejora la calidad del lead.
 import { site } from "../../data/site";
+
+interface Props {
+  heading?: string;
+  sub?: string;
+  /** Servicios con precio. Default: site.services */
+  services?: { name: string; desc: string; price: string }[];
+}
+
+const {
+  heading = 'Tratamientos y precios',
+  sub = 'Cada sesión incluye valoración de seguimiento y ajustes del plan según tu avance.',
+  services = site.services,
+} = Astro.props;
 ---
 
 <section id="servicios" class="section" itemscope itemtype="https://schema.org/ItemList">
   <div class="container">
     <header class="section-header">
-      <h2 class="t-3xl">Tratamientos y precios</h2>
+      <h2 class="t-3xl">{heading}</h2>
       <p class="lead measure-sm mx-auto">
-        Cada sesión incluye valoración de seguimiento y ajustes del plan según tu avance.
+        {sub}
       </p>
     </header>
 
     <div class="row">
-      {site.services.map((s, i) => (
+      {services.map((s, i) => (
         <article
           class="col-6-md card h-100 flex-col"
           itemprop="itemListElement"

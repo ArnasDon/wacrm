@@ -8,18 +8,24 @@ import { site } from '../../data/site';
 
 interface Row { name: string; price: string; category?: boolean }
 
-const rows: Row[] = [
-  { name: 'Valoración', price: '', category: true },
-  { name: 'Primera valoración (45–60 min)', price: '$600' },
-  { name: 'Revaloración', price: '$400' },
-  { name: 'Tratamiento', price: '', category: true },
-  { name: 'Sesión de fisioterapia', price: '$600' },
-  { name: 'Rehabilitación post-quirúrgica', price: '$750' },
-  { name: 'Terapia manual', price: '$650' },
-  { name: 'Paquetes', price: '', category: true },
-  { name: 'Bono 5 sesiones', price: '$2.700' },
-  { name: 'Bono 10 sesiones', price: '$5.000' },
-];
+interface Props {
+  rows?: Row[];
+}
+
+const {
+  rows = [
+    { name: 'Valoración', price: '', category: true },
+    { name: 'Primera valoración (45–60 min)', price: '$600' },
+    { name: 'Revaloración', price: '$400' },
+    { name: 'Tratamiento', price: '', category: true },
+    { name: 'Sesión de fisioterapia', price: '$600' },
+    { name: 'Rehabilitación post-quirúrgica', price: '$750' },
+    { name: 'Terapia manual', price: '$650' },
+    { name: 'Paquetes', price: '', category: true },
+    { name: 'Bono 5 sesiones', price: '$2.700' },
+    { name: 'Bono 10 sesiones', price: '$5.000' },
+  ],
+} = Astro.props;
 ---
 
 <section id="precios" class="section">

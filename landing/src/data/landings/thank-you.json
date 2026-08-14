@@ -1,0 +1,17 @@
+{
+  "title": "Gracias — te contactamos pronto",
+  "description": "Recibimos tu solicitud. Te contactamos por WhatsApp en menos de 24 horas.",
+  "blocks": [
+    {
+      "type": "thank-you",
+      "data": {
+        "icon": "✓",
+        "heading": "¡Gracias!",
+        "text": "Recibimos tu solicitud. Te contactaremos por WhatsApp en menos de 24 h.",
+        "waCta": "¿Prefieres hablar ahora?",
+        "backText": "Volver al inicio",
+        "backHref": "/"
+      }
+    }
+  ]
+}

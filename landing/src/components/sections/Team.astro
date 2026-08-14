@@ -4,12 +4,18 @@ import Rail from '../Rail.astro';
 
 interface Member { name: string; role: string; bio: string; img: string }
 
-const team: Member[] = [
-  { name: 'Dra. Ana Ruiz', role: 'Directora clínica', bio: '12 años en rehabilitación deportiva.', img: 'https://picsum.photos/seed/team1/300/300' },
-  { name: 'Luis Ortega', role: 'Fisioterapeuta', bio: 'Especialista en terapia manual.', img: 'https://picsum.photos/seed/team2/300/300' },
-  { name: 'Sara Núñez', role: 'Fisioterapeuta', bio: 'Recuperación post-quirúrgica.', img: 'https://picsum.photos/seed/team3/300/300' },
-  { name: 'Iván Prado', role: 'Readaptador', bio: 'Ejercicio terapéutico y prevención.', img: 'https://picsum.photos/seed/team4/300/300' },
-];
+interface Props {
+  team?: Member[];
+}
+
+const {
+  team = [
+    { name: 'Dra. Ana Ruiz', role: 'Directora clínica', bio: '12 años en rehabilitación deportiva.', img: 'https://picsum.photos/seed/team1/300/300' },
+    { name: 'Luis Ortega', role: 'Fisioterapeuta', bio: 'Especialista en terapia manual.', img: 'https://picsum.photos/seed/team2/300/300' },
+    { name: 'Sara Núñez', role: 'Fisioterapeuta', bio: 'Recuperación post-quirúrgica.', img: 'https://picsum.photos/seed/team3/300/300' },
+    { name: 'Iván Prado', role: 'Readaptador', bio: 'Ejercicio terapéutico y prevención.', img: 'https://picsum.photos/seed/team4/300/300' },
+  ],
+} = Astro.props;
 ---
 
 <section id="equipo" class="section">

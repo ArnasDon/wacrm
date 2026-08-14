@@ -3,21 +3,26 @@
 //
 // MOBILE FIRST: dos tarjetas apiladas; a 900px van lado a lado. No se usa
 // tabla: en móvil una tabla de dos columnas con texto largo es ilegible.
-interface Props { title?: string }
-const { title = '¿Fisioterapia o infiltraciones?' } = Astro.props;
+interface Props {
+  title?: string;
+  cols?: { head: string; good: boolean; items: string[] }[];
+}
 
-const cols = [
-  {
-    head: 'Fisioterapia',
-    good: true,
-    items: ['Corrige la causa, no solo el síntoma', 'Sin fármacos ni efectos secundarios', 'Resultados que se sostienen', 'Aprendes a prevenir la recaída'],
-  },
-  {
-    head: 'Solo infiltraciones',
-    good: false,
-    items: ['Alivio inmediato pero temporal', 'Número de aplicaciones limitado', 'No corrige el patrón de movimiento', 'El dolor suele volver'],
-  },
-];
+const {
+  title = '¿Fisioterapia o infiltraciones?',
+  cols = [
+    {
+      head: 'Fisioterapia',
+      good: true,
+      items: ['Corrige la causa, no solo el síntoma', 'Sin fármacos ni efectos secundarios', 'Resultados que se sostienen', 'Aprendes a prevenir la recaída'],
+    },
+    {
+      head: 'Solo infiltraciones',
+      good: false,
+      items: ['Alivio inmediato pero temporal', 'Número de aplicaciones limitado', 'No corrige el patrón de movimiento', 'El dolor suele volver'],
+    },
+  ],
+} = Astro.props;
 ---
 
 <section class="section bg-secondary" itemscope itemtype="https://schema.org/CreativeWork">

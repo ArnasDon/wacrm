@@ -165,3 +165,11 @@ export const PRIMARY_CTA = "Agenda tu valoración";
 
 /** Enlace a WhatsApp con el mensaje pre-rellenado. */
 export const whatsappHref = `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(site.whatsappText)}`;
+
+/** Links de navegación del Header (editable desde Ajustes del sitio). */
+export const MENU_LINKS = [
+  { href: "#servicios", text: "Servicios" },
+  { href: "#galeria", text: "Resultados" },
+  { href: "#precios", text: "Precios" },
+  { href: "#faq", text: "Preguntas" },
+];

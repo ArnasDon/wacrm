@@ -1,49 +1,34 @@
 ---
 // thank-you.astro — confirmación del lead (skill §14.4).
 //
-// Detecta ?lead=1 y re-emite form_submit con el MISMO event_id (idempotente
-// por UNIQUE en la tabla): cubre el caso de una navegación que pierde la
-// primera emisión sin generar una segunda conversión. La PII solo viaja en
-// el POST original, nunca en la URL.
+// Textos y bloque de confirmación editables desde la Content Collection
+// (src/data/landings/thank-you.json). La PII solo viaja en el POST original,
+// nunca en la URL.
 //
 // Lleva noindex siempre: una página de agradecimiento indexada genera
 // conversiones falsas desde búsqueda orgánica.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { whatsappHref } from "../data/site";
+import BlockRenderer from "../components/BlockRenderer.astro";
+import { getCollection } from "astro:content";
+
+const [page] = await getCollection("landing", ({ id }) => id === "thank-you");
+
+if (!page) {
+  throw new Error('landing: falta src/data/landings/thank-you.json');
+}
+
+const { title, description, blocks, settings } = page.data;
 ---
 
 <BaseLayout
-  title="Gracias — te contactamos pronto"
-  description="Recibimos tu solicitud. Te contactamos por WhatsApp en menos de 24 horas."
+  title={title}
+  description={description}
   path="/thank-you/"
   rootPath
   noindex
+  settings={settings}
 >
-  <section class="section text-center">
-    <div class="container measure-sm mx-auto">
-      <p class="icon-circle t-2xl" aria-hidden="true">✓</p>
-      <h1 class="t-3xl">¡Gracias!</h1>
-      <p class="lead">
-        Recibimos tu solicitud. Te contactaremos por WhatsApp en menos de 24 h.
-      </p>
-      <div class="btn-row mt-2">
-        <a
-          href={whatsappHref}
-          class="button primary pill"
-          target="_blank"
-          rel="noopener"
-          data-wa-cta
-          data-track="whatsapp_click"
-          data-track-label="thank_you"
-        >
-          ¿Prefieres hablar ahora?
-        </a>
-      </div>
-      <p class="mt-2">
-        <a href="/" class="t-sm text-grey">Volver al inicio</a>
-      </p>
-    </div>
-  </section>
+  <BlockRenderer blocks={blocks} showChrome={false} settings={settings} />
 </BaseLayout>
 
 <script>

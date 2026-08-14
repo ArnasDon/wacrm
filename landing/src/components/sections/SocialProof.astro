@@ -3,12 +3,19 @@
 // del hero y antes de cualquier argumento: responde a "¿por qué debería
 // creerte?" antes de pedir nada.
 import { site } from "../../data/site";
+
+interface Props {
+  /** Cifras de respaldo. Default: site.proof */
+  stats?: { num: string; label: string }[];
+}
+
+const { stats = site.proof } = Astro.props;
 ---
 
 <section class="section section--tight bg-secondary bordered" aria-label="Nuestros números">
   <div class="container">
     <ul class="proof-strip list-unstyled is-marginless">
-      {site.proof.map((p) => (
+      {stats.map((p) => (
         <li class="proof-strip__item">
           <strong class="proof-strip__num">{p.num}</strong>
           <span class="proof-strip__label">{p.label}</span>

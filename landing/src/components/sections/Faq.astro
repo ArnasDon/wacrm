@@ -5,16 +5,24 @@
 // semántica correcta. Cero JavaScript. El nodo FAQPage lo emite el layout
 // desde site.faq, así que lo visible y lo estructurado no pueden divergir.
 import { site } from "../../data/site";
+
+interface Props {
+  heading?: string;
+  /** Preguntas. Default: site.faq */
+  faq?: { q: string; a: string }[];
+}
+
+const { heading = 'Preguntas frecuentes', faq = site.faq } = Astro.props;
 ---
 
 <section id="faq" class="section">
   <div class="container">
     <header class="section-header">
-      <h2 class="t-3xl">Preguntas frecuentes</h2>
+      <h2 class="t-3xl">{heading}</h2>
     </header>
 
     <div class="accordion measure-md mx-auto">
-      {site.faq.map((f) => (
+      {faq.map((f) => (
         <details class="accordion__item">
           <summary class="accordion__summary">{f.q}</summary>
           <div class="accordion__panel">

@@ -1,0 +1,141 @@
+---
+// BlockRenderer.astro — mapea un bloque del JSON de landing a su componente.
+//
+// El `type` del bloque corresponde 1:1 a un componente de sections/ y el
+// `data` del bloque son sus props (todas opcionales, el componente tiene
+// defaults). Este archivo es el ÚNICO lugar donde se registra el catálogo:
+// añadir una sección nueva = añadirla al mapa.
+//
+// type="scroller" es especial: si `data.images` viene con URLs, renderiza la
+// marquesina de logos (requisito: scrollers infinitos solo con imágenes).
+import Header from './sections/Header.astro';
+import Breadcrumb from './sections/Breadcrumb.astro';
+import HeroVideo from './sections/HeroVideo.astro';
+import HeroFakeH1 from './sections/HeroFakeH1.astro';
+import SocialProof from './sections/SocialProof.astro';
+import Scroller from './sections/Scroller.astro';
+import ScrollerCards from './sections/ScrollerCards.astro';
+import Features from './sections/Features.astro';
+import Video from './sections/Video.astro';
+import LeadSection from './sections/LeadSection.astro';
+import Specialties from './sections/Specialties.astro';
+import PricingTable from './sections/PricingTable.astro';
+import Comparison from './sections/Comparison.astro';
+import DataTable from './sections/DataTable.astro';
+import VideoTestimonials from './sections/VideoTestimonials.astro';
+import Reviews from './sections/Reviews.astro';
+import Gallery from './sections/Gallery.astro';
+import HowItWorks from './sections/HowItWorks.astro';
+import Team from './sections/Team.astro';
+import About from './sections/About.astro';
+import TextSection from './sections/TextSection.astro';
+import LeadMagnet from './sections/LeadMagnet.astro';
+import Faq from './sections/Faq.astro';
+import RelatedPages from './sections/RelatedPages.astro';
+import Divider from './sections/Divider.astro';
+import HeroCentered from './sections/HeroCentered.astro';
+import Cta from './sections/Cta.astro';
+import ThankYou from './sections/ThankYou.astro';
+import ThankYouDownload from './sections/ThankYouDownload.astro';
+
+// Catálogo de bloques: type → componente. El data del bloque se pasa como
+// props (<Component {...data} />).
+const COMPONENTS: Record<string, AstroComponentFactory> = {
+  'hero-video': HeroVideo,
+  'hero-fake-h1': HeroFakeH1,
+  'hero-centered': HeroCentered,
+  'social-proof': SocialProof,
+  scroller: Scroller,
+  'scroller-cards': ScrollerCards,
+  features: Features,
+  video: Video,
+  'lead-section': LeadSection,
+  specialties: Specialties,
+  'pricing-table': PricingTable,
+  comparison: Comparison,
+  'data-table': DataTable,
+  'video-testimonials': VideoTestimonials,
+  reviews: Reviews,
+  gallery: Gallery,
+  'how-it-works': HowItWorks,
+  team: Team,
+  about: About,
+  'text-section': TextSection,
+  'lead-magnet': LeadMagnet,
+  faq: Faq,
+  'related-pages': RelatedPages,
+  divider: Divider,
+  cta: Cta,
+  'thank-you': ThankYou,
+  'thank-you-download': ThankYouDownload,
+};
+
+interface Block {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+interface Props {
+  /** Bloques de la landing, en orden de renderizado. */
+  blocks: Block[];
+  /** Cromo de cabecera (Header + Breadcrumb) — se renderiza una vez, al inicio. */
+  showChrome?: boolean;
+  /** "Ajustes del sitio" de la landing (opcional) — se pasa a las secciones. */
+  settings?: Record<string, unknown> | null;
+}
+
+const { blocks, showChrome = true, settings = null } = Astro.props;
+---
+
+{
+  showChrome && (
+    <>
+      <Header settings={settings} />
+      <Breadcrumb />
+    </>
+  )
+}
+
+{
+  blocks.map((block) => {
+    const Comp = COMPONENTS[block.type];
+    if (!Comp) {
+      console.warn(`BlockRenderer: tipo de bloque desconocido "${block.type}" — omitido.`);
+      return null;
+    }
+    // Se usa un fragment con el data serializado: Astro no permite el spread
+    // dinámico (<Comp {...data}/>) en esta posición, así que se renderiza
+    // con las props ya asignadas por el mapa de tipos.
+    const data = block.data;
+    switch (block.type) {
+      case 'hero-video': return <HeroVideo {...data} settings={settings} />;
+      case 'hero-fake-h1': return <HeroFakeH1 {...data} settings={settings} />;
+      case 'hero-centered': return <HeroCentered {...data} settings={settings} />;
+      case 'social-proof': return <SocialProof {...data} />;
+      case 'scroller': return <Scroller {...data} />;
+      case 'scroller-cards': return <ScrollerCards {...data} />;
+      case 'features': return <Features {...data} />;
+      case 'video': return <Video {...data} />;
+      case 'lead-section': return <LeadSection {...data} settings={settings} />;
+      case 'specialties': return <Specialties {...data} />;
+      case 'pricing-table': return <PricingTable {...data} />;
+      case 'comparison': return <Comparison {...data} />;
+      case 'data-table': return <DataTable {...data} />;
+      case 'video-testimonials': return <VideoTestimonials {...data} />;
+      case 'reviews': return <Reviews {...data} />;
+      case 'gallery': return <Gallery {...data} settings={settings} />;
+      case 'how-it-works': return <HowItWorks {...data} />;
+      case 'team': return <Team {...data} />;
+      case 'about': return <About {...data} />;
+      case 'text-section': return <TextSection {...data} />;
+      case 'lead-magnet': return <LeadMagnet {...data} />;
+      case 'faq': return <Faq {...data} />;
+      case 'related-pages': return <RelatedPages {...data} />;
+      case 'divider': return <Divider {...data} />;
+      case 'cta': return <Cta {...data} settings={settings} />;
+      case 'thank-you': return <ThankYou {...data} />;
+      case 'thank-you-download': return <ThankYouDownload {...data} />;
+      default: return null;
+    }
+  })
+}

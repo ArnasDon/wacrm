@@ -1,54 +1,47 @@
 ---
-// index.astro — SHOWCASE del catálogo completo.
+// index.astro — landing principal, alimentada por la Content Collection.
 //
-// Están las 24 secciones del sistema, en el orden del arquetipo transaccional.
-// Esta página existe para verlas todas juntas y decidir cuáles entran en cada
-// landing real: se copia el archivo, se borran las que no aplican y se
-// cambian los textos. Nadie maqueta nada.
+// TODO el contenido de la página vive en src/data/landings/home.json:
+// textos, imágenes, videos e incluso el SEO title/description. Este archivo
+// solo lee la colección y renderiza los bloques en orden.
 //
-// MOBILE FIRST en todo: el caso base es el móvil y el único breakpoint
-// estructural es 900px.
+// El grafo JSON-LD no diverge: faq y steps viajan al layout desde la misma
+// fuente que las secciones visibles.
 import BaseLayout from '../layouts/BaseLayout.astro';
-
-import Header from '../components/sections/Header.astro';
-import Breadcrumb from '../components/sections/Breadcrumb.astro';
-import HeroVideo from '../components/sections/HeroVideo.astro';
-import HeroFakeH1 from '../components/sections/HeroFakeH1.astro';
-import SocialProof from '../components/sections/SocialProof.astro';
-import Scroller from '../components/sections/Scroller.astro';
-import ScrollerCards from '../components/sections/ScrollerCards.astro';
-import Features from '../components/sections/Features.astro';
-import Video from '../components/sections/Video.astro';
-import LeadSection from '../components/sections/LeadSection.astro';
-import Specialties from '../components/sections/Specialties.astro';
-import PricingTable from '../components/sections/PricingTable.astro';
-import Comparison from '../components/sections/Comparison.astro';
-import DataTable from '../components/sections/DataTable.astro';
-import VideoTestimonials from '../components/sections/VideoTestimonials.astro';
-import Reviews from '../components/sections/Reviews.astro';
-import Gallery from '../components/sections/Gallery.astro';
-import HowItWorks from '../components/sections/HowItWorks.astro';
-import Team from '../components/sections/Team.astro';
-import About from '../components/sections/About.astro';
-import TextSection from '../components/sections/TextSection.astro';
-import LeadMagnet from '../components/sections/LeadMagnet.astro';
-import Faq from '../components/sections/Faq.astro';
-import RelatedPages from '../components/sections/RelatedPages.astro';
-import Divider from '../components/sections/Divider.astro';
-import HeroCentered from '../components/sections/HeroCentered.astro';
-import Cta from '../components/sections/Cta.astro';
+import BlockRenderer from '../components/BlockRenderer.astro';
 
 import { site } from '../data/site';
+import { getCollection } from 'astro:content';
 
-const title = 'Fisioterapia y rehabilitación en CDMX | Tu Clínica';
-const description =
-  'Valoración con diagnóstico y plan de tratamiento el mismo día. Fisioterapia, rehabilitación y terapia manual en CDMX. Te respondemos en menos de 24 h.';
+const [home] = await getCollection('landing', ({ id }) => id === 'home');
+
+// Si el JSON no existe o está mal formado, el build ya falló en la colección
+// (zod valida). Este guard evita un crash confuso si se borra el archivo.
+if (!home) {
+  throw new Error('landing: falta src/data/landings/home.json — la Content Collection no devolvió la página home.');
+}
+
+const { title, description, blocks } = home.data;
+
+// El grafo JSON-LD (FAQPage + HowTo) se alimenta de los MISMOS bloques que
+// se ven en pantalla: si el dueño edita el FAQ en el JSON, el grafo y lo
+// visible no pueden divergir.
+const faqBlock = blocks.find((b) => b.type === 'faq');
+const howBlock = blocks.find((b) => b.type === 'how-it-works');
+const faq = (faqBlock?.data as { faq?: { q: string; a: string }[] } | undefined)?.faq ?? site.faq;
+const steps = (howBlock?.data as { steps?: { title: string; text: string }[] } | undefined)?.steps ?? site.steps;
 
 // El hero con video de fondo: el poster es el LCP. Las miniaturas van en
 // preloadHero (BaseLayout las precarga con el MISMO media que el <picture>
 // del hero) y se pasan también al componente: una sola fuente de verdad.
-const heroThumbMobile = `https://i.ytimg.com/vi/${site.videoId}/hqdefault.jpg`;
-const heroThumbDesktop = `https://i.ytimg.com/vi/${site.videoId}/maxresdefault.jpg`;
+const heroVideoBlock = blocks.find((b) => b.type === 'hero-video');
+const heroVideoData = heroVideoBlock?.data as
+  | { videoId?: string; desktopVideoId?: string; thumbMobile?: string; thumbDesktop?: string }
+  | undefined;
+const videoId = heroVideoData?.videoId ?? site.videoId;
+const heroThumbMobile = heroVideoData?.thumbMobile ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+const heroThumbDesktop = heroVideoData?.thumbDesktop ?? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+const { settings } = home.data;
 ---
 
 <BaseLayout
@@ -57,74 +50,10 @@ const heroThumbDesktop = `https://i.ytimg.com/vi/${site.videoId}/maxresdefault.j
   path="/"
   hasVideo
   preloadHero={{ mobile: heroThumbMobile, desktop: heroThumbDesktop, breakpoint: 900 }}
-  faq={site.faq}
-  steps={site.steps}
+  faq={faq}
+  steps={steps}
   breadcrumb={[{ name: site.name, item: `${site.baseUrl}${site.landingBase}/` }]}
+  settings={settings}
 >
-  {/* Cromo: cabecera con menú móvil y popup de formulario */}
-  <Header />
-  <Breadcrumb />
-
-  {/* 1. Hero con video de fondo autoplay (YouTube, poster como LCP) */}
-  <HeroVideo thumbMobile={heroThumbMobile} thumbDesktop={heroThumbDesktop} />
-
-  {/* 2. Hero con H1 real en la chapita */}
-  <HeroFakeH1 />
-
-  {/* 3. Permiso para seguir leyendo */}
-  <SocialProof />
-  <Scroller title="Certificaciones y coberturas" />
-  <ScrollerCards />
-
-  {/* 3. Qué gana el paciente */}
-  <Features />
-
-  {/* 4. Prueba visual */}
-  <Video />
-
-  {/* 5. Captación arriba */}
-  <LeadSection
-    id="agenda"
-    formId="top"
-    heading="Agenda tu valoración"
-    sub="Déjanos tus datos y te contactamos por WhatsApp en menos de 24 h. Sin compromiso."
-  />
-
-  {/* 6. Oferta y precio, visibles */}
-  <Specialties />
-  <PricingTable />
-
-  {/* 7. Manejo de objeciones */}
-  <Comparison />
-  <DataTable />
-
-  {/* 8. Prueba social densa */}
-  <VideoTestimonials />
-  <Reviews />
-  <Gallery />
-
-  {/* 9. Proceso y autoridad */}
-  <HowItWorks />
-  <Team />
-  <About />
-  <TextSection />
-
-  {/* 10. Imán de leads */}
-  <LeadMagnet />
-
-  {/* 11. Objeciones residuales */}
-  <Faq />
-  <RelatedPages />
-
-  <Divider margin="lg" />
-
-  {/* 12. Cierre */}
-  <HeroCentered />
-  <LeadSection
-    id="cierre"
-    formId="bottom"
-    heading="Empieza hoy"
-    sub="Cuanto antes empiece el tratamiento, menos sesiones hacen falta."
-  />
-  <Cta />
+  <BlockRenderer blocks={blocks} settings={settings} />
 </BaseLayout>

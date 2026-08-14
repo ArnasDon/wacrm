@@ -19,6 +19,16 @@ services:
     # never baked into the image.
     env_file:
       - .env.local
+    # The dashboard edits landings as JSON on disk. This bind mount
+    # materializes those edits on the HOST (git repo dir), so:
+    #   · they survive container rebuilds, and
+    #   · `docker compose --env-file .env.local up --build -d` picks
+    #     them up (the builder COPYs from this same dir) and
+    #     recompiles the Astro landing with the latest content.
+    # Without it, edits live only in the container filesystem and
+    # are lost on the next rebuild.
+    volumes:
+      - ./landing/src/data/landings:/app/landing/src/data/landings
     # The server always listens on 3000 inside the container. Pinned
     # here because `environment` wins over `env_file`, so a stray PORT
     # in .env.local can't desync the app from the mapping and the

@@ -259,33 +259,41 @@ export function CalculatorView() {
 
       {(mode === 'free' || selectedProject) && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
-            <PropertyValueInput
-              label={t('propertyValue')}
-              value={propertyValue}
-              onChange={handleChangePropertyValue}
-            />
-            <div className="flex flex-col gap-3 sm:flex-row">
-              {mode === 'free' && (
-                <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 sm:w-48">
-                  <Label htmlFor="calc-free-flow-name">{t('projectName')}</Label>
-                  <Input
-                    id="calc-free-flow-name"
-                    value={freeFlowName}
-                    onChange={(e) => setFreeFlowName(e.target.value)}
-                    placeholder={t('projectNamePlaceholder')}
-                  />
-                </div>
-              )}
-              <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 sm:w-40">
-                <Label htmlFor="calc-unit">{t('unit')}</Label>
+          {/* A single flat flex row (not nested grid-in-flex) — Tailwind's
+              default stretch reliably equalizes sibling heights here,
+              which is what keeps Valor do imóvel / Empreendimento /
+              Unidade at identical heights regardless of label length. */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="sm:flex-1">
+              <PropertyValueInput
+                label={t('propertyValue')}
+                value={propertyValue}
+                onChange={handleChangePropertyValue}
+              />
+            </div>
+            {mode === 'free' && (
+              <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 sm:w-48">
+                <Label htmlFor="calc-free-flow-name" className="text-muted-foreground">
+                  {t('empreendimentoLabel')}
+                </Label>
                 <Input
-                  id="calc-unit"
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  placeholder={t('unitPlaceholder')}
+                  id="calc-free-flow-name"
+                  value={freeFlowName}
+                  onChange={(e) => setFreeFlowName(e.target.value)}
+                  placeholder={t('projectNamePlaceholder')}
                 />
               </div>
+            )}
+            <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 sm:w-40">
+              <Label htmlFor="calc-unit" className="text-muted-foreground">
+                {t('unit')}
+              </Label>
+              <Input
+                id="calc-unit"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder={t('unitPlaceholder')}
+              />
             </div>
           </div>
 

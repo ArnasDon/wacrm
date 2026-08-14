@@ -264,7 +264,7 @@ export function Sidebar({ open = false, onClose, asideRef, backdropRef }: Sideba
                       isActive
                         ? "border-transparent bg-primary/10 text-primary"
                         : item.highlight
-                          ? "border-primary/25 bg-primary/[0.04] text-foreground hover:bg-primary/10 hover:text-primary"
+                          ? "border-primary/25 bg-primary/[0.04] text-foreground hover:bg-muted hover:text-foreground"
                           : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >

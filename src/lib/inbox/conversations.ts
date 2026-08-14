@@ -47,6 +47,8 @@ export interface ContactFilters {
   tagIds: string[];
   /** Exact company match, or null for no company filter. */
   company: string | null;
+  /** Exact channel match, or null for no channel filter. */
+  channel?: "whatsapp" | "instagram" | null;
 }
 
 /**
@@ -56,7 +58,7 @@ export interface ContactFilters {
  */
 export function matchesContactFilters(
   conversation: Conversation,
-  { tagIds, company }: ContactFilters,
+  { tagIds, company, channel }: ContactFilters,
 ): boolean {
   if (tagIds.length > 0) {
     const contactTagIds = conversation.contact?.tags ?? [];
@@ -64,6 +66,10 @@ export function matchesContactFilters(
   }
 
   if (company !== null && conversation.contact?.company?.trim() !== company) {
+    return false;
+  }
+
+  if (channel && (conversation.channel ?? "whatsapp") !== channel) {
     return false;
   }
 

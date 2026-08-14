@@ -65,6 +65,31 @@ export function isExactMatch(existing: ExistingContact, phone: string): boolean 
 }
 
 /**
+ * Find an existing contact in `accountId` whose `instagram_id` (IGSID)
+ * exactly matches. Unlike phone matching, Instagram-Scoped IDs are
+ * opaque numeric strings assigned by Meta — no normalization or
+ * trunk-prefix fuzzy matching applies, so this is a plain equality
+ * lookup rather than findExistingContact's suffix-prefilter + JS match.
+ */
+export async function findExistingInstagramContact(
+  db: SupabaseClient,
+  accountId: string,
+  instagramId: string,
+): Promise<ExistingContact | null> {
+  if (!instagramId) return null;
+
+  const { data, error } = await db
+    .from("contacts")
+    .select("*")
+    .eq("account_id", accountId)
+    .eq("instagram_id", instagramId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ExistingContact;
+}
+
+/**
  * True for a Postgres unique-constraint violation (SQLSTATE 23505).
  * Used as the backstop when the DB unique index rejects a racing or
  * format-equal insert that slipped past the in-app check.

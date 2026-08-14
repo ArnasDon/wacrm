@@ -16,6 +16,29 @@ import {
   templateContentText,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
+import {
+  engineSendInstagramText,
+  engineSendInstagramQuickReplies,
+} from '@/lib/instagram/engine-send'
+import type { QuickReplyOption } from '@/lib/instagram/api'
+
+/**
+ * Which channel is `conversationId` on? Automation steps are written
+ * against a conversation, not a channel, so every entry point below
+ * checks this before deciding whether to run the WhatsApp path (the
+ * rest of this file, unchanged) or branch into the Instagram sender.
+ */
+async function resolveConversationChannel(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<'whatsapp' | 'instagram'> {
+  const { data } = await db
+    .from('conversations')
+    .select('channel')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.channel === 'instagram' ? 'instagram' : 'whatsapp'
+}
 
 // ------------------------------------------------------------
 // Automation-side Meta sender.
@@ -86,6 +109,19 @@ export async function engineSendInteractive(
 ): Promise<{ whatsapp_message_id: string }> {
   const { payload, accountId, userId, conversationId, contactId } = args
   const common = { accountId, userId, conversationId, contactId }
+
+  // Instagram has no buttons/list message type — its analogue is a
+  // flat set of quick-reply chips (max 13). Map both WhatsApp payload
+  // shapes down to that flat option list rather than failing the step:
+  // 'buttons' maps 1:1, 'list' flattens every row across every section.
+  if ((await resolveConversationChannel(supabaseAdmin(), conversationId)) === 'instagram') {
+    const options: QuickReplyOption[] =
+      payload.kind === 'buttons'
+        ? payload.buttons.map((b) => ({ title: b.title, payload: b.id }))
+        : payload.sections.flatMap((s) => s.rows.map((r) => ({ title: r.title, payload: r.id })))
+    return engineSendInstagramQuickReplies({ ...common, bodyText: payload.body, options })
+  }
+
   if (payload.kind === 'buttons') {
     return engineSendInteractiveButtons({
       ...common,
@@ -111,6 +147,22 @@ type SendInput =
 
 async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Instagram conversations branch off here — templates are a
+  // WhatsApp-only concept, so a template step targeting an Instagram
+  // conversation fails loudly rather than silently mis-sending.
+  if ((await resolveConversationChannel(db, input.conversationId)) === 'instagram') {
+    if (input.kind === 'template') {
+      throw new Error('Message templates are a WhatsApp-only concept and are not supported for Instagram conversations.')
+    }
+    return engineSendInstagramText({
+      accountId: input.accountId,
+      userId: input.userId,
+      conversationId: input.conversationId,
+      contactId: input.contactId,
+      text: input.text,
+    })
+  }
 
   // Scope the contact + config lookups by account_id, not user_id.
   // The engine uses the service-role client (bypassing RLS); without

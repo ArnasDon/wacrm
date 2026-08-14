@@ -118,6 +118,16 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /**
+   * Which channel this conversation is on. Templates and the
+   * WhatsApp-shaped interactive-message builder are WhatsApp-only
+   * concepts (Instagram has no template system, and its quick-reply
+   * analogue isn't wired into the composer yet — see
+   * docs/instagram-integration/PROGRESS.md) — both affordances are
+   * hidden for Instagram conversations. Defaults to 'whatsapp' so
+   * every existing caller keeps its current behavior unchanged.
+   */
+  channel?: "whatsapp" | "instagram";
 }
 
 function formatDuration(seconds: number): string {
@@ -140,8 +150,10 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  channel = "whatsapp",
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
+  const isInstagram = channel === "instagram";
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -546,7 +558,7 @@ export function MessageComposer({
           />
         </div>
       )}
-      {sessionExpired && (
+      {sessionExpired && !isInstagram && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
             {t("sessionExpiredHint")}
@@ -686,10 +698,12 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
-                <MessageSquareDashed className="mr-2 h-4 w-4" />
-                {t("interactiveMessage")}
-              </DropdownMenuItem>
+              {!isInstagram && (
+                <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                  <MessageSquareDashed className="mr-2 h-4 w-4" />
+                  {t("interactiveMessage")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -697,17 +711,19 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : t("sendTemplate")}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+          {!isInstagram && (
+            <GatedButton
+              variant="ghost"
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              title={readOnly ? undefined : t("sendTemplate")}
+              className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </GatedButton>
+          )}
 
           <GatedButton
             variant="ghost"

@@ -16,6 +16,32 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
+import {
+  engineSendInstagramText,
+  engineSendInstagramMedia,
+  engineSendInstagramQuickReplies,
+} from '@/lib/instagram/engine-send'
+import type { QuickReplyOption } from '@/lib/instagram/api'
+
+/**
+ * Which channel is `conversationId` on? Every entry point below
+ * checks this before running the WhatsApp path (unchanged) or
+ * branching into the Instagram sender. Same helper, independently
+ * defined, as automations/meta-send.ts's — kept local rather than
+ * shared per this file's own stated policy of not coupling the two
+ * engines' send paths together.
+ */
+async function resolveConversationChannel(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<'whatsapp' | 'instagram'> {
+  const { data } = await db
+    .from('conversations')
+    .select('channel')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.channel === 'instagram' ? 'instagram' : 'whatsapp'
+}
 
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
@@ -66,6 +92,10 @@ export async function engineSendText(
   args: SendTextEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  if ((await resolveConversationChannel(db, args.conversationId)) === 'instagram') {
+    return engineSendInstagramText(args)
+  }
 
   const { data: contact, error: contactErr } = await db
     .from('contacts')
@@ -176,6 +206,20 @@ export async function engineSendMedia(
   args: SendMediaEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Instagram media messages carry no caption/filename (unlike
+  // WhatsApp) — both are silently dropped rather than failing the
+  // step, since the media itself is still the point of this node.
+  if ((await resolveConversationChannel(db, args.conversationId)) === 'instagram') {
+    return engineSendInstagramMedia({
+      accountId: args.accountId,
+      userId: args.userId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      kind: args.kind,
+      link: args.link,
+    })
+  }
 
   const { data: contact, error: contactErr } = await db
     .from('contacts')
@@ -325,6 +369,24 @@ async function sendInteractiveViaMeta(
   input: SendInput,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+
+  // Instagram's closest analogue to buttons/list is a flat set of
+  // quick-reply chips (max 13) — same mapping as
+  // automations/meta-send.ts's engineSendInteractive.
+  if ((await resolveConversationChannel(db, input.conversationId)) === 'instagram') {
+    const options: QuickReplyOption[] =
+      input.kind === 'buttons'
+        ? input.buttons.map((b) => ({ title: b.title, payload: b.id }))
+        : input.sections.flatMap((s) => s.rows.map((r) => ({ title: r.title, payload: r.id })))
+    return engineSendInstagramQuickReplies({
+      accountId: input.accountId,
+      userId: input.userId,
+      conversationId: input.conversationId,
+      contactId: input.contactId,
+      bodyText: input.bodyText,
+      options,
+    })
+  }
 
   // Scope the contact + whatsapp_config lookups by account_id —
   // same defense-in-depth rationale as automations/meta-send.ts.

@@ -31,6 +31,11 @@ interface WhatsAppStatus {
   connected: boolean;
 }
 
+interface InstagramStatus {
+  configured: boolean;
+  connected: boolean;
+}
+
 export function SettingsOverview({
   onSelect,
 }: {
@@ -51,6 +56,9 @@ export function SettingsOverview({
   // from blanking the rest of the landing.
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
+  // Same independent-gating rationale as WhatsApp above.
+  const [instagram, setInstagram] = useState<InstagramStatus | null>(null);
+  const [instagramLoading, setInstagramLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !accountId) return;
@@ -136,6 +144,25 @@ export function SettingsOverview({
       setWhatsappLoading(false);
     })();
 
+    // Instagram connection status — same pattern as WhatsApp above.
+    (async () => {
+      setInstagramLoading(true);
+      const [row, health] = await Promise.allSettled([
+        supabase
+          .from('instagram_config')
+          .select('ig_account_id')
+          .eq('account_id', acctId)
+          .maybeSingle(),
+        fetch('/api/instagram/config', { cache: 'no-store' }).then((r) => r.json()),
+      ]);
+      if (cancelled) return;
+      setInstagram({
+        configured: row.status === 'fulfilled' && !!row.value.data?.ig_account_id,
+        connected: health.status === 'fulfilled' && !!health.value?.connected,
+      });
+      setInstagramLoading(false);
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -164,6 +191,21 @@ export function SettingsOverview({
       subtitle: !whatsapp?.configured ? (
         t('notSetup')
       ) : whatsapp.connected ? (
+        <>
+          <StatusDot tone="ok" /> {t('connected')}
+        </>
+      ) : (
+        <>
+          <StatusDot tone="muted" /> {t('needsReconnecting')}
+        </>
+      ),
+    },
+    {
+      section: 'instagram',
+      loading: instagramLoading,
+      subtitle: !instagram?.configured ? (
+        t('notSetup')
+      ) : instagram.connected ? (
         <>
           <StatusDot tone="ok" /> {t('connected')}
         </>

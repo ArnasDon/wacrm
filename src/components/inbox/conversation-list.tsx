@@ -9,6 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
+import { ChannelBadge, type MessagingChannel } from "./channel-badge";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -72,6 +73,7 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<MessagingChannel | null>(null);
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -152,6 +154,15 @@ export function ConversationList({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [conversations]);
 
+  // Same "only show the filter if it'd ever do something" rule as
+  // companies above — an account with no Instagram conversations sees
+  // no channel filter at all, keeping the toolbar unchanged for the
+  // common (WhatsApp-only) case.
+  const hasInstagramConversations = useMemo(
+    () => conversations.some((c) => c.channel === "instagram"),
+    [conversations],
+  );
+
   const tagsById = useMemo(() => {
     const m = new Map<string, Tag>();
     for (const t of tags) m.set(t.id, t);
@@ -167,12 +178,13 @@ export function ConversationList({
       result = result.filter((c) => c.status === filter);
     }
 
-    // Contact-based filters (tags via OR logic, exact company match).
-    if (selectedTagIds.length > 0 || selectedCompany !== null) {
+    // Contact-based filters (tags via OR logic, exact company match, exact channel match).
+    if (selectedTagIds.length > 0 || selectedCompany !== null || selectedChannel !== null) {
       result = result.filter((c) =>
         matchesContactFilters(c, {
           tagIds: selectedTagIds,
           company: selectedCompany,
+          channel: selectedChannel,
         })
       );
     }
@@ -182,13 +194,16 @@ export function ConversationList({
       result = result.filter((c) => {
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
+        const igUsername = c.contact?.instagram_username?.toLowerCase() ?? "";
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+        return (
+          name.includes(q) || phone.includes(q) || igUsername.includes(q) || lastMsg.includes(q)
+        );
       });
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, selectedChannel]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -199,9 +214,11 @@ export function ConversationList({
   const clearContactFilters = useCallback(() => {
     setSelectedTagIds([]);
     setSelectedCompany(null);
+    setSelectedChannel(null);
   }, []);
 
-  const hasContactFilters = selectedTagIds.length > 0 || selectedCompany !== null;
+  const hasContactFilters =
+    selectedTagIds.length > 0 || selectedCompany !== null || selectedChannel !== null;
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -350,6 +367,55 @@ export function ConversationList({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          {hasInstagramConversations && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  selectedChannel
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {selectedChannel === "instagram"
+                  ? t("channelInstagram")
+                  : selectedChannel === "whatsapp"
+                    ? t("channelWhatsapp")
+                    : t("channel")}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="border-border bg-popover">
+                <DropdownMenuItem
+                  onClick={() => setSelectedChannel(null)}
+                  className={cn(
+                    "text-sm",
+                    selectedChannel === null ? "text-primary" : "text-popover-foreground"
+                  )}
+                >
+                  {t("allChannels")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setSelectedChannel("whatsapp")}
+                  className={cn(
+                    "text-sm",
+                    selectedChannel === "whatsapp" ? "text-primary" : "text-popover-foreground"
+                  )}
+                >
+                  {t("channelWhatsapp")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setSelectedChannel("instagram")}
+                  className={cn(
+                    "text-sm",
+                    selectedChannel === "instagram" ? "text-primary" : "text-popover-foreground"
+                  )}
+                >
+                  {t("channelInstagram")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {hasContactFilters && (
@@ -377,6 +443,17 @@ export function ConversationList({
                 className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted/70"
               >
                 <span className="max-w-24 truncate">{selectedCompany}</span>
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {selectedChannel && (
+              <button
+                onClick={() => setSelectedChannel(null)}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground hover:bg-muted/70"
+              >
+                <span className="max-w-24 truncate">
+                  {selectedChannel === "instagram" ? t("channelInstagram") : t("channelWhatsapp")}
+                </span>
                 <X className="h-3 w-3" />
               </button>
             )}
@@ -437,7 +514,8 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const displayName =
+    contact?.name || contact?.instagram_username || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -459,16 +537,22 @@ function ConversationItem({
       )}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-        {contact?.avatar_url ? (
-          <img
-            src={contact.avatar_url}
-            alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
-          />
-        ) : (
-          initials
-        )}
+      <div className="relative shrink-0">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          {contact?.avatar_url ? (
+            <img
+              src={contact.avatar_url}
+              alt={displayName}
+              className="h-10 w-10 rounded-full object-cover"
+            />
+          ) : (
+            initials
+          )}
+        </div>
+        <ChannelBadge
+          channel={conversation.channel}
+          className="absolute -bottom-0.5 -right-0.5"
+        />
       </div>
 
       {/* Content */}

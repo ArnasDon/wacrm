@@ -610,6 +610,7 @@ async function processMessage(
     await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
+      channel: 'whatsapp',
     })
   }
 
@@ -879,6 +880,7 @@ async function processMessage(
     whatsapp_message_id: message.id,
     content_type: contentType,
     text: contentText,
+    channel: 'whatsapp',
   })
 }
 

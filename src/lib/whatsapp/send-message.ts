@@ -48,6 +48,20 @@ import {
   templateBodyParams,
   templateContentText,
 } from '@/lib/whatsapp/template-body';
+import { sendInstagramMessageToConversation } from '@/lib/instagram/send-message';
+// `SendMessageError`/`SendMessageParams`/`SendMessageResult` live in
+// this channel-neutral module (not here) specifically to avoid a
+// circular import with the Instagram sender this file branches into
+// below. Imported here for local use, and re-exported immediately so
+// every existing import site
+// (`import { SendMessageError } from '@/lib/whatsapp/send-message'`)
+// keeps working unchanged.
+import {
+  SendMessageError,
+  type SendMessageParams,
+  type SendMessageResult,
+} from '@/lib/messaging/types';
+export { SendMessageError, type SendMessageParams, type SendMessageResult };
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -56,46 +70,6 @@ export const VALID_MESSAGE_TYPES = [
   'interactive',
   ...MEDIA_KINDS,
 ] as const;
-
-/**
- * Typed failure with a machine `code` and a suggested HTTP `status`.
- * Callers map it to their own response shape (`toErrorResponse` for
- * the dashboard route, the v1 envelope for the public endpoint).
- */
-export class SendMessageError extends Error {
-  readonly code: string;
-  readonly status: number;
-  constructor(code: string, message: string, status: number) {
-    super(message);
-    this.name = 'SendMessageError';
-    this.code = code;
-    this.status = status;
-  }
-}
-
-export interface SendMessageParams {
-  conversationId: string;
-  messageType: string;
-  contentText?: string | null;
-  mediaUrl?: string | null;
-  filename?: string | null;
-  templateName?: string | null;
-  templateLanguage?: string | null;
-  /** Legacy positional body params (only used if messageParams.body unset). */
-  templateParams?: string[];
-  /** Structured template params (header/body/buttons). */
-  templateMessageParams?: unknown;
-  /** Structured payload for `messageType === 'interactive'`. */
-  interactivePayload?: InteractiveMessagePayload | null;
-  replyToMessageId?: string | null;
-}
-
-export interface SendMessageResult {
-  /** Our `messages.id` (the persisted row). */
-  messageId: string;
-  /** Meta's `wamid` for the delivered message. */
-  whatsappMessageId: string;
-}
 
 /**
  * Send a message in an existing conversation and persist it.
@@ -231,6 +205,13 @@ export async function sendMessageToConversation(
 
   if (convError || !conversation) {
     throw new SendMessageError('not_found', 'Conversation not found', 404);
+  }
+
+  // Instagram conversations branch off here into their own (much
+  // smaller) send path — see src/lib/instagram/send-message.ts. The
+  // rest of this function is unchanged WhatsApp behavior.
+  if (conversation.channel === 'instagram') {
+    return sendInstagramMessageToConversation(db, accountId, params);
   }
 
   const contact = conversation.contact;

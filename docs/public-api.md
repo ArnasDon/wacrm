@@ -43,7 +43,7 @@ it. Grant the minimum.
 
 | Scope                | Allows                                   |
 | -------------------- | ---------------------------------------- |
-| `messages:send`      | Send WhatsApp messages                   |
+| `messages:send`      | Send WhatsApp or Instagram messages      |
 | `messages:read`      | Read messages and delivery status        |
 | `contacts:read`      | List and read contacts                   |
 | `contacts:write`     | Create and update contacts               |
@@ -117,9 +117,11 @@ curl https://your-crm.example.com/api/v1/me \
 
 ### `POST /api/v1/messages`
 
-Send a WhatsApp message to a phone number. Scope: `messages:send`. You
-pass an **E.164 number**, not an internal id — the endpoint
-finds-or-creates the contact + conversation, then sends.
+Send a WhatsApp or Instagram message. Scope: `messages:send`. Pass
+exactly one of `to` (an **E.164 phone number**, WhatsApp) or
+`to_instagram_id` (the recipient's **Instagram-Scoped ID**, Instagram)
+— not an internal id either way. The endpoint finds-or-creates the
+contact + conversation on the matching channel, then sends.
 
 ```bash
 curl -X POST https://your-crm.example.com/api/v1/messages \
@@ -128,10 +130,20 @@ curl -X POST https://your-crm.example.com/api/v1/messages \
   -d '{ "to": "+14155550123", "type": "text", "text": "Hi 👋" }'
 ```
 
+```bash
+curl -X POST https://your-crm.example.com/api/v1/messages \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "to_instagram_id": "17841400000000000", "type": "text", "text": "Hi 👋" }'
+```
+
 `type` is `text` (default), `template`, or a media kind (`image` /
 `video` / `document` / `audio`). Media needs `media_url` (and optional
-`filename`); `text` doubles as the caption. `template` needs a
-`template` object:
+`filename`); `text` doubles as the caption (WhatsApp only — Instagram
+media messages carry no caption, so `text` is ignored there). `template`
+needs a `template` object and is **WhatsApp-only** — Instagram has no
+template concept, and a `to_instagram_id` request with `type: "template"`
+(or `"interactive"`) is rejected with `bad_request`:
 
 ```jsonc
 {
@@ -160,9 +172,14 @@ Response (201):
 }
 ```
 
-Domain error codes beyond the table above: `whatsapp_not_configured`
-(400), `meta_error` (502 — the request reached Meta and it rejected the
-send), `template_malformed` (500).
+`whatsapp_message_id` holds the provider's message id for either
+channel (Meta's `wamid` for WhatsApp, Instagram's own message id for
+Instagram) — the field name is shared rather than duplicated per
+channel.
+
+Domain error codes beyond the table above: `whatsapp_not_configured` /
+`instagram_not_configured` (400), `meta_error` (502 — the request
+reached Meta and it rejected the send), `template_malformed` (500).
 
 ### `GET /api/v1/contacts`
 
@@ -204,7 +221,10 @@ contact in another account returns `404`.
 
 List conversations, newest first. Scope: `conversations:read`.
 Paginated. Optional filters: `?status=` (`open` / `pending` / `closed`)
-and `?contact_id=`. Each conversation embeds its contact + tags.
+and `?contact_id=`. Each conversation embeds its contact + tags, and a
+`channel` field (`"whatsapp"` or `"instagram"`). A contact's `phone` is
+`null` for Instagram-only contacts, which instead carry
+`instagram_username`.
 
 ### `GET /api/v1/conversations/{id}`
 
@@ -328,14 +348,17 @@ delivery uuid you can dedupe on, and `data` varies by `event`:
 }
 ```
 
-`data` by event:
+`data` by event. Every payload carries a `channel` field
+(`"whatsapp"` or `"instagram"`) except `message.status_updated`, which
+is WhatsApp-only today (Instagram delivery receipts aren't mirrored
+onto outbound webhooks yet):
 
 ```jsonc
 // message.received
-{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋" }
+{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋", "channel": "whatsapp" }
 // conversation.created
-{ "conversation_id": "…", "contact_id": "…" }
-// message.status_updated
+{ "conversation_id": "…", "contact_id": "…", "channel": "instagram" }
+// message.status_updated (WhatsApp only)
 { "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered" }
 ```
 

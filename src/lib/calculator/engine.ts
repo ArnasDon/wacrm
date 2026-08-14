@@ -322,6 +322,78 @@ export function applyDirectEdit(
 }
 
 /**
+ * Toggles an item's lock. Unlocking is a no-op beyond the flag flip —
+ * the item just rejoins the normal percent-driven flow that
+ * `recalculate` already handles. LOCKING is where this differs from a
+ * plain `{ ...item, locked: true }` + `recalculate`:
+ *
+ * "Toda vez que eu zerar um valor... e travar esse cadeado... é
+ * necessário que o valor faltante seja recalculado para as demais
+ * etapas que não estão com o cadeado travado" — if freezing this
+ * item's amount leaves the flow off 100% (e.g. it was zeroed first),
+ * the resulting gap is spread across every OTHER unlocked item,
+ * proportionally to their current share of the unlocked total — not
+ * dumped onto a single "balancer" like `applyDirectEdit` does. Each
+ * gets `share = itsAmount / unlockedSum` of the gap; if every
+ * remaining unlocked item is also at 0 (no ratio to follow), the gap
+ * splits evenly instead. Every rebalanced item's `percent` is updated
+ * to match its new amount, so it stays a normal percent-driven field
+ * afterward — not a one-off balancer whose link stays broken.
+ *
+ * When locking doesn't change how close the flow is to 100% (the
+ * common case — the four etapas already sum correctly), this is
+ * exactly equivalent to the old plain toggle: nothing is touched
+ * beyond the `locked` flag.
+ */
+export function applyLockToggle(propertyValue: number, items: FlowItem[], id: string): FlowResult {
+  // Normalize first: `items` may still hold each percent-driven item's
+  // stale/seed `value` (e.g. fresh from createFlowItem, before any
+  // recalculate has run against the current propertyValue — happens
+  // whenever the user's very first action is locking something, with
+  // no prior edit to trigger a recalculate). Running it through
+  // `recalculate` once brings every unlocked item's value in line with
+  // its percent (locked items pass through unchanged either way), so
+  // the lockedSum/unlockedSum/gap math below always reflects what's
+  // actually on screen, never a leftover placeholder.
+  const normalized = recalculate(propertyValue, items).items;
+  const toggled = normalized.map((item) =>
+    item.id === id ? { ...item, locked: !item.locked } : item,
+  );
+
+  const target = toggled.find((item) => item.id === id);
+  if (!target?.locked) {
+    return recalculate(propertyValue, toggled);
+  }
+
+  const unlocked = toggled.filter((item) => !item.locked);
+  if (unlocked.length === 0) {
+    return recalculate(propertyValue, toggled);
+  }
+
+  const lockedSum = toggled.filter((item) => item.locked).reduce((sum, i) => sum + amountOf(i), 0);
+  const unlockedSum = unlocked.reduce((sum, i) => sum + amountOf(i), 0);
+  const gap = propertyValue - lockedSum - unlockedSum;
+
+  if (Math.abs(gap) <= EPSILON) {
+    return recalculate(propertyValue, toggled);
+  }
+
+  const rebalanced = toggled.map((item) => {
+    if (item.locked) return item;
+    const share = unlockedSum > 0 ? amountOf(item) / unlockedSum : 1 / unlocked.length;
+    const newAmount = Math.max(0, amountOf(item) + gap * share);
+    const newPercent = propertyValue > 0 ? (newAmount / propertyValue) * 100 : item.percent;
+    if (item.kind === 'single') {
+      return { ...item, value: newAmount, percent: newPercent };
+    }
+    const count = Math.max(1, item.count);
+    return { ...item, value: newAmount / count, percent: newPercent };
+  });
+
+  return recalculate(propertyValue, rebalanced);
+}
+
+/**
  * Plain-text flow summary for the "Copiar fluxo" action — the SAME
  * copy function as always (spec: "não criar uma nova função de
  * cópia"), just producing the exact format requested:

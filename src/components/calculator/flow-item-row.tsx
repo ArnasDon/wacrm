@@ -1,10 +1,11 @@
 'use client';
 
-import { Lock, Unlock, X } from 'lucide-react';
+import { Info, Lock, Unlock, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { percentOf } from '@/lib/calculator/engine';
+import { amountOf, percentOf } from '@/lib/calculator/engine';
 import { formatPercentNumber } from '@/lib/calculator/money';
 import { MoneyInput } from './money-input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { FlowItem } from '@/lib/calculator/types';
 
 interface FlowItemRowProps {
@@ -24,6 +25,7 @@ interface FlowItemRowProps {
   unlockLabel: string;
   removeLabel: string;
   installmentsCountLabel: string;
+  totalAmountLabel: string;
 }
 
 /** Below this, the Chaves etapa's per-unit value renders in red — a
@@ -37,7 +39,7 @@ const CHAVES_MIN_PERCENT = 40;
  *  column for single-kind items (empty "—"), so a row without it
  *  never shifts the value/remove columns leftward. */
 const GRID_COLUMNS =
-  'grid grid-cols-[2rem_7.5rem_4.5rem_3.25rem_1fr_1.75rem] items-center gap-x-2 sm:grid-cols-[2rem_9rem_4.5rem_3.25rem_1fr_1.75rem]';
+  'grid grid-cols-[2rem_7.5rem_4.5rem_3.25rem_1fr_1.75rem_1.75rem] items-center gap-x-2 sm:grid-cols-[2rem_9rem_4.5rem_3.25rem_1fr_1.75rem_1.75rem]';
 
 export function FlowItemRow({
   item,
@@ -54,6 +56,7 @@ export function FlowItemRow({
   unlockLabel,
   removeLabel,
   installmentsCountLabel,
+  totalAmountLabel,
 }: FlowItemRowProps) {
   const fieldsDisabled = item.locked || isBalancer;
   const livePercent = percentOf(item, propertyValue);
@@ -146,6 +149,17 @@ export function FlowItemRow({
           </>
         )}
       </div>
+
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label={totalAmountLabel}
+          className="flex size-7 items-center justify-center justify-self-end rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Info className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>{formatMoney(amountOf(item))}</TooltipContent>
+      </Tooltip>
 
       <button
         type="button"

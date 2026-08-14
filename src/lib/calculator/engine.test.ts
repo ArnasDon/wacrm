@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   amountOf,
   applyDirectEdit,
+  applyLockToggle,
   buildFlowText,
   createDefaultFlowItems,
   createFlowItem,
@@ -682,5 +683,126 @@ describe('buildFlowText — Copiar fluxo', () => {
     expect(text).not.toMatch(/%/);
     expect(text).not.toMatch(/\b10\b/);
     expect(text).not.toMatch(/\b25\b/);
+  });
+});
+
+describe('applyLockToggle — travar um campo zerado redistribui proporcionalmente (pedido mais recente)', () => {
+  it('locking with no gap (flow already closed) behaves exactly like a plain toggle — nothing else moves', () => {
+    const items = createDefaultFlowItems();
+    const result = applyLockToggle(300_000, items, 'chaves');
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+    const entrada = result.items.find((i) => i.id === 'entrada')!;
+    expect(chaves.locked).toBe(true);
+    expect(chaves.value).toBe(120_000);
+    expect(entrada.percent).toBe(10); // untouched
+    expect(result.status).toBe('closed');
+  });
+
+  it('Teste do pedido — travar as Chaves, zerar as Intercaladas e travá-las: a diferença é dividida proporcionalmente entre Entrada e Parcelas', () => {
+    const propertyValue = 700_000;
+    let items = createDefaultFlowItems(); // 10/25/25/40
+
+    // 1) Trava as Chaves — flow já fecha em 100%, nada muda além do lock.
+    items = applyLockToggle(propertyValue, items, 'chaves').items;
+
+    // 2) Zera o percentual das Intercaladas (edição manual comum, não
+    //    dispara redistribuição sozinha — regra de ouro preservada).
+    items = items.map((i) => (i.id === 'intercaladas' ? { ...i, percent: 0 } : i));
+    const afterZero = recalculate(propertyValue, items);
+    expect(afterZero.status).toBe('incomplete');
+    items = afterZero.items;
+
+    // 3) Trava as Intercaladas (agora zeradas) — ESTE é o gatilho: o
+    //    faltante (25% de 700.000 = 175.000) deve ser dividido entre
+    //    Entrada e Parcelas na proporção em que já estavam (10:25, ou
+    //    seja 2:5) — não tudo empurrado para uma única etapa.
+    const result = applyLockToggle(propertyValue, items, 'intercaladas');
+
+    expect(result.status).toBe('closed');
+    const entrada = result.items.find((i) => i.id === 'entrada')!;
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+
+    expect(intercaladas.locked).toBe(true);
+    expect(amountOf(intercaladas)).toBe(0);
+    expect(chaves.locked).toBe(true);
+    expect(amountOf(chaves)).toBe(280_000); // 40% — locked, untouched
+
+    // Gap = 700_000 - 280_000(chaves) - 0(intercaladas) - 70_000(entrada) - 175_000(parcelas) = 175_000
+    // split 2:7 / 5:7 over the PRE-lock entrada/parcelas amounts (70k / 175k out of 245k unlocked sum)
+    expect(amountOf(entrada)).toBeCloseTo(70_000 + (175_000 * 70_000) / 245_000, 5);
+    expect(amountOf(parcelas)).toBeCloseTo(175_000 + (175_000 * 175_000) / 245_000, 5);
+    // Both moved — neither stayed at its original 10%/25% share.
+    expect(amountOf(entrada)).toBeGreaterThan(70_000);
+    expect(amountOf(parcelas)).toBeGreaterThan(175_000);
+
+    const total =
+      amountOf(entrada) + amountOf(parcelas) + amountOf(intercaladas) + amountOf(chaves);
+    expect(total).toBeCloseTo(propertyValue, 5);
+  });
+
+  it('Teste do pedido — travar a Entrada e zerar/travar as Intercaladas: o faltante recai sobre Parcelas e Chaves', () => {
+    const propertyValue = 500_000;
+    let items = createDefaultFlowItems();
+
+    items = applyLockToggle(propertyValue, items, 'entrada').items; // no gap yet
+
+    items = recalculate(propertyValue, items.map((i) => (i.id === 'intercaladas' ? { ...i, percent: 0 } : i)))
+      .items;
+
+    const result = applyLockToggle(propertyValue, items, 'intercaladas');
+
+    expect(result.status).toBe('closed');
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+    const entrada = result.items.find((i) => i.id === 'entrada')!;
+
+    expect(entrada.locked).toBe(true);
+    expect(amountOf(entrada)).toBe(50_000); // locked at its original 10%, untouched
+
+    // Only Parcelas and Chaves were unlocked to absorb the gap —
+    // proportionally to their 25:40 (5:8) split.
+    const gap = 125_000; // the 25% that Intercaladas used to hold
+    expect(amountOf(parcelas)).toBeCloseTo(125_000 + (gap * 125_000) / 325_000, 5);
+    expect(amountOf(chaves)).toBeCloseTo(200_000 + (gap * 200_000) / 325_000, 5);
+
+    const total = amountOf(entrada) + amountOf(parcelas) + amountOf(chaves) + amountOf(result.items.find((i) => i.id === 'intercaladas')!);
+    expect(total).toBeCloseTo(propertyValue, 5);
+  });
+
+  it('when every remaining unlocked item is also at 0, the gap splits evenly instead of proportionally', () => {
+    const propertyValue = 400_000;
+
+    // "c" alone (locked) already covers the full property value, so
+    // locking "a" (also at 0) leaves no gap to redistribute — a plain
+    // toggle, same as the no-gap case above.
+    const withGap = [
+      single('a', 'A', 0, false, 0),
+      single('b', 'B', 0, false, 0),
+      single('c', 'C', 200_000, true, 50),
+    ];
+    const result = applyLockToggle(propertyValue, withGap, 'a');
+    const a = result.items.find((i) => i.id === 'a')!;
+    const b = result.items.find((i) => i.id === 'b')!;
+    // "a" just got locked at 0 — it does NOT participate in the split.
+    // "b" is the only unlocked item left, so it absorbs the entire gap.
+    expect(a.locked).toBe(true);
+    expect(a.value).toBe(0);
+    expect(b.value).toBe(200_000);
+    expect(result.status).toBe('closed');
+  });
+
+  it('unlocking never triggers redistribution — it is a plain toggle back into the percent-driven flow', () => {
+    const propertyValue = 300_000;
+    const locked = createDefaultFlowItems().map((i) =>
+      i.id === 'chaves' ? { ...i, locked: true } : i,
+    );
+    const built = recalculate(propertyValue, locked).items;
+    const result = applyLockToggle(propertyValue, built, 'chaves');
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+    expect(chaves.locked).toBe(false);
+    expect(chaves.percent).toBe(40);
+    expect(result.status).toBe('closed');
   });
 });

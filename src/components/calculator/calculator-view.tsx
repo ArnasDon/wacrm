@@ -17,6 +17,7 @@ import {
 } from '@/lib/calculator/queries';
 import {
   applyDirectEdit,
+  applyLockToggle,
   createDefaultFlowItems,
   createFlowItem,
   recalculate,
@@ -124,11 +125,15 @@ export function CalculatorView() {
     setPropertyValue(value);
   }, []);
 
+  // Locking an item that leaves the flow off 100% (e.g. it was zeroed
+  // first) proportionally redistributes the gap across the OTHER
+  // unlocked items — see applyLockToggle's doc comment in engine.ts.
+  // Unlocking is still a plain toggle + recalculate.
   const handleToggleLock = useCallback(
     (id: string) => {
-      applyItems(items.map((i) => (i.id === id ? { ...i, locked: !i.locked } : i)));
+      setItems(applyLockToggle(propertyValue, items, id).items);
     },
-    [items, applyItems],
+    [items, propertyValue],
   );
 
   const handleChangePercent = useCallback(
@@ -340,6 +345,7 @@ export function CalculatorView() {
             lockLabel={t('lock')}
             unlockLabel={t('unlock')}
             removeLabel={t('remove')}
+            totalAmountLabel={t('totalAmountLabel')}
           />
 
           {mode === 'free' ? (

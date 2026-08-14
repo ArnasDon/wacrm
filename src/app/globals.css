@@ -448,5 +448,27 @@ html[data-theme="rose"] {
       border: 1px solid var(--border);
       border-radius: 0.375rem;
     }
+
+    /* 2026-08-14 — porcentagem/quantidade (Entrada, Parcelas, Intercaladas)
+       jumped abruptly when focused on iPhone/PWA. Same root cause already
+       diagnosed and fixed once in this codebase for the Inbox composer's
+       textarea (message-composer.tsx, near its `text-base` class): iOS
+       Safari auto-zooms the whole viewport when a focused <input>/
+       <textarea>'s font-size is under 16px — these two fields are
+       `text-sm` (14px), the composer's textarea was too before that fix.
+       This isn't the `--app-height`/scroll-reset machinery in
+       dashboard-shell.tsx (that's a separate, already-global fix for a
+       different symptom — the shell not tracking the keyboard's height —
+       and every page, this one included, already inherits it). The zoom
+       trigger is per-field and was never applied here, so it's the one
+       gap left. Reusing the same principle: bump these two inputs to 16px
+       *only* in this iPhone-scoped block, so desktop's tighter grid
+       columns (tuned for 14px, see GRID_COLUMNS in flow-item-row.tsx)
+       stay untouched. Chaves' percent input gets this for free (same
+       selector, `nth-child(3) input` doesn't care about the label). */
+    .flow-item-row > *:nth-child(3) input,
+    .flow-item-row > input:nth-child(4) {
+      font-size: 16px;
+    }
   }
 }

@@ -311,9 +311,11 @@ html[data-theme="rose"] {
 
 /* Calculator flow card (flow-item-row.tsx) — two-row layout, iPhone only
    (Safari iOS + installed PWA). Desktop/Android/iPad keep the existing
-   single-row grid untouched.
+   single-row grid untouched (confirmed with the user 2026-08-14: this stays
+   iPhone-scoped on purpose, not broadened to "mobile" generally, so Android
+   is never touched).
 
-   Root cause of the reported cut-off text/values: flow-editor.tsx wraps
+   Root cause of the original cut-off text/values: flow-editor.tsx wraps
    every row in `min-w-[26rem]` + `overflow-x-auto` so all six columns
    (lock/label/percent/count/value/info) always fit side by side. On an
    iPhone-width viewport that forces the row wider than the screen, so it
@@ -326,10 +328,18 @@ html[data-theme="rose"] {
    standard way to scope CSS to iOS Safari/WKWebView specifically — true in
    both regular Safari tabs and standalone (installed PWA) mode. The
    `max-width` cap on top of it excludes iPad (smallest iPad viewport is
-   744px), keeping this to iPhone as requested. Only `display`/flex layout
-   properties are set here — unlayered CSS beats Tailwind's `@layer
-   utilities` regardless of source order, so this overrides the grid
-   classes on `.flow-item-row` without touching them for anyone else. */
+   744px), keeping this to iPhone as requested. Only layout properties
+   (display/flex/order/spacing/border) are set here — unlayered CSS beats
+   Tailwind's `@layer utilities` regardless of source order, so this
+   overrides the grid classes on `.flow-item-row` without touching them for
+   anyone else, and no JSX changed: every selector below reaches existing
+   elements by DOM position (nth-child) alone.
+
+   Rows, top to bottom (2026-08-14 revision: back to 2 rows — value moved
+   from its own line back onto the header row, matching the "cadeado
+   fechado" slim look the user wants unified across both lock states):
+     1. lock + título + valor + ícone de info
+     2. campo de porcentagem + campo de quantidade (ou "—" p/ Chaves) */
 @supports (-webkit-touch-callout: none) {
   @media (max-width: 430px) {
     .flow-editor-scroll {
@@ -337,56 +347,106 @@ html[data-theme="rose"] {
     }
     .flow-editor-scroll > .flow-editor-list {
       min-width: 0;
+      gap: 0.625rem;
     }
 
     .flow-item-row {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      column-gap: 0.5rem;
-      row-gap: 0.625rem;
+      column-gap: 0.3125rem;
+      row-gap: 0.5rem;
     }
-    /* Forces a line break: this pseudo-element is a flex item too, and
-       taking the full line width pushes everything ordered after it
-       (the percent/parcelas fields) onto row 2. */
+    /* One forced line break: this pseudo-element is a flex item that takes
+       the full line width, pushing everything ordered after it (percent +
+       quantidade) onto row 2. */
     .flow-item-row::before {
       content: '';
       order: 5;
       flex-basis: 100%;
     }
-    /* 1. lock button — row 1, start */
+
+    /* Row 1: lock (fixed width, same on every card so every título starts
+       on the same vertical axis) + título (grows to fill the row, so
+       valor + info end up flush against the card's right edge). */
     .flow-item-row > *:nth-child(1) {
       order: 1;
       flex: 0 0 auto;
     }
-    /* 2. title input — row 1, grows to push value/info to the right */
     .flow-item-row > *:nth-child(2) {
       order: 2;
-      flex: 1 1 auto;
+      /* flex-basis 0, not auto: the label <input> has no explicit
+         width/size, so its content-based hypothetical size defaults to
+         the browser's ~20-char intrinsic input width. flex-wrap decides
+         whether an item fits its line using that hypothetical size
+         *before* shrinking — with `auto` it would force this item onto
+         its own line even though everything plainly fits. Basis 0 makes
+         it size purely from flex-grow, sidestepping that intrinsic width.
+         No min-width floor: on the 375–430px range this targets, título
+         always has comfortable room (verified below); letting it shrink
+         all the way to 0 as a last resort keeps valor — which must never
+         truncate — winning the fight for space in any pathological case
+         (e.g. an 8-figure R$ amount) instead of pushing the ⓘ icon onto
+         its own orphan line. */
+      flex: 1 1 0%;
       min-width: 0;
     }
-    /* 3. porcentagem field — row 2, left half */
+    /* Valor: never grows, never shrinks below its own content — money is
+       the one thing on this row that must never truncate. Só o título
+       (acima) cede espaço quando o card fica apertado. */
+    .flow-item-row > *:nth-child(5) {
+      order: 3;
+      flex: 0 0 auto;
+    }
+    /* The editable-state MoneyInput has the same unstyled-<input> ~20-char
+       intrinsic width problem as the label above — uncapped, it can force
+       row 1 to wrap strangely even though the actual digits ("300,00")
+       need far less room. A fixed width based on ch units (character-
+       width-aware, respects the tabular-nums font) keeps it sized to
+       realistic BRL amounts without either truncating a real value or
+       reserving excess empty space. 12ch comfortably fits values into the
+       tens of millions ("3.086.419,50" = 12 chars) with zero clipping,
+       verified directly (input.scrollWidth === input.clientWidth) at
+       320/375/390/414/430px. */
+    .flow-item-row > *:nth-child(5) input {
+      width: 12ch;
+      flex: 0 0 auto;
+    }
+    .flow-item-row > *:nth-child(6) {
+      order: 4;
+      flex: 0 0 auto;
+    }
+
+    /* Row 2: porcentagem + quantidade split the row exactly in half.
+       Equal flex-basis on same-width cards is what keeps both columns
+       pixel-aligned down the whole list, no matter the card's content. */
     .flow-item-row > *:nth-child(3) {
       order: 6;
       flex: 1 1 0;
       min-width: 0;
     }
-    /* 4. parcelas field — row 2, right half */
     .flow-item-row > *:nth-child(4) {
       order: 7;
       flex: 1 1 0;
       min-width: 0;
     }
-    /* 5. total value — row 1, right-aligned */
-    .flow-item-row > *:nth-child(5) {
-      order: 3;
-      flex: 0 1 auto;
-      min-width: 0;
-    }
-    /* 6. info tooltip — row 1, end */
-    .flow-item-row > *:nth-child(6) {
-      order: 4;
-      flex: 0 0 auto;
+
+    /* Read-only percent ("10%" as plain text when locked/balancer) and
+       Chaves' "—" placeholder (no quantity field) don't carry the boxed
+       look the editable inputs already have. Giving them the same
+       height/border/radius here — purely cosmetic, still a <span>, never
+       an <input> — is what makes "cadeado aberto" and "cadeado fechado"
+       share one visual structure instead of the open state looking like a
+       taller, different layout. */
+    .flow-item-row > *:nth-child(3) > span:only-child,
+    .flow-item-row > span:nth-child(4) {
+      display: flex;
+      height: 2rem;
+      width: 100%;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
     }
   }
 }

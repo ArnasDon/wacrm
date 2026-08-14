@@ -41,6 +41,8 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
+import { MediaLightbox } from "./media-lightbox";
+import { collectMediaGallery } from "@/lib/media/gallery";
 import {
   MessageComposer,
   CHAT_MEDIA_BUCKET,
@@ -50,19 +52,13 @@ import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
+import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { toast } from "sonner";
 
 interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
-}
-
-function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return params[idx] ?? `{{${raw}}}`;
-  });
 }
 
 interface MessageThreadProps {
@@ -202,6 +198,15 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  // Which attachment the media viewer is showing. Lives here rather than in
+  // the bubble so the viewer can page through every image/video in the
+  // thread (issue #373). Paired with the conversation it belongs to and read
+  // back through that check below, so switching threads closes the viewer
+  // without an effect racing the messages refetch.
+  const [openMedia, setOpenMedia] = useState<{
+    conversationId: string;
+    messageId: string;
+  } | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -267,6 +272,19 @@ export function MessageThread({
 
   const conversationId = conversation?.id;
   const hasUnread = (conversation?.unread_count ?? 0) > 0;
+
+  const mediaMessageId =
+    openMedia && openMedia.conversationId === conversationId
+      ? openMedia.messageId
+      : null;
+  const handleMediaChange = useCallback(
+    (messageId: string | null) => {
+      setOpenMedia(
+        messageId && conversationId ? { conversationId, messageId } : null,
+      );
+    },
+    [conversationId],
+  );
 
   // Fetch messages whenever the selected conversation changes. Kept
   // separate from the unread-reset effect so that incoming messages
@@ -718,6 +736,10 @@ export function MessageThread({
     return map;
   }, [messages]);
 
+  // Images + videos in the thread, in order — the set the media viewer
+  // pages through with ← / →.
+  const mediaGallery = useMemo(() => collectMediaGallery(messages), [messages]);
+
   // Bucket reactions by their target message_id for O(1) per-bubble lookup.
   const reactionsByMessageId = useMemo(() => {
     const map = new Map<string, MessageReaction[]>();
@@ -1122,6 +1144,7 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          onOpenMedia={handleMediaChange}
                         />
                       </MessageActions>
                     );
@@ -1165,6 +1188,15 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      {/* Full-size viewer for the thread's images/videos. Renders nothing
+          until a bubble opens it. */}
+      <MediaLightbox
+        items={mediaGallery}
+        activeId={mediaMessageId}
+        onActiveIdChange={handleMediaChange}
+        contactLabel={contactDisplayName}
       />
     </div>
   );

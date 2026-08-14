@@ -1,0 +1,71 @@
+name: Migrations
+
+# Replaces the "Supabase Preview" check, which never worked: it fired
+# only on migration changes and then either 404'd in four seconds
+# ("Postgres config not found") or hung forever waiting on a branch
+# action, because two stale dashboard integrations were pointed at this
+# repo and neither could provision. It never applied a migration, so
+# every `supabase/migrations/*.sql` file in this repo has shipped
+# unexecuted by CI.
+#
+# This job does the thing that check only claimed to: boot a clean
+# Postgres and replay every migration, in order, from nothing. It needs
+# no secrets and no Supabase account — the CLI runs the database in a
+# container on the runner.
+
+on:
+  pull_request:
+    # `supabase/**` rather than `supabase/migrations/**` so a change to
+    # config.toml re-runs the check too, and this workflow is listed so
+    # that edits to the check are validated by the check.
+    #
+    # NOTE: if this is ever made a REQUIRED status check, drop these
+    # filters. GitHub leaves a required check that never ran stuck as
+    # "expected", which blocks every PR that doesn't touch SQL.
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/migrations.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/migrations.yml'
+
+concurrency:
+  group: migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    name: Apply to a clean database
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          # Pinned rather than `latest`: this check is infrastructure,
+          # and a CLI release changing behaviour should be a deliberate
+          # bump in a PR, not a Tuesday where main goes red.
+          version: 2.113.0
+
+      - name: Start Postgres
+        run: supabase db start
+
+      # `db start` already applies the migrations on a cold volume, but
+      # only on a cold volume — it is a no-op against a database that
+      # already exists. `db reset` drops and rebuilds unconditionally,
+      # so this step, not the one above, is the guarantee that every
+      # migration ran in filename order against nothing. It fails on the
+      # first statement Postgres rejects. --no-seed because there is no
+      # seed script and this is about schema, not data.
+      - name: Replay every migration from scratch
+        run: supabase db reset --local --no-seed
+
+      # A migration can apply "successfully" and still do nothing —
+      # every DDL statement here is IF NOT EXISTS-guarded, which turns a
+      # typo'd object name into a silent no-op. Assert the outcome, not
+      # just the absence of an error.
+      - name: Verify the resulting schema
+        run: supabase db query --local --file supabase/ci/verify-schema.sql

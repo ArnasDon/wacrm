@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import {
+  BATCH_SEND_ATTEMPTS,
+  batchRetryDelayMs,
+} from '@/lib/broadcast-retry';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -58,6 +62,11 @@ interface UseBroadcastSendingReturn {
  * Meta rate-limit buffer. 10 per batch + 1 s pause matches the spec
  * and keeps us comfortably under Meta's per-phone-number messaging
  * rate so a large broadcast never trips the upstream limiter.
+ *
+ * Note this shape when touching `RATE_LIMITS.broadcast`: a campaign is
+ * many calls to `/api/whatsapp/broadcast`, not one. A 1 000-recipient
+ * send is ~100 calls over several minutes, and a bucket sized for
+ * "one call per campaign" throttles most of it away (issue #472).
  */
 const SEND_BATCH_SIZE = 10;
 const SEND_BATCH_DELAY_MS = 1000;
@@ -386,11 +395,33 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
 
       // ── Step 3: Insert recipient rows ─────────────────────────────
+      // Custom values are fetched BEFORE the insert so each row can
+      // carry its resolved template params. Those params are what makes
+      // the campaign resumable server-side (issue #472): the send loop
+      // below runs in this browser tab, and if the tab goes away the
+      // only record of what {{1}} should be for each contact is this
+      // column. Resolving once here also means the resume sends exactly
+      // what this pass would have.
       setProgress(20);
+      const customValueIndex = await fetchCustomValueIndex(
+        supabase,
+        contacts.map((c) => c.id),
+      );
+      const paramsByContact = new Map(
+        contacts.map((contact) => [
+          contact.id,
+          resolveVariables(
+            payload.variables,
+            contact,
+            customValueIndex.get(contact.id),
+          ),
+        ]),
+      );
       const recipientRows = contacts.map((contact) => ({
         broadcast_id: broadcast.id,
         contact_id: contact.id,
         status: 'pending' as const,
+        template_params: paramsByContact.get(contact.id) ?? [],
       }));
 
       for (let i = 0; i < recipientRows.length; i += INSERT_BATCH_SIZE) {
@@ -417,7 +448,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         }
       }
 
-      // ── Step 4: Fetch recipients (joined contact) + preload custom values
+      // ── Step 4: Fetch recipients back (joined contact) ────────────
       setProgress(30);
       const { data: recipients, error: recipientsFetchError } = await supabase
         .from('broadcast_recipients')
@@ -427,16 +458,6 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       if (recipientsFetchError || !recipients) {
         throw new Error('Failed to fetch broadcast recipients');
       }
-
-      // One bulk fetch of custom values for every contact in this
-      // broadcast, avoiding N+1 during the send loop.
-      const contactIds = recipients
-        .map((r) => r.contact?.id)
-        .filter((id): id is string => Boolean(id));
-      const customValueIndex = await fetchCustomValueIndex(
-        supabase,
-        contactIds,
-      );
 
       let failedCount = 0;
       const totalRecipients = recipients.length;
@@ -461,33 +482,41 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           .filter((r) => r.contact?.phone)
           .map((r) => ({
             phone: r.contact!.phone as string,
-            params: r.contact
-              ? resolveVariables(
-                  payload.variables,
-                  r.contact,
-                  customValueIndex.get(r.contact.id),
-                )
-              : [],
+            // Read back off the row rather than re-resolved, so this
+            // pass and any later resume send identical params.
+            params: Array.isArray(r.template_params) ? r.template_params : [],
             ...(messageParams ? { messageParams } : {}),
           }));
 
         if (apiRecipients.length === 0) continue;
 
         try {
-          const res = await fetch('/api/whatsapp/broadcast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
-            }),
-          });
+          // Send the batch, waiting out a 429 rather than writing the
+          // whole batch off as failed. Only 429 is replayed — see
+          // batchRetryDelayMs for why nothing else can be.
+          let data: { error?: string; results?: BroadcastApiResult[] } = {};
+          for (let attempt = 1; ; attempt++) {
+            const res = await fetch('/api/whatsapp/broadcast', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipients: apiRecipients,
+                template_name: payload.template.name,
+                template_language: payload.template.language ?? 'en_US',
+              }),
+            });
 
-          const data = await res.json();
+            data = await res.json();
+            if (res.ok) break;
 
-          if (!res.ok) {
-            throw new Error(data.error || 'Broadcast API request failed');
+            const retryIn =
+              attempt < BATCH_SEND_ATTEMPTS
+                ? batchRetryDelayMs(res.status, res.headers.get('Retry-After'))
+                : null;
+            if (retryIn === null) {
+              throw new Error(data.error || 'Broadcast API request failed');
+            }
+            await sleep(retryIn);
           }
 
           const resultsByPhone = new Map<string, BroadcastApiResult>();

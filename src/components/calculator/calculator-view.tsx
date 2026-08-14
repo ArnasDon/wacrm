@@ -82,6 +82,40 @@ export function CalculatorView() {
     };
   }, []);
 
+  // Blocks pinch-to-zoom while this page is mounted — nowhere else in the
+  // app. The `viewport` export in this route's page.tsx (maximumScale/
+  // userScalable) is the primary mechanism; this is a JS backstop for the
+  // cases that meta tag alone doesn't reliably cover (namely a plain
+  // Safari tab, where iOS has historically kept pinch-zoom available
+  // regardless of the meta tag, for accessibility — the standalone PWA
+  // this task actually targets doesn't have that override).
+  // Document-level listeners, added on mount / removed on unmount, scope
+  // this to exactly "while viewing /calculadora" without touching the
+  // root layout or any shared component. Only multi-touch is blocked
+  // (`touches.length > 1`, and WebKit's own `gesturestart`/`gesturechange`
+  // pinch events) — single-finger taps, scrolling, focus, typing, and the
+  // virtual keyboard are a completely different code path and untouched.
+  useEffect(() => {
+    function blockPinchMove(e: TouchEvent) {
+      if (e.touches.length > 1) e.preventDefault();
+    }
+    function blockGesture(e: Event) {
+      e.preventDefault();
+    }
+    document.addEventListener('touchmove', blockPinchMove, { passive: false });
+    // `gesturestart`/`gesturechange` are non-standard WebKit-only events
+    // (no TS lib types) fired for the two-finger pinch/rotate gesture
+    // independently of `touchmove` — not in the DOM `Event` map, hence
+    // the cast.
+    document.addEventListener('gesturestart', blockGesture as EventListener);
+    document.addEventListener('gesturechange', blockGesture as EventListener);
+    return () => {
+      document.removeEventListener('touchmove', blockPinchMove);
+      document.removeEventListener('gesturestart', blockGesture as EventListener);
+      document.removeEventListener('gesturechange', blockGesture as EventListener);
+    };
+  }, []);
+
   const selectedProject = useMemo(
     () => projects.find((p) => p.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],

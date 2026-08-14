@@ -547,7 +547,7 @@ Patrón de mockeo: `vi.mock("@/lib/auth/account")` para `requireRole`, mock de `
 | DispatchInput | `engine.ts:47-57` | `{ accountId, triggerType, contactId?, context? }` |
 | Eval de trigger | `engine.ts:658-690` | `triggerMatches(automation, ctx)` — casos especiales para `keyword_match`, `interactive_reply`, `tag_added`; **default `return true`** |
 | Punto de entrada manual | `src/app/api/automations/engine/route.ts:27` | POST de prueba, `requireRole('agent')`, dispara cualquier trigger_type |
-| Envío WhatsApp | `src/lib/automations/meta-send.ts` | `engineSendText / engineSendTemplate / engineSendInteractive` |
+| Envío WhatsApp | `src/lib/flows/meta-send.ts` | `engineSendText / engineSendTemplate / engineSendInteractive` |
 | Resumen de `wait` | `src/app/api/automations/cron/route.ts` | cron + `automation_pending_executions` |
 
 ### 9.2 Lo que falta para `missed_call` (cambio mínimo, 5 ficheros)

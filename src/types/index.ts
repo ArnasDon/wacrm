@@ -187,6 +187,16 @@ export interface Contact {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  /**
+   * 'individual' (default, real 1:1 customer) | 'group' | 'community'
+   * | 'channel' (migration 047). A group/community/channel "contact"
+   * represents the chat itself, not a person — `phone` holds its
+   * WhatsApp id rather than a real number, and `name` is the chat's
+   * own name (e.g. a group's subject), not a person's. The Inbox
+   * filters these into their own "Groups" view (conversation-list.tsx)
+   * instead of mixing them with real contacts.
+   */
+  kind?: 'individual' | 'group' | 'community' | 'channel';
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];

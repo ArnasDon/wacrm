@@ -358,6 +358,44 @@ export async function listContacts(args: {
   return Array.isArray(data) ? (data as UazapiContact[]) : []
 }
 
+export interface UazapiChat {
+  wa_chatid: string
+  wa_name?: string
+  name?: string
+  image?: string
+  imagePreview?: string
+  wa_isGroup?: boolean
+  wa_isGroup_community?: boolean
+}
+
+/**
+ * POST /chat/find — looks up one chat's own metadata by id, used to
+ * resolve a WhatsApp group/community's real name + photo (`wa_name`/
+ * `image`) at the moment its first message creates a contact row for
+ * it — see chat-classify.ts and contact-name-sync.ts's own reasoning
+ * for why the per-message `senderName` field isn't the right source
+ * for a group's name (it's the individual participant who sent that
+ * message, not the group itself). Confirmed against uazapi's
+ * published response example (docs.uazapi.com/endpoint/post/chat~find).
+ */
+export async function findChat(args: {
+  baseUrl: string
+  token: string
+  chatId: string
+}): Promise<UazapiChat | null> {
+  const response = await fetch(`${args.baseUrl}/chat/find`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token: args.token },
+    body: JSON.stringify({ wa_chatid: args.chatId, limit: 1 }),
+  })
+  if (!response.ok) {
+    await throwUazapiError(response, `HTTP ${response.status}`)
+  }
+  const data = await response.json()
+  const chats = Array.isArray(data?.chats) ? data.chats : []
+  return (chats[0] as UazapiChat | undefined) ?? null
+}
+
 /**
  * POST /send/menu — covers both interactive buttons and lists. The
  * caller (UazapiProvider) is responsible for encoding `choices` into

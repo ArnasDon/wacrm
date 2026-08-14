@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -52,7 +52,12 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "groups";
+
+/** True for a group/community/channel "contact" — see Contact.kind (migration 047). */
+function isGroupConversation(c: Conversation): boolean {
+  return !!c.contact?.kind && c.contact.kind !== "individual";
+}
 
 export function ConversationList({
   activeConversationId,
@@ -70,6 +75,7 @@ export function ConversationList({
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
+    { label: t("filterGroups"), value: "groups" },
   ], [t]);
 
   const [search, setSearch] = useState("");
@@ -174,10 +180,18 @@ export function ConversationList({
   const filtered = useMemo(() => {
     let result = conversations;
 
-    if (filter === "unread") {
-      result = result.filter((c) => c.unread_count > 0);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.status === filter);
+    if (filter === "groups") {
+      // Groups/communities/channels get their own filter, never mixed
+      // into the other views below — mirrors how WhatsApp itself keeps
+      // group chats visually distinct from 1:1 conversations.
+      result = result.filter(isGroupConversation);
+    } else {
+      result = result.filter((c) => !isGroupConversation(c));
+      if (filter === "unread") {
+        result = result.filter((c) => c.unread_count > 0);
+      } else if (filter !== "all") {
+        result = result.filter((c) => c.status === filter);
+      }
     }
 
     // Contact-based filters (tags via OR logic, exact company match).
@@ -450,7 +464,8 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const isGroup = isGroupConversation(conversation);
+  const displayName = contact?.name || contact?.phone || (isGroup ? t("unknownGroup") : t("unknown"));
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -471,7 +486,9 @@ function ConversationItem({
         isActive && "border-l-2 border-primary bg-muted/70"
       )}
     >
-      {/* Avatar */}
+      {/* Avatar — group photo (or a generic group glyph) instead of
+          initials, the same distinction WhatsApp itself draws between
+          a person's photo and a group's. */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
         {contact?.avatar_url ? (
           <img
@@ -479,6 +496,8 @@ function ConversationItem({
             alt={displayName}
             className="h-10 w-10 rounded-full object-cover"
           />
+        ) : isGroup ? (
+          <Users className="h-5 w-5 text-muted-foreground" />
         ) : (
           initials
         )}
@@ -487,8 +506,16 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {isGroup && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <Users className="h-2.5 w-2.5" />
+                {t("groupBadge")}
+              </span>
+            )}
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>

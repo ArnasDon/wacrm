@@ -61,6 +61,8 @@ interface ContactRow {
   phone: string
   name?: string | null
   avatar_url?: string | null
+  /** 'individual' | 'group' | 'community' | 'channel' — see chat-classify.ts. */
+  kind?: string
   [key: string]: unknown
 }
 
@@ -77,6 +79,7 @@ async function findOrCreateContact(
   phone: string,
   name: string,
   avatarUrl?: string | null,
+  kind: string = 'individual',
 ): Promise<ContactOutcome | null> {
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
@@ -113,6 +116,7 @@ async function findOrCreateContact(
       phone,
       name: name || phone,
       avatar_url: avatarUrl || null,
+      kind,
     })
     .select()
     .single()
@@ -320,6 +324,19 @@ export interface ProcessInboundMessageParams {
    * webhook route before calling this.
    */
   contactAvatarUrl?: string | null
+  /**
+   * 'individual' (default) | 'group' | 'community' | 'channel' — see
+   * chat-classify.ts. Only meaningful on first contact; an existing
+   * contact's kind is never overwritten (a chat's fundamental type
+   * doesn't change). Group/community/channel chats still get a full
+   * contact + conversation + message row (so they show up in the
+   * inbox, filed under their own filter — see conversation-list.tsx),
+   * but skip flows/automations/AI auto-reply below: those are meant
+   * to react to an individual customer, and firing them into a shared
+   * group would be a real hazard (mass-messaging a group, replying to
+   * every member's message, etc.), not just a wrong-target bug.
+   */
+  contactKind?: string
   message: NormalizedInboundMessage
 }
 
@@ -333,8 +350,11 @@ export interface ProcessInboundMessageParams {
  * called.
  */
 export async function processInboundMessage(params: ProcessInboundMessageParams): Promise<void> {
-  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, message } = params
-  const senderPhone = normalizePhone(message.from)
+  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, contactKind, message } = params
+  // Group/community/channel JIDs aren't real phone numbers — see
+  // chat-classify.ts — so normalizePhone would just mangle them for
+  // no benefit. Only normalize for an actual individual contact.
+  const senderPhone = contactKind && contactKind !== 'individual' ? message.from : normalizePhone(message.from)
 
   const contactOutcome = await findOrCreateContact(
     accountId,
@@ -342,9 +362,11 @@ export async function processInboundMessage(params: ProcessInboundMessageParams)
     senderPhone,
     contactName,
     contactAvatarUrl,
+    contactKind ?? 'individual',
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+  const isGroupChat = contactRecord.kind != null && contactRecord.kind !== 'individual'
 
   const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id)
   if (!convResult) return
@@ -426,83 +448,91 @@ export async function processInboundMessage(params: ProcessInboundMessageParams)
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (aggregate trigger,
-  // migration 003).
+  // migration 003). No-ops for a group (never a broadcast recipient).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
   // ============================================================
-  // Flow runner dispatch.
-  //
-  // If the runner consumes the message (advanced an active run or
-  // started a new one), suppress the `new_message_received` +
-  // `keyword_match` automation triggers for this inbound — the
-  // customer is navigating the bot menu, not sending a fresh trigger
-  // word that should fork into automations. The relationship-level
-  // triggers (`new_contact_created`, `first_inbound_message`) still
-  // fire regardless.
+  // Flow runner / Automations / AI auto-reply — individual chats
+  // only. A group conversation still gets its message row and shows
+  // up in the inbox (filed under the Groups filter), but none of
+  // these react to it: a Flow or an AI auto-reply firing into a
+  // shared group on every member's message would spam the group, not
+  // help one customer — a materially different (and worse) failure
+  // mode than just "wrong target."
   // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message: message.interactiveReplyId
-      ? {
-          kind: 'interactive_reply',
-          reply_id: message.interactiveReplyId,
-          reply_title: message.text ?? '',
-          meta_message_id: message.externalId,
-        }
-      : {
-          kind: 'text',
-          text: message.text ?? '',
-          meta_message_id: message.externalId,
-        },
-    isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
-
-  // Fire any automations that react to this webhook event. Fire-and-
-  // forget: a slow or failing automation must not block the caller's
-  // 200 OK response to the provider.
   const inboundText = message.text ?? ''
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-    | 'interactive_reply'
-  )[] = []
-  if (!flowConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
-    if (message.interactiveReplyId) {
-      automationTriggers.push('interactive_reply')
-    }
-  }
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
-  if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
+  let flowConsumed = false
+  if (!isGroupChat) {
+    // If the runner consumes the message (advanced an active run or
+    // started a new one), suppress the `new_message_received` +
+    // `keyword_match` automation triggers for this inbound — the
+    // customer is navigating the bot menu, not sending a fresh trigger
+    // word that should fork into automations. The relationship-level
+    // triggers (`new_contact_created`, `first_inbound_message`) still
+    // fire regardless.
+    const flowResult = await dispatchInboundToFlows({
       accountId,
-      triggerType,
+      userId: configOwnerUserId,
       contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-        interactive_reply_id: message.interactiveReplyId ?? undefined,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
-  }
-
-  // AI auto-reply. Runs only for plain-text inbound the deterministic
-  // flow runner did NOT consume (flows win over the LLM), and only
-  // when the account has enabled it.
-  if (!flowConsumed && !message.interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
       conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
+      message: message.interactiveReplyId
+        ? {
+            kind: 'interactive_reply',
+            reply_id: message.interactiveReplyId,
+            reply_title: message.text ?? '',
+            meta_message_id: message.externalId,
+          }
+        : {
+            kind: 'text',
+            text: message.text ?? '',
+            meta_message_id: message.externalId,
+          },
+      isFirstInboundMessage,
     })
+    flowConsumed = flowResult.consumed
+
+    // Fire any automations that react to this webhook event. Fire-and-
+    // forget: a slow or failing automation must not block the caller's
+    // 200 OK response to the provider.
+    const automationTriggers: (
+      | 'new_contact_created'
+      | 'first_inbound_message'
+      | 'new_message_received'
+      | 'keyword_match'
+      | 'interactive_reply'
+    )[] = []
+    if (!flowConsumed) {
+      automationTriggers.push('new_message_received', 'keyword_match')
+      if (message.interactiveReplyId) {
+        automationTriggers.push('interactive_reply')
+      }
+    }
+    if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+    if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+    for (const triggerType of automationTriggers) {
+      runAutomationsForTrigger({
+        accountId,
+        triggerType,
+        contactId: contactRecord.id,
+        context: {
+          message_text: inboundText,
+          conversation_id: conversation.id,
+          interactive_reply_id: message.interactiveReplyId ?? undefined,
+        },
+      }).catch((err) => console.error('[automations] dispatch failed:', err))
+    }
+
+    // AI auto-reply. Runs only for plain-text inbound the deterministic
+    // flow runner did NOT consume (flows win over the LLM), and only
+    // when the account has enabled it.
+    if (!flowConsumed && !message.interactiveReplyId && inboundText.trim()) {
+      await dispatchInboundToAiReply({
+        accountId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        configOwnerUserId,
+      })
+    }
   }
 
   // message.received webhook (public API).
@@ -520,6 +550,8 @@ export interface MirrorAgentSentMessageParams {
   configOwnerUserId: string
   contactName: string
   contactAvatarUrl?: string | null
+  /** See ProcessInboundMessageParams.contactKind. */
+  contactKind?: string
   message: NormalizedInboundMessage
 }
 
@@ -547,8 +579,8 @@ export interface MirrorAgentSentMessageParams {
  * view of this thread.
  */
 export async function mirrorAgentSentMessage(params: MirrorAgentSentMessageParams): Promise<void> {
-  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, message } = params
-  const contactPhone = normalizePhone(message.from)
+  const { accountId, configOwnerUserId, contactName, contactAvatarUrl, contactKind, message } = params
+  const contactPhone = contactKind && contactKind !== 'individual' ? message.from : normalizePhone(message.from)
 
   const contactOutcome = await findOrCreateContact(
     accountId,
@@ -556,6 +588,7 @@ export async function mirrorAgentSentMessage(params: MirrorAgentSentMessageParam
     contactPhone,
     contactName,
     contactAvatarUrl,
+    contactKind ?? 'individual',
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact

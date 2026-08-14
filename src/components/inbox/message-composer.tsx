@@ -118,6 +118,12 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** True when this conversation is a WhatsApp group/community/channel
+   *  "contact" (migration 047). Outbound sending to these chats isn't
+   *  wired up in uazapi-api.ts's sendText/sendMedia yet, so the composer
+   *  is fully disabled and shows an explanatory hint instead of the
+   *  normal 24h-window messaging. */
+  groupChat?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -140,6 +146,7 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  groupChat = false,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
@@ -190,7 +197,8 @@ export function MessageComposer({
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
   // Media (like free-form text) is only allowed inside the 24h window.
-  const inputsDisabled = readOnly || sessionExpired;
+  // Group/community/channel chats can't send outbound at all yet.
+  const inputsDisabled = readOnly || sessionExpired || groupChat;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -222,7 +230,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (!trimmed || sending || sessionExpired || groupChat) return;
 
     setSending(true);
     try {
@@ -234,7 +242,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, groupChat, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -546,21 +554,27 @@ export function MessageComposer({
           />
         </div>
       )}
-      {sessionExpired && (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
-          <p className="text-xs text-amber-400">
-            {t("sessionExpiredHint")}
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="mr-1 h-3 w-3" />
-            {t("templates")}
-          </Button>
+      {groupChat ? (
+        <div className="mb-2 rounded-lg bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-400">{t("groupSendUnsupportedHint")}</p>
         </div>
+      ) : (
+        sessionExpired && (
+          <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
+            <p className="text-xs text-amber-400">
+              {t("sessionExpiredHint")}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-amber-400 hover:text-amber-300"
+              onClick={onOpenTemplates}
+            >
+              <LayoutTemplate className="mr-1 h-3 w-3" />
+              {t("templates")}
+            </Button>
+          </div>
+        )
       )}
 
       {/* Hidden file inputs driven by the attach menu. */}
@@ -732,21 +746,29 @@ export function MessageComposer({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder={
-              readOnly
-                ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+              groupChat
+                ? t("groupSendUnsupportedHint")
+                : readOnly
+                  ? t("readOnlyPlaceholder")
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly}
+            disabled={sessionExpired || readOnly || groupChat}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only state.
-            title={readOnly ? t("readOnlyTitle") : undefined}
+            title={
+              groupChat
+                ? t("groupSendUnsupportedHint")
+                : readOnly
+                  ? t("readOnlyTitle")
+                  : undefined
+            }
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              (sessionExpired || readOnly || groupChat) && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -754,7 +776,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || sessionExpired || sending || groupChat}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >

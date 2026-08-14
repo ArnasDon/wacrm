@@ -11,6 +11,7 @@ import {
   Copy,
   Check,
   User,
+  Users,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
@@ -127,6 +128,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
+  // Group/community/channel "contact" — the chat itself, not a person
+  // (migration 047). `phone` holds a WhatsApp chat id, not a real
+  // number, so the phone row below shows a group label instead of a
+  // meaningless-to-copy digit string.
+  const isGroup = !!contact.kind && contact.kind !== "individual";
   const displayName = contact.name || contact.phone;
   const initials = displayName.charAt(0).toUpperCase();
 
@@ -143,6 +149,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                   alt={displayName}
                   className="h-16 w-16 rounded-full object-cover"
                 />
+              ) : isGroup ? (
+                <Users className="h-7 w-7 text-muted-foreground" />
               ) : (
                 initials
               )}
@@ -155,20 +163,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             )}
           </div>
 
-          {/* Phone */}
+          {/* Phone (or group label) */}
           <div className="mt-4 space-y-2">
-            <button
-              onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
-              {copied ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
+            {isGroup ? (
+              <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{tSidebar("groupChat")}</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleCopyPhone}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{contact.phone}</span>
+                {copied ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">

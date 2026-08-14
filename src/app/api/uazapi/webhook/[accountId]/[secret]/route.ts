@@ -2,15 +2,17 @@ import { NextResponse, after } from 'next/server'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { downloadMessageMedia } from '@/lib/whatsapp/uazapi-api'
+import { downloadMessageMedia, findChat } from '@/lib/whatsapp/uazapi-api'
 import { resolveUazapiPlatformCredentials } from '@/lib/whatsapp/uazapi-platform-config'
 import { maybeSyncContactNames } from '@/lib/whatsapp/contact-name-sync'
+import { findExistingContact } from '@/lib/contacts/dedupe'
 import {
   processInboundMessage,
   mirrorAgentSentMessage,
   handleStatusUpdate,
   type NormalizedContentType,
 } from '@/lib/whatsapp/inbound-core'
+import { classifyWhatsAppChat, isNonIndividualChat } from '@/lib/whatsapp/chat-classify'
 
 // ============================================================
 // uazapi inbound webhook.
@@ -324,9 +326,62 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   const chatPhoneJid = data.chatid ?? data.sender_pn ?? data.sender
   if (!externalId || !chatPhoneJid) return
 
+  // Group / community / channel messages are a fundamentally different
+  // kind of chat from a real 1:1 customer — uazapi (like every
+  // WhatsApp-Web-based provider) forwards these through the same
+  // "messages" event as an individual chat, and the group/community's
+  // numeric id looks superficially like a phone number once naively
+  // parsed. Classified here so the branch below can give them their
+  // own contact `kind` and display name instead of either dropping
+  // them or mislabeling them as a numbered "customer" (see
+  // chat-classify.ts for the detection rules and their confidence
+  // caveats, and inbound-core.ts's ProcessInboundMessageParams.contactKind
+  // doc for what changes downstream once a chat isn't 'individual').
+  const chatKind = classifyWhatsAppChat(chatPhoneJid, {
+    explicitIsCommunity: Boolean((event as { isCommunity?: boolean }).isCommunity),
+  })
+  const isGroupLike = isNonIndividualChat(chatKind)
+
   const chatPhone = stripJidSuffix(chatPhoneJid)
   const contentType = mapUazapiTypeToContentType(data.type, data.messageType)
-  const contactAvatarUrl = event.chat?.imagePreview || event.chat?.image || null
+  let contactAvatarUrl = event.chat?.imagePreview || event.chat?.image || null
+
+  // The display name needs different sources depending on chat kind:
+  //   - individual: `senderName` is that person's own WhatsApp name —
+  //     correct as-is (unchanged from before).
+  //   - group/community/channel: `senderName` is whoever posted THIS
+  //     particular message, not the chat's own name — using it would
+  //     make the group's "contact" name flip to a different person on
+  //     every message. The chat's real name/photo come from uazapi's
+  //     own chat record instead (`POST /chat/find`), fetched once and
+  //     then reused from the existing contact row on every later
+  //     message — matches the "avatar/name refreshed opportunistically"
+  //     precedent findOrCreateContact already uses for individuals,
+  //     just resolved via a lookup instead of a per-message field.
+  let resolvedContactName: string
+  if (!isGroupLike) {
+    resolvedContactName = data.senderName || chatPhone
+  } else {
+    const existing = await findExistingContact(supabaseAdmin(), config.account_id, chatPhone)
+    if (existing) {
+      resolvedContactName = existing.name || chatPhone
+      if (!contactAvatarUrl && existing.avatar_url) contactAvatarUrl = existing.avatar_url as string
+    } else {
+      try {
+        const { baseUrl } = await resolveUazapiPlatformCredentials()
+        const chatInfo = await findChat({
+          baseUrl,
+          token: decrypt(config.uazapi_token),
+          chatId: chatPhoneJid,
+        })
+        resolvedContactName = chatInfo?.wa_name || chatInfo?.name || chatPhone
+        if (!contactAvatarUrl) contactAvatarUrl = chatInfo?.imagePreview || chatInfo?.image || null
+      } catch (err) {
+        console.error('[uazapi webhook] group/community chat lookup failed:', err)
+        resolvedContactName = chatPhone
+      }
+    }
+  }
 
   if (contentType === 'reaction') {
     // Agent reactions added from the phone aren't mirrored yet — see
@@ -336,8 +391,9 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     await processInboundMessage({
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
-      contactName: chatPhone,
+      contactName: resolvedContactName,
       contactAvatarUrl,
+      contactKind: chatKind,
       message: {
         externalId,
         from: chatPhone,
@@ -385,8 +441,9 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     await mirrorAgentSentMessage({
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
-      contactName: chatPhone,
+      contactName: resolvedContactName,
       contactAvatarUrl,
+      contactKind: chatKind,
       message: normalizedMessage,
     })
     return
@@ -395,12 +452,14 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
   await processInboundMessage({
     accountId: config.account_id,
     configOwnerUserId: config.user_id,
-    // `senderName` is the WhatsApp profile name uazapi resolves for
-    // us — confirmed present on the real payload. findOrCreateContact
-    // only overwrites an existing contact's name when a non-empty one
-    // is supplied, so this never clobbers a name already on file.
-    contactName: data.senderName || chatPhone,
+    // `resolvedContactName` is the WhatsApp profile name for an
+    // individual, or the group/community's own resolved name — see
+    // the resolution block above. findOrCreateContact only overwrites
+    // an existing contact's name when a non-empty one is supplied, so
+    // this never clobbers a name already on file.
+    contactName: resolvedContactName,
     contactAvatarUrl,
+    contactKind: chatKind,
     message: normalizedMessage,
   })
 }

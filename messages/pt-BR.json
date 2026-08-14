@@ -187,6 +187,7 @@
     "composer": {
       "draftHint": "Toque no ✨ para redigir uma resposta com IA — você pode editá-la antes de enviar",
       "sessionExpiredHint": "A sessão de 24 horas expirou. Use um modelo para reengajar.",
+      "groupSendUnsupportedHint": "Enviar mensagens para grupos do WhatsApp ainda não é suportado — esta conversa é somente leitura.",
       "templates": "Modelos",
       "readOnlyPlaceholder": "Somente leitura — visualizadores podem navegar mas não responder",
       "sessionExpiredPlaceholder": "Sessão expirada - use um modelo",

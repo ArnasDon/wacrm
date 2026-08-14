@@ -71,6 +71,92 @@ export interface AdsRow {
 
 
 
+export interface TimeInStageRow {
+  stageId: string
+  stageName: string
+  position: number
+  color: string | null
+  /** Deals ACTIVOS (status=open) en la etapa. */
+  dealCount: number
+  /** Mediana de tiempo en la etapa, en segundos. */
+  medianSeconds: number
+  /** Deal que lleva más tiempo en la etapa (outlier visible), en segundos. */
+  maxSeconds: number
+}
+
+/**
+ * Time in stage — deals activos por etapa y cuánto llevan en ella.
+ *
+ * Fuente: la vista `deal_time_in_stage` (migración 063): `stage_entered_at`
+ * es el `state_changed` real (solo transiciones from_stage <> to_stage) o el
+ * `created_at` del deal si nunca se movió. El tiempo en segundos se calcula
+ * en TS sobre `stage_entered_at` (now - entered), porque PostgREST serializa
+ * el `interval` de Postgres como texto con formato variable y parsearlo es
+ * frágil.
+ *
+ * Tenencia — leer antes de tocar: la vista se filtra por `account_id`, pero
+ * `pipeline_stages` NO tiene `account_id` (cuelga de `pipelines` vía
+ * `pipeline_id`, migración 017). Por eso se acota por `.in('id', stageIds)`
+ * con los stages que ya salieron de los deals de ESTA cuenta: los únicos
+ * stages expuestos son los que tienen deals del account consultado. Nunca
+ * se consultan stages huérfanos de otra cuenta.
+ */
+export async function loadTimeInStage(accountId: string): Promise<TimeInStageRow[]> {
+  const db = supabaseAdmin()
+
+  const { data: rows } = await db
+    .from('deal_time_in_stage')
+    .select('stage_id, stage_entered_at, status')
+    .eq('account_id', accountId)
+    .eq('status', 'open')
+
+  const active = (rows ?? []) as Array<{ stage_id: string; stage_entered_at: string }>
+  if (active.length === 0) return []
+
+  const stageIds = [...new Set(active.map((r) => r.stage_id))]
+  const { data: stages } = await db
+    .from('pipeline_stages')
+    .select('id, name, color, position')
+    .in('id', stageIds)
+
+  const stageInfo = new Map(
+    (stages ?? []).map((s) => [s.id, s] as const),
+  )
+
+  const now = Date.now()
+  const byStage = new Map<string, number[]>()
+  for (const r of active) {
+    const entered = new Date(r.stage_entered_at).getTime()
+    if (Number.isNaN(entered)) continue
+    const secs = Math.max(0, Math.floor((now - entered) / 1000))
+    const list = byStage.get(r.stage_id) ?? []
+    list.push(secs)
+    byStage.set(r.stage_id, list)
+  }
+
+  const out: TimeInStageRow[] = []
+  for (const [stageId, secsList] of byStage) {
+    const info = stageInfo.get(stageId)
+    const sorted = [...secsList].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    const median =
+      sorted.length % 2 === 0 && sorted.length > 0
+        ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+        : sorted[mid] ?? 0
+    out.push({
+      stageId,
+      stageName: info?.name ?? stageId.slice(0, 8),
+      position: info?.position ?? 0,
+      color: info?.color ?? null,
+      dealCount: secsList.length,
+      medianSeconds: median,
+      maxSeconds: sorted[sorted.length - 1] ?? 0,
+    })
+  }
+
+  return out.sort((a, b) => a.position - b.position)
+}
+
 export interface TopLeadRow {
   id: string
   name: string

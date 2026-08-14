@@ -19,6 +19,7 @@ import {
   type FunnelStep,
   type GroupBy,
 } from '@/lib/reporting/acquisition';
+import { TimeInStagePanel } from '@/components/reporting/time-in-stage-panel';
 
 // ============================================================
 // /reports — Adquisición. UNA página, sin pestañas.
@@ -436,6 +437,8 @@ export default function ReportsPage() {
           </p>
         </>
       )}
+
+      <TimeInStagePanel />
     </div>
   );
 }

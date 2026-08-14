@@ -17,13 +17,27 @@ interface Recorded {
   eqs: [string, unknown][]
   gtes: [string, unknown][]
   ltes: [string, unknown][]
+  ins: [string, unknown][]
 }
 
 const recorded: Recorded[] = []
 
+// Datos por tabla para el caso específico de loadTimeInStage: la vista
+// devuelve deals activos por etapa y pipeline_stages sus nombres/colores.
+const TABLE_DATA: Record<string, unknown[]> = {
+  deal_time_in_stage: [
+    { stage_id: 's1', stage_entered_at: '2026-08-01T00:00:00Z', status: 'open' },
+    { stage_id: 's2', stage_entered_at: '2026-08-10T00:00:00Z', status: 'open' },
+  ],
+  pipeline_stages: [
+    { id: 's1', name: 'Nuevo', color: '#3b82f6', position: 0 },
+    { id: 's2', name: 'Contactado', color: '#10b981', position: 1 },
+  ],
+}
+
 function makeAdminMock() {
   function builder(table: string) {
-    const rec: Recorded = { table, eqs: [], gtes: [], ltes: [] }
+    const rec: Recorded = { table, eqs: [], gtes: [], ltes: [], ins: [] }
     recorded.push(rec)
     const b: Record<string, unknown> = {}
     b.select = vi.fn(() => b)
@@ -39,10 +53,13 @@ function makeAdminMock() {
       rec.ltes.push([c, v])
       return b
     })
-    b.in = vi.fn(() => b)
+    b.in = vi.fn((c: string, v: unknown) => {
+      rec.ins.push([c, v])
+      return b
+    })
     b.order = vi.fn(() => b)
     b.limit = vi.fn(() => b)
-    const result = { data: [], error: null, count: 0 }
+    const result = { data: TABLE_DATA[table] ?? [], error: null, count: 0 }
     b.maybeSingle = vi.fn(() => Promise.resolve(result))
     b.single = vi.fn(() => Promise.resolve(result))
     b.then = (resolve: (v: unknown) => unknown) => resolve(result)
@@ -62,6 +79,7 @@ import {
   loadChannels,
   loadLost,
   loadOverview,
+  loadTimeInStage,
   loadTopLeads,
   type DateRange,
 } from './queries'
@@ -116,5 +134,43 @@ describe('rango de fechas', () => {
     const deals = recorded.find((r) => r.table === 'deals')
     expect(deals!.gtes).toContainEqual(['lost_at', RANGE.from])
     expect(deals!.ltes).toContainEqual(['lost_at', RANGE.to])
+  })
+})
+
+describe('loadTimeInStage', () => {
+  it('vista acotada por account + status open; stages acotados por in(id)', async () => {
+    await loadTimeInStage(ACCOUNT)
+
+    const view = recorded.find((r) => r.table === 'deal_time_in_stage')
+    expect(view).toBeDefined()
+    expect(view!.eqs).toContainEqual(['account_id', ACCOUNT])
+    expect(view!.eqs).toContainEqual(['status', 'open'])
+
+    const stages = recorded.find((r) => r.table === 'pipeline_stages')
+    expect(stages).toBeDefined()
+    // pipeline_stages NO tiene account_id (cuelga de pipelines vía
+    // pipeline_id, 017): se acota por in(id) con los stage_ids que ya
+    // salieron de los deals de ESTA cuenta. Nunca se tocan stages de otra.
+    expect(stages!.eqs).toEqual([])
+    expect(stages!.ins).toContainEqual(['id', ['s1', 's2']])
+  })
+
+  it('calcula mediana y máximo sobre stage_entered_at', async () => {
+    const rows = await loadTimeInStage(ACCOUNT)
+    expect(rows).toHaveLength(2)
+
+    const s1 = rows.find((r) => r.stageId === 's1')
+    const entered = new Date('2026-08-01T00:00:00Z').getTime()
+    const expected = Math.floor((Date.now() - entered) / 1000)
+    expect(s1).toBeDefined()
+    expect(s1!.dealCount).toBe(1)
+    expect(s1!.stageName).toBe('Nuevo')
+    expect(s1!.medianSeconds).toBe(expected)
+    expect(s1!.maxSeconds).toBe(expected)
+    expect(s1!.color).toBe('#3b82f6')
+
+    // Orden por posición de la etapa, no por id.
+    expect(rows[0].stageId).toBe('s1')
+    expect(rows[1].stageId).toBe('s2')
   })
 })

@@ -251,17 +251,31 @@ export function recalculate(
 }
 
 /**
- * Applies a direct edit to an item's per-unit value or its
- * installment count — the two fields the "Valor unitário"/quantidade
- * columns let the user type into directly. This is the ONE place that
- * revives the original "negotiation" behavior on top of the
- * percent-driven engine above: "trava a Entrada e as Chaves, digita
- * R$2.500 na Parcela, o sistema recalcula a Intercaladas para fechar
- * em 100%."
+ * Applies a direct edit to an item's per-unit VALUE — the "Valor
+ * unitário" column the user can type an R$ amount into. This is the
+ * ONE place that revives the original "negotiation" behavior on top
+ * of the percent-driven engine above: "trava a Entrada e as Chaves,
+ * digita R$2.500 na Parcela, o sistema recalcula a Intercaladas para
+ * fechar em 100%."
+ *
+ * IMPORTANT — this function is for VALUE edits only. Editing the
+ * installment COUNT is a structural choice, not a "I know this exact
+ * amount" declaration, and must never touch anyone's percent — see
+ * `handleChangeCount` in calculator-view.tsx, which updates `count`
+ * directly and lets the normal percent-driven path in `recalculate`
+ * redistribute the per-unit value from the UNCHANGED percent. An
+ * earlier version of this function also accepted a `count` patch and
+ * ran it through the same "break the link + pick a balancer" flow
+ * below; that was the root cause of two bugs — changing Parcelas'/
+ * Intercaladas' quantity could silently zero out an unrelated item's
+ * (often Chaves') percent, which then surfaced as "0%" the next time
+ * that item's lock was toggled or the flow was saved and reopened.
+ * Quantity must only ever affect the edited item's OWN per-unit
+ * value, via its own still-intact percent.
  *
  * What happens, in order:
- * 1. The edited item gets the new value/count and its `percent` link
- *    is cleared — it's now a literal number the user typed, not a
+ * 1. The edited item gets the new value and its `percent` link is
+ *    cleared — it's now a literal number the user typed, not a
  *    percentage the engine derives, so it must never be silently
  *    overwritten by a later propertyValue change.
  * 2. If another unlocked item exists, the LAST one (excluding the
@@ -283,10 +297,10 @@ export function applyDirectEdit(
   propertyValue: number,
   items: FlowItem[],
   editedId: string,
-  patch: Partial<Pick<FlowItem, 'value' | 'count'>>,
+  value: number,
 ): FlowResult {
   const edited = items.map((item) =>
-    item.id === editedId ? { ...item, ...patch, percent: null } : item,
+    item.id === editedId ? { ...item, value, percent: null } : item,
   );
 
   const otherUnlocked = edited.filter((item) => !item.locked && item.id !== editedId);

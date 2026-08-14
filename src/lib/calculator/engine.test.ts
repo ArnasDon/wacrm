@@ -381,7 +381,7 @@ describe('percentOf', () => {
   });
 });
 
-describe('applyDirectEdit — editing the unit value or count column', () => {
+describe('applyDirectEdit — editing the unit value column', () => {
   it("the spec's own example: trava Entrada e Chaves, edita o valor unitário da Parcela, Intercaladas absorve o resto", () => {
     const items = [
       single('entrada', 'Entrada', 50_000, true, 10),
@@ -389,7 +389,7 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
       installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
       single('chaves', 'Chaves', 200_000, true, 40),
     ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 2_500 });
+    const result = applyDirectEdit(500_000, items, 'parcelas', 2_500);
 
     expect(result.balancerId).toBe('intercaladas');
     expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(2_500); // exactly what was typed
@@ -404,24 +404,6 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
     expect(result.total).toBeCloseTo(500_000, 5);
   });
 
-  it('editing count also breaks the link and triggers the same rebalancing', () => {
-    const items = [
-      single('entrada', 'Entrada', 50_000, true, 10),
-      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
-      installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
-      single('chaves', 'Chaves', 200_000, true, 40),
-    ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', { count: 40 });
-
-    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
-    expect(parcelas.count).toBe(40);
-    expect(parcelas.value).toBe(1_600); // value untouched, only count changed
-    expect(result.balancerId).toBe('intercaladas');
-    // entrada(50k)+chaves(200k)+parcelas(40*1600=64k)=314k; intercaladas absorbs 186k.
-    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBeCloseTo(186_000 / 8, 5);
-    expect(result.status).toBe('closed');
-  });
-
   it('other unlocked items that were never touched keep tracking their own percent', () => {
     // Only entrada locked; parcelas edited directly; intercaladas and
     // chaves stay percent-linked — intercaladas keeps computing from
@@ -433,7 +415,7 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
       installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
       single('chaves', 'Chaves', 200_000, false, 40),
     ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 2_000 });
+    const result = applyDirectEdit(500_000, items, 'parcelas', 2_000);
 
     expect(result.balancerId).toBe('chaves');
     expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBe(15_625); // 25% of 500k / 8
@@ -446,7 +428,7 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
       single('chaves', 'Chaves', 200_000, false, 40),
     ];
-    const result = applyDirectEdit(500_000, items, 'chaves', { value: 150_000 });
+    const result = applyDirectEdit(500_000, items, 'chaves', 150_000);
 
     expect(result.balancerId).toBe('parcelas');
     expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(150_000); // exactly what was typed
@@ -460,7 +442,7 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
       single('chaves', 'Chaves', 200_000, true, 40),
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
     ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 1_000 });
+    const result = applyDirectEdit(500_000, items, 'parcelas', 1_000);
 
     expect(result.balancerId).toBeNull();
     expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(1_000);
@@ -475,9 +457,137 @@ describe('applyDirectEdit — editing the unit value or count column', () => {
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
       single('chaves', 'Chaves', 200_000, true, 40),
     ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 999 });
+    const result = applyDirectEdit(500_000, items, 'parcelas', 999);
     expect(result.items.find((i) => i.id === 'entrada')!.value).toBe(50_000);
     expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(200_000);
+  });
+});
+
+describe('Teste 3 do pedido — alteração manual do percentual continua funcionando', () => {
+  it('25% → o usuário digita 30% manualmente → 30% é aceito e o fluxo recalcula', () => {
+    const items = createDefaultFlowItems();
+    const edited = items.map((i) => (i.id === 'parcelas' ? { ...i, percent: 30 } : i));
+    const result = recalculate(300_000, edited);
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    expect(parcelas.percent).toBe(30);
+    expect(parcelas.value).toBeCloseTo(90_000, 5); // 30% of 300k
+  });
+});
+
+describe('BUG 1 — changing quantity must never touch any percent (Teste 1/2 do pedido)', () => {
+  it('Parcelas: 25% / 36x → 48x keeps 25% and only redistributes the per-unit value', () => {
+    // The user changes quantity via the plain, direct state update
+    // handleChangeCount uses (NOT applyDirectEdit) — simulated here by
+    // calling recalculate() straight, exactly like the UI now does.
+    const items = createDefaultFlowItems(); // entrada 10, parcelas 25, intercaladas 25, chaves 40
+    const afterFirstPass = recalculate(300_000, items).items;
+
+    const withNewCount = afterFirstPass.map((i) =>
+      i.id === 'parcelas' ? { ...i, count: 36 } : i,
+    );
+    const after36 = recalculate(300_000, withNewCount);
+    const parcelas36 = after36.items.find((i) => i.id === 'parcelas')!;
+    expect(parcelas36.percent).toBe(25); // untouched
+    expect(parcelas36.count).toBe(36);
+    expect(parcelas36.value).toBeCloseTo(75_000 / 36, 5); // 25% of 300k / 36
+
+    const withCount48 = after36.items.map((i) =>
+      i.id === 'parcelas' ? { ...i, count: 48 } : i,
+    );
+    const after48 = recalculate(300_000, withCount48);
+    const parcelas48 = after48.items.find((i) => i.id === 'parcelas')!;
+    expect(parcelas48.percent).toBe(25); // STILL untouched after a second change
+    expect(parcelas48.count).toBe(48);
+    expect(parcelas48.value).toBeCloseTo(75_000 / 48, 5); // still 25% of 300k, just / 48
+
+    // Nothing else moved — Entrada/Intercaladas/Chaves keep their own percents too.
+    expect(after48.items.find((i) => i.id === 'entrada')!.percent).toBe(10);
+    expect(after48.items.find((i) => i.id === 'intercaladas')!.percent).toBe(25);
+    expect(after48.items.find((i) => i.id === 'chaves')!.percent).toBe(40);
+    expect(after48.status).toBe('closed');
+  });
+
+  it('Intercaladas: 25% / 4x → 8x keeps 25% and only redistributes the per-unit value', () => {
+    const items = createDefaultFlowItems();
+    const withCount8 = items.map((i) => (i.id === 'intercaladas' ? { ...i, count: 8 } : i));
+    const result = recalculate(300_000, withCount8);
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    expect(intercaladas.percent).toBe(25);
+    expect(intercaladas.count).toBe(8);
+    expect(intercaladas.value).toBeCloseTo(75_000 / 8, 5);
+  });
+});
+
+describe('BUG 2 — primeiro clique no cadeado das Chaves após salvar/reabrir (Teste 5 do pedido)', () => {
+  it('save → reopen → toggle the Chaves lock never zeroes its percent or value', () => {
+    // 1) Build, close the flow, save.
+    const built = recalculate(300_000, createDefaultFlowItems()).items;
+    const saved = toComponentTemplates(built, 300_000);
+    expect(saved.find((c) => c.id === 'chaves')!.defaultPercent).toBe(40);
+
+    // 2) Reopen: fresh items from the saved template (value seeds at 0
+    //    until the next recalculate, exactly like handleSelectProject).
+    const reopened = saved.map(createFlowItem);
+    const afterReopen = recalculate(300_000, reopened);
+    const chavesAfterReopen = afterReopen.items.find((i) => i.id === 'chaves')!;
+    expect(chavesAfterReopen.percent).toBe(40);
+    expect(chavesAfterReopen.value).toBe(120_000);
+
+    // 3) First click on the Chaves lock — same plain toggle
+    //    handleToggleLock uses, nothing more.
+    const withChavesLocked = afterReopen.items.map((i) =>
+      i.id === 'chaves' ? { ...i, locked: true } : i,
+    );
+    const afterLock = recalculate(300_000, withChavesLocked);
+    const chavesAfterLock = afterLock.items.find((i) => i.id === 'chaves')!;
+
+    expect(chavesAfterLock.locked).toBe(true);
+    expect(chavesAfterLock.value).toBe(120_000); // NOT zeroed
+    expect(percentOf(chavesAfterLock, 300_000)).toBe(40); // NOT zeroed
+    expect(afterLock.status).toBe('closed'); // no spurious "incomplete"
+  });
+
+  it('the same save/reopen/lock cycle is clean even after a prior quantity edit on another item', () => {
+    // This is the exact combination that used to corrupt Chaves before
+    // the BUG 1 fix: changing Parcelas' quantity, THEN saving, THEN
+    // reopening, THEN locking Chaves for the first time.
+    const withNewCount = createDefaultFlowItems().map((i) =>
+      i.id === 'parcelas' ? { ...i, count: 48 } : i,
+    );
+    const built = recalculate(300_000, withNewCount).items;
+    expect(built.find((i) => i.id === 'chaves')!.percent).toBe(40); // untouched by the count edit
+
+    const saved = toComponentTemplates(built, 300_000);
+    const reopened = saved.map(createFlowItem);
+    const afterReopen = recalculate(300_000, reopened);
+
+    const withChavesLocked = afterReopen.items.map((i) =>
+      i.id === 'chaves' ? { ...i, locked: true } : i,
+    );
+    const afterLock = recalculate(300_000, withChavesLocked);
+    const chaves = afterLock.items.find((i) => i.id === 'chaves')!;
+    expect(chaves.value).toBe(120_000);
+    expect(percentOf(chaves, 300_000)).toBe(40);
+    expect(afterLock.status).toBe('closed');
+  });
+
+  it('the same lock/unlock check holds for Entrada, Parcelas, and Intercaladas too', () => {
+    const built = recalculate(300_000, createDefaultFlowItems()).items;
+    for (const id of ['entrada', 'parcelas', 'intercaladas']) {
+      const locked = built.map((i) => (i.id === id ? { ...i, locked: true } : i));
+      const result = recalculate(300_000, locked);
+      const item = result.items.find((i) => i.id === id)!;
+      expect(item.locked).toBe(true);
+      expect(item.value).not.toBe(0);
+      expect(percentOf(item, 300_000)).not.toBe(0);
+
+      const unlocked = result.items.map((i) => (i.id === id ? { ...i, locked: false } : i));
+      const afterUnlock = recalculate(300_000, unlocked);
+      const itemAfterUnlock = afterUnlock.items.find((i) => i.id === id)!;
+      expect(itemAfterUnlock.value).not.toBe(0);
+      expect(percentOf(itemAfterUnlock, 300_000)).not.toBe(0);
+    }
+    expect(recalculate(300_000, built).status).toBe('closed');
   });
 });
 

@@ -138,24 +138,32 @@ export function CalculatorView() {
     [items, applyItems],
   );
 
-  // Direct edits to the per-unit value or the installment count both
-  // go through applyDirectEdit: the edited item's percent link
-  // breaks, and the last OTHER unlocked item (this update's balancer)
-  // recalculates to keep the flow closed at propertyValue — "trava
-  // Entrada e Chaves, digita R$2.500 na Parcela, Intercaladas absorve
-  // o resto" (see engine.ts for the full rationale).
+  // A direct edit to the per-unit VALUE is treated as "I know this
+  // exact amount" — it breaks that item's percent link, and the last
+  // OTHER unlocked item (this update's balancer) recalculates to keep
+  // the flow closed at propertyValue — "trava Entrada e Chaves, digita
+  // R$2.500 na Parcela, Intercaladas absorve o resto" (see engine.ts).
   const handleChangeValue = useCallback(
     (id: string, value: number) => {
-      setItems(applyDirectEdit(propertyValue, items, id, { value }).items);
+      setItems(applyDirectEdit(propertyValue, items, id, value).items);
     },
     [items, propertyValue],
   );
 
+  // Quantity is a structural choice, not a value declaration — it
+  // must NEVER touch any percent (this item's own, or any other
+  // item's). Just update the count and let the normal percent-driven
+  // path in recalculate() redistribute this item's own per-unit value
+  // from its UNCHANGED percent. Routing this through applyDirectEdit
+  // (like handleChangeValue does) was the root cause of quantity
+  // edits silently zeroing out an unrelated item's percent (typically
+  // Chaves, as the last unlocked item — see engine.ts's applyDirectEdit
+  // doc comment for the full trace).
   const handleChangeCount = useCallback(
     (id: string, count: number) => {
-      setItems(applyDirectEdit(propertyValue, items, id, { count }).items);
+      applyItems(items.map((i) => (i.id === id ? { ...i, count } : i)));
     },
-    [items, propertyValue],
+    [items, applyItems],
   );
 
   const handleChangeLabel = useCallback((id: string, label: string) => {

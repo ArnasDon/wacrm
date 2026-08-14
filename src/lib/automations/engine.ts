@@ -452,6 +452,13 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       }
       const text = interpolate(contactText(cfg.text, cfg.variables, contact), args)
       if (!text.trim()) throw new Error('send_sms has empty text')
+      // ÚNICO paso saliente sin cuota anti-spam, y a propósito: el SMS
+      // saliente no se persiste en ninguna parte (el ENTRANTE sí, en
+      // `messages` con channel='sms' desde 041), así que `countSentToday`
+      // no tiene qué contar y el tope siempre leería 0. Llamar aquí a
+      // `checkFrequencyOrEnqueue` sería decorativo. Para cerrarlo hay que
+      // persistir este envío como `messages`/channel='sms'+sender 'bot'
+      // primero — lo que además lo haría visible en el inbox.
       await createTelnyxClient(telnyx.apiKey).sendSms({
         from: telnyx.fromNumber,
         to,

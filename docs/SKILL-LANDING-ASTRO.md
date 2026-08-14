@@ -1650,13 +1650,15 @@ Pistas de conexión que debe emitir el layout:
 Y de forma condicional, solo en las páginas que los usan:
 
 ```html
-<!-- Solo si la página contiene un video -->
+<!-- Solo si la página contiene un video: intervienen LOS DOS dominios —
+     la API sale de youtube.com y el reproductor embebe en nocookie (§12.1) -->
+<link rel="preconnect" href="https://www.youtube.com">
 <link rel="preconnect" href="https://www.youtube-nocookie.com">
 <!-- Solo si la página contiene un formulario protegido -->
 <link rel="preconnect" href="https://challenges.cloudflare.com">
 ```
 
-Emitir `preconnect` hacia dominios que la página no usa desperdicia conexiones y compite con los recursos reales.
+Emitir `preconnect` hacia dominios que la página no usa desperdicia conexiones y compite con los recursos reales. Ojo con el caso contrario, que es el que pasa desapercibido: precargar `youtube-nocookie.com` y **no** `youtube.com` deja una conexión muerta abierta y la que de verdad hace falta sin abrir, y no lo delata nada más que la cascada de red.
 
 ---
 
@@ -2856,6 +2858,17 @@ El horizontal es la excepción, no al revés. Un video vertical junto a un formu
 
 Si existe versión horizontal se usa en escritorio; si no, el vertical sirve para los dos. **La elección se hace en el clic, no al cargar**, para que girar el móvil no sirva el video equivocado.
 
+**El umbral es `min-width: 900px`, el mismo del CSS, y se escribe igual en JavaScript:**
+
+```js
+const isDesktop = window.matchMedia('(min-width:900px)').matches;
+const videoId = isDesktop
+  ? wrap.dataset.desktopVideoId || wrap.dataset.videoId
+  : wrap.dataset.videoId;
+```
+
+No es una preferencia de estilo. Si el JavaScript usa otro umbral —el clásico `max-width: 767px` heredado de Bootstrap— se abre una franja entre 768px y 899px en la que el CSS sigue aplicando `aspect-ratio: 9 / 16` mientras el JavaScript ya sirve el id horizontal: la tablet recibe un 16:9 embutido en un marco vertical, con dos tercios del hueco en negro. Es un fallo que no se ve en el móvil ni en el escritorio del que lo escribe, y que el grep de `@media (max-width` de §20 **no detecta**, porque la violación es una llamada a `matchMedia`. Por eso la lista lleva un grep aparte para ella.
+
 La miniatura también es mobile-first: el `<img>` lleva la vertical y el `<source media="(min-width: 900px)">` la horizontal.
 
 ```html
@@ -3215,7 +3228,18 @@ La base de Astro existe para que los assets hasheados resuelvan; no debe filtrar
 
 Mezclarlas hace que la puja automática optimice hacia la conversión más barata, que es siempre la descarga.
 
-**La entrega del documento ocurre en la página de gracias**, disparada al cargar, nunca como enlace público en la landing. Si la URL es adivinable, el documento circula sin dejar un dato.
+**La entrega del documento ocurre en la página de gracias**, disparada al cargar, nunca como enlace público en la landing.
+
+Conviene ser honesto sobre hasta dónde llega eso. Un PDF en `public/` es un archivo estático: quien acierte la URL se lo lleva sin dejar un dato, y no hay `noindex` ni página de gracias que lo impida. Lo que se consigue no publicándolo en la landing es que **el camino normal** pase por el formulario, no que el archivo esté protegido. Si el documento de verdad no puede circular libre, un archivo estático es el sitio equivocado: hace falta una ruta de servidor que verifique antes de servir.
+
+De ahí salen dos reglas sobre el nombre del archivo, que tiran en direcciones opuestas y hay que resolver a la vez:
+
+| Regla | Por qué |
+|---|---|
+| Sin fecha ni versión en el nombre | La URL acaba en historiales de descarga, en informes y en enlaces compartidos. Un `guia-2026.pdf` caduca en enero y obliga a renombrar justo lo que no debe cambiar. |
+| Tampoco un nombre tan corto que se adivine al primer intento | `guide.pdf` en la raíz de la landing es el primer sitio donde mira cualquiera. |
+
+Y una que no se negocia: **renombrar un archivo público exige su redirect**. El destino de `copy-dist.mjs` se borra entero en cada build, así que el nombre viejo desaparece del disco en el siguiente despliegue y toda descarga ya compartida pasa a 404. El redirect va en `next.config.ts`, que se evalúa antes del sistema de archivos y por eso cubre rutas que ya no existen.
 
 ### Sitemap
 

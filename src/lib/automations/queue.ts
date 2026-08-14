@@ -108,12 +108,13 @@ export async function checkFrequencyOrEnqueue(args: {
   const db = supabaseAdmin()
   const channel = args.channel ?? 'whatsapp'
 
-  const { data: rule, error } = await db
+  const { data, error } = await db
     .from('frequency_rules')
     .select('*')
     .eq('account_id', args.accountId)
     .eq('channel', channel)
     .maybeSingle()
+  const rule = data as FrequencyRuleRow | null
 
   // Fail-open: sin regla configurada → envía directo.
   if (error || !rule || !rule.is_active) {

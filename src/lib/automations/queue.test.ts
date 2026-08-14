@@ -279,6 +279,81 @@ describe("drainMessageQueue", () => {
     });
   });
 
+  it("reproduce send_buttons como interactivo, no como texto vacío", async () => {
+    const interactive = { kind: "buttons", body: "¿Cita?", buttons: [] };
+    h.dueRows = [
+      {
+        id: "q1",
+        account_id: ACCOUNT,
+        contact_id: CONTACT,
+        channel: "whatsapp",
+        payload: {
+          step_type: "send_buttons",
+          interactive,
+          conversation_id: "conv-1",
+          user_id: "user-1",
+        },
+        attempts: 0,
+      },
+    ];
+    const r = await drainMessageQueue();
+    expect(r.sent).toBe(1);
+    expect(h.sendInteractive).toHaveBeenCalledTimes(1);
+    expect(h.sendInteractive.mock.calls[0][0]).toMatchObject({
+      contactId: CONTACT,
+      conversationId: "conv-1",
+      payload: interactive,
+    });
+    // La regresión que esto vigila: antes caía en el `else` de texto plano.
+    expect(h.sendText).not.toHaveBeenCalled();
+  });
+
+  it("reproduce send_email con el cuerpo ya renderizado", async () => {
+    h.dueRows = [
+      {
+        id: "q1",
+        account_id: ACCOUNT,
+        contact_id: CONTACT,
+        channel: "email",
+        payload: {
+          step_type: "send_email",
+          template_name: "recordatorio",
+          recipient: "ana@example.com",
+          subject: "Tu cita",
+          html: "<p>Hola Ana</p>",
+        },
+        attempts: 0,
+      },
+    ];
+    const r = await drainMessageQueue();
+    expect(r.sent).toBe(1);
+    expect(h.deliverEmail).toHaveBeenCalledTimes(1);
+    expect(h.deliverEmail.mock.calls[0][0]).toMatchObject({
+      recipient: "ana@example.com",
+      subject: "Tu cita",
+      html: "<p>Hola Ana</p>",
+      automationId: null,
+    });
+  });
+
+  it("step_type sin reproductor → falla visible, nunca mensaje vacío", async () => {
+    h.dueRows = [
+      {
+        id: "q1",
+        account_id: ACCOUNT,
+        contact_id: CONTACT,
+        channel: "whatsapp",
+        payload: { step_type: "send_carrier_pigeon" },
+        attempts: 0,
+      },
+    ];
+    const r = await drainMessageQueue();
+    expect(r.failed).toBe(1);
+    expect(r.sent).toBe(0);
+    expect(h.sendText).not.toHaveBeenCalled();
+    expect(h.sendTemplate).not.toHaveBeenCalled();
+  });
+
   it("fallo del envío → reintento con backoff, no se descarta", async () => {
     h.sendTemplate.mockRejectedValueOnce(new Error("Meta 400"));
     h.dueRows = [

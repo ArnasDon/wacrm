@@ -5,7 +5,10 @@
 // grafo de datos estructurados y el widget de contacto leen todo de aquí.
 //
 // TODO dueño: reemplazar los placeholders con los datos reales antes de
-// poner `indexable: true`.
+// poner `indexable: true`. Eso incluye los ARCHIVOS, no solo los textos:
+// logo.svg, og.png y equipo.webp existen en landing/public/ como marcadores
+// para que ninguna página emita un 404 ni se comparta sin imagen, pero son
+// genéricos. Todo lo que se referencie desde aquí tiene que existir ahí.
 // ============================================================
 
 export const site = {

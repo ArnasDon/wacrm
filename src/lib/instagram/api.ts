@@ -16,7 +16,7 @@
  */
 
 const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+const META_API_BASE = `https://graph.instagram.com/${META_API_VERSION}`
 
 export interface InstagramSendResult {
   messageId: string

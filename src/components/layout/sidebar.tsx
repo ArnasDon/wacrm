@@ -10,6 +10,7 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   Bell,
   BrainCircuit,
+  Calculator,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -87,6 +88,13 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * Subtle, permanent visual emphasis (thin primary-tinted outline +
+   * near-transparent fill — the same idiom MetricCard uses for its
+   * "highlighted" tint) for a nav item worth finding at a glance.
+   * Unlike `beta`, this isn't a status flag — it never goes away.
+   */
+  highlight?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -99,6 +107,7 @@ const navItems: NavItem[] = [
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiHub", icon: BrainCircuit },
+  { href: "/calculadora", labelKey: "calculadora", icon: Calculator, highlight: true },
 ];
 
 const bottomNavItems = [
@@ -251,10 +260,12 @@ export function Sidebar({ open = false, onClose, asideRef, backdropRef }: Sideba
                     href={item.href}
                     className={cn(
                       // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "border-transparent bg-primary/10 text-primary"
+                        : item.highlight
+                          ? "border-primary/25 bg-primary/[0.04] text-foreground hover:bg-primary/10 hover:text-primary"
+                          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     <item.icon className="h-4 w-4" />

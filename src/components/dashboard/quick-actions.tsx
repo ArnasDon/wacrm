@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { UserPlus, Layers, Radio, Zap } from 'lucide-react'
+import { UserPlus, Layers, Radio, Calculator } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { SegmentsManagerDialog } from '@/components/segments/segments-manager-dialog'
 
@@ -32,7 +32,7 @@ export function QuickActions() {
       onClick: () => setSegmentsOpen(true),
     },
     { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
-    { labelKey: 'newAutomation', href: '/automations/new', icon: Zap, tint: 'text-primary' },
+    { labelKey: 'calculadora', href: '/calculadora', icon: Calculator, tint: 'text-primary' },
   ]
 
   return (

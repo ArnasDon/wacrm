@@ -188,6 +188,22 @@ export interface Property {
   updated_at: string;
 }
 
+/** An empreendimento template for the Calculadora de Fluxo module
+ *  (migration 064). `components` stores the reusable SHAPE of the
+ *  payment flow (see src/lib/calculator/types.ts for its shape) — no
+ *  per-unit amounts, those live only in the browser during a
+ *  simulation. Isolated from the rest of the CRM's domain model on
+ *  purpose; only this row shape is shared here. */
+export interface CalcProject {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  components: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Not yet acted on — columns exist (migration 045) so a future sync
  *  service can persist state without another migration, but nothing
  *  in the app writes anything other than 'not_synced' today. See

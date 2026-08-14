@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { useDrawerGesture } from "@/hooks/use-drawer-gesture";
 import { useAppHeight } from "@/hooks/use-app-height";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -40,6 +42,20 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     containerRef: shellRef,
     panelRef: asideRef,
     backdropRef,
+  });
+
+  // Global pull-to-refresh — iPhone Safari (regular tab or the
+  // home-screen PWA) only, a no-op everywhere else. `<main>` below is
+  // the app's one real scroll container (every route renders inside
+  // it), so wiring this once here covers every screen with no
+  // per-page code. `containerRef` returned here is a *callback* ref
+  // (handed straight to `<main>`'s own `ref`) rather than a `useRef` of
+  // ours — see use-pull-to-refresh.ts's doc comment for why a plain
+  // RefObject can't work given `<main>` only mounts after the
+  // auth-loading gate below.
+  const pullIndicatorRef = useRef<HTMLDivElement>(null);
+  const { phase: pullPhase, containerRef: pullContainerRef } = usePullToRefresh({
+    indicatorRef: pullIndicatorRef,
   });
 
   useEffect(() => {
@@ -137,8 +153,34 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
           the header actually leaves it. Cheap, defensive. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />
-        {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
-        <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        {/* Thinner horizontal padding on mobile so cards have room to breathe.
+            `relative`: makes this the positioning context for the pull-to-
+            refresh indicator below (`position: absolute; top: 0`), which is
+            what lets it reveal from above `<main>`'s own top edge via this
+            element's own `overflow-y-auto` clipping instead of a separate
+            visibility mechanism — see use-pull-to-refresh.ts. */}
+        <main ref={pullContainerRef} className="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* Pull-to-refresh indicator — iPhone Safari only; everywhere
+              else this hook never attaches its gesture listeners, so the
+              element sits permanently off-screen (`-translate-y-full
+              opacity-0`, its resting state) and is otherwise inert.
+              `pointer-events-none` so it can never intercept a tap even
+              while partially revealed mid-gesture. Same spinner look as
+              the auth-loading state above, reused rather than a new one. */}
+          <div
+            ref={pullIndicatorRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-14 -translate-y-full items-center justify-center opacity-0"
+          >
+            <div
+              className={cn(
+                "h-7 w-7 rounded-full border-2 border-primary border-t-transparent",
+                pullPhase === "refreshing" && "animate-spin",
+              )}
+            />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

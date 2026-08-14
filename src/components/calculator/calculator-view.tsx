@@ -52,6 +52,15 @@ export function CalculatorView() {
   const [freeFlowName, setFreeFlowName] = useState('');
   const [propertyValue, setPropertyValue] = useState(0);
   const [items, setItems] = useState<FlowItem[]>(() => createDefaultFlowItems());
+  // Which item (if any) the LAST edit explicitly designated as the
+  // balancer — undefined means "not decided yet, let recalculate's own
+  // auto-search figure it out" (fresh load: a brand-new Fluxo Livre or
+  // a just-opened empreendimento, neither of which has been through an
+  // edit yet). Every handler that resolves a FlowResult (applyItems,
+  // applyDirectEdit, applyLockToggle) captures ITS OWN balancerId here
+  // too, so the display below never re-derives a DIFFERENT one from
+  // scratch — see the `result` memo's comment for why that mattered.
+  const [balancerId, setBalancerId] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +96,7 @@ export function CalculatorView() {
       // project are intentionally discarded (spec §7: "se eu sair/
       // fechar sem salvar... deve voltar aos percentuais originais").
       setItems(project.components.map(createFlowItem));
+      setBalancerId(undefined);
     },
     [projects],
   );
@@ -99,11 +109,30 @@ export function CalculatorView() {
       // etapas (10/25/25/40) — spec §2 and §4 — and a blank name, so a
       // name typed in a previous session never leaks into a fresh one.
       setItems(createDefaultFlowItems());
+      setBalancerId(undefined);
       setFreeFlowName('');
     }
   }, []);
 
-  const result = useMemo(() => recalculate(propertyValue, items), [propertyValue, items]);
+  // Recomputed on every propertyValue change so percent-driven items
+  // keep rescaling live ("typing a new Valor do imóvel instantly
+  // updates every etapa") — but `balancerId` is passed through
+  // EXPLICITLY rather than left for recalculate's own auto-search.
+  // Without this, any item whose percent link was ever broken (a
+  // direct value edit always nulls the EDITED item's own percent —
+  // see applyDirectEdit) would get silently re-flagged as "the
+  // balancer" here on every subsequent render, turning its own field
+  // read-only right after the user typed into it — regardless of
+  // whether it was actually the field this update needed to auto-fill.
+  const result = useMemo(
+    () =>
+      recalculate(
+        propertyValue,
+        items,
+        balancerId === undefined ? undefined : { balancerId: balancerId ?? '__none__' },
+      ),
+    [propertyValue, items, balancerId],
+  );
 
   // Pure display math (spec §7: "sempre que possível, apresentar também
   // a diferença em reais" — here in the other direction, the % gap
@@ -116,7 +145,9 @@ export function CalculatorView() {
 
   const applyItems = useCallback(
     (next: FlowItem[]) => {
-      setItems(recalculate(propertyValue, next).items);
+      const res = recalculate(propertyValue, next);
+      setItems(res.items);
+      setBalancerId(res.balancerId);
     },
     [propertyValue],
   );
@@ -131,7 +162,9 @@ export function CalculatorView() {
   // Unlocking is still a plain toggle + recalculate.
   const handleToggleLock = useCallback(
     (id: string) => {
-      setItems(applyLockToggle(propertyValue, items, id).items);
+      const res = applyLockToggle(propertyValue, items, id);
+      setItems(res.items);
+      setBalancerId(res.balancerId);
     },
     [items, propertyValue],
   );
@@ -144,13 +177,15 @@ export function CalculatorView() {
   );
 
   // A direct edit to the per-unit VALUE is treated as "I know this
-  // exact amount" — it breaks that item's percent link, and the last
-  // OTHER unlocked item (this update's balancer) recalculates to keep
-  // the flow closed at propertyValue — "trava Entrada e Chaves, digita
-  // R$2.500 na Parcela, Intercaladas absorve o resto" (see engine.ts).
+  // exact amount" — it breaks that item's percent link, and every
+  // OTHER unlocked item shares whatever gap that leaves, proportionally
+  // to what each already held — "aumentei as Chaves, e as Parcelas e
+  // Intercaladas diminuíram proporcionalmente" (see engine.ts).
   const handleChangeValue = useCallback(
     (id: string, value: number) => {
-      setItems(applyDirectEdit(propertyValue, items, id, value).items);
+      const res = applyDirectEdit(propertyValue, items, id, value);
+      setItems(res.items);
+      setBalancerId(res.balancerId);
     },
     [items, propertyValue],
   );
@@ -212,6 +247,7 @@ export function CalculatorView() {
       setMode('project');
       setSelectedProjectId(created.id);
       setItems(created.components.map(createFlowItem));
+      setBalancerId(undefined);
     } catch {
       toast.error(t('projectSaveError'));
     } finally {

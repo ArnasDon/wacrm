@@ -7,29 +7,36 @@
 //
 // Rule that isn't spelled out by the product spec (it says the engine
 // "may adjust the free fields it needs to" without saying how to split
-// a redistribution across MULTIPLE free fields): the LAST unlocked
-// item WITHOUT a percent link is the "balancer" — it's the only field
-// the engine ever auto-computes to force closure. Every other unlocked
-// item is either percent-driven (see `applyPercent`) or, if it has no
-// percent link either, fully free — the user edits it directly and the
-// engine never touches it. Locking the current balancer promotes the
-// next-to-last eligible item to balancer, and so on.
+// a redistribution across MULTIPLE free fields): inside plain
+// `recalculate`, the LAST unlocked item WITHOUT a percent link is the
+// "balancer" — the only field IT ever auto-computes to force closure.
+// Every other unlocked item is either percent-driven (see
+// `applyPercent`) or, if it has no percent link either, fully free —
+// the user edits it directly and `recalculate` never touches it.
 //
-// IMPORTANT — a percent-linked item is NEVER eligible as balancer, even
-// when it's the only unlocked item left. This is a deliberate, narrow
-// widening of the original rule (which used to treat "last unlocked,
-// full stop" as the balancer, silently overriding that item's own
-// percent to force the total closed). The product now requires the
-// opposite for percent-driven flows: Entrada/Parcelas/Intercaladas/
+// IMPORTANT — a percent-linked item is NEVER eligible as `recalculate`'s
+// own balancer, even when it's the only unlocked item left. This is a
+// deliberate, narrow widening of the original rule (which used to treat
+// "last unlocked, full stop" as the balancer, silently overriding that
+// item's own percent to force the total closed). The product requires
+// the opposite for percent-driven flows: Entrada/Parcelas/Intercaladas/
 // Chaves must each show exactly what their own percentage computes to,
-// with NO auto-redistribution — if the percentages don't sum to 100%,
-// that has to surface as an incomplete/excess status, not get papered
-// over by quietly resizing whichever item happens to be last. Items
-// with no percent link (legacy templates, or a custom "+Adicionar"
-// item — those still seed `percent: null`) keep the original balancer
-// behavior unchanged. The underlying formulas — lockedSum, target, statusFor,
-// EPSILON — are untouched; only the ELIGIBILITY search for "which item
-// is the balancer" was narrowed.
+// with NO auto-redistribution from a plain recalculate — if the
+// percentages don't sum to 100%, that has to surface as an incomplete/
+// excess status, not get papered over by quietly resizing whichever
+// item happens to be last. Items with no percent link (legacy
+// templates, or a custom "+Adicionar" item — those still seed
+// `percent: null`) keep the original balancer behavior unchanged.
+//
+// `applyDirectEdit` and `applyLockToggle`, below, are the two
+// DELIBERATE exceptions to "no auto-redistribution": when the user
+// either types a literal value into one etapa or locks one at a value
+// that leaves the flow off 100%, the resulting gap IS spread — across
+// every OTHER unlocked item at once, proportionally to their current
+// share (see `distributeGapProportionally`), not onto a single field.
+// The underlying formulas — lockedSum, target, statusFor, EPSILON —
+// are untouched either way; only who gets to close the gap, and how
+// many fields share that job, differs between the three entry points.
 
 import type { FlowComponentTemplate, FlowItem, FlowResult, FlowStatus } from './types';
 
@@ -251,45 +258,78 @@ export function recalculate(
 }
 
 /**
+ * Spreads `gap` (positive = the flow is short by that much, negative =
+ * over) across every item in `recipients`, proportionally to each
+ * one's CURRENT amount — its share of `recipients`' combined total —
+ * or evenly if that total is 0 (nothing to derive a ratio from, e.g.
+ * every recipient is itself sitting at zero). Each recipient's
+ * `percent` is updated to match its new amount, so afterward it's
+ * still a normal percent-driven field (it'll keep tracking THAT new
+ * percent if propertyValue changes again), never a one-off literal
+ * frozen at today's number. `items` not in `recipients` pass through
+ * unchanged. Shared by `applyDirectEdit` and `applyLockToggle` — the
+ * two places where one change (typing a literal value into an etapa,
+ * locking one) needs to be absorbed by every OTHER unlocked etapa at
+ * once, rather than by a single balancer.
+ */
+function distributeGapProportionally(
+  propertyValue: number,
+  items: FlowItem[],
+  recipients: FlowItem[],
+  gap: number,
+): FlowItem[] {
+  const recipientIds = new Set(recipients.map((item) => item.id));
+  const recipientSum = recipients.reduce((sum, item) => sum + amountOf(item), 0);
+
+  return items.map((item) => {
+    if (!recipientIds.has(item.id)) return item;
+    const share = recipientSum > 0 ? amountOf(item) / recipientSum : 1 / recipients.length;
+    const newAmount = Math.max(0, amountOf(item) + gap * share);
+    const newPercent = propertyValue > 0 ? (newAmount / propertyValue) * 100 : item.percent;
+    if (item.kind === 'single') {
+      return { ...item, value: newAmount, percent: newPercent };
+    }
+    const count = Math.max(1, item.count);
+    return { ...item, value: newAmount / count, percent: newPercent };
+  });
+}
+
+/**
  * Applies a direct edit to an item's per-unit VALUE — the "Valor
- * unitário" column the user can type an R$ amount into. This is the
- * ONE place that revives the original "negotiation" behavior on top
- * of the percent-driven engine above: "trava a Entrada e as Chaves,
- * digita R$2.500 na Parcela, o sistema recalcula a Intercaladas para
- * fechar em 100%."
+ * unitário" column the user can type an R$ amount into. This is one of
+ * the two places (with `applyLockToggle`) that revive "negotiation" on
+ * top of the percent-driven engine above: "aumentei as Chaves, e as
+ * Parcelas e Intercaladas [as duas etapas destravadas] diminuíram
+ * proporcionalmente para o total permanecer 100%."
  *
  * IMPORTANT — this function is for VALUE edits only. Editing the
  * installment COUNT is a structural choice, not a "I know this exact
  * amount" declaration, and must never touch anyone's percent — see
  * `handleChangeCount` in calculator-view.tsx, which updates `count`
  * directly and lets the normal percent-driven path in `recalculate`
- * redistribute the per-unit value from the UNCHANGED percent. An
- * earlier version of this function also accepted a `count` patch and
- * ran it through the same "break the link + pick a balancer" flow
- * below; that was the root cause of two bugs — changing Parcelas'/
- * Intercaladas' quantity could silently zero out an unrelated item's
- * (often Chaves') percent, which then surfaced as "0%" the next time
- * that item's lock was toggled or the flow was saved and reopened.
- * Quantity must only ever affect the edited item's OWN per-unit
- * value, via its own still-intact percent.
+ * redistribute the per-unit value from the UNCHANGED percent. Routing
+ * count edits through here was the root cause of two earlier bugs
+ * (changing Parcelas'/Intercaladas' quantity silently zeroing an
+ * unrelated item's percent) — quantity must only ever affect the
+ * edited item's OWN per-unit value, via its own still-intact percent.
  *
  * What happens, in order:
- * 1. The edited item gets the new value and its `percent` link is
+ * 1. `items` is normalized through `recalculate` first, so every
+ *    percent-driven item's amount reflects its CURRENT percent rather
+ *    than a stale/seed value (same reasoning as `applyLockToggle`).
+ * 2. The edited item gets the new value and its `percent` link is
  *    cleared — it's now a literal number the user typed, not a
  *    percentage the engine derives, so it must never be silently
  *    overwritten by a later propertyValue change.
- * 2. If another unlocked item exists, the LAST one (excluding the
- *    item just edited) is designated as this update's balancer via
- *    `recalculate`'s `balancerId` option — its own percent link is
- *    cleared too, and its value gets computed to close the flow to
- *    exactly `propertyValue`. Passing `balancerId` explicitly (rather
- *    than letting `recalculate` auto-search) is what guarantees the
- *    just-edited item itself is never mistaken for the balancer, even
- *    when it happens to be last in the list.
- * 3. Every OTHER unlocked item that still carries a percent link (i.e.
- *    was never directly touched) keeps tracking its own percentage,
- *    exactly as `recalculate` already does on its own — nothing here
- *    changes that.
+ * 3. If the edit leaves the flow off `propertyValue` by more than
+ *    EPSILON, that gap is spread across EVERY other unlocked item at
+ *    once via `distributeGapProportionally` — not dumped onto a single
+ *    "balancer". "trava Entrada e Chaves, digita R$2.500 na Parcela" →
+ *    with only Intercaladas left unlocked, it alone absorbs 100% of
+ *    the gap (a one-recipient proportional split is the same as the
+ *    old single-balancer behavior). With Chaves ALSO unlocked, typing
+ *    into Parcelas instead spreads the gap across Intercaladas AND
+ *    Chaves together, proportional to what each already held.
  * Locked items are — as everywhere else in this engine — never
  * touched by any of this.
  */
@@ -299,7 +339,8 @@ export function applyDirectEdit(
   editedId: string,
   value: number,
 ): FlowResult {
-  const edited = items.map((item) =>
+  const normalized = recalculate(propertyValue, items).items;
+  const edited = normalized.map((item) =>
     item.id === editedId ? { ...item, value, percent: null } : item,
   );
 
@@ -313,12 +354,19 @@ export function applyDirectEdit(
     return recalculate(propertyValue, edited, { balancerId: '__none__' });
   }
 
-  const balancerId = otherUnlocked[otherUnlocked.length - 1].id;
-  const withBalancerLinkCleared = edited.map((item) =>
-    item.id === balancerId ? { ...item, percent: null } : item,
-  );
+  const lockedSum = edited.filter((item) => item.locked).reduce((sum, i) => sum + amountOf(i), 0);
+  const otherUnlockedSum = otherUnlocked.reduce((sum, i) => sum + amountOf(i), 0);
+  const editedAmount = amountOf(edited.find((item) => item.id === editedId)!);
+  const gap = propertyValue - lockedSum - editedAmount - otherUnlockedSum;
 
-  return recalculate(propertyValue, withBalancerLinkCleared, { balancerId });
+  const rebalanced =
+    Math.abs(gap) <= EPSILON ? edited : distributeGapProportionally(propertyValue, edited, otherUnlocked, gap);
+
+  // Redistribution already closed the flow (or the gap was negligible
+  // to begin with) — pass '__none__' so recalculate's own auto-search
+  // never mistakes the just-edited item (unlocked, percent: null) for
+  // its balancer and overwrites what was just typed.
+  return recalculate(propertyValue, rebalanced, { balancerId: '__none__' });
 }
 
 /**
@@ -331,14 +379,9 @@ export function applyDirectEdit(
  * necessário que o valor faltante seja recalculado para as demais
  * etapas que não estão com o cadeado travado" — if freezing this
  * item's amount leaves the flow off 100% (e.g. it was zeroed first),
- * the resulting gap is spread across every OTHER unlocked item,
- * proportionally to their current share of the unlocked total — not
- * dumped onto a single "balancer" like `applyDirectEdit` does. Each
- * gets `share = itsAmount / unlockedSum` of the gap; if every
- * remaining unlocked item is also at 0 (no ratio to follow), the gap
- * splits evenly instead. Every rebalanced item's `percent` is updated
- * to match its new amount, so it stays a normal percent-driven field
- * afterward — not a one-off balancer whose link stays broken.
+ * the resulting gap is spread across every OTHER unlocked item via
+ * `distributeGapProportionally` — the same mechanism `applyDirectEdit`
+ * uses, just triggered by a lock instead of a typed value.
  *
  * When locking doesn't change how close the flow is to 100% (the
  * common case — the four etapas already sum correctly), this is
@@ -378,18 +421,7 @@ export function applyLockToggle(propertyValue: number, items: FlowItem[], id: st
     return recalculate(propertyValue, toggled);
   }
 
-  const rebalanced = toggled.map((item) => {
-    if (item.locked) return item;
-    const share = unlockedSum > 0 ? amountOf(item) / unlockedSum : 1 / unlocked.length;
-    const newAmount = Math.max(0, amountOf(item) + gap * share);
-    const newPercent = propertyValue > 0 ? (newAmount / propertyValue) * 100 : item.percent;
-    if (item.kind === 'single') {
-      return { ...item, value: newAmount, percent: newPercent };
-    }
-    const count = Math.max(1, item.count);
-    return { ...item, value: newAmount / count, percent: newPercent };
-  });
-
+  const rebalanced = distributeGapProportionally(propertyValue, toggled, unlocked, gap);
   return recalculate(propertyValue, rebalanced);
 }
 

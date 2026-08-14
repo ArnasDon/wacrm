@@ -383,7 +383,7 @@ describe('percentOf', () => {
 });
 
 describe('applyDirectEdit — editing the unit value column', () => {
-  it("the spec's own example: trava Entrada e Chaves, edita o valor unitário da Parcela, Intercaladas absorve o resto", () => {
+  it("the spec's own example: trava Entrada e Chaves, edita o valor unitário da Parcela, Intercaladas absorve o resto (único destravado)", () => {
     const items = [
       single('entrada', 'Entrada', 50_000, true, 10),
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
@@ -392,38 +392,69 @@ describe('applyDirectEdit — editing the unit value column', () => {
     ];
     const result = applyDirectEdit(500_000, items, 'parcelas', 2_500);
 
-    expect(result.balancerId).toBe('intercaladas');
     expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(2_500); // exactly what was typed
     expect(result.items.find((i) => i.id === 'parcelas')!.percent).toBeNull(); // link broken
 
     // entrada(50k) + chaves(200k) + parcelas(50*2500=125k) = 375k;
-    // intercaladas absorbs the remaining 125k over its 8 parcelas.
+    // intercaladas is the ONLY other unlocked item, so it absorbs the
+    // whole remaining 125k over its 8 parcelas — with a single
+    // recipient, proportional split and the old single-balancer
+    // behavior are numerically identical.
     const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
     expect(intercaladas.value).toBe(125_000 / 8);
-    expect(intercaladas.percent).toBeNull();
     expect(result.status).toBe('closed');
     expect(result.total).toBeCloseTo(500_000, 5);
   });
 
-  it('other unlocked items that were never touched keep tracking their own percent', () => {
-    // Only entrada locked; parcelas edited directly; intercaladas and
-    // chaves stay percent-linked — intercaladas keeps computing from
-    // its own 25%, chaves (last unlocked, still percent-linked) is
-    // the one nulled to become the balancer.
+  it('gap already zero: the other unlocked item needs no adjustment and keeps its own percent untouched', () => {
+    // Same setup as above, but the typed value (2_500) already makes
+    // Intercaladas' own 25% exactly close the flow — nothing to
+    // redistribute, so its percent stays exactly 25 (not nulled).
     const items = [
       single('entrada', 'Entrada', 50_000, true, 10),
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
       installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
-      single('chaves', 'Chaves', 200_000, false, 40),
+      single('chaves', 'Chaves', 200_000, true, 40),
     ];
-    const result = applyDirectEdit(500_000, items, 'parcelas', 2_000);
-
-    expect(result.balancerId).toBe('chaves');
-    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBe(15_625); // 25% of 500k / 8
-    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(2_000);
+    const result = applyDirectEdit(500_000, items, 'parcelas', 2_500);
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    expect(intercaladas.percent).toBe(25);
+    expect(result.balancerId).toBeNull();
   });
 
-  it('when the edited item is the last unlocked one, the next-to-last unlocked item balances instead', () => {
+  it('Teste do pedido — aumentar as Chaves com Parcelas e Intercaladas destravadas reduz as duas proporcionalmente', () => {
+    // "travei a entrada e ajustei certinho as parcelas, intercaladas e
+    // chaves... quando eu aumentei as chaves não houve redistribuição
+    // automática (diminuição proporcional das parcelas e intercaladas
+    // para o total permanecer 100%)". Entrada locked at 10%; Parcelas
+    // 30%, Intercaladas 20%, Chaves 40% — all closed at 100%.
+    const items = [
+      single('entrada', 'Entrada', 100_000, true, 10),
+      installments('parcelas', 'Parcelas', 1, 300_000, false, 30),
+      installments('intercaladas', 'Intercaladas', 1, 200_000, false, 20),
+      single('chaves', 'Chaves', 400_000, false, 40),
+    ];
+    const result = applyDirectEdit(1_000_000, items, 'chaves', 500_000);
+
+    expect(result.status).toBe('closed');
+    expect(result.balancerId).toBeNull(); // no single field absorbed it — both did
+    expect(result.items.find((i) => i.id === 'entrada')!.value).toBe(100_000); // locked, untouched
+    expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(500_000); // exactly what was typed
+
+    // Chaves grew by 100_000 over the flow's 100%; Parcelas (30%) and
+    // Intercaladas (20%) shrink to cover it, in their 3:2 ratio.
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(240_000); // 300k - 60k
+    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBe(160_000); // 200k - 40k
+
+    const total =
+      result.items.find((i) => i.id === 'entrada')!.value +
+      result.items.find((i) => i.id === 'parcelas')!.value +
+      result.items.find((i) => i.id === 'intercaladas')!.value +
+      result.items.find((i) => i.id === 'chaves')!.value;
+    expect(total).toBe(1_000_000);
+  });
+
+  it('when the edited item is the last unlocked one, the only other unlocked item balances instead', () => {
     const items = [
       single('entrada', 'Entrada', 50_000, true, 10),
       installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
@@ -431,7 +462,7 @@ describe('applyDirectEdit — editing the unit value column', () => {
     ];
     const result = applyDirectEdit(500_000, items, 'chaves', 150_000);
 
-    expect(result.balancerId).toBe('parcelas');
+    expect(result.balancerId).toBeNull();
     expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(150_000); // exactly what was typed
     // entrada(50k)+chaves(150k)=200k; parcelas absorbs 300k over 50x.
     expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(300_000 / 50);

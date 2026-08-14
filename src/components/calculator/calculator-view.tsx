@@ -18,6 +18,7 @@ import {
 import {
   applyDirectEdit,
   applyLockToggle,
+  applyPercentEdit,
   createDefaultFlowItems,
   createFlowItem,
   recalculate,
@@ -169,11 +170,17 @@ export function CalculatorView() {
     [items, propertyValue],
   );
 
+  // Increasing/reducing one etapa's percent redistributes the
+  // difference across every OTHER unlocked etapa, proportionally to
+  // what each already held, so the flow always still closes at 100% —
+  // "a calculadora não deve permitir fluxo excedente" (see engine.ts).
   const handleChangePercent = useCallback(
     (id: string, percent: number) => {
-      applyItems(items.map((i) => (i.id === id ? { ...i, percent } : i)));
+      const res = applyPercentEdit(propertyValue, items, id, percent);
+      setItems(res.items);
+      setBalancerId(res.balancerId);
     },
-    [items, applyItems],
+    [items, propertyValue],
   );
 
   // A direct edit to the per-unit VALUE is treated as "I know this

@@ -28,13 +28,18 @@
 // templates, or a custom "+Adicionar" item — those still seed
 // `percent: null`) keep the original balancer behavior unchanged.
 //
-// `applyDirectEdit` and `applyLockToggle`, below, are the two
-// DELIBERATE exceptions to "no auto-redistribution": when the user
-// either types a literal value into one etapa or locks one at a value
-// that leaves the flow off 100%, the resulting gap IS spread — across
-// every OTHER unlocked item at once, proportionally to their current
-// share (see `distributeGapProportionally`), not onto a single field.
-// The underlying formulas — lockedSum, target, statusFor, EPSILON —
+// `applyPercentEdit`, `applyDirectEdit` and `applyLockToggle`, below,
+// are the three DELIBERATE exceptions to "no auto-redistribution": the
+// product's requirement evolved from "percentages never move except by
+// their own field" to "the flow must never sit at anything but 100% —
+// editing one etapa's percent or value, or locking one at whatever
+// value it holds, must redistribute the difference across every OTHER
+// unlocked etapa at once, proportionally to their current share (see
+// `distributeGapProportionally`), not onto a single field." A plain
+// `recalculate` call on its own still never does this — it's each of
+// these three functions that normalizes the items, applies the edit,
+// and THEN calls `recalculate` with the redistribution already baked
+// in. The underlying formulas — lockedSum, target, statusFor, EPSILON —
 // are untouched either way; only who gets to close the gap, and how
 // many fields share that job, differs between the three entry points.
 
@@ -366,6 +371,56 @@ export function applyDirectEdit(
   // to begin with) — pass '__none__' so recalculate's own auto-search
   // never mistakes the just-edited item (unlocked, percent: null) for
   // its balancer and overwrites what was just typed.
+  return recalculate(propertyValue, rebalanced, { balancerId: '__none__' });
+}
+
+/**
+ * Applies a direct edit to an item's PERCENT field. This supersedes
+ * the older "regra de ouro" (percent only ever moves by editing its
+ * own field, every other item stays put, the banner just shows
+ * incomplete/excess) with the product's later, explicit requirement:
+ * "a calculadora não deve permitir fluxo excedente... se eu aumentar o
+ * percentual de entrada ou reduzir algum percentual, a diferença tem
+ * que ser redistribuída para sempre gerar 100%." So a percent edit now
+ * behaves like `applyDirectEdit`'s value edit: the difference it
+ * creates is spread across every OTHER unlocked item at once via
+ * `distributeGapProportionally`, proportional to what each already
+ * held — increasing Entrada from 10% to 20% shrinks Parcelas,
+ * Intercaladas and Chaves together, in their existing 25:25:40 ratio,
+ * not just whichever one happens to be last.
+ *
+ * Unlike a value edit, the edited item's `percent` is NOT nulled here
+ * — it's the literal thing the user just typed, so it stays a normal
+ * percent-driven field (as do the OTHER items pulled into the split;
+ * see `distributeGapProportionally`). With no other unlocked item to
+ * absorb the difference, the edit still stands exactly as typed and
+ * the status banner reflects whatever gap that leaves — there's
+ * nothing else this function can touch without breaking a lock.
+ */
+export function applyPercentEdit(
+  propertyValue: number,
+  items: FlowItem[],
+  editedId: string,
+  percent: number,
+): FlowResult {
+  const normalized = recalculate(propertyValue, items).items;
+  const edited = normalized.map((item) =>
+    item.id === editedId ? applyPercent({ ...item, percent }, propertyValue) : item,
+  );
+
+  const otherUnlocked = edited.filter((item) => !item.locked && item.id !== editedId);
+  if (otherUnlocked.length === 0) {
+    return recalculate(propertyValue, edited, { balancerId: '__none__' });
+  }
+
+  const lockedSum = edited.filter((item) => item.locked).reduce((sum, i) => sum + amountOf(i), 0);
+  const otherUnlockedSum = otherUnlocked.reduce((sum, i) => sum + amountOf(i), 0);
+  const editedAmount = amountOf(edited.find((item) => item.id === editedId)!);
+  const gap = propertyValue - lockedSum - editedAmount - otherUnlockedSum;
+
+  const rebalanced =
+    Math.abs(gap) <= EPSILON ? edited : distributeGapProportionally(propertyValue, edited, otherUnlocked, gap);
+
   return recalculate(propertyValue, rebalanced, { balancerId: '__none__' });
 }
 

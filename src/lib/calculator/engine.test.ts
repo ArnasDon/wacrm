@@ -3,6 +3,7 @@ import {
   amountOf,
   applyDirectEdit,
   applyLockToggle,
+  applyPercentEdit,
   buildFlowText,
   createDefaultFlowItems,
   createFlowItem,
@@ -835,5 +836,88 @@ describe('applyLockToggle — travar um campo zerado redistribui proporcionalmen
     expect(chaves.locked).toBe(false);
     expect(chaves.percent).toBe(40);
     expect(result.status).toBe('closed');
+  });
+});
+
+describe('applyPercentEdit — editing the percent field redistributes proportionally (fluxo nunca excedente)', () => {
+  it('Teste do pedido — aumentar o percentual da Entrada reduz Parcelas/Intercaladas/Chaves proporcionalmente, sempre fechando em 100%', () => {
+    const propertyValue = 700_000;
+    const items = recalculate(propertyValue, createDefaultFlowItems()).items; // 10/25/25/40
+
+    const result = applyPercentEdit(propertyValue, items, 'entrada', 20);
+
+    expect(result.status).toBe('closed');
+    const entrada = result.items.find((i) => i.id === 'entrada')!;
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+
+    expect(entrada.percent).toBe(20);
+    expect(entrada.value).toBeCloseTo(140_000, 5); // 20% of 700k, exactly as typed
+
+    // 10 percentage points removed from the other three, split in
+    // their existing 25:25:40 ratio.
+    expect(parcelas.percent).toBeCloseTo(22.222, 2);
+    expect(intercaladas.percent).toBeCloseTo(22.222, 2);
+    expect(chaves.percent).toBeCloseTo(35.556, 2);
+
+    const total = amountOf(entrada) + amountOf(parcelas) + amountOf(intercaladas) + amountOf(chaves);
+    expect(total).toBeCloseTo(propertyValue, 5);
+  });
+
+  it('reducing a percent grows the others proportionally instead of leaving the flow incomplete', () => {
+    const propertyValue = 300_000;
+    const items = recalculate(propertyValue, createDefaultFlowItems()).items; // 10/25/25/40
+
+    const result = applyPercentEdit(propertyValue, items, 'chaves', 20); // 40% -> 20%
+
+    expect(result.status).toBe('closed');
+    const entrada = result.items.find((i) => i.id === 'entrada')!;
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    const chaves = result.items.find((i) => i.id === 'chaves')!;
+
+    expect(chaves.percent).toBe(20);
+    // 20 percentage points freed up, split across 10:25:25 (2:5:5).
+    expect(entrada.percent).toBeCloseTo(13.333, 2);
+    expect(parcelas.percent).toBeCloseTo(33.333, 2);
+    expect(intercaladas.percent).toBeCloseTo(33.333, 2);
+
+    const total = amountOf(entrada) + amountOf(parcelas) + amountOf(intercaladas) + amountOf(chaves);
+    expect(total).toBeCloseTo(propertyValue, 5);
+  });
+
+  it('locked items are excluded from the split and stay exactly as they were', () => {
+    const propertyValue = 500_000;
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 1, 125_000, false, 25),
+      installments('intercaladas', 'Intercaladas', 1, 125_000, false, 25),
+      single('chaves', 'Chaves', 200_000, false, 40),
+    ];
+    const result = applyPercentEdit(propertyValue, items, 'chaves', 60);
+
+    expect(result.status).toBe('closed');
+    expect(result.items.find((i) => i.id === 'entrada')!.value).toBe(50_000); // locked, untouched
+    expect(result.items.find((i) => i.id === 'chaves')!.value).toBeCloseTo(300_000, 5); // 60% of 500k
+
+    // Only parcelas/intercaladas (unlocked) absorb the -20pp, split 1:1.
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBeCloseTo(75_000, 5);
+    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBeCloseTo(75_000, 5);
+  });
+
+  it('with no other unlocked item to rebalance, the edit stands as typed and status reflects the gap', () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      single('chaves', 'Chaves', 200_000, true, 40),
+      installments('parcelas', 'Parcelas', 1, 75_000, false, 25),
+    ];
+    const result = applyPercentEdit(500_000, items, 'parcelas', 10);
+
+    expect(result.items.find((i) => i.id === 'parcelas')!.percent).toBe(10);
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBeCloseTo(50_000, 5);
+    // entrada(50k)+chaves(200k)+parcelas(50k)=300k, faltam 200k — nada
+    // mais destravado para absorver.
+    expect(result.status).toBe('incomplete');
   });
 });

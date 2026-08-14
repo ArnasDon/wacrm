@@ -75,7 +75,7 @@ describe('google-ads — Data Manager API adapter', () => {
       expect(captured!.url).toBe('https://datamanager.googleapis.com/v1/events:ingest')
       expect(captured!.headers.Authorization).toBe('Bearer tok')
 
-      const dest = captured!.body.destinations as Array<{ operatingAccount: unknown; productDestinationId: string }>
+      const dest = (captured!.body.destinations as Array<{ operatingAccount: unknown; productDestinationId: string }>)[0]
       expect(dest.operatingAccount).toEqual({ accountType: 'GOOGLE_ADS', accountId: '1234567890' })
       expect(dest.productDestinationId).toBe('987654321')
 

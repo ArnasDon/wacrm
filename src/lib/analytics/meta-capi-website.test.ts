@@ -28,7 +28,7 @@ describe('meta-capi — dispatchWebsiteConversion (action_source website)', () =
   })
 
   it('envía event_id, action_source website y combina em/ph/fbc/fbp en UN user_data', async () => {
-    let body: { data: Array<Record<string, unknown>> }
+    let body!: { data: Array<Record<string, unknown>> }
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
       body = JSON.parse(init?.body ?? '{}')
@@ -68,7 +68,7 @@ describe('meta-capi — dispatchWebsiteConversion (action_source website)', () =
   })
 
   it('omite custom_data cuando no hay valor (lead sin monetización)', async () => {
-    let body: { data: Array<Record<string, unknown>> }
+    let body!: { data: Array<Record<string, unknown>> }
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
       body = JSON.parse(init?.body ?? '{}')

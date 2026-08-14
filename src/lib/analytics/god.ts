@@ -213,6 +213,33 @@ export function wireClickBeacons(siteUrl: string): void {
 const ytPlayers = new WeakMap<Element, unknown>();
 let ytApiPromise: Promise<void> | undefined;
 
+/**
+ * Elige el id según el viewport: vertical por defecto, horizontal solo si la
+ * hay y estamos en escritorio.
+ *
+ * `min-width: 900px`, el ÚNICO breakpoint estructural del sistema (skill §1
+ * regla 6), y en `min-width` porque la regla es mobile-first. Vive aquí, en un
+ * solo sitio, porque cuando estaba copiado en cada reproductor los dos umbrales
+ * se separaron: uno decía 767 y otro 899, y en la franja de 768 a 899 el CSS
+ * seguía en vertical 9/16 mientras el JavaScript ya servía el id horizontal.
+ * El umbral tiene que ser el mismo que el de 05-components.css.
+ */
+function pickVideoId(wrap: HTMLElement): string | undefined {
+  const isDesktop = window.matchMedia("(min-width:900px)").matches;
+  return isDesktop
+    ? wrap.dataset.desktopVideoId || wrap.dataset.videoId
+    : wrap.dataset.videoId;
+}
+
+/**
+ * El reproductor se sirve desde youtube-nocookie.com: sin esto, YT.Player
+ * embebe en youtube.com y planta cookies de seguimiento en cuanto alguien le
+ * da al play. El script de la API sí sale de youtube.com (no hay copia en
+ * nocookie), y por eso BaseLayout precarga los dos dominios y la CSP declara
+ * los dos en `frame-src`.
+ */
+const YT_HOST = "https://www.youtube-nocookie.com";
+
 function loadYTApi(): Promise<void> {
   if (ytApiPromise) return ytApiPromise;
   ytApiPromise = new Promise<void>((resolve) => {
@@ -239,16 +266,7 @@ export function wireYouTubeFacades(): void {
     // bloque arrancaría el vídeo.
     if (!wrap || !btn) return;
 
-    // 900px, el ÚNICO breakpoint estructural del sistema (skill §1 regla 6), y
-    // en `min-width` porque la regla es mobile-first. Antes esto era
-    // `max-width:767px`: entre 768 y 899px el CSS seguía en vertical 9/16
-    // mientras aquí ya se elegía el id horizontal, así que la tablet recibía un
-    // 16:9 embutido en un marco vertical. El umbral tiene que ser EL MISMO que
-    // el de 05-components.css o vuelve a abrirse esa franja.
-    const isDesktop = window.matchMedia("(min-width:900px)").matches;
-    const videoId = isDesktop
-      ? wrap.dataset.desktopVideoId || wrap.dataset.videoId
-      : wrap.dataset.videoId;
+    const videoId = pickVideoId(wrap);
 
     if (!videoId || ytPlayers.has(wrap)) return;
 
@@ -275,7 +293,7 @@ export function wireYouTubeFacades(): void {
           // en cuanto alguien le da al play. El script de la API sí sale de
           // youtube.com (no hay copia en nocookie), y por eso BaseLayout
           // precarga los dos dominios.
-          host: "https://www.youtube-nocookie.com",
+          host: YT_HOST,
           playerVars: {
             autoplay: 1, controls: 1, rel: 0,
             playsinline: 1, modestbranding: 1, iv_load_policy: 3,
@@ -322,10 +340,7 @@ export function wireHeroVideo(): void {
   const start = (): void => {
     if (ytPlayers.has(wrap)) return;
 
-    const isMobile = window.matchMedia("(max-width:899px)").matches;
-    const videoId = isMobile
-      ? wrap.dataset.videoId
-      : wrap.dataset.desktopVideoId || wrap.dataset.videoId;
+    const videoId = pickVideoId(wrap);
     if (!videoId) return;
 
     void loadYTApi().then(() => {

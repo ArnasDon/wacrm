@@ -23,7 +23,9 @@ import {
   Eye,
   GripVertical,
   ImagePlus,
+  Loader2,
   Save,
+  Settings,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -34,6 +36,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { BLOCK_TYPES, previewUrl } from '@/lib/landing-block-types';
 import { ARRAY_EDITORS, ArrayBlockEditor } from './array-block-editor';
 import { MediaPicker } from './media-picker';
+import { LANDING_FORMS } from '@/lib/landing-settings';
+import type { LandingSettings } from '@/lib/landing-settings';
 
 interface LandingBlock {
   type: string;
@@ -45,6 +49,7 @@ interface LandingPage {
   title: string;
   description: string;
   blocks: LandingBlock[];
+  settings?: LandingSettings;
 }
 
 interface Props {
@@ -127,6 +132,9 @@ export function PageEditor({ slug }: Props) {
   const [newBlockType, setNewBlockType] = useState('');
   const [pageSlugs, setPageSlugs] = useState<string[]>([]);
   const [mediaField, setMediaField] = useState<string | null>(null);
+  const [buildPending, setBuildPending] = useState(false);
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,6 +190,7 @@ export function PageEditor({ slug }: Props) {
           title: page.title,
           description: page.description,
           blocks: page.blocks,
+          settings: page.settings,
         }),
       });
       const data = await res.json();
@@ -190,13 +199,53 @@ export function PageEditor({ slug }: Props) {
         return;
       }
       setSaved(true);
-      setPreviewKey((k) => k + 1); // recarga el preview con el contenido guardado
+      // Live update: el server recompila la landing en segundo plano.
+      // Hacemos polling del estado del build y recargamos el preview al terminar.
+      setBuildPending(true);
+      setBuildError(null);
+      pollBuild();
       setTimeout(() => setSaved(false), 4000);
     } catch {
       setError('No se pudo guardar la página.');
     } finally {
       setSaving(false);
     }
+  };
+
+  // Polling del build de la landing tras guardar (live update).
+  const pollBuild = async () => {
+    const deadline = Date.now() + 120_000; // máx. 2 min
+    const tick = async (): Promise<void> => {
+      try {
+        const res = await fetch('/api/pages/build-status');
+        const data = await res.json();
+        const st = data?.status;
+        if (st === 'done') {
+          setBuildPending(false);
+          setPreviewKey((k) => k + 1); // HTML regenerado → recarga el preview
+          return;
+        }
+        if (st === 'error') {
+          setBuildPending(false);
+          setBuildError(data?.status?.error ?? 'El build de la landing falló.');
+          return;
+        }
+        if (Date.now() < deadline) {
+          setTimeout(tick, 1500);
+          return;
+        }
+        setBuildPending(false);
+        setBuildError('El build tardó demasiado. Revisa la consola del servidor.');
+      } catch {
+        // Error de red transitorio: reintenta.
+        if (Date.now() < deadline) {
+          setTimeout(tick, 1500);
+          return;
+        }
+        setBuildPending(false);
+      }
+    };
+    void tick();
   };
 
   const move = (index: number, dir: -1 | 1) => {
@@ -284,6 +333,11 @@ export function PageEditor({ slug }: Props) {
     setPage({ ...page, blocks });
   };
 
+  const updateSettings = (patch: Partial<LandingSettings>) => {
+    if (!page) return;
+    setPage({ ...page, settings: { ...(page.settings ?? {}), ...patch } });
+  };
+
   if (!page) {
     return <p className="text-sm text-muted-foreground">Cargando página...</p>;
   }
@@ -318,9 +372,28 @@ export function PageEditor({ slug }: Props) {
         <div className="flex items-center gap-2">
           {saved && (
             <span className="text-xs text-emerald-600">
-              Guardado ✓ (el HTML se regenera en el build)
+              Guardado ✓
             </span>
           )}
+          {buildPending && (
+            <span className="flex items-center gap-1.5 text-xs text-amber-600">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Regenerando HTML…
+            </span>
+          )}
+          {!buildPending && !saved && buildError && (
+            <span className="text-xs text-destructive" title={buildError}>
+              Build falló
+            </span>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setShowSettings((v) => !v)}
+            className={showSettings ? 'border-primary text-primary' : ''}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Ajustes del sitio
+          </Button>
           <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
             <Eye className="mr-2 h-4 w-4" />
             {showPreview ? 'Ocultar preview' : 'Vista previa'}
@@ -348,12 +421,156 @@ export function PageEditor({ slug }: Props) {
       <Card className="bg-muted/30 p-4 text-xs text-muted-foreground">
         <p>
           <span className="font-semibold text-foreground">Cómo funciona:</span> al guardar se
-          escribe el JSON de la landing (<code>landing/src/data/landings/{slug}.json</code>). La
-          página pública se regenera en el <span className="font-semibold">build de la
-          landing</span>: hasta que no se ejecute, el preview muestra el último build servido. En
-          desarrollo con el dev server de Astro el cambio se ve al instante.
+          escribe el JSON de la landing (<code>landing/src/data/landings/{slug}.json</code>) y se
+          regenera el HTML automáticamente (live update). El preview muestra el último build
+          servido.
         </p>
       </Card>
+
+      {/* Ajustes del sitio (overrides por landing) */}
+      {showSettings && (
+        <Card className="p-4">
+          <h2 className="mb-1 text-sm font-semibold text-muted-foreground">Ajustes del sitio</h2>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Deja vacío para usar el valor global. Afecta a WhatsApp, teléfono, botón principal,
+            colores, menú y footer de esta landing.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="set-siteName">Nombre del negocio</Label>
+              <Input
+                id="set-siteName"
+                value={page.settings?.siteName ?? ''}
+                placeholder="Ej. Wacrm Estética"
+                onChange={(e) => updateSettings({ siteName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-phone">Teléfono visible</Label>
+              <Input
+                id="set-phone"
+                value={page.settings?.phone ?? ''}
+                placeholder="Ej. +52 1 55 1234 5678"
+                onChange={(e) => updateSettings({ phone: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-whatsapp">WhatsApp (número)</Label>
+              <Input
+                id="set-whatsapp"
+                value={page.settings?.whatsappNumber ?? ''}
+                placeholder="Ej. 5215512345678"
+                onChange={(e) => updateSettings({ whatsappNumber: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-whatsappText">Mensaje de WhatsApp</Label>
+              <Input
+                id="set-whatsappText"
+                value={page.settings?.whatsappText ?? ''}
+                placeholder="Ej. Hola, quiero agendar mi valoración"
+                onChange={(e) => updateSettings({ whatsappText: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-email">Email de contacto</Label>
+              <Input
+                id="set-email"
+                value={page.settings?.email ?? ''}
+                placeholder="Ej. hola@wacrm.mx"
+                onChange={(e) => updateSettings({ email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-cta">Texto del botón principal (CTA)</Label>
+              <Input
+                id="set-cta"
+                value={page.settings?.primaryCta ?? ''}
+                placeholder="Ej. Agenda tu valoración"
+                onChange={(e) => updateSettings({ primaryCta: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-color-primary">Color primario</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  className="h-9 w-9 cursor-pointer rounded border border-input"
+                  value={page.settings?.colors?.primary ?? '#000000'}
+                  onChange={(e) =>
+                    updateSettings({
+                      colors: { ...(page.settings?.colors ?? {}), primary: e.target.value },
+                    })
+                  }
+                />
+                <Input
+                  id="set-color-primary"
+                  value={page.settings?.colors?.primary ?? ''}
+                  placeholder="#0f766e"
+                  onChange={(e) =>
+                    updateSettings({
+                      colors: { ...(page.settings?.colors ?? {}), primary: e.target.value },
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="set-color-accent">Color de acento</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  className="h-9 w-9 cursor-pointer rounded border border-input"
+                  value={page.settings?.colors?.accent ?? '#000000'}
+                  onChange={(e) =>
+                    updateSettings({
+                      colors: { ...(page.settings?.colors ?? {}), accent: e.target.value },
+                    })
+                  }
+                />
+                <Input
+                  id="set-color-accent"
+                  value={page.settings?.colors?.accent ?? ''}
+                  placeholder="#f59e0b"
+                  onChange={(e) =>
+                    updateSettings({
+                      colors: { ...(page.settings?.colors ?? {}), accent: e.target.value },
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Links del menú (texto / enlace por línea)</Label>
+              <Textarea
+                value={(page.settings?.menuLinks ?? [])
+                  .map((l) => `${l.text} | ${l.href}`)
+                  .join('\n')}
+                rows={4}
+                placeholder={'Servicios | #servicios\nResultados | #galeria\nPrecios | #precios'}
+                onChange={(e) =>
+                  updateSettings({
+                    menuLinks: e.target.value
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter(Boolean)
+                      .map((line) => {
+                        const [text, ...rest] = line.split('|').map((s) => s.trim());
+                        return { text: text ?? '', href: rest.join('|').trim() || '#' };
+                      }),
+                  })
+                }
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Formato por línea: <code>texto | #enlace</code>. Vacío = menú global.
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Guarda los cambios para aplicarlos.
+          </p>
+        </Card>
+      )}
 
       {/* SEO */}
       <Card className="p-4">
@@ -535,6 +752,30 @@ export function PageEditor({ slug }: Props) {
                           {options.map((opt) => (
                             <option key={opt} value={opt}>
                               {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+                  if (key === 'formId') {
+                    const current = String(value ?? 'contact');
+                    const options = [...LANDING_FORMS];
+                    if (current && !options.some((o) => o.id === current)) {
+                      options.unshift({ id: current, label: `${current} (personalizado)` });
+                    }
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label htmlFor="f-formId">Formulario de captación</Label>
+                        <select
+                          id="f-formId"
+                          className={selectCls}
+                          value={current}
+                          onChange={(e) => updateField('formId', e.target.value)}
+                        >
+                          {options.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
                             </option>
                           ))}
                         </select>

@@ -28,6 +28,9 @@ export type BlockEditorConfig =
 
 // Definición de los ítems de cada bloque (campos del schema zod de Astro).
 export const ARRAY_EDITORS: Record<string, BlockEditorConfig> = {
+  // data-table se edita con su editor propio (DataTableEditor, que maneja
+  // head + rows); esta entrada solo hace que el inspector lo renderice.
+  'data-table': { kind: 'strings', arrayKey: 'head' },
   'social-proof': {
     kind: 'objects',
     arrayKey: 'stats',

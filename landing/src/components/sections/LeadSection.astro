@@ -4,7 +4,8 @@
 // Los dos usan el MISMO componente de formulario con `formId` distinto, para
 // que los id de cada campo sigan siendo únicos en el documento.
 import ContactForm from "../ContactForm.astro";
-import { PRIMARY_CTA } from "../../data/site";
+import { resolveSite } from "../../lib/site-context";
+import type { SiteSettings } from "../../lib/site-context";
 
 interface Props {
   id: string;
@@ -14,7 +15,8 @@ interface Props {
   dark?: boolean;
 }
 
-const { id, formId, heading, sub, dark = false } = Astro.props;
+const { id, formId, heading, sub, dark = false, settings = null } = Astro.props;
+const s = resolveSite(settings);
 ---
 
 <section id={id} class:list={["section", dark ? "bg-dark" : "bg-secondary"]}>
@@ -26,7 +28,7 @@ const { id, formId, heading, sub, dark = false } = Astro.props;
       </div>
       <div class="col-6-md">
         <div class="card card--lg">
-          <ContactForm formId={formId} cta={PRIMARY_CTA} />
+          <ContactForm formId={formId} cta={s.primaryCta} />
         </div>
       </div>
     </div>

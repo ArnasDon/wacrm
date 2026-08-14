@@ -17,6 +17,8 @@ export { BLOCK_TYPES, RESERVED_SLUGS } from './landing-block-types';
 
 // Resuelto en cada llamada (no en import time) para que los tests puedan
 // redirigir process.cwd() a un directorio temporal.
+import type { LandingSettings } from './landing-settings';
+
 function landingsDir(): string {
   return join(process.cwd(), 'landing', 'src', 'data', 'landings');
 }
@@ -33,6 +35,8 @@ export interface LandingPage {
   title: string;
   description: string;
   blocks: LandingBlock[];
+  /** Ajustes del sitio (opcional) — override del site.ts global. */
+  settings?: LandingSettings;
 }
 
 /** Valida un slug de página. Devuelve un mensaje de error o null si es válido. */
@@ -78,12 +82,18 @@ export async function listLandings(): Promise<{ slug: string; title: string }[]>
 /** Lee una landing completa. Lanza si no existe o el JSON está roto. */
 export async function readLanding(slug: string): Promise<LandingPage> {
   const raw = await fs.readFile(filePath(slug), 'utf-8');
-  const parsed = JSON.parse(raw) as { title?: string; description?: string; blocks?: LandingBlock[] };
+  const parsed = JSON.parse(raw) as {
+    title?: string;
+    description?: string;
+    blocks?: LandingBlock[];
+    settings?: LandingSettings;
+  };
   return {
     slug,
     title: parsed.title ?? slug,
     description: parsed.description ?? '',
     blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [],
+    settings: parsed.settings,
   };
 }
 
@@ -115,11 +125,15 @@ export async function writeLanding(page: LandingPage): Promise<void> {
   const invalid = validateSlug(page.slug);
   if (invalid) throw new Error(invalid);
 
-  const doc = {
+  const doc: Record<string, unknown> = {
     title: page.title,
     description: page.description,
     blocks: page.blocks,
   };
+  // settings solo se escribe si está definido (el editor lo envía al PUT).
+  if (page.settings !== undefined) {
+    doc.settings = page.settings;
+  }
   const json = `${JSON.stringify(doc, null, 2)}\n`;
   await fs.mkdir(landingsDir(), { recursive: true });
   await fs.writeFile(filePath(page.slug), json, 'utf-8');

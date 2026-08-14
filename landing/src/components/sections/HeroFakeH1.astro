@@ -6,7 +6,9 @@
 // sentido visual. El titular grande que parece un H1 es un <p> con bold (un
 // claim), no un encabezado. La frase SEO "Fisioterapia y rehabilitación…" se
 // eliminó del hero: vive en el <title>, meta tags y JSON-LD de la página.
-import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+import { site } from '../../data/site';
+import { resolveSite } from '../../lib/site-context';
+import type { SiteSettings } from '../../lib/site-context';
 
 interface Props {
   /** El H1 real: la chapita de disponibilidad. */
@@ -14,13 +16,17 @@ interface Props {
   /** El titular visible, grande. Va como <p>, no como encabezado. */
   displayTitle?: string;
   subtitle?: string;
+  /** Ajustes del sitio (opcional). */
+  settings?: SiteSettings | null;
 }
 
 const {
   badge = 'Agenda disponible esta semana',
   displayTitle = 'Recupera el movimiento sin pasar por quirófano',
   subtitle = 'Valoración con diagnóstico y plan por escrito el mismo día.',
+  settings = null,
 } = Astro.props;
+const s = resolveSite(settings);
 ---
 
 <section class="section" itemscope itemtype="https://schema.org/WPHeader">
@@ -38,8 +44,8 @@ const {
         <p class="lead measure-sm mt-1 mb-2">{subtitle}</p>
 
         <div class="btn-row">
-          <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
-          <a href={whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
+          <a href="#agenda" class="button primary pill">{s.primaryCta}</a>
+          <a href={s.whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
             Escribir por WhatsApp
           </a>
         </div>

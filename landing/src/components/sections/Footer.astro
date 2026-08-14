@@ -2,23 +2,32 @@
 // Pie — datos de contacto. El nodo del negocio ya viaja en el grafo JSON-LD,
 // así que aquí no se repiten microdatos: duplicar la entidad entre JSON-LD y
 // microdatos es un error de datos estructurados (skill §20).
-import { site, whatsappHref } from "../../data/site";
+import { resolveSite } from "../../lib/site-context";
+import type { SiteSettings } from "../../lib/site-context";
+
+interface Props {
+  /** "Ajustes del sitio" de la landing (opcional). */
+  settings?: SiteSettings | null;
+}
+
+const { settings = null } = Astro.props;
+const s = resolveSite(settings);
 ---
 
 <footer class="section section--tight bg-dark">
   <div class="container text-center">
-    <p class="t-lg fw-700 is-marginless">{site.name}</p>
+    <p class="t-lg fw-700 is-marginless">{s.name}</p>
     <p class="t-sm is-marginless">
-      {site.address.street}, {site.address.locality}, {site.address.region}
+      {s.address.street}, {s.address.locality}, {s.address.region}
     </p>
     <p class="t-sm mt-1">
-      <a href={`tel:${site.phone.replace(/\s/g, "")}`} class="text-white">{site.phone}</a>
+      <a href={`tel:${s.phone.replace(/\s/g, "")}`} class="text-white">{s.phone}</a>
       <span aria-hidden="true"> · </span>
-      <a href={`mailto:${site.email}`} class="text-white">{site.email}</a>
+      <a href={`mailto:${s.email}`} class="text-white">{s.email}</a>
     </p>
     <p class="t-sm">
       <a
-        href={whatsappHref}
+        href={s.whatsappHref}
         class="text-white"
         target="_blank"
         rel="noopener"

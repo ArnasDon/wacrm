@@ -17,7 +17,7 @@ if (!page) {
   throw new Error('landing: falta src/data/landings/thank-you.json');
 }
 
-const { title, description, blocks } = page.data;
+const { title, description, blocks, settings } = page.data;
 ---
 
 <BaseLayout
@@ -26,8 +26,9 @@ const { title, description, blocks } = page.data;
   path="/thank-you/"
   rootPath
   noindex
+  settings={settings}
 >
-  <BlockRenderer blocks={blocks} showChrome={false} />
+  <BlockRenderer blocks={blocks} showChrome={false} settings={settings} />
 </BaseLayout>
 
 <script>

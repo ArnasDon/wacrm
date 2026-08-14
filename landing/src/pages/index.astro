@@ -41,6 +41,7 @@ const heroVideoData = heroVideoBlock?.data as
 const videoId = heroVideoData?.videoId ?? site.videoId;
 const heroThumbMobile = heroVideoData?.thumbMobile ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 const heroThumbDesktop = heroVideoData?.thumbDesktop ?? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+const { settings } = home.data;
 ---
 
 <BaseLayout
@@ -52,6 +53,7 @@ const heroThumbDesktop = heroVideoData?.thumbDesktop ?? `https://i.ytimg.com/vi/
   faq={faq}
   steps={steps}
   breadcrumb={[{ name: site.name, item: `${site.baseUrl}${site.landingBase}/` }]}
+  settings={settings}
 >
-  <BlockRenderer blocks={blocks} />
+  <BlockRenderer blocks={blocks} settings={settings} />
 </BaseLayout>

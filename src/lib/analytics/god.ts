@@ -358,6 +358,10 @@ export function wireHeroVideo(): void {
           // (idempotente), por si uno no llega.
           onReady: (ev: { target: { playVideo(): void } }) => {
             ev.target.playVideo();
+            // onReady ya implica frame real montado: retirar el poster aquí
+            // (además de onStateChange=PLAYING) cubre el caso en que el estado
+            // PLAYING no llega a emitirse (autoplay mute en algunos entornos).
+            handoffPoster();
           },
           onStateChange: (ev: { data: number }) => {
             if (ev.data === 1) handoffPoster();

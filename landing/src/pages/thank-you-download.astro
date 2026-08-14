@@ -18,7 +18,7 @@ if (!page) {
   throw new Error('landing: falta src/data/landings/thank-you-download.json');
 }
 
-const { title, description, blocks } = page.data;
+const { title, description, blocks, settings } = page.data;
 
 // El PDF vive en landing/public/, que Astro emite bajo `base` — de ahí que
 // la URL lleve el prefijo aunque la página se sirva desde la raíz.
@@ -40,8 +40,9 @@ const pdfHref = `${site.landingBase}/guia.pdf`;
   path="/thank-you-download/"
   rootPath
   noindex
+  settings={settings}
 >
-  <BlockRenderer blocks={blocks} showChrome={false} />
+  <BlockRenderer blocks={blocks} showChrome={false} settings={settings} />
 </BaseLayout>
 
 <script>

@@ -6,19 +6,25 @@
 //   · El popup de "Agenda tu cita" es el MISMO `.lightbox:target` que la
 //     galería. Una clase, dos componentes.
 import ContactForm from '../ContactForm.astro';
-import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+import { site } from '../../data/site';
+import { resolveSite } from '../../lib/site-context';
+import type { SiteSettings } from '../../lib/site-context';
 
-const links = [
-  { href: '#servicios', text: 'Servicios' },
-  { href: '#galeria', text: 'Resultados' },
-  { href: '#precios', text: 'Precios' },
-  { href: '#faq', text: 'Preguntas' },
-];
+interface Props {
+  /** "Ajustes del sitio" de la landing (opcional). */
+  settings?: SiteSettings | null;
+}
+
+const { settings = null } = Astro.props;
+// Valores efectivos: site.ts + overrides del dashboard.
+const s = resolveSite(settings);
+const links = s.menuLinks;
+const cta = s.primaryCta;
 ---
 
 <header class="nav">
   <div class="container nav__inner">
-    <a href={`${site.landingBase}/`} class="nav__brand">{site.name}</a>
+    <a href={`${site.landingBase}/`} class="nav__brand">{s.name}</a>
 
     <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Abrir menú" />
     <label for="nav-toggle" class="nav-toggle-label" aria-hidden="true"><span></span></label>
@@ -30,7 +36,7 @@ const links = [
     </nav>
 
     <div class="nav-right">
-      <a href="#form-popup" class="button primary pill nav__cta">{PRIMARY_CTA}</a>
+      <a href="#form-popup" class="button primary pill nav__cta">{cta}</a>
     </div>
   </div>
 </header>
@@ -39,11 +45,11 @@ const links = [
 <div class="lightbox" id="form-popup">
   <a href="#!" class="lightbox-close" aria-label="Cerrar">&times;</a>
   <div class="lightbox__panel">
-    <h2 class="t-xl mb-1">{PRIMARY_CTA}</h2>
+    <h2 class="t-xl mb-1">{cta}</h2>
     <p class="t-sm text-grey mb-1">Te contactamos por WhatsApp en menos de 24 h.</p>
-    <ContactForm formId="popup" variant="compact" cta={PRIMARY_CTA} />
+    <ContactForm formId="popup" variant="compact" cta={cta} />
     <p class="t-xs text-center mt-1">
-      <a href={whatsappHref} target="_blank" rel="noopener" data-wa-cta>o escríbenos por WhatsApp</a>
+      <a href={s.whatsappHref} target="_blank" rel="noopener" data-wa-cta>o escríbenos por WhatsApp</a>
     </p>
   </div>
 </div>

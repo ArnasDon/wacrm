@@ -13,7 +13,9 @@
 //
 // Contenido = fisioterapia actual. El H1 real es la chapita "Agenda disponible
 // esta semana" (patrón decidido con el dueño); el claim grande es un <p> bold.
-import { site, whatsappHref, PRIMARY_CTA } from '../../data/site';
+import { site } from '../../data/site';
+import { resolveSite } from '../../lib/site-context';
+import type { SiteSettings } from '../../lib/site-context';
 import HalftoneFade from '../HalftoneFade.astro';
 
 interface Props {
@@ -29,6 +31,8 @@ interface Props {
   /** Claim visible — es un <p> bold, no un encabezado. */
   displayTitle?: string;
   subtitle?: string;
+  /** Ajustes del sitio (opcional). */
+  settings?: SiteSettings | null;
 }
 
 const {
@@ -39,7 +43,11 @@ const {
   badge = 'Agenda disponible esta semana',
   displayTitle = 'Recupera el movimiento sin pasar por quirófano',
   subtitle = 'Valoración con diagnóstico y plan por escrito el mismo día.',
+  settings = null,
 } = Astro.props;
+
+// Valores efectivos del sitio (defaults globales + overrides del dashboard).
+const s = resolveSite(settings);
 
 const ytThumb = (v: string) => `https://i.ytimg.com/vi/${v}/hqdefault.jpg`;
 const ytThumbHd = (v: string) => `https://i.ytimg.com/vi/${v}/maxresdefault.jpg`;
@@ -94,8 +102,8 @@ const stats = site.proof.slice(0, 3);
     <p class="lead hero-video__lead measure-sm mt-1 mb-2">{subtitle}</p>
 
     <div class="btn-row hero-video__btn-row">
-      <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
-      <a href={whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
+      <a href="#agenda" class="button primary pill">{s.primaryCta}</a>
+      <a href={s.whatsappHref} class="button outline pill" target="_blank" rel="noopener" data-wa-cta>
         Escribir por WhatsApp
       </a>
     </div>
@@ -136,14 +144,17 @@ const stats = site.proof.slice(0, 3);
     overflow: hidden;
   }
   /* Cover 16:9 real: el iframe se agranda al menor tamaño que cubre la
-     pantalla y se centra; los sobrantes se recortan con overflow hidden. */
+     pantalla y se centra; los sobrantes se recortan con overflow hidden.
+     `!important` anula el `style` inline que YouTube inyecta en el iframe
+     (width/height:100%), que de otro modo ganaría y dejaría el video con
+     letterbox en vez de llenar el hero. */
   .hero-video__frame iframe {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: max(100vw, 177.78vh);
-    height: max(100svh, 56.25vw);
+    width: max(100vw, 177.78vh) !important;
+    height: max(100svh, 56.25vw) !important;
   }
   .hero-video__poster {
     position: absolute;

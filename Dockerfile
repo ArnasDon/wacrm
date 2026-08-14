@@ -53,12 +53,28 @@ RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
-# Page editor: las landings JSON viven en landing/src/data/landings y son
-# la fuente de verdad de la Content Collection de Astro (ver landing-pages.ts).
-# El runner standalone las necesita para que /api/pages pueda listar/editar.
-# Persisten en el fs del contenedor; el próximo `up --build` las re-sincroniza
-# desde el host.
-COPY --from=builder --chown=nextjs:nextjs /app/landing/src/data/landings ./landing/src/data/landings
+
+# Page editor + LIVE UPDATE: la landing completa (source de Astro) vive en
+# el runner para poder recompilar en runtime cuando el dashboard guarda un
+# JSON (edit → guardar → `astro build` de solo la landing → public/landing
+# actualiza, sin recompilar Next ni reiniciar). Ver src/lib/landing-build.ts
+# y el bind mount de landing/src/data/landings en docker-compose.yml.
+COPY --from=builder --chown=nextjs:nextjs /app/landing ./landing
+
+# Entorno Astro dedicado para el live build (no toca el node_modules de
+# Next). astro se instala aquí en build time y lo usa landing-build.ts.
+USER root
+RUN corepack enable && mkdir -p /app/astro-env && cd /app/astro-env && \
+    printf 'onlyBuiltDependencies:\n  - esbuild\n' > pnpm-workspace.yaml && \
+    pnpm add astro@^7.1.6 && \
+    # La landing (COPY de /app/landing, con un node_modules vacío del builder)
+    # resuelve astro/config y astro:content desde el astro-env vía symlink.
+    rm -rf /app/landing/node_modules && \
+    ln -sfn /app/astro-env/node_modules /app/landing/node_modules && \
+    # Vite escribe node_modules/.vite (cache de deps) durante el build: el
+    # runtime (USER nextjs) necesita escribir en el astro-env.
+    chown -R nextjs:nextjs /app/astro-env /app/landing/node_modules
+USER nextjs
 
 USER nextjs
 EXPOSE 3000

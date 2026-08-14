@@ -1,11 +1,14 @@
 ---
 // Cierre — repetición de la acción principal con refuerzo de confianza.
-import { whatsappHref, PRIMARY_CTA } from '../../data/site';
-interface Props { title?: string; text?: string }
+import { resolveSite } from '../../lib/site-context';
+import type { SiteSettings } from '../../lib/site-context';
+interface Props { title?: string; text?: string; settings?: SiteSettings | null }
 const {
   title = 'Empieza esta semana',
   text = 'Cuanto antes empiece el tratamiento, menos sesiones hacen falta.',
+  settings = null,
 } = Astro.props;
+const s = resolveSite(settings);
 ---
 
 <section class="section section--dark">
@@ -13,8 +16,8 @@ const {
     <h2 class="t-3xl text-white">{title}</h2>
     <p class="lead text-white">{text}</p>
     <div class="btn-row mt-2">
-      <a href="#agenda" class="button primary pill">{PRIMARY_CTA}</a>
-      <a href={whatsappHref} class="button outline pill cta__wa" target="_blank" rel="noopener" data-wa-cta>
+      <a href="#agenda" class="button primary pill">{s.primaryCta}</a>
+      <a href={s.whatsappHref} class="button outline pill cta__wa" target="_blank" rel="noopener" data-wa-cta>
         WhatsApp
       </a>
     </div>

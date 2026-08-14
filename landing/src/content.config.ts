@@ -21,6 +21,7 @@
 import { defineCollection } from "astro:content";
 import { z } from "astro/zod";
 import { glob } from "astro/loaders";
+import { fileURLToPath } from "node:url";
 
 // ── Tipos de bloque ────────────────────────────────────────────
 const heroVideo = z.object({
@@ -224,6 +225,36 @@ const thankYouDownload = z.object({
   backHref: z.string().optional(),
 });
 
+// ── Ajustes del sitio (por landing) ────────────────────────────
+// Override opcional de los defaults globales de src/data/site.ts.
+// Cada campo es opcional: si falta, site-context.ts resuelve el valor
+// global. El editor del dashboard edita esto en "Ajustes del sitio".
+const siteSettings = z.object({
+  siteName: z.string().optional(),
+  phone: z.string().optional(),
+  whatsappNumber: z.string().optional(),
+  whatsappText: z.string().optional(),
+  email: z.string().optional(),
+  primaryCta: z.string().optional(),
+  colors: z
+    .object({
+      primary: z.string().optional(),
+      primaryDark: z.string().optional(),
+      accent: z.string().optional(),
+    })
+    .optional(),
+  menuLinks: z
+    .array(z.object({ text: z.string(), href: z.string() }))
+    .optional(),
+  address: z
+    .object({
+      street: z.string().optional(),
+      locality: z.string().optional(),
+      region: z.string().optional(),
+    })
+    .optional(),
+});
+
 // ── Documento de landing ───────────────────────────────────────
 const landing = defineCollection({
   loader: glob({ pattern: "**/*.json", base: "./src/data/landings" }),
@@ -232,6 +263,8 @@ const landing = defineCollection({
     title: z.string(),
     /** SEO meta description */
     description: z.string(),
+    /** Ajustes del sitio (whatsapp, colores, menú, footer) — opcional. */
+    settings: siteSettings.optional(),
     /** Bloques de la página, en orden de renderizado */
     blocks: z.array(
       z.discriminatedUnion("type", [

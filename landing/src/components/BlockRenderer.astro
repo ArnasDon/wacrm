@@ -80,15 +80,17 @@ interface Props {
   blocks: Block[];
   /** Cromo de cabecera (Header + Breadcrumb) — se renderiza una vez, al inicio. */
   showChrome?: boolean;
+  /** "Ajustes del sitio" de la landing (opcional) — se pasa a las secciones. */
+  settings?: Record<string, unknown> | null;
 }
 
-const { blocks, showChrome = true } = Astro.props;
+const { blocks, showChrome = true, settings = null } = Astro.props;
 ---
 
 {
   showChrome && (
     <>
-      <Header />
+      <Header settings={settings} />
       <Breadcrumb />
     </>
   )
@@ -106,22 +108,22 @@ const { blocks, showChrome = true } = Astro.props;
     // con las props ya asignadas por el mapa de tipos.
     const data = block.data;
     switch (block.type) {
-      case 'hero-video': return <HeroVideo {...data} />;
-      case 'hero-fake-h1': return <HeroFakeH1 {...data} />;
-      case 'hero-centered': return <HeroCentered {...data} />;
+      case 'hero-video': return <HeroVideo {...data} settings={settings} />;
+      case 'hero-fake-h1': return <HeroFakeH1 {...data} settings={settings} />;
+      case 'hero-centered': return <HeroCentered {...data} settings={settings} />;
       case 'social-proof': return <SocialProof {...data} />;
       case 'scroller': return <Scroller {...data} />;
       case 'scroller-cards': return <ScrollerCards {...data} />;
       case 'features': return <Features {...data} />;
       case 'video': return <Video {...data} />;
-      case 'lead-section': return <LeadSection {...data} />;
+      case 'lead-section': return <LeadSection {...data} settings={settings} />;
       case 'specialties': return <Specialties {...data} />;
       case 'pricing-table': return <PricingTable {...data} />;
       case 'comparison': return <Comparison {...data} />;
       case 'data-table': return <DataTable {...data} />;
       case 'video-testimonials': return <VideoTestimonials {...data} />;
       case 'reviews': return <Reviews {...data} />;
-      case 'gallery': return <Gallery {...data} />;
+      case 'gallery': return <Gallery {...data} settings={settings} />;
       case 'how-it-works': return <HowItWorks {...data} />;
       case 'team': return <Team {...data} />;
       case 'about': return <About {...data} />;
@@ -130,7 +132,7 @@ const { blocks, showChrome = true } = Astro.props;
       case 'faq': return <Faq {...data} />;
       case 'related-pages': return <RelatedPages {...data} />;
       case 'divider': return <Divider {...data} />;
-      case 'cta': return <Cta {...data} />;
+      case 'cta': return <Cta {...data} settings={settings} />;
       case 'thank-you': return <ThankYou {...data} />;
       case 'thank-you-download': return <ThankYouDownload {...data} />;
       default: return null;

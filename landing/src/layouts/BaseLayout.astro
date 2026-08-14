@@ -9,6 +9,8 @@
 import "../styles/index.css";
 import { site } from "../data/site";
 import { buildGraph } from "../lib/schema";
+import { resolveSite } from "../lib/site-context";
+import type { SiteSettings } from "../lib/site-context";
 import ContactLauncher from "../components/ContactLauncher.astro";
 import Footer from "../components/sections/Footer.astro";
 
@@ -35,6 +37,8 @@ interface Props {
   faq?: readonly { q: string; a: string }[];
   steps?: readonly { title: string; text: string }[];
   breadcrumb?: { name: string; item?: string }[];
+  /** "Ajustes del sitio" de la landing (opcional). */
+  settings?: SiteSettings | null;
 }
 
 const {
@@ -48,6 +52,7 @@ const {
   faq,
   steps,
   breadcrumb,
+  settings,
 } = Astro.props;
 
 const canonical = `${site.baseUrl}${rootPath ? "" : site.landingBase}${path}`;
@@ -56,6 +61,10 @@ const canonical = `${site.baseUrl}${rootPath ? "" : site.landingBase}${path}`;
 const robots = noindex || !site.indexable
   ? "noindex, nofollow"
   : "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1";
+
+// Valores efectivos del sitio: default global + overrides de los
+// "Ajustes del sitio" editados en el dashboard.
+const s = resolveSite(settings);
 
 const graph = buildGraph({
   url: canonical,
@@ -66,7 +75,7 @@ const graph = buildGraph({
   breadcrumb,
 });
 
-const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-dark:${site.theme.primaryDark};--color-accent:${site.theme.accent};}`;
+const brandVars = `:root{--color-primary:${s.theme.primary};--color-primary-dark:${s.theme.primaryDark};--color-accent:${s.theme.accent};}`;
 ---
 
 <!doctype html>
@@ -88,7 +97,7 @@ const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-d
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content={site.name} />
+    <meta property="og:site_name" content={s.name} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
@@ -148,7 +157,7 @@ const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-d
     </main>
 
     {/* Fuera de <main>: el pie es cromo del sitio, no contenido de la página. */}
-    <Footer />
+    <Footer settings={settings} />
 
     <ContactLauncher />
 

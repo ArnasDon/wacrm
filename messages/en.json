@@ -28,6 +28,7 @@
     "calls": "Phone",
     "email": "Email",
     "reports": "Reports",
+    "appointments": "Calendar",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -963,6 +964,38 @@
         "message_read": {
           "label": "Message Read",
           "hint": "When the contact reads a message you sent"
+        },
+        "message_delivered": {
+          "label": "SMS Delivered",
+          "hint": "When an outbound SMS is delivered (Telnyx)"
+        },
+        "message_failed": {
+          "label": "SMS Failed",
+          "hint": "When an outbound SMS fails to deliver (Telnyx)"
+        },
+        "appointment_created": {
+          "label": "Appointment Created",
+          "hint": "When an appointment is created"
+        },
+        "appointment_updated": {
+          "label": "Appointment Updated",
+          "hint": "When an appointment is updated"
+        },
+        "appointment_rescheduled": {
+          "label": "Appointment Rescheduled",
+          "hint": "When an appointment is moved to a new date/time"
+        },
+        "appointment_cancelled": {
+          "label": "Appointment Cancelled",
+          "hint": "When an appointment is cancelled"
+        },
+        "appointment_completed": {
+          "label": "Appointment Completed",
+          "hint": "When an appointment is marked completed"
+        },
+        "appointment_no_show": {
+          "label": "Appointment No-Show",
+          "hint": "When an appointment is marked as no-show"
         }
       },
       "trigger": "Trigger",
@@ -1043,6 +1076,8 @@
         "titleLabel": "Title",
         "amountLabel": "Amount",
         "unitLabel": "Unit",
+        "waitUntilLabel": "Until (optional)",
+        "waitUntilHint": "Absolute date or '{{vars.appointment_start_at}}' for reminders before the appointment (amount becomes the offset, negative = before)",
         "units": {
           "minutes": "Minutes",
           "hours": "Hours",

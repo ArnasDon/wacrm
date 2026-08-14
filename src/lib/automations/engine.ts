@@ -293,7 +293,17 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     // scope. The cron endpoint will pick it up later.
     if (step.step_type === 'wait') {
       const cfg = step.step_config as WaitStepConfig
+      // Reminders relativos a una fecha (agenda): `until` resuelve una
+      // fecha absoluta desde `{{vars.*}}` (inyectada por el dispatch de
+      // appointment_*) y el offset es amount/unit. Sin `until`, run_at es
+      // relativo a ahora (comportamiento original).
+      const untilRaw = cfg.until ? interpolate(cfg.until, args) : null
+      const untilMs = untilRaw ? Date.parse(untilRaw) : Number.NaN
       const ms = waitMs(cfg)
+      const runAt =
+        !Number.isNaN(untilMs) && untilMs > 0
+          ? new Date(untilMs + ms).toISOString()
+          : new Date(Date.now() + ms).toISOString()
       await db.from('automation_pending_executions').insert({
         automation_id: args.automation.id,
         // Tenancy: account_id required NOT NULL post-017.
@@ -305,7 +315,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         branch: args.branch,
         next_step_position: step.position + 1,
         context: args.context,
-        run_at: new Date(Date.now() + ms).toISOString(),
+        run_at: runAt,
         status: 'pending',
       })
       results.push({
@@ -383,6 +393,31 @@ async function getContactForSend(
 }
 
 /**
+ * Conversación del contacto para un envío saliente. Mismo convenio que el
+ * webhook entrante: una sola conversación por (account, contact). Si la
+ * conversación no existe (contacto creado fuera de un hilo), se crea.
+ */
+async function findOrCreateConversationForSend(
+  db: ReturnType<typeof supabaseAdmin>,
+  accountId: string,
+  contactId: string,
+): Promise<{ id: string }> {
+  const { data: existing } = await db
+    .from('conversations')
+    .select('id')
+    .eq('contact_id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (existing) return existing
+  const { data: created } = await db
+    .from('conversations')
+    .insert({ contact_id: contactId, account_id: accountId, status: 'open' })
+    .select('id')
+    .single()
+  return created ?? { id: '' }
+}
+
+/**
  * Ordena claves de variable numéricamente primero, alfabéticamente después.
  *
  * Meta usa marcadores posicionales `{{1}}`, `{{2}}`, … así que los params
@@ -452,19 +487,46 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       }
       const text = interpolate(contactText(cfg.text, cfg.variables, contact), args)
       if (!text.trim()) throw new Error('send_sms has empty text')
-      // ÚNICO paso saliente sin cuota anti-spam, y a propósito: el SMS
-      // saliente no se persiste en ninguna parte (el ENTRANTE sí, en
-      // `messages` con channel='sms' desde 041), así que `countSentToday`
-      // no tiene qué contar y el tope siempre leería 0. Llamar aquí a
-      // `checkFrequencyOrEnqueue` sería decorativo. Para cerrarlo hay que
-      // persistir este envío como `messages`/channel='sms'+sender 'bot'
-      // primero — lo que además lo haría visible en el inbox.
-      await createTelnyxClient(telnyx.apiKey).sendSms({
+
+      const { id: telnyxMsgId } = await createTelnyxClient(telnyx.apiKey).sendSms({
         from: telnyx.fromNumber,
         to,
         text,
         messagingProfileId: telnyx.messagingProfileId,
       })
+
+      // El SMS saliente se persiste en `messages` (channel='sms', sender
+      // 'agent') para que: (1) sea visible en el inbox como cualquier otro
+      // canal, (2) el tope anti-spam `countSentToday` tenga algo que contar,
+      // y (3) los webhooks de Telnyx `message.sent` / `message.finalized`
+      // encuentren la fila por `metadata.telnyx_message_id` y actualicen el
+      // estado de entrega (delivered/failed) — la pieza que antes faltaba.
+      // La conversación se resuelve con el mismo convenio de una por
+      // (account, contact) que el webhook entrante.
+      const conversation = await findOrCreateConversationForSend(
+        db,
+        args.automation.account_id,
+        args.contactId,
+      )
+      const ts = new Date().toISOString()
+      const { error: insErr } = await db.from('messages').insert({
+        conversation_id: conversation.id,
+        sender_type: 'agent',
+        content_type: 'text',
+        content_text: text,
+        channel: 'sms',
+        status: 'sent',
+        metadata: { telnyx_message_id: telnyxMsgId ?? null },
+        created_at: ts,
+      })
+      if (insErr) {
+        console.error('[automations] sms outbound persist failed:', insErr)
+      } else {
+        await db
+          .from('conversations')
+          .update({ last_message_text: text, last_message_at: ts })
+          .eq('id', conversation.id)
+      }
       return 'sms sent via Telnyx'
     }
 
@@ -1002,6 +1064,10 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
 
 function waitMs(cfg: WaitStepConfig): number {
   const unitMs = cfg.unit === 'days' ? 86_400_000 : cfg.unit === 'hours' ? 3_600_000 : 60_000
+  // `until` (fecha absoluta) permite offsets NEGATIVOS (reminders antes
+  // de la cita): -1 day, -1 hour, -15 minutes. Sin `until`, el wait es
+  // relativo a ahora y se mantiene el mínimo defensivo de 1s.
+  if (cfg.until) return cfg.amount * unitMs
   return Math.max(1_000, cfg.amount * unitMs)
 }
 

@@ -83,6 +83,14 @@ function setCookieFirstParty(name: string, value: string, days: number): void {
   try { document.cookie = `${name}=${value};path=/;max-age=${days*24*60*60};SameSite=Lax`; } catch {}
 }
 
+/** Lee una cookie por nombre (first-party). */
+function readCookie(name: string): string | undefined {
+  try {
+    const raw = document.cookie.split("; ").find(r => r.startsWith(name + "="));
+    return raw ? decodeURIComponent(raw.split("=").slice(1).join("=")) : undefined;
+  } catch { return undefined; }
+}
+
 /** Rellena hidden inputs del formulario con la atribución (el viaje al server) */
 export function fillHiddenInputs(form: HTMLFormElement, attr: Attribution): void {
   const set = (name: string, v?: string) => {
@@ -101,6 +109,10 @@ export function fillHiddenInputs(form: HTMLFormElement, attr: Attribution): void
   set("event_id", attr.event_id);
   set("channel", attr.channel); set("medium", attr.medium);
   set("visitor_id", getVisitorId());
+  // Loop de conversiones: fbc/fbp (Meta) y dominio del referrer viajan
+  // en hidden inputs para que lead-form.ts los envíe al server.
+  set("fbc", attr.fbc); set("fbp", attr.fbp);
+  set("referrer", attr.referrer);
 }
 
 /** Init idempotente: captura DOM → persiste → rellena forms → dataLayer page_view */
@@ -112,6 +124,12 @@ export function initAttribution(): void {
     landingPath: location.pathname,
     existing,
     consent: W.getConsent?.("ad_storage") ?? "granted",
+    // Meta first-party cookies: _fbc (click id) y _fbp (browser id).
+    // Sin ellas la CAPI no puede emparejar el evento website con el
+    // navegador → sin deduplicación. Se leen aquí, se persisten en la
+    // cookie de atribución y viajan en los hidden inputs.
+    fbc: readCookie("_fbc"),
+    fbp: readCookie("_fbp"),
   });
   // persiste campos individuales (mirror) + cookie compuesta
   setCookieMirror({ ...attr.utm, ...attr.click_ids });

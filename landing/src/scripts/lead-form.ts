@@ -95,6 +95,12 @@ function wire(form: HTMLFormElement): void {
       channel: readField(form, "channel") || undefined,
       medium: readField(form, "medium") || undefined,
       visitor_id: readField(form, "visitor_id") || undefined,
+      // Loop de conversiones: Meta _fbc/_fbp y dominio del referrer viajan
+      // en hidden inputs rellenados por god.ts → se propagan al server para
+      // el matching de la CAPI y el reporting de adquisición.
+      fbc: readField(form, "fbc") || undefined,
+      fbp: readField(form, "fbp") || undefined,
+      referrer: readField(form, "referrer") || undefined,
     };
 
     try {

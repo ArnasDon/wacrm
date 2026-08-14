@@ -158,11 +158,17 @@ export async function POST(req: NextRequest) {
 
   try {
     if (eventType === 'call.initiated') await onCallInitiated(admin, accountId, p)
+    else if (eventType === 'call.ringing') await onCallRinging(admin, accountId, p)
     else if (eventType === 'call.answered') await onCallAnswered(admin, accountId, p)
     else if (eventType === 'call.hangup') await onCallHangup(admin, accountId, p)
     else if (eventType === 'message.received') await onMessageReceived(admin, accountId, p)
+    else if (eventType === 'message.sent') await onMessageSent(admin, accountId, p)
+    else if (eventType === 'message.finalized') await onMessageFinalized(admin, accountId, p)
     else if (eventType === 'call.recording.saved') await onRecordingSaved(admin, accountId, p)
-    // Otros eventos (call.machine.*, etc.) se ignoran.
+    // Otros eventos (call.machine.*, call.bridged, etc.) se ignoran:
+    // `call.bridged` no aporta estado nuevo — `call.answered` ya marca la
+    // conexión y `call.hangup` cierra el ciclo; un inbound que no llegó a
+    // answered queda como `disposition='missed'` + hangup_cause en `calls`.
   } catch (err) {
     console.error('[telnyx:webhook] handler error:', eventType, err)
   }
@@ -626,6 +632,95 @@ async function onMessageReceived(admin: Admin, accountId: string, p: Payload) {
     last_message_text: text,
     last_message_at: new Date().toISOString(),
   }).eq('id', conversation.id)
+}
+
+// ------------------------------------------------------------
+// Outbound SMS lifecycle (message.sent / message.finalized)
+//
+// El SMS saliente se persiste en `messages` desde el step send_sms del
+// engine (metadata.telnyx_message_id). Estos webhooks cierran el ciclo:
+//   message.sent      → status 'sent' (aceptado por el carrier)
+//   message.finalized → status 'delivered' | 'failed' (terminal)
+// y disparan la automatización correspondiente (`message_delivered` /
+// `message_failed`). El event_type real de Telnyx es `message.finalized`
+// — NO existen `message.delivered`/`message.failed` (doc oficial,
+// verificado context7): el estado terminal viaja en el payload.
+// ------------------------------------------------------------
+
+/** Estado terminal del destinatario en message.finalized (to[].status). */
+function terminalDeliveryStatus(p: Payload): 'delivered' | 'failed' | null {
+  const to = p.to
+  if (!Array.isArray(to)) return null
+  const status = (to[0] as { status?: string } | undefined)?.status ?? ''
+  if (status.includes('delivered')) return 'delivered'
+  if (status.includes('failed')) return 'failed'
+  return null
+}
+
+async function onMessageSent(admin: Admin, accountId: string, p: Payload) {
+  const telnyxMsgId = (p.id as string) ?? (p.message_id as string)
+  if (!telnyxMsgId) return
+  await admin
+    .from('messages')
+    .update({ status: 'sent' })
+    .eq('metadata->telnyx_message_id', telnyxMsgId)
+}
+
+async function onMessageFinalized(admin: Admin, accountId: string, p: Payload) {
+  const telnyxMsgId = (p.id as string) ?? (p.message_id as string)
+  if (!telnyxMsgId) return
+
+  const terminal = terminalDeliveryStatus(p)
+  if (!terminal) {
+    console.warn('[telnyx:webhook] message.finalized sin status terminal, ignorado')
+    return
+  }
+
+  const { data: msg } = await admin
+    .from('messages')
+    .select('id, conversation_id, conversations(account_id, contact_id)')
+    .eq('metadata->telnyx_message_id', telnyxMsgId)
+    .maybeSingle()
+
+  if (!msg) {
+    console.warn('[telnyx:webhook] message.finalized sin fila messages, ignorado')
+    return
+  }
+
+  await admin.from('messages').update({ status: terminal }).eq('id', msg.id)
+
+  // Fire-and-forget: el engine nunca lanza, y un fallo aquí no debe
+  // romper el ack del webhook. Mismo patrón que message_read (WhatsApp).
+  const conv = (msg.conversations as unknown as {
+    account_id: string
+    contact_id: string | null
+  } | null)
+  if (!conv?.account_id || conv.account_id !== accountId) return
+  if (!conv.contact_id) return
+
+  await runAutomationsForTrigger({
+    accountId,
+    triggerType: terminal === 'delivered' ? 'message_delivered' : 'message_failed',
+    contactId: conv.contact_id,
+    context: { conversation_id: msg.conversation_id },
+  }).catch((err) =>
+    console.error('[automations] message delivery dispatch failed:', err),
+  )
+}
+
+// ------------------------------------------------------------
+// call.ringing — señal explícita de timbre (misma transición que ya
+// hacía onCallInitiated; idempotente sobre el mismo leg).
+// ------------------------------------------------------------
+
+async function onCallRinging(admin: Admin, accountId: string, p: Payload) {
+  const ctrl = p.call_control_id
+  if (!ctrl) return
+  await admin
+    .from('calls')
+    .update({ status: 'ringing' })
+    .eq('telnyx_call_control_id', ctrl)
+    .eq('account_id', accountId)
 }
 
 async function findContactByPhone(

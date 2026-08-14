@@ -80,6 +80,11 @@ export const attributionInputSchema = z.object({
   event_id: z.string().optional(),
   consent: z.string().optional(),
   visitor_id: z.string().optional(),
+  // Loop de conversiones: Meta _fbc/_fbp (matching CAPI) y dominio del
+  // referrer. Llegan en hidden inputs desde god.js.
+  fbc: z.string().max(256).optional(),
+  fbp: z.string().max(256).optional(),
+  referrer: z.string().max(256).optional(),
 });
 
 /** Payload acotado: valores JSON simples, tamaño y número de claves limitados

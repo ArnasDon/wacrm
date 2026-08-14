@@ -47,6 +47,39 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Message Read',
     pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   },
+  message_delivered: {
+    label: 'SMS Delivered',
+    pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  },
+  message_failed: {
+    label: 'SMS Failed',
+    pillClass: 'border-red-500/30 bg-red-500/10 text-red-300',
+  },
+  // ── Appointment (agenda interna) ────────────────────────────
+  appointment_created: {
+    label: 'Appointment Created',
+    pillClass: 'border-primary/30 bg-primary/10 text-primary',
+  },
+  appointment_updated: {
+    label: 'Appointment Updated',
+    pillClass: 'border-primary/30 bg-primary/10 text-primary',
+  },
+  appointment_rescheduled: {
+    label: 'Appointment Rescheduled',
+    pillClass: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  },
+  appointment_cancelled: {
+    label: 'Appointment Cancelled',
+    pillClass: 'border-red-500/30 bg-red-500/10 text-red-300',
+  },
+  appointment_completed: {
+    label: 'Appointment Completed',
+    pillClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  },
+  appointment_no_show: {
+    label: 'Appointment No-Show',
+    pillClass: 'border-red-500/30 bg-red-500/10 text-red-300',
+  },
 }
 
 export function triggerMeta(t: AutomationTriggerType | string): TriggerMeta {

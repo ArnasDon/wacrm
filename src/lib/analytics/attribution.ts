@@ -24,6 +24,16 @@ export interface Attribution {
   last_touch?: number;
   event_id?: string;
   consent?: string;    // hook Consent Mode (ad_storage)
+  // Meta signal: cookies first-party _fbc/_fbp que Meta planta. Su ausencia
+  // rompe el matching browser→server de la CAPI (los eventos website llegan
+  // sin deduplicar). Se leen en god.ts y se propagan hasta el server.
+  fbc?: string;        // Meta click id (_fbc)
+  fbp?: string;        // Meta browser id (_fbp)
+  // Dominio del referrer (hostname). El usuario lo pidió explícitamente
+  // ("de referrer poner lo del dom que tengo de donde viene"): hoy solo se
+  // guarda el referrer crudo en page_view.payload; se persiste el dominio
+  // en la atribución para reporting de adquisición.
+  referrer?: string;   // hostname, ej. "google.com"
 }
 
 // 13 campos leídos del query string
@@ -72,6 +82,7 @@ export function mapReferrerToChannel(referrer: string): { channel: string; mediu
 export function buildAttribution(input: {
   search: string; referrer: string; landingPath: string;
   existing?: Partial<Attribution>; consent?: string;
+  fbc?: string; fbp?: string;
 }): Attribution {
   const url = parseUrlParams(input.search);
   const clickIds = url.click_ids ?? {};
@@ -94,7 +105,23 @@ export function buildAttribution(input: {
     last_touch: Date.now(),
     event_id: input.existing?.event_id ?? genEventId(),
     consent: input.consent,
+    // Meta _fbc/_fbp y dominio del referrer. Precedencia: la del DOM de hoy
+    // (o la persistida si la captura de cookies la preservó) antes que la
+    // existente en la cookie de atribución.
+    fbc: input.fbc ?? input.existing?.fbc,
+    fbp: input.fbp ?? input.existing?.fbp,
+    referrer: referrerDomain(input.referrer) ?? input.existing?.referrer,
   };
+}
+
+/** 4b. Extrae el HOSTNAME de un referrer (el dominio "de donde viene"). */
+export function referrerDomain(referrer: string): string | undefined {
+  if (!referrer) return undefined;
+  try {
+    return new URL(referrer).hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 5. ref_code: ata una conversión OFFLINE (WhatsApp/tel) al canal de origen */

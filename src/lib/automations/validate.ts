@@ -222,6 +222,21 @@ export function validateTriggerForActivation(
     // trigger fires server-side from the WhatsApp webhook when a status
     // update with `read` arrives for an outbound message; there is no
     // user-editable payload, so activation requires nothing.
+  } else if (triggerType === 'message_delivered' || triggerType === 'message_failed') {
+    // No config required (Telnyx `message.finalized`). The trigger fires
+    // server-side from the webhook with the terminal status; there is no
+    // user-editable payload, so activation requires nothing.
+  } else if (
+    triggerType === 'appointment_created' ||
+    triggerType === 'appointment_updated' ||
+    triggerType === 'appointment_rescheduled' ||
+    triggerType === 'appointment_cancelled' ||
+    triggerType === 'appointment_completed' ||
+    triggerType === 'appointment_no_show'
+  ) {
+    // No config required (agenda interna). The trigger fires server-side
+    // from the appointments API with vars.appointment_start_at; there is
+    // no user-editable payload, so activation requires nothing.
   }
 
   return issues

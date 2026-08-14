@@ -11,6 +11,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  CalendarDays,
   Crown,
   FileText,
   GitBranch,
@@ -107,6 +108,7 @@ const navItems: NavItem[] = [
   { href: "/calls", labelKey: "calls", icon: Phone },
   { href: "/email", labelKey: "email", icon: Mail },
   { href: "/reports", labelKey: "reports", icon: BarChart3 },
+  { href: "/appointments", labelKey: "appointments", icon: CalendarDays },
   { href: "/pages", labelKey: "pages", icon: FileText },
   { href: "/media", labelKey: "media", icon: ImageIcon },
 ];

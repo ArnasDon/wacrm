@@ -28,6 +28,7 @@
     "calls": "Teléfono",
     "email": "Correo",
     "reports": "Reportes",
+    "appointments": "Calendario",
     "settings": "Ajustes",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversación sin leer} other {conversaciones sin leer}}",
@@ -956,6 +957,38 @@
         "message_read": {
           "label": "Mensaje leído",
           "hint": "Cuando el contacto lee un mensaje que le enviaste"
+        },
+        "message_delivered": {
+          "label": "SMS entregado",
+          "hint": "Cuando un SMS saliente se entrega (Telnyx)"
+        },
+        "message_failed": {
+          "label": "SMS fallido",
+          "hint": "Cuando un SMS saliente falla al entregarse (Telnyx)"
+        },
+        "appointment_created": {
+          "label": "Cita creada",
+          "hint": "Cuando se crea una cita"
+        },
+        "appointment_updated": {
+          "label": "Cita actualizada",
+          "hint": "Cuando se actualiza una cita"
+        },
+        "appointment_rescheduled": {
+          "label": "Cita reprogramada",
+          "hint": "Cuando una cita se mueve a otra fecha/hora"
+        },
+        "appointment_cancelled": {
+          "label": "Cita cancelada",
+          "hint": "Cuando se cancela una cita"
+        },
+        "appointment_completed": {
+          "label": "Cita completada",
+          "hint": "Cuando una cita se marca como completada"
+        },
+        "appointment_no_show": {
+          "label": "Cita sin asistencia",
+          "hint": "Cuando una cita se marca como no presentado"
         }
       },
       "trigger": "Disparador",
@@ -1035,6 +1068,8 @@
         "titleLabel": "Título",
         "amountLabel": "Cantidad",
         "unitLabel": "Unidad",
+        "waitUntilLabel": "Hasta (opcional)",
+        "waitUntilHint": "Fecha absoluta o '{{vars.appointment_start_at}}' para recordatorios antes de la cita (la cantidad se vuelve el offset, negativo = antes)",
         "units": {
           "minutes": "Minutos",
           "hours": "Horas",

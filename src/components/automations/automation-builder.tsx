@@ -159,6 +159,16 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   // en api/whatsapp/webhook/route.ts:452— pero no figuraba aquí, así que no
   // había forma de elegirlo en el desplegable.
   { value: "message_read" },
+  // SMS outbound (Telnyx message.finalized, webhook → dispatch server-side).
+  { value: "message_delivered" },
+  { value: "message_failed" },
+  // Agenda interna (appointments API → dispatch server-side).
+  { value: "appointment_created" },
+  { value: "appointment_updated" },
+  { value: "appointment_rescheduled" },
+  { value: "appointment_cancelled" },
+  { value: "appointment_completed" },
+  { value: "appointment_no_show" },
 ]
 
 function cid(): string {
@@ -1514,26 +1524,39 @@ function StepEditor({
       )
     case "wait":
       return (
-        <div className="grid grid-cols-2 gap-2">
-          <FieldBlock label={t("config.amountLabel")}>
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <FieldBlock label={t("config.amountLabel")}>
+              <Input
+                type="number"
+                min={1}
+                value={(cfg.amount as number) ?? 1}
+                onChange={(e) => set({ amount: Math.max(1, Number(e.target.value)) })}
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+            <FieldBlock label={t("config.unitLabel")}>
+              <select
+                value={(cfg.unit as string) ?? "hours"}
+                onChange={(e) => set({ unit: e.target.value })}
+                className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+              >
+                <option value="minutes">{t("config.units.minutes")}</option>
+                <option value="hours">{t("config.units.hours")}</option>
+                <option value="days">{t("config.units.days")}</option>
+              </select>
+            </FieldBlock>
+          </div>
+          <FieldBlock label={t("config.waitUntilLabel")}>
             <Input
-              type="number"
-              min={1}
-              value={(cfg.amount as number) ?? 1}
-              onChange={(e) => set({ amount: Math.max(1, Number(e.target.value)) })}
+              placeholder="{{vars.appointment_start_at}}"
+              value={(cfg.until as string) ?? ""}
+              onChange={(e) => set({ until: e.target.value || undefined })}
               className="bg-muted text-foreground"
             />
-          </FieldBlock>
-          <FieldBlock label={t("config.unitLabel")}>
-            <select
-              value={(cfg.unit as string) ?? "hours"}
-              onChange={(e) => set({ unit: e.target.value })}
-              className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
-            >
-              <option value="minutes">{t("config.units.minutes")}</option>
-              <option value="hours">{t("config.units.hours")}</option>
-              <option value="days">{t("config.units.days")}</option>
-            </select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {t("config.waitUntilHint")}
+            </p>
           </FieldBlock>
         </div>
       )
@@ -1662,7 +1685,7 @@ function previewFor(step: BuilderStep): string {
     case "send_template":
       return (step.step_config.template_name as string) || "pick a template"
     case "wait":
-      return `${step.step_config.amount ?? "?"} ${step.step_config.unit ?? ""}`
+      return `${step.step_config.amount ?? "?"} ${step.step_config.unit ?? ""}${step.step_config.until ? " → until" : ""}`
     case "condition":
       return `when ${step.step_config.subject ?? "?"}`
     case "send_webhook":

@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
     upsertCalls: [] as { table: string; payload: unknown }[],
     logInserts: [] as Record<string, unknown>[],
     logUpdates: [] as Record<string, unknown>[],
+    pendingInserts: [] as Record<string, unknown>[],
   },
 }));
 
@@ -58,6 +59,13 @@ vi.mock("./admin-client", () => {
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
     if (table === "automation_steps") return { data: state.steps, error: null };
+    if (table === "automation_pending_executions") {
+      if (type === "insert") {
+        state.pendingInserts.push(ops.payload as Record<string, unknown>);
+        return { data: { id: "pe1" }, error: null };
+      }
+      return { data: null, error: null };
+    }
     return { data: null, error: null };
   }
 
@@ -119,6 +127,7 @@ beforeEach(() => {
   h.state.upsertCalls = [];
   h.state.logInserts = [];
   h.state.logUpdates = [];
+  h.state.pendingInserts = [];
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -548,5 +557,97 @@ describe("triggerMatches — keyword_match", () => {
   it("ignores empty keywords and empty messages in `word` mode", () => {
     expect(on(automation({ keywords: [""], match_type: "word" }), "anything")).toBe(false);
     expect(on(automation({ keywords: ["hi"], match_type: "word" }), "")).toBe(false);
+  });
+});
+
+describe("wait step — appointment reminders via `until`", () => {
+  function waitAutomation(cfg: Record<string, unknown>) {
+    return {
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      trigger_type: "appointment_created",
+      trigger_config: {},
+      is_active: true,
+    };
+  }
+
+  it("schedules run_at at the until date plus a NEGATIVE offset (reminder before the appointment)", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [waitAutomation({})];
+    h.state.steps = [{
+      id: "s1",
+      automation_id: "a1",
+      step_type: "wait",
+      position: 0,
+      parent_step_id: null,
+      step_config: { amount: -1, unit: "hours", until: "{{vars.appointment_start_at}}" },
+    }];
+
+    // 10:00 appointment → reminder must fire at 09:00.
+    const startAt = new Date("2026-08-14T10:00:00.000Z");
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "appointment_created",
+      contactId: "c1",
+      context: { vars: { appointment_start_at: startAt.toISOString() } },
+    });
+
+    expect(h.state.pendingInserts.length).toBe(1);
+    const runAt = new Date(h.state.pendingInserts[0].run_at as string);
+    expect(runAt.toISOString()).toBe("2026-08-14T09:00:00.000Z");
+  });
+
+  it("schedules run_at at the until date plus a positive offset (follow-up after the appointment)", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [waitAutomation({})];
+    h.state.steps = [{
+      id: "s1",
+      automation_id: "a1",
+      step_type: "wait",
+      position: 0,
+      parent_step_id: null,
+      step_config: { amount: 1, unit: "days", until: "{{vars.appointment_start_at}}" },
+    }];
+
+    const startAt = new Date("2026-08-14T10:00:00.000Z");
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "appointment_created",
+      contactId: "c1",
+      context: { vars: { appointment_start_at: startAt.toISOString() } },
+    });
+
+    expect(h.state.pendingInserts.length).toBe(1);
+    const runAt = new Date(h.state.pendingInserts[0].run_at as string);
+    expect(runAt.toISOString()).toBe("2026-08-15T10:00:00.000Z");
+  });
+
+  it("falls back to relative now when `until` is absent (original behaviour)", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [waitAutomation({})];
+    h.state.steps = [{
+      id: "s1",
+      automation_id: "a1",
+      step_type: "wait",
+      position: 0,
+      parent_step_id: null,
+      step_config: { amount: 5, unit: "minutes" },
+    }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "appointment_created",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.pendingInserts.length).toBe(1);
+    const runAt = Date.parse(h.state.pendingInserts[0].run_at as string);
+    const now = Date.now();
+    // 5 minutes out — with the defensive 1s floor and Date.now skew, allow slack.
+    expect(Math.abs(runAt - (now + 5 * 60_000))).toBeLessThan(5_000);
   });
 });

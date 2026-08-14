@@ -297,4 +297,22 @@ describe("validateTriggerForActivation", () => {
   it("does not flag unknown trigger types (handled elsewhere)", () => {
     expect(validateTriggerForActivation("some_future_trigger", {})).toEqual([]);
   });
+
+  it("accepts no-config triggers: message_delivered / message_failed (Telnyx delivery)", () => {
+    // Terminal SMS status arrives via Telnyx `message.finalized`; there
+    // is no user-editable payload, so activation must not require one.
+    expect(validateTriggerForActivation("message_delivered", {})).toEqual([]);
+    expect(validateTriggerForActivation("message_failed", {})).toEqual([]);
+  });
+
+  it("accepts no-config triggers: appointment_* lifecycle (internal calendar)", () => {
+    // Fired server-side from the appointments API with
+    // vars.appointment_start_at injected into context; no config needed.
+    expect(validateTriggerForActivation("appointment_created", {})).toEqual([]);
+    expect(validateTriggerForActivation("appointment_updated", {})).toEqual([]);
+    expect(validateTriggerForActivation("appointment_rescheduled", {})).toEqual([]);
+    expect(validateTriggerForActivation("appointment_cancelled", {})).toEqual([]);
+    expect(validateTriggerForActivation("appointment_completed", {})).toEqual([]);
+    expect(validateTriggerForActivation("appointment_no_show", {})).toEqual([]);
+  });
 });

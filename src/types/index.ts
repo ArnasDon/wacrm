@@ -634,7 +634,23 @@ export type AutomationTriggerType =
   /** Customer read an outbound WhatsApp message (check azul, DAD §8.3 —
    *  decision `mensaje_leido`). Dispatched by the webhook on status
    *  update `read`; matches on the outbound message. */
-  | 'message_read';
+  | 'message_read'
+  /** SMS outbound entregado (Telnyx `message.finalized`, status
+   *  delivered). Dispatched server-side by the webhook; no config. */
+  | 'message_delivered'
+  /** SMS outbound fallido (Telnyx `message.finalized`, status failed).
+   *  Dispatched server-side by the webhook; no config. */
+  | 'message_failed'
+  // ── Appointment (agenda interna) ─────────────────────────────
+  // Dispatched server-side por la API de citas con
+  // context.vars.appointment_start_at (y demás campos de la cita), que
+  // alimenta los reminders por wait-step (WaitStepConfig.until).
+  | 'appointment_created'
+  | 'appointment_updated'
+  | 'appointment_rescheduled'
+  | 'appointment_cancelled'
+  | 'appointment_completed'
+  | 'appointment_no_show';
 
 export type AutomationStepType =
   | 'send_message'
@@ -742,6 +758,16 @@ export interface CreateDealStepConfig {
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
+  /**
+   * Fecha absoluta (ISO) o referencia `{{vars.<campo>}}` resuelta en
+   * runtime. Mecanismo mínimo para reminders relativos a una fecha
+   * (agenda): el dispatch de appointment_* inyecta
+   * `vars.appointment_start_at`; un wait con `until="{{vars.appointment_start_at}}"`
+   * y amount negativo (-1 day, -1 hour, -15 minutes) programa run_at =
+   * reference_date + offset sin scheduler nuevo (el cron existente lo
+   * drena vía automation_pending_executions).
+   */
+  until?: string;
 }
 
 export type ConditionSubject =

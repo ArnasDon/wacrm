@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     const admin = supabaseAdmin();
     const auditUserId = await resolveAuditUserId(admin, account_id);
     try {
-      await findOrCreateContact(admin, account_id, auditUserId, {
+      const contact = await findOrCreateContact(admin, account_id, auditUserId, {
         phone,
         name: typeof payload?.name === 'string' ? payload.name : undefined,
         email: typeof payload?.email === 'string' ? payload.email : undefined,
@@ -101,6 +101,33 @@ export async function POST(req: NextRequest) {
         // findOrCreateContact la ignora.
         attribution: attribution ?? null,
       });
+
+      // Loop de conversiones: el form_submit ES el lead. Se emite el evento
+      // canónico `lead` con el contact_id recién resuelto y un event_id
+      // DETERMINÍSTICO derivado del form_submit (`lead_<event_id>`): el mismo
+      // formulario reenviado (retry de red, doble clic) produce el mismo
+      // event_id → el UNIQUE de tracking_events lo descarta → Google/Meta
+      // reciben una sola conversión. Sin esto, cada reintento del navegador
+      // reportaría un lead nuevo.
+      const leadEventId = `lead_${event_id}`;
+      const { error: leadErr } = await supabaseAdmin()
+        .from('tracking_events')
+        .upsert(
+          {
+            account_id,
+            contact_id: contact.id,
+            event_id: leadEventId,
+            event_type: 'lead',
+            attribution: attribution ?? null,
+            payload: { source_event_id: event_id },
+            ref_code: ref_code ?? null,
+            landing_slug: landing_slug ?? null,
+          },
+          { onConflict: 'event_id', ignoreDuplicates: true }
+        );
+      if (leadErr) {
+        console.error('[api/events] lead event error:', leadErr);
+      }
     } catch (err) {
       console.error('[api/events] findOrCreateContact error:', err);
       return NextResponse.json({ error: 'lead_failed' }, { status: 500 });

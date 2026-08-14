@@ -2,19 +2,20 @@
 
 import { Lock, Unlock, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { amountOf, percentOf } from '@/lib/calculator/engine';
+import { percentOf } from '@/lib/calculator/engine';
 import { formatPercentNumber } from '@/lib/calculator/money';
+import { MoneyInput } from './money-input';
 import type { FlowItem } from '@/lib/calculator/types';
 
 interface FlowItemRowProps {
   item: FlowItem;
   /** True when this is the item the engine is currently auto-balancing —
-   *  its value is computed, not typed, so its % renders read-only. Only
-   *  ever true for an item with no percent link (see engine.ts). */
+   *  its value is computed, not typed, so its %/valor render read-only. */
   isBalancer: boolean;
   propertyValue: number;
   formatMoney: (value: number) => string;
   onToggleLock: () => void;
+  onChangeValue: (value: number) => void;
   onChangeCount: (count: number) => void;
   onChangePercent: (percent: number) => void;
   onRemove: () => void;
@@ -25,16 +26,16 @@ interface FlowItemRowProps {
   installmentsCountLabel: string;
 }
 
-/** Below this, the Chaves etapa's computed value renders in red — a
+/** Below this, the Chaves etapa's per-unit value renders in red — a
  *  pure visual nudge (spec §11), independent of the 100% validation
  *  banner. Never blocks editing, saving, or the engine's own math. */
 const CHAVES_MIN_PERCENT = 40;
 
 /** Fixed column widths shared by EVERY row, regardless of item kind or
- *  label length — this is what keeps the percent/quantity boxes in a
- *  single, perfectly aligned vertical column (spec §1–3). Quantity
- *  still reserves its column for single-kind items (empty "—"), so a
- *  row without it never shifts the value/remove columns leftward. */
+ *  label length — this is what keeps the percent/quantity/value boxes
+ *  in perfectly aligned vertical columns. Quantity still reserves its
+ *  column for single-kind items (empty "—"), so a row without it
+ *  never shifts the value/remove columns leftward. */
 const GRID_COLUMNS =
   'grid grid-cols-[2rem_7.5rem_4.5rem_3.25rem_1fr_1.75rem] items-center gap-x-2 sm:grid-cols-[2rem_9rem_4.5rem_3.25rem_1fr_1.75rem]';
 
@@ -44,6 +45,7 @@ export function FlowItemRow({
   propertyValue,
   formatMoney,
   onToggleLock,
+  onChangeValue,
   onChangeCount,
   onChangePercent,
   onRemove,
@@ -53,7 +55,7 @@ export function FlowItemRow({
   removeLabel,
   installmentsCountLabel,
 }: FlowItemRowProps) {
-  const percentDisabled = item.locked || isBalancer;
+  const fieldsDisabled = item.locked || isBalancer;
   const livePercent = percentOf(item, propertyValue);
   const isChaves = item.label.trim().toLowerCase() === 'chaves';
   const chavesWarning = isChaves && livePercent < CHAVES_MIN_PERCENT - 0.05;
@@ -83,7 +85,7 @@ export function FlowItemRow({
       />
 
       <div className="flex items-center gap-1">
-        {percentDisabled ? (
+        {fieldsDisabled ? (
           <span className="w-full text-center text-sm tabular-nums text-muted-foreground">
             {formatPercentNumber(livePercent)}%
           </span>
@@ -120,14 +122,30 @@ export function FlowItemRow({
         </span>
       )}
 
-      <span
-        className={cn(
-          'truncate text-right text-sm font-medium tabular-nums',
-          chavesWarning ? 'text-destructive' : 'text-foreground',
+      <div className="flex min-w-0 items-center justify-end gap-1">
+        {fieldsDisabled ? (
+          <span
+            className={cn(
+              'truncate text-right text-sm font-medium tabular-nums',
+              chavesWarning ? 'text-destructive' : 'text-foreground',
+            )}
+          >
+            {formatMoney(item.value)}
+          </span>
+        ) : (
+          <>
+            <span className="shrink-0 text-sm text-muted-foreground select-none">R$</span>
+            <MoneyInput
+              value={item.value}
+              onChange={onChangeValue}
+              className={cn(
+                'h-8 min-w-0 flex-1 text-right text-sm font-medium',
+                chavesWarning ? 'text-destructive' : 'text-foreground',
+              )}
+            />
+          </>
         )}
-      >
-        {formatMoney(amountOf(item))}
-      </span>
+      </div>
 
       <button
         type="button"

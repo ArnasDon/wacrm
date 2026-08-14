@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   amountOf,
+  applyDirectEdit,
   buildFlowText,
   createDefaultFlowItems,
   createFlowItem,
@@ -377,6 +378,106 @@ describe('percentOf', () => {
   });
   it('falls back to the stored percent link when property value is 0', () => {
     expect(percentOf(single('a', 'A', 0, false, 25), 0)).toBe(25);
+  });
+});
+
+describe('applyDirectEdit — editing the unit value or count column', () => {
+  it("the spec's own example: trava Entrada e Chaves, edita o valor unitário da Parcela, Intercaladas absorve o resto", () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+      installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
+      single('chaves', 'Chaves', 200_000, true, 40),
+    ];
+    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 2_500 });
+
+    expect(result.balancerId).toBe('intercaladas');
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(2_500); // exactly what was typed
+    expect(result.items.find((i) => i.id === 'parcelas')!.percent).toBeNull(); // link broken
+
+    // entrada(50k) + chaves(200k) + parcelas(50*2500=125k) = 375k;
+    // intercaladas absorbs the remaining 125k over its 8 parcelas.
+    const intercaladas = result.items.find((i) => i.id === 'intercaladas')!;
+    expect(intercaladas.value).toBe(125_000 / 8);
+    expect(intercaladas.percent).toBeNull();
+    expect(result.status).toBe('closed');
+    expect(result.total).toBeCloseTo(500_000, 5);
+  });
+
+  it('editing count also breaks the link and triggers the same rebalancing', () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+      installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
+      single('chaves', 'Chaves', 200_000, true, 40),
+    ];
+    const result = applyDirectEdit(500_000, items, 'parcelas', { count: 40 });
+
+    const parcelas = result.items.find((i) => i.id === 'parcelas')!;
+    expect(parcelas.count).toBe(40);
+    expect(parcelas.value).toBe(1_600); // value untouched, only count changed
+    expect(result.balancerId).toBe('intercaladas');
+    // entrada(50k)+chaves(200k)+parcelas(40*1600=64k)=314k; intercaladas absorbs 186k.
+    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBeCloseTo(186_000 / 8, 5);
+    expect(result.status).toBe('closed');
+  });
+
+  it('other unlocked items that were never touched keep tracking their own percent', () => {
+    // Only entrada locked; parcelas edited directly; intercaladas and
+    // chaves stay percent-linked — intercaladas keeps computing from
+    // its own 25%, chaves (last unlocked, still percent-linked) is
+    // the one nulled to become the balancer.
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+      installments('intercaladas', 'Intercaladas', 8, 10_000, false, 25),
+      single('chaves', 'Chaves', 200_000, false, 40),
+    ];
+    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 2_000 });
+
+    expect(result.balancerId).toBe('chaves');
+    expect(result.items.find((i) => i.id === 'intercaladas')!.value).toBe(15_625); // 25% of 500k / 8
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(2_000);
+  });
+
+  it('when the edited item is the last unlocked one, the next-to-last unlocked item balances instead', () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+      single('chaves', 'Chaves', 200_000, false, 40),
+    ];
+    const result = applyDirectEdit(500_000, items, 'chaves', { value: 150_000 });
+
+    expect(result.balancerId).toBe('parcelas');
+    expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(150_000); // exactly what was typed
+    // entrada(50k)+chaves(150k)=200k; parcelas absorbs 300k over 50x.
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(300_000 / 50);
+  });
+
+  it('with no other unlocked item to rebalance, the edit stands as typed and status reflects the gap', () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      single('chaves', 'Chaves', 200_000, true, 40),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+    ];
+    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 1_000 });
+
+    expect(result.balancerId).toBeNull();
+    expect(result.items.find((i) => i.id === 'parcelas')!.value).toBe(1_000);
+    // entrada(50k)+chaves(200k)+parcelas(50*1000=50k)=300k, faltam 200k.
+    expect(result.status).toBe('incomplete');
+    expect(result.difference).toBeCloseTo(-200_000, 5);
+  });
+
+  it('locked items are never touched by a direct edit elsewhere', () => {
+    const items = [
+      single('entrada', 'Entrada', 50_000, true, 10),
+      installments('parcelas', 'Parcelas', 50, 1_600, false, 25),
+      single('chaves', 'Chaves', 200_000, true, 40),
+    ];
+    const result = applyDirectEdit(500_000, items, 'parcelas', { value: 999 });
+    expect(result.items.find((i) => i.id === 'entrada')!.value).toBe(50_000);
+    expect(result.items.find((i) => i.id === 'chaves')!.value).toBe(200_000);
   });
 });
 

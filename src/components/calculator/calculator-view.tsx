@@ -16,13 +16,14 @@ import {
   type CalcProjectWithComponents,
 } from '@/lib/calculator/queries';
 import {
+  applyDirectEdit,
   createDefaultFlowItems,
   createFlowItem,
   recalculate,
   buildFlowText,
   toComponentTemplates,
 } from '@/lib/calculator/engine';
-import type { FlowItem, FlowItemKind } from '@/lib/calculator/types';
+import type { FlowItem } from '@/lib/calculator/types';
 import { ProjectPicker } from './project-picker';
 import { ProjectManagerDialog } from './project-manager-dialog';
 import { PropertyValueInput } from './property-value-input';
@@ -137,11 +138,24 @@ export function CalculatorView() {
     [items, applyItems],
   );
 
+  // Direct edits to the per-unit value or the installment count both
+  // go through applyDirectEdit: the edited item's percent link
+  // breaks, and the last OTHER unlocked item (this update's balancer)
+  // recalculates to keep the flow closed at propertyValue — "trava
+  // Entrada e Chaves, digita R$2.500 na Parcela, Intercaladas absorve
+  // o resto" (see engine.ts for the full rationale).
+  const handleChangeValue = useCallback(
+    (id: string, value: number) => {
+      setItems(applyDirectEdit(propertyValue, items, id, { value }).items);
+    },
+    [items, propertyValue],
+  );
+
   const handleChangeCount = useCallback(
     (id: string, count: number) => {
-      applyItems(items.map((i) => (i.id === id ? { ...i, count } : i)));
+      setItems(applyDirectEdit(propertyValue, items, id, { count }).items);
     },
-    [items, applyItems],
+    [items, propertyValue],
   );
 
   const handleChangeLabel = useCallback((id: string, label: string) => {
@@ -151,16 +165,6 @@ export function CalculatorView() {
   const handleRemove = useCallback(
     (id: string) => {
       applyItems(items.filter((i) => i.id !== id));
-    },
-    [items, applyItems],
-  );
-
-  const handleAdd = useCallback(
-    (kind: FlowItemKind, label: string) => {
-      applyItems([
-        ...items,
-        { id: crypto.randomUUID(), label, kind, locked: false, value: 0, count: 1, percent: null },
-      ]);
     },
     [items, applyItems],
   );
@@ -318,16 +322,12 @@ export function CalculatorView() {
             propertyValue={propertyValue}
             formatMoney={formatBRL}
             onToggleLock={handleToggleLock}
+            onChangeValue={handleChangeValue}
             onChangeCount={handleChangeCount}
             onChangePercent={handleChangePercent}
             onChangeLabel={handleChangeLabel}
             onRemove={handleRemove}
-            onAdd={handleAdd}
             emptyStateLabel={t('emptyFlow')}
-            addLabel={t('addComponent')}
-            labelPlaceholder={t('componentLabelPlaceholder')}
-            singleKindLabel={t('kindSingle')}
-            installmentsKindLabel={t('kindInstallments')}
             installmentsCountLabel={t('installmentsCountLabel')}
             lockLabel={t('lock')}
             unlockLabel={t('unlock')}

@@ -124,18 +124,6 @@ export function toComponentTemplates(
   }));
 }
 
-export function createBlankFlowItem(kind: FlowItem['kind'], label: string): FlowItem {
-  return {
-    id: crypto.randomUUID(),
-    label,
-    kind,
-    locked: false,
-    value: 0,
-    count: 1,
-    percent: null,
-  };
-}
-
 function statusFor(difference: number): FlowStatus {
   if (Math.abs(difference) <= EPSILON) return 'closed';
   return difference < 0 ? 'incomplete' : 'excess';
@@ -186,7 +174,11 @@ export function percentOf(item: FlowItem, propertyValue: number): number {
  * auto-redistributed" both fall out of logic that already existed —
  * nothing new was invented to enforce them.
  */
-export function recalculate(propertyValue: number, items: FlowItem[]): FlowResult {
+export function recalculate(
+  propertyValue: number,
+  items: FlowItem[],
+  options?: { balancerId?: string },
+): FlowResult {
   const lockedSum = items.filter((i) => i.locked).reduce((sum, i) => sum + amountOf(i), 0);
 
   const unlockedIndexes = items
@@ -199,10 +191,15 @@ export function recalculate(propertyValue: number, items: FlowItem[]): FlowResul
     return { items, total, difference, status: statusFor(difference), balancerId: null };
   }
 
-  // A percent-linked item always determines its own value — it can
-  // never be "the balancer" the engine fills in to force closure.
-  const balancerEntry =
-    [...unlockedIndexes].reverse().find(({ item }) => item.percent == null) ?? null;
+  // `options.balancerId` lets a caller PIN which unlocked item absorbs
+  // the remainder for this update (used by `applyDirectEdit` so the
+  // item the user just typed into is never the one that gets
+  // silently overwritten). Without it, a percent-linked item always
+  // determines its own value — it can never be "the balancer" the
+  // engine fills in to force closure.
+  const balancerEntry = options?.balancerId
+    ? (unlockedIndexes.find(({ item }) => item.id === options.balancerId) ?? null)
+    : ([...unlockedIndexes].reverse().find(({ item }) => item.percent == null) ?? null);
 
   const percentAppliedItems = items.map((item, index) => {
     const isUnlocked = unlockedIndexes.some((e) => e.index === index);
@@ -251,6 +248,63 @@ export function recalculate(propertyValue: number, items: FlowItem[]): FlowResul
     status: statusFor(difference),
     balancerId: balancerEntry.item.id,
   };
+}
+
+/**
+ * Applies a direct edit to an item's per-unit value or its
+ * installment count — the two fields the "Valor unitário"/quantidade
+ * columns let the user type into directly. This is the ONE place that
+ * revives the original "negotiation" behavior on top of the
+ * percent-driven engine above: "trava a Entrada e as Chaves, digita
+ * R$2.500 na Parcela, o sistema recalcula a Intercaladas para fechar
+ * em 100%."
+ *
+ * What happens, in order:
+ * 1. The edited item gets the new value/count and its `percent` link
+ *    is cleared — it's now a literal number the user typed, not a
+ *    percentage the engine derives, so it must never be silently
+ *    overwritten by a later propertyValue change.
+ * 2. If another unlocked item exists, the LAST one (excluding the
+ *    item just edited) is designated as this update's balancer via
+ *    `recalculate`'s `balancerId` option — its own percent link is
+ *    cleared too, and its value gets computed to close the flow to
+ *    exactly `propertyValue`. Passing `balancerId` explicitly (rather
+ *    than letting `recalculate` auto-search) is what guarantees the
+ *    just-edited item itself is never mistaken for the balancer, even
+ *    when it happens to be last in the list.
+ * 3. Every OTHER unlocked item that still carries a percent link (i.e.
+ *    was never directly touched) keeps tracking its own percentage,
+ *    exactly as `recalculate` already does on its own — nothing here
+ *    changes that.
+ * Locked items are — as everywhere else in this engine — never
+ * touched by any of this.
+ */
+export function applyDirectEdit(
+  propertyValue: number,
+  items: FlowItem[],
+  editedId: string,
+  patch: Partial<Pick<FlowItem, 'value' | 'count'>>,
+): FlowResult {
+  const edited = items.map((item) =>
+    item.id === editedId ? { ...item, ...patch, percent: null } : item,
+  );
+
+  const otherUnlocked = edited.filter((item) => !item.locked && item.id !== editedId);
+  if (otherUnlocked.length === 0) {
+    // Nothing else can absorb the difference — the edit stands exactly
+    // as typed. Pass a balancerId that can never match a real item so
+    // `recalculate` skips its own auto-search too: otherwise, with the
+    // edited item now the ONLY unlocked one left (and percent-null), that
+    // search would find it and silently overwrite what was just typed.
+    return recalculate(propertyValue, edited, { balancerId: '__none__' });
+  }
+
+  const balancerId = otherUnlocked[otherUnlocked.length - 1].id;
+  const withBalancerLinkCleared = edited.map((item) =>
+    item.id === balancerId ? { ...item, percent: null } : item,
+  );
+
+  return recalculate(propertyValue, withBalancerLinkCleared, { balancerId });
 }
 
 /**

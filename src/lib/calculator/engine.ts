@@ -44,7 +44,14 @@ const EPSILON = 0.01;
  * needs to change, this is the one place to edit it.
  */
 export const DEFAULT_FLOW_COMPONENTS: FlowComponentTemplate[] = [
-  { id: 'entrada', label: 'Entrada', kind: 'single', defaultLocked: false, defaultPercent: 10 },
+  {
+    id: 'entrada',
+    label: 'Entrada',
+    kind: 'installments',
+    defaultLocked: false,
+    defaultCount: 1,
+    defaultPercent: 10,
+  },
   {
     id: 'parcelas',
     label: 'Parcelas',

@@ -265,7 +265,7 @@ export function CalculatorView() {
               value={propertyValue}
               onChange={handleChangePropertyValue}
             />
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="flex flex-col gap-3 sm:flex-row">
               {mode === 'free' && (
                 <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-border bg-card px-4 py-3 sm:w-48">
                   <Label htmlFor="calc-free-flow-name">{t('projectName')}</Label>

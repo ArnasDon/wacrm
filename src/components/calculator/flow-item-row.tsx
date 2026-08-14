@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Info, Lock, Unlock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { amountOf, percentOf } from '@/lib/calculator/engine';
@@ -59,6 +60,16 @@ export function FlowItemRow({
   const isChaves = item.label.trim().toLowerCase() === 'chaves';
   const chavesWarning = isChaves && livePercent < CHAVES_MIN_PERCENT - 0.05;
 
+  // Quantidade (Parcelas): mirrors the DOM value while the field is
+  // focused, distinct from the committed `item.count`. Without it,
+  // Backspace-ing the default "1" down to an empty field computes
+  // `Math.max(1, Number('') || 1)` === 1 — the *same* value it already
+  // had — so React bails out of re-rendering and the controlled `value`
+  // prop leaves the "1" sitting in the DOM, making the field look like it
+  // refuses to clear until a genuinely different digit is typed. Null
+  // means "not editing right now, just show item.count".
+  const [countDraft, setCountDraft] = useState<string | null>(null);
+
   return (
     <div className={cn(GRID_COLUMNS, 'flow-item-row rounded-lg border border-border bg-card px-3 py-2.5')}>
       <button
@@ -109,10 +120,21 @@ export function FlowItemRow({
         <input
           type="number"
           min={1}
-          value={item.count}
+          value={countDraft ?? item.count}
           disabled={item.locked}
           aria-label={installmentsCountLabel}
-          onChange={(e) => onChangeCount(Math.max(1, Number(e.target.value) || 1))}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setCountDraft(raw);
+            // Empty is a valid mid-edit state (right after Backspace) —
+            // committing it immediately would clamp back to 1 and, if
+            // the count was already 1, silently undo the Backspace on
+            // screen (see countDraft's comment above). Only commit once
+            // there's an actual number typed.
+            if (raw === '') return;
+            onChangeCount(Math.max(1, Number(raw) || 1));
+          }}
+          onBlur={() => setCountDraft(null)}
           className="h-8 w-full min-w-0 rounded-md border border-input bg-transparent px-1.5 text-center text-sm tabular-nums text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         />
       ) : (

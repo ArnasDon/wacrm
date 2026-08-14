@@ -47,8 +47,8 @@ export function FlowEditor({
 
   return (
     <TooltipProvider>
-      <div className="overflow-x-auto">
-        <div className="flex min-w-[26rem] flex-col gap-2">
+      <div className="flow-editor-scroll overflow-x-auto">
+        <div className="flow-editor-list flex min-w-[26rem] flex-col gap-2">
           {items.map((item) => (
             <FlowItemRow
               key={item.id}

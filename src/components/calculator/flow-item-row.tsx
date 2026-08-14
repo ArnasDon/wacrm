@@ -60,7 +60,7 @@ export function FlowItemRow({
   const chavesWarning = isChaves && livePercent < CHAVES_MIN_PERCENT - 0.05;
 
   return (
-    <div className={cn(GRID_COLUMNS, 'rounded-lg border border-border bg-card px-3 py-2.5')}>
+    <div className={cn(GRID_COLUMNS, 'flow-item-row rounded-lg border border-border bg-card px-3 py-2.5')}>
       <button
         type="button"
         onClick={onToggleLock}

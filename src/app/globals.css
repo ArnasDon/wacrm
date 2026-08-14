@@ -308,3 +308,85 @@ html[data-theme="rose"] {
     transform: scaleY(1.4);
   }
 }
+
+/* Calculator flow card (flow-item-row.tsx) — two-row layout, iPhone only
+   (Safari iOS + installed PWA). Desktop/Android/iPad keep the existing
+   single-row grid untouched.
+
+   Root cause of the reported cut-off text/values: flow-editor.tsx wraps
+   every row in `min-w-[26rem]` + `overflow-x-auto` so all six columns
+   (lock/label/percent/count/value/info) always fit side by side. On an
+   iPhone-width viewport that forces the row wider than the screen, so it
+   silently scrolls sideways instead of visibly truncating — but iOS hides
+   the scrollbar, so the label/value just *look* clipped at the screen edge.
+
+   `-webkit-touch-callout` is a non-standard, WebKit-and-iOS-only property
+   (unsupported on desktop Safari, Android Chrome/WebView, and every
+   non-WebKit browser), so `@supports (-webkit-touch-callout: none)` is the
+   standard way to scope CSS to iOS Safari/WKWebView specifically — true in
+   both regular Safari tabs and standalone (installed PWA) mode. The
+   `max-width` cap on top of it excludes iPad (smallest iPad viewport is
+   744px), keeping this to iPhone as requested. Only `display`/flex layout
+   properties are set here — unlayered CSS beats Tailwind's `@layer
+   utilities` regardless of source order, so this overrides the grid
+   classes on `.flow-item-row` without touching them for anyone else. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 430px) {
+    .flow-editor-scroll {
+      overflow-x: visible;
+    }
+    .flow-editor-scroll > .flow-editor-list {
+      min-width: 0;
+    }
+
+    .flow-item-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 0.5rem;
+      row-gap: 0.625rem;
+    }
+    /* Forces a line break: this pseudo-element is a flex item too, and
+       taking the full line width pushes everything ordered after it
+       (the percent/parcelas fields) onto row 2. */
+    .flow-item-row::before {
+      content: '';
+      order: 5;
+      flex-basis: 100%;
+    }
+    /* 1. lock button — row 1, start */
+    .flow-item-row > *:nth-child(1) {
+      order: 1;
+      flex: 0 0 auto;
+    }
+    /* 2. title input — row 1, grows to push value/info to the right */
+    .flow-item-row > *:nth-child(2) {
+      order: 2;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    /* 3. porcentagem field — row 2, left half */
+    .flow-item-row > *:nth-child(3) {
+      order: 6;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    /* 4. parcelas field — row 2, right half */
+    .flow-item-row > *:nth-child(4) {
+      order: 7;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    /* 5. total value — row 1, right-aligned */
+    .flow-item-row > *:nth-child(5) {
+      order: 3;
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+    /* 6. info tooltip — row 1, end */
+    .flow-item-row > *:nth-child(6) {
+      order: 4;
+      flex: 0 0 auto;
+    }
+  }
+}

@@ -199,7 +199,9 @@ export function wireClickBeacons(siteUrl: string): void {
 //
 // El iframe no existe hasta el clic. Se usa la API de YouTube (YT.Player)
 // cargada bajo demanda, no un iframe suelto, para poder controlar el
-// reproductor y arrancar la reproducción sin un segundo gesto.
+// reproductor y arrancar la reproducción sin un segundo gesto. El reproductor
+// se ancla a youtube-nocookie.com (`host`), que es lo que mantiene el embed
+// sin cookies aunque la API salga de youtube.com.
 //
 // Dos ids por vídeo: `data-video-id` es el VERTICAL (móvil) y
 // `data-desktop-video-id` el horizontal. Si el segundo falta, se reutiliza el
@@ -237,10 +239,16 @@ export function wireYouTubeFacades(): void {
     // bloque arrancaría el vídeo.
     if (!wrap || !btn) return;
 
-    const isMobile = window.matchMedia("(max-width:767px)").matches;
-    const videoId = isMobile
-      ? wrap.dataset.videoId
-      : wrap.dataset.desktopVideoId || wrap.dataset.videoId;
+    // 900px, el ÚNICO breakpoint estructural del sistema (skill §1 regla 6), y
+    // en `min-width` porque la regla es mobile-first. Antes esto era
+    // `max-width:767px`: entre 768 y 899px el CSS seguía en vertical 9/16
+    // mientras aquí ya se elegía el id horizontal, así que la tablet recibía un
+    // 16:9 embutido en un marco vertical. El umbral tiene que ser EL MISMO que
+    // el de 05-components.css o vuelve a abrirse esa franja.
+    const isDesktop = window.matchMedia("(min-width:900px)").matches;
+    const videoId = isDesktop
+      ? wrap.dataset.desktopVideoId || wrap.dataset.videoId
+      : wrap.dataset.videoId;
 
     if (!videoId || ytPlayers.has(wrap)) return;
 
@@ -262,6 +270,12 @@ export function wireYouTubeFacades(): void {
       void loadYTApi().then(() => {
         const player = new W.YT!.Player(container!, {
           videoId,
+          // El reproductor se sirve desde youtube-nocookie.com: sin esto,
+          // YT.Player embebe en youtube.com y planta cookies de seguimiento
+          // en cuanto alguien le da al play. El script de la API sí sale de
+          // youtube.com (no hay copia en nocookie), y por eso BaseLayout
+          // precarga los dos dominios.
+          host: "https://www.youtube-nocookie.com",
           playerVars: {
             autoplay: 1, controls: 1, rel: 0,
             playsinline: 1, modestbranding: 1, iv_load_policy: 3,

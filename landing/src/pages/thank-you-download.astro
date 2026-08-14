@@ -19,11 +19,15 @@ import { site, whatsappHref } from "../data/site";
 // El PDF vive en landing/public/, que Astro emite bajo `base` — de ahí que
 // la URL lleve el prefijo aunque la página se sirva desde la raíz.
 //
-// Nombre genérico a propósito: la URL del archivo aparece en el historial de
-// descargas del usuario y en las estadísticas, y cambiarla cada vez que se
-// reescriba la guía rompería los enlaces que ya haya por ahí. El título real
-// vive dentro del PDF y en el texto de la página, no en el nombre.
-const pdfHref = `${site.landingBase}/guide-2026.pdf`;
+// La URL es genérica y SIN fecha a propósito: aparece en el historial de
+// descargas y en las estadísticas, y renombrarla cada vez que se reescriba la
+// guía rompería los enlaces que ya haya por ahí. Un `guia-2026.pdf` caduca en
+// enero y obliga justo a ese renombrado. El título real vive dentro del PDF y
+// en el texto de la página, no en el nombre del archivo.
+//
+// Renombrar esto exige añadir el redirect de la ruta vieja en next.config.ts,
+// o las descargas ya compartidas pasan a 404.
+const pdfHref = `${site.landingBase}/guia.pdf`;
 ---
 
 <BaseLayout
@@ -45,12 +49,16 @@ const pdfHref = `${site.landingBase}/guide-2026.pdf`;
       {/* El enlace es real y visible, no solo el gancho del script: si el
           navegador bloquea la descarga automática (Safari lo hace a veces
           sin gesto del usuario), esto es lo único que salva la conversión.
-          Por eso es un <a> de verdad y no un <button>. */}
+          Por eso es un <a> de verdad y no un <button>.
+
+          `download` es el nombre con el que el archivo se guarda en el disco,
+          que NO es la URL: por eso aquí sí describe el contenido — lo que
+          importa es que el lead sepa qué tiene en Descargas dentro de un mes. */}
       <div class="btn-row mt-2">
         <a
           id="magnet-download"
           href={pdfHref}
-          download="guide-2026.pdf"
+          download="guia-dolor-de-espalda.pdf"
           class="button primary pill"
           data-track="magnet_download"
           data-track-label="thank_you_download"

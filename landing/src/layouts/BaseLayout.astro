@@ -124,7 +124,16 @@ const brandVars = `:root{--color-primary:${site.theme.primary};--color-primary-d
 
     {/* Solo los dominios que la página usa de verdad: un preconnect sobrante
         desperdicia una conexión y compite con los recursos reales (§8.4). */}
-    {hasVideo && <link rel="preconnect" href="https://www.youtube-nocookie.com" />}
+    {/* Los DOS dominios del vídeo, porque intervienen los dos: el script de la
+        API sale de youtube.com y el reproductor se embebe en nocookie (god.ts
+        le pasa `host`). Precargar solo uno deja la mitad de la cascada sin
+        conexión abierta, y precargar el que no se usa desperdicia una. */}
+    {hasVideo && (
+      <>
+        <link rel="preconnect" href="https://www.youtube.com" />
+        <link rel="preconnect" href="https://www.youtube-nocookie.com" />
+      </>
+    )}
 
     <style set:html={brandVars}></style>
     <script type="application/ld+json" set:html={JSON.stringify(graph)}></script>

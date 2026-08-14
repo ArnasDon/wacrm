@@ -1,6 +1,13 @@
 # Framework de Landing Pages en Astro
 ### SOP de producción — sistema completo, sin Tailwind, sin React, sin JavaScript innecesario
 
+> **Si eres un agente y no tienes contexto previo, vete a [§21](#21-directrices-para-agentes-de-ia) y vuelve.**
+> Ahí está el orden de trabajo, las cinco decisiones que se equivocan siempre y
+> los comandos de verificación. Este documento tiene casi 4.000 líneas: leerlo
+> de arriba abajo antes de empezar es la forma más rápida de construir lo que no
+> es. §21 dice qué se construye y en qué orden; el resto es la referencia que se
+> consulta desde ahí.
+
 ---
 
 ## 0. Qué construye este documento
@@ -18,7 +25,7 @@ Esta distinción decide si el resultado sirve. La misma landing se repite decena
 | Un sistema de utilidades | Tokens, grilla y utilidades, y luego escribes cada sección a mano combinándolas | Un Tailwind casero. **Mal.** |
 | Una biblioteca de secciones | Las secciones del catálogo, completas y reutilizables, sobre esos tokens | Una landing que se repite sin volver a maquetar. **Bien.** |
 
-Por eso las secciones 3 a 6 —tokens, layout, utilidades, componentes— son **el sustrato**, no el entregable. El entregable es el catálogo de la sección 10.
+Por eso las secciones 3 a 6 —tokens, layout, utilidades, componentes— son **el sustrato**, no el entregable. El entregable son las 24 secciones que se listan aquí abajo; §10 no es ese listado, sino la API y la anatomía que cada una de ellas implementa.
 
 **Si al terminar tienes un sistema de estilos elegante y tres secciones escritas a mano, has fallado.**
 
@@ -1510,13 +1517,20 @@ Con `flex-wrap` cada tarjeta se estira a su propio contenido y quedan de alturas
 
 La tentación es convertir una tabla en tarjetas apiladas en móvil. **No lo hagas en tablas de precios ni de datos comparables.** Una tabla existe para comparar filas entre sí; partirla en tarjetas destruye justo eso.
 
+La clase es `.table-wrap`, **una sola para las dos tablas del catálogo** —precios y datos—, no una por sección. El `min-width` vive en la tabla, no en el envoltorio: es la tabla la que se niega a encogerse.
+
 ```css
-.table-wrap { overflow-x: auto; scrollbar-width: none; }
-.table-wrap::-webkit-scrollbar { display: none; }
+.table-wrap  { margin-bottom: var(--space-5); overflow-x: auto; }
 .table-wrap > table { min-width: 420px; }
 ```
 
-El envoltorio se desplaza con la barra oculta, igual que el carril. La tabla conserva su forma.
+#### Aquí la barra de desplazamiento NO se oculta
+
+Es la diferencia con el carril, y es deliberada. El carril puede permitirse `scrollbar-width: none` porque la tarjeta siguiente asoma al 78% y el `scroll-snap` la encuadra: el propio contenido anuncia que hay más, y además lleva su `.rail-hint` debajo.
+
+Una tabla no asoma nada. Si le ocultas la barra, el usuario ve cinco columnas cortadas a la mitad de la sexta y nada le dice que existan la séptima y la octava — que es exactamente la comparación que la tabla existía para permitir. Copiar el `scrollbar-width: none` del carril sin copiar el mecanismo que lo hace seguro es cambiar un problema de maquetación por uno de información.
+
+Si la barra nativa molesta visualmente, la salida es un degradado en el borde derecho o una pista de texto, **no** esconder el único indicador que queda.
 
 ---
 
@@ -2863,7 +2877,12 @@ const btn  = e.target.closest('.play-button');
 if (!wrap || !btn) return;          // hacen falta LOS DOS
 ```
 
-Sin exigir `.play-button`, **cualquier** clic dentro del bloque arranca el video —incluido el que da el navegador al enfocar la página— y aparecen reproductores fantasma. Es un fallo real y difícil de diagnosticar.
+Sin exigir `.play-button`, **cualquier** clic dentro del bloque arranca el video: el que cae en el pie de foto, el que se da para cerrar un desplegable que quedaba encima, o el que suelta un arrastre que empezó fuera. El botón es lo que separa "quiero ver el video" de "he tocado por aquí".
+
+Dos precisiones, porque es fácil deducir de más:
+
+- **El foco no dispara clics.** Ningún navegador sintetiza un `click` al enfocar un elemento. Si aparecen reproductores fantasma, la causa está en el delegado o en la ausencia de guardia de reentrada, no en el foco.
+- **La guardia contra la doble inicialización es el `WeakMap`, no el selector.** El `.play-button` del catálogo se pinta con `position: absolute; inset: 0`, así que cubre el bloque entero y en la práctica casi todo clic real lo alcanza. Lo que impide instanciar dos veces el mismo video es comprobar el mapa antes de crear el reproductor.
 
 El `.play-button` es un `<button>`, no un `<div>`: así se activa con teclado sin añadir `role` ni manejadores.
 
@@ -2876,6 +2895,27 @@ Al reproducir se inserta un `<iframe>` dentro. Un `<iframe>` dentro de un `<butt
 **En el script único del sitio, no en un script por componente.** Una landing con seis videos no debe cargar seis copias del mismo escuchador. El delegado va en el mismo archivo que la atribución y los beacons.
 
 Se carga la API de YouTube bajo demanda (`YT.Player`) en lugar de insertar un iframe suelto, para poder arrancar la reproducción sin exigir un segundo gesto al usuario. Orden que evita un reflow doble: retirar miniatura y botón primero, marcar el estado, crear el contenedor y solo entonces —dentro de `requestAnimationFrame`— cargar el reproductor.
+
+#### Sin cookies: `host`, no el dominio del script
+
+Usar la API tiene un precio que hay que pagar a mano. `YT.Player` embebe en `youtube.com` por defecto, así que planta cookies de seguimiento en cuanto alguien le da al play. Se corrige con una opción:
+
+```js
+new YT.Player(container, {
+  videoId,
+  host: 'https://www.youtube-nocookie.com',   // el embed, sin cookies
+  playerVars: { autoplay: 1, controls: 1, rel: 0, playsinline: 1 },
+});
+```
+
+El script de la API sí sale de `youtube.com` —no hay copia en el dominio nocookie—, de modo que **intervienen dos dominios y hay que precargar los dos**:
+
+```html
+<link rel="preconnect" href="https://www.youtube.com">
+<link rel="preconnect" href="https://www.youtube-nocookie.com">
+```
+
+Precargar solo `nocookie`, que es lo que pide el instinto, deja sin conexión abierta al dominio del que cuelga la primera petición de la cascada, y encima incumple la regla de §8.4: un `preconnect` hacia un dominio que la página no usa desperdicia una conexión.
 
 Un `WeakMap` de instancias evita inicializar dos veces el mismo bloque.
 
@@ -3116,12 +3156,25 @@ Es el bug más silencioso de los tres: el formulario envía, el lead se crea, y 
 
 #### Cómo verificarlo
 
-No basta con que el build pase. Sobre el HTML emitido:
+No basta con que el build pase. Sobre el HTML emitido, y **desde la raíz del
+repositorio** — la landing vive en `landing/`, así que un `src/` a secas apunta
+a la aplicación Next y todas las comprobaciones pasan sin haber mirado nada:
 
 ```bash
-node --check <script-extraído>          # ¿es JavaScript válido?
-grep -c '<iframe' dist/index.html       # 0 antes del clic
-grep -o 'function [a-z]*([^)]*)' dist/index.html   # ¿quedan tipos?
+# 1. Todo módulo que Astro empaquetó tiene que parsear. Si un `define:vars`
+#    coló TypeScript, el archivo ni siquiera es JavaScript válido.
+for f in landing/dist/_astro/*.js; do node --check "$f" || echo "FALLA: $f"; done
+
+# 2. Iframes antes del clic. `grep -o | wc -l` cuenta OCURRENCIAS; `grep -c`
+#    cuenta LÍNEAS, y con `compressHTML: true` el HTML entero es una sola
+#    línea, así que diría "1" igual para un iframe que para veinte — y saldría
+#    con código 1 en el caso bueno (cero), que un runner lee como fallo.
+grep -o '<iframe' landing/dist/index.html | wc -l   # 0 antes del clic
+
+# 3. Anotaciones de tipo sobrevivientes en un script inline. Se busca la forma
+#    `(nombre: Tipo`, no la palabra `function`: al minificar los nombres
+#    cambian, pero una anotación de tipo no debería estar ahí en absoluto.
+grep -oE '\([a-zA-Z_$]+ *: *[A-Z][A-Za-z]+' landing/dist/index.html
 ```
 
 ---
@@ -3809,14 +3862,17 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 
 ## 20. Lista de comprobación
 
+**Las rutas de los comandos son `landing/src/` y `landing/dist/`, desde la raíz del repositorio.** Un `src/` a secas apunta a la aplicación Next y hace que toda la lista pase en verde sin comprobar nada.
+
 ### Marcado y estilo
-- [ ] `grep -rn '@media (max-width' src/` no devuelve nada de layout
+- [ ] `grep -rn '@media (max-width' landing/src/` no devuelve nada de layout
+- [ ] `grep -rn 'matchMedia("(max-width' landing/src/ src/` no devuelve nada — el umbral en JavaScript es el mismo `min-width: 900px` que el del CSS
 - [ ] Ningún elemento interactivo dentro de otro (`button button`, `button a`, `a button`)
 - [ ] Toda sección de 3+ tarjetas equivalentes usa carril, no apilado
-- [ ] Las tablas se desplazan en móvil, no se rompen en tarjetas
+- [ ] Las tablas se desplazan en móvil, no se rompen en tarjetas, y **conservan su barra de desplazamiento**
 - [ ] Toda sección tiene `<section>` como raíz, con `itemscope` e `itemtype`
-- [ ] `grep -r 'style="' src/` devuelve únicamente `--i` y `--count`
-- [ ] `grep -r '!important' src/` no devuelve resultados
+- [ ] `grep -r 'style="' landing/src/` devuelve únicamente propiedades personalizadas: `--i`, `--count`, `--rail-cols`, `--rail-item`
+- [ ] `grep -r '!important' landing/src/` no devuelve resultados
 - [ ] Un solo `<h1>` por página
 - [ ] Jerarquía de encabezados sin saltos de nivel
 
@@ -3836,15 +3892,16 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 ### JavaScript
 - [ ] Ningún `import` de script de cliente en el frontmatter (no llega al navegador)
 - [ ] Ningún `<script define:vars>` con TypeScript dentro
-- [ ] El script emitido pasa `node --check`
+- [ ] Todo `landing/dist/_astro/*.js` pasa `node --check`
 - [ ] Los selectores de formulario usan `[name="…"]`, no `input[name="…"]`
 - [ ] Un solo escuchador delegado por comportamiento, no uno por componente
+- [ ] El reproductor de video se ancla a `youtube-nocookie.com` (`host`), y se precargan los dos dominios: la API sale de `youtube.com`
 - [ ] La página funciona con JavaScript deshabilitado
 - [ ] El formulario envía y entrega el lead con JavaScript deshabilitado
 - [ ] El total transferido es inferior a 5 KB comprimidos
 - [ ] Ningún `client:*` sin comentario justificativo
 - [ ] Ningún video carga antes de la interacción
-- [ ] `grep -r 'onclick=' src/` no devuelve resultados
+- [ ] `grep -r 'onclick=' landing/src/` no devuelve resultados
 - [ ] Ningún widget de chat de terceros
 
 ### Formularios
@@ -3858,6 +3915,8 @@ Si el módulo nuevo obliga a modificar cualquier archivo fuera de esta lista, el
 ### SEO y datos estructurados
 - [ ] Existe sitemap con las URLs limpias, y excluye las páginas de gracias
 - [ ] El favicon existe (no es un 404 en cada carga)
+- [ ] **Todo asset referenciado desde `site.ts` existe en `landing/public/`** — el logotipo, la imagen Open Graph y el retrato de autoridad se emiten en cada página y en el grafo, y un 404 ahí no rompe nada visible: solo deja todas las comparticiones sin imagen
+- [ ] Renombrar un archivo público (PDF, imagen compartida) lleva su redirect en `next.config.ts`
 - [ ] Las páginas de gracias cuelgan de la raíz, no de la base de Astro
 - [ ] Hay una página de gracias por tipo de conversión
 - [ ] Título entre 50 y 60 caracteres
@@ -3917,7 +3976,7 @@ Sigue esta secuencia. No la reordenes.
 | 1 | Lee §0 y confirma que vas a construir **secciones**, no un sistema de utilidades | Puedes nombrar las 24 secciones del catálogo |
 | 2 | Copia el sustrato de §3–§6 tal cual: capas, tokens, layout, utilidades, componentes | `@layer` declarado y los tokens en `:root` |
 | 3 | Construye el cromo: cabecera con menú y popup, pie, widget flotante (§7.7) | El menú abre con `input:checked`, el popup con `:target` |
-| 4 | Construye las 24 secciones del catálogo (§10) | Cada una existe como archivo propio y se monta sin tocar CSS global |
+| 4 | Construye las 24 secciones listadas en §0, cada una con la API y la anatomía de §10 | Cada una existe como archivo propio y se monta sin tocar CSS global |
 | 5 | Monta la página con el arquetipo que toque (§16) y la anatomía de §15 | Un solo `<h1>`, la acción principal 3–5 veces con el mismo texto |
 | 6 | Cablea formulario, atribución y medición (§12–§14) | Un envío de prueba genera exactamente una conversión |
 | 7 | Pasa la lista de §20 **ejecutando los comandos**, no leyéndolos | Cero fallos |
@@ -3936,16 +3995,21 @@ Contrástalas antes de escribir cada sección.
 
 ### Antes de dar nada por hecho
 
-Que el build pase no prueba que el JavaScript llegue al navegador. Verifica sobre el HTML emitido, no sobre el código fuente:
+Que el build pase no prueba que el JavaScript llegue al navegador. Verifica sobre el HTML emitido, no sobre el código fuente.
+
+**Las rutas son `landing/src/` y `landing/dist/`, desde la raíz del repositorio.** Un `src/` a secas es la aplicación Next: los greps no encuentran nada, todo sale en verde y no se ha comprobado ni una línea de la landing.
 
 ```bash
-grep -c '<iframe' dist/index.html                  # 0 antes del clic
-grep -rn '@media (max-width' src/                  # vacío, salvo no-layout
-grep -rn 'style="' src/ | grep -v '\-\-'           # vacío
-node --check <script-extraído-del-html>            # JavaScript válido
+grep -o '<iframe' landing/dist/index.html | wc -l        # 0 antes del clic
+grep -rn '@media (max-width' landing/src/                # vacío, salvo no-layout
+grep -rn 'matchMedia("(max-width' landing/src/ src/      # vacío: el umbral es min-width:900
+grep -rn 'style="' landing/src/ | grep -v '\-\-'         # vacío
+for f in landing/dist/_astro/*.js; do node --check "$f" || echo "FALLA: $f"; done
 ```
 
 Las tres trampas de Astro de §12.6 no dan error de build y solo se ven así.
+
+El grep de `matchMedia` no es un extra: el único breakpoint del sistema es `min-width: 900px`, y un `matchMedia("(max-width:767px)")` en el JavaScript **no lo ve** el grep de `@media`. Cuando los dos umbrales se separan aparece una franja —768px a 899px— donde el CSS cree que es móvil y el JavaScript cree que es escritorio. Es exactamente el fallo que sirvió el vídeo horizontal dentro de un marco vertical en tablet.
 
 ### Si algo no encaja con este documento
 

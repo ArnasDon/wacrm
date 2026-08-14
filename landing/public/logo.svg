@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 60" width="260" height="60" role="img" aria-label="Tu Clínica">
+  <!-- Placeholder de marca, igual que el resto de datos de site.ts.
+       Sustituir por el logotipo real antes de poner indexable: true. -->
+  <g fill="none" stroke="#059669" stroke-width="6" stroke-linecap="round">
+    <path d="M18 30h10l6-13 8 26 6-13h10"/>
+  </g>
+  <text x="76" y="38" font-family="system-ui,sans-serif" font-size="24" font-weight="700" fill="#2a2d34">Tu Clínica</text>
+</svg>

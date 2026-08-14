@@ -4,11 +4,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   rule: null as Record<string, unknown> | null,
   sentToday: 0 as number,
+  emailSentToday: 0 as number,
   inserts: [] as { table: string; payload: Record<string, unknown> }[],
   updates: [] as { table: string; payload: Record<string, unknown> }[],
   dueRows: [] as Record<string, unknown>[],
   sendTemplate: vi.fn(async (_args: Record<string, unknown>) => ({ whatsapp_message_id: "m1" })),
   sendText: vi.fn(async (_args: Record<string, unknown>) => ({ whatsapp_message_id: "m1" })),
+  sendInteractive: vi.fn(async (_args: Record<string, unknown>) => ({ whatsapp_message_id: "m1" })),
+  deliverEmail: vi.fn(async (_args: Record<string, unknown>) => ({ resendMessageId: "re-1" })),
+  /** Tabla que la última consulta de conteo tocó — verifica el por-canal. */
+  countedTables: [] as string[],
 }));
 
 vi.mock("./admin-client", () => {
@@ -16,7 +21,12 @@ vi.mock("./admin-client", () => {
     if (ops.table === "frequency_rules") return { data: h.rule, error: null };
     if (ops.table === "messages") {
       // count head query
+      h.countedTables.push("messages");
       return { count: h.sentToday, error: null };
+    }
+    if (ops.table === "email_sends") {
+      h.countedTables.push("email_sends");
+      return { count: h.emailSentToday, error: null };
     }
     if (ops.table === "message_queue") {
       if (ops.type === "insert") return { data: { id: "q1" }, error: null };
@@ -60,6 +70,11 @@ vi.mock("./admin-client", () => {
 vi.mock("@/lib/flows/meta-send", () => ({
   engineSendTemplate: h.sendTemplate,
   engineSendText: h.sendText,
+  engineSendInteractive: h.sendInteractive,
+}));
+
+vi.mock("./send-email-step", () => ({
+  deliverAutomationEmail: h.deliverEmail,
 }));
 
 import {
@@ -74,11 +89,15 @@ const CONTACT = "contact-1";
 beforeEach(() => {
   h.rule = null;
   h.sentToday = 0;
+  h.emailSentToday = 0;
   h.inserts = [];
   h.updates = [];
   h.dueRows = [];
+  h.countedTables = [];
   h.sendTemplate.mockClear();
   h.sendText.mockClear();
+  h.sendInteractive.mockClear();
+  h.deliverEmail.mockClear();
 });
 
 // El builder del mock no registra inserts/updates en el estado; los
@@ -156,6 +175,72 @@ describe("checkFrequencyOrEnqueue", () => {
       payload: { step_type: "send_message", text: "hola" },
     });
     expect(r.queued).toBe(false);
+  });
+});
+
+describe("cuota por canal", () => {
+  const exhausted = {
+    account_id: ACCOUNT,
+    max_per_day: 1,
+    window_start: "09:00",
+    window_end: "20:00",
+    is_active: true,
+  };
+
+  it("whatsapp cuenta contra messages, no contra email_sends", async () => {
+    h.rule = { ...exhausted, channel: "whatsapp" };
+    h.sentToday = 1;
+    const r = await checkFrequencyOrEnqueue({
+      accountId: ACCOUNT,
+      contactId: CONTACT,
+      payload: { step_type: "send_message", text: "hola" },
+    });
+    expect(r.queued).toBe(true);
+    expect(h.countedTables).toContain("messages");
+    expect(h.countedTables).not.toContain("email_sends");
+  });
+
+  it("email cuenta contra email_sends, no contra messages", async () => {
+    h.rule = { ...exhausted, channel: "email" };
+    // Volumen alto de WhatsApp que NO debe consumir la cuota de email.
+    h.sentToday = 99;
+    h.emailSentToday = 0;
+    const r = await checkFrequencyOrEnqueue({
+      accountId: ACCOUNT,
+      contactId: CONTACT,
+      channel: "email",
+      payload: { step_type: "send_email", subject: "s", html: "<p/>" },
+    });
+    expect(r.queued).toBe(false);
+    expect(h.countedTables).toContain("email_sends");
+    expect(h.countedTables).not.toContain("messages");
+  });
+
+  it("email con su propia cuota agotada → encola", async () => {
+    h.rule = { ...exhausted, channel: "email" };
+    h.emailSentToday = 1;
+    const r = await checkFrequencyOrEnqueue({
+      accountId: ACCOUNT,
+      contactId: CONTACT,
+      channel: "email",
+      payload: { step_type: "send_email", subject: "s", html: "<p/>" },
+    });
+    expect(r.queued).toBe(true);
+  });
+
+  it("send_buttons agotada la cuota de whatsapp → encola", async () => {
+    h.rule = { ...exhausted, channel: "whatsapp" };
+    h.sentToday = 1;
+    const r = await checkFrequencyOrEnqueue({
+      accountId: ACCOUNT,
+      contactId: CONTACT,
+      payload: {
+        step_type: "send_buttons",
+        interactive: { kind: "buttons", body: "¿Cita?", buttons: [] },
+        conversation_id: "conv-1",
+      },
+    });
+    expect(r.queued).toBe(true);
   });
 });
 

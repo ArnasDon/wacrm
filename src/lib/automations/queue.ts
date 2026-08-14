@@ -1,5 +1,11 @@
 import { supabaseAdmin } from './admin-client'
-import { engineSendTemplate, engineSendText } from '@/lib/flows/meta-send'
+import {
+  engineSendInteractive,
+  engineSendTemplate,
+  engineSendText,
+} from '@/lib/flows/meta-send'
+import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
+import { deliverAutomationEmail } from './send-email-step'
 
 // ------------------------------------------------------------
 // Fase 2 Mautic P1.4 — frequency_rules + message_queue (DAD §8.3)
@@ -27,14 +33,39 @@ interface FrequencyRuleRow {
 }
 
 /**
- * Cuenta los mensajes salientes del contact hoy (canal WhatsApp, sender
- * agent/bot) para el account. Null-safe: sin conversación → 0.
+ * Cuenta los envíos salientes del contact hoy en `channel` para el account.
+ * Null-safe: sin filas → 0. Fail-open: ante error → 0 (nunca bloquea).
+ *
+ * Cada canal se cuenta contra su propia tabla; una cuota de email que
+ * midiera volumen de WhatsApp no sería una cuota de email.
+ *
+ * OJO `sms`: el SMS ENTRANTE se persiste en `messages` con channel='sms'
+ * (041), pero el SALIENTE del engine va directo a Telnyx sin guardarse.
+ * Este contador es correcto por construcción y devolverá 0 hasta que el
+ * envío se persista — ver la nota en el paso `send_sms` de engine.ts.
  */
 async function countSentToday(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
   contactId: string,
+  channel: QueueChannel,
 ): Promise<number> {
+  const since = new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z'
+
+  if (channel === 'email') {
+    const { count, error } = await db
+      .from('email_sends')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .gte('sent_at', since)
+    if (error) {
+      console.error('[queue] countSentToday(email) failed:', error)
+      return 0
+    }
+    return count ?? 0
+  }
+
   const { count, error } = await db
     .from('messages')
     // Tenancy: messages no lleva account_id; filtra por el embebido
@@ -42,10 +73,11 @@ async function countSentToday(
     .select('conversations!inner(account_id)', { count: 'exact', head: true })
     .eq('contact_id', contactId)
     .eq('conversations.account_id', accountId)
-    .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z')
+    .eq('channel', channel)
+    .gte('created_at', since)
     .in('sender_type', ['agent', 'bot'])
   if (error) {
-    console.error('[queue] countSentToday failed:', error)
+    console.error(`[queue] countSentToday(${channel}) failed:`, error)
     return 0
   }
   return count ?? 0
@@ -89,7 +121,12 @@ export async function checkFrequencyOrEnqueue(args: {
     return { queued: false }
   }
 
-  const sentToday = await countSentToday(db, args.accountId, args.contactId)
+  const sentToday = await countSentToday(
+    db,
+    args.accountId,
+    args.contactId,
+    channel,
+  )
   if (sentToday < rule.max_per_day) return { queued: false }
 
   // Excede la cuota → re-agendar, no descartar. Fuera de ventana →
@@ -137,6 +174,85 @@ export async function checkFrequencyOrEnqueue(args: {
   }
 }
 
+/** Fila de `message_queue` que el drenaje reproduce. */
+interface QueuedRow {
+  account_id: string
+  contact_id: string
+}
+
+/** Pasos que saben reproducirse desde la cola. */
+type ReplayableStepType =
+  | 'send_message'
+  | 'send_template'
+  | 'send_buttons'
+  | 'send_list'
+  | 'send_email'
+
+/**
+ * Cómo re-enviar cada tipo de paso aplazado.
+ *
+ * Es un `Record` sobre la unión a propósito: añadir un tipo encolable sin
+ * enseñarle al drenaje a reproducirlo es un error de compilación. Antes
+ * esto era `if (send_template) … else texto plano`, así que cualquier otro
+ * tipo se drenaba como `String(payload.text ?? '')` — un mensaje vacío.
+ *
+ * Los payloads llegan ya renderizados desde el engine; aquí NO se vuelve a
+ * consultar la cuota, o un envío aplazado se re-encolaría para siempre.
+ */
+const QUEUE_REPLAYERS: Record<
+  ReplayableStepType,
+  (row: QueuedRow, payload: Record<string, unknown>) => Promise<void>
+> = {
+  send_message: async (row, p) => {
+    await engineSendText({
+      accountId: row.account_id,
+      userId: (p.user_id as string) ?? row.account_id,
+      conversationId: p.conversation_id as string,
+      contactId: row.contact_id,
+      text: String(p.text ?? ''),
+    })
+  },
+  send_template: async (row, p) => {
+    await engineSendTemplate({
+      accountId: row.account_id,
+      userId: (p.user_id as string) ?? row.account_id,
+      conversationId: p.conversation_id as string,
+      contactId: row.contact_id,
+      templateName: p.template_name as string,
+      language: (p.language as string | undefined) ?? undefined,
+      params: (p.params as string[] | undefined) ?? [],
+    })
+  },
+  send_buttons: (row, p) => replayInteractive(row, p),
+  send_list: (row, p) => replayInteractive(row, p),
+  send_email: async (row, p) => {
+    await deliverAutomationEmail({
+      accountId: row.account_id,
+      contactId: row.contact_id,
+      // El vínculo con la automatización no sobrevive a la cola; la fila
+      // de email_sends queda sin automation_id, no huérfana de account.
+      automationId: null,
+      templateName: p.template_name as string,
+      recipient: p.recipient as string,
+      subject: String(p.subject ?? ''),
+      html: String(p.html ?? ''),
+    })
+  },
+}
+
+async function replayInteractive(
+  row: QueuedRow,
+  p: Record<string, unknown>,
+): Promise<void> {
+  await engineSendInteractive({
+    accountId: row.account_id,
+    userId: (p.user_id as string) ?? row.account_id,
+    conversationId: p.conversation_id as string,
+    contactId: row.contact_id,
+    payload: p.interactive as InteractiveMessagePayload,
+  })
+}
+
 /**
  * Drain: re-envía los mensajes en cola cuyo `due_at` llegó. Claim por
  * id (status → claimed) para que dos crons solapados no dupliquen.
@@ -177,26 +293,17 @@ export async function drainMessageQueue(limit = 50): Promise<{
 
     try {
       const payload = (row.payload ?? {}) as Record<string, unknown>
-      if (row.channel === 'whatsapp' && payload.step_type === 'send_template') {
-        await engineSendTemplate({
-          accountId: row.account_id,
-          userId: (payload.user_id as string) ?? row.account_id,
-          conversationId: payload.conversation_id as string,
-          contactId: row.contact_id as string,
-          templateName: payload.template_name as string,
-          language: (payload.language as string | undefined) ?? undefined,
-          params: (payload.params as string[] | undefined) ?? [],
-        })
-      } else {
-        // Default: texto plano.
-        await engineSendText({
-          accountId: row.account_id,
-          userId: (payload.user_id as string) ?? row.account_id,
-          conversationId: payload.conversation_id as string,
-          contactId: row.contact_id as string,
-          text: String(payload.text ?? ''),
-        })
+      const stepType = String(payload.step_type ?? '')
+      const replay = QUEUE_REPLAYERS[stepType as ReplayableStepType]
+      // Sin reproductor preferimos fallar visiblemente (reintento y, a las
+      // 3, `failed` con last_error) antes que entregar un mensaje vacío.
+      if (!replay) {
+        throw new Error(`queued step_type not replayable: ${stepType || '(none)'}`)
       }
+      await replay(
+        { account_id: row.account_id, contact_id: row.contact_id as string },
+        payload,
+      )
       await db
         .from('message_queue')
         .update({ status: 'sent', sent_at: new Date().toISOString() })

@@ -197,15 +197,31 @@ const nextConfig: NextConfig = {
   },
 
   /**
-   * La ruta vieja de la página de gracias.
+   * Rutas viejas que ya circulan por ahí.
    *
    * `permanent: false` (307) a propósito: un 308 se queda cacheado en el
-   * navegador de forma prácticamente irreversible, y esta ruta es joven —
+   * navegador de forma prácticamente irreversible, y estas rutas son jóvenes —
    * si hubiera que deshacerlo, un 307 se deshace y un 308 no.
+   *
+   * Los dos nombres viejos del imán de leads: el PDF es un archivo estático
+   * bajo public/landing/, y `copy-dist.mjs` borra el destino entero en cada
+   * build, así que sin esto la URL que el lead guardó en su historial pasa a
+   * 404 en el siguiente despliegue. Los redirects de Next se evalúan antes
+   * del sistema de archivos, así que cubren rutas que ya no existen en disco.
    */
   async redirects() {
     return [
       { source: "/landing/thank-you", destination: "/thank-you", permanent: false },
+      {
+        source: "/landing/guia-dolor-de-espalda.pdf",
+        destination: "/landing/guia.pdf",
+        permanent: false,
+      },
+      {
+        source: "/landing/guide-2026.pdf",
+        destination: "/landing/guia.pdf",
+        permanent: false,
+      },
     ];
   },
 };

@@ -16,7 +16,7 @@ const rows = [
 <section class="section bg-secondary">
   <div class="container measure-lg mx-auto">
     <header class="section-header"><h2 class="t-3xl">{title}</h2></header>
-    <div class="pricing-table-wrap">
+    <div class="table-wrap">
       <table class="table">
         <thead><tr>{head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
         <tbody>{rows.map((r) => <tr>{r.map((c) => <td>{c}</td>)}</tr>)}</tbody>

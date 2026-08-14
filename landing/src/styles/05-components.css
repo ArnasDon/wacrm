@@ -703,12 +703,18 @@
 @keyframes scroll-v { from { transform: translateY(0); } to { transform: translateY(-50%); } }
 
 /* ============================================================
- * Tabla de precios — portado de chota-god.css:597-607.
+ * Envoltorio de tabla — portado de chota-god.css:597-607.
  * MOBILE FIRST: se desplaza en horizontal dentro de su envoltorio en vez de
- * romper la maqueta; a 900px cabe entera.
+ * romper la maqueta; a 900px cabe entera. Lo usan la tabla de precios y la de
+ * datos, de ahí el nombre genérico.
+ *
+ * A DIFERENCIA DEL CARRIL, aquí la barra de desplazamiento NO se oculta. El
+ * carril puede permitírselo porque la tarjeta siguiente asoma al 78% y eso
+ * anuncia que hay más; una tabla no asoma nada ni encaja por snap, así que sin
+ * barra no queda ni una pista de que las columnas de la derecha existen — y
+ * una tabla que no se ve entera no compara, que es su único trabajo.
  * ============================================================ */
-.pricing-table-wrap { margin-bottom: var(--space-5); overflow-x: auto; scrollbar-width: none; }
-.pricing-table-wrap::-webkit-scrollbar { display: none; }
+.table-wrap { margin-bottom: var(--space-5); overflow-x: auto; }
 .pricing-table { width: 100%; min-width: 420px; border-collapse: separate; border-spacing: 0 5px; font-size: var(--text-sm); }
 .pricing-table caption {
   background: var(--color-primary); color: var(--color-on-dark);

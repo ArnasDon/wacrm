@@ -30,7 +30,7 @@ import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { createTelnyxClient, loadTelnyxSendConfig } from '@/lib/telnyx/api'
-import { createResendClient, loadEmailConfig } from '@/lib/email/send'
+import { deliverAutomationEmail } from './send-email-step'
 import { resolveVariables, type VariableMapping } from '@/hooks/use-broadcast-sending'
 
 // ------------------------------------------------------------
@@ -475,26 +475,35 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         .maybeSingle()
       const template = tpl as { subject: string; body_html: string } | null
       if (!template) throw new Error(`send_email: template "${cfg.template}" not found`)
-      const { apiKey, fromEmail, replyTo } = await loadEmailConfig(args.automation.account_id)
       const subject = interpolate(contactText(template.subject, cfg.variables, contact), args)
       const html = interpolate(contactText(template.body_html, cfg.variables, contact), args)
-      const { id: resendMessageId } = await createResendClient(apiKey).send(fromEmail, replyTo, {
-        to: contact.email,
-        subject,
-        html,
+
+      // Anti-spam: el email tiene su propia cuota (`frequency_rules` con
+      // channel='email'). Se interpola ANTES de consultarla para que el
+      // payload encolado lleve el cuerpo ya renderizado — el `ExecuteArgs`
+      // que resuelve `{{vars.*}}` no sobrevive a la cola.
+      const freq = await checkFrequencyOrEnqueue({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        channel: 'email',
+        payload: {
+          step_type: 'send_email',
+          template_name: cfg.template,
+          recipient: contact.email,
+          subject,
+          html,
+        },
       })
-      // Persistir en email_sends (DAD §7.7 — Item 13 del plan §13): el webhook de
-      // Resend actualiza status/contadores por resend_message_id (048).
-      await db.from('email_sends').insert({
-        account_id: args.automation.account_id,
-        contact_id: args.contactId,
-        automation_id: args.automation.id,
-        template_name: cfg.template,
+      if (freq.queued) return `queued (${freq.reason})`
+
+      await deliverAutomationEmail({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        automationId: args.automation.id,
+        templateName: cfg.template,
         recipient: contact.email,
         subject,
         html,
-        status: 'sent',
-        resend_message_id: resendMessageId,
       })
       return `email sent via Resend (${cfg.template})`
     }
@@ -540,6 +549,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const check = validateInteractivePayload(payload)
       if (!check.ok) throw new Error(check.error)
       const conversationId = await resolveConversationId(args)
+
+      // Anti-spam: botones y listas son mensajes salientes de WhatsApp
+      // como cualquier otro y cuentan contra la misma cuota diaria.
+      // Se valida antes de encolar para no aplazar un payload que Meta
+      // rechazaría igualmente al drenar.
+      const freq = await checkFrequencyOrEnqueue({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        payload: {
+          step_type: step.step_type,
+          interactive: payload,
+          conversation_id: conversationId,
+          user_id: args.automation.user_id,
+        },
+      })
+      if (freq.queued) return `queued (${freq.reason})`
+
       const { whatsapp_message_id } = await engineSendInteractive({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,

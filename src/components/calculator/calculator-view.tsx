@@ -175,13 +175,6 @@ export function CalculatorView() {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, label } : i)));
   }, []);
 
-  const handleRemove = useCallback(
-    (id: string) => {
-      applyItems(items.filter((i) => i.id !== id));
-    },
-    [items, applyItems],
-  );
-
   const handleCopy = useCallback(async () => {
     const text = buildFlowText({
       projectName: mode === 'project' ? (selectedProject?.name ?? '') : freeFlowName,
@@ -339,12 +332,10 @@ export function CalculatorView() {
             onChangeCount={handleChangeCount}
             onChangePercent={handleChangePercent}
             onChangeLabel={handleChangeLabel}
-            onRemove={handleRemove}
             emptyStateLabel={t('emptyFlow')}
             installmentsCountLabel={t('installmentsCountLabel')}
             lockLabel={t('lock')}
             unlockLabel={t('unlock')}
-            removeLabel={t('remove')}
             totalAmountLabel={t('totalAmountLabel')}
           />
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Info, Lock, Unlock, X } from 'lucide-react';
+import { Info, Lock, Unlock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { amountOf, percentOf } from '@/lib/calculator/engine';
 import { formatPercentNumber } from '@/lib/calculator/money';
@@ -19,11 +19,9 @@ interface FlowItemRowProps {
   onChangeValue: (value: number) => void;
   onChangeCount: (count: number) => void;
   onChangePercent: (percent: number) => void;
-  onRemove: () => void;
   onChangeLabel: (label: string) => void;
   lockLabel: string;
   unlockLabel: string;
-  removeLabel: string;
   installmentsCountLabel: string;
   totalAmountLabel: string;
 }
@@ -37,9 +35,9 @@ const CHAVES_MIN_PERCENT = 40;
  *  label length — this is what keeps the percent/quantity/value boxes
  *  in perfectly aligned vertical columns. Quantity still reserves its
  *  column for single-kind items (empty "—"), so a row without it
- *  never shifts the value/remove columns leftward. */
+ *  never shifts the value/info columns leftward. */
 const GRID_COLUMNS =
-  'grid grid-cols-[2rem_7.5rem_4.5rem_3.25rem_1fr_1.75rem_1.75rem] items-center gap-x-2 sm:grid-cols-[2rem_9rem_4.5rem_3.25rem_1fr_1.75rem_1.75rem]';
+  'grid grid-cols-[2rem_7.5rem_4.5rem_3.25rem_1fr_1.75rem] items-center gap-x-2 sm:grid-cols-[2rem_9rem_4.5rem_3.25rem_1fr_1.75rem]';
 
 export function FlowItemRow({
   item,
@@ -50,11 +48,9 @@ export function FlowItemRow({
   onChangeValue,
   onChangeCount,
   onChangePercent,
-  onRemove,
   onChangeLabel,
   lockLabel,
   unlockLabel,
-  removeLabel,
   installmentsCountLabel,
   totalAmountLabel,
 }: FlowItemRowProps) {
@@ -160,15 +156,6 @@ export function FlowItemRow({
         </TooltipTrigger>
         <TooltipContent>{formatMoney(amountOf(item))}</TooltipContent>
       </Tooltip>
-
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={removeLabel}
-        className="flex size-7 items-center justify-center justify-self-end rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <X className="size-3.5" />
-      </button>
     </div>
   );
 }

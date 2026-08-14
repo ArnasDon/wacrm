@@ -14,12 +14,10 @@ interface FlowEditorProps {
   onChangeCount: (id: string, count: number) => void;
   onChangePercent: (id: string, percent: number) => void;
   onChangeLabel: (id: string, label: string) => void;
-  onRemove: (id: string) => void;
   emptyStateLabel: string;
   installmentsCountLabel: string;
   lockLabel: string;
   unlockLabel: string;
-  removeLabel: string;
   totalAmountLabel: string;
 }
 
@@ -33,12 +31,10 @@ export function FlowEditor({
   onChangeCount,
   onChangePercent,
   onChangeLabel,
-  onRemove,
   emptyStateLabel,
   installmentsCountLabel,
   lockLabel,
   unlockLabel,
-  removeLabel,
   totalAmountLabel,
 }: FlowEditorProps) {
   if (items.length === 0) {
@@ -65,10 +61,8 @@ export function FlowEditor({
               onChangeCount={(count) => onChangeCount(item.id, count)}
               onChangePercent={(percent) => onChangePercent(item.id, percent)}
               onChangeLabel={(label) => onChangeLabel(item.id, label)}
-              onRemove={() => onRemove(item.id)}
               lockLabel={lockLabel}
               unlockLabel={unlockLabel}
-              removeLabel={removeLabel}
               installmentsCountLabel={installmentsCountLabel}
               totalAmountLabel={totalAmountLabel}
             />

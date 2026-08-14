@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
+import { previewUrl } from '@/lib/landing-block-types';
 
 interface PageItem {
   slug: string;
@@ -117,18 +118,23 @@ export function PagesList() {
       ) : (
         <div className="space-y-2">
           {pages.map((p) => (
-            <Link key={p.slug} href={`/pages/${p.slug}`} className="block">
-              <Card className="flex items-center justify-between p-4 transition-colors hover:bg-accent/50">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{p.title || p.slug}</p>
-                    <p className="text-xs text-muted-foreground">/{p.slug}</p>
-                  </div>
+            <Card
+              key={p.slug}
+              className="flex flex-row items-center justify-between p-4 transition-colors"
+            >
+              <Link href={`/pages/${p.slug}`} className="flex flex-1 items-center gap-3">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">{p.title || p.slug}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Editar: /pages/{p.slug} · Ver: {previewUrl(p.slug)}
+                  </p>
                 </div>
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-              </Card>
-            </Link>
+              </Link>
+              <a href={previewUrl(p.slug)} target="_blank" rel="noreferrer">
+                <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              </a>
+            </Card>
           ))}
         </div>
       )}

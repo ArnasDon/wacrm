@@ -190,6 +190,12 @@ const nextConfig: NextConfig = {
       afterFiles: [
         // URLs limpias → index.html (sin redirect 308)
         { source: "/landing", destination: "/landing/index.html" },
+        // Páginas del page editor (cualquier slug nuevo): /landing/<slug>
+        // → <slug>/index.html. afterFiles se evalúa DESPUÉS del filesystem,
+        // así que los assets reales (/landing/_astro/*, imágenes, pdf) los
+        // sirve el fs y no caen aquí; solo los directorios sin index.html
+        // resuelto por Next llegan a esta rewrite (evita el loop 307/308).
+        { source: "/landing/:slug", destination: "/landing/:slug/index.html" },
         // Las páginas de gracias cuelgan del home, no de /landing: son el
         // final del embudo de la raíz y `/landing/...` en la barra de
         // direcciones delata la mecánica interna. El HTML se sigue
@@ -221,6 +227,9 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/landing/thank-you", destination: "/thank-you", permanent: false },
+      // URLs viejas con extensión que generaba una versión anterior del
+      // page editor (el build de Astro emite directorios, no .html).
+      { source: "/landing/:slug.html", destination: "/landing/:slug", permanent: false },
       {
         source: "/landing/guia-dolor-de-espalda.pdf",
         destination: "/landing/guia.pdf",

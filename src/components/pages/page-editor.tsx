@@ -4,7 +4,9 @@
 //
 // Estructura:
 //   SEO (title + description) → /api/pages/[slug] PUT
-//   Bloques: lista reordenable (↑↓), cada bloque se edita en un inspector.
+//   Bloques: lista reordenable (drag + ↑↓, duplicar, eliminar), cada bloque
+//   se edita en un inspector con campos simples (dropdowns para enums),
+//   selector de página de gracias y editor visual de tablas/filas.
 //
 // El JSON que se guarda es EXACTAMENTE el que consume la Content Collection
 // de Astro: el editor no inventa estructura, la valida el schema zod en el
@@ -20,7 +22,6 @@ import {
   ExternalLink,
   Eye,
   GripVertical,
-  Plus,
   Save,
   Trash2,
 } from 'lucide-react';
@@ -29,7 +30,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { BLOCK_TYPES } from '@/lib/landing-block-types';
+import { BLOCK_TYPES, previewUrl } from '@/lib/landing-block-types';
+import { ARRAY_EDITORS, ArrayBlockEditor } from './array-block-editor';
 
 interface LandingBlock {
   type: string;
@@ -47,11 +49,12 @@ interface Props {
   slug: string;
 }
 
-// Campos conocidos por tipo de bloque. Los valores se editan como texto
-// plano (los anidados como JSON en el inspector avanzado).
+// Etiquetas legibles de los campos escalares.
 const FIELD_LABELS: Record<string, string> = {
   videoId: 'ID del video (YouTube)',
   desktopVideoId: 'ID horizontal (escritorio)',
+  thumbMobile: 'Miniatura móvil (URL)',
+  thumbDesktop: 'Miniatura escritorio (URL)',
   badge: 'Chapita (H1)',
   displayTitle: 'Titular',
   subtitle: 'Subtítulo',
@@ -59,14 +62,10 @@ const FIELD_LABELS: Record<string, string> = {
   text: 'Texto',
   heading: 'Título de sección',
   image: 'Imagen (URL)',
-  imagePosition: 'Posición de imagen (left|right)',
-  bg: 'Fondo (white|secondary)',
-  ratio: 'Ratio (auto|vertical|horizontal)',
-  videoPosition: 'Posición de video (left|right)',
   id: 'ID (ancle)',
   formId: 'ID del formulario',
   sub: 'Subtítulo de captación',
-  dark: 'Oscuro (true|false)',
+  dark: 'Fondo oscuro',
   name: 'Nombre',
   meta: 'Meta (texto corto)',
   img: 'Imagen (URL)',
@@ -76,42 +75,38 @@ const FIELD_LABELS: Record<string, string> = {
   alt: 'Texto alternativo',
   cover: 'Portada (URL)',
   cta: 'Texto del botón',
-  thankYou: 'Página de gracias',
   heading2: 'Título',
   label: 'Etiqueta',
   icon: 'Icono (emoji)',
+  jobTitle: 'Cargo',
+  bio: 'Bio',
+  downloadCta: 'Texto del botón de descarga',
+  downloadName: 'Nombre del archivo',
+  pdfHref: 'URL del PDF',
+  waCta: 'Texto del botón de WhatsApp',
+  backText: 'Texto del enlace de volver',
+  backHref: 'Enlace de volver',
 };
 
-// Bloques cuyo `data` es una lista de ítems (arrays de objetos) → se editan
-// como JSON en el inspector (editor avanzado).
-const ARRAY_BLOCK_TYPES = new Set([
-  'social-proof',
-  'scroller-cards',
-  'features',
-  'pricing-table',
-  'comparison',
-  'data-table',
-  'video-testimonials',
-  'reviews',
-  'team',
-  'how-it-works',
-  'faq',
-  'related-pages',
-]);
+// Campos enum → se editan con dropdown, no con texto libre.
+const ENUM_FIELDS: Record<string, { label: string; options: string[] }> = {
+  ratio: { label: 'Ratio del video', options: ['auto', 'vertical', 'horizontal'] },
+  videoPosition: { label: 'Posición del video', options: ['left', 'right'] },
+  imagePosition: { label: 'Posición de la imagen', options: ['left', 'right'] },
+  bg: { label: 'Fondo', options: ['white', 'secondary'] },
+  speed: { label: 'Velocidad', options: ['fast', 'normal', 'slow'] },
+  margin: { label: 'Margen', options: ['sm', 'md', 'lg'] },
+};
 
-// URL del preview de una landing.
-// - Por defecto apunta al estático servido por el propio Next: /landing/ para
-//   home y /landing/<slug>.html para el resto (así lo deja el build de Astro
-//   copiado a public/landing).
-// - Si hay NEXT_PUBLIC_LANDING_URL (ej: http://localhost:4321/landing con el
-//   dev server de Astro), se usa esa base y los slugs no llevan extensión.
-function previewUrl(slug: string): string {
-  const devServerUrl = process.env.NEXT_PUBLIC_LANDING_URL;
-  const base = (devServerUrl || '/landing').replace(/\/+$/, '');
-  const devServer = typeof devServerUrl === 'string' && devServerUrl.length > 0;
-  if (slug === 'home') return `${base}/`;
-  return `${base}/${slug}${devServer ? '' : '.html'}`;
-}
+// Campos booleanos → dropdown Sí/No.
+const BOOLEAN_FIELDS = new Set(['dark']);
+
+// Páginas de gracias disponibles para el campo `thankYou` (paths públicos).
+// Las de agradecimiento existen por rewrite; el resto cuelga de /landing/.
+const THANK_YOU_PATHS = ['/thank-you', '/thank-you-download'];
+
+const selectCls =
+  'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
 export function PageEditor({ slug }: Props) {
   const router = useRouter();
@@ -124,6 +119,8 @@ export function PageEditor({ slug }: Props) {
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
+  const [newBlockType, setNewBlockType] = useState('');
+  const [pageSlugs, setPageSlugs] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +140,28 @@ export function PageEditor({ slug }: Props) {
       cancelled = true;
     };
   }, [slug]);
+
+  // Lista de páginas para el selector de thank-you.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/pages');
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          const slugs = (data.pages ?? [])
+            .map((p: { slug: string }) => p.slug)
+            .filter((s: string) => !['home', 'thank-you', 'thank-you-download'].includes(s));
+          setPageSlugs(slugs);
+        }
+      } catch {
+        // Sin lista no pasa nada: el select muestra solo los paths base.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const save = async () => {
     if (!page) return;
@@ -166,7 +185,7 @@ export function PageEditor({ slug }: Props) {
       }
       setSaved(true);
       setPreviewKey((k) => k + 1); // recarga el preview con el contenido guardado
-      setTimeout(() => setSaved(false), 2500);
+      setTimeout(() => setSaved(false), 4000);
     } catch {
       setError('No se pudo guardar la página.');
     } finally {
@@ -234,16 +253,28 @@ export function PageEditor({ slug }: Props) {
 
   const addBlock = (type: string) => {
     if (!page) return;
-    const blocks = [...page.blocks, { type, data: {} }];
+    const template = BLOCK_TYPES.find((b) => b.type === type);
+    // El bloque nace con los campos del template (defaultData) para que el
+    // inspector los muestre editables de inmediato.
+    const data = template
+      ? JSON.parse(JSON.stringify(template.defaultData))
+      : {};
+    const blocks = [...page.blocks, { type, data }];
     setPage({ ...page, blocks });
     setSelected(blocks.length - 1);
   };
 
-  const updateField = (key: string, value: string) => {
+  const updateField = (key: string, value: string | boolean | number) => {
     if (!page || selected === null) return;
     const blocks = page.blocks.map((b, i) =>
       i === selected ? { ...b, data: { ...b.data, [key]: value } } : b,
     );
+    setPage({ ...page, blocks });
+  };
+
+  const updateArray = (data: Record<string, unknown>) => {
+    if (!page || selected === null) return;
+    const blocks = page.blocks.map((b, i) => (i === selected ? { ...b, data } : b));
     setPage({ ...page, blocks });
   };
 
@@ -252,6 +283,16 @@ export function PageEditor({ slug }: Props) {
   }
 
   const selectedBlock = selected !== null ? page.blocks[selected] : null;
+  const arrayConfig = selectedBlock ? ARRAY_EDITORS[selectedBlock.type] : null;
+  const arrayKey = arrayConfig ? arrayConfig.arrayKey : null;
+
+  // Campos escalares del bloque: excluye arrays (se editan en el editor de
+  // tablas) y el campo thankYou (selector propio).
+  const scalarFields = selectedBlock
+    ? Object.entries(selectedBlock.data).filter(
+        ([k, v]) => !Array.isArray(v) && k !== 'thankYou' && k !== arrayKey,
+      )
+    : [];
 
   return (
     <div className="space-y-6">
@@ -263,11 +304,17 @@ export function PageEditor({ slug }: Props) {
           </Button>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">{page.title || page.slug}</h1>
-            <p className="text-xs text-muted-foreground">/{page.slug}</p>
+            <p className="text-xs text-muted-foreground">
+              Editar: /pages/{page.slug} · Ver: {previewUrl(page.slug)}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {saved && <span className="text-xs text-emerald-600">Guardado ✓</span>}
+          {saved && (
+            <span className="text-xs text-emerald-600">
+              Guardado ✓ (el HTML se regenera en el build)
+            </span>
+          )}
           <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
             <Eye className="mr-2 h-4 w-4" />
             {showPreview ? 'Ocultar preview' : 'Vista previa'}
@@ -290,6 +337,17 @@ export function PageEditor({ slug }: Props) {
           {error}
         </div>
       )}
+
+      {/* Cómo funciona (el flujo editar → build) */}
+      <Card className="bg-muted/30 p-4 text-xs text-muted-foreground">
+        <p>
+          <span className="font-semibold text-foreground">Cómo funciona:</span> al guardar se
+          escribe el JSON de la landing (<code>landing/src/data/landings/{slug}.json</code>). La
+          página pública se regenera en el <span className="font-semibold">build de la
+          landing</span>: hasta que no se ejecute, el preview muestra el último build servido. En
+          desarrollo con el dev server de Astro el cambio se ve al instante.
+        </p>
+      </Card>
 
       {/* SEO */}
       <Card className="p-4">
@@ -316,13 +374,13 @@ export function PageEditor({ slug }: Props) {
       </Card>
 
       {/* Bloques */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         {/* Lista de bloques */}
         <div className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">Secciones de la página</h2>
           {page.blocks.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              Sin secciones. Añade la primera con el botón de abajo.
+              Sin secciones. Añade la primera con el selector de abajo.
             </p>
           )}
           {page.blocks.map((block, i) => {
@@ -332,12 +390,15 @@ export function PageEditor({ slug }: Props) {
             return (
               <Card
                 key={`${block.type}-${i}`}
+                size="sm"
                 draggable
                 onDragStart={handleDragStart(i)}
                 onDragOver={handleDragOver(i)}
                 onDrop={handleDrop(i)}
                 onDragEnd={handleDragEnd}
-                className={`flex items-center gap-2 p-3 transition-colors ${
+                // flex-row anula el flex-col base del Card (tailwind-merge):
+                // sin esto cada bloque se apila verticalmente y queda enorme.
+                className={`flex flex-row items-center gap-2 p-3 ${
                   selected === i ? 'border-primary ring-1 ring-primary' : ''
                 } ${isDragging ? 'opacity-50' : ''} ${
                   isOver ? 'border-dashed border-primary/60 ring-1 ring-primary/30' : ''
@@ -377,13 +438,27 @@ export function PageEditor({ slug }: Props) {
           })}
 
           {/* Añadir bloque */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            {BLOCK_TYPES.map((bt) => (
-              <Button key={bt.type} variant="outline" size="sm" onClick={() => addBlock(bt.type)}>
-                <Plus className="mr-1 h-3 w-3" />
-                {bt.label}
-              </Button>
-            ))}
+          <div className="flex items-center gap-2 pt-2">
+            <select
+              aria-label="Tipo de bloque"
+              className={selectCls}
+              value={newBlockType}
+              onChange={(e) => {
+                if (e.target.value) {
+                  addBlock(e.target.value);
+                  setNewBlockType('');
+                }
+              }}
+            >
+              <option value="" disabled>
+                Añadir sección…
+              </option>
+              {BLOCK_TYPES.map((bt) => (
+                <option key={bt.type} value={bt.type}>
+                  {bt.icon} {bt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -394,57 +469,111 @@ export function PageEditor({ slug }: Props) {
               {BLOCK_TYPES.find((b) => b.type === selectedBlock.type)?.label ?? selectedBlock.type}
             </h2>
 
-            {ARRAY_BLOCK_TYPES.has(selectedBlock.type) ? (
-              <div className="space-y-1.5">
-                <Label>Contenido (JSON)</Label>
-                <Textarea
-                  rows={14}
-                  className="font-mono text-xs"
-                  value={JSON.stringify(selectedBlock.data, null, 2)}
-                  onChange={(e) => {
-                    try {
-                      const parsed = JSON.parse(e.target.value);
-                      const blocks = page.blocks.map((b, i) =>
-                        i === selected ? { ...b, data: parsed } : b,
-                      );
-                      setPage({ ...page, blocks });
-                    } catch {
-                      // JSON inválido mientras se escribe: no se rompe el estado.
-                    }
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Edición avanzada: estructura JSON validada por el build de Astro.
-                </p>
-              </div>
-            ) : (
+            {/* Campos escalares */}
+            {scalarFields.length > 0 && (
               <div className="space-y-3">
-                {Object.entries(selectedBlock.data).map(([key, value]) => (
-                  <div key={key} className="space-y-1.5">
-                    <Label htmlFor={`f-${key}`}>{FIELD_LABELS[key] ?? key}</Label>
-                    {typeof value === 'string' && value.length > 80 ? (
-                      <Textarea
-                        id={`f-${key}`}
-                        rows={3}
-                        value={value}
-                        onChange={(e) => updateField(key, e.target.value)}
-                      />
-                    ) : (
-                      <Input
-                        id={`f-${key}`}
-                        value={String(value)}
-                        onChange={(e) => updateField(key, e.target.value)}
-                      />
-                    )}
-                  </div>
-                ))}
-                {Object.keys(selectedBlock.data).length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Sin campos todavía. Guarda y edita los valores en el inspector
-                    (los campos se autogeneran desde el JSON guardado).
-                  </p>
-                )}
+                {scalarFields.map(([key, value]) => {
+                  const enumDef = ENUM_FIELDS[key];
+                  const label = FIELD_LABELS[key] ?? key;
+                  if (enumDef) {
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label htmlFor={`f-${key}`}>{enumDef.label}</Label>
+                        <select
+                          id={`f-${key}`}
+                          className={selectCls}
+                          value={String(value)}
+                          onChange={(e) => updateField(key, e.target.value)}
+                        >
+                          {enumDef.options.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+                  if (BOOLEAN_FIELDS.has(key)) {
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label htmlFor={`f-${key}`}>{label}</Label>
+                        <select
+                          id={`f-${key}`}
+                          className={selectCls}
+                          value={value === true ? 'true' : 'false'}
+                          onChange={(e) => updateField(key, e.target.value === 'true')}
+                        >
+                          <option value="true">Sí</option>
+                          <option value="false">No</option>
+                        </select>
+                      </div>
+                    );
+                  }
+                  if (key === 'thankYou') {
+                    const options = [
+                      ...THANK_YOU_PATHS,
+                      ...pageSlugs.map((s) => `/landing/${s}`),
+                    ];
+                    const current = String(value ?? '');
+                    if (current && !options.includes(current)) options.unshift(current);
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label htmlFor="f-thankYou">Página de gracias</Label>
+                        <select
+                          id="f-thankYou"
+                          className={selectCls}
+                          value={current}
+                          onChange={(e) => updateField('thankYou', e.target.value)}
+                        >
+                          {options.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={key} className="space-y-1.5">
+                      <Label htmlFor={`f-${key}`}>{label}</Label>
+                      {typeof value === 'string' && value.length > 80 ? (
+                        <Textarea
+                          id={`f-${key}`}
+                          rows={3}
+                          value={value}
+                          onChange={(e) => updateField(key, e.target.value)}
+                        />
+                      ) : (
+                        <Input
+                          id={`f-${key}`}
+                          value={String(value)}
+                          onChange={(e) => updateField(key, e.target.value)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            )}
+
+            {/* Tablas / listas de ítems */}
+            {arrayConfig && (
+              <div className="space-y-2">
+                <Label className="text-xs">Contenido de {FIELD_LABELS[arrayConfig.arrayKey] ?? arrayConfig.arrayKey}</Label>
+                <ArrayBlockEditor
+                  type={selectedBlock.type}
+                  data={selectedBlock.data}
+                  onChange={updateArray}
+                />
+              </div>
+            )}
+
+            {scalarFields.length === 0 && !arrayConfig && (
+              <p className="text-xs text-muted-foreground">
+                Este bloque no tiene campos editables.
+              </p>
             )}
           </div>
         )}

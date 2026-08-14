@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Eye,
   GripVertical,
+  ImagePlus,
   Save,
   Trash2,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { BLOCK_TYPES, previewUrl } from '@/lib/landing-block-types';
 import { ARRAY_EDITORS, ArrayBlockEditor } from './array-block-editor';
+import { MediaPicker } from './media-picker';
 
 interface LandingBlock {
   type: string;
@@ -101,6 +103,9 @@ const ENUM_FIELDS: Record<string, { label: string; options: string[] }> = {
 // Campos booleanos → dropdown Sí/No.
 const BOOLEAN_FIELDS = new Set(['dark']);
 
+// Campos que guardan una URL de imagen → botón para elegir del media.
+const IMAGE_FIELDS = new Set(['image', 'img', 'src', 'cover', 'thumbMobile', 'thumbDesktop']);
+
 // Páginas de gracias disponibles para el campo `thankYou` (paths públicos).
 // Las de agradecimiento existen por rewrite; el resto cuelga de /landing/.
 const THANK_YOU_PATHS = ['/thank-you', '/thank-you-download'];
@@ -121,6 +126,7 @@ export function PageEditor({ slug }: Props) {
   const [previewKey, setPreviewKey] = useState(0);
   const [newBlockType, setNewBlockType] = useState('');
   const [pageSlugs, setPageSlugs] = useState<string[]>([]);
+  const [mediaField, setMediaField] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -545,6 +551,24 @@ export function PageEditor({ slug }: Props) {
                           value={value}
                           onChange={(e) => updateField(key, e.target.value)}
                         />
+                      ) : IMAGE_FIELDS.has(key) ? (
+                        <div className="flex gap-2">
+                          <Input
+                            id={`f-${key}`}
+                            value={String(value)}
+                            placeholder="URL de la imagen"
+                            onChange={(e) => updateField(key, e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            title="Elegir del media"
+                            onClick={() => setMediaField(key)}
+                          >
+                            <ImagePlus className="h-4 w-4" />
+                          </Button>
+                        </div>
                       ) : (
                         <Input
                           id={`f-${key}`}
@@ -604,6 +628,16 @@ export function PageEditor({ slug }: Props) {
           </p>
         </Card>
       )}
+
+      {/* Picker de media para campos de imagen */}
+      <MediaPicker
+        open={mediaField !== null}
+        onOpenChange={(open) => !open && setMediaField(null)}
+        onSelect={(url) => {
+          if (mediaField) updateField(mediaField, url);
+          setMediaField(null);
+        }}
+      />
     </div>
   );
 }

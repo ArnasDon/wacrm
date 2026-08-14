@@ -252,27 +252,45 @@ export function AgendaWeek() {
                         {t('emptyDay')}
                       </p>
                     ) : (
-                      dayAppointments.map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => setDetailAppointment(a)}
-                          className={`w-full rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
-                        >
-                          <p className="truncate text-sm font-semibold text-foreground">
-                            {a.contact?.name || a.contact?.phone || a.client_name || t('noContactShort')}
-                          </p>
-                          <p className="mt-0.5 text-xs tabular-nums text-foreground/80">
-                            {a.scheduled_time ? a.scheduled_time.slice(0, 5) : t('allDay')}
-                          </p>
-                          <p
-                            className="mt-0.5 truncate text-[11px] text-muted-foreground"
-                            title={a.property?.name ?? undefined}
+                      dayAppointments.map((a) => {
+                        // 3rd line is conditional on type: Visita/Proposta are
+                        // about a specific listing, so the property name stays
+                        // (current behavior). Every other type (Ligação,
+                        // Reunião, Follow-up, Outro) shows the free-text
+                        // Descrição instead — a property name is often empty
+                        // or irrelevant for those (e.g. "elaborar aditivo
+                        // contratual"). "—" when there's nothing to show,
+                        // rather than hiding the line, so every card keeps the
+                        // same height in the grid.
+                        const showsProperty = a.type === 'visit' || a.type === 'proposal'
+                        const thirdLineText = showsProperty
+                          ? a.property?.name || t('noPropertyShort')
+                          : a.description?.trim() || '—'
+                        const thirdLineTitle = showsProperty
+                          ? (a.property?.name ?? undefined)
+                          : (a.description?.trim() || undefined)
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => setDetailAppointment(a)}
+                            className={`w-full rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
                           >
-                            {a.property?.name || t('noPropertyShort')}
-                          </p>
-                        </button>
-                      ))
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {a.contact?.name || a.contact?.phone || a.client_name || t('noContactShort')}
+                            </p>
+                            <p className="mt-0.5 text-xs tabular-nums text-foreground/80">
+                              {a.scheduled_time ? a.scheduled_time.slice(0, 5) : t('allDay')}
+                            </p>
+                            <p
+                              className="mt-0.5 truncate text-[11px] text-muted-foreground"
+                              title={thirdLineTitle}
+                            >
+                              {thirdLineText}
+                            </p>
+                          </button>
+                        )
+                      })
                     )}
                   </div>
                 </div>

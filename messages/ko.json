@@ -120,6 +120,7 @@
       "allDay": "종일",
       "noContactShort": "고객 없음",
       "noPropertyShort": "매물 없음",
+      "appointmentDetailsLabel": "일정 세부정보 보기",
       "connectGoogleCalendar": "Google 캘린더 연결",
       "calendarConnectedAs": "{email}(으)로 연결됨",
       "calendarDisconnect": "Google 캘린더 연결 해제",

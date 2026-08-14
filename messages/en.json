@@ -120,6 +120,7 @@
       "allDay": "All day",
       "noContactShort": "No client",
       "noPropertyShort": "No property",
+      "appointmentDetailsLabel": "View appointment details",
       "connectGoogleCalendar": "Connect Google Calendar",
       "calendarConnectedAs": "Connected as {email}",
       "calendarDisconnect": "Disconnect Google Calendar",

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CalendarSync, LogOut, Plus } from 'lucide-react'
+import { CalendarSync, Info, LogOut, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { listAppointmentsByDateRange } from '@/lib/appointments/queries'
@@ -17,6 +17,7 @@ import { AppointmentFormDialog } from '@/components/appointments/appointment-for
 import { AppointmentDetailSheet } from '@/components/appointments/appointment-detail-sheet'
 import { Skeleton } from './skeleton'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Appointment, AppointmentType } from '@/types'
 import { useTranslations } from 'next-intl'
 
@@ -216,6 +217,7 @@ export function AgendaWeek() {
             ))}
           </div>
         ) : (
+          <TooltipProvider>
           <div className="grid min-w-[1020px] grid-cols-6 gap-3">
             {weekDates.map((dateKey, i) => {
               const dayAppointments = byDay.get(dateKey) ?? []
@@ -256,25 +258,37 @@ export function AgendaWeek() {
                         // 3rd line is conditional on type: Visita/Proposta are
                         // about a specific listing, so the property name stays
                         // (current behavior). Every other type (Ligação,
-                        // Reunião, Follow-up, Outro) shows the free-text
-                        // Descrição instead — a property name is often empty
-                        // or irrelevant for those (e.g. "elaborar aditivo
-                        // contratual"). "—" when there's nothing to show,
-                        // rather than hiding the line, so every card keeps the
-                        // same height in the grid.
+                        // Reunião, Follow-up, Outro) shows the appointment's
+                        // Título instead — a property name is often empty or
+                        // irrelevant for those (e.g. "elaborar aditivo
+                        // contratual"), and every appointment always has a
+                        // título (required field), unlike Descrição.
                         const showsProperty = a.type === 'visit' || a.type === 'proposal'
-                        const thirdLineText = showsProperty
-                          ? a.property?.name || t('noPropertyShort')
-                          : a.description?.trim() || '—'
-                        const thirdLineTitle = showsProperty
-                          ? (a.property?.name ?? undefined)
-                          : (a.description?.trim() || undefined)
+                        const thirdLineText = showsProperty ? a.property?.name || t('noPropertyShort') : a.title
+                        // Native `title` attribute as a plain hover fallback
+                        // (works with just the mouse, no JS) alongside the
+                        // dedicated info icon below, which also works on tap.
+                        const thirdLineTitleAttr = showsProperty ? (a.property?.name ?? undefined) : a.title
                         return (
-                          <button
+                          // A `<div role="button">`, not a native `<button>`:
+                          // the info icon below is itself a real `<button>`
+                          // (TooltipTrigger), and nesting button-in-button is
+                          // invalid HTML — the browser closes the outer one
+                          // the instant it hits the inner one, breaking the
+                          // card's layout. onKeyDown mirrors the Enter/Space
+                          // activation a real button gets for free.
+                          <div
                             key={a.id}
-                            type="button"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => setDetailAppointment(a)}
-                            className={`w-full rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                setDetailAppointment(a)
+                              }
+                            }}
+                            className={`w-full cursor-pointer rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
                           >
                             <p className="truncate text-sm font-semibold text-foreground">
                               {a.contact?.name || a.contact?.phone || a.client_name || t('noContactShort')}
@@ -282,13 +296,44 @@ export function AgendaWeek() {
                             <p className="mt-0.5 text-xs tabular-nums text-foreground/80">
                               {a.scheduled_time ? a.scheduled_time.slice(0, 5) : t('allDay')}
                             </p>
-                            <p
-                              className="mt-0.5 truncate text-[11px] text-muted-foreground"
-                              title={thirdLineTitle}
-                            >
-                              {thirdLineText}
-                            </p>
-                          </button>
+                            <div className="mt-0.5 flex items-center gap-1">
+                              <p
+                                className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+                                title={thirdLineTitleAttr}
+                              >
+                                {thirdLineText}
+                              </p>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  type="button"
+                                  aria-label={t('appointmentDetailsLabel')}
+                                  // Stops the click from also bubbling up to
+                                  // the card's own onClick (which would open
+                                  // the full detail sheet on top of the
+                                  // tooltip) — this is meant to be a quick
+                                  // peek, not a navigation.
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+                                >
+                                  <Info className="size-3" />
+                                </TooltipTrigger>
+                                <TooltipContent className="block max-w-56">
+                                  {/* TooltipContent's own base class is
+                                      `inline-flex items-center` (built for a
+                                      short one-line label) — wrapping in a
+                                      single flex-col child isolates our
+                                      multi-paragraph content from that row
+                                      layout so título/descrição/observações
+                                      stack instead of sitting side by side. */}
+                                  <div className="flex flex-col gap-1 text-left">
+                                    <p className="font-medium">{a.title}</p>
+                                    {a.description ? <p className="text-background/80">{a.description}</p> : null}
+                                    {a.notes ? <p className="text-background/80">{a.notes}</p> : null}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </div>
                         )
                       })
                     )}
@@ -297,6 +342,7 @@ export function AgendaWeek() {
               )
             })}
           </div>
+          </TooltipProvider>
         )}
       </div>
 

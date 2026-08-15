@@ -551,9 +551,14 @@ antes de leer configuración, descifrar credenciales o descargar contenido.
 empresas y para un medio ajeno. Las 9 pruebas dirigidas pasaron, junto con
 `npm.cmd run typecheck` y `npm.cmd run build`; el build generó las 59 rutas.
 
-**Pendiente / siguiente paso:** Publicar y observar el despliegue. Después se
-puede cerrar el resto de housekeeping de Fase 0 o comenzar el núcleo de Fase 2
-(temperatura manual de clientes), según la prioridad de producto.
+**Despliegue:** Publiqué `a74ca40` en `origin/main`. El webhook automático se
+demoró y el panel tuvo una interrupción breve; se inició también un despliegue
+manual, y EasyPanel terminó correctamente la implementación identificada con
+el commit de aislamiento.
+
+**Pendiente / siguiente paso:** Se puede cerrar el resto de housekeeping de
+Fase 0 o comenzar el núcleo de Fase 2 (temperatura manual de clientes), según
+la prioridad de producto.
 
 **Notas:** No se alteró el esquema ni se modificaron mensajes o medios reales.
 El archivo no relacionado `src/lib/probe_delete_test.txt` permanece intacto.

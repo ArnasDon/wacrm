@@ -7,6 +7,7 @@ import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
+import { loadBusinessMetrics, metricsGrounding } from '@/lib/ai/business-metrics'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -78,11 +79,12 @@ export async function POST(request: Request) {
       config,
       latestUserMessage(messages),
     )
+    const metrics = await loadBusinessMetrics(supabase, accountId)
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
-    })
+    }) + metricsGrounding(metrics)
 
     const { text, handoff } = await generateReply({ config, systemPrompt, messages })
     return NextResponse.json({ reply: text, handoff })

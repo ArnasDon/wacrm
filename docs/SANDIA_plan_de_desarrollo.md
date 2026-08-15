@@ -624,3 +624,22 @@ y las herramientas IA empresariales con permisos y bitácora de acciones.
 
 **Notas:** No se modificaron datos reales ni configuraciones de canales. El
 archivo `src/lib/probe_delete_test.txt` permanece intacto y excluido.
+
+### 2026-08-15 — Codex (rate limit remoto y métricas para IA empresarial)
+
+**Hecho:** Apliqué `048_shared_rate_limits_and_usage.sql` en Supabase productivo
+y verifiqué que `authenticated` no puede ejecutar el RPC, mientras
+`service_role` sí. Agregué un snapshot de métricas aislado por `account_id`
+(contactos por temperatura, conversaciones por estado y negocios por estado y
+valor ganado). El playground de cada empresa recibe estas métricas como
+contexto y también existe `GET /api/ai/business-metrics` para la futura UI.
+
+**Probado:** La migración respondió correctamente, la tabla compartida existe,
+los privilegios son los esperados y `npm.cmd run typecheck` quedó limpio.
+
+**Pendiente / siguiente paso:** Incorporar confirmación y auditoría para las
+acciones IA de cerrar chat, marcar venta y mover negocio; luego continuar con
+CSP, múltiples números, webhooks y español completo.
+
+**Notas:** La prueba solo creó un bucket técnico temporal de rate limit; no se
+modificaron contactos, conversaciones, negocios ni configuraciones reales.

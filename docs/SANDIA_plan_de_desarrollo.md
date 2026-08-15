@@ -456,3 +456,25 @@ cuenta y verificar que solo pueda ver los datos de su propia empresa.
 **Notas:** No se abrió ni inspeccionó el buzón del destinatario. La confirmación
 actual es la respuesta exitosa de Supabase y la creación de la empresa en el
 panel de producción.
+
+### 2026-08-15 — Codex (corrección de enlace de invitación)
+
+**Hecho:** Corregí en Supabase Auth la `Site URL` de `localhost:3000` al dominio
+productivo de Sandia y agregué el mismo dominio a la lista permitida de URLs de
+redirección. También configuré `NEXT_PUBLIC_SITE_URL` en EasyPanel y reforcé la
+API de administración para enviar explícitamente las futuras invitaciones a
+`/login` del sitio configurado.
+
+**Probado:** `npm.cmd run build` completó correctamente las 59 rutas y la
+comprobación de TypeScript incluida en el build. La configuración de Supabase
+quedó guardada con el dominio productivo y la variable fue guardada en el
+servicio de EasyPanel sin alterar las demás variables.
+
+**Pendiente / siguiente paso:** Publicar el cambio de la API, confirmar el
+despliegue automático y reemitir la invitación de David para reemplazar el
+correo anterior, cuyo enlace fue generado cuando Supabase todavía apuntaba a
+localhost.
+
+**Notas:** No se eliminó la cuenta, empresa ni invitación existente de David.
+El archivo local no relacionado `src/lib/probe_delete_test.txt` permanece
+intacto y fuera de los cambios.

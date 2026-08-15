@@ -4,6 +4,12 @@ import { platformAdminClient } from "@/lib/platform/admin-client";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function platformInviteRedirectUrl(request: Request): string {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const baseUrl = configuredSiteUrl || new URL(request.url).origin;
+  return `${baseUrl.replace(/\/+$/, "")}/login`;
+}
+
 export async function GET() {
   try {
     await requirePlatformAdmin();
@@ -67,6 +73,7 @@ export async function POST(request: Request) {
 
     const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
       data: { full_name: companyName },
+      redirectTo: platformInviteRedirectUrl(request),
     });
     if (inviteError) {
       await admin.from("platform_company_invitations").delete().eq("id", invitationId);

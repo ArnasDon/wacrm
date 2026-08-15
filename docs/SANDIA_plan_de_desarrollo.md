@@ -497,6 +497,7 @@ por Supabase. Cuando Auth confirma el nuevo correo, el trigger remoto
 el permiso de plataforma permanecen ligados al `user_id` y no se recrean.
 
 **Probado:** `npm.cmd run typecheck` y `npm.cmd run build` completaron sin
-errores; el build generó las 59 rutas. Queda desplegar y comprobar en
-producción que el campo de correo siga visible en Perfil. No se ejecutará un
-cambio real sin que el propietario indique la nueva dirección.
+errores; el build generó las 59 rutas. Publiqué `120ce6d` en `origin/main`,
+EasyPanel completó el despliegue y producción mostró el campo Email y el botón
+de guardar en `/settings?tab=profile`. No se ejecutó un cambio real porque el
+propietario no ha indicado una nueva dirección.

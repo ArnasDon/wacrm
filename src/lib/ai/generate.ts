@@ -1,4 +1,11 @@
-import { AiError, type AiConfig, type ChatMessage, type GenerateResult } from './types'
+import {
+  AiError,
+  type AiConfig,
+  type AiUsage,
+  type ChatMessage,
+  type GenerateResult,
+} from './types'
+import { sumUsage } from './providers/shared'
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import type { ToolDef } from './tag-tool'
 import type { ProviderToolCall } from './providers/shared'
@@ -37,13 +44,13 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     timeoutMs,
   }
 
-  let raw: string
+  let result: { text: string; usage: AiUsage | null }
   switch (config.provider) {
     case 'openai':
-      raw = await generateOpenAi(providerArgs)
+      result = await generateOpenAi(providerArgs)
       break
     case 'anthropic':
-      raw = await generateAnthropic(providerArgs)
+      result = await generateAnthropic(providerArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
@@ -52,18 +59,23 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       })
   }
 
-  return parseGeneration(raw)
+  return parseGeneration(result.text, result.usage)
 }
 
 /**
- * Split the raw model output into `{ text, handoff }`. The sentinel can
- * appear alone or trailing a partial reply; either way we treat the
- * turn as a handoff and strip the marker from any remaining text.
+ * Split the raw model output into `{ text, handoff, usage }`. The
+ * sentinel can appear alone or trailing a partial reply; either way we
+ * treat the turn as a handoff and strip the marker from any remaining
+ * text. `usage` is passed straight through (null when the provider
+ * didn't report it).
  */
-export function parseGeneration(raw: string): GenerateResult {
+export function parseGeneration(
+  raw: string,
+  usage: AiUsage | null = null,
+): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
   const text = raw.split(HANDOFF_SENTINEL).join('').trim()
-  return { text, handoff }
+  return { text, handoff, usage }
 }
 
 /** Outcome of applying (or not) one `add_tag` call, reported back by
@@ -121,32 +133,32 @@ export async function generateReplyWithTools(
     case 'openai': {
       const turn = await generateOpenAiTurn({ ...providerArgs, tool })
       if (turn.toolCalls.length === 0) {
-        return parseGeneration(turn.text ?? '')
+        return parseGeneration(turn.text ?? '', turn.usage)
       }
       const results = await onToolCalls(turn.toolCalls)
-      const text = await continueOpenAiAfterTools({
+      const { text, usage } = await continueOpenAiAfterTools({
         ...providerArgs,
         assistantMessage: turn.assistantMessage,
         toolResults: turn.toolCalls.map((c) => ({ id: c.id, content: buildToolAck(c, results) })),
       })
       return {
-        ...parseGeneration(text),
+        ...parseGeneration(text, sumUsage(turn.usage, usage)),
         toolCalls: turn.toolCalls.map(({ tagId, reason }) => ({ tagId, reason })),
       }
     }
     case 'anthropic': {
       const turn = await generateAnthropicTurn({ ...providerArgs, tool })
       if (turn.toolCalls.length === 0) {
-        return parseGeneration(turn.text ?? '')
+        return parseGeneration(turn.text ?? '', turn.usage)
       }
       const results = await onToolCalls(turn.toolCalls)
-      const text = await continueAnthropicAfterTools({
+      const { text, usage } = await continueAnthropicAfterTools({
         ...providerArgs,
         assistantContent: turn.assistantContent,
         toolResults: turn.toolCalls.map((c) => ({ id: c.id, content: buildToolAck(c, results) })),
       })
       return {
-        ...parseGeneration(text),
+        ...parseGeneration(text, sumUsage(turn.usage, usage)),
         toolCalls: turn.toolCalls.map(({ tagId, reason }) => ({ tagId, reason })),
       }
     }

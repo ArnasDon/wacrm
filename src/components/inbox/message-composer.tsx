@@ -19,6 +19,9 @@ import {
   X,
   Loader2,
   Sparkles,
+  Plus,
+  MessageSquareDashed,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -28,6 +31,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useCan } from "@/hooks/use-can";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -37,6 +47,14 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
+import { useTranslations } from "next-intl";
+import {
+  InteractiveBuilder,
+  blankButtonsPayload,
+} from "@/components/interactive/interactive-builder";
+import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
+import type { InteractiveMessagePayload, QuickReply } from "@/types";
+import { QuickReplyPicker } from "./quick-reply-picker";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -96,6 +114,7 @@ interface MessageComposerProps {
   sessionExpired: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
+  onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
@@ -117,14 +136,24 @@ export function MessageComposer({
   sessionExpired,
   onSend,
   onSendMedia,
+  onSendInteractive,
   onOpenTemplates,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
+  const t = useTranslations("Inbox.composer");
+
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Interactive-message builder dialog + quick-reply picker.
+  const [interactiveOpen, setInteractiveOpen] = useState(false);
+  const [interactivePayload, setInteractivePayload] =
+    useState<InteractiveMessagePayload>(blankButtonsPayload);
+  const [savingQuickReply, setSavingQuickReply] = useState(false);
+  const [quickReplyOpen, setQuickReplyOpen] = useState(false);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -268,6 +297,89 @@ export function MessageComposer({
       setDrafting(false);
     }
   }, [drafting, conversationId, adjustHeight]);
+
+  // ---- Interactive message + quick replies --------------------------
+
+  const openInteractiveBuilder = useCallback(
+    (seed?: InteractiveMessagePayload) => {
+      setInteractivePayload(seed ?? blankButtonsPayload());
+      setInteractiveOpen(true);
+    },
+    [],
+  );
+
+  const sendInteractive = useCallback(() => {
+    const result = validateInteractivePayload(interactivePayload);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    onSendInteractive(interactivePayload, replyTo?.id);
+    setInteractiveOpen(false);
+    onClearReply?.();
+  }, [interactivePayload, onSendInteractive, replyTo?.id, onClearReply]);
+
+  // Persist the current builder payload as a reusable interactive snippet.
+  const saveAsQuickReply = useCallback(async () => {
+    const result = validateInteractivePayload(interactivePayload);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    const title = window
+      .prompt(t("quickReplyNamePrompt"))
+      ?.trim();
+    if (!title) return;
+    setSavingQuickReply(true);
+    try {
+      const res = await fetch("/api/quick-replies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          kind: "interactive",
+          interactive_payload: interactivePayload,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("quickReplySaveError"));
+        return;
+      }
+      toast.success(t("quickReplySaved"));
+    } catch {
+      toast.error(t("quickReplySaveError"));
+    } finally {
+      setSavingQuickReply(false);
+    }
+  }, [interactivePayload, t]);
+
+  // A picked quick reply: text fills the composer; interactive opens the
+  // builder pre-filled so the agent can tweak before sending.
+  const handlePickQuickReply = useCallback(
+    (qr: QuickReply) => {
+      setQuickReplyOpen(false);
+      if (qr.kind === "interactive" && qr.interactive_payload) {
+        openInteractiveBuilder(qr.interactive_payload);
+        return;
+      }
+      const body = qr.content_text ?? "";
+      // Separate the snippet from any existing draft with a newline so the
+      // words don't run together ("Thanks" + "we'll…" → "Thankswe'll…").
+      setText((prev) =>
+        prev && !/\s$/.test(prev) ? `${prev}\n${body}` : `${prev}${body}`,
+      );
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [openInteractiveBuilder, adjustHeight],
+  );
 
   // Upload a captured file to chat-media and stage it as a draft.
   const stageUpload = useCallback(
@@ -437,7 +549,7 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
-            24-hour session expired. Use a template to re-engage.
+            {t("sessionExpiredHint")}
           </p>
           <Button
             variant="ghost"
@@ -446,7 +558,7 @@ export function MessageComposer({
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="mr-1 h-3 w-3" />
-            Templates
+            {t("templates")}
           </Button>
         </div>
       )}
@@ -491,27 +603,27 @@ export function MessageComposer({
           onCaptionChange={setCaption}
           onDiscard={discardDraft}
           onSend={sendDraft}
+          t={t}
         />
       ) : recording ? (
         // Recording bar — replaces the composer while the mic is live.
         <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2.5">
           <span className="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
           <span className="flex-1 text-sm text-foreground">
-            Recording… {formatDuration(recordSeconds)} /{" "}
-            {formatDuration(MAX_RECORDING_SECONDS)}
+            {t("recording", { current: formatDuration(recordSeconds), max: formatDuration(MAX_RECORDING_SECONDS) })}
           </span>
           <button
             type="button"
             onClick={cancelRecording}
             className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground"
           >
-            Cancel
+            {t("cancel")}
           </button>
           <Button
             size="sm"
             onClick={stopRecording}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
-            title="Stop and attach"
+            title={t("stopAndAttach")}
           >
             <Square className="h-4 w-4" />
           </Button>
@@ -524,10 +636,10 @@ export function MessageComposer({
               disabled={inputsDisabled || busy}
               title={
                 readOnly
-                  ? "Read-only — your role can't send messages"
+                  ? t("readOnlyTitle")
                   : inputsDisabled
                     ? undefined
-                    : "Attach media"
+                    : t("attachMedia")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -540,19 +652,47 @@ export function MessageComposer({
             <DropdownMenuContent align="start" className="border-border bg-popover">
               <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
                 <ImageIcon className="mr-2 h-4 w-4" />
-                Photo
+                {t("photo")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
                 <Video className="mr-2 h-4 w-4" />
-                Video
+                {t("video")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
                 <FileText className="mr-2 h-4 w-4" />
-                Document
+                {t("document")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => void startRecording()}>
                 <Mic className="mr-2 h-4 w-4" />
-                Voice note
+                {t("voiceNote")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* + menu — interactive messages + quick replies. Gated on the
+              24h window like free-form text (interactive requires it). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={inputsDisabled}
+              title={
+                readOnly
+                  ? t("readOnlyTitle")
+                  : inputsDisabled
+                    ? undefined
+                    : t("moreActions")
+              }
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="border-border bg-popover">
+              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+                <MessageSquareDashed className="mr-2 h-4 w-4" />
+                {t("interactiveMessage")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
+                <Zap className="mr-2 h-4 w-4" />
+                {t("quickReplies")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -562,7 +702,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            title={readOnly ? undefined : "Send template"}
+            title={readOnly ? undefined : t("sendTemplate")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
             onClick={onOpenTemplates}
           >
@@ -575,7 +715,7 @@ export function MessageComposer({
             canAct={!readOnly}
             gateReason="send messages"
             disabled={drafting}
-            title={readOnly ? undefined : "Draft a reply with AI"}
+            title={readOnly ? undefined : t("draftWithAI")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
             onClick={handleDraft}
           >
@@ -593,17 +733,17 @@ export function MessageComposer({
             onKeyDown={handleKeyDown}
             placeholder={
               readOnly
-                ? "Read-only — viewers can browse but not reply"
+                ? t("readOnlyPlaceholder")
                 : sessionExpired
-                  ? "Session expired - use a template"
-                  : "Type a message... (Shift+Enter for new line)"
+                  ? t("sessionExpiredPlaceholder")
+                  : t("typeMessagePlaceholder")
             }
             disabled={sessionExpired || readOnly}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only state.
-            title={readOnly ? "Read-only — your role can't send messages" : undefined}
+            title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
@@ -628,9 +768,49 @@ export function MessageComposer({
           under the textarea left edge. */}
       {!draft && !recording && (
         <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
-          Tap the ✨ to draft a reply with AI — you can edit it before sending
+          {t("draftHint")}
         </p>
       )}
+
+      {/* Interactive-message builder dialog. */}
+      <Dialog open={interactiveOpen} onOpenChange={setInteractiveOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("interactiveMessage")}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-y-auto">
+            <InteractiveBuilder
+              value={interactivePayload}
+              onChange={setInteractivePayload}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={savingQuickReply}
+              onClick={saveAsQuickReply}
+            >
+              {savingQuickReply ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Zap className="mr-1 h-4 w-4" />
+              )}
+              {t("saveAsQuickReply")}
+            </Button>
+            <Button onClick={sendInteractive}>
+              <Send className="mr-1 h-4 w-4" />
+              {t("send")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick-reply picker. */}
+      <QuickReplyPicker
+        open={quickReplyOpen}
+        onOpenChange={setQuickReplyOpen}
+        onPick={handlePickQuickReply}
+      />
     </div>
   );
 }
@@ -648,6 +828,7 @@ function MediaDraftPreview({
   onCaptionChange,
   onDiscard,
   onSend,
+  t,
 }: {
   draft: MediaDraft;
   busy: boolean;
@@ -655,6 +836,7 @@ function MediaDraftPreview({
   onCaptionChange: (caption: string) => void;
   onDiscard: () => void;
   onSend: () => void;
+  t: ReturnType<typeof useTranslations>;
 }) {
   return (
     <div className="rounded-xl border border-border bg-muted/40 p-3">
@@ -684,7 +866,7 @@ function MediaDraftPreview({
         <button
           type="button"
           onClick={onDiscard}
-          aria-label="Remove attachment"
+          aria-label={t("removeAttachment")}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
@@ -703,7 +885,7 @@ function MediaDraftPreview({
                 onSend();
               }
             }}
-            placeholder="Add a caption…"
+            placeholder={t("addCaption")}
             className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
           />
         )}

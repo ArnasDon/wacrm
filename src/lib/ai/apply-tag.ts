@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { addContactTag } from '@/lib/automations/engine'
+import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
 
 /**
  * Apply an AI-chosen tag to a contact.
@@ -8,9 +8,9 @@ import { addContactTag } from '@/lib/automations/engine'
  * `ai_assignable`) rather than trusting the enum built at prompt time —
  * closes the race where a tag is deleted or detoggled between prompt
  * construction and the model's tool call. The actual write + `tag_added`
- * dispatch is delegated to the shared `addContactTag` — the same path
- * every other tag-adding surface in the app goes through (manual UI,
- * API v1, the automation engine's own `add_tag` step).
+ * dispatch is delegated to the shared `addContactTagAndDispatch` — the
+ * same path every other tag-adding surface in the app goes through
+ * (manual UI, API v1, the automation engine's own `add_tag` step).
  */
 export async function applyAiTag(
   db: SupabaseClient,
@@ -33,7 +33,13 @@ export async function applyAiTag(
 
   if (!tag) return { applied: false, tagName: null }
 
-  const { added } = await addContactTag({ accountId, contactId, tagId, conversationId })
+  const { added } = await addContactTagAndDispatch({
+    db,
+    accountId,
+    contactId,
+    tagId,
+    context: { conversation_id: conversationId },
+  })
   if (!added) return { applied: false, tagName: null }
 
   return { applied: true, tagName: tag.name as string }

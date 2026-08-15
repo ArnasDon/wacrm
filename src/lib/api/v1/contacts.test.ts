@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const h = vi.hoisted(() => ({
-  addContactTag: vi.fn(),
+  addContactTagAndDispatch: vi.fn(),
 }));
 
-vi.mock('@/lib/automations/engine', () => ({
-  addContactTag: h.addContactTag,
+vi.mock('@/lib/contacts/tag-events', () => ({
+  addContactTagAndDispatch: h.addContactTagAndDispatch,
 }));
 
 import {
@@ -114,11 +114,11 @@ function fakeDb(opts: {
 
 describe('setContactTags', () => {
   beforeEach(() => {
-    h.addContactTag.mockReset();
-    h.addContactTag.mockResolvedValue({ added: true });
+    h.addContactTagAndDispatch.mockReset();
+    h.addContactTagAndDispatch.mockResolvedValue({ added: true, dispatched: true });
   });
 
-  it('adds each newly-desired tag via addContactTag, not a raw insert', async () => {
+  it('adds each newly-desired tag via addContactTagAndDispatch, not a raw insert', async () => {
     const { db } = fakeDb({
       tags: [
         { id: 't1', name: 'vip' },
@@ -129,16 +129,17 @@ describe('setContactTags', () => {
 
     await setContactTags(db, 'acct-1', 'user-1', 'contact-1', ['vip', 'newsletter']);
 
-    expect(h.addContactTag).toHaveBeenCalledTimes(1);
-    expect(h.addContactTag).toHaveBeenCalledWith({
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledTimes(1);
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledWith({
+      db,
       accountId: 'acct-1',
       contactId: 'contact-1',
       tagId: 't2',
     });
   });
 
-  it('throws a ContactError when addContactTag fails to add', async () => {
-    h.addContactTag.mockResolvedValue({ added: false });
+  it('throws a ContactError when addContactTagAndDispatch throws', async () => {
+    h.addContactTagAndDispatch.mockRejectedValue(new Error('write failed'));
     const { db } = fakeDb({
       tags: [{ id: 't1', name: 'vip' }],
       currentContactTagIds: [],
@@ -149,7 +150,7 @@ describe('setContactTags', () => {
     ).rejects.toBeInstanceOf(ContactError);
   });
 
-  it('removes no-longer-desired tags via a direct delete, unaffected by addContactTag', async () => {
+  it('removes no-longer-desired tags via a direct delete, unaffected by addContactTagAndDispatch', async () => {
     const { db, deleteCalls } = fakeDb({
       tags: [{ id: 't1', name: 'vip' }],
       currentContactTagIds: ['t1', 't-stale'],
@@ -158,6 +159,6 @@ describe('setContactTags', () => {
     await setContactTags(db, 'acct-1', 'user-1', 'contact-1', ['vip']);
 
     expect(deleteCalls).toEqual([{ tagIds: ['t-stale'] }]);
-    expect(h.addContactTag).not.toHaveBeenCalled();
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
+import { useTranslations } from "next-intl";
 
 interface PipelineAnalyticsProps {
   stages: PipelineStage[];
@@ -46,6 +47,7 @@ function computeStageProbability(
 }
 
 export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
+  const t = useTranslations("Pipelines.analytics");
   const { defaultCurrency } = useAuth();
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -96,39 +98,45 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
       <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-card/60 p-4 sm:grid-cols-3 xl:grid-cols-6">
         <Metric
           icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
-          label="Total Deals"
+          label={t("totalDeals")}
           value={String(stats.totalCount)}
-          tooltip="Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included."
+          tooltip={t("totalDealsTooltip")}
+          t={t}
         />
         <Metric
           icon={<DollarSign className="h-4 w-4 text-primary" />}
-          label="Pipeline Value"
+          label={t("pipelineValue")}
           value={formatCurrency(stats.totalValue, defaultCurrency)}
-          tooltip="Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost."
+          tooltip={t("pipelineValueTooltip")}
+          t={t}
         />
         <Metric
           icon={<Target className="h-4 w-4 text-blue-400" />}
-          label="Avg Deal Size"
+          label={t("avgDealSize")}
           value={formatCurrency(stats.avgValue, defaultCurrency)}
-          tooltip="Pipeline Value divided by Total Deals — the average value of a single non-lost deal."
+          tooltip={t("avgDealSizeTooltip")}
+          t={t}
         />
         <Metric
           icon={<TrendingUp className="h-4 w-4 text-purple-400" />}
-          label="Weighted Value"
+          label={t("weightedValue")}
           value={formatCurrency(stats.weightedValue, defaultCurrency)}
-          tooltip="Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded."
+          tooltip={t("weightedValueTooltip")}
+          t={t}
         />
         <Metric
           icon={<Trophy className="h-4 w-4 text-primary" />}
-          label="Won This Month"
+          label={t("wonThisMonth")}
           value={String(stats.wonThisMonth)}
-          tooltip="Deals marked as Won since the first day of the current month."
+          tooltip={t("wonThisMonthTooltip")}
+          t={t}
         />
         <Metric
           icon={<XCircle className="h-4 w-4 text-red-400" />}
-          label="Lost This Month"
+          label={t("lostThisMonth")}
           value={String(stats.lostThisMonth)}
-          tooltip="Deals marked as Lost since the first day of the current month."
+          tooltip={t("lostThisMonthTooltip")}
+          t={t}
         />
       </div>
     </TooltipProvider>
@@ -140,11 +148,14 @@ function Metric({
   label,
   value,
   tooltip,
+  t,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   tooltip: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t: any;
 }) {
   return (
     <div className="rounded-lg bg-muted/50 p-3">
@@ -156,7 +167,7 @@ function Metric({
             render={
               <button
                 type="button"
-                aria-label={`How ${label} is calculated`}
+                aria-label={t("howCalculated", { label })}
                 className="ml-auto text-muted-foreground hover:text-foreground focus:outline-none"
               />
             }

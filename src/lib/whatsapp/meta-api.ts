@@ -777,8 +777,16 @@ export async function sendInteractiveButtons(
       `Interactive button message requires 1-${INTERACTIVE_LIMITS.maxButtons} buttons (got ${buttons.length}).`
     )
   }
+  const seenButtonIds = new Set<string>()
   for (const btn of buttons) {
     if (!btn.id) throw new Error('Interactive button missing id.')
+    // Duplicate button ids make the tapped-button webhook ambiguous —
+    // Meta rejects them, and the pre-flight validator (interactive.ts)
+    // rejects them too, so guard here to keep the two paths in step.
+    if (seenButtonIds.has(btn.id)) {
+      throw new Error(`Interactive message has duplicate button id "${btn.id}".`)
+    }
+    seenButtonIds.add(btn.id)
     if (!btn.title) throw new Error(`Interactive button "${btn.id}" missing title.`)
     if (btn.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
       throw new Error(
@@ -994,10 +1002,16 @@ export interface GetMediaUrlArgs {
 /**
  * Resolve a media ID to Meta's (short-lived, authenticated) CDN URL
  * plus the MIME type. Step one of the media-proxy flow.
+ *
+ * `fileSize` is Meta's `file_size` (bytes) and is what lets the
+ * inbound mirror (issue #466) reject a file the `chat-media` bucket
+ * would refuse WITHOUT downloading it first — a 90 MB document costs
+ * nothing to skip here and a full transfer to skip after the fact.
+ * Null when Meta omits the field or sends something non-numeric.
  */
 export async function getMediaUrl(
   args: GetMediaUrlArgs
-): Promise<{ url: string; mimeType: string }> {
+): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const { mediaId, accessToken } = args
   const response = await fetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -1007,7 +1021,14 @@ export async function getMediaUrl(
   }
   const data = await response.json()
   if (!data.url) throw new Error('Media URL not found in Meta response')
-  return { url: data.url, mimeType: data.mime_type || 'application/octet-stream' }
+  // Meta documents file_size as a number but has been observed sending
+  // it as a numeric string; Number() handles both and NaN-guards junk.
+  const size = Number(data.file_size)
+  return {
+    url: data.url,
+    mimeType: data.mime_type || 'application/octet-stream',
+    fileSize: Number.isFinite(size) && size >= 0 ? size : null,
+  }
 }
 
 export interface DownloadMediaArgs {

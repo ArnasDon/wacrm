@@ -1,8 +1,9 @@
-import { AiError, type ChatMessage } from '../types'
+import { AiError, type AiUsage, type ChatMessage, type ProviderResult } from '../types'
 import { MAX_OUTPUT_TOKENS } from '../defaults'
 import { ADD_TAG_TOOL_NAME, type ToolDef } from '../tag-tool'
 import {
   mergeConsecutive,
+  normalizeUsage,
   providerHttpError,
   toNetworkError,
   type ProviderArgs,
@@ -23,6 +24,7 @@ interface AnthropicContentBlock {
 
 interface AnthropicResponse {
   content?: AnthropicContentBlock[]
+  usage?: { input_tokens?: number; output_tokens?: number }
 }
 
 /**
@@ -45,10 +47,10 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
 
 /**
  * Call Anthropic's Messages endpoint with the caller's own key.
- * Returns the raw assistant text (handoff parsing happens in
- * `generateReply`).
+ * Returns the raw assistant text + token usage (handoff parsing happens
+ * in `generateReply`).
  */
-export async function generateAnthropic(args: ProviderArgs): Promise<string> {
+export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   let res: Response
@@ -87,7 +89,12 @@ export async function generateAnthropic(args: ProviderArgs): Promise<string> {
       code: 'empty_response',
     })
   }
-  return text
+  // Anthropic reports input/output but no total — normalizeUsage sums.
+  const usage = normalizeUsage({
+    prompt: data?.usage?.input_tokens,
+    completion: data?.usage?.output_tokens,
+  })
+  return { text, usage }
 }
 
 function toAnthropicToolPayload(tool: ToolDef) {
@@ -126,6 +133,7 @@ export interface AnthropicTurnResult {
   text: string | null
   toolCalls: ProviderToolCall[]
   assistantContent: AnthropicContentBlock[]
+  usage: AiUsage | null
 }
 
 /**
@@ -180,7 +188,11 @@ export async function generateAnthropicTurn(
     })
   }
 
-  return { text, toolCalls, assistantContent: content }
+  const usage = normalizeUsage({
+    prompt: data?.usage?.input_tokens,
+    completion: data?.usage?.output_tokens,
+  })
+  return { text, toolCalls, assistantContent: content, usage }
 }
 
 /**
@@ -190,12 +202,17 @@ export async function generateAnthropicTurn(
  * Anthropic (unlike OpenAI) allows multiple `tool_result` blocks in a
  * single user turn.
  */
+export interface AnthropicContinueResult {
+  text: string
+  usage: AiUsage | null
+}
+
 export async function continueAnthropicAfterTools(
   args: ProviderArgs & {
     assistantContent: AnthropicContentBlock[]
     toolResults: ProviderToolResult[]
   },
-): Promise<string> {
+): Promise<AnthropicContinueResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs, assistantContent, toolResults } = args
 
   let res: Response
@@ -245,5 +262,9 @@ export async function continueAnthropicAfterTools(
       code: 'empty_response',
     })
   }
-  return text
+  const usage = normalizeUsage({
+    prompt: data?.usage?.input_tokens,
+    completion: data?.usage?.output_tokens,
+  })
+  return { text, usage }
 }

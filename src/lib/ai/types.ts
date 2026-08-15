@@ -21,6 +21,10 @@ export interface AiConfig {
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number
+  /** Where auto-reply hands a conversation off when the model bails: an
+   *  agent's `auth.users.id`, or null to leave it unassigned (drop into
+   *  the shared queue). */
+  handoffAgentId: string | null
   /** Optional OpenAI-compatible key for embeddings. When set, the
    *  knowledge base is embedded and semantic retrieval turns on; when
    *  null, retrieval falls back to lexical full-text search. */
@@ -40,6 +44,24 @@ export interface ToolCallResult {
   reason: string
 }
 
+/**
+ * Token counts for one provider call, normalized across OpenAI
+ * (`prompt`/`completion`) and Anthropic (`input`/`output`). Null when
+ * the provider didn't return usage. Logged to `ai_usage_log`.
+ */
+export interface AiUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+/** Raw text + usage a provider adapter returns before handoff parsing. */
+export interface ProviderResult {
+  text: string
+  usage: AiUsage | null
+  toolCalls?: ToolCallResult[]
+}
+
 /** Outcome of a generation call. */
 export interface GenerateResult {
   /** The reply text, with any handoff sentinel stripped. */
@@ -49,6 +71,8 @@ export interface GenerateResult {
   /** `add_tag` calls the model made, when tools were offered. Absent/[]
    *  when no tool was attached or the model didn't call it. */
   toolCalls?: ToolCallResult[]
+  /** Provider token usage for this call, or null when unavailable. */
+  usage: AiUsage | null
 }
 
 /**

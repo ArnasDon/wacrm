@@ -117,10 +117,16 @@ export const RATE_LIMITS = {
   /** Individual message send. 60/min per user = one per second
    *  sustained, comfortable for a live human typing. */
   send: { limit: 60, windowMs: 60_000 },
-  /** Broadcast dispatch. 5/min per user — even a 1 000-recipient
-   *  broadcast is one call; this caps the rate at which a single user
-   *  can launch campaigns, not the messages inside one. */
-  broadcast: { limit: 5, windowMs: 60_000 },
+  /** Broadcast dispatch. NOT one call per campaign: the wizard fans a
+   *  campaign out over `/api/whatsapp/broadcast` in batches of 10
+   *  recipients, roughly one call every 1–2 s, so a 1 000-recipient
+   *  send is ~100 calls over several minutes. This bucket was 5/min on
+   *  the assumption of one call per campaign, which meant everything
+   *  past the first ~50 recipients came back 429 and was recorded as a
+   *  failed recipient (issue #472). 60/min per user carries the wizard's
+   *  pacing with headroom while still bounding a script in a loop;
+   *  Meta's own per-number limits remain the real throughput ceiling. */
+  broadcast: { limit: 60, windowMs: 60_000 },
   /** Reaction add/swap/remove. More permissive than send — users
    *  fidget with reactions and a single "swap" is actually two calls
    *  (remove + add) under the hood. */
@@ -159,6 +165,14 @@ export const RATE_LIMITS = {
    *  key past the provider's own rate limit. 60/min ≈ three busy agents
    *  drafting flat-out. */
   aiDraftAccount: { limit: 60, windowMs: 60_000 },
+  /** AI auto-reply generation, per account. The per-conversation cap
+   *  (`auto_reply_max_per_conversation`) bounds one thread; this bounds
+   *  the whole account across threads, so a burst of inbound from many
+   *  customers at once can't run the BYO key past the provider's limit
+   *  or the owner's budget. 30/min is generous for organic inbound while
+   *  capping a stampede; excess inbounds simply don't get an auto-reply
+   *  (they still land in the inbox for a human). */
+  aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

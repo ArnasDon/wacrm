@@ -71,6 +71,7 @@ export async function POST(request: Request) {
         isActive: true,
         autoReplyEnabled: false,
         autoReplyMaxPerConversation: 3,
+        handoffAgentId: null,
         embeddingsApiKey: null,
       })
     } catch (err) {

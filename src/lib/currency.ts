@@ -42,6 +42,7 @@ export const CURRENCIES: CurrencyOption[] = [
   { code: "NGN", label: "Nigerian Naira", symbol: "₦" },
   { code: "SGD", label: "Singapore Dollar", symbol: "S$" },
   { code: "MXN", label: "Mexican Peso", symbol: "$" },
+  { code: "COP", label: "Colombian Peso", symbol: "$" },
 ];
 
 /**
@@ -90,8 +91,17 @@ export function formatCurrencyShort(
 ): string {
   const code = currency || DEFAULT_CURRENCY;
   const symbol = CURRENCIES.find((c) => c.code === code)?.symbol ?? `${code} `;
+  return `${symbol}${formatCompactNumber(value)}`;
+}
+
+/**
+ * Compact number for tight spaces (chart tiles, legends): 1_234 → "1.2k",
+ * 1_200_000 → "1.2M", 900 → "900". The unit-less core shared with
+ * {@link formatCurrencyShort}.
+ */
+export function formatCompactNumber(value: number): string {
   const v = Number(value || 0);
-  if (v >= 1_000_000) return `${symbol}${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${symbol}${(v / 1_000).toFixed(1)}k`;
-  return `${symbol}${v.toFixed(0)}`;
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
+  return v.toFixed(0);
 }

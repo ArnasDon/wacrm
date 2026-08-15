@@ -1,0 +1,27 @@
+-- ============================================================
+-- 031_ai_reply_slot_grant.sql — fix: AI auto-reply never fires
+--
+-- Migration 029 created `claim_ai_reply_slot(uuid, integer)` as a
+-- SECURITY DEFINER function but never GRANTed EXECUTE on it — the only
+-- function in the schema missing its grant (cf. 007, 012, 018, 019,
+-- 025, 030, which all grant EXECUTE explicitly).
+--
+-- SECURITY DEFINER changes the privileges a function runs *with*, not
+-- who may *call* it: the caller still needs EXECUTE. On Postgres
+-- instances where the default PUBLIC execute privilege on public-schema
+-- functions has been revoked (standard on hardened / self-hosted
+-- Supabase), `service_role` therefore cannot invoke it. The AI
+-- auto-reply path runs entirely under the service-role client (the
+-- inbound webhook has no auth.uid()), so `db.rpc('claim_ai_reply_slot')`
+-- fails with permission-denied, the caller bails before sending, and the
+-- bot silently never answers ANY inbound message — while the Playground
+-- (which never claims a slot) keeps working. See issue #345.
+--
+-- Only the service role ever claims a slot, so we grant to it alone —
+-- matching the increment-counter precedent in 007 / 012, and never
+-- exposing a counter-mutating function to end users.
+--
+-- Idempotent — GRANT is a no-op when the privilege already exists.
+-- ============================================================
+
+GRANT EXECUTE ON FUNCTION public.claim_ai_reply_slot(uuid, integer) TO service_role;

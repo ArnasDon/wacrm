@@ -36,7 +36,7 @@
  * list view reads.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyNodeChanges,
   Background,
@@ -58,6 +58,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Plus, Trash2 } from 'lucide-react';
+
+import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -87,6 +89,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -131,10 +134,12 @@ function slotColor(nodeType: NodeType, slotId: string, fallback: string) {
 }
 
 function FlowNodeCard({ data, selected }: NodeProps) {
+  const t = useTranslations('Flows.builder');
   const { node, isEntry, isFlashed } = data as NodeData;
   const meta = NODE_META[node.node_type];
   const c = nodeColors(node.node_type);
-  const summary = summarizeNode(node);
+  const tSummary = useTranslations('Flows.summary');
+  const summary = summarizeNode(node, tSummary);
   const slots = outgoingSlots(node);
   // Start nodes are entry-only; nothing ever targets them, so they
   // don't need an incoming Handle. Every other node type accepts
@@ -190,11 +195,11 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           className="truncate text-[10.5px] font-semibold tracking-wider uppercase"
           style={{ color: c.text }}
         >
-          {meta.label}
+          {t(`nodes.${node.node_type}.label`)}
         </span>
         {isEntry && (
           <span className="border-border text-muted-foreground ml-auto rounded border px-1.5 py-0.5 text-[8.5px] font-bold tracking-[0.1em] uppercase">
-            Entry
+            {t('badgeEntry')}
           </span>
         )}
       </div>
@@ -269,6 +274,7 @@ export function FlowCanvas() {
 }
 
 function FlowCanvasInner() {
+  const t = useTranslations('Flows.builder');
   const {
     state,
     setState,
@@ -507,8 +513,8 @@ function FlowCanvasInner() {
   if (rfNodes.length === 0) {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
-        <p>No nodes yet.</p>
-        <CanvasAddNodeButton />
+        <p>{t('noNodesYet')}</p>
+        <CanvasAddNodeButton t={t} />
       </div>
     );
   }
@@ -564,7 +570,7 @@ function FlowCanvasInner() {
             className="!border-border !bg-card !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
           />
           <Panel position="top-left" className="!top-4 !left-4">
-            <CanvasAddNodeButton />
+            <CanvasAddNodeButton t={t} />
           </Panel>
         </ReactFlow>
       </div>
@@ -577,6 +583,7 @@ function FlowCanvasInner() {
         onUpdateConfig={onSelectedUpdateConfig}
         onDelete={handleDeleteSelected}
         onSetEntry={handleSetEntry}
+        t={t}
       />
     </>
   );
@@ -596,6 +603,7 @@ function NodeEditSheet({
   onUpdateConfig,
   onDelete,
   onSetEntry,
+  t,
 }: {
   node: BuilderNode | null;
   isEntry: boolean;
@@ -604,6 +612,7 @@ function NodeEditSheet({
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
   onSetEntry: () => void;
+  t: ReturnType<typeof useTranslations>;
 }) {
   // Sheet is controlled — opens when a node is selected, closes via
   // Esc / overlay / close button (all delegated to onClose).
@@ -627,15 +636,15 @@ function NodeEditSheet({
           <NodeIconChip type={node.node_type} size={36} iconSize={18} />
           <div className="min-w-0 flex-1">
             <SheetTitle className="flex items-center gap-2 text-[11px] font-semibold tracking-wider uppercase">
-              <span style={{ color: c.text }}>{meta.label}</span>
+              <span style={{ color: c.text }}>{t(`nodes.${node.node_type}.label`)}</span>
               {isEntry && (
                 <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-emerald-300 uppercase">
-                  Entry
+                  {t('badgeEntry')}
                 </span>
               )}
             </SheetTitle>
             <SheetDescription className="text-muted-foreground mt-0.5 text-xs">
-              {meta.blurb}
+              {t(`nodes.${node.node_type}.blurb`)}
             </SheetDescription>
           </div>
           <code className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]">
@@ -655,7 +664,7 @@ function NodeEditSheet({
         <SheetFooter className="border-border border-t px-5 py-3 sm:flex-row sm:justify-between">
           {!isEntry ? (
             <Button variant="ghost" size="sm" onClick={onSetEntry}>
-              Set as entry
+              {t('setAsEntry')}
             </Button>
           ) : (
             <span />
@@ -667,7 +676,7 @@ function NodeEditSheet({
             className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete node
+            {t('deleteNode')}
           </Button>
         </SheetFooter>
       </SheetContent>
@@ -695,7 +704,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'end',
 ];
 
-function CanvasAddNodeButton() {
+function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
   const reactFlow = useReactFlow();
   const { addNode, updateNodePosition } = useFlowEditor();
 
@@ -727,47 +736,53 @@ function CanvasAddNodeButton() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
-        aria-label="Add node"
+        aria-label={t('addNode')}
       >
         <Plus className="h-4 w-4" />
-        Add node
+        {t('addNode')}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         className="border-border bg-popover w-[268px] p-1.5"
       >
         {groupNodeTypesByCategory(ADD_NODE_TYPES).map((group, i) => (
-          <div key={group.id}>
+          // DropdownMenuGroup (base-ui Menu.Group) is REQUIRED: the
+          // DropdownMenuLabel below is base-ui's Menu.GroupLabel, which
+          // throws at render without a Menu.Group ancestor. A plain <div>
+          // here crashed the page when this menu opened (issue #336).
+          <Fragment key={group.id}>
             {i > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
-              {group.label}
-            </DropdownMenuLabel>
-            {group.types.map((t) => {
-              const meta = NODE_META[t];
-              return (
-                <DropdownMenuItem
-                  key={t}
-                  onClick={() => handleAdd(t)}
-                  className="gap-3 py-2"
-                >
-                  <NodeIconChip
-                    type={t}
-                    size={28}
-                    iconSize={16}
-                    className="rounded-md"
-                  />
-                  <span className="flex flex-col">
-                    <span className="text-popover-foreground text-[13px] font-semibold">
-                      {meta.label}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="text-muted-foreground px-2 py-1.5 text-[11px] font-semibold tracking-wider uppercase">
+                {t(`categories.${group.id}`)}
+              </DropdownMenuLabel>
+              {group.types.map((t_type) => {
+                const meta = NODE_META[t_type];
+                return (
+                  <DropdownMenuItem
+                    key={t_type}
+                    onClick={() => handleAdd(t_type)}
+                    className="gap-3 py-2"
+                  >
+                    <NodeIconChip
+                      type={t_type}
+                      size={28}
+                      iconSize={16}
+                      className="rounded-md"
+                    />
+                    <span className="flex flex-col">
+                      <span className="text-popover-foreground text-[13px] font-semibold">
+                        {t(`nodes.${t_type}.label`)}
+                      </span>
+                      <span className="text-muted-foreground text-[11.5px]">
+                        {t(`nodes.${t_type}.blurb`)}
+                      </span>
                     </span>
-                    <span className="text-muted-foreground text-[11.5px]">
-                      {meta.blurb}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              );
-            })}
-          </div>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuGroup>
+          </Fragment>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

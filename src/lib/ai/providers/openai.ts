@@ -1,8 +1,9 @@
-import { AiError } from '../types'
+import { AiError, type AiUsage, type ProviderResult } from '../types'
 import { MAX_OUTPUT_TOKENS } from '../defaults'
 import { ADD_TAG_TOOL_NAME, type ToolDef } from '../tag-tool'
 import {
   mergeConsecutive,
+  normalizeUsage,
   providerHttpError,
   toNetworkError,
   type ProviderArgs,
@@ -14,6 +15,11 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
 interface OpenAiResponse {
   choices?: { message?: OpenAiResponseMessage }[]
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    total_tokens?: number
+  }
 }
 
 interface OpenAiResponseMessage {
@@ -35,10 +41,10 @@ export interface OpenAiAssistantMessage {
 
 /**
  * Call OpenAI's Chat Completions endpoint with the caller's own key.
- * Returns the raw assistant text (handoff parsing happens in
- * `generateReply`).
+ * Returns the raw assistant text + token usage (handoff parsing happens
+ * in `generateReply`).
  */
-export async function generateOpenAi(args: ProviderArgs): Promise<string> {
+export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   let res: Response
@@ -74,7 +80,12 @@ export async function generateOpenAi(args: ProviderArgs): Promise<string> {
       code: 'empty_response',
     })
   }
-  return text
+  const usage = normalizeUsage({
+    prompt: data?.usage?.prompt_tokens,
+    completion: data?.usage?.completion_tokens,
+    total: data?.usage?.total_tokens,
+  })
+  return { text, usage }
 }
 
 function toOpenAiToolPayload(tool: ToolDef) {
@@ -121,6 +132,7 @@ export interface OpenAiTurnResult {
   text: string | null
   toolCalls: ProviderToolCall[]
   assistantMessage: OpenAiAssistantMessage
+  usage: AiUsage | null
 }
 
 /**
@@ -172,6 +184,11 @@ export async function generateOpenAiTurn(
     })
   }
 
+  const usage = normalizeUsage({
+    prompt: data?.usage?.prompt_tokens,
+    completion: data?.usage?.completion_tokens,
+    total: data?.usage?.total_tokens,
+  })
   return {
     text,
     toolCalls,
@@ -180,6 +197,7 @@ export async function generateOpenAiTurn(
       content: message?.content ?? null,
       tool_calls: message?.tool_calls,
     },
+    usage,
   }
 }
 
@@ -189,12 +207,17 @@ export async function generateOpenAiTurn(
  * call — OpenAI 400s if any `tool_call_id` from the first turn is left
  * without a matching result — and get the natural-language reply.
  */
+export interface OpenAiContinueResult {
+  text: string
+  usage: AiUsage | null
+}
+
 export async function continueOpenAiAfterTools(
   args: ProviderArgs & {
     assistantMessage: OpenAiAssistantMessage
     toolResults: ProviderToolResult[]
   },
-): Promise<string> {
+): Promise<OpenAiContinueResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs, assistantMessage, toolResults } = args
 
   let res: Response
@@ -236,5 +259,10 @@ export async function continueOpenAiAfterTools(
       code: 'empty_response',
     })
   }
-  return text
+  const usage = normalizeUsage({
+    prompt: data?.usage?.prompt_tokens,
+    completion: data?.usage?.completion_tokens,
+    total: data?.usage?.total_tokens,
+  })
+  return { text, usage }
 }

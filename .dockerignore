@@ -1,0 +1,17 @@
+.git
+.github
+.next
+node_modules
+docs
+mcp-server
+supabase
+*.md
+!README.md
+.env*
+!.env.local.example
+Dockerfile
+docker-compose*.yml
+.dockerignore
+.vscode
+.idea
+coverage

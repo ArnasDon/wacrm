@@ -5,7 +5,11 @@ import type {
   AutomationTriggerType,
   ConditionStepConfig,
   KeywordMatchTriggerConfig,
+  InteractiveReplyTriggerConfig,
+  TagTriggerConfig,
   SendMessageStepConfig,
+  SendButtonsStepConfig,
+  SendListStepConfig,
   SendTemplateStepConfig,
   SendWebhookStepConfig,
   TagStepConfig,
@@ -16,7 +20,11 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
-import { engineSendText, engineSendTemplate } from './meta-send'
+import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
+import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
+import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 // ------------------------------------------------------------
 // Public API
@@ -33,6 +41,8 @@ export interface AutomationContext {
   tag_id?: string
   /** Agent the conversation was assigned to, for conversation_assigned. */
   agent_id?: string
+  /** Button / list-row id the customer tapped, for interactive_reply. */
+  interactive_reply_id?: string
 }
 
 export interface DispatchInput {
@@ -45,20 +55,7 @@ export interface DispatchInput {
   triggerType: AutomationTriggerType
   contactId?: string | null
   context?: AutomationContext
-  /** Internal — how many automation-triggered-automation hops led to
-   *  this dispatch. Callers outside this file should never set this;
-   *  it defaults to 0 (a fresh, top-level dispatch). Incremented by
-   *  `addContactTag` when an automation's own `add_tag` step fires a
-   *  further `tag_added` dispatch, so `runAutomationsForTrigger` can
-   *  refuse once `MAX_AUTOMATION_CHAIN_DEPTH` is exceeded. */
-  depth?: number
 }
-
-/** Safety cap on automation-triggered-automation chains (e.g. an
- *  `add_tag` step firing a `tag_added` automation whose own `add_tag`
- *  step fires another) — without this, two automations configured to
- *  tag each other would recurse forever. */
-export const MAX_AUTOMATION_CHAIN_DEPTH = 5
 
 /**
  * Fire all active automations matching the given trigger for an
@@ -70,15 +67,6 @@ export const MAX_AUTOMATION_CHAIN_DEPTH = 5
  */
 export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
   try {
-    const depth = input.depth ?? 0
-    if (depth >= MAX_AUTOMATION_CHAIN_DEPTH) {
-      console.warn(
-        `[automations] chain depth limit (${MAX_AUTOMATION_CHAIN_DEPTH}) reached — refusing to dispatch further`,
-        { accountId: input.accountId, triggerType: input.triggerType },
-      )
-      return
-    }
-
     const db = supabaseAdmin()
 
     // Tenant isolation. `contactId` can be caller-supplied (the manual
@@ -174,11 +162,6 @@ export async function resumePendingExecution(pending: {
       startPosition: pending.next_step_position,
       logId: pending.log_id,
       triggerEvent: 'resumed_wait',
-      // Chain depth isn't persisted across a wait-step pause — a resumed
-      // run always restarts the chain-depth guard at 0. Acceptable: wait
-      // steps are an uncommon hop in an add_tag chain, and this only
-      // under-counts (never over-refuses) a legitimate resumption.
-      depth: 0,
     })
     await markPending(pending.id, 'done')
   } catch (err) {
@@ -207,7 +190,15 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
       contact_id: input.contactId ?? null,
       trigger_event: input.triggerType,
       steps_executed: [],
-      status: 'success',
+      // Seeded pessimistically. The row is written BEFORE any step runs,
+      // and every terminal path below overwrites it (`appendResults` at
+      // the outermost scope, or `finalizeLog`). Seeding 'success' meant a
+      // run that died mid-flight — the process frozen, the pod recycled —
+      // left a permanent `status: 'success'` with `steps_executed: []`,
+      // indistinguishable from an automation that genuinely had nothing
+      // to do. 'failed' inverts that: the status only becomes success if
+      // execution actually reached the end. See issue #409.
+      status: 'failed',
     })
     .select()
     .single()
@@ -226,7 +217,6 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
     startPosition: 0,
     logId: log.id,
     triggerEvent: input.triggerType,
-    depth: input.depth ?? 0,
   })
 
   // Atomic counter update via the SQL function from migration 007.
@@ -250,10 +240,6 @@ interface ExecuteArgs {
   startPosition: number
   logId: string | null
   triggerEvent: string
-  /** Chain depth this execution is running at — see
-   *  `MAX_AUTOMATION_CHAIN_DEPTH`. Passed to `addContactTag` (+1) when
-   *  the `add_tag` step fires a further `tag_added` dispatch. */
-  depth: number
 }
 
 async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
@@ -390,6 +376,26 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       return `sent via Meta (${whatsapp_message_id})`
     }
 
+    case 'send_buttons':
+    case 'send_list': {
+      const payload = step.step_config as SendButtonsStepConfig | SendListStepConfig
+      if (!args.contactId) throw new Error(`${step.step_type} needs a contact`)
+      // Validate against Meta's limits before the network call so a bad
+      // payload surfaces as a clear failed-step detail rather than a raw
+      // Meta 400 mid-conversation.
+      const check = validateInteractivePayload(payload)
+      if (!check.ok) throw new Error(check.error)
+      const conversationId = await resolveConversationId(args)
+      const { whatsapp_message_id } = await engineSendInteractive({
+        accountId: args.automation.account_id,
+        userId: args.automation.user_id,
+        conversationId,
+        contactId: args.contactId,
+        payload,
+      })
+      return `interactive sent via Meta (${whatsapp_message_id})`
+    }
+
     case 'send_template': {
       const cfg = step.step_config as SendTemplateStepConfig
       if (!args.contactId) throw new Error('send_template needs a contact')
@@ -428,16 +434,38 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'add_tag': {
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
-      const { added } = await addContactTag({
+      const added = await addContactTagIfAbsent(db, {
         accountId: args.automation.account_id,
         contactId: args.contactId,
         tagId: cfg.tag_id,
-        conversationId: args.context.conversation_id ?? null,
-        depth: args.depth + 1,
       })
-      return added
-        ? `tag ${cfg.tag_id} added`
-        : `tag ${cfg.tag_id} not added (contact not found or write failed)`
+      if (!added) return `tag ${cfg.tag_id} already present`
+
+      const depth = getTagChainDepth(args.context)
+      if (depth >= MAX_TAG_CHAIN_DEPTH) {
+        console.warn('[automations] tag_added chain depth limit reached', {
+          automationId: args.automation.id,
+          contactId: args.contactId,
+          tagId: cfg.tag_id,
+          depth,
+        })
+        return `tag ${cfg.tag_id} added; tag_added dispatch skipped at depth ${depth}`
+      }
+
+      await runAutomationsForTrigger({
+        accountId: args.automation.account_id,
+        triggerType: 'tag_added',
+        contactId: args.contactId,
+        context: {
+          ...args.context,
+          tag_id: cfg.tag_id,
+          vars: {
+            ...(args.context.vars ?? {}),
+            _tag_chain_depth: depth + 1,
+          },
+        },
+      })
+      return `tag ${cfg.tag_id} added and tag_added dispatched`
     }
 
     case 'remove_tag': {
@@ -560,11 +588,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_webhook': {
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
+      // SSRF guard: the URL and headers are account-controlled and the
+      // server makes the request, so refuse any destination that resolves
+      // to a private / loopback / link-local / reserved address. Mirrors
+      // the webhook_endpoints delivery path (see lib/webhooks/deliver.ts).
+      if (!(await isDeliverableUrl(cfg.url))) {
+        throw new Error('send_webhook: destination not allowed')
+      }
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
         body,
+        // Do NOT follow redirects — a public URL could 3xx-bounce to an
+        // internal address, defeating the guard above. Bound the request
+        // so a hung/slow internal host can't tie up the runner.
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
       })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`
@@ -607,80 +647,91 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     .eq('contact_id', args.contactId)
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
-  if (!data?.id) throw new Error('no conversation for contact')
+  if (!data?.id) {
+    const prefix = args.triggerEvent === 'tag_added'
+      ? 'tag_added automation cannot send'
+      : 'cannot send'
+    throw new Error(`${prefix}: contact has no existing conversation`)
+  }
   return data.id as string
 }
 
+/** Letter, digit or underscore in any script — the "inside a word" test. */
+const WORD_CHAR = '[\\p{L}\\p{N}_]'
+
 /**
- * Canonical "add a tag to a contact" — every code path that applies a
- * tag (manually, via the public API, via an automation's own `add_tag`
- * step, via the AI assistant) should call this, so `tag_added`
- * automations fire consistently no matter who added the tag.
+ * Whole-word keyword test, behind `match_type: 'word'` (issue #409 — a
+ * one-letter keyword under `contains` fires on every message containing
+ * that letter, e.g. "k" on "thanks").
  *
- * `contact_tags` has no `account_id` column, so — unlike
- * `runAutomationsForTrigger`'s own ownership check, which only guards
- * the automation dispatch that happens *after* this upsert — this
- * verifies the contact belongs to `accountId` itself, before writing.
- * Fails closed (returns `{ added: false }`) rather than throwing, so a
- * bad tag id or a cross-tenant contact id degrades to a silent no-op
- * for every caller (matches the "if nothing fits, apply nothing" rule
- * the AI tagging feature already relies on).
+ * Deliberately NOT `\b`, which is defined against `[A-Za-z0-9_]` and so
+ * breaks two cases that matter for WhatsApp traffic:
+ *
+ *   - A keyword carrying punctuation: `/\bhi!\b/` demands a word character
+ *     after the "!", so it never matches "say hi!".
+ *   - Any non-Latin script: every character of "안녕" is a non-word
+ *     character to `\b`, so `/\b안녕\b/` matches nothing at all.
+ *
+ * Unicode-aware lookarounds handle both. Note this really is word-based:
+ * it won't find "안녕" inside "안녕하세요", because a language that doesn't
+ * delimit words with spaces has no word edge there. That's what `contains`
+ * is for, and it stays the default.
+ *
+ * Exported for direct unit testing of the escaping / boundary edges.
  */
-export async function addContactTag(args: {
-  accountId: string
-  contactId: string
-  tagId: string
-  conversationId?: string | null
-  /** Internal — see `MAX_AUTOMATION_CHAIN_DEPTH`. Callers outside this
-   *  file should leave this unset (defaults to 0, a fresh top-level
-   *  add). Only the `add_tag` step passes `depth + 1`. */
-  depth?: number
-}): Promise<{ added: boolean }> {
-  const { accountId, contactId, tagId, conversationId, depth = 0 } = args
-  const db = supabaseAdmin()
-
-  const { data: owned, error: ownErr } = await db
-    .from('contacts')
-    .select('id')
-    .eq('id', contactId)
-    .eq('account_id', accountId)
-    .maybeSingle()
-  if (ownErr || !owned) return { added: false }
-
-  const { error: upsertErr } = await db
-    .from('contact_tags')
-    .upsert(
-      { contact_id: contactId, tag_id: tagId },
-      { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
-    )
-  if (upsertErr) return { added: false }
-
-  runAutomationsForTrigger({
-    accountId,
-    triggerType: 'tag_added',
-    contactId,
-    context: { tag_id: tagId, conversation_id: conversationId ?? undefined },
-    depth: depth + 1,
-  }).catch((err) => console.error('[automations] tag_added dispatch failed:', err))
-
-  return { added: true }
+export function matchesWholeWord(
+  text: string,
+  keyword: string,
+  caseSensitive = false,
+): boolean {
+  if (!keyword) return false
+  // The keyword is account-supplied free text, so metacharacters have to
+  // be literal — otherwise "(" is an unterminated group and RegExp throws.
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(
+    `(?<!${WORD_CHAR})${escaped}(?!${WORD_CHAR})`,
+    caseSensitive ? 'u' : 'iu',
+  )
+  return pattern.test(text)
 }
 
-function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+  if (automation.trigger_type === 'keyword_match') {
+    const cfg = automation.trigger_config as KeywordMatchTriggerConfig
+    if (!cfg?.keywords || cfg.keywords.length === 0) return false
+    const text = (ctx?.message_text ?? '').toString()
+    if (!text) return false
+    if (cfg.match_type === 'word') {
+      return cfg.keywords.some((raw) =>
+        matchesWholeWord(text, raw, cfg.case_sensitive),
+      )
+    }
+    const haystack = cfg.case_sensitive ? text : text.toLowerCase()
+    return cfg.keywords.some((raw) => {
+      const k = cfg.case_sensitive ? raw : raw.toLowerCase()
+      return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
+    })
+  }
+
+  // Match on the tapped button / list-row id (exact). Lets multi-step
+  // menus be chained: automation A sends buttons, automation B fires on
+  // the reply id and sends the next step.
+  if (automation.trigger_type === 'interactive_reply') {
+    const cfg = automation.trigger_config as InteractiveReplyTriggerConfig
+    const replyId = ctx?.interactive_reply_id
+    if (!replyId || !Array.isArray(cfg?.reply_ids) || cfg.reply_ids.length === 0) {
+      return false
+    }
+    return cfg.reply_ids.includes(replyId)
+  }
+
   if (automation.trigger_type === 'tag_added') {
     const cfg = automation.trigger_config as TagTriggerConfig
-    return !!cfg?.tag_id && cfg.tag_id === ctx?.tag_id
+    const tagId = ctx?.tag_id
+    return Boolean(tagId && cfg?.tag_id && cfg.tag_id === tagId)
   }
-  if (automation.trigger_type !== 'keyword_match') return true
-  const cfg = automation.trigger_config as KeywordMatchTriggerConfig
-  if (!cfg?.keywords || cfg.keywords.length === 0) return false
-  const text = (ctx?.message_text ?? '').toString()
-  if (!text) return false
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase()
-  return cfg.keywords.some((raw) => {
-    const k = cfg.case_sensitive ? raw : raw.toLowerCase()
-    return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
-  })
+
+  return true
 }
 
 async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): Promise<boolean> {

@@ -25,8 +25,15 @@ import {
   sendTextMessage,
   sendTemplateMessage,
   sendMediaMessage,
+  sendInteractiveButtons,
+  sendInteractiveList,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
+import {
+  validateInteractivePayload,
+  interactivePayloadPreviewText,
+  type InteractiveMessagePayload,
+} from '@/lib/whatsapp/interactive';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
@@ -36,12 +43,17 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import {
+  resolveTemplateRow,
+  templateBodyParams,
+  templateContentText,
+} from '@/lib/whatsapp/template-body';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
   'text',
   'template',
+  'interactive',
   ...MEDIA_KINDS,
 ] as const;
 
@@ -73,6 +85,8 @@ export interface SendMessageParams {
   templateParams?: string[];
   /** Structured template params (header/body/buttons). */
   templateMessageParams?: unknown;
+  /** Structured payload for `messageType === 'interactive'`. */
+  interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
 }
 
@@ -103,8 +117,10 @@ export function validateSendMessageParams(params: {
   contentText?: string | null;
   mediaUrl?: string | null;
   templateName?: string | null;
+  interactivePayload?: InteractiveMessagePayload | null;
 }): void {
-  const { messageType, contentText, mediaUrl, templateName } = params;
+  const { messageType, contentText, mediaUrl, templateName, interactivePayload } =
+    params;
 
   if (!messageType) {
     throw new SendMessageError('bad_request', 'message_type is required', 400);
@@ -134,6 +150,15 @@ export function validateSendMessageParams(params: {
       'template_name is required for template messages',
       400
     );
+  }
+
+  // Interactive: validate the full structured payload against Meta's
+  // limits up front so a bad payload 400s before we touch Meta.
+  if (messageType === 'interactive') {
+    const result = validateInteractivePayload(interactivePayload);
+    if (!result.ok) {
+      throw new SendMessageError('bad_request', result.error, 400);
+    }
   }
 
   if (isMediaKind && !mediaUrl) {
@@ -174,6 +199,7 @@ export async function sendMessageToConversation(
     templateLanguage,
     templateParams,
     templateMessageParams,
+    interactivePayload,
     replyToMessageId,
   } = params;
 
@@ -185,7 +211,13 @@ export async function sendMessageToConversation(
     );
   }
 
-  validateSendMessageParams({ messageType, contentText, mediaUrl, templateName });
+  validateSendMessageParams({
+    messageType,
+    contentText,
+    mediaUrl,
+    templateName,
+    interactivePayload,
+  });
 
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
 
@@ -280,25 +312,28 @@ export async function sendMessageToConversation(
     }
   }
 
-  // Template row (for header + button components). isMessageTemplate
-  // guards against a malformed local row crashing the send-builder.
+  // Template row — needed for the send-builder's header + button
+  // components AND for the body we persist. The lookup tolerates the
+  // en / en_US split so a caller that omits the language still resolves
+  // a row (see resolveTemplateRow).
   let templateRow: MessageTemplate | null = null;
+  let sendLanguage = templateLanguage || 'en_US';
   if (messageType === 'template' && templateName) {
-    const { data } = await db
-      .from('message_templates')
-      .select('*')
-      .eq('account_id', accountId)
-      .eq('name', templateName)
-      .eq('language', templateLanguage || 'en_US')
-      .maybeSingle();
-    if (data && !isMessageTemplate(data)) {
+    const resolved = await resolveTemplateRow(
+      db,
+      accountId,
+      templateName,
+      templateLanguage
+    );
+    if (resolved.malformed) {
       throw new SendMessageError(
         'template_malformed',
         'Template row is malformed locally — run "Sync from Meta" in Settings to repair it.',
         500
       );
     }
-    templateRow = data ?? null;
+    templateRow = resolved.row;
+    sendLanguage = resolved.language;
   }
 
   const attempt = async (phone: string): Promise<string> => {
@@ -308,7 +343,7 @@ export async function sendMessageToConversation(
         accessToken,
         to: phone,
         templateName: templateName!,
-        language: templateLanguage || 'en_US',
+        language: sendLanguage,
         template: templateRow ?? undefined,
         messageParams: templateMessageParams ?? undefined,
         params: templateParams || [],
@@ -325,6 +360,34 @@ export async function sendMessageToConversation(
         link: mediaUrl!,
         caption: contentText || undefined,
         filename: filename || undefined,
+        contextMessageId,
+      });
+      return result.messageId;
+    }
+    if (messageType === 'interactive') {
+      const p = interactivePayload!;
+      if (p.kind === 'buttons') {
+        const result = await sendInteractiveButtons({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          bodyText: p.body,
+          headerText: p.header || undefined,
+          footerText: p.footer || undefined,
+          buttons: p.buttons,
+          contextMessageId,
+        });
+        return result.messageId;
+      }
+      const result = await sendInteractiveList({
+        phoneNumberId: config.phone_number_id,
+        accessToken,
+        to: phone,
+        bodyText: p.body,
+        buttonLabel: p.button_label,
+        headerText: p.header || undefined,
+        footerText: p.footer || undefined,
+        sections: p.sections,
         contextMessageId,
       });
       return result.messageId;
@@ -386,15 +449,36 @@ export async function sendMessageToConversation(
 
   // Persist the sent message. Field names MUST match the messages
   // schema (see 001_initial_schema.sql).
+  // Interactive messages persist the body as content_text (so the
+  // conversation-list preview reads sensibly) plus the full structured
+  // payload so the thread can re-render the buttons / rows.
+  //
+  // Templates persist the *substituted* body. The composer pre-renders
+  // and posts it as contentText; every other caller (the public API,
+  // most importantly) sends none, and storing null there left the
+  // Inbox rendering an empty bubble — issue #483.
+  const persistedText =
+    messageType === 'interactive'
+      ? interactivePayload!.body
+      : messageType === 'template'
+        ? templateContentText(
+            templateRow,
+            templateBodyParams(templateParams, templateMessageParams),
+            contentText
+          )
+        : (contentText ?? null);
+
   const { data: messageRecord, error: msgError } = await db
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
       content_type: messageType,
-      content_text: contentText || null,
+      content_text: persistedText,
       media_url: mediaUrl || null,
       template_name: templateName || null,
+      interactive_payload:
+        messageType === 'interactive' ? interactivePayload : null,
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
@@ -411,10 +495,15 @@ export async function sendMessageToConversation(
     );
   }
 
+  const lastMessageText =
+    messageType === 'interactive'
+      ? interactivePayloadPreviewText(interactivePayload!)
+      : persistedText || `[${messageType}]`;
+
   await db
     .from('conversations')
     .update({
-      last_message_text: contentText || `[${messageType}]`,
+      last_message_text: lastMessageText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

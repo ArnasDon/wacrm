@@ -9,6 +9,68 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.8.1] — 2026-07-10
+
+Fixes inbound chats fragmenting into multiple threads for the same
+number.
+
+> **Migration required:** apply `supabase/migrations/036_conversation_contact_dedup.sql`
+> (merges any existing duplicate conversations into the oldest thread —
+> no messages are lost — then adds a `UNIQUE (account_id, contact_id)`
+> index so one contact can only ever have one conversation).
+
+### Fixed
+
+- **Duplicate chats for a single contact.** An inbound message could
+  create a second conversation for a contact under a race (Meta retries a
+  delivery, or a batch fans out to concurrent runs). Once two existed,
+  the `.single()` lookup errored on every later message and the webhook
+  created yet another conversation each time, snowballing into a wall of
+  duplicate chats. The find-or-create now resolves to the oldest existing
+  thread and a DB unique index makes the one-conversation-per-contact
+  rule authoritative. The same hardening was applied to the public-API
+  conversation resolver. (Issue #363)
+
+## [0.8.0] — 2026-07-08
+
+Polishes the AI auto-reply bot: it's now **visible and controllable from
+the inbox**, its **handoff actually hands off**, and its **token spend is
+logged**.
+
+> **Migration required:** apply `supabase/migrations/033_ai_reply_polish.sql`
+> (adds `messages.ai_generated`, `ai_configs.handoff_agent_id`,
+> `conversations.ai_handoff_summary`, and the `ai_usage_log` table).
+
+### Added
+
+- **"AI" badge in the inbox.** Replies the bot sent are tagged with a
+  small ✨ AI badge, so agents can tell an automated reply from their own
+  or a Flow's at a glance. (New `messages.ai_generated` flag; only the
+  auto-reply bot sets it.)
+- **Take over / Resume from the thread.** A banner on AI-handled
+  conversations lets an agent **Take over** (pauses the bot for that
+  thread and assigns it to them) or **Resume AI** (hands the thread back
+  and clears the pause). Backed by `POST /api/ai/autoreply/[id]`.
+- **Real handoff.** When the bot bails (can't help, or hits the reply
+  cap) it now (1) routes the conversation to a configurable **handoff
+  target** — a specific agent, or the unassigned queue — and (2) leaves a
+  short **internal note** summarizing the exchange for whoever picks it
+  up. Assigning fires the existing assignment notification. Pick the
+  target under **AI Agents → Setup → Hand off to**.
+- **Token-usage logging + dashboard.** Every draft and auto-reply records
+  its provider token counts to the new `ai_usage_log` table
+  (admin-readable). A new **AI Agents → Usage** tab (admin-only) charts
+  daily token spend on your BYO key with per-mode and per-model
+  breakdowns, backed by `GET /api/ai/usage`. Counts only — no message
+  content is stored or shown.
+
+### Changed
+
+- Auto-reply now has an **account-wide rate limit** (30/min) on top of
+  the existing per-conversation cap, so a burst of inbound can't run your
+  provider key past its limit. Over the limit, inbounds simply wait in
+  the inbox for a human instead of being auto-answered.
+
 ## [0.7.0] — 2026-07-02
 
 Promotes the AI assistant to a first-class **AI Agents** section in the

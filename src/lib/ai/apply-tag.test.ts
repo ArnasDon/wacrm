@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => ({
-  addContactTag: vi.fn(),
+  addContactTagAndDispatch: vi.fn(),
 }))
 
-vi.mock('@/lib/automations/engine', () => ({
-  addContactTag: h.addContactTag,
+vi.mock('@/lib/contacts/tag-events', () => ({
+  addContactTagAndDispatch: h.addContactTagAndDispatch,
 }))
 
 import { applyAiTag } from './apply-tag'
@@ -33,22 +33,23 @@ const ARGS = {
 }
 
 beforeEach(() => {
-  h.addContactTag.mockReset()
-  h.addContactTag.mockResolvedValue({ added: true })
+  h.addContactTagAndDispatch.mockReset()
+  h.addContactTagAndDispatch.mockResolvedValue({ added: true, dispatched: true })
 })
 
 describe('applyAiTag', () => {
-  it('delegates the write + tag_added dispatch to addContactTag once the tag validates', async () => {
+  it('delegates the write + tag_added dispatch to addContactTagAndDispatch once the tag validates', async () => {
     const db = fakeDb({ tag: { id: 'tag-1', name: 'quer-consultor' } })
 
     const result = await applyAiTag(db as never, ARGS)
 
     expect(result).toEqual({ applied: true, tagName: 'quer-consultor' })
-    expect(h.addContactTag).toHaveBeenCalledWith({
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledWith({
+      db,
       accountId: 'acct-1',
       contactId: 'contact-1',
       tagId: 'tag-1',
-      conversationId: 'conv-1',
+      context: { conversation_id: 'conv-1' },
     })
   })
 
@@ -58,11 +59,11 @@ describe('applyAiTag', () => {
     const result = await applyAiTag(db as never, ARGS)
 
     expect(result).toEqual({ applied: false, tagName: null })
-    expect(h.addContactTag).not.toHaveBeenCalled()
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
   })
 
-  it('no-ops without throwing when addContactTag fails to add', async () => {
-    h.addContactTag.mockResolvedValue({ added: false })
+  it('no-ops without throwing when addContactTagAndDispatch fails to add', async () => {
+    h.addContactTagAndDispatch.mockResolvedValue({ added: false, dispatched: false, reason: 'duplicate' })
     const db = fakeDb({ tag: { id: 'tag-1', name: 'quer-consultor' } })
 
     const result = await applyAiTag(db as never, ARGS)

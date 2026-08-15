@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { getIgUserProfile } from '@/lib/instagram/api'
-import { handleInboundInstagramMessage, markMessageRead, toContentType } from '@/lib/instagram/inbound'
+import { handleInboundDmMessage, markMessageRead, toContentType } from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as src/app/api/whatsapp/webhook/route.ts: the after()
 // callback can fan out to a profile-lookup call per new contact, so
@@ -224,10 +224,11 @@ async function processMessagingEvent(
 
   const { contentText, mediaUrl, contentType } = parseMessageContent(message)
 
-  await handleInboundInstagramMessage(supabaseAdmin(), {
+  await handleInboundDmMessage(supabaseAdmin(), {
+    channel: 'instagram',
     accountId,
     configOwnerUserId,
-    igsid: senderIgsid,
+    senderId: senderIgsid,
     mid: message.mid,
     contentText,
     mediaUrl,

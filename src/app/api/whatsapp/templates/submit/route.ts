@@ -8,6 +8,7 @@ import {
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
+import { createZernioTemplate } from '@/lib/zernio/api'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -152,61 +153,103 @@ export async function POST(request: Request) {
           { status: 400 },
         )
       }
-      if (!config.waba_id) {
-        return NextResponse.json(
-          {
-            error:
-              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
-          },
-          { status: 400 },
-        )
-      }
 
-      const accessToken = decrypt(config.access_token)
+      if (config.provider === 'zernio') {
+        // Image-header handles are scoped to the Meta App that
+        // uploaded them (see ensureImageHeaderHandle) — Zernio submits
+        // through its own app, so a handle minted with our
+        // META_APP_ID would be meaningless there. Text/no-header
+        // templates have no such dependency.
+        if (payload.header_type === 'image') {
+          return NextResponse.json(
+            {
+              error:
+                'Image-header templates are not yet supported for Zernio-connected WhatsApp accounts. Use a text header, or connect WhatsApp directly to Meta instead.',
+            },
+            { status: 400 },
+          )
+        }
+        const metaPayload = buildMetaTemplatePayload(payload)
+        try {
+          const created = await createZernioTemplate({
+            apiKey: decrypt(config.zernio_api_key),
+            accountId: config.zernio_account_id,
+            name: payload.name,
+            category: payload.category,
+            language: payload.language,
+            components: metaPayload.components ?? [],
+          })
+          metaTemplateId = created.id
+          metaStatus = created.status
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Zernio submit failed.'
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, userId, payload, {
+              status: 'DRAFT',
+              metaTemplateId: null,
+              submissionError: message,
+            }),
+          )
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
+      } else {
+        if (!config.waba_id) {
+          return NextResponse.json(
+            {
+              error:
+                'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+            },
+            { status: 400 },
+          )
+        }
 
-      // Image headers need a Resumable-Upload handle (Meta rejects a
-      // plain URL at creation). Derive it from header_media_url before
-      // building the payload. Surfaces a 400 with an actionable message
-      // (missing META_APP_ID, unreachable URL, wrong type/size).
-      try {
-        await ensureImageHeaderHandle(payload, accessToken)
-      } catch (e) {
-        return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header image upload failed.' },
-          { status: 400 },
-        )
-      }
+        const accessToken = decrypt(config.access_token)
 
-      const metaPayload = buildMetaTemplatePayload(payload)
-      try {
-        const meta = await submitMessageTemplate({
-          wabaId: config.waba_id,
-          accessToken,
-          payload: metaPayload,
-        })
-        metaTemplateId = meta.id
-        metaStatus = meta.status
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta submit failed.'
-        // Persist the failure so the user can retry; row stays DRAFT
-        // until they fix and re-submit.
-        await upsertTemplateRow(
-          supabase,
-          buildUpsertRow(accountId, userId, payload, {
-            status: 'DRAFT',
-            metaTemplateId: null,
-            submissionError: message,
-          }),
-        )
-        const isRateLimit = /\b429\b/.test(message)
-        return NextResponse.json(
-          {
-            error: isRateLimit
-              ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
-              : message,
-          },
-          { status: isRateLimit ? 429 : 502 },
-        )
+        // Image headers need a Resumable-Upload handle (Meta rejects a
+        // plain URL at creation). Derive it from header_media_url before
+        // building the payload. Surfaces a 400 with an actionable message
+        // (missing META_APP_ID, unreachable URL, wrong type/size).
+        try {
+          await ensureImageHeaderHandle(payload, accessToken)
+        } catch (e) {
+          return NextResponse.json(
+            { error: e instanceof Error ? e.message : 'Header image upload failed.' },
+            { status: 400 },
+          )
+        }
+
+        const metaPayload = buildMetaTemplatePayload(payload)
+        try {
+          const meta = await submitMessageTemplate({
+            wabaId: config.waba_id,
+            accessToken,
+            payload: metaPayload,
+          })
+          metaTemplateId = meta.id
+          metaStatus = meta.status
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Meta submit failed.'
+          // Persist the failure so the user can retry; row stays DRAFT
+          // until they fix and re-submit.
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, userId, payload, {
+              status: 'DRAFT',
+              metaTemplateId: null,
+              submissionError: message,
+            }),
+          )
+          const isRateLimit = /\b429\b/.test(message)
+          return NextResponse.json(
+            {
+              error: isRateLimit
+                ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
+                : message,
+            },
+            { status: isRateLimit ? 429 : 502 },
+          )
+        }
       }
     }
 

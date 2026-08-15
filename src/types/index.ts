@@ -281,21 +281,26 @@ export interface MessageReaction {
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
-  phone_number_id: string;
+  provider: 'meta' | 'zernio';
+  phone_number_id?: string;
   waba_id?: string;
-  access_token: string;
+  access_token?: string;
   verify_token?: string;
+  zernio_api_key?: string;
+  zernio_account_id?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
   /**
    * Set when POST /{phone_number_id}/register last succeeded. NULL
    * means the number was saved but never actually subscribed for
    * webhooks on Meta's side — inbound events will be silently lost.
+   * Meta-only — a Zernio-provider row never sets this (Zernio owns
+   * its own subscription server-side).
    */
   registered_at?: string;
-  /** Set when POST /{waba_id}/subscribed_apps last succeeded. */
+  /** Set when POST /{waba_id}/subscribed_apps last succeeded. Meta-only. */
   subscribed_apps_at?: string;
-  /** Last error from /register; cleared on success. */
+  /** Last error from /register; cleared on success. Meta-only. */
   last_registration_error?: string;
 }
 
@@ -310,6 +315,18 @@ export interface InstagramConfig {
   verify_token?: string;
   zernio_api_key?: string;
   zernio_account_id?: string;
+  status: 'connected' | 'disconnected';
+  connected_at?: string;
+  last_connection_error?: string;
+}
+
+/** Facebook has no direct-Meta path in wacrm — always a Zernio connection. */
+export interface FacebookConfig {
+  id: string;
+  user_id: string;
+  zernio_api_key: string;
+  zernio_account_id: string;
+  fb_page_name?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
   last_connection_error?: string;

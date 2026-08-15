@@ -49,6 +49,13 @@ import {
   templateContentText,
 } from '@/lib/whatsapp/template-body';
 import { sendInstagramMessageToConversation } from '@/lib/instagram/send-message';
+import { sendFacebookMessageToConversation } from '@/lib/facebook/send-message';
+import {
+  sendWhatsAppTextViaZernio,
+  sendWhatsAppMediaViaZernio,
+  sendWhatsAppTemplateViaZernio,
+  sendWhatsAppInteractiveViaZernio,
+} from '@/lib/whatsapp/zernio-send';
 // `SendMessageError`/`SendMessageParams`/`SendMessageResult` live in
 // this channel-neutral module (not here) specifically to avoid a
 // circular import with the Instagram sender this file branches into
@@ -214,6 +221,12 @@ export async function sendMessageToConversation(
     return sendInstagramMessageToConversation(db, accountId, params);
   }
 
+  // Facebook conversations branch off the same way — see
+  // src/lib/facebook/send-message.ts.
+  if (conversation.channel === 'facebook') {
+    return sendFacebookMessageToConversation(db, accountId, params);
+  }
+
   const contact = conversation.contact;
   if (!contact?.phone) {
     throw new SendMessageError(
@@ -247,10 +260,15 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  // Meta-only — a Zernio-provider row has no access_token (its
+  // credential is zernio_api_key, decrypted inside the zernio-send
+  // helpers instead). `provider` defaults to 'meta' on rows that
+  // predate the Zernio option, so the `!== 'zernio'` check (rather
+  // than `=== 'meta'`) keeps those working unchanged.
+  const accessToken = config.provider !== 'zernio' ? decrypt(config.access_token) : '';
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  if (config.provider !== 'zernio' && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
       .update({ access_token: encrypt(accessToken) })
@@ -317,7 +335,44 @@ export async function sendMessageToConversation(
     sendLanguage = resolved.language;
   }
 
+  // Zernio addresses a conversation by its own opaque id, not by
+  // phone number — there is no phone-variant concept on that path, so
+  // this short-circuits before the retry loop below even sees a
+  // phone. A failure here throws straight out (not an
+  // `isRecipientNotAllowedError`, so the retry loop won't spin on it).
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'zernio') {
+      const zernioCtx = {
+        config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
+        zernioConversationId: (conversation.zernio_conversation_id as string | null) ?? null,
+      };
+      if (messageType === 'template') {
+        const result = await sendWhatsAppTemplateViaZernio(zernioCtx, {
+          templateName: templateName!,
+          language: sendLanguage,
+          template: templateRow ?? undefined,
+          messageParams: templateMessageParams ?? undefined,
+          params: templateParams || [],
+        });
+        return result.messageId;
+      }
+      if (isMediaKind) {
+        const result = await sendWhatsAppMediaViaZernio(
+          zernioCtx,
+          messageType as MediaKind,
+          mediaUrl!,
+          contentText || undefined,
+          filename || undefined,
+        );
+        return result.messageId;
+      }
+      if (messageType === 'interactive') {
+        const result = await sendWhatsAppInteractiveViaZernio(zernioCtx, interactivePayload!);
+        return result.messageId;
+      }
+      const result = await sendWhatsAppTextViaZernio(zernioCtx, contentText!);
+      return result.messageId;
+    }
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,

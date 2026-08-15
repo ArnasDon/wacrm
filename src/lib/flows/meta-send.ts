@@ -22,25 +22,51 @@ import {
   engineSendInstagramQuickReplies,
 } from '@/lib/instagram/engine-send'
 import type { QuickReplyOption } from '@/lib/instagram/api'
+import {
+  engineSendFacebookText,
+  engineSendFacebookMedia,
+  engineSendFacebookQuickReplies,
+} from '@/lib/facebook/engine-send'
+import {
+  sendWhatsAppTextViaZernio,
+  sendWhatsAppMediaViaZernio,
+  sendWhatsAppInteractiveViaZernio,
+  type ZernioSendContext,
+} from '@/lib/whatsapp/zernio-send'
+
+/** `conversations.zernio_conversation_id` for a WhatsApp-via-Zernio send. */
+async function loadZernioConversationId(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from('conversations')
+    .select('zernio_conversation_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.zernio_conversation_id ?? null
+}
 
 /**
  * Which channel is `conversationId` on? Every entry point below
  * checks this before running the WhatsApp path (unchanged) or
- * branching into the Instagram sender. Same helper, independently
- * defined, as automations/meta-send.ts's — kept local rather than
- * shared per this file's own stated policy of not coupling the two
- * engines' send paths together.
+ * branching into the Instagram/Facebook sender. Same helper,
+ * independently defined, as automations/meta-send.ts's — kept local
+ * rather than shared per this file's own stated policy of not
+ * coupling the two engines' send paths together.
  */
 async function resolveConversationChannel(
   db: ReturnType<typeof supabaseAdmin>,
   conversationId: string,
-): Promise<'whatsapp' | 'instagram'> {
+): Promise<'whatsapp' | 'instagram' | 'facebook'> {
   const { data } = await db
     .from('conversations')
     .select('channel')
     .eq('id', conversationId)
     .maybeSingle()
-  return data?.channel === 'instagram' ? 'instagram' : 'whatsapp'
+  if (data?.channel === 'instagram') return 'instagram'
+  if (data?.channel === 'facebook') return 'facebook'
+  return 'whatsapp'
 }
 
 // ------------------------------------------------------------
@@ -93,8 +119,12 @@ export async function engineSendText(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  if ((await resolveConversationChannel(db, args.conversationId)) === 'instagram') {
+  const engineChannel = await resolveConversationChannel(db, args.conversationId)
+  if (engineChannel === 'instagram') {
     return engineSendInstagramText(args)
+  }
+  if (engineChannel === 'facebook') {
+    return engineSendFacebookText(args)
   }
 
   const { data: contact, error: contactErr } = await db
@@ -119,6 +149,36 @@ export async function engineSendText(
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
+  }
+
+  if (config.provider === 'zernio') {
+    const zernioCtx: ZernioSendContext = {
+      config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
+      zernioConversationId: await loadZernioConversationId(db, args.conversationId),
+    }
+    const { messageId } = await sendWhatsAppTextViaZernio(zernioCtx, args.text)
+
+    const { error: msgErr } = await db.from('messages').insert({
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: 'text',
+      content_text: args.text,
+      message_id: messageId,
+      status: 'sent',
+      ai_generated: args.aiGenerated ?? false,
+    })
+    if (msgErr) throw new Error(`sent to Zernio but DB insert failed: ${msgErr.message}`)
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: args.text,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', args.conversationId)
+
+    return { whatsapp_message_id: messageId }
   }
 
   const accessToken = decrypt(config.access_token)
@@ -207,11 +267,22 @@ export async function engineSendMedia(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Instagram media messages carry no caption/filename (unlike
-  // WhatsApp) — both are silently dropped rather than failing the
-  // step, since the media itself is still the point of this node.
-  if ((await resolveConversationChannel(db, args.conversationId)) === 'instagram') {
+  // Instagram/Facebook media messages carry no caption/filename
+  // (unlike WhatsApp) — both are silently dropped rather than failing
+  // the step, since the media itself is still the point of this node.
+  const engineChannel = await resolveConversationChannel(db, args.conversationId)
+  if (engineChannel === 'instagram') {
     return engineSendInstagramMedia({
+      accountId: args.accountId,
+      userId: args.userId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      kind: args.kind,
+      link: args.link,
+    })
+  }
+  if (engineChannel === 'facebook') {
+    return engineSendFacebookMedia({
       accountId: args.accountId,
       userId: args.userId,
       conversationId: args.conversationId,
@@ -243,6 +314,36 @@ export async function engineSendMedia(
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
+  }
+
+  if (config.provider === 'zernio') {
+    const zernioCtx: ZernioSendContext = {
+      config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
+      zernioConversationId: await loadZernioConversationId(db, args.conversationId),
+    }
+    const { messageId } = await sendWhatsAppMediaViaZernio(zernioCtx, args.kind, args.link, args.caption, args.filename)
+
+    const preview = args.caption?.trim() || `[${args.kind}]`
+    const { error: msgErr } = await db.from('messages').insert({
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: args.kind,
+      content_text: args.caption ?? null,
+      message_id: messageId,
+      status: 'sent',
+    })
+    if (msgErr) throw new Error(`sent to Zernio but DB insert failed: ${msgErr.message}`)
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: preview,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', args.conversationId)
+
+    return { whatsapp_message_id: messageId }
   }
 
   const accessToken = decrypt(config.access_token)
@@ -370,22 +471,26 @@ async function sendInteractiveViaMeta(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Instagram's closest analogue to buttons/list is a flat set of
-  // quick-reply chips (max 13) — same mapping as
+  // Instagram/Facebook's closest analogue to buttons/list is a flat
+  // set of quick-reply chips (max 13) — same mapping as
   // automations/meta-send.ts's engineSendInteractive.
-  if ((await resolveConversationChannel(db, input.conversationId)) === 'instagram') {
+  const engineChannel = await resolveConversationChannel(db, input.conversationId)
+  if (engineChannel === 'instagram' || engineChannel === 'facebook') {
     const options: QuickReplyOption[] =
       input.kind === 'buttons'
         ? input.buttons.map((b) => ({ title: b.title, payload: b.id }))
         : input.sections.flatMap((s) => s.rows.map((r) => ({ title: r.title, payload: r.id })))
-    return engineSendInstagramQuickReplies({
+    const sendArgs = {
       accountId: input.accountId,
       userId: input.userId,
       conversationId: input.conversationId,
       contactId: input.contactId,
       bodyText: input.bodyText,
       options,
-    })
+    }
+    return engineChannel === 'instagram'
+      ? engineSendInstagramQuickReplies(sendArgs)
+      : engineSendFacebookQuickReplies(sendArgs)
   }
 
   // Scope the contact + whatsapp_config lookups by account_id —
@@ -413,6 +518,47 @@ async function sendInteractiveViaMeta(
     .single()
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
+  }
+
+  if (config.provider === 'zernio') {
+    const zernioCtx: ZernioSendContext = {
+      config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
+      zernioConversationId: await loadZernioConversationId(db, input.conversationId),
+    }
+    const payload: InteractiveMessagePayload =
+      input.kind === 'buttons'
+        ? { kind: 'buttons', body: input.bodyText, header: input.headerText, footer: input.footerText, buttons: input.buttons }
+        : {
+            kind: 'list',
+            body: input.bodyText,
+            button_label: input.buttonLabel,
+            header: input.headerText,
+            footer: input.footerText,
+            sections: input.sections,
+          }
+    const { messageId } = await sendWhatsAppInteractiveViaZernio(zernioCtx, payload)
+
+    const { error: msgErr } = await db.from('messages').insert({
+      conversation_id: input.conversationId,
+      sender_type: 'bot',
+      content_type: 'interactive',
+      content_text: input.bodyText,
+      interactive_payload: payload,
+      message_id: messageId,
+      status: 'sent',
+    })
+    if (msgErr) throw new Error(`sent to Zernio but DB insert failed: ${msgErr.message}`)
+
+    await db
+      .from('conversations')
+      .update({
+        last_message_text: input.bodyText,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.conversationId)
+
+    return { whatsapp_message_id: messageId }
   }
 
   const accessToken = decrypt(config.access_token)

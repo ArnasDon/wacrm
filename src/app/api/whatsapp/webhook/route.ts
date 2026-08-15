@@ -359,7 +359,14 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
-async function handleStatusUpdate(status: {
+/**
+ * Mirrors a delivery-status change onto `messages` + `broadcast_recipients`
+ * and fans out `message.status_updated`. Provider-agnostic — resolves
+ * everything from `status.id` (the platform message id), so the Zernio
+ * webhook route (`/api/whatsapp/webhook/zernio`) reuses this unchanged
+ * rather than duplicating the broadcast-recipient mirror + webhook dispatch.
+ */
+export async function handleStatusUpdate(status: {
   id: string
   status: string
   timestamp: string

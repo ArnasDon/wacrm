@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import crypto from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
@@ -6,6 +7,7 @@ import {
   subscribeWabaToApp,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { verifyZernioAccount } from '@/lib/zernio/api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /**
@@ -87,7 +89,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('provider, phone_number_id, access_token, zernio_api_key, zernio_account_id, status')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -108,6 +110,39 @@ export async function GET() {
         },
         { status: 200 }
       )
+    }
+
+    if (config.provider === 'zernio') {
+      let zApiKey: string
+      try {
+        zApiKey = decrypt(config.zernio_api_key)
+      } catch (err) {
+        console.error('[whatsapp/config GET] Zernio key decryption failed:', err)
+        return NextResponse.json(
+          {
+            connected: false,
+            reason: 'token_corrupted',
+            needs_reset: true,
+            message:
+              'The stored Zernio API key cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments. Click "Reset Configuration" below, then re-save.',
+          },
+          { status: 200 }
+        )
+      }
+      try {
+        const accountInfo = await verifyZernioAccount({ apiKey: zApiKey, accountId: config.zernio_account_id, expectedPlatform: 'whatsapp' })
+        return NextResponse.json({
+          connected: true,
+          phone_info: { display_phone_number: accountInfo.username, verified_name: accountInfo.displayName },
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
+        console.error('[whatsapp/config GET] Zernio API verification failed:', message)
+        return NextResponse.json(
+          { connected: false, reason: 'zernio_api_error', message: `Zernio API rejected the credentials: ${message}` },
+          { status: 200 }
+        )
+      }
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.
@@ -185,6 +220,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
+
+    if (body.provider === 'zernio') {
+      return await saveZernioWhatsAppConfig(supabase, accountId, user.id, body)
+    }
+
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
 
     if (!access_token || !phone_number_id) {
@@ -354,10 +394,16 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
       verify_token: encryptedVerifyToken,
+      // Cleared so a provider switch doesn't leave a stale Zernio
+      // credential set sitting next to the newly-active Meta one.
+      zernio_api_key: null,
+      zernio_account_id: null,
+      zernio_webhook_secret: null,
       status: registrationError ? 'disconnected' : 'connected',
       connected_at: registrationError ? null : new Date().toISOString(),
       registered_at: registrationError ? null : registeredAt,
@@ -429,6 +475,124 @@ export async function POST(request: Request) {
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+async function saveZernioWhatsAppConfig(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  accountId: string,
+  userId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: any,
+) {
+  const { zernio_api_key, zernio_account_id } = body
+
+  if (!zernio_api_key || !zernio_account_id) {
+    return NextResponse.json({ error: 'zernio_api_key and zernio_account_id are required' }, { status: 400 })
+  }
+
+  const { data: existing } = await supabase
+    .from('whatsapp_config')
+    .select('id, zernio_webhook_secret')
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  // Same "can't be claimed by two wacrm accounts" guarantee the Meta
+  // path enforces on phone_number_id — see idx_whatsapp_config_zernio_account.
+  const { data: claimed, error: claimedError } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('zernio_account_id', zernio_account_id)
+    .neq('account_id', accountId)
+    .maybeSingle()
+
+  if (claimedError) {
+    console.error('Error checking zernio_account_id ownership:', claimedError)
+    return NextResponse.json({ error: 'Failed to validate configuration' }, { status: 500 })
+  }
+  if (claimed) {
+    return NextResponse.json(
+      {
+        error:
+          'This Zernio account is already linked to another account on this instance. Each Zernio-connected WhatsApp number can only be connected to one wacrm account.',
+      },
+      { status: 409 },
+    )
+  }
+
+  let accountInfo
+  try {
+    accountInfo = await verifyZernioAccount({ apiKey: zernio_api_key, accountId: zernio_account_id, expectedPlatform: 'whatsapp' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
+    console.error('Zernio API verification failed during save:', message)
+    return NextResponse.json({ error: `Zernio API error: ${message}` }, { status: 400 })
+  }
+
+  // The webhook secret is generated once and kept stable across
+  // re-saves — see the Instagram config route's identical comment.
+  const isNewSecret = !existing?.zernio_webhook_secret
+  const plaintextSecret = isNewSecret ? crypto.randomBytes(32).toString('hex') : null
+
+  let encryptedApiKey: string
+  let encryptedSecret: string | null
+  try {
+    encryptedApiKey = encrypt(zernio_api_key)
+    encryptedSecret = plaintextSecret ? encrypt(plaintextSecret) : existing!.zernio_webhook_secret
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown encryption error'
+    console.error('Encryption failed:', message)
+    return NextResponse.json(
+      {
+        error:
+          'Failed to encrypt credentials. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
+      },
+      { status: 500 },
+    )
+  }
+
+  const baseRow = {
+    provider: 'zernio',
+    zernio_api_key: encryptedApiKey,
+    zernio_account_id,
+    zernio_webhook_secret: encryptedSecret,
+    // Cleared so a provider switch doesn't leave a stale Meta
+    // credential set sitting next to the newly-active Zernio one.
+    phone_number_id: null,
+    waba_id: null,
+    access_token: null,
+    verify_token: null,
+    registered_at: null,
+    subscribed_apps_at: null,
+    last_registration_error: null,
+    status: 'connected',
+    connected_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  if (existing) {
+    const { error: updateError } = await supabase.from('whatsapp_config').update(baseRow).eq('account_id', accountId)
+    if (updateError) {
+      console.error('Error updating whatsapp_config:', updateError)
+      return NextResponse.json({ error: 'Failed to update configuration' }, { status: 500 })
+    }
+  } else {
+    const { error: insertError } = await supabase
+      .from('whatsapp_config')
+      .insert({ account_id: accountId, user_id: userId, ...baseRow })
+    if (insertError) {
+      console.error('Error inserting whatsapp_config:', insertError)
+      return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    saved: true,
+    registered: true,
+    registration_skipped: false,
+    phone_info: { display_phone_number: accountInfo.username, verified_name: accountInfo.displayName },
+    webhook_secret: plaintextSecret,
+  })
 }
 
 /**

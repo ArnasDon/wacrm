@@ -2,14 +2,15 @@ import crypto from 'node:crypto'
 
 /**
  * Verify the HMAC-SHA256 signature Zernio attaches to webhook POSTs.
+ * Shared by every channel's Zernio webhook route (Instagram, Facebook,
+ * WhatsApp, ...).
  *
  * Zernio signs the raw request body with the per-webhook secret
  * configured in the Zernio dashboard and sends the result in the
  * `X-Zernio-Signature` header (lowercase hex). Unlike Meta's single
- * app-wide secret (`verifyMetaWebhookSignature`), the secret here is
- * per-`instagram_config` row (each wacrm account creates its own
- * webhook in Zernio with its own secret), so the caller resolves and
- * decrypts the right secret before calling this.
+ * app-wide secret, the secret here is per-`*_config` row (each wacrm
+ * account creates its own webhook in Zernio with its own secret), so
+ * the caller resolves and decrypts the right secret before calling this.
  *
  * Reference: https://docs.zernio.com/webhooks#signature-verification
  */

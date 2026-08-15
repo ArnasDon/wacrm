@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendWhatsAppTemplateViaZernio, type ZernioSendContext } from '@/lib/whatsapp/zernio-send'
+import { findExistingContact } from '@/lib/contacts/dedupe'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
@@ -136,7 +138,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const accessToken = config.provider !== 'zernio' ? decrypt(config.access_token) : ''
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -177,18 +179,29 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Retry with phone variants on "not in allowed list" so numbers
-      // that differ only in a trunk-prefix 0 still reach recipients.
-      const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
 
-      for (const variant of variants) {
+      if (config.provider === 'zernio') {
+        // Zernio addresses a conversation by its own opaque id — a
+        // recipient with no prior inbound message (no contact / no
+        // conversation yet) can't be reached this way. Same scope
+        // boundary as every other Zernio send path in this integration.
         try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
+          const contact = await findExistingContact(supabase, accountId, sanitized)
+          const { data: conv } = contact
+            ? await supabase
+                .from('conversations')
+                .select('zernio_conversation_id')
+                .eq('account_id', accountId)
+                .eq('contact_id', contact.id)
+                .maybeSingle()
+            : { data: null }
+          const zernioCtx: ZernioSendContext = {
+            config: { zernio_api_key: decrypt(config.zernio_api_key), zernio_account_id: config.zernio_account_id },
+            zernioConversationId: conv?.zernio_conversation_id ?? null,
+          }
+          const result = await sendWhatsAppTemplateViaZernio(zernioCtx, {
             templateName: template_name,
             language: resolvedTemplate.language,
             template: templateRow ?? undefined,
@@ -196,17 +209,38 @@ export async function POST(request: Request) {
             params: recipient.params ?? [],
           })
           sentMessageId = result.messageId
-          lastError = null
-          break
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error'
-          if (!isRecipientNotAllowedError(errorMessage)) {
-            lastError = errorMessage
+          lastError = error instanceof Error ? error.message : 'Unknown error'
+        }
+      } else {
+        // Retry with phone variants on "not in allowed list" so numbers
+        // that differ only in a trunk-prefix 0 still reach recipients.
+        const variants = phoneVariants(sanitized)
+        for (const variant of variants) {
+          try {
+            const result = await sendTemplateMessage({
+              phoneNumberId: config.phone_number_id,
+              accessToken,
+              to: variant,
+              templateName: template_name,
+              language: resolvedTemplate.language,
+              template: templateRow ?? undefined,
+              messageParams: recipient.messageParams,
+              params: recipient.params ?? [],
+            })
+            sentMessageId = result.messageId
+            lastError = null
             break
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error'
+            if (!isRecipientNotAllowedError(errorMessage)) {
+              lastError = errorMessage
+              break
+            }
+            lastError = errorMessage
+            // retry with next variant
           }
-          lastError = errorMessage
-          // retry with next variant
         }
       }
 

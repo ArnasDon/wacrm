@@ -6,6 +6,7 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { listZernioTemplates } from '@/lib/zernio/api'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
 
@@ -151,48 +152,68 @@ export async function POST() {
       )
     }
 
-    if (!config.waba_id) {
-      return NextResponse.json(
-        {
-          error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
-        },
-        { status: 400 },
-      )
-    }
-
-    const accessToken = decrypt(config.access_token)
-
     const metaTemplates: MetaTemplate[] = []
-    let nextUrl:
-      | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
-    const PAGE_CAP = 20
     let pageCount = 0
+    let truncated = false
+    const PAGE_CAP = 20
 
-    while (nextUrl && pageCount < PAGE_CAP) {
-      pageCount++
-      const metaRes: Response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-
-      if (!metaRes.ok) {
-        let metaErr = `Meta API error: ${metaRes.status}`
-        try {
-          const body = await metaRes.json()
-          if (body?.error?.message) metaErr = body.error.message
-        } catch {
-          // response wasn't JSON — keep the fallback
-        }
-        return NextResponse.json({ error: metaErr }, { status: 502 })
+    if (config.provider === 'zernio') {
+      // Zernio's list endpoint returns the full catalog in one call —
+      // no pagination to walk, and its response shape (id, name,
+      // status, category, language, components) already matches
+      // MetaTemplate, since Zernio proxies Meta's own template data.
+      try {
+        const zTemplates = await listZernioTemplates({
+          apiKey: decrypt(config.zernio_api_key),
+          accountId: config.zernio_account_id,
+        })
+        metaTemplates.push(...(zTemplates as unknown as MetaTemplate[]))
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Zernio API error'
+        return NextResponse.json({ error: message }, { status: 502 })
+      }
+    } else {
+      if (!config.waba_id) {
+        return NextResponse.json(
+          {
+            error:
+              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+          },
+          { status: 400 },
+        )
       }
 
-      const metaBody: {
-        data?: MetaTemplate[]
-        paging?: { next?: string }
-      } = await metaRes.json()
-      if (metaBody.data) metaTemplates.push(...metaBody.data)
-      nextUrl = metaBody.paging?.next ?? null
+      const accessToken = decrypt(config.access_token)
+
+      let nextUrl:
+        | string
+        | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+
+      while (nextUrl && pageCount < PAGE_CAP) {
+        pageCount++
+        const metaRes: Response = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+
+        if (!metaRes.ok) {
+          let metaErr = `Meta API error: ${metaRes.status}`
+          try {
+            const body = await metaRes.json()
+            if (body?.error?.message) metaErr = body.error.message
+          } catch {
+            // response wasn't JSON — keep the fallback
+          }
+          return NextResponse.json({ error: metaErr }, { status: 502 })
+        }
+
+        const metaBody: {
+          data?: MetaTemplate[]
+          paging?: { next?: string }
+        } = await metaRes.json()
+        if (metaBody.data) metaTemplates.push(...metaBody.data)
+        nextUrl = metaBody.paging?.next ?? null
+      }
+      truncated = pageCount >= PAGE_CAP && nextUrl !== null
     }
 
     let inserted = 0
@@ -292,7 +313,7 @@ export async function POST() {
       inserted,
       updated,
       errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+      truncated,
     })
   } catch (error) {
     // Auth failures map to 401/403 rather than being folded into the

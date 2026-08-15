@@ -21,23 +21,44 @@ import {
   engineSendInstagramQuickReplies,
 } from '@/lib/instagram/engine-send'
 import type { QuickReplyOption } from '@/lib/instagram/api'
+import {
+  engineSendFacebookText,
+  engineSendFacebookQuickReplies,
+} from '@/lib/facebook/engine-send'
+import { sendWhatsAppTextViaZernio, sendWhatsAppTemplateViaZernio, type ZernioSendContext } from '@/lib/whatsapp/zernio-send'
 
 /**
  * Which channel is `conversationId` on? Automation steps are written
  * against a conversation, not a channel, so every entry point below
  * checks this before deciding whether to run the WhatsApp path (the
- * rest of this file, unchanged) or branch into the Instagram sender.
+ * rest of this file, unchanged) or branch into the Instagram/Facebook
+ * sender.
  */
 async function resolveConversationChannel(
   db: ReturnType<typeof supabaseAdmin>,
   conversationId: string,
-): Promise<'whatsapp' | 'instagram'> {
+): Promise<'whatsapp' | 'instagram' | 'facebook'> {
   const { data } = await db
     .from('conversations')
     .select('channel')
     .eq('id', conversationId)
     .maybeSingle()
-  return data?.channel === 'instagram' ? 'instagram' : 'whatsapp'
+  if (data?.channel === 'instagram') return 'instagram'
+  if (data?.channel === 'facebook') return 'facebook'
+  return 'whatsapp'
+}
+
+/** `conversations.zernio_conversation_id` for a WhatsApp-via-Zernio send. Same helper, independently defined, as flows/meta-send.ts's. */
+async function loadZernioConversationId(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from('conversations')
+    .select('zernio_conversation_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.zernio_conversation_id ?? null
 }
 
 // ------------------------------------------------------------
@@ -110,16 +131,20 @@ export async function engineSendInteractive(
   const { payload, accountId, userId, conversationId, contactId } = args
   const common = { accountId, userId, conversationId, contactId }
 
-  // Instagram has no buttons/list message type — its analogue is a
-  // flat set of quick-reply chips (max 13). Map both WhatsApp payload
-  // shapes down to that flat option list rather than failing the step:
-  // 'buttons' maps 1:1, 'list' flattens every row across every section.
-  if ((await resolveConversationChannel(supabaseAdmin(), conversationId)) === 'instagram') {
+  // Instagram/Facebook have no buttons/list message type — their
+  // analogue is a flat set of quick-reply chips (max 13). Map both
+  // WhatsApp payload shapes down to that flat option list rather than
+  // failing the step: 'buttons' maps 1:1, 'list' flattens every row
+  // across every section.
+  const engineChannel = await resolveConversationChannel(supabaseAdmin(), conversationId)
+  if (engineChannel === 'instagram' || engineChannel === 'facebook') {
     const options: QuickReplyOption[] =
       payload.kind === 'buttons'
         ? payload.buttons.map((b) => ({ title: b.title, payload: b.id }))
         : payload.sections.flatMap((s) => s.rows.map((r) => ({ title: r.title, payload: r.id })))
-    return engineSendInstagramQuickReplies({ ...common, bodyText: payload.body, options })
+    return engineChannel === 'instagram'
+      ? engineSendInstagramQuickReplies({ ...common, bodyText: payload.body, options })
+      : engineSendFacebookQuickReplies({ ...common, bodyText: payload.body, options })
   }
 
   if (payload.kind === 'buttons') {
@@ -148,20 +173,24 @@ type SendInput =
 async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  // Instagram conversations branch off here — templates are a
-  // WhatsApp-only concept, so a template step targeting an Instagram
-  // conversation fails loudly rather than silently mis-sending.
-  if ((await resolveConversationChannel(db, input.conversationId)) === 'instagram') {
+  // Instagram/Facebook conversations branch off here — templates are
+  // a WhatsApp-only concept, so a template step targeting one of them
+  // fails loudly rather than silently mis-sending.
+  const engineChannel = await resolveConversationChannel(db, input.conversationId)
+  if (engineChannel === 'instagram' || engineChannel === 'facebook') {
     if (input.kind === 'template') {
-      throw new Error('Message templates are a WhatsApp-only concept and are not supported for Instagram conversations.')
+      throw new Error(
+        `Message templates are a WhatsApp-only concept and are not supported for ${engineChannel} conversations.`,
+      )
     }
-    return engineSendInstagramText({
+    const textArgs = {
       accountId: input.accountId,
       userId: input.userId,
       conversationId: input.conversationId,
       contactId: input.contactId,
       text: input.text,
-    })
+    }
+    return engineChannel === 'instagram' ? engineSendInstagramText(textArgs) : engineSendFacebookText(textArgs)
   }
 
   // Scope the contact + config lookups by account_id, not user_id.
@@ -196,7 +225,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const accessToken = config.provider !== 'zernio' ? decrypt(config.access_token) : ''
 
   // Local template row — read for the body we persist below, not for
   // the Meta payload (the wire shape is deliberately unchanged here).
@@ -214,7 +243,27 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         ).row
       : null
 
+  // Zernio addresses a conversation by its own opaque id, not by
+  // phone — no phone-variant concept here, same as send-message.ts's
+  // identical branch.
   const attempt = async (phone: string): Promise<string> => {
+    if (config.provider === 'zernio') {
+      const zernioCtx: ZernioSendContext = {
+        config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
+        zernioConversationId: await loadZernioConversationId(db, input.conversationId),
+      }
+      if (input.kind === 'template') {
+        const r = await sendWhatsAppTemplateViaZernio(zernioCtx, {
+          templateName: input.templateName,
+          language: input.language || 'en_US',
+          template: templateRow ?? undefined,
+          params: input.params,
+        })
+        return r.messageId
+      }
+      const r = await sendWhatsAppTextViaZernio(zernioCtx, input.text)
+      return r.messageId
+    }
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,

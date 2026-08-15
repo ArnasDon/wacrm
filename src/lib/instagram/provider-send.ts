@@ -13,7 +13,7 @@
  */
 
 import { sendTextMessage, sendMediaMessage, sendQuickReplies, type InstagramMediaKind, type QuickReplyOption } from '@/lib/instagram/api'
-import { sendZernioText, sendZernioMedia, sendZernioQuickReplies } from '@/lib/instagram/zernio-api'
+import { sendZernioText, sendZernioMedia, sendZernioQuickReplies } from '@/lib/zernio/api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
 /** The subset of an `instagram_config` row this module needs. */

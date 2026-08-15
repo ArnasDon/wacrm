@@ -1,31 +1,55 @@
 /**
- * Provider-agnostic inbound Instagram DM handling — contact/conversation
+ * Provider-agnostic inbound DM handling — contact/conversation
  * resolution, idempotent message persistence, and the flows/automations/
- * AI-reply/outbound-webhook fan-out.
+ * AI-reply/outbound-webhook fan-out. Shared by every "Meta-style DM"
+ * channel (Instagram, Facebook Messenger), each of whose webhook
+ * routes (Meta-direct or Zernio) normalize their own payload shape
+ * into `InboundDmMessage` and call `handleInboundDmMessage` once.
  *
- * Extracted from what was previously inline in
- * `src/app/api/instagram/webhook/route.ts` (the Meta-direct webhook)
- * so the Zernio webhook route
- * (`src/app/api/instagram/webhook/zernio/route.ts`) can reuse the
- * exact same downstream behavior after normalizing its
- * differently-shaped payload into `InboundInstagramMessage`. Nothing
- * about the Meta route's own behavior changes — this is a pure
- * extraction.
+ * Originally extracted from `src/app/api/instagram/webhook/route.ts`
+ * (the Meta-direct Instagram webhook) as `@/lib/instagram/inbound`,
+ * then generalized here to also serve Facebook — the two channels'
+ * downstream handling (contact/conversation/message shape, flows,
+ * automations, AI auto-reply, outbound webhook events) is identical;
+ * only the contact identity column differs.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { findExistingInstagramContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import {
+  findExistingInstagramContact,
+  findExistingFacebookContact,
+  isUniqueViolation,
+  type ExistingContact,
+} from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
-export interface InboundInstagramMessage {
+export type DmChannel = 'instagram' | 'facebook'
+
+/** Which `contacts` columns anchor each channel's identity. */
+const CONTACT_COLUMNS: Record<DmChannel, { id: string; username: string }> = {
+  instagram: { id: 'instagram_id', username: 'instagram_username' },
+  facebook: { id: 'facebook_id', username: 'facebook_username' },
+}
+
+/** Per-channel exact-match contact lookup — see each function's own doc comment in dedupe.ts. */
+const findExistingContact: Record<
+  DmChannel,
+  (db: SupabaseClient, accountId: string, externalId: string) => Promise<ExistingContact | null>
+> = {
+  instagram: findExistingInstagramContact,
+  facebook: findExistingFacebookContact,
+}
+
+export interface InboundDmMessage {
+  channel: DmChannel
   accountId: string
   configOwnerUserId: string
-  /** Sender's Instagram-Scoped ID (IGSID). */
-  igsid: string
+  /** Sender's platform-scoped id (IGSID for Instagram, PSID for Facebook). */
+  senderId: string
   /** Platform message id — used as the idempotency key for retried deliveries. */
   mid: string
   contentText: string | null
@@ -38,16 +62,12 @@ export interface InboundInstagramMessage {
    * Zernio's own opaque conversation id, stored on the conversation row
    * so later outbound sends know which Zernio conversation to post
    * into. Omitted (undefined) on the Meta-direct path, which has no
-   * such concept — `contacts.instagram_id` is enough to send there.
+   * such concept — the contact's platform id is enough to send there.
    */
   zernioConversationId?: string
   /**
-   * Best-effort profile lookup for contact creation. Meta's path fetches
-   * this lazily via a Graph API call (only within the messaging window);
-   * Zernio already includes name/username inline on the webhook payload,
-   * so its implementation just returns them synchronously. Must never
-   * throw — return null on any failure, same contract as
-   * `getIgUserProfile`.
+   * Best-effort profile lookup for contact creation. Never throws —
+   * return null on any failure.
    */
   resolveProfile: () => Promise<{ name?: string; username?: string } | null>
 }
@@ -71,12 +91,15 @@ interface ContactOutcome {
 
 async function findOrCreateContact(
   db: SupabaseClient,
+  channel: DmChannel,
   accountId: string,
   configOwnerUserId: string,
-  igsid: string,
+  senderId: string,
   resolveProfile: () => Promise<{ name?: string; username?: string } | null>,
 ): Promise<ContactOutcome | null> {
-  const existingContact = await findExistingInstagramContact(db, accountId, igsid)
+  const { id: idColumn, username: usernameColumn } = CONTACT_COLUMNS[channel]
+
+  const existingContact = await findExistingContact[channel](db, accountId, senderId)
   if (existingContact) {
     return { contact: existingContact, wasCreated: false }
   }
@@ -89,26 +112,32 @@ async function findOrCreateContact(
       account_id: accountId,
       user_id: configOwnerUserId,
       phone: null,
-      instagram_id: igsid,
-      instagram_username: profile?.username ?? null,
-      name: profile?.name || profile?.username || igsid,
+      [idColumn]: senderId,
+      [usernameColumn]: profile?.username ?? null,
+      name: profile?.name || profile?.username || senderId,
     })
     .select()
     .single()
 
   if (createError) {
     if (isUniqueViolation(createError)) {
-      const raced = await findExistingInstagramContact(db, accountId, igsid)
+      const raced = await findExistingContact[channel](db, accountId, senderId)
       if (raced) return { contact: raced, wasCreated: false }
     }
-    console.error('[instagram inbound] error creating contact:', createError)
+    console.error(`[${channel} inbound] error creating contact:`, createError)
     return null
   }
 
   return { contact: newContact, wasCreated: true }
 }
 
-async function findOrCreateConversation(db: SupabaseClient, accountId: string, configOwnerUserId: string, contactId: string) {
+async function findOrCreateConversation(
+  db: SupabaseClient,
+  channel: DmChannel,
+  accountId: string,
+  configOwnerUserId: string,
+  contactId: string,
+) {
   const { data: existingRows, error: findError } = await db
     .from('conversations')
     .select('*')
@@ -118,7 +147,7 @@ async function findOrCreateConversation(db: SupabaseClient, accountId: string, c
     .limit(1)
 
   if (findError) {
-    console.error('[instagram inbound] error finding conversation:', findError)
+    console.error(`[${channel} inbound] error finding conversation:`, findError)
     return null
   }
   if (existingRows && existingRows.length > 0) {
@@ -131,7 +160,7 @@ async function findOrCreateConversation(db: SupabaseClient, accountId: string, c
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
-      channel: 'instagram',
+      channel,
     })
     .select()
     .single()
@@ -149,29 +178,29 @@ async function findOrCreateConversation(db: SupabaseClient, accountId: string, c
         return { conversation: raced[0], created: false }
       }
     }
-    console.error('[instagram inbound] error creating conversation:', createError)
+    console.error(`[${channel} inbound] error creating conversation:`, createError)
     return null
   }
 
   return { conversation: newConv, created: true }
 }
 
-/** Mirror a read receipt onto `messages.status`, shared by both webhook routes. */
+/** Mirror a read receipt onto `messages.status`, shared by every DM webhook route. */
 export async function markMessageRead(db: SupabaseClient, platformMessageId: string): Promise<void> {
   const { error } = await db.from('messages').update({ status: 'read' }).eq('message_id', platformMessageId)
   if (error) {
-    console.error('[instagram inbound] error updating message read status:', error)
+    console.error('[dm inbound] error updating message read status:', error)
   }
 }
 
-export async function handleInboundInstagramMessage(db: SupabaseClient, msg: InboundInstagramMessage): Promise<void> {
-  const { accountId, configOwnerUserId } = msg
+export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmMessage): Promise<void> {
+  const { channel, accountId, configOwnerUserId } = msg
 
-  const contactOutcome = await findOrCreateContact(db, accountId, configOwnerUserId, msg.igsid, msg.resolveProfile)
+  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, msg.senderId, msg.resolveProfile)
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(db, accountId, configOwnerUserId, contactRecord.id)
+  const convResult = await findOrCreateConversation(db, channel, accountId, configOwnerUserId, contactRecord.id)
   if (!convResult) return
   const conversation = convResult.conversation
 
@@ -179,7 +208,7 @@ export async function handleInboundInstagramMessage(db: SupabaseClient, msg: Inb
     await dispatchWebhookEvent(db, accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
-      channel: 'instagram',
+      channel,
     })
   }
 
@@ -231,11 +260,11 @@ export async function handleInboundInstagramMessage(db: SupabaseClient, msg: Inb
     .select('id')
 
   if (msgError) {
-    console.error('[instagram inbound] error inserting message:', msgError)
+    console.error(`[${channel} inbound] error inserting message:`, msgError)
     return
   }
   if (!insertedRows || insertedRows.length === 0) {
-    console.info('[instagram inbound] duplicate inbound message ignored (idempotent replay):', msg.mid)
+    console.info(`[${channel} inbound] duplicate inbound message ignored (idempotent replay):`, msg.mid)
     return
   }
 
@@ -244,7 +273,7 @@ export async function handleInboundInstagramMessage(db: SupabaseClient, msg: Inb
     p_last_message_text: msg.contentText || `[${msg.contentType}]`,
   })
   if (convError) {
-    console.error('[instagram inbound] error updating conversation:', convError)
+    console.error(`[${channel} inbound] error updating conversation:`, convError)
   }
 
   await reopenClosedConversation(db, conversation)
@@ -315,6 +344,6 @@ export async function handleInboundInstagramMessage(db: SupabaseClient, msg: Inb
     whatsapp_message_id: msg.mid,
     content_type: msg.contentType,
     text: msg.contentText,
-    channel: 'instagram',
+    channel,
   })
 }

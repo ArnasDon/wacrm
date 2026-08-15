@@ -5,6 +5,7 @@ import {
   deleteMessageTemplate,
   editMessageTemplate,
 } from '@/lib/whatsapp/meta-api'
+import { updateZernioTemplate, deleteZernioTemplate } from '@/lib/zernio/api'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -149,36 +150,68 @@ export async function PATCH(
           { status: 400 },
         )
       }
-      const accessToken = decrypt(config.access_token)
 
-      // Image headers need a fresh Resumable-Upload handle on every edit
-      // (Meta replaces components wholesale). Derive from header_media_url.
-      try {
-        await ensureImageHeaderHandle(payload, accessToken)
-      } catch (e) {
-        return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header image upload failed.' },
-          { status: 400 },
-        )
-      }
-
-      const metaPayload = buildMetaTemplatePayload(payload)
-      try {
-        await editMessageTemplate({
-          metaTemplateId: existing.meta_template_id,
-          accessToken,
-          components: metaPayload.components,
-        })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta edit failed.'
-        await supabase
-          .from('message_templates')
-          .update({
-            submission_error: message,
-            last_submitted_at: new Date().toISOString(),
+      if (config.provider === 'zernio') {
+        if (payload.header_type === 'image') {
+          return NextResponse.json(
+            {
+              error:
+                'Image-header templates are not yet supported for Zernio-connected WhatsApp accounts. Use a text header, or connect WhatsApp directly to Meta instead.',
+            },
+            { status: 400 },
+          )
+        }
+        const metaPayload = buildMetaTemplatePayload(payload)
+        try {
+          await updateZernioTemplate({
+            apiKey: decrypt(config.zernio_api_key),
+            accountId: config.zernio_account_id,
+            templateName: existing.name,
+            components: metaPayload.components ?? [],
           })
-          .eq('id', id)
-        return NextResponse.json({ error: message }, { status: 502 })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Zernio edit failed.'
+          await supabase
+            .from('message_templates')
+            .update({
+              submission_error: message,
+              last_submitted_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
+      } else {
+        const accessToken = decrypt(config.access_token)
+
+        // Image headers need a fresh Resumable-Upload handle on every edit
+        // (Meta replaces components wholesale). Derive from header_media_url.
+        try {
+          await ensureImageHeaderHandle(payload, accessToken)
+        } catch (e) {
+          return NextResponse.json(
+            { error: e instanceof Error ? e.message : 'Header image upload failed.' },
+            { status: 400 },
+          )
+        }
+
+        const metaPayload = buildMetaTemplatePayload(payload)
+        try {
+          await editMessageTemplate({
+            metaTemplateId: existing.meta_template_id,
+            accessToken,
+            components: metaPayload.components,
+          })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Meta edit failed.'
+          await supabase
+            .from('message_templates')
+            .update({
+              submission_error: message,
+              last_submitted_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
       }
     }
 
@@ -283,23 +316,43 @@ export async function DELETE(
         .select('*')
         .eq('account_id', accountId)
         .single()
-      if (configError || !config || !config.waba_id) {
+      if (configError || !config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },
           { status: 400 },
         )
       }
-      const accessToken = decrypt(config.access_token)
-      try {
-        await deleteMessageTemplate({
-          wabaId: config.waba_id,
-          accessToken,
-          name: existing.name,
-          metaTemplateId: existing.meta_template_id,
-        })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta delete failed.'
-        return NextResponse.json({ error: message }, { status: 502 })
+
+      if (config.provider === 'zernio') {
+        try {
+          await deleteZernioTemplate({
+            apiKey: decrypt(config.zernio_api_key),
+            accountId: config.zernio_account_id,
+            templateName: existing.name,
+          })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Zernio delete failed.'
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
+      } else {
+        if (!config.waba_id) {
+          return NextResponse.json(
+            { error: 'WhatsApp not configured — cannot delete on Meta.' },
+            { status: 400 },
+          )
+        }
+        const accessToken = decrypt(config.access_token)
+        try {
+          await deleteMessageTemplate({
+            wabaId: config.waba_id,
+            accessToken,
+            name: existing.name,
+            metaTemplateId: existing.meta_template_id,
+          })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Meta delete failed.'
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
       }
     }
 

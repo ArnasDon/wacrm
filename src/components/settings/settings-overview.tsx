@@ -36,6 +36,11 @@ interface InstagramStatus {
   connected: boolean;
 }
 
+interface FacebookStatus {
+  configured: boolean;
+  connected: boolean;
+}
+
 export function SettingsOverview({
   onSelect,
 }: {
@@ -59,6 +64,9 @@ export function SettingsOverview({
   // Same independent-gating rationale as WhatsApp above.
   const [instagram, setInstagram] = useState<InstagramStatus | null>(null);
   const [instagramLoading, setInstagramLoading] = useState(true);
+  // Same independent-gating rationale as WhatsApp/Instagram above.
+  const [facebook, setFacebook] = useState<FacebookStatus | null>(null);
+  const [facebookLoading, setFacebookLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !accountId) return;
@@ -163,6 +171,25 @@ export function SettingsOverview({
       setInstagramLoading(false);
     })();
 
+    // Facebook connection status — same pattern as Instagram above.
+    (async () => {
+      setFacebookLoading(true);
+      const [row, health] = await Promise.allSettled([
+        supabase
+          .from('facebook_config')
+          .select('zernio_account_id')
+          .eq('account_id', acctId)
+          .maybeSingle(),
+        fetch('/api/facebook/config', { cache: 'no-store' }).then((r) => r.json()),
+      ]);
+      if (cancelled) return;
+      setFacebook({
+        configured: row.status === 'fulfilled' && !!row.value.data?.zernio_account_id,
+        connected: health.status === 'fulfilled' && !!health.value?.connected,
+      });
+      setFacebookLoading(false);
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -206,6 +233,21 @@ export function SettingsOverview({
       subtitle: !instagram?.configured ? (
         t('notSetup')
       ) : instagram.connected ? (
+        <>
+          <StatusDot tone="ok" /> {t('connected')}
+        </>
+      ) : (
+        <>
+          <StatusDot tone="muted" /> {t('needsReconnecting')}
+        </>
+      ),
+    },
+    {
+      section: 'facebook',
+      loading: facebookLoading,
+      subtitle: !facebook?.configured ? (
+        t('notSetup')
+      ) : facebook.connected ? (
         <>
           <StatusDot tone="ok" /> {t('connected')}
         </>

@@ -90,6 +90,30 @@ export async function findExistingInstagramContact(
 }
 
 /**
+ * Find an existing contact in `accountId` whose `facebook_id` (PSID)
+ * exactly matches. Same reasoning as `findExistingInstagramContact` —
+ * Facebook's Page-Scoped IDs are opaque, so a plain equality lookup
+ * is enough.
+ */
+export async function findExistingFacebookContact(
+  db: SupabaseClient,
+  accountId: string,
+  facebookId: string,
+): Promise<ExistingContact | null> {
+  if (!facebookId) return null;
+
+  const { data, error } = await db
+    .from("contacts")
+    .select("*")
+    .eq("account_id", accountId)
+    .eq("facebook_id", facebookId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ExistingContact;
+}
+
+/**
  * True for a Postgres unique-constraint violation (SQLSTATE 23505).
  * Used as the backstop when the DB unique index rejects a racing or
  * format-equal insert that slipped past the in-app check.

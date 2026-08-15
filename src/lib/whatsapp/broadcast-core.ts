@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
+import { sendWhatsAppTemplateViaZernio, type ZernioSendContext } from '@/lib/whatsapp/zernio-send';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import {
   sanitizePhoneForMeta,
@@ -58,16 +59,21 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
+  contactId: string;
   phone: string;
   params: string[];
 }
 
 export interface BroadcastPlan {
   broadcastId: string;
+  accountId: string;
+  provider: string;
   templateName: string;
   templateLanguage: string;
   phoneNumberId: string;
   accessToken: string;
+  zernioApiKey: string | null;
+  zernioAccountId: string | null;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
@@ -122,7 +128,11 @@ export async function createBroadcast(
       400
     );
   }
-  const accessToken = decrypt(config.access_token);
+  // Zernio-provider rows have no access_token (their credential is
+  // zernio_api_key instead) — see whatsapp_config's provider CHECK
+  // constraint (migration 042).
+  const accessToken = config.provider !== 'zernio' ? decrypt(config.access_token) : '';
+  const zernioApiKey = config.provider === 'zernio' ? decrypt(config.zernio_api_key) : null;
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -226,16 +236,25 @@ export async function createBroadcast(
   const planned: PlannedRecipient[] = createdRows.map(
     (row: { recipient_id: string; contact_id: string }) => {
       const r = byContact.get(row.contact_id)!;
-      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+      return {
+        recipientRowId: row.recipient_id,
+        contactId: row.contact_id,
+        phone: r.phone,
+        params: r.params,
+      };
     }
   );
 
   return {
     broadcastId,
+    accountId,
+    provider: config.provider ?? 'meta',
     templateName,
     templateLanguage: resolvedTemplate.language,
     phoneNumberId: config.phone_number_id,
     accessToken,
+    zernioApiKey,
+    zernioAccountId: config.zernio_account_id ?? null,
     templateRow,
     planned,
     rejected,
@@ -260,29 +279,58 @@ export async function deliverBroadcast(
   plan: BroadcastPlan
 ): Promise<void> {
   for (const recipient of plan.planned) {
-    const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
-    for (const variant of variants) {
+    if (plan.provider === 'zernio') {
+      // Zernio addresses a conversation by its own opaque id, not a
+      // phone number — a broadcast recipient with no prior inbound
+      // message has no conversation to send into yet. Fails that one
+      // recipient rather than the whole broadcast; same scope boundary
+      // as every other Zernio send path in this integration.
       try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
-          to: variant,
+        const { data: conv } = await db
+          .from('conversations')
+          .select('zernio_conversation_id')
+          .eq('account_id', plan.accountId)
+          .eq('contact_id', recipient.contactId)
+          .maybeSingle();
+        const zernioCtx: ZernioSendContext = {
+          config: { zernio_api_key: plan.zernioApiKey!, zernio_account_id: plan.zernioAccountId! },
+          zernioConversationId: conv?.zernio_conversation_id ?? null,
+        };
+        const result = await sendWhatsAppTemplateViaZernio(zernioCtx, {
           templateName: plan.templateName,
           language: plan.templateLanguage,
           template: plan.templateRow ?? undefined,
           params: recipient.params,
         });
         sentMessageId = result.messageId;
-        lastError = null;
-        break;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        lastError = message;
-        // Only a "recipient not allowed" error is worth another variant.
-        if (!isRecipientNotAllowedError(message)) break;
+        lastError = error instanceof Error ? error.message : 'Unknown error';
+      }
+    } else {
+      const variants = phoneVariants(recipient.phone);
+      for (const variant of variants) {
+        try {
+          const result = await sendTemplateMessage({
+            phoneNumberId: plan.phoneNumberId,
+            accessToken: plan.accessToken,
+            to: variant,
+            templateName: plan.templateName,
+            language: plan.templateLanguage,
+            template: plan.templateRow ?? undefined,
+            params: recipient.params,
+          });
+          sentMessageId = result.messageId;
+          lastError = null;
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          lastError = message;
+          // Only a "recipient not allowed" error is worth another variant.
+          if (!isRecipientNotAllowedError(message)) break;
+        }
       }
     }
 

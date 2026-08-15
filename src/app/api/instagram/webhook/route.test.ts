@@ -122,6 +122,10 @@ vi.mock('@/lib/instagram/api', () => ({
 }))
 vi.mock('@/lib/contacts/dedupe', () => ({
   findExistingInstagramContact: h.findExistingInstagramContact,
+  // Unused by this suite (Instagram-only), but the shared dm-inbound
+  // module imports it unconditionally — must be present or the mock
+  // factory throws at import time.
+  findExistingFacebookContact: vi.fn(),
   isUniqueViolation: () => false,
 }))
 vi.mock('@/lib/conversations/reopen', () => ({

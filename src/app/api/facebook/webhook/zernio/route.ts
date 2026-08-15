@@ -4,9 +4,10 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
 import { handleInboundDmMessage, markMessageRead, toContentType } from '@/lib/messaging/dm-inbound'
 
-// Same reasoning as src/app/api/instagram/webhook/route.ts (the
-// Meta-direct route this mirrors): after() can fan out to several DB
-// round-trips per inbound message, so give it headroom.
+// Same reasoning as src/app/api/instagram/webhook/zernio/route.ts,
+// which this mirrors exactly apart from the config table: Facebook
+// has no direct-Meta path in wacrm, so this is the only Facebook
+// webhook route.
 export const maxDuration = 60
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,10 +24,8 @@ function supabaseAdmin() {
 
 // ============================================================
 // Zernio inbox webhook envelope — see
-// https://docs.zernio.com/webhooks/inbox. Structurally different from
-// Meta's `entry[].messaging[]` shape: one event per delivery, keyed by
-// `account.id` (Zernio's own connected-account id, not Meta's numeric
-// IG Business Account ID) rather than a brute-force verify-token match.
+// https://docs.zernio.com/webhooks/inbox. Identical shape to the
+// Instagram Zernio route; only the platform value and config table differ.
 // ============================================================
 
 interface ZernioWebhookAttachment {
@@ -65,11 +64,7 @@ interface ZernioWebhookPayload {
 }
 
 // POST - Receive events. Same ack-fast-then-process pattern as the
-// Meta route: resolve which account this event belongs to (needed
-// before we can even know which webhook secret to verify against —
-// Zernio issues one secret per webhook, and each wacrm account owns
-// its own webhook), verify the signature, defer the actual work into
-// after() so Zernio gets its 2xx within its 5s window.
+// Instagram Zernio route.
 export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-zernio-signature')
@@ -87,23 +82,22 @@ export async function POST(request: Request) {
   }
 
   const { data: config, error: configError } = await supabaseAdmin()
-    .from('instagram_config')
+    .from('facebook_config')
     .select('*')
-    .eq('provider', 'zernio')
     .eq('zernio_account_id', zernioAccountId)
     .maybeSingle()
 
   if (configError) {
-    console.error('[zernio webhook] error fetching instagram_config:', configError)
+    console.error('[facebook zernio webhook] error fetching facebook_config:', configError)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
   if (!config) {
-    console.error('[zernio webhook] no instagram_config found for zernio_account_id:', zernioAccountId)
+    console.error('[facebook zernio webhook] no facebook_config found for zernio_account_id:', zernioAccountId)
     return NextResponse.json({ error: 'Unknown account' }, { status: 404 })
   }
 
   if (!config.zernio_webhook_secret) {
-    console.error('[zernio webhook] account has no webhook secret configured:', zernioAccountId)
+    console.error('[facebook zernio webhook] account has no webhook secret configured:', zernioAccountId)
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 401 })
   }
 
@@ -111,12 +105,12 @@ export async function POST(request: Request) {
   try {
     secret = decrypt(config.zernio_webhook_secret)
   } catch (err) {
-    console.error('[zernio webhook] failed to decrypt webhook secret:', err)
+    console.error('[facebook zernio webhook] failed to decrypt webhook secret:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   if (!verifyZernioWebhookSignature(rawBody, signature, secret)) {
-    console.warn('[zernio webhook] rejected request with invalid signature')
+    console.warn('[facebook zernio webhook] rejected request with invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -124,7 +118,7 @@ export async function POST(request: Request) {
     try {
       await processZernioEvent(payload, config)
     } catch (error) {
-      console.error('[zernio webhook] error processing event:', error)
+      console.error('[facebook zernio webhook] error processing event:', error)
     }
   })
 
@@ -144,18 +138,13 @@ async function processZernioEvent(
   if (payload.event !== 'message.received' || !payload.message) return
 
   const message = payload.message
-  // Echoes: an outgoing message somehow arriving on message.received
-  // rather than message.sent. Defensive only — Zernio's docs describe
-  // message.received as customer-originated, but skipping non-incoming
-  // directions here mirrors the is_echo guard on the Meta route so an
-  // agent's own send can never be re-ingested as a second "customer"
-  // message.
+  // Echoes: defensive guard, same reasoning as the Instagram Zernio route.
   if (message.direction !== 'incoming') return
 
   const attachment = message.attachments?.[0]
 
   await handleInboundDmMessage(supabaseAdmin(), {
-    channel: 'instagram',
+    channel: 'facebook',
     accountId: config.account_id,
     configOwnerUserId: config.user_id,
     senderId: message.sender.id,
@@ -163,12 +152,9 @@ async function processZernioEvent(
     contentText: attachment ? null : message.text,
     mediaUrl: attachment?.url ?? null,
     contentType: attachment ? toContentType(attachment.type) : 'text',
-    // Zernio's `metadata` field on message.received (quick-reply taps,
-    // postback/button taps, quote-replies) isn't parsed here yet —
-    // every Zernio-provider inbound message is treated as plain
-    // text/media for now, same scope boundary the Meta route draws
-    // around Instagram quick replies not being wired into the inbox
-    // renderer (see engine-send.ts's comment on that gap).
+    // Same scope boundary as the Instagram Zernio route: quick-reply
+    // taps / postbacks / quote-replies (Zernio's `metadata` field)
+    // aren't parsed yet — every inbound message is text/media for now.
     interactiveReplyId: null,
     replyToMid: null,
     zernioConversationId: message.conversationId,

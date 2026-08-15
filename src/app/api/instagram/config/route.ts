@@ -3,7 +3,7 @@ import crypto from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { verifyIgAccount } from '@/lib/instagram/api'
-import { verifyZernioAccount } from '@/lib/instagram/zernio-api'
+import { verifyZernioAccount } from '@/lib/zernio/api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /**
@@ -107,7 +107,7 @@ export async function GET() {
       }
 
       try {
-        const accountInfo = await verifyZernioAccount({ apiKey, accountId: config.zernio_account_id! })
+        const accountInfo = await verifyZernioAccount({ apiKey, accountId: config.zernio_account_id!, expectedPlatform: 'instagram' })
         return NextResponse.json({
           connected: true,
           account_info: { username: accountInfo.username, name: accountInfo.displayName },
@@ -349,7 +349,7 @@ async function saveZernioConfig({ supabase, accountId, userId, existing, body }:
 
   let accountInfo
   try {
-    accountInfo = await verifyZernioAccount({ apiKey: zernio_api_key, accountId: zernio_account_id })
+    accountInfo = await verifyZernioAccount({ apiKey: zernio_api_key, accountId: zernio_account_id, expectedPlatform: 'instagram' })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
     console.error('Zernio API verification failed during save:', message)

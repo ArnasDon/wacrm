@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { downloadZernioWhatsAppMedia } from '@/lib/zernio/api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
 export async function GET(
@@ -60,6 +61,21 @@ export async function GET(
         { error: 'WhatsApp not configured' },
         { status: 400 }
       )
+    }
+
+    if (config.provider === 'zernio') {
+      const { buffer, contentType } = await downloadZernioWhatsAppMedia({
+        apiKey: decrypt(config.zernio_api_key),
+        accountId: config.zernio_account_id,
+        mediaId,
+      })
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': contentType || 'application/octet-stream',
+          'Cache-Control': 'public, max-age=86400',
+        },
+      })
     }
 
     const accessToken = decrypt(config.access_token)

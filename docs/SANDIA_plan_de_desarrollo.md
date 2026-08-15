@@ -522,10 +522,15 @@ Supabase confirmó el guardado de la política de 8 caracteres.
 `npm.cmd run typecheck` y `npm.cmd run build` finalizaron correctamente; el
 build generó las 59 rutas.
 
-**Pendiente / siguiente paso:** Publicar y verificar el formulario de registro
-en producción. Después continuar la Fase 0 con el aislamiento por cuenta de las
-actualizaciones de estado de mensajes y la autorización explícita del proxy de
-medios, que requieren cambios acompañados de pruebas específicas.
+**Despliegue:** Publiqué `9dc5628` en `origin/main` y EasyPanel completó la
+implementación automática. La sesión autenticada redirige correctamente
+`/signup` al dashboard, por lo que no se creó un usuario artificial para una
+prueba visual; el mínimo queda cubierto por el build y por la validación remota
+de Supabase Auth.
+
+**Pendiente / siguiente paso:** Continuar la Fase 0 con el aislamiento por
+cuenta de las actualizaciones de estado de mensajes y la autorización explícita
+del proxy de medios, que requieren cambios acompañados de pruebas específicas.
 
 **Notas:** No se modificaron filas de negocio ni cuentas. El archivo local no
 relacionado `src/lib/probe_delete_test.txt` permanece intacto y fuera de los

@@ -110,6 +110,21 @@ export async function POST(request: Request) {
       return fail('bad_request', "'phone' is required", 400);
     }
 
+    const leadTemperature = body.lead_temperature;
+    if (
+      leadTemperature !== undefined &&
+      leadTemperature !== null &&
+      leadTemperature !== 'cold' &&
+      leadTemperature !== 'warm' &&
+      leadTemperature !== 'hot'
+    ) {
+      return fail(
+        'bad_request',
+        "'lead_temperature' must be 'cold', 'warm', 'hot', or null",
+        400
+      );
+    }
+
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
     const { id, created } = await findOrCreateContact(
@@ -121,6 +136,7 @@ export async function POST(request: Request) {
         name: typeof body.name === 'string' ? body.name : undefined,
         email: typeof body.email === 'string' ? body.email : undefined,
         company: typeof body.company === 'string' ? body.company : undefined,
+        lead_temperature: leadTemperature ?? undefined,
       }
     );
 

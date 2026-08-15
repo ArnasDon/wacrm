@@ -67,6 +67,19 @@ export async function PATCH(
       }
     }
 
+    if ('lead_temperature' in body) {
+      const value = body.lead_temperature;
+      if (value === null || value === 'cold' || value === 'warm' || value === 'hot') {
+        updates.lead_temperature = value;
+      } else {
+        return fail(
+          'bad_request',
+          "'lead_temperature' must be 'cold', 'warm', 'hot', or null",
+          400
+        );
+      }
+    }
+
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString();
       const { error } = await ctx.supabase

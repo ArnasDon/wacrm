@@ -6,7 +6,7 @@ import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
+import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate, LeadTemperature } from '@/types';
 import {
   TemplatePicker,
   type TemplateSendValues,
@@ -25,6 +25,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Phone,
@@ -74,6 +82,7 @@ export function ContactDetailView({
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
+  const [editLeadTemperature, setEditLeadTemperature] = useState<LeadTemperature | 'unclassified'>('unclassified');
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Tags tab
@@ -113,6 +122,7 @@ export function ContactDetailView({
       setEditPhone(data.phone);
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
+      setEditLeadTemperature(data.lead_temperature ?? 'unclassified');
     }
     setLoading(false);
   }, [contactId, supabase]);
@@ -211,6 +221,7 @@ export function ContactDetailView({
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
+        lead_temperature: editLeadTemperature === 'unclassified' ? null : editLeadTemperature,
         updated_at: new Date().toISOString(),
       })
       .eq('id', contactId);
@@ -435,6 +446,15 @@ export function ContactDetailView({
                         {contact.company}
                       </span>
                     )}
+                    <LeadTemperatureBadge
+                      value={contact.lead_temperature}
+                      labels={{
+                        cold: t('temperatureCold'),
+                        warm: t('temperatureWarm'),
+                        hot: t('temperatureHot'),
+                      }}
+                      unclassifiedLabel={t('temperatureUnclassified')}
+                    />
                   </div>
                 </div>
               </div>
@@ -526,6 +546,23 @@ export function ContactDetailView({
                       onChange={(e) => setEditCompany(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">{t('temperature')}</Label>
+                    <Select
+                      value={editLeadTemperature}
+                      onValueChange={(value) => setEditLeadTemperature(value as LeadTemperature | 'unclassified')}
+                    >
+                      <SelectTrigger className="w-full bg-muted border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unclassified">{t('temperatureUnclassified')}</SelectItem>
+                        <SelectItem value="cold">{t('temperatureCold')}</SelectItem>
+                        <SelectItem value="warm">{t('temperatureWarm')}</SelectItem>
+                        <SelectItem value="hot">{t('temperatureHot')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button
                     onClick={saveDetails}

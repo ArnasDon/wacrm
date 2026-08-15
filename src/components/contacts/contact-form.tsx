@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import type { Contact, Tag, ContactTag, LeadTemperature } from '@/types';
 import {
   findExistingContact,
   isExactMatch,
@@ -24,6 +24,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -55,6 +62,7 @@ export function ContactForm({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
+  const [leadTemperature, setLeadTemperature] = useState<LeadTemperature | 'unclassified'>('unclassified');
   const [saving, setSaving] = useState(false);
 
   // Duplicate-phone detection for NEW contacts. `exact` (same digits)
@@ -76,6 +84,7 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+      setLeadTemperature(contact?.lead_temperature ?? 'unclassified');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
@@ -157,6 +166,7 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
             updated_at: new Date().toISOString(),
           })
           .eq('id', contactId);
@@ -171,6 +181,7 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
           })
           .select('id')
           .single();
@@ -321,6 +332,25 @@ export function ContactForm({
               placeholder={t('companyPlaceholder')}
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-muted-foreground">{t('temperatureLabel')}</Label>
+            <Select
+              value={leadTemperature}
+              onValueChange={(value) => setLeadTemperature(value as LeadTemperature | 'unclassified')}
+            >
+              <SelectTrigger className="w-full bg-muted border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unclassified">{t('temperatureUnclassified')}</SelectItem>
+                <SelectItem value="cold">{t('temperatureCold')}</SelectItem>
+                <SelectItem value="warm">{t('temperatureWarm')}</SelectItem>
+                <SelectItem value="hot">{t('temperatureHot')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('temperatureHint')}</p>
           </div>
 
           <div className="space-y-2">

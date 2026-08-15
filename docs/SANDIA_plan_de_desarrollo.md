@@ -59,6 +59,9 @@ La ruta `/flows` ya está protegida, el registro exige contraseñas de al menos
 operativas privilegiadas identificadas en el diagnóstico ya no son ejecutables
 por los roles de navegador. Las actualizaciones de estado de WhatsApp y el
 proxy de medios también verifican explícitamente la empresa propietaria.
+La Fase 2 ya comenzó con temperatura manual de clientes (`cold`, `warm`,
+`hot` o sin clasificar), disponible en el modelo, la API pública y la interfaz
+de Contactos.
 
 ### Encargos de Angel (estado al 2026-08-15)
 
@@ -562,3 +565,25 @@ la prioridad de producto.
 
 **Notas:** No se alteró el esquema ni se modificaron mensajes o medios reales.
 El archivo no relacionado `src/lib/probe_delete_test.txt` permanece intacto.
+
+### 2026-08-15 — Codex (temperatura manual de clientes)
+
+**Hecho:** Inicié la Fase 2 con la migración aditiva
+`047_contact_lead_temperature.sql`. Los contactos admiten `cold`, `warm`,
+`hot` o `NULL` (sin clasificar). La temperatura se puede escoger al crear o
+editar, modificar desde el detalle y ver como distintivo en la tabla. La API
+pública v1 serializa el campo, lo admite al crear y valida actualizaciones.
+Los catálogos inglés y coreano mantienen las mismas claves.
+
+**Probado:** Apliqué 047 al proyecto real; la verificación devolvió columna
+nullable existente y 0 filas inválidas. Las pruebas de contactos e i18n
+pasaron (4/4), `npm.cmd run typecheck` quedó limpio y `npm.cmd run build`
+generó correctamente las 59 rutas.
+
+**Pendiente / siguiente paso:** Publicar, verificar visualmente Contactos en
+producción y probar una clasificación real solo si se autoriza modificar un
+contacto existente. La clasificación automática por IA queda fuera de este
+primer corte manual.
+
+**Notas:** La migración no clasificó ni reescribió contactos existentes. El
+archivo local `src/lib/probe_delete_test.txt` sigue intacto y excluido.

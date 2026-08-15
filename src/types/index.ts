@@ -96,6 +96,8 @@ export interface AccountInvitation {
   accepted_by_user_id: string | null;
 }
 
+export type LeadTemperature = 'cold' | 'warm' | 'hot';
+
 export interface Contact {
   id: string;
   user_id: string;
@@ -117,6 +119,8 @@ export interface Contact {
   name?: string;
   email?: string;
   company?: string;
+  /** Manual commercial qualification. Null/absent means not classified yet. */
+  lead_temperature?: LeadTemperature | null;
   avatar_url?: string;
   created_at: string;
   updated_at: string;

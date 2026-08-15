@@ -436,3 +436,23 @@ completo de español siguen como fases posteriores.
 
 **Notas:** El archivo local no relacionado `src/lib/probe_delete_test.txt` se
 mantuvo intacto y fuera del commit.
+
+### 2026-08-15 — Codex (prueba de invitación real)
+
+**Hecho:** Desde `/admin` envié una invitación autorizada para la empresa
+`David Emanuel Duran Simon` al correo `durandavidinma1@gmail.com`.
+
+**Probado:** La API de producción completó la solicitud sin error. Supabase
+creó el usuario invitado y el trigger generó inmediatamente su cuenta aislada;
+el panel pasó de 1 a 2 empresas y muestra a David como propietario, con 1
+usuario y estado activo. La invitación ya no aparece como pendiente porque
+`inviteUserByEmail()` crea la fila de `auth.users` al enviar el correo y el
+trigger consume la invitación en ese momento.
+
+**Pendiente / siguiente paso:** David debe abrir el correo de Supabase, aceptar
+la invitación y establecer su acceso. Después conviene iniciar sesión con esa
+cuenta y verificar que solo pueda ver los datos de su propia empresa.
+
+**Notas:** No se abrió ni inspeccionó el buzón del destinatario. La confirmación
+actual es la respuesta exitosa de Supabase y la creación de la empresa en el
+panel de producción.

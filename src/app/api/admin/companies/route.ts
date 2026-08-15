@@ -24,9 +24,17 @@ export async function GET() {
     if (error) throw error;
 
     const profiles = profilesResult.data ?? [];
-    const companies = (accountsResult.data ?? []).map((account) => {
+    const usageSince = new Date(Date.now() - 30 * 86400000).toISOString();
+    const companies = await Promise.all((accountsResult.data ?? []).map(async (account) => {
       const members = profiles.filter((profile) => profile.account_id === account.id);
       const owner = members.find((profile) => profile.user_id === account.owner_user_id);
+      const [messages, conversations, aiUsage] = await Promise.all([
+        admin.from("messages").select("id", { count: "exact", head: true }).eq("account_id", account.id).gte("created_at", usageSince),
+        admin.from("conversations").select("id", { count: "exact", head: true }).eq("account_id", account.id).gte("created_at", usageSince),
+        admin.from("ai_usage_log").select("total_tokens").eq("account_id", account.id).gte("created_at", usageSince),
+      ]);
+      const usageError = messages.error ?? conversations.error ?? aiUsage.error;
+      if (usageError) throw usageError;
       return {
         id: account.id,
         name: account.name,
@@ -35,8 +43,13 @@ export async function GET() {
         suspendedAt: account.suspended_at,
         suspendedReason: account.suspended_reason,
         owner: owner ? { name: owner.full_name, email: owner.email } : null,
+        usage30d: {
+          messages: messages.count ?? 0,
+          conversations: conversations.count ?? 0,
+          aiTokens: (aiUsage.data ?? []).reduce((sum, row) => sum + Number(row.total_tokens ?? 0), 0),
+        },
       };
-    });
+    }));
 
     return NextResponse.json({ companies, invitations: invitationsResult.data ?? [] });
   } catch (error) {

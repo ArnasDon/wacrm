@@ -21,6 +21,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export interface RateLimitOptions {
   /** Max requests allowed in `windowMs`. */
@@ -44,6 +45,18 @@ interface Entry {
 }
 
 const buckets = new Map<string, Entry>();
+let sharedStoreClient: SupabaseClient | null = null;
+
+function getSharedStoreClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRoleKey) return null;
+
+  sharedStoreClient ??= createClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return sharedStoreClient;
+}
 
 // Opportunistic cleanup. Running a sweep on every call would be
 // quadratic; running it 1-in-N lets the Map self-drain without a
@@ -86,6 +99,39 @@ export function checkRateLimit(
     remaining: limit - entry.count,
     reset: entry.resetAt,
     limit,
+  };
+}
+
+/**
+ * Atomic fixed-window limiter backed by Supabase, shared across every app
+ * process. During a database outage it deliberately falls back to the local
+ * limiter so user-facing routes remain available while still retaining a
+ * per-process safety bound.
+ */
+export async function checkSharedRateLimit(
+  key: string,
+  options: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const client = getSharedStoreClient();
+  if (!client) return checkRateLimit(key, options);
+
+  const { data, error } = await client.rpc('consume_rate_limit', {
+    p_bucket_key: key,
+    p_limit: options.limit,
+    p_window_ms: options.windowMs,
+  });
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row) {
+    console.error('[rate-limit] shared store unavailable; using local fallback', error?.message);
+    return checkRateLimit(key, options);
+  }
+
+  return {
+    success: Boolean(row.success),
+    remaining: Number(row.remaining),
+    reset: Number(row.reset_at_ms),
+    limit: Number(row.applied_limit),
   };
 }
 

@@ -4,7 +4,7 @@ import {
   requireRole,
   toErrorResponse,
 } from '@/lib/auth/account'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
 
-    const limit = checkRateLimit(`ai-config:${userId}`, RATE_LIMITS.adminAction)
+    const limit = await checkSharedRateLimit(`ai-config:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)

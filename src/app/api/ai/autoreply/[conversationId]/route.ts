@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: Params) {
 
     // Reuse the send bucket: this is a cheap per-user inbox action and
     // toggling it in a tight loop has no legitimate use.
-    const limit = checkRateLimit(`ai-takeover:${userId}`, RATE_LIMITS.send)
+    const limit = await checkSharedRateLimit(`ai-takeover:${userId}`, RATE_LIMITS.send)
     if (!limit.success) return rateLimitResponse(limit)
 
     const { conversationId } = await params

@@ -54,6 +54,10 @@ y muestra correctamente la empresa activa, su propietario y sus miembros.
 El proyecto sigue siendo un fork MIT de `wacrm` (Next.js 16 + Supabase), con
 multi-tenancy vía `accounts` + RLS. Continúa pendiente el dominio de comercio
 (productos, inventario y cotizaciones) y el paquete completo de español.
+El siguiente alcance confirmado incluye rate limiting compartido, medición de
+consumo por empresa, CSP estricta, múltiples números de WhatsApp, ampliación de
+webhooks y agentes IA por empresa capaces de consultar métricas y, con permisos
+y auditoría, cerrar chats, marcar ventas y mover leads en el pipeline.
 La ruta `/flows` ya está protegida, el registro exige contraseñas de al menos
 8 caracteres tanto en la aplicación como en Supabase Auth, y las funciones
 operativas privilegiadas identificadas en el diagnóstico ya no son ejecutables
@@ -600,3 +604,23 @@ IA queda fuera de este primer corte manual y corresponde a una fase posterior.
 
 **Notas:** La migración no clasificó ni reescribió contactos existentes. El
 archivo local `src/lib/probe_delete_test.txt` sigue intacto y excluido.
+
+### 2026-08-15 — Codex (inicio de ampliación SaaS e IA operativa)
+
+**Hecho:** Incorporé al plan el nuevo alcance solicitado. Agregué la migración
+`048_shared_rate_limits_and_usage.sql`, con contadores atómicos compartidos en
+Supabase accesibles solo por `service_role`, y un cliente con fallback local
+para contingencias. Las rutas de IA, auto-respuesta y API pública ya usan el
+limitador compartido. El panel de Plataforma ahora calcula por empresa el
+consumo de conversaciones, mensajes y tokens IA de los últimos 30 días.
+
+**Probado:** `npm.cmd run typecheck` quedó limpio. Las pruebas de rate limiting
+y registro de consumo IA pasaron (11/11).
+
+**Pendiente / siguiente paso:** Aplicar 048 en Supabase y desplegar este corte;
+después migrar los límites administrativos y de envío restantes al almacén
+compartido. Continuar con CSP con nonces, múltiples números, webhooks, español
+y las herramientas IA empresariales con permisos y bitácora de acciones.
+
+**Notas:** No se modificaron datos reales ni configuraciones de canales. El
+archivo `src/lib/probe_delete_test.txt` permanece intacto y excluido.

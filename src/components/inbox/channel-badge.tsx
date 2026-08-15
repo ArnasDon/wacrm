@@ -1,7 +1,7 @@
-import { Camera, Phone } from "lucide-react";
+import { Camera, Phone, ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type MessagingChannel = "whatsapp" | "instagram";
+export type MessagingChannel = "whatsapp" | "instagram" | "facebook";
 
 const CHANNEL_META: Record<
   MessagingChannel,
@@ -16,6 +16,11 @@ const CHANNEL_META: Record<
     icon: Camera,
     label: "Instagram",
     className: "bg-fuchsia-600 text-white",
+  },
+  facebook: {
+    icon: ThumbsUp,
+    label: "Facebook",
+    className: "bg-blue-600 text-white",
   },
 };
 

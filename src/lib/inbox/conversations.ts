@@ -1,4 +1,5 @@
 import type { Conversation, Contact, Tag } from "@/types";
+import type { MessagingChannel } from "@/components/inbox/channel-badge";
 
 /**
  * Conversation select that embeds the contact plus its tags, so the Inbox
@@ -48,7 +49,7 @@ export interface ContactFilters {
   /** Exact company match, or null for no company filter. */
   company: string | null;
   /** Exact channel match, or null for no channel filter. */
-  channel?: "whatsapp" | "instagram" | null;
+  channel?: MessagingChannel | null;
 }
 
 /**

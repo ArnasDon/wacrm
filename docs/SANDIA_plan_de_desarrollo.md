@@ -44,39 +44,26 @@ El locale activo sigue siendo inglés; el paquete español completo queda
 pendiente porque el catálogo exige traducir y validar más de 1,800 mensajes,
 sin fallback por clave.
 
-El panel de plataforma está implementado en el código local (migración 043,
-autorización, API, navegación y UI) y pasa typecheck/pruebas. La migración **no
-se ha aplicado al proyecto Supabase real** porque este entorno no tiene CLI ni
-conector Supabase disponible; la pantalla no funcionará contra el backend real
-hasta aplicar y verificar esa migración. La suspensión también está
-implementada localmente en la migración 044, el backend y la UI, pero tampoco
-se ha aplicado ni probado contra una base Supabase. Hubo un
-intento completo de construir el panel de platform admin en esta misma
-fecha, se probó (typecheck limpio, advisors de seguridad de Supabase sin
-hallazgos nuevos), y **se revirtió por completo a pedido de Angel** porque
-mientras se editaba, el `npm run dev` local (corriendo sobre la misma
-carpeta) mostró la página rota a mitad de los cambios (ver bitácora del
-2026-08-15 para el detalle). El código de la app y la base de datos de
-Supabase quedaron exactamente como estaban antes de esa sesión — no hay
-ningún residuo de esa prueba.
+El panel de plataforma, las invitaciones de empresas y la suspensión/reactivación
+están implementados y desplegados en producción. Las migraciones 043, 044 y 045
+están aplicadas al proyecto Supabase real. Angel tiene el permiso de plataforma
+ligado a su `user_id`; los cambios confirmados de correo se sincronizan desde
+Supabase Auth sin perder ese permiso. La ruta `/admin` fue validada en producción
+y muestra correctamente la empresa activa, su propietario y sus miembros.
 
-El código base sigue siendo, tal cual lo describe `SANDIA_diagnostico_tecnico.md`:
-un fork del template `wacrm` (Next.js 16 + Supabase), con multi-tenancy real
-vía `accounts` + RLS, pero **sin marca renombrada, sin panel de operador de
-plataforma, sin concepto de suscripción/suspensión, y sin dominio de
-comercio (productos/inventario/cotizaciones)**.
+El proyecto sigue siendo un fork MIT de `wacrm` (Next.js 16 + Supabase), con
+multi-tenancy vía `accounts` + RLS. Continúa pendiente el dominio de comercio
+(productos, inventario y cotizaciones) y el paquete completo de español.
 
-### Encargos pendientes de Angel (2026-08-15)
+### Encargos de Angel (estado al 2026-08-15)
 
-1. Renombrar la marca del CRM a **"Chat Sandía"**.
-2. Panel de administración de plataforma (operador = Angel) que permita
-   agregar nuevas empresas afiliadas.
-3. Poder **suspender/reactivar la suscripción** de una empresa (si no paga).
-4. Garantizar que las empresas nuevas tengan las mismas funciones que la
+1. **Completado:** renombrar la marca del CRM a **"Chat Sandía"**.
+2. **Completado:** panel de administración de plataforma para agregar empresas.
+3. **Completado:** suspender/reactivar la suscripción de una empresa.
+4. **Completado estructuralmente:** garantizar que las empresas nuevas tengan las mismas funciones que la
    cuenta de Angel (esto ya es cierto estructuralmente — ver más abajo).
-5. Deploy: el host de producción usa **EasyPanel**; el VPS es **Contabo**
-   (Angel dará acceso SSH cuando se necesite — todavía no está conectado a
-   este flujo de trabajo). Repo: `github.com/angelsandia-rgb/wacrm`
+5. **Completado para esta iteración:** deploy en **EasyPanel** sobre **Contabo**.
+   Repo: `github.com/angelsandia-rgb/wacrm`
    (fork de `github.com/ArnasDon/wacrm`, licencia MIT — mantener el aviso
    de licencia, no hace falta ocultar el origen).
 6. Supabase del proyecto real: proyecto **"Sandia"**,
@@ -430,3 +417,22 @@ listo.
 **Notas:** La CLI de Supabase sigue sin estar instalada; se respetó la
 numeración existente del repositorio y las migraciones se ejecutaron desde el
 SQL Editor autenticado. No se borraron datos.
+
+### 2026-08-15 — Codex (deploy de plataforma)
+
+**Hecho:** Ejecuté el build de producción, publiqué el commit `fe929ec` en
+`origin/main` y confirmé la implementación automática en EasyPanel. El build
+Docker terminó con `Success` y la nueva imagen reemplazó el servicio.
+
+**Probado:** `next build` completó las 59 rutas, incluyendo `/admin` y los
+endpoints `/api/admin/companies`. En producción, `/admin` cargó con la sesión de
+Angel, mostró el acceso “Plataforma” y listó 1 empresa activa con su propietario
+y 1 usuario. No se envió una invitación de prueba porque eso habría enviado un
+correo real a un tercero no especificado.
+
+**Pendiente / siguiente paso:** Probar una invitación cuando Angel proporcione
+un correo real autorizado para recibirla. El dominio de comercio y el paquete
+completo de español siguen como fases posteriores.
+
+**Notas:** El archivo local no relacionado `src/lib/probe_delete_test.txt` se
+mantuvo intacto y fuera del commit.

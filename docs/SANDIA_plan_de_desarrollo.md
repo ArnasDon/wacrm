@@ -714,5 +714,6 @@ través de la relación interna con `conversations.account_id`.
 relacional corregida respondió HTTP 200 contra producción y el typecheck quedó
 limpio.
 
-**Pendiente / siguiente paso:** Desplegar y confirmar que `/admin` vuelve a
-mostrar las empresas y sus consumos de los últimos 30 días.
+**Validado en producción:** EasyPanel completó el despliegue y `/admin` volvió
+a mostrar las dos empresas con sus conversaciones, mensajes y tokens IA. No se
+observaron errores en la consola del navegador.

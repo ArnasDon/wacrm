@@ -39,6 +39,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase CLI local project state (contains a live DB connection string)
+supabase/.temp/
+
+# claude code — personal/local permissions, not shared policy
+.claude/settings.local.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

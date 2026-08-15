@@ -686,3 +686,20 @@ Incluye unicidad del número Meta y un único número predeterminado por empresa
 configuración, envío, webhooks y UI para seleccionar la conexión correcta.
 049 continúa bloqueando la publicación acumulada porque Chrome no responde al
 enumerar o controlar la pestaña autenticada de Supabase.
+
+### 2026-08-15 — Codex (migración 049 confirmada y build de producción)
+
+**Hecho:** Apliqué `049_ai_action_audit.sql` en el proyecto Sandia de Supabase.
+La bitácora `ai_action_log`, sus políticas RLS y sus permisos ya están activos.
+Las acciones empresariales de IA y la CSP obligatoria quedan listas para
+publicarse junto con la base aditiva de múltiples números.
+
+**Probado:** El editor SQL devolvió `Success. No rows returned`, la API REST de
+Supabase confirmó `ai_action_log` con HTTP 200 y `npm.cmd run build` completó
+las 61 páginas/rutas sin errores de compilación ni de TypeScript.
+
+**Pendiente / siguiente paso:** Publicar y validar en producción las acciones
+IA y la CSP. Después adaptar API, envío, recepción y UI antes de aplicar 050.
+
+**Notas:** No se ejecutaron acciones IA sobre datos reales y
+`src/lib/probe_delete_test.txt` permanece intacto y excluido.

@@ -470,10 +470,15 @@ comprobación de TypeScript incluida en el build. La configuración de Supabase
 quedó guardada con el dominio productivo y la variable fue guardada en el
 servicio de EasyPanel sin alterar las demás variables.
 
-**Pendiente / siguiente paso:** Publicar el cambio de la API, confirmar el
-despliegue automático y reemitir la invitación de David para reemplazar el
-correo anterior, cuyo enlace fue generado cuando Supabase todavía apuntaba a
-localhost.
+**Despliegue y acceso:** Publiqué el commit `599d747` en `origin/main` y
+EasyPanel completó la implementación automática. La URL productiva respondió y
+redirigió correctamente de `/login` a `/dashboard` con una sesión válida.
+David ya figura confirmado y con un inicio de sesión registrado; además se
+solicitó desde Supabase un enlace mágico nuevo después de corregir la URL.
+
+**Pendiente / siguiente paso:** David debe usar el correo más reciente y
+confirmar que entra al dominio productivo. Después conviene validar con su
+sesión que solo vea la empresa `David Emanuel Duran Simon`.
 
 **Notas:** No se eliminó la cuenta, empresa ni invitación existente de David.
 El archivo local no relacionado `src/lib/probe_delete_test.txt` permanece

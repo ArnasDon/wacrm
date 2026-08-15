@@ -580,10 +580,16 @@ nullable existente y 0 filas inválidas. Las pruebas de contactos e i18n
 pasaron (4/4), `npm.cmd run typecheck` quedó limpio y `npm.cmd run build`
 generó correctamente las 59 rutas.
 
-**Pendiente / siguiente paso:** Publicar, verificar visualmente Contactos en
-producción y probar una clasificación real solo si se autoriza modificar un
-contacto existente. La clasificación automática por IA queda fuera de este
-primer corte manual.
+**Despliegue:** Publiqué `1376cce` en `origin/main`. Los dos primeros intentos
+de EasyPanel fallaron durante el build porque el servicio conservaba solamente
+`NEXT_PUBLIC_SITE_URL`; faltaban los argumentos públicos de Supabase que Next.js
+necesita al prerenderizar. Restauré en EasyPanel el conjunto de variables desde
+el entorno local, manteniendo la URL productiva, y lancé nuevamente el deploy.
+
+**Pendiente / siguiente paso:** Confirmar que el nuevo deploy terminó y
+verificar visualmente Contactos en producción. Probar una clasificación real
+solo si se autoriza modificar un contacto existente. La clasificación
+automática por IA queda fuera de este primer corte manual.
 
 **Notas:** La migración no clasificó ni reescribió contactos existentes. El
 archivo local `src/lib/probe_delete_test.txt` sigue intacto y excluido.

@@ -660,3 +660,17 @@ tres comandos, conectar la confirmación a la interfaz conversacional y validar
 el flujo en una empresa de prueba antes de habilitarlo en conversaciones reales.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y excluido.
+
+### 2026-08-15 — Codex (CSP obligatoria y diseño n8n)
+
+**Hecho:** Cambié la CSP de modo reporte a modo obligatorio, eliminé
+`unsafe-eval` en producción y bloqueé objetos; workers quedan limitados al mismo
+origen y `blob:`. Definí n8n como orquestador externo por empresa para Calendar,
+Meet, cotizaciones, correo y recordatorios, mientras el CRM conserva permisos,
+confirmaciones, datos y auditoría de las acciones críticas.
+
+**Probado:** `npm.cmd run typecheck` quedó limpio.
+
+**Pendiente / siguiente paso:** Validar CSP en build/navegador antes de publicar.
+La tabla `ai_action_log` aún no existe en Supabase; Chrome no logró completar
+el editor SQL, por lo que 049 y las acciones IA siguen sin desplegarse.

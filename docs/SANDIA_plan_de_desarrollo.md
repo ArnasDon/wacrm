@@ -54,6 +54,10 @@ y muestra correctamente la empresa activa, su propietario y sus miembros.
 El proyecto sigue siendo un fork MIT de `wacrm` (Next.js 16 + Supabase), con
 multi-tenancy vía `accounts` + RLS. Continúa pendiente el dominio de comercio
 (productos, inventario y cotizaciones) y el paquete completo de español.
+La ruta `/flows` ya está protegida, el registro exige contraseñas de al menos
+8 caracteres tanto en la aplicación como en Supabase Auth, y las funciones
+operativas privilegiadas identificadas en el diagnóstico ya no son ejecutables
+por los roles de navegador.
 
 ### Encargos de Angel (estado al 2026-08-15)
 
@@ -501,3 +505,28 @@ errores; el build generó las 59 rutas. Publiqué `120ce6d` en `origin/main`,
 EasyPanel completó el despliegue y producción mostró el campo Email y el botón
 de guardar en `/settings?tab=profile`. No se ejecutó un cambio real porque el
 propietario no ha indicado una nueva dirección.
+
+### 2026-08-15 — Codex (cierre parcial de seguridad Fase 0)
+
+**Hecho:** Agregué la migración aditiva
+`046_harden_privileged_function_acl.sql` y la apliqué al proyecto real. Revoca
+la ejecución de `_bcast_bump`, `recompute_broadcast_counts`,
+`record_webhook_failure` y `claim_ai_reply_slot` a `PUBLIC`, `anon` y
+`authenticated`, conservando el acceso operativo de `service_role`. También
+subí el mínimo de registro de 6 a 8 caracteres y configuré el mismo mínimo en
+Supabase Auth.
+
+**Probado:** La consulta remota de ACL devolvió `false` para `anon` y
+`authenticated` en las cuatro funciones, y `true` para `service_role`.
+Supabase confirmó el guardado de la política de 8 caracteres.
+`npm.cmd run typecheck` y `npm.cmd run build` finalizaron correctamente; el
+build generó las 59 rutas.
+
+**Pendiente / siguiente paso:** Publicar y verificar el formulario de registro
+en producción. Después continuar la Fase 0 con el aislamiento por cuenta de las
+actualizaciones de estado de mensajes y la autorización explícita del proxy de
+medios, que requieren cambios acompañados de pruebas específicas.
+
+**Notas:** No se modificaron filas de negocio ni cuentas. El archivo local no
+relacionado `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
+cambios.

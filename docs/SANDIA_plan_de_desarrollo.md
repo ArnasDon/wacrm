@@ -483,3 +483,20 @@ sesión que solo vea la empresa `David Emanuel Duran Simon`.
 **Notas:** No se eliminó la cuenta, empresa ni invitación existente de David.
 El archivo local no relacionado `src/lib/probe_delete_test.txt` permanece
 intacto y fuera de los cambios.
+
+### 2026-08-15 — Codex (retorno seguro al cambiar correo)
+
+**Hecho:** Reforcé la opción existente de cambio de correo en Configuración >
+Perfil. La llamada a Supabase Auth ahora envía explícitamente como retorno la
+sección de perfil del mismo origen donde el usuario está conectado
+(`/settings?tab=profile`), evitando depender de una URL predeterminada.
+
+**Comportamiento:** El cambio continúa requiriendo la confirmación configurada
+por Supabase. Cuando Auth confirma el nuevo correo, el trigger remoto
+`on_auth_user_email_updated` sincroniza `profiles.email`; la empresa, el rol y
+el permiso de plataforma permanecen ligados al `user_id` y no se recrean.
+
+**Probado:** `npm.cmd run typecheck` y `npm.cmd run build` completaron sin
+errores; el build generó las 59 rutas. Queda desplegar y comprobar en
+producción que el campo de correo siga visible en Perfil. No se ejecutará un
+cambio real sin que el propietario indique la nueva dirección.

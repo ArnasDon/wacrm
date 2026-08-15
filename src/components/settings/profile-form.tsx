@@ -157,9 +157,11 @@ export function ProfileForm() {
       // through the on_auth_user_email_updated database trigger.
       let emailSent = false;
       if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
-        const { error: emailError } = await supabase.auth.updateUser({
-          email: trimmedEmail,
-        });
+        const emailRedirectTo = `${window.location.origin}/settings?tab=profile`;
+        const { error: emailError } = await supabase.auth.updateUser(
+          { email: trimmedEmail },
+          { emailRedirectTo },
+        );
         if (emailError) {
           // Partial success: name/avatar saved but email didn't.
           toast.success(t('profileSaved'));

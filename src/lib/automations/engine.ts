@@ -13,7 +13,6 @@ import type {
   SendTemplateStepConfig,
   SendWebhookStepConfig,
   TagStepConfig,
-  TagTriggerConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
   CreateDealStepConfig,

@@ -216,7 +216,7 @@ describe('generateReplyWithTools — no tool offered', () => {
       onToolCalls,
     })
 
-    expect(res).toEqual({ text: 'Hi!', handoff: false })
+    expect(res).toEqual({ text: 'Hi!', handoff: false, usage: null })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(onToolCalls).not.toHaveBeenCalled()
   })
@@ -238,7 +238,7 @@ describe('generateReplyWithTools — OpenAI', () => {
       onToolCalls,
     })
 
-    expect(res).toEqual({ text: 'No tag needed here.', handoff: false })
+    expect(res).toEqual({ text: 'No tag needed here.', handoff: false, usage: null })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(onToolCalls).not.toHaveBeenCalled()
   })
@@ -388,7 +388,7 @@ describe('generateReplyWithTools — Anthropic', () => {
       onToolCalls,
     })
 
-    expect(res).toEqual({ text: 'Just chatting back.', handoff: false })
+    expect(res).toEqual({ text: 'Just chatting back.', handoff: false, usage: null })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(onToolCalls).not.toHaveBeenCalled()
   })

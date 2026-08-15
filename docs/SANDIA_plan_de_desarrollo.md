@@ -643,3 +643,20 @@ CSP, múltiples números, webhooks y español completo.
 
 **Notas:** La prueba solo creó un bucket técnico temporal de rate limit; no se
 modificaron contactos, conversaciones, negocios ni configuraciones reales.
+
+### 2026-08-15 — Codex (acciones empresariales de IA con confirmación)
+
+**Hecho:** Preparé `049_ai_action_audit.sql` y `POST /api/ai/actions`. La capa
+permite cerrar conversaciones, marcar negocios como ganados y moverlos de etapa,
+siempre filtrando objetivo, pipeline y etapa por la empresa activa. Toda acción
+exige reenviar una frase de confirmación exacta y se registra en
+`ai_action_log`; solo administradores de la empresa pueden consultar la bitácora.
+
+**Probado:** `npm.cmd run typecheck` quedó limpio. No se ejecutó ninguna acción
+sobre datos reales.
+
+**Pendiente / siguiente paso:** Aplicar 049, agregar pruebas unitarias de los
+tres comandos, conectar la confirmación a la interfaz conversacional y validar
+el flujo en una empresa de prueba antes de habilitarlo en conversaciones reales.
+
+**Notas:** `src/lib/probe_delete_test.txt` permanece intacto y excluido.

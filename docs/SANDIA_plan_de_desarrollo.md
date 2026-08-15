@@ -586,10 +586,17 @@ de EasyPanel fallaron durante el build porque el servicio conservaba solamente
 necesita al prerenderizar. Restauré en EasyPanel el conjunto de variables desde
 el entorno local, manteniendo la URL productiva, y lancé nuevamente el deploy.
 
-**Pendiente / siguiente paso:** Confirmar que el nuevo deploy terminó y
-verificar visualmente Contactos en producción. Probar una clasificación real
-solo si se autoriza modificar un contacto existente. La clasificación
-automática por IA queda fuera de este primer corte manual.
+**Validación productiva:** EasyPanel terminó correctamente tanto el deploy de
+la funcionalidad como el deploy posterior de documentación. En producción,
+Contactos muestra la columna de temperatura, los contactos existentes aparecen
+sin clasificar y el detalle expone el selector manual. El panel de plataforma
+carga dos empresas activas y aisladas, Angel y David, cada una con un único
+propietario; no quedaron invitaciones pendientes. La consola del navegador no
+registró errores durante estas comprobaciones.
+
+**Pendiente / siguiente paso:** La solicitud inmediata queda cerrada y la app
+está lista para validación con otras empresas. La clasificación automática por
+IA queda fuera de este primer corte manual y corresponde a una fase posterior.
 
 **Notas:** La migración no clasificó ni reescribió contactos existentes. El
 archivo local `src/lib/probe_delete_test.txt` sigue intacto y excluido.

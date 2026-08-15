@@ -674,3 +674,15 @@ confirmaciones, datos y auditoría de las acciones críticas.
 **Pendiente / siguiente paso:** Validar CSP en build/navegador antes de publicar.
 La tabla `ai_action_log` aún no existe en Supabase; Chrome no logró completar
 el editor SQL, por lo que 049 y las acciones IA siguen sin desplegarse.
+
+### 2026-08-15 — Codex (base para múltiples números)
+
+**Hecho:** Preparé la migración aditiva `050_multiple_whatsapp_numbers.sql`.
+Elimina el límite de una configuración por cuenta, conserva la conexión actual
+como predeterminada y vincula cada conversación con el número que la atiende.
+Incluye unicidad del número Meta y un único número predeterminado por empresa.
+
+**Pendiente / siguiente paso:** No aplicar 050 hasta adaptar GET/POST de
+configuración, envío, webhooks y UI para seleccionar la conexión correcta.
+049 continúa bloqueando la publicación acumulada porque Chrome no responde al
+enumerar o controlar la pestaña autenticada de Supabase.

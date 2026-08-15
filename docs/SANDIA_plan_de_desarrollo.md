@@ -703,3 +703,16 @@ IA y la CSP. Después adaptar API, envío, recepción y UI antes de aplicar 050.
 
 **Notas:** No se ejecutaron acciones IA sobre datos reales y
 `src/lib/probe_delete_test.txt` permanece intacto y excluido.
+
+### 2026-08-15 — Codex (corrección de métricas del panel)
+
+**Hecho:** Corregí el conteo de mensajes de `/api/admin/companies`. La tabla
+`messages` no contiene `account_id`; ahora el conteo se limita por empresa a
+través de la relación interna con `conversations.account_id`.
+
+**Probado:** La consulta anterior reprodujo PostgreSQL `42703`; la consulta
+relacional corregida respondió HTTP 200 contra producción y el typecheck quedó
+limpio.
+
+**Pendiente / siguiente paso:** Desplegar y confirmar que `/admin` vuelve a
+mostrar las empresas y sus consumos de los últimos 30 días.

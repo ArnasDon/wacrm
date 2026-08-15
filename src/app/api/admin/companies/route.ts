@@ -29,7 +29,14 @@ export async function GET() {
       const members = profiles.filter((profile) => profile.account_id === account.id);
       const owner = members.find((profile) => profile.user_id === account.owner_user_id);
       const [messages, conversations, aiUsage] = await Promise.all([
-        admin.from("messages").select("id", { count: "exact", head: true }).eq("account_id", account.id).gte("created_at", usageSince),
+        // `messages` has no account_id column. Scope through its owning
+        // conversation so platform metrics stay tenant-safe without relying
+        // on a denormalized field that does not exist in the production schema.
+        admin
+          .from("messages")
+          .select("id, conversations!inner(account_id)", { count: "exact", head: true })
+          .eq("conversations.account_id", account.id)
+          .gte("created_at", usageSince),
         admin.from("conversations").select("id", { count: "exact", head: true }).eq("account_id", account.id).gte("created_at", usageSince),
         admin.from("ai_usage_log").select("total_tokens").eq("account_id", account.id).gte("created_at", usageSince),
       ]);

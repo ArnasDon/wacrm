@@ -57,7 +57,8 @@ multi-tenancy vía `accounts` + RLS. Continúa pendiente el dominio de comercio
 La ruta `/flows` ya está protegida, el registro exige contraseñas de al menos
 8 caracteres tanto en la aplicación como en Supabase Auth, y las funciones
 operativas privilegiadas identificadas en el diagnóstico ya no son ejecutables
-por los roles de navegador.
+por los roles de navegador. Las actualizaciones de estado de WhatsApp y el
+proxy de medios también verifican explícitamente la empresa propietaria.
 
 ### Encargos de Angel (estado al 2026-08-15)
 
@@ -535,3 +536,24 @@ del proxy de medios, que requieren cambios acompañados de pruebas específicas.
 **Notas:** No se modificaron filas de negocio ni cuentas. El archivo local no
 relacionado `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
 cambios.
+
+### 2026-08-15 — Codex (aislamiento de estados y medios)
+
+**Hecho:** Cerré los dos pendientes multi-tenant restantes de la Fase 0. Los
+eventos de estado de Meta resuelven ahora la empresa mediante
+`metadata.phone_number_id`, y Zernio transmite la empresa ya autenticada; las
+búsquedas y actualizaciones de `messages` y `broadcast_recipients` se filtran
+por esa cuenta. El proxy `/api/whatsapp/media/[mediaId]` comprueba que exista
+un mensaje con esa URL dentro de una conversación de la empresa del usuario
+antes de leer configuración, descifrar credenciales o descargar contenido.
+
+**Probado:** Agregué regresiones para una colisión de identificador entre
+empresas y para un medio ajeno. Las 9 pruebas dirigidas pasaron, junto con
+`npm.cmd run typecheck` y `npm.cmd run build`; el build generó las 59 rutas.
+
+**Pendiente / siguiente paso:** Publicar y observar el despliegue. Después se
+puede cerrar el resto de housekeeping de Fase 0 o comenzar el núcleo de Fase 2
+(temperatura manual de clientes), según la prioridad de producto.
+
+**Notas:** No se alteró el esquema ni se modificaron mensajes o medios reales.
+El archivo no relacionado `src/lib/probe_delete_test.txt` permanece intacto.

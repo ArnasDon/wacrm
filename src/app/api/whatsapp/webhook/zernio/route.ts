@@ -189,7 +189,7 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
       status: statusByEvent[payload.event],
       timestamp: String(Math.floor(statusAt.getTime() / 1000)),
       recipient_id: payload.message.sender.id,
-    })
+    }, config.account_id)
     return
   }
 

@@ -49,6 +49,32 @@ export async function GET(
       )
     }
 
+    // The external media id alone is not an authorization boundary. Verify
+    // that this exact proxy URL is referenced by a message whose conversation
+    // belongs to the caller's account before using any provider credentials.
+    const { data: ownedMessage, error: ownershipError } = await supabase
+      .from('messages')
+      .select('id, conversations!inner(account_id)')
+      .eq('media_url', `/api/whatsapp/media/${mediaId}`)
+      .eq('conversations.account_id', accountId)
+      .limit(1)
+      .maybeSingle()
+
+    if (ownershipError) {
+      console.error('Error verifying WhatsApp media ownership:', ownershipError)
+      return NextResponse.json(
+        { error: 'Failed to verify media access' },
+        { status: 500 },
+      )
+    }
+
+    if (!ownedMessage) {
+      return NextResponse.json(
+        { error: 'Media not found' },
+        { status: 404 },
+      )
+    }
+
     // Fetch and decrypt WhatsApp config
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')

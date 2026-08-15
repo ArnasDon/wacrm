@@ -244,24 +244,16 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const value = change.value
+      const phoneNumberId = value.metadata?.phone_number_id
 
-      // Handle status updates
-      if (value.statuses) {
-        for (const status of value.statuses) {
-          await handleStatusUpdate(status)
-        }
+      if (!phoneNumberId) {
+        console.error('Webhook change is missing metadata.phone_number_id')
+        continue
       }
 
-      // Handle incoming messages
-      if (!value.messages || !value.contacts) continue
-
-      const phoneNumberId = value.metadata.phone_number_id
-
-      // Find user's config by phone_number_id. `.single()` returns
-      // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
-      // operators see the real cause in logs. ≥2 rows shouldn't happen
-      // post-migration 013 (UNIQUE constraint), but a row created
-      // before the constraint, or a race, would still surface here.
+      // Resolve the account once for both status and inbound-message events.
+      // Meta message ids are not globally unique across phone numbers, so every
+      // downstream lookup must carry this account boundary.
       const { data: configRows, error: configError } = await supabaseAdmin()
         .from('whatsapp_config')
         .select('*')
@@ -285,7 +277,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         console.error(
           `Multiple configs (${configRows.length}) found for phone_number_id:`,
           phoneNumberId,
-          '— inbound message dropped. Resolve duplicates so each number maps to a single account.',
+          '— webhook change dropped. Resolve duplicates so each number maps to a single account.',
           'Account owners:',
           configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
         )
@@ -293,6 +285,16 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const config = configRows[0]
+
+      // Handle status updates
+      if (value.statuses) {
+        for (const status of value.statuses) {
+          await handleStatusUpdate(status, config.account_id)
+        }
+      }
+
+      // Handle incoming messages
+      if (!value.messages || !value.contacts) continue
 
       const decryptedAccessToken = decrypt(config.access_token)
 
@@ -371,19 +373,26 @@ export async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
-}) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
+}, accountId: string) {
+  // Resolve only messages owned by the account tied to the receiving phone
+  // number. message_id is intentionally not globally unique.
+  const { data: messageRows, error: msgLookupErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .select('id, conversation_id, conversations!inner(account_id)')
     .eq('message_id', status.id)
+    .eq('conversations.account_id', accountId)
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (msgLookupErr) {
+    console.error('Error resolving account-scoped message status:', msgLookupErr)
+  } else if (messageRows && messageRows.length > 0) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .in('id', messageRows.map((row: { id: string }) => row.id))
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -398,8 +407,9 @@ export async function handleStatusUpdate(status: {
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcasts!inner(account_id)')
     .eq('whatsapp_message_id', status.id)
+    .eq('broadcasts.account_id', accountId)
     .maybeSingle()
 
   if (recFetchErr) {
@@ -429,17 +439,14 @@ export async function handleStatusUpdate(status: {
   //    Runs last so a slow subscriber can't delay the mirrors above.
   //    Bounded to one row (message_id isn't unique) purely to resolve
   //    the owning account for delivery.
-  const { data: msgRow } = await supabaseAdmin()
-    .from('messages')
-    .select('conversation_id, conversations(account_id)')
-    .eq('message_id', status.id)
-    .limit(1)
-    .maybeSingle()
+  const msgRow = messageRows?.[0] as {
+    conversation_id: string
+    conversations: { account_id: string } | null
+  } | undefined
 
   if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null
-    const accountId = conv?.account_id
-    if (accountId) {
+    const conv = msgRow.conversations
+    if (conv?.account_id === accountId) {
       await dispatchWebhookEvent(
         supabaseAdmin(),
         accountId,

@@ -179,7 +179,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'This Zernio account is already linked to another account on this instance. Each Zernio-connected Facebook Page can only be connected to one wacrm account.',
+            'This Zernio account is already linked to another account on this instance. Each Zernio-connected Facebook Page can only be connected to one Chat Sandía account.',
         },
         { status: 409 }
       )

@@ -26,11 +26,27 @@ import {
  * Renders nothing on the happy path.
  */
 export function AccountAccessAlert() {
-  const { accountStatus, accountStatusDetail, refreshProfile } = useAuth();
+  const { accountStatus, accountStatusDetail, account, refreshProfile } = useAuth();
   const t = useTranslations("AccountAccess");
   const [retrying, setRetrying] = useState(false);
 
   if (accountStatus === "loading" || accountStatus === "ready") return null;
+
+  if (accountStatus === "suspended") {
+    return (
+      <Alert variant="destructive" className="mb-4">
+        <TriangleAlert />
+        <AlertTitle>Suscripción pausada</AlertTitle>
+        <AlertDescription>
+          El acceso a los datos comerciales de esta empresa está temporalmente suspendido.
+          {account?.suspended_reason ? (
+            <span className="mt-1 block">Motivo: {account.suspended_reason}</span>
+          ) : null}
+          <span className="mt-1 block">Contacta al equipo de Chat Sandía para reactivar el servicio.</span>
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   const retry = async () => {
     setRetrying(true);

@@ -188,3 +188,17 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
   }
   return ctx;
 }
+
+export async function requirePlatformAdmin(): Promise<AccountContext> {
+  const ctx = await getCurrentAccount();
+  const { data, error } = await ctx.supabase
+    .from("profiles")
+    .select("is_platform_admin")
+    .eq("user_id", ctx.userId)
+    .maybeSingle();
+
+  if (error || data?.is_platform_admin !== true) {
+    throw new ForbiddenError("Platform administrator access required");
+  }
+  return ctx;
+}

@@ -35,6 +35,7 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  is_platform_admin: boolean;
 }
 
 interface AccountSummary {
@@ -43,6 +44,8 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  suspended_at: string | null;
+  suspended_reason: string | null;
 }
 
 /**
@@ -59,6 +62,8 @@ export type AccountStatus =
   | "loading"
   /** Account + role resolved; normal operation. */
   | "ready"
+  /** Company subscription is paused; business-data RLS is disabled. */
+  | "suspended"
   /** Signed in, but no profile row / no account / no role on it. */
   | "unlinked"
   /** The profile lookup itself failed after retrying. */
@@ -130,6 +135,8 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /** Platform-wide operator capability, independent of account role. */
+  isPlatformAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -152,6 +159,7 @@ interface ProfileRow {
   beta_features: string[] | null;
   account_id: string | null;
   account_role: string | null;
+  is_platform_admin: boolean | null;
 }
 
 /**
@@ -192,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, is_platform_admin",
           )
           .eq("user_id", userId)
           .maybeSingle();
@@ -239,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
             // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            .select("id, name, default_currency, suspended_at, suspended_reason")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -254,6 +262,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              suspended_at: account.suspended_at ?? null,
+              suspended_reason: account.suspended_reason ?? null,
             };
           }
         }
@@ -280,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          is_platform_admin: data.is_platform_admin === true,
         });
         setAccount(accountRow);
         if (!data.account_id || !accountRole) {
@@ -410,6 +421,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      isPlatformAdmin: profile?.is_platform_admin === true,
     };
   }, [profile?.account_role, profile?.account_id]);
 
@@ -422,7 +434,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       : !profile
         ? "error"
         : derived.accountId && derived.accountRole
-          ? "ready"
+          ? account?.suspended_at
+            ? "suspended"
+            : "ready"
           : "unlinked";
 
   return (
@@ -481,6 +495,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      isPlatformAdmin: false,
     };
   }
   return ctx;

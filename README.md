@@ -1,4 +1,8 @@
-# wacrm — CRM Template for WhatsApp
+# Chat Sandía — Inteligencia comercial para empresas
+
+Chat Sandía se construye a partir del proyecto open source
+[wacrm](https://github.com/ArnasDon/wacrm) de Arnas Donauskas, distribuido
+bajo licencia MIT. Se conserva la atribución y el aviso de licencia original.
 
 > Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
 > sales pipelines, broadcasts, and no-code automations. Fork it, brand

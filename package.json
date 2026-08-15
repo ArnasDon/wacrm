@@ -2,7 +2,7 @@
   "name": "wacrm",
   "version": "0.8.0",
   "private": true,
-  "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
+  "description": "Chat Sandía — plataforma de inteligencia comercial para empresas, construida sobre Next.js y Supabase.",
   "license": "MIT",
   "author": "Arnas Donauskas",
   "homepage": "https://github.com/ArnasDon/wacrm",

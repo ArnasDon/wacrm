@@ -13,6 +13,7 @@ import {
   Crown,
   GitBranch,
   LayoutDashboard,
+  Building2,
   LogOut,
   MessageSquare,
   Radio,
@@ -116,7 +117,7 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, isPlatformAdmin, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -269,6 +270,28 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </ul>
 
           <div className="my-4 border-t border-border" />
+
+          {isPlatformAdmin ? (
+            <>
+              <ul className="flex flex-col gap-1">
+                <li>
+                  <Link
+                    href="/admin"
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      pathname.startsWith("/admin")
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Plataforma
+                  </Link>
+                </li>
+              </ul>
+              <div className="my-4 border-t border-border" />
+            </>
+          ) : null}
 
           <ul className="flex flex-col gap-1">
             {bottomNavItems.map((item) => {

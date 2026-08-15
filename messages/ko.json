@@ -15,7 +15,7 @@
     "createAccount": "계정 만들기"
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "Chat Sandía",
     "dashboard": "대시보드",
     "inbox": "인박스",
     "notifications": "알림",
@@ -1317,7 +1317,7 @@
       "labelTooLong": "라벨은 {max}자 이하여야 합니다",
       "copied": "초대 링크가 복사되었습니다",
       "clipboardBlocked": "클립보드 접근이 차단되었습니다 — 링크를 직접 복사하세요",
-      "whatsappMessage": "이 링크(유효 기간 {expiresInDays}일)로 wacrm의 {accountName}에 참여하세요: {url}"
+      "whatsappMessage": "이 링크(유효 기간 {expiresInDays}일)로 Chat Sandía의 {accountName}에 참여하세요: {url}"
     },
     "tagsAndFields": {
       "title": "필드 & 태그",
@@ -1437,8 +1437,8 @@
       "submitApproval": "승인 요청",
 
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
-      "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
-      "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
+      "deleteMetaDesc": "\"{name}\"이(가) Meta와 Chat Sandía에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
+      "deleteLocalDesc": "\"{name}\"이(가) Chat Sandía에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
 
@@ -1480,7 +1480,7 @@
       "notConnected": "연결되지 않음",
       "connectedDesc": "액세스 토큰으로 Meta 인증이 완료되었습니다. 웹훅이 실제로 연결되었는지는 아래 등록 상태를 확인하세요.",
       "notConnectedDesc": "아래에서 Meta API 자격 증명을 설정해 WhatsApp 비즈니스 계정을 연결하세요.",
-      "registered": "등록됨 — Meta가 wacrm으로 이벤트를 전달합니다",
+      "registered": "등록됨 — Meta가 Chat Sandía로 이벤트를 전달합니다",
       "notRegistered": "등록되지 않음 — Meta가 이벤트를 전달하지 않습니다",
       "verifyWithMeta": "Meta로 확인",
       "subscribedSince": "{date}부터 구독 중입니다. 이벤트가 더 이상 도착하지 않으면 Meta로 확인을 클릭하세요.",
@@ -1536,7 +1536,7 @@
       "step4_5": "\"messages\" 웹훅 필드를 구독",
       "metaDocs": "Meta WhatsApp API 문서",
       "providerSectionTitle": "연결 방식",
-      "providerSectionDesc": "wacrm이 WhatsApp에 연결하는 방식을 선택하세요.",
+      "providerSectionDesc": "Chat Sandía가 WhatsApp에 연결하는 방식을 선택하세요.",
       "providerMeta": "Meta (직접 연결)",
       "providerMetaDesc": "Meta Cloud API에 직접 연결합니다. Meta 비즈니스 인증이 필요합니다.",
       "providerZernio": "Zernio",
@@ -1607,7 +1607,7 @@
       "step3_3": "\"messages\" 웹훅 필드를 구독",
       "metaDocs": "Meta Instagram Messaging API 문서",
       "providerSectionTitle": "연결 방식",
-      "providerSectionDesc": "wacrm이 Instagram에 연결하는 방식을 선택하세요.",
+      "providerSectionDesc": "Chat Sandía가 Instagram에 연결하는 방식을 선택하세요.",
       "providerMeta": "Meta (직접 연결)",
       "providerMetaDesc": "Meta Graph API에 직접 연결합니다. Meta 비즈니스 인증이 필요합니다.",
       "providerZernio": "Zernio",

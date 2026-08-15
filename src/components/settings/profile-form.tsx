@@ -153,9 +153,8 @@ export function ProfileForm() {
 
       // Email change goes through Supabase Auth, which emails a
       // confirmation to both the old and new addresses. We don't
-      // touch profiles.email — Supabase will push the change there
-      // after the user clicks the link (handled by the handle_new_user
-      // trigger pattern in production deployments).
+      // touch profiles.email — Supabase will push the confirmed change there
+      // through the on_auth_user_email_updated database trigger.
       let emailSent = false;
       if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
         const { error: emailError } = await supabase.auth.updateUser({

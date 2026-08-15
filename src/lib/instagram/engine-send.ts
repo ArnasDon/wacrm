@@ -23,14 +23,8 @@
 // down to a flat option array before calling engineSendInstagramQuickReplies.
 // ============================================================
 
-import {
-  sendTextMessage,
-  sendMediaMessage,
-  sendQuickReplies,
-  type InstagramMediaKind,
-  type QuickReplyOption,
-} from '@/lib/instagram/api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import type { InstagramMediaKind, QuickReplyOption } from '@/lib/instagram/api'
+import { sendInstagramText, sendInstagramMedia, sendInstagramQuickReplies, type SendTarget } from '@/lib/instagram/provider-send'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -43,11 +37,12 @@ interface CommonArgs {
   contactId: string
 }
 
-async function loadContactAndConfig(
+async function loadSendTarget(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-): Promise<{ contact: { id: string; instagram_id: string }; igAccountId: string; accessToken: string }> {
+  conversationId: string,
+): Promise<{ contact: { id: string; instagram_id: string }; target: SendTarget }> {
   const { data: contact, error: contactErr } = await db
     .from('contacts')
     .select('id, instagram_id')
@@ -67,10 +62,19 @@ async function loadContactAndConfig(
     throw new Error('Instagram not configured for this account')
   }
 
+  const { data: conversation } = await db
+    .from('conversations')
+    .select('zernio_conversation_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+
   return {
     contact,
-    igAccountId: config.ig_account_id,
-    accessToken: decrypt(config.access_token),
+    target: {
+      config,
+      igsid: contact.instagram_id,
+      zernioConversationId: conversation?.zernio_conversation_id ?? null,
+    },
   }
 }
 
@@ -82,14 +86,9 @@ interface SendTextArgs extends CommonArgs {
 
 export async function engineSendInstagramText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-  const { contact, igAccountId, accessToken } = await loadContactAndConfig(db, args.accountId, args.contactId)
+  const { target } = await loadSendTarget(db, args.accountId, args.contactId, args.conversationId)
 
-  const { messageId } = await sendTextMessage({
-    igAccountId,
-    accessToken,
-    to: contact.instagram_id,
-    text: args.text,
-  })
+  const { messageId } = await sendInstagramText(target, args.text)
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
@@ -123,15 +122,9 @@ interface SendMediaArgs extends CommonArgs {
 
 export async function engineSendInstagramMedia(args: SendMediaArgs): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-  const { contact, igAccountId, accessToken } = await loadContactAndConfig(db, args.accountId, args.contactId)
+  const { target } = await loadSendTarget(db, args.accountId, args.contactId, args.conversationId)
 
-  const { messageId } = await sendMediaMessage({
-    igAccountId,
-    accessToken,
-    to: contact.instagram_id,
-    kind: args.kind,
-    link: args.link,
-  })
+  const { messageId } = await sendInstagramMedia(target, args.kind, args.link)
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
@@ -183,15 +176,9 @@ export async function engineSendInstagramQuickReplies(
   args: SendQuickRepliesArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
-  const { contact, igAccountId, accessToken } = await loadContactAndConfig(db, args.accountId, args.contactId)
+  const { target } = await loadSendTarget(db, args.accountId, args.contactId, args.conversationId)
 
-  const { messageId } = await sendQuickReplies({
-    igAccountId,
-    accessToken,
-    to: contact.instagram_id,
-    text: args.bodyText,
-    quickReplies: args.options,
-  })
+  const { messageId } = await sendInstagramQuickReplies(target, args.bodyText, args.options)
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,

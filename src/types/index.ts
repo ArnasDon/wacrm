@@ -302,11 +302,14 @@ export interface WhatsAppConfig {
 export interface InstagramConfig {
   id: string;
   user_id: string;
-  ig_account_id: string;
+  provider: 'meta' | 'zernio';
+  ig_account_id?: string;
   page_id?: string;
   ig_username?: string;
-  access_token: string;
+  access_token?: string;
   verify_token?: string;
+  zernio_api_key?: string;
+  zernio_account_id?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
   last_connection_error?: string;

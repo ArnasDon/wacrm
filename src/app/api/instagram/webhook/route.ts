@@ -1,14 +1,9 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { findExistingInstagramContact, isUniqueViolation } from '@/lib/contacts/dedupe'
-import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
-import { dispatchInboundToFlows } from '@/lib/flows/engine'
-import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
-import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { getIgUserProfile } from '@/lib/instagram/api'
+import { handleInboundInstagramMessage, markMessageRead, toContentType } from '@/lib/instagram/inbound'
 
 // Same reasoning as src/app/api/whatsapp/webhook/route.ts: the after()
 // callback can fan out to a profile-lookup call per new contact, so
@@ -196,7 +191,7 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
       const config = configRows[0]
 
       if (event.read) {
-        await handleReadReceipt(event.read.mid)
+        await markMessageRead(supabaseAdmin(), event.read.mid)
         continue
       }
 
@@ -210,21 +205,6 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
         )
       }
     }
-  }
-}
-
-/**
- * Mirror a read receipt onto `messages.status`. Instagram's read
- * event only carries the id of the most recently read message (not a
- * per-message ladder like WhatsApp's status webhook), so this simply
- * flips that one row — same shape as the WhatsApp route's status
- * mirror, minus the broadcast_recipients side (Instagram has no
- * broadcasts in this integration).
- */
-async function handleReadReceipt(mid: string) {
-  const { error } = await supabaseAdmin().from('messages').update({ status: 'read' }).eq('message_id', mid)
-  if (error) {
-    console.error('[instagram webhook] error updating message read status:', error)
   }
 }
 
@@ -242,155 +222,22 @@ async function processMessagingEvent(
   // "customer" message.
   if (message.is_echo) return
 
-  const contactName: string | null = null // Instagram gives no profile name inline; resolved lazily below only for new contacts.
-
-  const contactOutcome = await findOrCreateContact(accountId, configOwnerUserId, senderIgsid, contactName, accessToken)
-  if (!contactOutcome) return
-  const contactRecord = contactOutcome.contact
-
-  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id)
-  if (!convResult) return
-  const conversation = convResult.conversation
-
-  if (convResult.created) {
-    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
-      conversation_id: conversation.id,
-      contact_id: contactRecord.id,
-      channel: 'instagram',
-    })
-  }
-
   const { contentText, mediaUrl, contentType } = parseMessageContent(message)
-  const interactiveReplyId = message.quick_reply?.payload ?? null
 
-  let replyToInternalId: string | null = null
-  if (message.reply_to?.mid) {
-    const { data: parent } = await supabaseAdmin()
-      .from('messages')
-      .select('id')
-      .eq('message_id', message.reply_to.mid)
-      .eq('conversation_id', conversation.id)
-      .maybeSingle()
-    replyToInternalId = parent?.id ?? null
-  }
-
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
-
-  // Idempotent insert — Meta retries webhook deliveries, and each
-  // retry replays the same mid. Same (conversation_id, message_id)
-  // unique index (migration 037) the WhatsApp route relies on.
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
-    .from('messages')
-    .upsert(
-      {
-        conversation_id: conversation.id,
-        sender_type: 'customer',
-        content_type: contentType,
-        content_text: contentText,
-        media_url: mediaUrl,
-        message_id: message.mid,
-        status: 'delivered',
-        reply_to_message_id: replyToInternalId,
-        interactive_reply_id: interactiveReplyId,
-      },
-      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
-    )
-    .select('id')
-
-  if (msgError) {
-    console.error('[instagram webhook] error inserting message:', msgError)
-    return
-  }
-  if (!insertedRows || insertedRows.length === 0) {
-    console.info('[instagram webhook] duplicate inbound message ignored (idempotent replay):', message.mid)
-    return
-  }
-
-  const { error: convError } = await supabaseAdmin().rpc('bump_conversation_on_inbound', {
-    p_conversation_id: conversation.id,
-    p_last_message_text: contentText || `[${contentType}]`,
-  })
-  if (convError) {
-    console.error('[instagram webhook] error updating conversation:', convError)
-  }
-
-  await reopenClosedConversation(supabaseAdmin(), conversation)
-
-  // Same fan-out the WhatsApp route uses — all four of these are
-  // already channel-agnostic (accountId/contactId/conversationId, no
-  // WhatsApp-specific fields), so nothing about them changes here.
-  const flowResult = await dispatchInboundToFlows({
+  await handleInboundInstagramMessage(supabaseAdmin(), {
     accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    message: interactiveReplyId
-      ? {
-          kind: 'interactive_reply',
-          reply_id: interactiveReplyId,
-          reply_title: contentText ?? '',
-          meta_message_id: message.mid,
-        }
-      : {
-          kind: 'text',
-          text: contentText ?? '',
-          meta_message_id: message.mid,
-        },
-    isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
-
-  const inboundText = contentText ?? ''
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-    | 'interactive_reply'
-  )[] = []
-  if (!flowConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
-    if (interactiveReplyId) {
-      automationTriggers.push('interactive_reply')
-    }
-  }
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
-  if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-
-  for (const triggerType of automationTriggers) {
-    await runAutomationsForTrigger({
-      accountId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-        interactive_reply_id: interactiveReplyId ?? undefined,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
-  }
-
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
-      accountId,
-      conversationId: conversation.id,
-      contactId: contactRecord.id,
-      configOwnerUserId,
-    })
-  }
-
-  await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {
-    conversation_id: conversation.id,
-    contact_id: contactRecord.id,
-    whatsapp_message_id: message.mid,
-    content_type: contentType,
-    text: contentText,
-    channel: 'instagram',
+    configOwnerUserId,
+    igsid: senderIgsid,
+    mid: message.mid,
+    contentText,
+    mediaUrl,
+    contentType,
+    interactiveReplyId: message.quick_reply?.payload ?? null,
+    replyToMid: message.reply_to?.mid ?? null,
+    // Instagram gives no profile name inline on the message event —
+    // resolved lazily here (Graph API call, best-effort, never throws)
+    // only when findOrCreateContact determines the contact is new.
+    resolveProfile: () => getIgUserProfile({ igsid: senderIgsid, accessToken }),
   })
 }
 
@@ -401,13 +248,6 @@ async function processMessagingEvent(
  * the /api/whatsapp/media proxy is needed here). Stored as-is in
  * `messages.media_url`.
  */
-const ALLOWED_CONTENT_TYPES = new Set(['text', 'image', 'document', 'audio', 'video'])
-
-function toContentType(attachmentType: string): string {
-  if (attachmentType === 'file') return 'document'
-  return ALLOWED_CONTENT_TYPES.has(attachmentType) ? attachmentType : 'text'
-}
-
 function parseMessageContent(message: InstagramMessage): {
   contentText: string | null
   mediaUrl: string | null
@@ -425,101 +265,4 @@ function parseMessageContent(message: InstagramMessage): {
     return { contentText: message.text || message.quick_reply.payload, mediaUrl: null, contentType: 'text' }
   }
   return { contentText: message.text ?? null, mediaUrl: null, contentType: 'text' }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ContactRow = any
-
-interface ContactOutcome {
-  contact: ContactRow
-  wasCreated: boolean
-}
-
-async function findOrCreateContact(
-  accountId: string,
-  configOwnerUserId: string,
-  igsid: string,
-  _name: string | null,
-  accessToken: string
-): Promise<ContactOutcome | null> {
-  const existingContact = await findExistingInstagramContact(supabaseAdmin(), accountId, igsid)
-  if (existingContact) {
-    return { contact: existingContact, wasCreated: false }
-  }
-
-  // Best-effort profile fetch — never throws, returns null on any
-  // failure (outside the messaging window, revoked token, etc).
-  const profile = await getIgUserProfile({ igsid, accessToken })
-
-  const { data: newContact, error: createError } = await supabaseAdmin()
-    .from('contacts')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      phone: null,
-      instagram_id: igsid,
-      instagram_username: profile?.username ?? null,
-      name: profile?.name || profile?.username || igsid,
-    })
-    .select()
-    .single()
-
-  if (createError) {
-    if (isUniqueViolation(createError)) {
-      const raced = await findExistingInstagramContact(supabaseAdmin(), accountId, igsid)
-      if (raced) return { contact: raced, wasCreated: false }
-    }
-    console.error('[instagram webhook] error creating contact:', createError)
-    return null
-  }
-
-  return { contact: newContact, wasCreated: true }
-}
-
-async function findOrCreateConversation(accountId: string, configOwnerUserId: string, contactId: string) {
-  const { data: existingRows, error: findError } = await supabaseAdmin()
-    .from('conversations')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: true })
-    .limit(1)
-
-  if (findError) {
-    console.error('[instagram webhook] error finding conversation:', findError)
-    return null
-  }
-  if (existingRows && existingRows.length > 0) {
-    return { conversation: existingRows[0], created: false }
-  }
-
-  const { data: newConv, error: createError } = await supabaseAdmin()
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      contact_id: contactId,
-      channel: 'instagram',
-    })
-    .select()
-    .single()
-
-  if (createError) {
-    if (isUniqueViolation(createError)) {
-      const { data: raced } = await supabaseAdmin()
-        .from('conversations')
-        .select('*')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-      if (raced && raced.length > 0) {
-        return { conversation: raced[0], created: false }
-      }
-    }
-    console.error('[instagram webhook] error creating conversation:', createError)
-    return null
-  }
-
-  return { conversation: newConv, created: true }
 }

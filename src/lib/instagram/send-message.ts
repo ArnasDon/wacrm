@@ -29,12 +29,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendMediaMessage,
-  type InstagramMediaKind,
-} from '@/lib/instagram/api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import type { InstagramMediaKind } from '@/lib/instagram/api';
+import { sendInstagramText, sendInstagramMedia } from '@/lib/instagram/provider-send';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { SendMessageError, type SendMessageParams, type SendMessageResult } from '@/lib/messaging/types';
 
@@ -126,32 +122,25 @@ export async function sendInstagramMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  const target = {
+    config,
+    igsid: contact.instagram_id as string,
+    zernioConversationId: (conversation.zernio_conversation_id as string | null) ?? null,
+  };
 
   let igMessageId = '';
   try {
     if (isMediaKind) {
-      const result = await sendMediaMessage({
-        igAccountId: config.ig_account_id,
-        accessToken,
-        to: contact.instagram_id,
-        kind: messageType as InstagramMediaKind,
-        link: mediaUrl!,
-      });
+      const result = await sendInstagramMedia(target, messageType as InstagramMediaKind, mediaUrl!);
       igMessageId = result.messageId;
     } else {
-      const result = await sendTextMessage({
-        igAccountId: config.ig_account_id,
-        accessToken,
-        to: contact.instagram_id,
-        text: contentText!,
-      });
+      const result = await sendInstagramText(target, contentText!);
       igMessageId = result.messageId;
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[instagram/send-message] Meta send failed:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    const message = err instanceof Error ? err.message : 'Unknown provider API error';
+    console.error('[instagram/send-message] send failed:', message);
+    throw new SendMessageError('instagram_send_error', message, 502);
   }
 
   const persistedText = contentText ?? null;

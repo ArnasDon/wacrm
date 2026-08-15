@@ -33,8 +33,9 @@ import type { InstagramConfig as InstagramConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
+type Provider = 'meta' | 'zernio';
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
-type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
+type ResetReason = 'token_corrupted' | 'meta_api_error' | 'zernio_api_error' | null;
 
 /**
  * Instagram's counterpart to `WhatsAppConfig` (whatsapp-config.tsx).
@@ -44,6 +45,14 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
  * separate "Registration status" banner — an Instagram access token
  * being valid IS the connection being live, there's no second
  * subscription step to track.
+ *
+ * Supports two providers, picked by the segmented control at the top:
+ *   - 'meta': the original direct-to-Meta path, requiring Meta
+ *     Business Verification.
+ *   - 'zernio': routes through zernio.com instead, for accounts that
+ *     can't complete that verification (e.g. informal businesses).
+ * Only one provider's credentials are stored at a time — saving one
+ * clears the other's fields server-side (see the config route).
  */
 export function InstagramConfig() {
   const t = useTranslations('Settings.instagram');
@@ -61,14 +70,27 @@ export function InstagramConfig() {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const loadedAccountIdRef = useRef<string | null>(null);
 
+  const [provider, setProvider] = useState<Provider>('meta');
+
   const [igAccountId, setIgAccountId] = useState('');
   const [pageId, setPageId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
+  const [zernioAccountId, setZernioAccountId] = useState('');
+  const [zernioApiKey, setZernioApiKey] = useState('');
+  const [zernioApiKeyEdited, setZernioApiKeyEdited] = useState(false);
+  const [showZernioApiKey, setShowZernioApiKey] = useState(false);
+  // Only ever populated right after a fresh save that generated a new
+  // one — the server never returns an existing secret (see the config
+  // route's "shown once" comment), so this resets to null on load.
+  const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+
   const webhookUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/api/instagram/webhook` : '';
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/instagram/webhook${provider === 'zernio' ? '/zernio' : ''}`
+      : '';
 
   const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
@@ -85,11 +107,15 @@ export function InstagramConfig() {
 
       if (data) {
         setConfig(data);
+        setProvider(data.provider === 'zernio' ? 'zernio' : 'meta');
         setIgAccountId(data.ig_account_id || '');
         setPageId(data.page_id || '');
         setAccessToken(MASKED_TOKEN);
         setVerifyToken('');
         setTokenEdited(false);
+        setZernioAccountId(data.zernio_account_id || '');
+        setZernioApiKey(data.zernio_api_key ? MASKED_TOKEN : '');
+        setZernioApiKeyEdited(false);
       } else {
         setConfig(null);
         setIgAccountId('');
@@ -97,6 +123,9 @@ export function InstagramConfig() {
         setAccessToken('');
         setVerifyToken('');
         setTokenEdited(false);
+        setZernioAccountId('');
+        setZernioApiKey('');
+        setZernioApiKeyEdited(false);
       }
 
       if (data) {
@@ -115,7 +144,9 @@ export function InstagramConfig() {
                 ? 'token_corrupted'
                 : payload.reason === 'meta_api_error'
                   ? 'meta_api_error'
-                  : null
+                  : payload.reason === 'zernio_api_error'
+                    ? 'zernio_api_error'
+                    : null
             );
             setStatusMessage(payload.message || '');
           }
@@ -149,6 +180,14 @@ export function InstagramConfig() {
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleSave() {
+    if (provider === 'zernio') {
+      await handleSaveZernio();
+    } else {
+      await handleSaveMeta();
+    }
+  }
+
+  async function handleSaveMeta() {
     if (!igAccountId.trim()) {
       toast.error('Instagram Business Account ID is required');
       return;
@@ -162,6 +201,7 @@ export function InstagramConfig() {
       setSaving(true);
 
       const payload: Record<string, unknown> = {
+        provider: 'meta',
         ig_account_id: igAccountId.trim(),
         page_id: pageId.trim() || null,
         verify_token: verifyToken.trim() || null,
@@ -204,6 +244,65 @@ export function InstagramConfig() {
     }
   }
 
+  async function handleSaveZernio() {
+    if (!zernioAccountId.trim()) {
+      toast.error('Zernio Instagram Account ID is required');
+      return;
+    }
+    if (!config && (!zernioApiKey.trim() || !zernioApiKeyEdited)) {
+      toast.error('Zernio API Key is required for initial setup');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload: Record<string, unknown> = {
+        provider: 'zernio',
+        zernio_account_id: zernioAccountId.trim(),
+      };
+
+      if (zernioApiKeyEdited && zernioApiKey !== MASKED_TOKEN && zernioApiKey.trim()) {
+        payload.zernio_api_key = zernioApiKey.trim();
+      } else if (config) {
+        toast.error('Please re-enter the Zernio API Key to save changes');
+        setSaving(false);
+        return;
+      }
+
+      const res = await fetch('/api/instagram/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to save configuration');
+        setSaving(false);
+        return;
+      }
+
+      if (data.webhook_secret) {
+        setWebhookSecret(data.webhook_secret);
+      }
+
+      toast.success(
+        data.account_info?.username
+          ? `Connected — @${data.account_info.username} can now send and receive DMs via Zernio.`
+          : 'Zernio connected. Add the webhook in your Zernio dashboard to start receiving events.',
+      );
+
+      if (accountId) await fetchConfig(accountId);
+    } catch (err) {
+      console.error('Save error:', err);
+      toast.error('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleTestConnection() {
     try {
       setTesting(true);
@@ -226,7 +325,9 @@ export function InstagramConfig() {
             ? 'token_corrupted'
             : payload.reason === 'meta_api_error'
               ? 'meta_api_error'
-              : null
+              : payload.reason === 'zernio_api_error'
+                ? 'zernio_api_error'
+                : null
         );
         setStatusMessage(payload.message || '');
         toast.error(payload.message || 'API connection failed');
@@ -262,6 +363,10 @@ export function InstagramConfig() {
       setAccessToken('');
       setVerifyToken('');
       setTokenEdited(false);
+      setZernioAccountId('');
+      setZernioApiKey('');
+      setZernioApiKeyEdited(false);
+      setWebhookSecret(null);
       setConnectionStatus('disconnected');
       setResetReason(null);
       setStatusMessage('');
@@ -276,6 +381,18 @@ export function InstagramConfig() {
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success('Webhook URL copied to clipboard');
+  }
+
+  function handleCopyWebhookSecret() {
+    if (!webhookSecret) return;
+    navigator.clipboard.writeText(webhookSecret);
+    toast.success('Webhook secret copied to clipboard');
+  }
+
+  function handleProviderChange(next: Provider) {
+    if (next === provider) return;
+    setProvider(next);
+    setWebhookSecret(null);
   }
 
   if (loading) {
@@ -343,92 +460,179 @@ export function InstagramConfig() {
             </div>
             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
-                ? t('connectedDesc')
+                ? provider === 'zernio' ? t('zernioConnectedDesc') : t('connectedDesc')
                 : statusMessage || t('notConnectedDesc')}
             </AlertDescription>
           </Alert>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                {t('apiCredentialsDesc')}
-              </CardDescription>
+              <CardTitle className="text-foreground">{t('providerSectionTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">{t('providerSectionDesc')}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('igAccountId')}</Label>
-                <Input
-                  placeholder="e.g. 17841400000000000"
-                  value={igAccountId}
-                  onChange={(e) => setIgAccountId(e.target.value)}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">
-                  {t('pageId')} <span className="ml-1 text-muted-foreground">{t('pageIdOptional')}</span>
-                </Label>
-                <Input
-                  placeholder="e.g. 100234567890456"
-                  value={pageId}
-                  onChange={(e) => setPageId(e.target.value)}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('accessToken')}</Label>
-                <div className="relative">
-                  <Input
-                    type={showToken ? 'text' : 'password'}
-                    placeholder={t('accessTokenPlaceholder')}
-                    value={accessToken}
-                    onChange={(e) => {
-                      setAccessToken(e.target.value);
-                      setTokenEdited(true);
-                    }}
-                    onFocus={() => {
-                      if (accessToken === MASKED_TOKEN) {
-                        setAccessToken('');
-                        setTokenEdited(true);
-                      }
-                    }}
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
-                </div>
-                {config && !tokenEdited && (
-                  <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('webhookVerifyToken')}</Label>
-                <Input
-                  placeholder={t('webhookVerifyTokenPlaceholder')}
-                  value={verifyToken}
-                  onChange={(e) => setVerifyToken(e.target.value)}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                />
-                <p className="text-xs text-muted-foreground">{t('webhookVerifyTokenHint')}</p>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleProviderChange('meta')}
+                  className={`text-left rounded-lg border p-3 transition-colors ${
+                    provider === 'meta'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted'
+                  }`}
+                >
+                  <div className="font-medium text-foreground">{t('providerMeta')}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{t('providerMetaDesc')}</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleProviderChange('zernio')}
+                  className={`text-left rounded-lg border p-3 transition-colors ${
+                    provider === 'zernio'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted'
+                  }`}
+                >
+                  <div className="font-medium text-foreground">{t('providerZernio')}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{t('providerZernioDesc')}</div>
+                </button>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-foreground">{t('webhookTitle')}</CardTitle>
-              <CardDescription className="text-muted-foreground">{t('webhookDesc')}</CardDescription>
+              <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {provider === 'zernio' ? t('zernioApiCredentialsDesc') : t('apiCredentialsDesc')}
+              </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {provider === 'meta' ? (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{t('igAccountId')}</Label>
+                    <Input
+                      placeholder="e.g. 17841400000000000"
+                      value={igAccountId}
+                      onChange={(e) => setIgAccountId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      {t('pageId')} <span className="ml-1 text-muted-foreground">{t('pageIdOptional')}</span>
+                    </Label>
+                    <Input
+                      placeholder="e.g. 100234567890456"
+                      value={pageId}
+                      onChange={(e) => setPageId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{t('accessToken')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showToken ? 'text' : 'password'}
+                        placeholder={t('accessTokenPlaceholder')}
+                        value={accessToken}
+                        onChange={(e) => {
+                          setAccessToken(e.target.value);
+                          setTokenEdited(true);
+                        }}
+                        onFocus={() => {
+                          if (accessToken === MASKED_TOKEN) {
+                            setAccessToken('');
+                            setTokenEdited(true);
+                          }
+                        }}
+                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {config && !tokenEdited && (
+                      <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{t('webhookVerifyToken')}</Label>
+                    <Input
+                      placeholder={t('webhookVerifyTokenPlaceholder')}
+                      value={verifyToken}
+                      onChange={(e) => setVerifyToken(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">{t('webhookVerifyTokenHint')}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{t('zernioAccountId')}</Label>
+                    <Input
+                      placeholder={t('zernioAccountIdPlaceholder')}
+                      value={zernioAccountId}
+                      onChange={(e) => setZernioAccountId(e.target.value)}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">{t('zernioAccountIdHint')}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{t('zernioApiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showZernioApiKey ? 'text' : 'password'}
+                        placeholder={t('zernioApiKeyPlaceholder')}
+                        value={zernioApiKey}
+                        onChange={(e) => {
+                          setZernioApiKey(e.target.value);
+                          setZernioApiKeyEdited(true);
+                        }}
+                        onFocus={() => {
+                          if (zernioApiKey === MASKED_TOKEN) {
+                            setZernioApiKey('');
+                            setZernioApiKeyEdited(true);
+                          }
+                        }}
+                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowZernioApiKey(!showZernioApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showZernioApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                    {config && !zernioApiKeyEdited && (
+                      <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">{t('zernioApiKeyHint')}</p>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-foreground">{t('webhookTitle')}</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {provider === 'zernio' ? t('zernioWebhookDesc') : t('webhookDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('webhookUrl')}</Label>
                 <div className="flex gap-2">
@@ -447,6 +651,34 @@ export function InstagramConfig() {
                   </Button>
                 </div>
               </div>
+
+              {provider === 'zernio' && (
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">{t('webhookSecretLabel')}</Label>
+                  {webhookSecret ? (
+                    <>
+                      <div className="flex gap-2">
+                        <Input
+                          readOnly
+                          value={webhookSecret}
+                          className="bg-muted border-border text-muted-foreground font-mono text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handleCopyWebhookSecret}
+                          className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                        >
+                          <Copy className="size-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-amber-400">{t('webhookSecretGenerated')}</p>
+                    </>
+                  ) : (
+                    config && <p className="text-xs text-muted-foreground">{t('webhookSecretAlreadySet')}</p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -515,64 +747,114 @@ export function InstagramConfig() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Accordion>
-                <AccordionItem className="border-border">
-                  <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
-                    <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
-                      {t('step1')}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li>{t('step1_1')}</li>
-                      <li>{t('step1_2')}</li>
-                      <li>{t('step1_3')}</li>
-                    </ol>
-                  </AccordionContent>
-                </AccordionItem>
+              {provider === 'meta' ? (
+                <Accordion>
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+                        {t('step1')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li>{t('step1_1')}</li>
+                        <li>{t('step1_2')}</li>
+                        <li>{t('step1_3')}</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
 
-                <AccordionItem className="border-border">
-                  <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
-                    <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
-                      {t('step2')}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step2_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step2_2') }} />
-                    </ol>
-                  </AccordionContent>
-                </AccordionItem>
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
+                        {t('step2')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('step2_1') }} />
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('step2_2') }} />
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
 
-                <AccordionItem className="border-border">
-                  <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
-                    <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
-                      {t('step3')}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }} />
-                      <li>{t('step3_3')}</li>
-                    </ol>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
+                        {t('step3')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('step3_1') }} />
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }} />
+                        <li>{t('step3_3')}</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              ) : (
+                <Accordion>
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+                        {t('zernioStep1')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li>{t('zernioStep1_1')}</li>
+                        <li>{t('zernioStep1_2')}</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
+                        {t('zernioStep2')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep2_1') }} />
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep2_2') }} />
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem className="border-border">
+                    <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
+                        {t('zernioStep3')}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground">
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep3_1') }} />
+                        <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep3_2') }} />
+                        <li>{t('zernioStep3_3')}</li>
+                      </ol>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              )}
 
               <div className="mt-4 pt-4 border-t border-border">
                 <a
-                  href="https://developers.facebook.com/docs/messenger-platform/instagram"
+                  href={provider === 'zernio' ? 'https://docs.zernio.com' : 'https://developers.facebook.com/docs/messenger-platform/instagram'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
                 >
                   <ExternalLink className="size-3.5" />
-                  {t('metaDocs')}
+                  {provider === 'zernio' ? t('zernioDocs') : t('metaDocs')}
                 </a>
               </div>
             </CardContent>

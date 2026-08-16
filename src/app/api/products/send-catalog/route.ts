@@ -6,9 +6,9 @@ import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send
 /**
  * POST /api/products/send-catalog  (agent+)
  *
- * Body: { conversation_id }. Generates a PDF of the account's active
- * products and sends it as a document to the given conversation, via
- * the same channel-agnostic send core the quote-send route uses.
+ * Body: { conversation_id }. Sends a link to the account's public
+ * catalog page to the given conversation, via the same channel-agnostic
+ * send core the quote-send route uses.
  */
 export async function POST(request: Request) {
   let ctx
@@ -34,8 +34,8 @@ export async function POST(request: Request) {
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
     try {
-      const { pdfUrl } = await sendCatalogToConversation(db, ctx.accountId, conversationId)
-      return NextResponse.json({ ok: true, pdf_url: pdfUrl })
+      const { catalogUrl } = await sendCatalogToConversation(db, ctx.accountId, conversationId)
+      return NextResponse.json({ ok: true, catalog_url: catalogUrl })
     } catch (err) {
       if (err instanceof SendCatalogError) {
         return NextResponse.json({ error: err.message }, { status: err.status })

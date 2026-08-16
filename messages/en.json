@@ -725,7 +725,7 @@
       "nameLabel": "Name",
       "namePlaceholder": "e.g. Wireless headphones",
       "descriptionLabel": "Description",
-      "descriptionPlaceholder": "Short description shown on the catalog PDF",
+      "descriptionPlaceholder": "Short description shown on your catalog page",
       "priceLabel": "Price",
       "imageLabel": "Image",
       "uploadImageBtn": "Upload image",

@@ -725,7 +725,7 @@
       "nameLabel": "이름",
       "namePlaceholder": "예: 무선 이어폰",
       "descriptionLabel": "설명",
-      "descriptionPlaceholder": "카탈로그 PDF에 표시되는 짧은 설명",
+      "descriptionPlaceholder": "카탈로그 페이지에 표시되는 짧은 설명",
       "priceLabel": "가격",
       "imageLabel": "이미지",
       "uploadImageBtn": "이미지 업로드",

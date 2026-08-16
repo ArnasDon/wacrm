@@ -127,7 +127,7 @@ export function buildSystemPrompt(args: {
 
     if (catalog && catalog.length > 0) {
       parts.push(
-        `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — this sends them the full catalog as a PDF, so you don't need to list every product yourself, just answer naturally and add the marker. Never mention this marker to the customer.`,
+        `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — this sends them a link to the live catalog page, where they can browse every product and request a quote themselves, so you don't need to list every product yourself, just answer naturally and add the marker. Never mention this marker to the customer.`,
       )
     }
   }

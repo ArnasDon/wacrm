@@ -181,7 +181,7 @@ beforeEach(() => {
     isWonStage: false,
   })
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
-  h.sendCatalogToConversation.mockResolvedValue({ pdfUrl: 'https://example.com/catalogo.pdf' })
+  h.sendCatalogToConversation.mockResolvedValue({ catalogUrl: 'https://example.com/catalog/acct-1' })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {

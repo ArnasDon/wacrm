@@ -343,7 +343,13 @@ export function ContactForm({
             <Label className="text-muted-foreground">{t('temperatureLabel')}</Label>
             <Select
               value={leadTemperature}
-              onValueChange={(value) => setLeadTemperature(value as LeadTemperature | 'unclassified')}
+              onValueChange={(value) => value && setLeadTemperature(value as LeadTemperature | 'unclassified')}
+              items={{
+                unclassified: t('temperatureUnclassified'),
+                cold: t('temperatureCold'),
+                warm: t('temperatureWarm'),
+                hot: t('temperatureHot'),
+              }}
             >
               <SelectTrigger className="w-full bg-muted border-border">
                 <SelectValue />

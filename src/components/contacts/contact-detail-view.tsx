@@ -552,7 +552,13 @@ export function ContactDetailView({
                     <Label className="text-muted-foreground text-xs">{t('temperature')}</Label>
                     <Select
                       value={editLeadTemperature}
-                      onValueChange={(value) => setEditLeadTemperature(value as LeadTemperature | 'unclassified')}
+                      onValueChange={(value) => value && setEditLeadTemperature(value as LeadTemperature | 'unclassified')}
+                      items={{
+                        unclassified: t('temperatureUnclassified'),
+                        cold: t('temperatureCold'),
+                        warm: t('temperatureWarm'),
+                        hot: t('temperatureHot'),
+                      }}
                     >
                       <SelectTrigger className="w-full bg-muted border-border">
                         <SelectValue />

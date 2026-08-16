@@ -315,11 +315,17 @@ export function Step3Personalize({
                     <Select
                       value={mapping.type}
                       onValueChange={(val) =>
+                        val &&
                         updateVariable(key, {
                           type: val as VariableType,
                           value: '',
                         })
                       }
+                      items={{
+                        static: t('personalize.typeStatic'),
+                        field: t('personalize.typeContact'),
+                        custom_field: t('personalize.typeCustom'),
+                      }}
                     >
                       <SelectTrigger className="w-full border-border bg-muted text-foreground">
                         <SelectValue />
@@ -353,6 +359,12 @@ export function Step3Personalize({
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
+                        items={Object.fromEntries(
+                          contactFields.map((field) => [
+                            field.value,
+                            t(`personalize.fieldMap.${field.labelKey}`),
+                          ]),
+                        )}
                       >
                         <SelectTrigger className="w-full border-border bg-muted text-foreground">
                           <SelectValue placeholder={t('personalize.selectContactField')} />
@@ -371,6 +383,7 @@ export function Step3Personalize({
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
+                        items={Object.fromEntries(customFields.map((f) => [f.id, f.field_name]))}
                       >
                         <SelectTrigger className="w-full border-border bg-muted text-foreground">
                           <SelectValue

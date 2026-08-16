@@ -292,6 +292,9 @@ export function InviteMemberDialog({
                 <Select
                   value={expiry}
                   onValueChange={(v) => v && setExpiry(v)}
+                  items={Object.fromEntries(
+                    EXPIRY_OPTIONS.map((opt) => [opt.value, t(opt.labelKey as Parameters<typeof t>[0])]),
+                  )}
                 >
                   <SelectTrigger className="w-full bg-muted border-border text-foreground">
                     <SelectValue />

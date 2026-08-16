@@ -630,8 +630,13 @@ function ConditionForm({
           <Select
             value={subject}
             onValueChange={(v) =>
-              onUpdateConfig({ subject: v as ConditionCfg["subject"] })
+              v && onUpdateConfig({ subject: v as ConditionCfg["subject"] })
             }
+            items={{
+              var: t("capturedVariable"),
+              tag: t("contactHasTag"),
+              contact_field: t("contactField"),
+            }}
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />
@@ -655,6 +660,7 @@ function ConditionForm({
             <Select
               value={cfg.subject_key ?? ""}
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
+              items={Object.fromEntries(tags.map((tag) => [tag.id, tag.name]))}
             >
               <SelectTrigger className="bg-muted">
                 <SelectValue placeholder="Pick a tag…" />
@@ -706,8 +712,14 @@ function ConditionForm({
           <Select
             value={operator}
             onValueChange={(v) =>
-              onUpdateConfig({ operator: v as ConditionCfg["operator"] })
+              v && onUpdateConfig({ operator: v as ConditionCfg["operator"] })
             }
+            items={{
+              present: t("isPresent"),
+              absent: t("isAbsent"),
+              equals: t("equals"),
+              contains: t("contains"),
+            }}
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />
@@ -785,8 +797,9 @@ function SetTagForm({
           <Select
             value={cfg.mode ?? "add"}
             onValueChange={(v) =>
-              onUpdateConfig({ mode: v as SetTagCfg["mode"] })
+              v && onUpdateConfig({ mode: v as SetTagCfg["mode"] })
             }
+            items={{ add: t("addTag"), remove: t("removeTag") }}
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />
@@ -803,6 +816,7 @@ function SetTagForm({
             <Select
               value={cfg.tag_id ?? ""}
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
+              items={Object.fromEntries(tags.map((tag) => [tag.id, tag.name]))}
             >
               <SelectTrigger className="bg-muted">
                 <SelectValue placeholder="Pick a tag…" />
@@ -950,6 +964,7 @@ function SendMediaForm({
         <Select
           value={mediaType}
           onValueChange={(v) => {
+            if (!v) return;
             // Changing type clears the existing file — the bucket
             // accepts different MIME sets per type and a previously
             // uploaded PDF can't be sent as an image.
@@ -958,6 +973,11 @@ function SendMediaForm({
               media_url: "",
               filename: "",
             });
+          }}
+          items={{
+            image: t("imageLabel"),
+            video: t("videoLabel"),
+            document: t("documentLabel"),
           }}
         >
           <SelectTrigger className="bg-muted">

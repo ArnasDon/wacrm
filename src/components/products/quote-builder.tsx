@@ -306,7 +306,13 @@ export function QuoteBuilder({ open, onOpenChange, contact, conversationId, onSa
             <div className="flex items-end gap-2">
               <div className="flex-1 space-y-1">
                 <Label className="text-xs text-muted-foreground">{t("productLabel")}</Label>
-                <Select value={pickProductId} onValueChange={(v) => setPickProductId(v ?? "")}>
+                <Select
+                  value={pickProductId}
+                  onValueChange={(v) => setPickProductId(v ?? "")}
+                  items={Object.fromEntries(
+                    products.map((p) => [p.id, `${p.name} — ${formatCurrency(p.price, defaultCurrency)}`]),
+                  )}
+                >
                   <SelectTrigger className="bg-muted border-border">
                     <SelectValue placeholder={t("productPlaceholder")} />
                   </SelectTrigger>

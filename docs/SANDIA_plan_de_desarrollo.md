@@ -1492,5 +1492,58 @@ prueba en `deals`.
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.
 
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Auditoría completa de Select con UUID/valor crudo
+
+**Hecho:** Angel pidió revisar si el resto de los `Select` custom del
+proyecto tenía el mismo bug encontrado antes en `contact-sidebar.tsx`
+(muestran el `value` crudo en vez de la etiqueta cuando `<Select.Root>`
+de `@base-ui/react/select` no recibe una prop `items`). Encontré los 13
+archivos que importan `@/components/ui/select` (`grep -rl` sobre
+`<SelectValue`) y revisé cada `<Select>` uno por uno:
+
+- **Con el bug, corregidos (agregado `items={...}`):**
+  `products/quote-builder.tsx` (selector de producto en cotizaciones —
+  mostraba el UUID del producto), `settings/ai-config.tsx` (proveedor de
+  IA y agente de handoff), `contacts/contact-form.tsx` y
+  `contacts/contact-detail-view.tsx` (temperatura de lead — mismo bug que
+  ya existía en el Inbox, dos lugares más), `settings/invite-member-dialog.tsx`
+  (vigencia de la invitación — el selector de rol ya estaba bien, usaba
+  `children` en `SelectValue`), `broadcasts/step3-personalize.tsx` (tres
+  selectores: tipo de variable, campo de contacto, campo personalizado),
+  `settings/template-manager.tsx` (formato de encabezado de plantilla —
+  nueva función `headerFormatLabel()` compartida entre el `items` y el
+  render de opciones para no duplicar el mapeo; y tipo de botón de
+  plantilla), `flows/forms/node-config-form.tsx` (seis selectores:
+  sujeto/operador de condición, modo agregar/quitar etiqueta, dos
+  selectores de etiqueta, tipo de medio a enviar), `flows/forms/fields.tsx`
+  (`NodeKeySelect`, el selector reutilizable de "siguiente nodo" en el
+  builder de Flows — el `items` reconstruye el mismo ícono+texto que ya
+  usa `SelectItem`), `flows/flow-builder.tsx` (tipo de disparador del
+  flow), `agents/ai-usage.tsx` (ventana de días del gráfico de consumo de
+  tokens de IA — mostraba "7"/"30"/"90" en vez de "Last 7 days" etc).
+- **Sin bug, no se tocaron:** `settings/members-tab.tsx` (el selector de
+  rol de miembro ya usaba `<SelectValue>{tRoles(member.role)}</SelectValue>`,
+  el patrón correcto); el selector de categoría de plantilla en
+  `template-manager.tsx` y el de campo de contacto en
+  `node-config-form.tsx` (sus valores — `Marketing`/`Utility`/
+  `Authentication`, `name`/`email`/`phone`/`company` — son literalmente
+  iguales a la etiqueta que se muestra, así que el bug no tiene efecto
+  visible ahí; no se agregó `items` redundante).
+
+**Probado:** `npm run typecheck` limpio. `npx eslint` sobre los 11
+archivos modificados: 0 errores, 9 warnings — todos preexistentes y sin
+relación (imports sin usar, deps de hooks) en líneas que no toqué.
+`npm run build` limpio (mismas rutas, `package-lock.json` sin cambios).
+`npx vitest run`: 907/909 (mismas 2 fallas preexistentes de
+`mondayIndex`/zona horaria).
+
+**Pendiente / siguiente paso:** publicar y, cuando Angel tenga tiempo,
+confirmar a simple vista en un par de estos (el proveedor de IA en
+Configuración → Agentes IA, y el tipo de disparador de un Flow son los
+más rápidos de revisar) que ya muestran el nombre en vez del valor
+crudo — no alcancé a abrir cada uno de los 11 en el navegador en esta
+sesión dado el volumen, pero el mismo patrón (`items={...}`) ya se
+validó en producción para el Inbox y el Dashboard.
+
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

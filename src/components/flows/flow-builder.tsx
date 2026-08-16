@@ -283,6 +283,7 @@ function TriggerPanel({
           <Select
             value={state.trigger_type}
             onValueChange={(v) =>
+              v &&
               setState((s) => ({
                 ...s,
                 trigger_type: v as BuilderState['trigger_type'],
@@ -290,6 +291,11 @@ function TriggerPanel({
                   v === 'keyword' ? { keywords: [] } : v === 'manual' ? {} : {},
               }))
             }
+            items={{
+              keyword: t('triggerKeywordTitle'),
+              first_inbound_message: t('triggerFirstInboundTitle'),
+              manual: t('triggerManualTitle'),
+            }}
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />

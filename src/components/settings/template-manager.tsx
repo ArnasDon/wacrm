@@ -57,6 +57,21 @@ const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
 const HEADER_FORMATS: HeaderFormat[] = ['none', 'text', 'image', 'video', 'document'];
 
+function headerFormatLabel(type: HeaderFormat, t: ReturnType<typeof useTranslations>): string {
+  switch (type) {
+    case 'none':
+      return t('headerNone');
+    case 'text':
+      return t('headerText');
+    case 'image':
+      return t('headerImage');
+    case 'video':
+      return t('headerVideo');
+    case 'document':
+      return t('headerDocument');
+  }
+}
+
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
   Utility: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
@@ -746,6 +761,7 @@ export function TemplateManager() {
                     header_format: (val || 'none') as HeaderFormat,
                   })
                 }
+                items={Object.fromEntries(HEADER_FORMATS.map((type) => [type, headerFormatLabel(type, t)]))}
               >
                 <SelectTrigger className="w-full bg-muted border-border text-foreground">
                   <SelectValue />
@@ -757,15 +773,7 @@ export function TemplateManager() {
                       value={type}
                       className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
                     >
-                      {type === 'none'
-                        ? t('headerNone')
-                        : type === 'text'
-                          ? t('headerText')
-                          : type === 'image'
-                            ? t('headerImage')
-                            : type === 'video'
-                              ? t('headerVideo')
-                              : t('headerDocument')}
+                      {headerFormatLabel(type, t)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -953,6 +961,12 @@ export function TemplateManager() {
                             // onValueChange(null) on deselect.
                             if (!val) return;
                             changeButtonType(i, val as TemplateButton['type']);
+                          }}
+                          items={{
+                            QUICK_REPLY: t('btnQuickReply'),
+                            URL: t('btnUrl'),
+                            PHONE_NUMBER: t('btnPhone'),
+                            COPY_CODE: t('btnCopyCode'),
                           }}
                         >
                           <SelectTrigger className="w-40 bg-muted border-border text-foreground h-8 text-xs">

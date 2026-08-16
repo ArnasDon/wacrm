@@ -111,6 +111,21 @@ export function NodeKeySelect({
     <Select
       value={value ?? "__none__"}
       onValueChange={(v) => onChange(v === "__none__" ? null : v)}
+      items={{
+        __none__: t("none"),
+        ...Object.fromEntries(
+          options.map((n) => {
+            const Icon = NODE_META[n.node_type].icon;
+            return [
+              n.node_key,
+              <span key={n.node_key} className="inline-flex items-center gap-1.5">
+                <Icon className={cn("h-3 w-3", NODE_META[n.node_type].color)} />
+                {n.node_key}
+              </span>,
+            ];
+          }),
+        ),
+      }}
     >
       <SelectTrigger className={cn("bg-muted", className)}>
         <SelectValue placeholder={placeholder ?? "—"} />

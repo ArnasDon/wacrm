@@ -4,6 +4,7 @@ import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
+import { loadCatalogContext } from '@/lib/ai/catalog-context'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
@@ -98,10 +99,13 @@ export async function POST(request: Request) {
       latestUserMessage(messages),
     )
 
+    const catalog = await loadCatalogContext(supabase, accountId)
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
+      catalog,
     })
 
     const { text, usage } = await generateReply({ config, systemPrompt, messages })

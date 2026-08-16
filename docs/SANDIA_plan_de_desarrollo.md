@@ -1677,3 +1677,80 @@ sin un smoke test end-to-end.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.
+
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Bloque 6 (personas por etapa) + Bloque 7 (catálogo para la IA)
+
+**Hecho:** Angel pidió cinco cosas grandes de un golpe (dashboard con
+personas por etapa, catálogo accesible a la IA, página pública de
+catálogo con cotización por selección, botón de soporte por correo, y
+botón de reportar pago + suscripciones en `/admin`). Dado el tamaño,
+entré a modo plan, investigué el estado real del código (no hay ninguna
+capacidad de enviar correo hoy; la IA no ve el catálogo en la
+conversación, solo lo usa un humano al enviarlo manualmente o al pasarle
+ítems ya elegidos a `create_quote`; `/join/[token]` es el único patrón de
+página pública que existe) y confirmé con Angel que el envío de correo
+va por SMTP de Gmail con contraseñas de aplicación (no un proveedor
+nuevo). Escribí un plan de 5 bloques (6 a 10) y lo aprobó. Esta entrada
+cubre los dos primeros, ya publicados.
+
+**Bloque 6 — personas por etapa:** `loadPipelinesOverview()`
+(`src/lib/dashboard/queries.ts`) contaba filas de `deals`, no personas —
+un contacto con dos negocios en la misma etapa contaba doble. Ahora
+cuenta contactos distintos (`Set` de `contact_id`) por etapa y por
+pipeline; el dinero sigue sumando cada negocio sin deduplicar. Renombré
+`dealCount` → `peopleCount` en `src/lib/dashboard/types.ts` y la etiqueta
+en `pipelines-overview.tsx` (nueva clave `personCount` con plural ICU,
+reemplaza `dealCount` en `messages/en.json`/`ko.json` — no se usaba en
+ningún otro lado).
+
+**Bloque 7 — catálogo accesible para la IA:**
+- Nuevo `src/lib/ai/catalog-context.ts` (`loadCatalogContext`): trae
+  hasta 30 productos activos y arma líneas compactas
+  ("- Nombre (Precio) — descripción corta", con la descripción truncada
+  a 80 caracteres). Se inyecta en `buildSystemPrompt()`
+  (`src/lib/ai/defaults.ts`) en modo `draft` **y** `auto_reply` — así
+  tanto el botón "Redactar con IA" del agente como el bot autónomo y el
+  Playground (los tres llaman a `buildSystemPrompt`) recomiendan
+  productos y precios reales, nunca inventados.
+- Nuevo sentinel autónomo `[[ACTION:send_catalog]]`
+  (`SEND_CATALOG_SENTINEL`) — igual patrón que `move_deal`/`mark_deal_won`
+  (parseado en `parseGeneration`, instruido solo cuando hay catálogo
+  activo). Bajo riesgo (no muta nada, solo manda el PDF que ya existía)
+  así que corre sin confirmación humana. Extraje la lógica que ya tenía
+  `POST /api/products/send-catalog` a un helper compartido
+  `sendCatalogToConversation()` (`src/lib/products/send-catalog.ts`)
+  para no duplicarla entre la ruta HTTP (humana) y el disparo autónomo
+  nuevo en `auto-reply.ts` — ya era channel-agnostic
+  (`sendMessageToConversation`), así que WhatsApp/Instagram/Facebook
+  funcionan sin cambios adicionales.
+- Envío del catálogo y avance de etapa **no son excluyentes** entre sí
+  (un cliente puede pedir el catálogo y a la vez mostrar que avanzó de
+  etapa en el mismo mensaje) — solo `mark_deal_won` y `move_deal` siguen
+  siendo mutuamente excluyentes entre ellos.
+- **No incluido a propósito:** que la IA arme cotizaciones interpretando
+  texto libre del cliente sobre el catálogo — eso lo resuelve el Bloque 8
+  con selección estructurada en la página pública, más confiable que
+  pedirle al modelo que interprete "quiero 2 de esto y 1 de aquello".
+
+**Probado:** `npm run typecheck`, `npx eslint` sobre los 12 archivos
+tocados (0 errores/warnings), `npm run build` limpio,
+`package-lock.json` sin cambios. `npx vitest run`: 931/933 (mismas 2
+fallas preexistentes de `mondayIndex`). Tests nuevos:
+`catalog-context.test.ts` (formato, truncado, moneda por defecto — con
+aserciones tolerantes a espacios NBSP, mismo criterio que
+`currency.test.ts`), extensiones en `generate.test.ts` (nuevo sentinel,
+combinación con `move_deal`) y en `auto-reply.test.ts` (catálogo en el
+prompt cuando hay productos activos y nada cuando no, envío autónomo,
+envío simultáneo con avance de etapa, no revienta si falla el envío).
+
+**Pendiente / siguiente paso:** publicar, confirmar el deploy, y validar
+en producción con cautela — mismo motivo que el bloque anterior (toca
+conversaciones reales). Sugerido: probar en el Playground de AI Agents
+(no toca clientes reales) preguntando "¿qué productos tienen?" y "mándame
+el catálogo" y confirmar que menciona productos reales y ofrece
+enviarlo; si hay oportunidad, confirmar en un chat real que el PDF llega
+por WhatsApp cuando el bot decide enviarlo solo. Después sigue el
+Bloque 8 (página pública de catálogo + cotización por selección).
+
+**Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
+commit.

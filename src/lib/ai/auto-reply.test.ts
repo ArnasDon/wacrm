@@ -6,10 +6,12 @@ const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
+  loadCatalogContext: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   moveDeal: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  sendCatalogToConversation: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -25,12 +27,23 @@ const h = vi.hoisted(() => ({
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
+vi.mock('./catalog-context', () => ({ loadCatalogContext: h.loadCatalogContext }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
 vi.mock('@/lib/pipelines/move-deal', () => ({
   moveDeal: h.moveDeal,
   MoveDealError: class MoveDealError extends Error {
+    status: number
+    constructor(message: string, status = 400) {
+      super(message)
+      this.status = status
+    }
+  },
+}))
+vi.mock('@/lib/products/send-catalog', () => ({
+  sendCatalogToConversation: h.sendCatalogToConversation,
+  SendCatalogError: class SendCatalogError extends Error {
     status: number
     constructor(message: string, status = 400) {
       super(message)
@@ -114,6 +127,7 @@ vi.mock('./admin-client', () => ({
 }))
 
 import { dispatchInboundToAiReply } from './auto-reply'
+import { SendCatalogError } from '@/lib/products/send-catalog'
 
 const ARGS = {
   accountId: 'acct-1',
@@ -153,11 +167,13 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
+  h.loadCatalogContext.mockResolvedValue(null)
   h.generateReply.mockResolvedValue({
     text: 'Hello!',
     handoff: false,
     markDealWon: false,
     moveToStageName: null,
+    sendCatalog: false,
   })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.moveDeal.mockResolvedValue({
@@ -165,6 +181,7 @@ beforeEach(() => {
     isWonStage: false,
   })
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.sendCatalogToConversation.mockResolvedValue({ pdfUrl: 'https://example.com/catalogo.pdf' })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -494,5 +511,74 @@ describe('dispatchInboundToAiReply — autonomous move_deal', () => {
     expect(h.state.aiActionLogInserts).toEqual([
       expect.objectContaining({ action: 'flag_deal_closing' }),
     ])
+  })
+})
+
+describe('dispatchInboundToAiReply — catalog context in prompt', () => {
+  it('includes catalog lines in the system prompt when the account has active products', async () => {
+    h.loadCatalogContext.mockResolvedValue(['- Camisa (Q150)', '- Pantalón (Q250)'])
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('Camisa (Q150)')
+    expect(systemPrompt).toContain('Pantalón (Q250)')
+  })
+
+  it('says nothing about a catalog when the account has no active products', async () => {
+    h.loadCatalogContext.mockResolvedValue(null)
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('ACTION:send_catalog')
+    expect(systemPrompt).not.toContain('Product catalog')
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous send_catalog', () => {
+  it('sends the catalog when the model asks for it', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Claro, aquí tienes nuestro catálogo.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: true,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendCatalogToConversation).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'conv-1')
+  })
+
+  it('does not send the catalog when the model does not ask for it', async () => {
+    await dispatchInboundToAiReply(ARGS) // default mock: sendCatalog false
+    expect(h.sendCatalogToConversation).not.toHaveBeenCalled()
+  })
+
+  it('fires alongside an autonomous stage move in the same turn', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes el catálogo, y seguimos negociando.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+      sendCatalog: true,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendCatalogToConversation).toHaveBeenCalled()
+    expect(h.moveDeal).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'deal-1', 'stage-b')
+  })
+
+  it('swallows a send failure — the already-sent reply is unaffected', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: true,
+    })
+    h.sendCatalogToConversation.mockRejectedValue(new SendCatalogError('No active products in the catalog yet.'))
+
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 })

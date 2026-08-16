@@ -50,6 +50,16 @@ export const MARK_DEAL_WON_SENTINEL = '[[ACTION:mark_deal_won]]'
 export const MOVE_DEAL_SENTINEL_PREFIX = '[[ACTION:move_deal:'
 export const MOVE_DEAL_SENTINEL_SUFFIX = ']]'
 
+/**
+ * Sentinel the model is instructed to append (in auto-reply mode only,
+ * when the account has an active catalog) when the customer asks what
+ * the business sells / for a catalog / price list. Low-risk — it only
+ * sends a PDF that already exists, mutates nothing — so, like
+ * `MOVE_DEAL_SENTINEL_PREFIX`, it runs with no human confirmation gate.
+ * Parsed and stripped by `generateReply` like `HANDOFF_SENTINEL`.
+ */
+export const SEND_CATALOG_SENTINEL = '[[ACTION:send_catalog]]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -86,8 +96,11 @@ export function buildSystemPrompt(args: {
    *  lets the model advance it through non-won stages as the
    *  conversation progresses. Omit/null when there's no open deal. */
   dealStageOptions?: { currentStageName: string; otherStageNames: string[] } | null
+  /** Compact active-catalog lines (see `loadCatalogContext`), or null
+   *  when the account has no active products. */
+  catalog?: string[] | null
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -111,10 +124,22 @@ export function buildSystemPrompt(args: {
         `This contact has an open deal currently at the "${dealStageOptions.currentStageName}" stage. If — and only if — the conversation itself clearly shows the deal has moved forward to one of these other stages: ${dealStageOptions.otherStageNames.map((n) => `"${n}"`).join(', ')}, append ${MOVE_DEAL_SENTINEL_PREFIX}<exact stage name>${MOVE_DEAL_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after the purchase-confirmation marker above if both apply), using the exact stage name as written above — never a name outside this list, never the deal's current stage, and never a guess when the signal is ambiguous. This is for ordinary progress (e.g. the customer asked for a quote, or is now negotiating terms) — it is separate from, and does not replace, the purchase-confirmation marker above. Never mention this marker to the customer.`,
       )
     }
+
+    if (catalog && catalog.length > 0) {
+      parts.push(
+        `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — this sends them the full catalog as a PDF, so you don't need to list every product yourself, just answer naturally and add the marker. Never mention this marker to the customer.`,
+      )
+    }
   }
 
   if (userPrompt && userPrompt.trim()) {
     parts.push(`Business context and instructions:\n${userPrompt.trim()}`)
+  }
+
+  if (catalog && catalog.length > 0) {
+    parts.push(
+      `Product catalog — the business's real, active products. Only recommend or quote items from this list; never invent a product, price, or availability that isn't here.\n\n${catalog.join('\n')}`,
+    )
   }
 
   if (knowledge && knowledge.length > 0) {

@@ -45,6 +45,7 @@ describe('parseGeneration', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage: null,
     })
   })
@@ -55,6 +56,7 @@ describe('parseGeneration', () => {
       handoff: true,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -62,6 +64,7 @@ describe('parseGeneration', () => {
       handoff: true,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage: null,
     })
   })
@@ -72,6 +75,7 @@ describe('parseGeneration', () => {
       handoff: false,
       markDealWon: true,
       moveToStageName: null,
+      sendCatalog: false,
       usage: null,
     })
   })
@@ -89,6 +93,7 @@ describe('parseGeneration', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: 'Negotiation',
+      sendCatalog: false,
       usage: null,
     })
   })
@@ -108,6 +113,26 @@ describe('parseGeneration', () => {
     expect(res.text).toBe('All set!')
   })
 
+  it('detects + strips the send-catalog sentinel', () => {
+    expect(parseGeneration('Here you go! [[ACTION:send_catalog]]')).toEqual({
+      text: 'Here you go!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: true,
+      usage: null,
+    })
+  })
+
+  it('allows send-catalog to appear alongside move-deal in the same reply', () => {
+    const res = parseGeneration(
+      'Claro, aquí tienes. [[ACTION:send_catalog]] [[ACTION:move_deal:Cotización]]',
+    )
+    expect(res.sendCatalog).toBe(true)
+    expect(res.moveToStageName).toBe('Cotización')
+    expect(res.text).toBe('Claro, aquí tienes.')
+  })
+
   it('passes usage straight through', () => {
     const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
     expect(parseGeneration('Hi', usage)).toEqual({
@@ -115,6 +140,7 @@ describe('parseGeneration', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage,
     })
   })
@@ -141,6 +167,7 @@ describe('generateReply — OpenAI', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -202,6 +229,7 @@ describe('generateReply — Anthropic', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: null,
+      sendCatalog: false,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

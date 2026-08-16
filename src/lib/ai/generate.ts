@@ -10,6 +10,7 @@ import {
   MARK_DEAL_WON_SENTINEL,
   MOVE_DEAL_SENTINEL_PREFIX,
   MOVE_DEAL_SENTINEL_SUFFIX,
+  SEND_CATALOG_SENTINEL,
   aiRequestTimeoutMs,
 } from './defaults'
 import { generateOpenAi } from './providers/openai'
@@ -70,6 +71,7 @@ export function parseGeneration(
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
   const markDealWon = raw.includes(MARK_DEAL_WON_SENTINEL)
+  const sendCatalog = raw.includes(SEND_CATALOG_SENTINEL)
 
   const moveMatch = raw.match(
     new RegExp(
@@ -83,10 +85,12 @@ export function parseGeneration(
     .join('')
     .split(MARK_DEAL_WON_SENTINEL)
     .join('')
+    .split(SEND_CATALOG_SENTINEL)
+    .join('')
     .replace(moveMatch ? moveMatch[0] : '', '')
     .trim()
 
-  return { text, handoff, markDealWon, moveToStageName, usage }
+  return { text, handoff, markDealWon, moveToStageName, sendCatalog, usage }
 }
 
 function escapeRegExp(s: string): string {

@@ -70,6 +70,9 @@ export interface GenerateResult {
    *  Always one of the stage names the model was shown; never the
    *  account's "won" stage (that's `markDealWon`'s job). */
   moveToStageName: string | null
+  /** True when the model asked to send the product catalog (auto-reply
+   *  mode only) — see `SEND_CATALOG_SENTINEL`. */
+  sendCatalog: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

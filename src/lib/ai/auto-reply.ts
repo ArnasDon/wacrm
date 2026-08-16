@@ -3,6 +3,7 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
+import { loadCatalogContext } from './catalog-context'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
@@ -12,6 +13,7 @@ import { engineSendText } from '@/lib/flows/meta-send'
 import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send-catalog'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -117,14 +119,20 @@ export async function dispatchInboundToAiReply(
     // marker below, handled by a person, never this one.
     const dealStageOptions = await loadDealStageOptions({ db, accountId, contactId })
 
+    // The account's active catalog, if any — lets the model recommend
+    // real products/prices and offer to send the full PDF instead of
+    // guessing or staying silent about what the business sells.
+    const catalog = await loadCatalogContext(db, accountId)
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       dealStageOptions,
+      catalog,
     })
 
-    const { text, handoff, markDealWon, moveToStageName, usage } = await generateReply({
+    const { text, handoff, markDealWon, moveToStageName, sendCatalog, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -201,13 +209,15 @@ export async function dispatchInboundToAiReply(
     })
 
     // Autonomous business actions — explicit product decision, no human
-    // confirmation gate for either (unlike every other business action,
-    // which goes through POST /api/ai/actions's two-step confirm flow).
-    // Both run after the send so a failure here can never prevent the
-    // customer-facing reply from going out. At most one fires per
-    // inbound: a purchase confirmation always wins over an ordinary
-    // stage-progress signal (the model is told to emit at most one
-    // "closing" marker, but code stays defensive about that).
+    // confirmation gate for any of these (unlike every other business
+    // action, which goes through POST /api/ai/actions's two-step
+    // confirm flow). All run after the send so a failure here can never
+    // prevent the customer-facing reply from going out. The two
+    // deal-mutating ones are mutually exclusive per inbound: a purchase
+    // confirmation always wins over an ordinary stage-progress signal
+    // (the model is told to emit at most one "closing" marker, but code
+    // stays defensive about that). Sending the catalog is independent —
+    // it mutates nothing, so it can fire alongside either.
     if (markDealWon) {
       try {
         await flagDealClosing({ db, accountId, conversationId, configOwnerUserId, handoffAgentId: config.handoffAgentId, alreadyAssigned: Boolean(conv.assigned_agent_id) })
@@ -219,6 +229,18 @@ export async function dispatchInboundToAiReply(
         await autoMoveDealStage({ db, accountId, contactId, configOwnerUserId, stageName: moveToStageName })
       } catch (err) {
         console.error('[ai auto-reply] autonomous move_deal failed:', err)
+      }
+    }
+
+    if (sendCatalog) {
+      try {
+        await sendCatalogToConversation(db, accountId, conversationId)
+      } catch (err) {
+        if (err instanceof SendCatalogError) {
+          console.error('[ai auto-reply] autonomous send_catalog failed:', err.message)
+        } else {
+          throw err
+        }
       }
     }
   } catch (err) {

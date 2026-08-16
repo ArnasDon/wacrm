@@ -1545,5 +1545,14 @@ crudo — no alcancé a abrir cada uno de los 11 en el navegador en esta
 sesión dado el volumen, pero el mismo patrón (`items={...}`) ya se
 validó en producción para el Inbox y el Dashboard.
 
+**Publicado y validado parcialmente en producción:** Angel autorizó el
+push (`f0dc2a4`). Con la sesión real de Angel en Chrome confirmé
+`AI Agents → Setup`: el selector de proveedor muestra "Anthropic
+(Claude)" (antes habría mostrado "anthropic") y "Hand off to" muestra
+"angel israel duran simon" (antes habría mostrado su UUID de usuario).
+No abrí los otros 9 archivos corregidos en el navegador — mismo patrón
+ya confirmado dos veces (Inbox, Dashboard, y ahora AI Agents), riesgo
+bajo de que alguno se comporte distinto.
+
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

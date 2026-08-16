@@ -1,18 +1,25 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { platformAdminClient } from '@/lib/platform/admin-client'
-import { findOverdueAccounts, suspendOverdueAccounts } from '@/lib/admin/subscriptions'
+import {
+  findAccountsDueInDays,
+  findOverdueAccounts,
+  sendSubscriptionAlerts,
+} from '@/lib/admin/subscriptions'
 
 /**
- * Daily subscription-suspension sweep. Same secret-header pattern as
+ * Daily subscription-alert sweep. Same secret-header pattern as
  * src/app/api/conversations/cron/route.ts and the other pg_cron-driven
  * routes — requires `x-cron-secret` to match `SUBSCRIPTIONS_CRON_SECRET`.
  *
- * `?dry_run=true` runs the read-only check (which accounts WOULD be
- * suspended right now) without mutating anything — this is the exact
- * safety check promised before ever scheduling the real pg_cron job:
- * hit this URL with dry_run once, review the list with Angel, only
- * then register the daily schedule.
+ * Never suspends anything automatically (Angel's explicit call,
+ * 2026-08-16) — it only emails PAYMENTS_INBOX: once when an account
+ * hits its 3-day warning, and daily while an account sits overdue.
+ * Angel reviews and suspends by hand from /admin ("Suspender").
+ *
+ * `?dry_run=true` returns which accounts WOULD trigger each alert right
+ * now, without sending anything — the safety check to run once and
+ * review before registering the daily pg_cron schedule.
  */
 export async function GET(request: Request) {
   const expected = process.env.SUBSCRIPTIONS_CRON_SECRET
@@ -33,10 +40,13 @@ export async function GET(request: Request) {
   const dryRun = new URL(request.url).searchParams.get('dry_run') === 'true'
 
   if (dryRun) {
-    const wouldSuspend = await findOverdueAccounts(db)
-    return NextResponse.json({ dry_run: true, would_suspend: wouldSuspend })
+    const [dueSoon, overdue] = await Promise.all([
+      findAccountsDueInDays(db, 3),
+      findOverdueAccounts(db),
+    ])
+    return NextResponse.json({ dry_run: true, due_soon: dueSoon, overdue })
   }
 
-  const result = await suspendOverdueAccounts(db)
+  const result = await sendSubscriptionAlerts(db)
   return NextResponse.json(result)
 }

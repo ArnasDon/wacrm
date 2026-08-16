@@ -6,7 +6,7 @@
 // Shows Angel's bank details (platform_settings, readable by any
 // authenticated user — migration 056) and this account's own next
 // payment due date, with a "Reportar pago" button (admin/owner only)
-// that emails pagosandia@gmail.com. Doesn't touch next_payment_due_at
+// that emails the payments inbox. Doesn't touch next_payment_due_at
 // itself — Angel confirms and advances it from /admin.
 // ============================================================
 

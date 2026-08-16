@@ -3,7 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { sendEmail, EmailError, type EmailAttachment } from '@/lib/email/send'
 
-const SUPPORT_INBOX = 'soportesandia1@gmail.com'
+const SUPPORT_INBOX = 'asistentedechat@gmail.com'
 const MAX_SCREENSHOTS = 5
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5MB each — stays well under Gmail's ~25MB total limit at 5 files
 

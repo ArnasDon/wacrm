@@ -3,7 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { sendEmail, EmailError } from '@/lib/email/send'
 
-const PAYMENTS_INBOX = 'pagosandia@gmail.com'
+const PAYMENTS_INBOX = 'asistentedechat@gmail.com'
 
 /**
  * POST /api/billing/report-payment  (admin+)

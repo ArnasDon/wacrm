@@ -230,7 +230,7 @@ export const RATE_LIMITS = {
   /** Support-issue report (sends an email with attachments), per user.
    *  Low — this is a "something's broken" button, not a chat; 5/min
    *  still lets someone retry after a validation error without being
-   *  able to spam soportesandia1@gmail.com. */
+   *  able to spam the support inbox. */
   supportReport: { limit: 5, windowMs: 60_000 },
   /** Payment report (sends an email), per user. Same reasoning as
    *  supportReport — an occasional, human-triggered action. */

@@ -5,7 +5,7 @@
 //
 // "Reportar un problema" — reachable from the sidebar's account menu.
 // Any logged-in user can send a description + up to 5 screenshots to
-// soportesandia1@gmail.com (POST /api/support/report). Screenshots are
+// the support inbox (POST /api/support/report). Screenshots are
 // emailed directly, never uploaded to Supabase Storage first.
 // ============================================================
 

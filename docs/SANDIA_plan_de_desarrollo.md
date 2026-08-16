@@ -1836,6 +1836,101 @@ antes de desplegar, así que este commit queda local junto con el Bloque
 7 hasta que decida el momento del deploy. Sigue el Bloque 9 (botón de
 soporte por correo).
 
+### 2026-08-16 — Claude Code — Bloque 10 (reportar pago + suscripciones en /admin)
+
+**Hecho:** el bloque de mayor riesgo del plan — toca el mismo mecanismo
+de suspensión (`accounts.suspended_at`/`suspended_reason`) del que
+depende `is_account_member()`, la función de la que cuelga cada
+política RLS del sistema (migración 044). Diseñado para que **ninguna
+cuenta real se vea afectada hasta que Angel le asigne una fecha de pago
+a mano** desde `/admin` — `next_payment_due_at` nace `NULL` en todas
+las cuentas existentes, y el barrido de suspensión automática nunca
+toca una cuenta con esa columna en `NULL`.
+
+- **Migración `056_billing.sql`:** `accounts.next_payment_due_at` +
+  `last_marked_paid_at` (ambas nullable). Tabla nueva
+  `platform_settings` (fila única, `id=1`) con los datos bancarios de
+  Angel — lectura abierta a cualquier usuario autenticado (`GRANT
+  SELECT ... TO authenticated` + política `USING (true)`), escritura
+  solo por el cliente de service-role desde una ruta con
+  `requirePlatformAdmin()` (mismo patrón que
+  `platform_company_invitations` de la migración 043 — sin ningún
+  GRANT de escritura para `authenticated`, así que ni siquiera hace
+  falta una política RLS de `UPDATE` para bloquearlo). Ningún cambio
+  en `is_account_member()` ni en las políticas existentes — reutiliza
+  tal cual las columnas de suspensión de la migración 044.
+- **`src/lib/admin/subscriptions.ts`:** `findOverdueAccounts()` (lectura
+  pura), `suspendOverdueAccounts()` (solo cuentas con
+  `next_payment_due_at` vencido y `suspended_at IS NULL` — nunca toca
+  una cuenta ya suspendida por otro motivo), `markAccountPaid()`
+  ("marcar como pagada": registra `last_marked_paid_at`, avanza
+  `next_payment_due_at` un mes desde la fecha vigente si todavía no
+  venció o desde hoy si ya venció/no existía, y reactiva la cuenta solo
+  si estaba suspendida específicamente por `'Pago pendiente'` — una
+  suspensión manual por otro motivo queda intacta).
+- **`GET /api/admin/subscriptions/cron`** (mismo patrón de secreto
+  `x-cron-secret` que los crons existentes, variable
+  `SUBSCRIPTIONS_CRON_SECRET`): soporta `?dry_run=true` para listar qué
+  cuentas suspendería **sin mutar nada** — esta es la verificación de
+  seguridad prometida en el plan antes de programar el `pg_cron` real.
+  Sin `dry_run`, ejecuta la suspensión de verdad.
+- **`/admin`:** columna nueva "Próximo pago" (input de fecha editable
+  por fila, guarda con `onBlur`) con la fecha del último pago marcado
+  debajo; botón "Marcar pagada" independiente del botón existente de
+  Suspender/Reactivar; nueva tarjeta "Mis datos bancarios" al final de
+  la página para editar `platform_settings`. `PATCH
+  /api/admin/companies/[id]` (ya existía para suspender/reactivar) gana
+  dos ramas nuevas — `mark_paid: true` y `next_payment_due_at` — antes
+  de la validación original de `suspended`, sin tocar esa lógica.
+  `GET /api/admin/companies` ahora también trae ambas fechas. Nueva
+  `PATCH /api/admin/platform-settings` (platform admin) para los datos
+  bancarios.
+- **Configuración → Facturación** (sección nueva en
+  `settings-sections.ts`, ícono `Banknote`, visible en el rail para
+  cualquier miembro): muestra los datos bancarios de `platform_settings`
+  (lectura directa vía cliente RLS-scoped, igual criterio que
+  `settings-overview.tsx`) y la fecha de próximo pago de la propia
+  cuenta; botón "Reportar pago" (`canEditSettings` — admin/owner) →
+  `POST /api/billing/report-payment`, que arma el correo a
+  `pagosandia@gmail.com` con empresa, quién reportó, fecha, y los datos
+  bancarios como referencia (tal como pidió Angel: el correo mismo debe
+  llevar los datos). No toca `next_payment_due_at` — Angel sigue
+  marcando el pago a mano en `/admin` después.
+- Reutiliza `src/lib/email/send.ts` del Bloque 9 con `account:
+  'payments'` — necesita `PAYMENTS_GMAIL_USER`/
+  `PAYMENTS_GMAIL_APP_PASSWORD`, las mismas variables que ya había
+  dejado reservadas la nota del Bloque 9.
+
+**Probado:** `npm run typecheck` limpio, `npx eslint` sobre los 10
+archivos tocados/nuevos (0 errores/warnings), `npm run build` limpio —
+confirmé explícitamente que `/api/admin/companies`,
+`/api/admin/companies/[id]`, `/api/admin/platform-settings` y
+`/api/admin/subscriptions/cron` aparecen en la lista de rutas.
+`git diff --stat package-lock.json` vacío. `npx vitest run`: 931/933
+(mismas 2 fallas preexistentes). Sin tests nuevos — la lógica más
+delicada (`markAccountPaid`/`suspendOverdueAccounts`) es CRUD directo
+sobre Supabase sin ramas de negocio complejas que valga la pena mockear
+por separado; el riesgo real de este bloque no está en la lógica sino
+en cuándo se activa, y por eso el diseño entero gira en torno a que
+nada se dispare solo.
+
+**Pendiente / siguiente paso — el más importante de los tres bloques:**
+la migración `056` NO está aplicada todavía (nada de los Bloques 8-10
+lo está — quedó en pausa a propósito hasta que Angel decida el momento
+del deploy conjunto). Antes de programar el `pg_cron` diario de
+`/api/admin/subscriptions/cron`, hay que: (1) desplegar, (2) aplicar la
+migración, (3) llamar la ruta con `?dry_run=true` y el secreto, y
+mostrarle a Angel exactamente qué cuentas suspendería hoy (debería ser
+ninguna, porque `next_payment_due_at` nace `NULL` en todas), y (4) solo
+entonces registrar el cron. Angel también debe generar la contraseña de
+aplicación de `pagosandia@gmail.com` y cargar
+`PAYMENTS_GMAIL_USER`/`PAYMENTS_GMAIL_APP_PASSWORD` en EasyPanel, además
+de `SUBSCRIPTIONS_CRON_SECRET` (nueva, para este cron).
+
+**Con esto quedan terminados los Bloques 8, 9 y 10 — los tres siguen
+sin publicar, a la espera de que Angel confirme el momento para lanzar
+todo el paquete junto (Bloques 6-10) en un solo despliegue.**
+
 ### 2026-08-16 — Claude Code — Bloque 9 (botón de soporte por correo)
 
 **Hecho:** primera capacidad de envío de correo del proyecto — antes de

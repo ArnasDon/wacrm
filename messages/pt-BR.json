@@ -133,11 +133,11 @@
       "today": "Hoje",
       "viewingNextWeek": "Próxima semana",
       "weekdays": {
-        "monday": "Segunda-feira",
-        "tuesday": "Terça-feira",
-        "wednesday": "Quarta-feira",
-        "thursday": "Quinta-feira",
-        "friday": "Sexta-feira",
+        "monday": "Segunda",
+        "tuesday": "Terça",
+        "wednesday": "Quarta",
+        "thursday": "Quinta",
+        "friday": "Sexta",
         "saturday": "Sábado",
         "sunday": "Domingo"
       }

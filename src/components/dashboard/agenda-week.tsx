@@ -62,24 +62,6 @@ function formatDayLabel(dateKey: string): string {
 }
 
 /**
- * Monday that anchors the agenda's "current" week. Every other day maps
- * to the Monday of its own calendar week (getWeekDates' normal rule).
- * Sunday is the deliberate exception: WEEK_DAY_OFFSETS never shows a
- * Sunday column, so getWeekDates(sunday) would resolve to the Mon-Sat
- * that just ended — the past week the agenda should already have moved
- * on from. Nudging the anchor to tomorrow instead rolls Sunday straight
- * into the upcoming week, matching what "semana atual" means to a
- * business user checking the agenda on a Sunday.
- */
-function currentAgendaWeekAnchor(base: Date = new Date()): Date {
-  const anchor = startOfLocalDay(base)
-  if (anchor.getDay() === 0) {
-    anchor.setDate(anchor.getDate() + 1)
-  }
-  return anchor
-}
-
-/**
  * Self-contained "Agenda da Semana" section — fetches this week's
  * (Mon–Sat, see WEEK_DAY_OFFSETS) appointments itself and owns both
  * the create dialog and the click-through detail sheet. Kept separate
@@ -93,17 +75,17 @@ export function AgendaWeek() {
   const [appointments, setAppointments] = useState<Appointment[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
-  // undefined = let the dialog fall back to today (its own default,
-  // used by the header "Novo Compromisso" button); set to a specific
-  // dateKey when opened from a day card's own "+" so that exact day
-  // (from weekDates, not "today") is pre-filled — see openNewAppointment.
+  // undefined = let the dialog fall back to today (its own default);
+  // set to a specific dateKey when opened from a day card's own "+" so
+  // that exact day (from weekDates, not "today") is pre-filled — see
+  // openNewAppointment.
   const [formDefaultDate, setFormDefaultDate] = useState<string | undefined>(undefined)
   const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null)
 
-  // 0 = current week (see currentAgendaWeekAnchor for the Sunday
-  // rule), 1 = next week. Navigation is capped to these two — "máximo
-  // 2 semanas de referência" — so Previous/Next just clamp instead of
-  // ever reaching a 3rd week.
+  // 0 = current week (the Mon-Sat span containing today, every day of
+  // the week including Sunday), 1 = next week. Navigation is capped to
+  // these two — "máximo 2 semanas de referência" — so Previous/Next
+  // just clamp instead of ever reaching a 3rd week.
   const [weekOffset, setWeekOffset] = useState<0 | 1>(0)
 
   // null = not connected, undefined = still loading, string = connected email.
@@ -167,7 +149,11 @@ export function AgendaWeek() {
   }
 
   const todayKey = localDayKey(new Date())
-  const weekAnchor = currentAgendaWeekAnchor()
+  // Always the calendar week actually containing today (Mon-Sat) — no
+  // day-of-week special case. Appointments must stay visible through
+  // their whole Mon-Sat span regardless of what day "today" is,
+  // including Sunday; the agenda never jumps ahead on its own.
+  const weekAnchor = startOfLocalDay(new Date())
   weekAnchor.setDate(weekAnchor.getDate() + weekOffset * 7)
   const weekDates = getWeekDates(weekAnchor)
   const weekKey = weekDates.join(',')
@@ -212,39 +198,11 @@ export function AgendaWeek() {
             {weekOffset === 1 ? ` · ${t('viewingNextWeek')}` : ''}
           </p>
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={goToPreviousWeek}
-            disabled={weekOffset === 0}
-            aria-label={t('previousWeek')}
-            title={t('previousWeek')}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant={weekOffset === 0 ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={goToToday}
-            className="px-3 text-xs"
-          >
-            {t('today')}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={goToNextWeek}
-            disabled={weekOffset === 1}
-            aria-label={t('nextWeek')}
-            title={t('nextWeek')}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* Right-side group — calendar connect + the week nav cluster,
+            in that order, pinned to the header's top-right corner (no
+            longer a 3rd flex child floating between title and here —
+            see git history for the "Novo Compromisso" button this
+            slot used to hold, removed per spec). */}
         <div className="flex items-center gap-2">
           {calendarEmail ? (
             <Button
@@ -268,10 +226,39 @@ export function AgendaWeek() {
               <span className="hidden sm:inline">{t('connectGoogleCalendar')}</span>
             </Button>
           )}
-          <Button size="sm" onClick={() => openNewAppointment()}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t('newAppointment')}</span>
-          </Button>
+          <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={goToPreviousWeek}
+              disabled={weekOffset === 0}
+              aria-label={t('previousWeek')}
+              title={t('previousWeek')}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant={weekOffset === 0 ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={goToToday}
+              className="px-3 text-xs"
+            >
+              {t('today')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={goToNextWeek}
+              disabled={weekOffset === 1}
+              aria-label={t('nextWeek')}
+              title={t('nextWeek')}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 

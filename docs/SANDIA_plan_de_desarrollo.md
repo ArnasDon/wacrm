@@ -2100,3 +2100,96 @@ empresa desde `/admin`.
 completar el click de borrado; Angel lo borró manualmente. Con esto,
 **los cinco bloques (6-10) quedan completos, publicados, validados en
 producción y con el cron de alertas de pago activo.**
+
+### 2026-08-16 — Claude Code — Catálogo: link en vez de PDF + "Me lo llevo" con entrega instantánea
+
+**Hecho:** tres cambios encadenados, pedidos por Angel después de ver el
+Bloque 8 y 7 en producción:
+
+1. **El catálogo se comparte como link, no como PDF.** Tanto el botón
+   manual (`POST /api/products/send-catalog`) como la acción autónoma
+   de la IA (`[[ACTION:send_catalog]]`) ahora mandan un mensaje de texto
+   con el link a `/catalog/<account_id>` en vez de generar y subir un
+   PDF — un paso menos (sin render/upload) y nunca queda desactualizado,
+   a diferencia de un PDF generado una sola vez. `src/lib/products/send-catalog.ts`
+   reescrito: ya no depende de `renderCatalogPdf`/`uploadCatalogPdf`, solo
+   arma la URL desde `NEXT_PUBLIC_SITE_URL` (documentado en el propio
+   `.env.local.example` como pensado exactamente para este caso: un
+   contexto sin `Request`, como la ruta autónoma de la IA). Se eliminó
+   `src/lib/pdf/catalog-pdf.tsx` (quedó sin ningún otro caller). El
+   texto del prompt de la IA (`defaults.ts`) también se actualizó para
+   describir un link en vez de un PDF.
+2. **El mensaje de WhatsApp del wa.me ahora lleva el pedido exacto**
+   (`quote-request/route.ts`) — en vez de "acabo de solicitar una
+   cotización", dice literalmente "Quiero cotizar: 2x Producto A, 1x
+   Producto B." — usando los `items` que devuelve `createQuote()`, así
+   quien atienda el chat (humano o IA) ya sabe qué cotizar sin que el
+   cliente tenga que volver a escribirlo.
+3. **"Me lo llevo" con entrega instantánea del PDF.** Angel pidió algo
+   más ambicioso: que el PDF de la cotización aparezca directo en el
+   chat, no solo un mensaje de texto. Restricción real de Meta
+   explicada y confirmada con Angel: un negocio no puede mandarle un
+   mensaje libre a alguien que nunca le ha escrito (o no le escribe hace
+   más de 24h) — así que el diseño final tiene dos caminos:
+   - **Push instantáneo:** si el contacto ya tiene una conversación
+     dentro de la ventana de 24h (por ejemplo, la IA compartió el link
+     del catálogo en medio de un chat activo), el PDF se manda de
+     inmediato a esa conversación — sin que el visitante salga de la
+     página del catálogo.
+   - **Fallback por wa.me:** si no hay ventana abierta (link frío,
+     primer contacto), se le sigue mandando el link de WhatsApp con el
+     pedido pre-llenado (punto 2); la cotización queda marcada
+     `auto_send_pending = true`, y en cuanto ese mensaje llega — abriendo
+     la ventana — el webhook de WhatsApp la detecta y manda el PDF solo,
+     como primera respuesta.
+   - Nuevo `src/lib/quotes/send-quote.ts`: extrae de
+     `POST /api/quotes/[id]/send` la lógica de generar/reusar el PDF +
+     enviarlo + marcar `sent_at`/`status` (ahora compartida entre esa
+     ruta humana, el push instantáneo, y el auto-envío del webhook), más
+     `findRecentConversation()` (misma regla "conversación más reciente"
+     que ya usaba la ruta humana) e `isWithinMessagingWindow()` (consulta
+     el último mensaje `sender_type='customer'` de la conversación —
+     no existía ningún chequeo de ventana de 24h en todo el proyecto
+     hasta ahora, Meta simplemente rechaza el envío si se manda fuera de
+     ventana).
+   - Migración `057_quote_auto_send.sql`: `quotes.auto_send_pending`
+     (booleano, default `false` — no afecta cotizaciones existentes ni
+     las creadas por otros caminos, como el constructor manual).
+   - `src/app/api/whatsapp/webhook/route.ts`: nuevo bloque, envuelto en
+     `try/catch` (nunca puede romper el procesamiento normal del
+     mensaje), justo después de `flagBroadcastReplyIfAny` — busca
+     cotizaciones `auto_send_pending=true` sin `sent_at` para ese
+     contacto y las manda con `sendQuoteToConversation`.
+   - Página pública (`catalog/[accountId]/page.tsx`): botón renombrado a
+     **"Me lo llevo"**; el diálogo de confirmación ahora distingue los
+     dos casos (`delivered: true` → "Ya te enviamos el PDF... revisa el
+     chat"; `delivered: false` → el botón de WhatsApp de siempre).
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios en cada uno de
+los tres commits. 10 tests nuevos en `send-catalog.test.ts` (link
+correcto, sin barra final duplicada, error claro si falta
+`NEXT_PUBLIC_SITE_URL`, no manda nada sin productos activos, envuelve
+`SendMessageError`) y 10 en `send-quote.test.ts` (genera/reusa PDF,
+marca `sent_at`/`auto_send_pending=false`, envuelve errores, ventana de
+mensajería por hora/mes/ausencia de mensajes). `npx vitest run`:
+951/953 (mismas 2 fallas preexistentes de `mondayIndex`). Publicado
+(`fde4008`, `2f5bd08`, `e2bdef6`) y migración `057` aplicada.
+
+**Validado en producción:** confirmé el botón "Me lo llevo" visible en
+`/catalog/<account_id>`, y probé `POST .../quote-request` de punta a
+punta — la respuesta ya trae `delivered: false` (sin conversación
+previa, cae al fallback esperado) y la cotización quedó con
+`auto_send_pending = true` en base de datos. Borré los 3 contactos y 7
+cotizaciones/negocios de prueba que quedaron del proceso de validación
+(uno de mis propios `curl` de polling terminó creando varias
+cotizaciones repetidas sin querer, por pegarle a una ruta que muta en
+vez de una de solo lectura — lección para la próxima vez que espere un
+deploy).
+
+**Pendiente / siguiente paso:** no se puede probar el push instantáneo
+de punta a punta sin un número de WhatsApp público conectado y una
+conversación real dentro de ventana — queda para cuando Angel conecte
+un número real. El auto-envío del webhook tampoco se probó con un
+mensaje real de Meta (no hay forma de simular la firma del webhook
+desde aquí); la cobertura de esa ruta descansa en los tests unitarios
+de `send-quote.ts` y en que el bloque nuevo está aislado con try/catch.

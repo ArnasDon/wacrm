@@ -90,6 +90,17 @@ export function canSendMessages(role: AccountRole): boolean {
 }
 
 /**
+ * Owner / admin / agent: create/edit/delete the product catalog and
+ * build quotes. Same threshold as `canSendMessages` — managing the
+ * catalog is operational sales work, not account configuration, per
+ * an explicit product decision (unlike WhatsApp config/templates,
+ * which stay admin-only under `canEditSettings`).
+ */
+export function canManageProducts(role: AccountRole): boolean {
+  return hasMinRole(role, "agent");
+}
+
+/**
  * Viewer: read-only across everything. Provided as a positive
  * predicate so UI gates read naturally (`if (canViewOnly(role))`
  * shows the "Read-only" tooltip without inverting `canSendMessages`).

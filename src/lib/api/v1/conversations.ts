@@ -13,7 +13,7 @@ import type { Conversation, Message } from '@/types';
 export interface ApiConversation {
   id: string;
   contact_id: string;
-  channel: 'whatsapp' | 'instagram';
+  channel: 'whatsapp' | 'instagram' | 'facebook';
   status: string;
   assigned_agent_id: string | null;
   last_message_text: string | null;

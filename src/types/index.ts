@@ -195,8 +195,8 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
-  /** Messaging channel this conversation is on (migration 039). Defaults to 'whatsapp' for every pre-existing row. */
-  channel?: 'whatsapp' | 'instagram';
+  /** Messaging channel this conversation is on (migration 039, widened to include 'facebook' in migration 041). Defaults to 'whatsapp' for every pre-existing row. */
+  channel?: 'whatsapp' | 'instagram' | 'facebook';
 }
 
 // ============================================================
@@ -427,6 +427,61 @@ export interface Deal {
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+}
+
+// ============================================================
+// Product catalog + Quotes (migration 053)
+// ============================================================
+
+export interface Product {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  image_url?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+
+export interface QuoteItem {
+  id: string;
+  quote_id: string;
+  /** Null for a free-form item — only a human can create one; the AI's
+   *  create_quote action only ever references catalog products. */
+  product_id: string | null;
+  description: string;
+  unit_price: number;
+  quantity: number;
+  line_total: number;
+  position: number;
+  created_at: string;
+}
+
+export interface Quote {
+  id: string;
+  account_id: string;
+  user_id: string;
+  contact_id: string;
+  deal_id: string | null;
+  customer_nit: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_address: string;
+  currency: string;
+  subtotal: number;
+  total: number;
+  status: QuoteStatus;
+  pdf_url?: string | null;
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  contact?: Contact;
+  items?: QuoteItem[];
 }
 
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';

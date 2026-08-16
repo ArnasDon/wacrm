@@ -74,15 +74,23 @@ export async function sendInstagramMedia(
   target: SendTarget,
   kind: InstagramMediaKind,
   link: string,
+  opts: { caption?: string | null; filename?: string | null } = {},
 ): Promise<ProviderSendResult> {
   const { config } = target
   if (isZernioProvider(config)) {
+    // Zernio's bridge supports a caption/filename on the underlying
+    // channel it's relaying to — forward them here. The direct-Meta path
+    // below can't: Instagram's own Send API attachment payload has no
+    // caption/filename field at all, a platform limitation, not a gap
+    // in this codebase.
     const result = await sendZernioMedia({
       apiKey: decrypt(config.zernio_api_key!),
       conversationId: requireZernioConversation(target),
       accountId: config.zernio_account_id!,
       kind,
       link,
+      caption: opts.caption ?? undefined,
+      filename: opts.filename ?? undefined,
     })
     return { messageId: result.messageId }
   }

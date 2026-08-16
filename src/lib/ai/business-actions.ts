@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { moveDeal, findWonStageId, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { supabaseAdmin } from '@/lib/webhooks/admin-client'
+import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import type { LeadTemperature } from '@/types'
 
 export type BusinessAction =
@@ -9,6 +10,7 @@ export type BusinessAction =
   | 'mark_deal_won'
   | 'move_deal'
   | 'set_lead_temperature'
+  | 'create_quote'
 
 const LEAD_TEMPERATURES: readonly LeadTemperature[] = ['cold', 'warm', 'hot']
 
@@ -23,8 +25,14 @@ export function confirmationPhrase(action: BusinessAction, targetId: string) {
 export async function executeBusinessAction(args: {
   db: SupabaseClient; accountId: string; userId: string; action: BusinessAction;
   targetId: string; stageId?: string; temperature?: string
+  /** create_quote only — targetId is the contact_id. */
+  items?: QuoteItemInput[]
+  customerNit?: string; customerEmail?: string; customerPhone?: string; customerAddress?: string
 }) {
-  const { db, accountId, userId, action, targetId, stageId, temperature } = args
+  const {
+    db, accountId, userId, action, targetId, stageId, temperature,
+    items, customerNit, customerEmail, customerPhone, customerAddress,
+  } = args
   let result: Record<string, unknown>
 
   // Webhook dispatch always goes through its own service-role client —
@@ -108,6 +116,27 @@ export async function executeBusinessAction(args: {
     void dispatchWebhookEvent(webhookDb, accountId, 'contact.lead_temperature_changed', {
       contact_id: data.id, lead_temperature: data.lead_temperature,
     })
+  } else if (action === 'create_quote') {
+    // targetId is a contact_id for this action, like set_lead_temperature.
+    // allowFreeItems: false — the AI may only ever quote from products
+    // that exist in the account's catalog; createQuote() enforces this
+    // itself (rejects any item without a valid, active product_id), so
+    // the model can't invent an item or a price even if it tried.
+    try {
+      const created = await createQuote({
+        db, accountId, userId, contactId: targetId,
+        customerNit: customerNit ?? '', customerEmail: customerEmail ?? '',
+        customerPhone: customerPhone ?? '', customerAddress: customerAddress ?? '',
+        items: items ?? [], allowFreeItems: false,
+      })
+      result = { ...created.quote, items: created.items }
+    } catch (err) {
+      if (err instanceof CreateQuoteError) throw new BusinessActionError(err.message, err.status)
+      throw err
+    }
+    void dispatchWebhookEvent(webhookDb, accountId, 'quote.created', {
+      quote_id: (result as { id: string }).id, contact_id: targetId, source: 'ai_action',
+    })
   } else {
     throw new BusinessActionError(`Unsupported action: ${action as string}`)
   }
@@ -117,6 +146,7 @@ export async function executeBusinessAction(args: {
     input: {
       ...(stageId ? { stageId } : {}),
       ...(temperature ? { temperature } : {}),
+      ...(action === 'create_quote' ? { items, customerNit, customerEmail, customerPhone, customerAddress } : {}),
     },
     result,
   })

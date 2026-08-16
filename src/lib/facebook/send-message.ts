@@ -61,7 +61,7 @@ export async function sendFacebookMessageToConversation(
   accountId: string,
   params: SendMessageParams
 ): Promise<SendMessageResult> {
-  const { conversationId, messageType, contentText, mediaUrl } = params;
+  const { conversationId, messageType, contentText, mediaUrl, filename } = params;
 
   if (!conversationId) {
     throw new SendMessageError('bad_request', 'conversation_id is required', 400);
@@ -120,6 +120,8 @@ export async function sendFacebookMessageToConversation(
         accountId: config.zernio_account_id,
         kind: messageType as ZernioMediaKind,
         link: mediaUrl!,
+        caption: contentText ?? undefined,
+        filename: filename ?? undefined,
       });
       zernioMessageId = result.messageId;
     } else {

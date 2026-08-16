@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   moveDeal: vi.fn(),
   findWonStageId: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  createQuote: vi.fn(),
 }))
 
 vi.mock('@/lib/pipelines/move-deal', () => ({
@@ -20,6 +21,16 @@ vi.mock('@/lib/pipelines/move-deal', () => ({
 }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
 vi.mock('@/lib/webhooks/admin-client', () => ({ supabaseAdmin: () => ({}) }))
+vi.mock('@/lib/quotes/create-quote', () => ({
+  createQuote: h.createQuote,
+  CreateQuoteError: class CreateQuoteError extends Error {
+    status: number
+    constructor(message: string, status = 400) {
+      super(message)
+      this.status = status
+    }
+  },
+}))
 
 import { executeBusinessAction, confirmationPhrase, BusinessActionError } from './business-actions'
 
@@ -98,6 +109,7 @@ beforeEach(() => {
   h.moveDeal.mockReset()
   h.findWonStageId.mockReset()
   h.dispatchWebhookEvent.mockReset().mockResolvedValue(undefined)
+  h.createQuote.mockReset()
 })
 
 describe('confirmationPhrase', () => {
@@ -277,6 +289,51 @@ describe('executeBusinessAction — set_lead_temperature', () => {
         db, accountId: 'acct-1', userId: 'user-1', action: 'set_lead_temperature', targetId: 'contact-x', temperature: 'warm',
       }),
     ).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('executeBusinessAction — create_quote', () => {
+  it('delegates to createQuote() with allowFreeItems: false and dispatches quote.created', async () => {
+    const { db, inserts } = makeDb({})
+    h.createQuote.mockResolvedValue({
+      quote: { id: 'quote-1', contact_id: 'contact-1', total: 100 },
+      items: [{ id: 'item-1', product_id: 'prod-1', quantity: 2 }],
+    })
+
+    const result = await executeBusinessAction({
+      db, accountId: 'acct-1', userId: 'user-1', action: 'create_quote', targetId: 'contact-1',
+      items: [{ product_id: 'prod-1', quantity: 2 }],
+      customerNit: '123', customerEmail: 'a@b.com', customerPhone: '+502...', customerAddress: 'Zona 1',
+    })
+
+    expect(h.createQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', allowFreeItems: false,
+        items: [{ product_id: 'prod-1', quantity: 2 }],
+      }),
+    )
+    expect(result).toMatchObject({ id: 'quote-1', total: 100 })
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(), 'acct-1', 'quote.created',
+      expect.objectContaining({ quote_id: 'quote-1', contact_id: 'contact-1', source: 'ai_action' }),
+    )
+    expect(inserts).toEqual([
+      expect.objectContaining({ table: 'ai_action_log', action: 'create_quote', target_id: 'contact-1' }),
+    ])
+  })
+
+  it('propagates a CreateQuoteError (e.g. an item without a valid catalog product) as a BusinessActionError', async () => {
+    const { db } = makeDb({})
+    const { CreateQuoteError } = await import('@/lib/quotes/create-quote')
+    h.createQuote.mockRejectedValue(new CreateQuoteError('Items must reference a catalog product (product_id)', 400))
+
+    await expect(
+      executeBusinessAction({
+        db, accountId: 'acct-1', userId: 'user-1', action: 'create_quote', targetId: 'contact-1',
+        items: [{ quantity: 1 }], // no product_id — the AI can never supply a free item
+        customerNit: '123', customerEmail: 'a@b.com', customerPhone: '+502...', customerAddress: 'Zona 1',
+      }),
+    ).rejects.toBeInstanceOf(BusinessActionError)
   })
 })
 

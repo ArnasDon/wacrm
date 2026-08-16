@@ -81,7 +81,7 @@ export async function sendInstagramMessageToConversation(
   accountId: string,
   params: SendMessageParams
 ): Promise<SendMessageResult> {
-  const { conversationId, messageType, contentText, mediaUrl } = params;
+  const { conversationId, messageType, contentText, mediaUrl, filename } = params;
 
   if (!conversationId) {
     throw new SendMessageError('bad_request', 'conversation_id is required', 400);
@@ -131,7 +131,10 @@ export async function sendInstagramMessageToConversation(
   let igMessageId = '';
   try {
     if (isMediaKind) {
-      const result = await sendInstagramMedia(target, messageType as InstagramMediaKind, mediaUrl!);
+      const result = await sendInstagramMedia(target, messageType as InstagramMediaKind, mediaUrl!, {
+        caption: contentText,
+        filename,
+      });
       igMessageId = result.messageId;
     } else {
       const result = await sendInstagramText(target, contentText!);

@@ -1148,3 +1148,79 @@ reportó hallazgos nuevos.
 **Notas:** No se modificaron datos reales — la migración 052 es puramente
 aditiva. `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
 cambios.
+
+### 2026-08-16 — Claude Code (Catálogo de productos + Cotizaciones)
+
+**Hecho:** Angel pidió adelantar el Catálogo + Cotizaciones (pospuesto desde
+el inicio de la sesión) antes de retomar lo pendiente del Bloque 3. Aclaré
+alcance con Angel en dos rondas de preguntas y construí el dominio "commerce"
+completo:
+
+1. **Prerrequisitos cross-canal:** `Conversation.channel` y la prop
+   `channel` del composer estaban tipadas solo `whatsapp|instagram` pese a
+   que la base de datos acepta `facebook` desde la migración 041 — se
+   amplió el tipo y se corrigió el gating de plantillas/mensaje interactivo
+   para Facebook también. Los envíos de documento por Instagram y Facebook
+   perdían el caption/filename (Instagram vía Meta directo no lo soporta a
+   nivel de plataforma — se documentó, no se puede arreglar; vía Zernio sí
+   se corrigió, igual que Facebook, que siempre pasa por Zernio).
+2. **Esquema (migración `053_product_catalog_and_quotes.sql`):**
+   `products`, `quotes`, `quote_items` (mismo patrón de RLS que
+   `quick_replies`: lectura para cualquier miembro, escritura `agent+`),
+   más el CHECK de `ai_action_log.action` extendido con `create_quote`, y
+   dos buckets de Storage nuevos (`product-media` para imágenes de
+   producto, `catalog-documents` para PDFs generados server-side).
+3. **Generación de PDF:** se agregó `@react-pdf/renderer` (no había
+   ninguna librería de PDF en el proyecto) — plantillas para el PDF de una
+   cotización y del catálogo completo.
+4. **Núcleo compartido `src/lib/quotes/create-quote.ts`:** valida los 4
+   datos del cliente (NIT/correo/celular/dirección), relee siempre el
+   precio de `products` para un ítem de catálogo (nunca confía en un
+   precio que mande el llamador), acepta ítems libres solo cuando
+   `allowFreeItems` es `true`, y crea automáticamente un negocio (deal)
+   vinculado en la pipeline de la cuenta.
+5. **Dos formas de crear una cotización:** un humano vía
+   `POST /api/quotes` (permite ítems libres) y la IA vía la nueva acción
+   `create_quote` en `business-actions.ts` (`allowFreeItems: false` —
+   la IA solo puede cotizar productos que existen en el catálogo,
+   reforzado server-side, no solo en el prompt; con confirmación
+   obligatoria como `set_lead_temperature`, no autónoma).
+6. **Rutas nuevas:** `/api/products` (+ `[id]`), `/api/quotes` (+ `[id]`,
+   `[id]/pdf`, `[id]/send`), `/api/products/send-catalog` — el envío de
+   cotización/catálogo reutiliza el envío channel-agnóstico ya existente
+   (`sendMessageToConversation`), sin escribir despacho por canal nuevo.
+7. **Permisos:** nueva capacidad `manage-products` (`useCan`/`roles.ts`)
+   en `agent+` — Administradores y Asesores, por decisión de Angel.
+8. **Moneda:** se agregó GTQ (Quetzal) a `CURRENCIES`
+   (`src/lib/currency.ts`) — no estaba, pese a que Sandía es para
+   Guatemala.
+9. **Interfaz:** nueva página `/products` ("Productos") en el menú
+   principal con pestañas Productos/Cotizaciones; armador de cotización
+   (`quote-builder.tsx`) reutilizable desde ahí y desde
+   `contact-sidebar.tsx` (nueva sección "Cotizaciones" por contacto, igual
+   que la de "Active Deals" del Bloque 3); opción "Enviar catálogo" en el
+   menú `+` del composer del inbox.
+10. **Evento de webhook nuevo:** `quote.created`, agregado al catálogo ya
+    existente (Bloque 2).
+
+**Probado:** `npm run typecheck`, `npx eslint .` (0 errores, mismos
+warnings preexistentes) y `npm run build` limpios (73 rutas, incluye
+`/products` y todas las rutas de `/api/products`/`/api/quotes`).
+`npx vitest run`: 907/909 (mismas 2 fallas preexistentes de zona horaria en
+`date-utils.test.ts`, ajenas a este trabajo). Pruebas nuevas: 13 en
+`create-quote.test.ts` (incluye la garantía de que la IA nunca puede crear
+un ítem libre ni alterar el precio de un producto del catálogo), 4 en
+`quote-pdf.test.ts`/`catalog-pdf.test.ts` (humo — el PDF generado empieza
+con la cabecera `%PDF-`), 2 nuevas en `business-actions.test.ts` para
+`create_quote`. Migración 053 aplicada contra `puvbwzwmojpjplhdfnmk`;
+`get_advisors` no reportó hallazgos nuevos.
+
+**Pendiente / siguiente paso:** Publicar (un solo push) y confirmar el
+deploy en EasyPanel. Después, retomar lo que quedó pausado del Bloque 3
+(programar el `pg_cron` de `/api/conversations/cron` y la validación
+manual), la validación pendiente del Bloque 2, y los Bloques 4 (i18n
+español) y 5 (CSP + rate limits).
+
+**Notas:** No se modificaron datos reales — la migración 053 es puramente
+aditiva. `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
+cambios.

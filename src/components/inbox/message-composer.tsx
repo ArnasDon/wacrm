@@ -23,6 +23,7 @@ import {
   MessageSquareDashed,
   Zap,
   Lightbulb,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -135,13 +136,15 @@ interface MessageComposerProps {
   /**
    * Which channel this conversation is on. Templates and the
    * WhatsApp-shaped interactive-message builder are WhatsApp-only
-   * concepts (Instagram has no template system, and its quick-reply
-   * analogue isn't wired into the composer yet — see
-   * docs/instagram-integration/PROGRESS.md) — both affordances are
-   * hidden for Instagram conversations. Defaults to 'whatsapp' so
-   * every existing caller keeps its current behavior unchanged.
+   * concepts — Instagram has no template system and its quick-reply
+   * analogue isn't wired into the composer yet (see
+   * docs/instagram-integration/PROGRESS.md), and Facebook's send layer
+   * (`validateFacebookSendParams`) rejects both message types outright
+   * — both affordances are hidden for Instagram and Facebook
+   * conversations. Defaults to 'whatsapp' so every existing caller keeps
+   * its current behavior unchanged.
    */
-  channel?: "whatsapp" | "instagram";
+  channel?: "whatsapp" | "instagram" | "facebook";
 }
 
 function formatDuration(seconds: number): string {
@@ -168,10 +171,15 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
   const isInstagram = channel === "instagram";
+  // Templates and the interactive-message builder are WhatsApp-only —
+  // both Instagram and Facebook lack them (Facebook's send layer rejects
+  // both message types server-side).
+  const hidesWhatsappOnlyFeatures = channel === "instagram" || channel === "facebook";
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [sendingCatalog, setSendingCatalog] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState<ActionSuggestion | null>(null);
   const [confirmingSuggestion, setConfirmingSuggestion] = useState(false);
@@ -326,6 +334,30 @@ export function MessageComposer({
       setDrafting(false);
     }
   }, [drafting, conversationId, adjustHeight]);
+
+  // Sends a PDF of the account's active product catalog to this
+  // conversation, generated on demand server-side.
+  const handleSendCatalog = useCallback(async () => {
+    if (sendingCatalog) return;
+    setSendingCatalog(true);
+    try {
+      const res = await fetch("/api/products/send-catalog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("sendCatalogFailed"));
+        return;
+      }
+      toast.success(t("sendCatalogSuccess"));
+    } catch {
+      toast.error(t("sendCatalogFailed"));
+    } finally {
+      setSendingCatalog(false);
+    }
+  }, [sendingCatalog, conversationId, t]);
 
   // Ask the AI to suggest one of the four business actions (close the
   // conversation, mark a deal won, move a deal, update lead temperature)
@@ -847,7 +879,7 @@ export function MessageComposer({
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              {!isInstagram && (
+              {!hidesWhatsappOnlyFeatures && (
                 <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
                   <MessageSquareDashed className="mr-2 h-4 w-4" />
                   {t("interactiveMessage")}
@@ -857,10 +889,18 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
               </DropdownMenuItem>
+              <DropdownMenuItem disabled={sendingCatalog} onClick={() => void handleSendCatalog()}>
+                {sendingCatalog ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <BookOpen className="mr-2 h-4 w-4" />
+                )}
+                {t("sendCatalog")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {!isInstagram && (
+          {!hidesWhatsappOnlyFeatures && (
             <GatedButton
               variant="ghost"
               size="sm"

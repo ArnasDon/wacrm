@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { BusinessActionError, confirmationPhrase, executeBusinessAction, type BusinessAction } from '@/lib/ai/business-actions'
+import type { QuoteItemInput } from '@/lib/quotes/create-quote'
 
 const ACTIONS = new Set<BusinessAction>([
   'close_conversation',
   'mark_deal_won',
   'move_deal',
   'set_lead_temperature',
+  'create_quote',
 ])
 
 export async function POST(request: Request) {
@@ -33,6 +35,11 @@ export async function POST(request: Request) {
       db: supabase, accountId, userId, action, targetId,
       stageId: typeof body?.stageId === 'string' ? body.stageId : undefined,
       temperature: typeof body?.temperature === 'string' ? body.temperature : undefined,
+      items: Array.isArray(body?.items) ? (body.items as QuoteItemInput[]) : undefined,
+      customerNit: typeof body?.customerNit === 'string' ? body.customerNit : undefined,
+      customerEmail: typeof body?.customerEmail === 'string' ? body.customerEmail : undefined,
+      customerPhone: typeof body?.customerPhone === 'string' ? body.customerPhone : undefined,
+      customerAddress: typeof body?.customerAddress === 'string' ? body.customerAddress : undefined,
     })
     return NextResponse.json({ ok: true, action, result })
   } catch (error) {

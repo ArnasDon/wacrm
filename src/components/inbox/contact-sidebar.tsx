@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import type { Contact, Deal, ContactNote, Tag, PipelineStage, LeadTemperature } from "@/types";
+import { useCan } from "@/hooks/use-can";
+import { formatCurrency } from "@/lib/currency";
+import type { Contact, Deal, ContactNote, Tag, PipelineStage, LeadTemperature, Quote } from "@/types";
 import {
   Phone,
   Mail,
@@ -17,6 +19,8 @@ import {
   Trophy,
   Loader2,
   Thermometer,
+  FileText,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -36,26 +40,34 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LeadTemperatureBadge } from "@/components/contacts/lead-temperature-badge";
+import { QuoteBuilder } from "@/components/products/quote-builder";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Current open conversation, if any — lets a quote built here target
+   *  it directly for "save and send" instead of resolving one server-side. */
+  conversationId?: string | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversationId = null }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
   const tTemp = useTranslations("Contacts.detailView");
 
   const { accountId } = useAuth();
+  const canManageProducts = useCan("manage-products");
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [quoteBuilderOpen, setQuoteBuilderOpen] = useState(false);
+  const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
 
   // Deal-action state: stages per pipeline (for the "move stage" picker
   // and to know which stage is "Venta cerrada"), a busy flag per deal
@@ -73,8 +85,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags, and quotes in parallel
+    const [dealsRes, notesRes, tagsRes, quotesRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -89,7 +101,13 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("quotes")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .order("created_at", { ascending: false }),
     ]);
+    if (quotesRes.data) setQuotes(quotesRes.data);
 
     if (dealsRes.data) {
       setDeals(dealsRes.data);
@@ -228,6 +246,41 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       }
     } finally {
       setSavingTemperature(false);
+    }
+  }
+
+  async function handleViewQuotePdf(quote: Quote) {
+    let url = quote.pdf_url;
+    if (!url) {
+      const res = await fetch(`/api/quotes/${quote.id}/pdf`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || tSidebar("quotePdfFailed"));
+        return;
+      }
+      url = data.pdf_url;
+      await fetchContactData();
+    }
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleResendQuote(quote: Quote) {
+    setSendingQuoteId(quote.id);
+    try {
+      const res = await fetch(`/api/quotes/${quote.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(conversationId ? { conversation_id: conversationId } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || tSidebar("quoteSendFailed"));
+        return;
+      }
+      toast.success(tSidebar("quoteSendSuccess"));
+      await fetchContactData();
+    } finally {
+      setSendingQuoteId(null);
     }
   }
 
@@ -454,6 +507,70 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
+          {/* Quotes */}
+          <div>
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <FileText className="h-3 w-3" />
+                {tSidebar("quotes")}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                disabled={!canManageProducts}
+                onClick={() => setQuoteBuilderOpen(true)}
+              >
+                <Plus className="h-3 w-3" />
+                {tSidebar("newQuote")}
+              </Button>
+            </div>
+            <div className="mt-2 space-y-2">
+              {quotes.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noQuotes")}</p>
+              ) : (
+                quotes.map((quote) => (
+                  <div key={quote.id} className="rounded-lg bg-muted px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-foreground">
+                        {formatCurrency(quote.total, quote.currency)}
+                      </p>
+                      <span className="text-[10px] uppercase text-muted-foreground">{quote.status}</span>
+                    </div>
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 flex-1 border-border text-[11px]"
+                        onClick={() => handleViewQuotePdf(quote)}
+                      >
+                        <FileText className="size-3" />
+                        {tSidebar("viewPdf")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 flex-1 border-border text-[11px]"
+                        disabled={!canManageProducts || sendingQuoteId === quote.id}
+                        onClick={() => handleResendQuote(quote)}
+                      >
+                        {sendingQuoteId === quote.id ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Send className="size-3" />
+                        )}
+                        {tSidebar("resend")}
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
           {/* Notes */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -525,6 +642,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <QuoteBuilder
+        open={quoteBuilderOpen}
+        onOpenChange={setQuoteBuilderOpen}
+        contact={contact}
+        conversationId={conversationId}
+        onSaved={fetchContactData}
+      />
     </div>
   );
 }

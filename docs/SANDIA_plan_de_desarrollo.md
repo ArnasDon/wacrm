@@ -1651,17 +1651,29 @@ no reportó ningún hallazgo nuevo relacionado (la lista completa son
 hallazgos preexistentes de sesiones anteriores, ninguno toca
 `ai_action_log`).
 
-**Pendiente / siguiente paso:** publicar, confirmar el deploy en
-EasyPanel, y validar en producción con cautela — es la pieza de mayor
-riesgo de esta sesión porque toca conversaciones reales de clientes.
-Sugerido: (1) revisar `GET /api/ai/usage` en el navegador para confirmar
-que las dos tarjetas nuevas cargan sin error; (2) si Angel tiene una
-conversación real de prueba disponible, seguirla y confirmar que al
-avanzar naturalmente hacia una etapa distinta el negocio se mueve solo, y
-que al confirmar una compra la conversación se pausa y se asigna en vez
-de cerrarse sola; (3) revisar `ai_action_log` por SQL después para
-confirmar que las filas nuevas (`move_deal`/`flag_deal_closing` con
-`source: auto_reply_autonomous`) tienen sentido.
+**Publicado y validado parcialmente en producción:** Angel autorizó el
+push (`4743e2f`). Confirmé con `fetch` autenticado que
+`GET /api/ai/usage?days=30` responde `200` con
+`results: {deals_auto_advanced: 0, conversations_resolved: 1}` (el 1 es
+dato real preexistente, no algo que yo haya generado) y con la tarjeta
+"Token usage & results" en `AI Agents → Usage` mostrando "Deals
+auto-advanced: 0" y "Resolved without a human: 1" junto a las métricas
+de tokens que ya había. **No pude validar el flujo autónomo en sí**
+(avanzar una etapa sola / entregar el chat al confirmar compra) porque
+eso requiere una conversación real de WhatsApp en curso con un cliente
+real — no algo que se pueda simular de forma segura sin mensajear a un
+tercero sin autorización.
+
+**Pendiente / siguiente paso:** cuando Angel tenga una conversación real
+en curso (o quiera probarlo escribiéndose a sí mismo desde otro número),
+confirmar: (1) que al avanzar naturalmente hacia una etapa distinta el
+negocio se mueve solo; (2) que al confirmar una compra la conversación
+se pausa y se asigna al asesor de "Hand off to" en vez de cerrarse sola;
+(3) revisar `ai_action_log` por SQL para confirmar que las filas nuevas
+(`move_deal`/`flag_deal_closing` con `source: auto_reply_autonomous`)
+tienen sentido. Hasta entonces, el código está desplegado y probado por
+unidad, pero el comportamiento autónomo en una conversación real sigue
+sin un smoke test end-to-end.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

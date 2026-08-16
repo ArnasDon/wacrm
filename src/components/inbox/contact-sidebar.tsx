@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useCan } from "@/hooks/use-can";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrency, CURRENCIES } from "@/lib/currency";
 import type { Contact, Deal, ContactNote, Tag, PipelineStage, LeadTemperature, Quote } from "@/types";
 import {
   Phone,
@@ -23,6 +23,7 @@ import {
   Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -57,7 +58,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const tThread = useTranslations("Inbox.messageThread");
   const tTemp = useTranslations("Contacts.detailView");
 
-  const { accountId } = useAuth();
+  const { accountId, defaultCurrency } = useAuth();
   const canManageProducts = useCan("manage-products");
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -76,6 +77,19 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const [stagesByPipeline, setStagesByPipeline] = useState<Record<string, PipelineStage[]>>({});
   const [busyDealId, setBusyDealId] = useState<string | null>(null);
   const [confirmWinDeal, setConfirmWinDeal] = useState<Deal | null>(null);
+
+  // All of the account's pipelines (with their stages), independent of
+  // whether this contact has any deals yet — powers the "New deal"
+  // quick-create below, which needs a pipeline+stage picker even when
+  // `stagesByPipeline` (derived from existing deals) is empty.
+  const [pipelines, setPipelines] = useState<{ id: string; name: string; stages: PipelineStage[] }[]>([]);
+  const [newDealOpen, setNewDealOpen] = useState(false);
+  const [newDealTitle, setNewDealTitle] = useState("");
+  const [newDealPipelineId, setNewDealPipelineId] = useState("");
+  const [newDealStageId, setNewDealStageId] = useState("");
+  const [newDealValue, setNewDealValue] = useState("");
+  const [newDealCurrency, setNewDealCurrency] = useState(defaultCurrency);
+  const [creatingDeal, setCreatingDeal] = useState(false);
 
   const [temperature, setTemperature] = useState<LeadTemperature | "unclassified">("unclassified");
   const [savingTemperature, setSavingTemperature] = useState(false);
@@ -150,6 +164,36 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     fetchContactData();
   }, [fetchContactData]);
 
+  // Account-level pipelines, loaded once (not per-contact) so the
+  // "New deal" quick-create has a pipeline/stage picker ready even
+  // before this contact has any deals.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [pipelinesRes, stagesRes] = await Promise.all([
+        supabase.from("pipelines").select("id, name").order("created_at"),
+        supabase.from("pipeline_stages").select("*").order("position"),
+      ]);
+      if (cancelled) return;
+      const stagesByPipelineId: Record<string, PipelineStage[]> = {};
+      for (const stage of stagesRes.data ?? []) {
+        (stagesByPipelineId[stage.pipeline_id] ??= []).push(stage);
+      }
+      setPipelines(
+        (pipelinesRes.data ?? []).map((p) => ({
+          id: p.id as string,
+          name: p.name as string,
+          stages: stagesByPipelineId[p.id as string] ?? [],
+        })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
     await navigator.clipboard.writeText(contact.phone);
@@ -215,6 +259,56 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     } finally {
       setBusyDealId(null);
     }
+  }
+
+  function openNewDeal() {
+    const defaultPipeline = pipelines[0];
+    setNewDealTitle(contact?.name || contact?.instagram_username || contact?.phone || "");
+    setNewDealPipelineId(defaultPipeline?.id ?? "");
+    setNewDealStageId(defaultPipeline?.stages[0]?.id ?? "");
+    setNewDealValue("");
+    setNewDealCurrency(defaultCurrency);
+    setNewDealOpen(true);
+  }
+
+  function handleNewDealPipelineChange(pipelineId: string) {
+    setNewDealPipelineId(pipelineId);
+    const pipeline = pipelines.find((p) => p.id === pipelineId);
+    setNewDealStageId(pipeline?.stages[0]?.id ?? "");
+  }
+
+  async function handleCreateDeal() {
+    if (!contact || !accountId || !newDealTitle.trim() || !newDealPipelineId || !newDealStageId) return;
+    setCreatingDeal(true);
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) {
+      toast.error(tSidebar("dealCreateFailed"));
+      setCreatingDeal(false);
+      return;
+    }
+    const { error } = await supabase.from("deals").insert({
+      title: newDealTitle.trim(),
+      value: parseFloat(newDealValue) || 0,
+      currency: newDealCurrency,
+      contact_id: contact.id,
+      pipeline_id: newDealPipelineId,
+      stage_id: newDealStageId,
+      user_id: user.id,
+      account_id: accountId,
+      status: "open",
+    });
+    setCreatingDeal(false);
+    if (error) {
+      toast.error(tSidebar("dealCreateFailed"));
+      return;
+    }
+    toast.success(tSidebar("dealCreateSuccess"));
+    setNewDealOpen(false);
+    await fetchContactData();
   }
 
   async function handleConfirmWon() {
@@ -420,12 +514,115 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
 
           {/* Active Deals */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <DollarSign className="h-3 w-3" />
+                {tSidebar("deals")}
+              </div>
+              {!newDealOpen && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  disabled={pipelines.length === 0}
+                  onClick={openNewDeal}
+                >
+                  <Plus className="h-3 w-3" />
+                  {tSidebar("newDeal")}
+                </Button>
+              )}
             </div>
             <div className="mt-2 space-y-2">
-              {deals.length === 0 ? (
+              {newDealOpen && (
+                <div className="space-y-1.5 rounded-lg border border-border bg-muted px-3 py-2">
+                  <Input
+                    autoFocus
+                    value={newDealTitle}
+                    onChange={(e) => setNewDealTitle(e.target.value)}
+                    placeholder={tSidebar("dealTitlePlaceholder")}
+                    className="h-7 border-border bg-card text-xs"
+                  />
+                  {pipelines.length > 1 && (
+                    <Select
+                      value={newDealPipelineId}
+                      onValueChange={(v) => v && handleNewDealPipelineChange(v)}
+                    >
+                      <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pipelines.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Select
+                    value={newDealStageId}
+                    onValueChange={(v) => v && setNewDealStageId(v)}
+                  >
+                    <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
+                      <SelectValue placeholder={tSidebar("dealStagePlaceholder")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(pipelines.find((p) => p.id === newDealPipelineId)?.stages ?? []).map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <DollarSign className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="number"
+                        value={newDealValue}
+                        onChange={(e) => setNewDealValue(e.target.value)}
+                        placeholder="0"
+                        className="h-7 border-border bg-card pl-6 text-xs"
+                      />
+                    </div>
+                    <select
+                      value={newDealCurrency}
+                      onChange={(e) => setNewDealCurrency(e.target.value)}
+                      className="h-7 w-[4.5rem] rounded-lg border border-border bg-card px-1.5 text-xs text-foreground outline-none focus:border-primary"
+                    >
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-1.5 pt-0.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 flex-1 border-border text-muted-foreground hover:bg-muted text-xs"
+                      disabled={creatingDeal}
+                      onClick={() => setNewDealOpen(false)}
+                    >
+                      {tSidebar("cancel")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-7 flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
+                      disabled={creatingDeal || !newDealTitle.trim() || !newDealStageId}
+                      onClick={handleCreateDeal}
+                    >
+                      {creatingDeal ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        tSidebar("createDeal")
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {deals.length === 0 && !newDealOpen ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
               ) : (
                 deals.map((deal) => {

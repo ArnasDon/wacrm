@@ -1242,3 +1242,142 @@ error de servidor), confirmando que el deploy quedó sano.
 bueno para producción, vale la pena correr `npm ci` dentro de
 `node:20-alpine` (Docker) para adelantarse a este tipo de discrepancia
 entre versiones de npm — no solo confiar en que pasó localmente.
+
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Bloque 3 pg_cron + validación pendiente del Bloque 2
+
+**Hecho:** Retomé los dos pendientes que quedaron pausados. (1) Programé
+el job `conversation-reassign-sweep` (`*/5 * * * *`) en `pg_cron` contra
+`puvbwzwmojpjplhdfnmk`, igual que `webhook-retry-sweep` del Bloque 2:
+`net.http_get` a `GET https://sandia-sandia-crm.kmencc.easypanel.host/api/conversations/cron`
+con `x-cron-secret` vía `execute_sql` (no en migración, para no dejar el
+secreto persistido en el repo). Angel ya tenía `CONVERSATIONS_CRON_SECRET`
+cargado en EasyPanel y me pasó el valor por chat. (2) Completé la
+validación manual pendiente del Bloque 2: creé un endpoint de prueba en
+Configuración → Webhooks apuntando a webhook.site, un negocio de prueba
+vinculado a un contacto real, y lo moví a "Won" vía `PATCH
+/api/deals/[id]/stage` (llamado desde la consola del navegador ya
+autenticado como Angel, porque el `Select` de etapa del panel del Inbox
+resultó poco fiable para automatización — problema de la UI/automatización,
+no del código de la app).
+
+**Hallazgo durante la validación (corregido en la sesión):** el primer
+intento de mover el negocio a "Won" no disparó `deal.won`. Causa: la etapa
+"Won" del pipeline de Angel (creada en el seed original, antes de la
+migración 051) nunca quedó marcada `is_won = true` — el campo default es
+`false` y migración 051 no puede inferir automáticamente cuál etapa
+representa "venta cerrada" en un pipeline ya existente. Lo corregí desde
+Pipelines → **Manage Pipelines** → casilla "Venta cerrada" en la fila
+"Won", sin tocar SQL directo salvo para diagnosticar. **Cualquier cuenta
+con un pipeline creado antes del Bloque 2 probablemente tiene el mismo
+problema silencioso** — vale la pena que alguien revise/marque la etapa
+ganadora de cada pipeline real (Angel y David) para que `deal.won` no se
+quede mudo ahí también.
+
+**Probado (Bloque 2, extremo a extremo):** Con `is_won` corregido, reabrí y
+volví a cerrar el negocio (Qualified → Won) y la conversación (open →
+closed) desde la consola autenticada para forzar un evento fresco. Verifiqué
+en `webhook_deliveries`: `deal.won` y `conversation.closed`, ambos
+`status = 'delivered'`, `response_status = 200`. Verifiqué en el dashboard
+de webhook.site el payload completo de los dos requests — `account_id`
+correcto, `deal_id`/`conversation_id` correctos, `closed_by`/`source:
+"human"` — y los headers `x-wacrm-signature`, `x-wacrm-webhook-id`,
+`x-wacrm-event` presentes en ambos. Bloque 2 queda validado por completo.
+
+**Probado (Bloque 3, cron):** Confirmé `GET /api/conversations/cron` sin
+header → `401` (la variable ya estaba cargada en EasyPanel, como indicó
+Angel) y con `x-cron-secret` correcto → `200 {"processed":3,"assigned":0}`
+(3 conversaciones abiertas sin asesor superaron el timeout; `assigned:0`
+porque nadie estaba en línea en el momento de la prueba — comportamiento
+esperado, documentado en el bloque original). El job quedó registrado en
+`cron.job` (`jobid 2`, `active: true`); su primera ejecución automática
+programada (no confirmada todavía por `cron.job_run_details` al momento de
+escribir esto, ya que el job se creó fuera del minuto `*/5`) queda para
+quien retome la sesión, igual que se hizo con `webhook-retry-sweep` en el
+Bloque 2.
+
+**Limpieza:** Borré el negocio de prueba (`Prueba webhook Bloque 2`) y el
+endpoint de webhook de prueba (webhook.site) al terminar — no quedan
+artefactos de prueba en `deals` ni en `webhook_endpoints`. La conversación
+de David Duran quedó igual que antes de la prueba (`closed`, que ya era su
+estado original).
+
+**Verificación adicional de `is_won`:** revisé los demás pipelines reales
+por SQL — "Proceso de Ventas" (la otra cuenta de Angel) ya tenía "Venta
+cerrada" marcada `is_won = true` desde antes de esta sesión, y la cuenta de
+David Emanuel Duran Simon todavía no tiene ningún pipeline creado
+(`pipeline_count = 0`), así que no aplica por ahora. No quedan pipelines
+reales con el problema silencioso — solo hace falta que quien cree un
+pipeline nuevo recuerde marcar la casilla "Venta cerrada" en la etapa que
+corresponda.
+
+**Pendiente / siguiente paso:** (1) Confirmar en `cron.job_run_details`
+que `conversation-reassign-sweep` corrió automáticamente al menos una vez
+con `status: succeeded` (mismo chequeo que se hizo para el Bloque 2). (2)
+Con eso, ambos bloques (2 y 3) quedan completamente cerrados y se puede
+seguir con Bloques 4 (i18n español) y 5 (CSP + rate limits), o con
+Catálogo/Cotizaciones si Angel prefiere continuar por ahí.
+
+**Notas:** No se modificaron datos de negocio reales más allá del propio
+negocio/webhook de prueba, ya eliminados. `src/lib/probe_delete_test.txt`
+no fue tocado. La automatización de UI (clicks en el `Select` custom de
+etapa en el panel del Inbox) no funcionó de forma confiable en esta sesión
+— quedó resuelto llamando directamente a las rutas API server-side
+(`PATCH /api/deals/[id]/stage`, `PATCH /api/conversations/[id]/status`)
+desde la consola del navegador ya autenticado, que ejercitan exactamente
+el mismo código que dispara los webhooks. Si un futuro agente necesita
+automatizar ese `Select` vía clicks reales, considerar que es un
+componente custom (no `<select>` nativo) sensible a temporización.
+
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Inbox: crear negocio desde el chat
+
+**Hecho:** Angel señaló, revisando la validación anterior, que si un
+contacto/chat todavía no tiene ningún negocio, el panel lateral del Inbox
+(`contact-sidebar.tsx`) no ofrecía forma de crear uno — solo listaba y
+permitía mover negocios ya existentes. Para moverlo a "Cotización", "Venta
+cerrada" o cualquier otra etapa había que salir al módulo Pipelines, crear
+el negocio ahí, elegir el contacto manualmente, y volver al chat. Con dos
+decisiones de Angel (botón rápido inline en vez de reutilizar el panel
+grande de Pipelines; si la cuenta tiene más de un pipeline, preguntar cuál
+en vez de asumir uno por defecto — Angel tiene dos: "Sales Pipeline" y
+"Proceso de Ventas"), agregué un botón "+ Nuevo" junto a "Deals" en el
+panel lateral que abre un mini-formulario inline (título, selector de
+pipeline si hay más de uno, etapa, valor y moneda) sin salir del chat. Crea
+el negocio ya vinculado al contacto actual vía inserción directa a
+`deals` (mismo patrón que usa `deal-form.tsx` en Pipelines — no hay ruta
+`POST /api/deals`, así que mantuve consistencia con lo existente en vez de
+introducir una nueva), y recarga la lista para que el negocio nuevo
+aparezca de inmediato con los controles ya existentes de mover
+etapa/marcar ganado.
+
+**Probado:** `npm run typecheck`, `npx eslint` sobre el archivo tocado, y
+`npx vitest run i18n` (3/3) limpios. `npm run build` completó sin errores
+(mismas rutas de antes, no se agregó ninguna). Encontré y corregí dos
+`Select` (el de pipeline y el de etapa del formulario nuevo) que no
+tipaban contra la firma real de `onValueChange` (acepta `string | null`
+en este componente base — Next.js 16/base-ui, ver `AGENTS.md`) antes de
+que el build pasara.
+
+**Importante — revertido antes de commitear:** mi `npm install` local (para
+poder correr `typecheck`/`build`, ya que `node_modules` estaba incompleto
+en este entorno) regeneró `package-lock.json` y sin querer volvió a quitar
+la entrada `next-intl/node_modules/@swc/helpers` que la sesión anterior
+había fijado a propósito para evitar el fallo de `npm ci` en la imagen
+`node:20-alpine` de EasyPanel (ver la entrada "Catálogo de productos +
+Cotizaciones" más arriba). Lo detecté con `git diff --stat` antes de
+comitear y revertí `package-lock.json` con `git checkout --` — el commit
+de este bloque no toca el lockfile.
+
+**No pude probarlo en un navegador real en esta sesión:** intenté levantar
+`npm run dev` localmente (apunta al Supabase real vía `.env`) pero no
+tengo forma de autenticarme sin escribir la contraseña de Angel — pedirle
+la contraseña o generar un enlace mágico con la service role key para
+sortear el login está fuera de lo que puedo hacer sin permiso explícito, y
+el intento de generar el enlace fue bloqueado por el propio entorno.
+**Pendiente / siguiente paso:** publicar este commit, confirmar el deploy
+en EasyPanel, y validar a mano en producción: abrir un chat sin negocios,
+crear uno con "+ Nuevo" eligiendo la etapa "Cotización" o "Venta cerrada"
+del pipeline "Proceso de Ventas", confirmar que aparece correctamente y
+que moverlo después con el selector ya existente sigue funcionando.
+
+**Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
+commit.

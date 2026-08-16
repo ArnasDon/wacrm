@@ -1000,3 +1000,24 @@ hallazgos nuevos. El job de `cron.schedule` se registró (`schedule: 1`).
 datos fue el backfill aditivo propio de la migración
 (`pipeline_stages.is_won` default `false`, sin afectar etapas existentes).
 `src/lib/probe_delete_test.txt` permanece intacto y fuera del commit.
+
+### 2026-08-16 — Claude Code (Bloque 2: cron confirmado extremo a extremo)
+
+**Hecho:** Angel agregó `WEBHOOK_CRON_SECRET` en EasyPanel y confirmó el
+deploy terminado. Verifiqué el pipeline completo por SQL contra el proyecto
+real: `GET /api/webhooks/cron` sin encabezado devolvió `401 Unauthorized`
+(confirma que la variable ya está configurada — `503` habría significado que
+faltaba), y las últimas 5 ejecuciones de `cron.job_run_details` más
+`net._http_response` muestran `status_code 200` con `{"processed":0}` cada 5
+minutos — el cron de Supabase le pega correctamente a producción con el
+secreto correcto; "0" es esperado porque todavía no hay ninguna entrega
+pendiente de reintento.
+
+**Pendiente / siguiente paso:** Falta únicamente la validación funcional
+manual en la app (crear un webhook de prueba en Configuración → Webhooks,
+mover un negocio a "Venta cerrada", cerrar una conversación, revisar el log
+de entregas) — pendiente de que Angel la haga cuando le convenga; no bloquea
+dar el bloque por desplegado, ya que la infraestructura de entrega y
+reintentos quedó confirmada extremo a extremo. Después de esa validación,
+abrir la planificación del Bloque 3 (acciones de IA en interfaz
+conversacional).

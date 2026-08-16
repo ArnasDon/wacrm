@@ -1404,16 +1404,32 @@ hallazgo para una sesión futura, no se tocó nada fuera de este archivo.
 
 **Probado tras el fix:** `npm run typecheck`, `npx eslint` (0 errores, el
 mismo warning preexistente de `<img>` sin relación) y `npm run build`
-limpios; `package-lock.json` sin cambios. Publiqué el commit `[pendiente
-de hash — ver git log]` y, tras el deploy, verifiqué en producción con la
-sesión de Angel que el selector de pipeline/etapa del formulario nuevo ya
-muestra los nombres correctos ("Sales Pipeline" / "Cotización" / etc.) en
-vez del UUID.
+limpios; `package-lock.json` sin cambios. Publiqué el commit `5b94a17` y,
+tras el deploy, verifiqué en producción con la sesión de Angel: abrí el
+chat de David Duran (sin negocios), abrí "+ New", y confirmé que
+TEMPERATURE ya muestra "Unclassified" (antes mostraba el valor crudo en
+minúsculas) y que el formulario de negocio nuevo muestra "Sales Pipeline"
+/ "Proceso de Ventas" en el selector de pipeline y las 5 etapas reales
+("Cliente reciente", "Cotización", "Convencimiento", "Venta cerrada",
+"Seguimiento entrega") con nombre legible en el selector de etapa —
+cambiar de pipeline recalcula la etapa a la primera del pipeline elegido,
+como se diseñó. No llegué a confirmar visualmente el selector de etapa de
+un negocio *ya existente* (no había ninguno creado en esta cuenta al
+momento de probar) porque los clics automatizados sobre el listbox ya
+abierto siguieron siendo poco fiables (mismo problema de automatización
+documentado en el bloque anterior — funciona con teclado y con el primer
+clic que abre el trigger, pero no con clics sobre las opciones ya
+desplegadas); la navegación por teclado (`ArrowDown`+`Enter`) sí confirmó
+el cambio de pipeline correctamente. Es el mismo componente y el mismo
+fix (`items={...}`) que ya se ve bien en los dos selectores nuevos, así
+que doy el fix por bueno, pero un check visual humano directo sobre un
+negocio real existente sería la confirmación final.
 
-**Pendiente / siguiente paso:** confirmar que el selector de etapa de un
-negocio *ya existente* (el que originaba la duda de Angel) también
-muestra el nombre correcto ahora, y decidir si vale la pena auditar el
-resto de los `Select` custom del proyecto para el mismo problema.
+**Pendiente / siguiente paso:** que Angel (o una próxima sesión) confirme
+a simple vista que el selector de etapa de un negocio ya existente
+también muestra el nombre en vez del UUID, y decida si vale la pena
+auditar el resto de los `Select` custom del proyecto (Configuración,
+Pipelines, etc.) para el mismo problema.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

@@ -1056,3 +1056,7 @@ retomar la validación pendiente del Bloque 2 y abrir el Bloque 3.
 
 **Notas:** No se modificaron datos reales. `src/lib/probe_delete_test.txt`
 permanece intacto y fuera del commit.
+
+**Deploy confirmado:** Angel confirmó el build en verde para `57352d9` en
+EasyPanel (build completo, 63 rutas, `Success`). Pendiente que confirme en
+la app que el menú "Assign" ya no muestra la empresa de David Emanuel.

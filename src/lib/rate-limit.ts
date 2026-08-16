@@ -219,6 +219,14 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Public catalog page (read-only), per-IP. Generous — covers a
+   *  visitor reloading/browsing, plus the page's own client-side
+   *  fetch on mount. */
+  publicCatalogView: { limit: 60, windowMs: 60_000 },
+  /** Public catalog quote request, per-IP. Mutates data (creates a
+   *  contact + quote + deal), so tighter than the read — still enough
+   *  for a genuine visitor to retry a typo without hitting the wall. */
+  publicCatalogQuote: { limit: 10, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

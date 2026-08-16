@@ -44,6 +44,7 @@ interface ConfigSummary {
   id: string;
   provider: Provider;
   display_name: string | null;
+  public_phone_number: string | null;
   phone_number_id: string | null;
   waba_id: string | null;
   zernio_account_id: string | null;
@@ -287,6 +288,7 @@ function ConnectionForm({
 
   const [provider, setProvider] = useState<Provider>(initialData?.provider ?? 'meta');
   const [displayName, setDisplayName] = useState(initialData?.display_name ?? '');
+  const [publicPhoneNumber, setPublicPhoneNumber] = useState(initialData?.public_phone_number ?? '');
   const [makeDefault, setMakeDefault] = useState(isFirstConnection || initialData?.is_default || false);
 
   const [phoneNumberId, setPhoneNumberId] = useState(initialData?.phone_number_id ?? '');
@@ -373,6 +375,7 @@ function ConnectionForm({
       const payload: Record<string, unknown> = {
         provider: 'meta',
         display_name: displayName.trim() || null,
+        public_phone_number: publicPhoneNumber.trim() || null,
         is_default: makeDefault,
       };
 
@@ -448,6 +451,7 @@ function ConnectionForm({
       const payload: Record<string, unknown> = {
         provider: 'zernio',
         display_name: displayName.trim() || null,
+        public_phone_number: publicPhoneNumber.trim() || null,
         is_default: makeDefault,
         zernio_account_id: zernioAccountId.trim(),
       };
@@ -620,6 +624,16 @@ function ConnectionForm({
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
               <p className="text-xs text-muted-foreground">{t('displayNameHint')}</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('publicPhoneNumber')}</Label>
+              <Input
+                placeholder={t('publicPhoneNumberPlaceholder')}
+                value={publicPhoneNumber}
+                onChange={(e) => setPublicPhoneNumber(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">{t('publicPhoneNumberHint')}</p>
             </div>
             {!(isFirstConnection && !isEditing) && (
               <label className="flex items-center gap-2 text-sm text-foreground">

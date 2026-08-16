@@ -28,7 +28,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('whatsapp_config')
       .select(
-        'id, provider, display_name, phone_number_id, waba_id, zernio_account_id, status, is_default, connected_at, registered_at, subscribed_apps_at, last_registration_error'
+        'id, provider, display_name, public_phone_number, phone_number_id, waba_id, zernio_account_id, status, is_default, connected_at, registered_at, subscribed_apps_at, last_registration_error'
       )
       .eq('account_id', accountId)
       .order('is_default', { ascending: false })
@@ -74,11 +74,16 @@ export async function POST(request: Request) {
       typeof body.display_name === 'string' && body.display_name.trim()
         ? body.display_name.trim()
         : null
+    const publicPhoneNumber: string | null =
+      typeof body.public_phone_number === 'string' && body.public_phone_number.trim()
+        ? body.public_phone_number.trim()
+        : null
     const requestedDefault = isFirstConnection || body.is_default === true
 
     if (body.provider === 'zernio') {
       return await createZernioWhatsAppConfig(supabase, accountId, userId, body, {
         displayName,
+        publicPhoneNumber,
         makeDefault: requestedDefault,
       })
     }
@@ -115,6 +120,7 @@ export async function POST(request: Request) {
         account_id: accountId,
         user_id: userId,
         display_name: displayName,
+        public_phone_number: publicPhoneNumber,
         is_default: requestedDefault,
         ...connected.row,
       })
@@ -165,7 +171,7 @@ async function createZernioWhatsAppConfig(
   userId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   body: any,
-  opts: { displayName: string | null; makeDefault: boolean }
+  opts: { displayName: string | null; publicPhoneNumber: string | null; makeDefault: boolean }
 ) {
   const { zernio_api_key, zernio_account_id } = body
 
@@ -190,6 +196,7 @@ async function createZernioWhatsAppConfig(
       account_id: accountId,
       user_id: userId,
       display_name: opts.displayName,
+      public_phone_number: opts.publicPhoneNumber,
       is_default: opts.makeDefault,
       ...connected.row,
     })

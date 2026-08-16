@@ -1754,3 +1754,84 @@ Bloque 8 (página pública de catálogo + cotización por selección).
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.
+
+### 2026-08-16 — Claude Code — Bloque 8 (página pública del catálogo + cotización por selección)
+
+**Hecho:** implementé el Bloque 8 completo del plan aprobado
+(`shimmering-hopping-tide.md`). Antes de escribir código investigué el
+gap real que el plan no había anticipado: **`whatsapp_config` nunca ha
+guardado un número de teléfono marcable.** Solo tiene `phone_number_id`
+(el ID interno de enrutamiento de Meta, no el número), y
+`display_phone_number` se consulta en vivo contra la Graph API solo en
+el momento de conectar, para un toast — nunca se persiste
+(`src/lib/whatsapp/config-connect.ts`). Hacer esa consulta en vivo desde
+una ruta pública sin sesión habría sido lento, frágil, y no funciona
+para el proveedor Zernio (que no tiene número de Meta). Resolví esto con
+un ajuste pequeño de alcance sobre lo planeado: nueva columna
+`whatsapp_config.public_phone_number` (migración `055`, nullable,
+editable a mano en Configuración → WhatsApp, mismo patrón que
+`display_name`) — el link de WhatsApp del catálogo se resuelve de ahí,
+no de Meta. Angel debe cargarlo una vez en Configuración para que el
+botón de WhatsApp aparezca en su catálogo público (si queda vacío, la
+cotización igual se crea, solo no se ofrece el link).
+
+- **Página pública nueva:** `src/app/catalog/[accountId]/page.tsx`
+  (+ `src/app/catalog/layout.tsx`) — sin auth, cliente, fuera de
+  `protectedPaths` (confirmado en `src/middleware.ts`: el array no
+  incluye `/catalog`). Grid de productos activos con selector de
+  cantidad (+/-), barra inferior fija con total y botón "Solicitar
+  cotización" que abre un diálogo pidiendo Nombre y Teléfono
+  (obligatorios) + NIT/Correo/Dirección (opcionales — si quedan en
+  blanco se usan valores de reserva: `C/F` para NIT como es costumbre en
+  Guatemala, "No proporcionado(a)" para correo/dirección). Imágenes con
+  `<img>` plano, no `next/image` — mismo criterio que
+  `product-form.tsx`, evita tener que dar de alta el dominio de Supabase
+  Storage en `next.config.ts`.
+- **`GET /api/public/catalog/[accountId]`** (pública, rate-limited
+  `publicCatalogView` 60/min por IP, cliente `supabaseAdmin()` porque no
+  hay sesión) — nombre de cuenta, productos activos (id/nombre/
+  descripción/precio/imagen), moneda por defecto, y el
+  `public_phone_number` de la conexión de WhatsApp default.
+- **`POST /api/public/catalog/[accountId]/quote-request`** (pública,
+  rate-limited `publicCatalogQuote` 10/min por IP) — reutiliza
+  `findOrCreateContact`/`resolveAuditUserId` de `src/lib/api/v1/contacts.ts`
+  (la misma deduplicación por teléfono que ya usa la API pública) y
+  `createQuote()` de `src/lib/quotes/create-quote.ts` con
+  `allowFreeItems: false` y exactamente los `product_id`/`quantity` que
+  la persona marcó — nada de texto libre interpretado por IA, tal como
+  quedó explícitamente fuera de alcance en el Bloque 7. Responde con
+  `wa.me/<public_phone_number>?text=...` (mismo patrón de
+  `encodeURIComponent` que `invite-member-dialog.tsx`) para que sea el
+  visitante quien inicie el chat de WhatsApp — evita cualquier problema
+  de ventana de 24h de mensajería saliente, y la cotización ya queda
+  creada y vinculada a su contacto antes de que ese chat entre al inbox.
+- **Configuración → WhatsApp:** nuevo campo "Número público de WhatsApp"
+  en el formulario de conexión (`whatsapp-config.tsx`), junto al nombre
+  para mostrar — se guarda vía `POST`/`PATCH /api/whatsapp/config[/id]`,
+  columna nueva incluida en el `GET` de listado. Strings nuevos en
+  `messages/en.json`/`ko.json` bajo `Settings.whatsapp`.
+- Nuevos buckets de rate limit en `src/lib/rate-limit.ts`:
+  `publicCatalogView` (60/min) y `publicCatalogQuote` (10/min).
+
+**Probado:** `npm run typecheck` limpio (tuve que forzar una
+recompilación del dev server para que regenerara los tipos de rutas de
+Next — `/catalog` no existía todavía en su caché), `npx eslint` sobre
+los 10 archivos tocados (0 errores; 1 warning preexistente sin relación
+en `whatsapp-config.tsx`, línea que no toqué), `npm run build` limpio
+(las 2 rutas públicas y `/catalog/[accountId]` aparecen listadas),
+`git status --short package-lock.json` vacío, `npx vitest run`:
+931/933 (mismas 2 fallas preexistentes de `mondayIndex`, sin tests
+nuevos en este bloque — es código nuevo sin lógica de negocio compleja
+aislable; la lógica que sí es delicada, `createQuote`/`findOrCreateContact`,
+ya tiene su propia cobertura de antes).
+
+**Pendiente / siguiente paso:** validar en producción con la cuenta real
+de Angel (cargar un número público de WhatsApp en Configuración,
+visitar `/catalog/<su-account-id>`, seleccionar 1-2 productos, confirmar
+que la cotización aparece en Productos → Cotizaciones vinculada a un
+contacto nuevo, confirmar que el link de WhatsApp abre con el número y
+mensaje correctos, y borrar el contacto/cotización de prueba después).
+Todavía no publicado — Angel pidió avanzar con los Bloques 8, 9 y 10
+antes de desplegar, así que este commit queda local junto con el Bloque
+7 hasta que decida el momento del deploy. Sigue el Bloque 9 (botón de
+soporte por correo).

@@ -156,6 +156,9 @@ export async function PATCH(
     if (typeof body.display_name === 'string') {
       fieldsToUpdate.display_name = body.display_name.trim() || null
     }
+    if (typeof body.public_phone_number === 'string') {
+      fieldsToUpdate.public_phone_number = body.public_phone_number.trim() || null
+    }
 
     let phoneInfo: unknown = null
     let registrationError: string | null = null

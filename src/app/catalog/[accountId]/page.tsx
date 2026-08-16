@@ -256,7 +256,7 @@ export default function PublicCatalogPage() {
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-8 border-gray-300 text-gray-700 hover:bg-gray-100"
+                        className="size-8 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
                         onClick={() => setQuantity(product.id, Math.max(0, qty - 1))}
                         disabled={qty === 0}
                       >
@@ -269,7 +269,7 @@ export default function PublicCatalogPage() {
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-8 border-gray-300 text-gray-700 hover:bg-gray-100"
+                        className="size-8 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
                         onClick={() => setQuantity(product.id, qty + 1)}
                       >
                         <Plus className="size-3.5" />
@@ -365,7 +365,7 @@ export default function PublicCatalogPage() {
                 <Button
                   variant="outline"
                   onClick={() => setDialogOpen(false)}
-                  className="border-gray-300 text-gray-700 hover:bg-gray-100"
+                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
                 >
                   Cancelar
                 </Button>
@@ -401,7 +401,7 @@ export default function PublicCatalogPage() {
                 <Button
                   variant="outline"
                   onClick={resetDialog}
-                  className="border-gray-300 text-gray-700 hover:bg-gray-100"
+                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
                 >
                   Cerrar
                 </Button>

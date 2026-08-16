@@ -128,6 +128,10 @@
       "calendarConnectError": "Couldn't connect to Google Calendar. Please try again.",
       "calendarDisconnectedToast": "Google Calendar disconnected.",
       "calendarDisconnectFailed": "Couldn't disconnect. Please try again.",
+      "previousWeek": "Previous week",
+      "nextWeek": "Next week",
+      "today": "Today",
+      "viewingNextWeek": "Next week",
       "weekdays": {
         "monday": "Monday",
         "tuesday": "Tuesday",

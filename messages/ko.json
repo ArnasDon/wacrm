@@ -128,6 +128,10 @@
       "calendarConnectError": "Google 캘린더에 연결하지 못했습니다. 다시 시도해 주세요.",
       "calendarDisconnectedToast": "Google 캘린더 연결이 해제되었습니다.",
       "calendarDisconnectFailed": "연결을 해제하지 못했습니다. 다시 시도해 주세요.",
+      "previousWeek": "이전 주",
+      "nextWeek": "다음 주",
+      "today": "오늘",
+      "viewingNextWeek": "다음 주",
       "weekdays": {
         "monday": "월요일",
         "tuesday": "화요일",

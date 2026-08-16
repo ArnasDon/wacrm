@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CalendarSync, Info, LogOut, Plus } from 'lucide-react'
+import { CalendarSync, ChevronLeft, ChevronRight, Info, LogOut, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { listAppointmentsByDateRange } from '@/lib/appointments/queries'
@@ -12,7 +12,7 @@ import { listAppointmentsByDateRange } from '@/lib/appointments/queries'
 // build). This file is a client component, so it must not import
 // anything that transitively drags that in.
 import { getMyCalendarConnection, disconnectMyCalendar } from '@/lib/calendar/connection-queries'
-import { getWeekDates, localDayKey } from '@/lib/dashboard/date-utils'
+import { getWeekDates, localDayKey, startOfLocalDay } from '@/lib/dashboard/date-utils'
 import { AppointmentFormDialog } from '@/components/appointments/appointment-form-dialog'
 import { AppointmentDetailSheet } from '@/components/appointments/appointment-detail-sheet'
 import { Skeleton } from './skeleton'
@@ -62,6 +62,24 @@ function formatDayLabel(dateKey: string): string {
 }
 
 /**
+ * Monday that anchors the agenda's "current" week. Every other day maps
+ * to the Monday of its own calendar week (getWeekDates' normal rule).
+ * Sunday is the deliberate exception: WEEK_DAY_OFFSETS never shows a
+ * Sunday column, so getWeekDates(sunday) would resolve to the Mon-Sat
+ * that just ended — the past week the agenda should already have moved
+ * on from. Nudging the anchor to tomorrow instead rolls Sunday straight
+ * into the upcoming week, matching what "semana atual" means to a
+ * business user checking the agenda on a Sunday.
+ */
+function currentAgendaWeekAnchor(base: Date = new Date()): Date {
+  const anchor = startOfLocalDay(base)
+  if (anchor.getDay() === 0) {
+    anchor.setDate(anchor.getDate() + 1)
+  }
+  return anchor
+}
+
+/**
  * Self-contained "Agenda da Semana" section — fetches this week's
  * (Mon–Sat, see WEEK_DAY_OFFSETS) appointments itself and owns both
  * the create dialog and the click-through detail sheet. Kept separate
@@ -81,6 +99,12 @@ export function AgendaWeek() {
   // (from weekDates, not "today") is pre-filled — see openNewAppointment.
   const [formDefaultDate, setFormDefaultDate] = useState<string | undefined>(undefined)
   const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null)
+
+  // 0 = current week (see currentAgendaWeekAnchor for the Sunday
+  // rule), 1 = next week. Navigation is capped to these two — "máximo
+  // 2 semanas de referência" — so Previous/Next just clamp instead of
+  // ever reaching a 3rd week.
+  const [weekOffset, setWeekOffset] = useState<0 | 1>(0)
 
   // null = not connected, undefined = still loading, string = connected email.
   const [calendarEmail, setCalendarEmail] = useState<string | null | undefined>(undefined)
@@ -143,8 +167,14 @@ export function AgendaWeek() {
   }
 
   const todayKey = localDayKey(new Date())
-  const weekDates = getWeekDates(new Date())
+  const weekAnchor = currentAgendaWeekAnchor()
+  weekAnchor.setDate(weekAnchor.getDate() + weekOffset * 7)
+  const weekDates = getWeekDates(weekAnchor)
   const weekKey = weekDates.join(',')
+
+  const goToPreviousWeek = () => setWeekOffset(0)
+  const goToNextWeek = () => setWeekOffset(1)
+  const goToToday = () => setWeekOffset(0)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -177,7 +207,43 @@ export function AgendaWeek() {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('description')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t('description')}
+            {weekOffset === 1 ? ` · ${t('viewingNextWeek')}` : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={goToPreviousWeek}
+            disabled={weekOffset === 0}
+            aria-label={t('previousWeek')}
+            title={t('previousWeek')}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={weekOffset === 0 ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={goToToday}
+            className="px-3 text-xs"
+          >
+            {t('today')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={goToNextWeek}
+            disabled={weekOffset === 1}
+            aria-label={t('nextWeek')}
+            title={t('nextWeek')}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           {calendarEmail ? (

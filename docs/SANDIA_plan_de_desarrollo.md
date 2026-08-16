@@ -1224,3 +1224,21 @@ español) y 5 (CSP + rate limits).
 **Notas:** No se modificaron datos reales — la migración 053 es puramente
 aditiva. `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
 cambios.
+
+**Deploy confirmado (con un bache en el camino):** El primer intento de
+deploy (`73b042a`) falló en `npm ci` dentro de Docker con
+`Missing: @swc/helpers@0.5.23 from lock file` — una inconsistencia
+preexistente en `package-lock.json` (una dependencia anidada opcional de
+`next-intl` nunca quedó registrada), que solo la versión de npm que usa la
+imagen `node:20-alpine` de EasyPanel (10.8.2) detecta; mi npm local (11.x)
+la toleraba en silencio. Reproduje el build exacto con Docker localmente
+(`node:20-alpine`), regeneré `package-lock.json` dentro de ese mismo
+contenedor, y confirmé `npm ci` limpio antes de publicar el fix
+(`692d30c`). Angel confirmó el segundo deploy en verde (~22 minutos).
+Verifiqué `GET /api/products` en producción → `401` (requiere sesión, no
+error de servidor), confirmando que el deploy quedó sano.
+
+**Lección para próximas sesiones:** antes de dar un `npm install` por
+bueno para producción, vale la pena correr `npm ci` dentro de
+`node:20-alpine` (Docker) para adelantarse a este tipo de discrepancia
+entre versiones de npm — no solo confiar en que pasó localmente.

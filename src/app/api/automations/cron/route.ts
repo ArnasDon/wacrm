@@ -5,6 +5,19 @@ import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 
 /**
+ * A pending row this stale means the external pinger stopped hitting
+ * this endpoint for a while (outage, misconfigured/deleted cron-job.org
+ * job, rotated secret, etc. — exactly what happened 2026-08-16: this
+ * endpoint had no cron job pointed at it at all). Rather than silently
+ * firing a wait-step message hours late to a real customer once the
+ * pinger comes back, anything overdue by more than this is marked
+ * 'failed' with a clear reason instead of executed. 15 minutes is
+ * generous headroom above the 1-minute polling interval this endpoint
+ * expects, so it never trips under normal operation.
+ */
+const MAX_STALENESS_MS = 15 * 60 * 1000
+
+/**
  * Drain due `automation_pending_executions` rows. Meant to be hit
  * on a schedule (Vercel Cron / external pinger) — requires a shared
  * secret via the `x-cron-secret` header to match
@@ -43,6 +56,7 @@ export async function GET(request: Request) {
   if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
 
   let processed = 0
+  let skippedStale = 0
   for (const row of due) {
     const { data: claim } = await admin
       .from('automation_pending_executions')
@@ -52,6 +66,24 @@ export async function GET(request: Request) {
       .select('id')
       .maybeSingle()
     if (!claim) continue
+
+    const staleMs = Date.now() - new Date(row.run_at as string).getTime()
+    if (staleMs > MAX_STALENESS_MS) {
+      const reason = `wait step skipped: ${Math.round(staleMs / 60000)}min overdue (cron gap) — not sent to avoid a stale message reaching the customer`
+      await admin
+        .from('automation_pending_executions')
+        .update({ status: 'failed' })
+        .eq('id', row.id)
+      if (row.log_id) {
+        await admin
+          .from('automation_logs')
+          .update({ status: 'failed', error_message: reason })
+          .eq('id', row.log_id as string)
+      }
+      console.warn('[automations/cron]', reason, { pendingId: row.id })
+      skippedStale++
+      continue
+    }
 
     await resumePendingExecution({
       id: row.id as string,
@@ -70,5 +102,5 @@ export async function GET(request: Request) {
     processed++
   }
 
-  return NextResponse.json({ processed })
+  return NextResponse.json({ processed, skippedStale })
 }

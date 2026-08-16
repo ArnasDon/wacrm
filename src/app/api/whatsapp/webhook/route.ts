@@ -16,6 +16,14 @@ import {
 } from '@/lib/whatsapp/template-webhook'
 import { handleInboundPendingConfirmation } from '@/lib/eter/pending-confirmation'
 import { cancelFollowUpCadence } from '@/lib/eter/followups'
+import { handleInboundDataDeletionRequest } from '@/lib/eter/data-deletion'
+import {
+  forwardApprovalDecision,
+  isAisdrApprovalForwardEnabled,
+  isAuthorizedApprover,
+  parseApprovalButtonId,
+  verifyApprovalContext,
+} from '@/lib/eter/aisdr-approval-forward'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -292,6 +300,80 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
+
+        // AI SDR approval buttons ([Enviar]/[Descartar]) — MUST run
+        // before the normal cascade below (contact/conversation
+        // creation, flows, automations, AI auto-reply). These taps are
+        // Ricardo deciding on a LinkedIn/WhatsApp outreach approval,
+        // not a lead messaging in; they are forwarded to the AI SDR
+        // worker and never touch the inbox. See
+        // src/lib/eter/aisdr-approval-forward.ts for the full contract
+        // (button id shape, retry/idempotency/queue behaviour) — this
+        // fixes approvals that fell into the void after the single Meta
+        // webhook moved to this app on 11 Aug (see migration 042).
+        //
+        // Gated behind AISDR_APPROVAL_FORWARD_ENABLED so it can be
+        // disabled without reverting code; when disabled (or the
+        // tapped button doesn't match the aisdr_ pattern) the message
+        // falls through to the normal cascade unchanged.
+        if (isAisdrApprovalForwardEnabled() && message.type === 'interactive') {
+          const buttonId = message.interactive?.button_reply?.id
+          const parsed = buttonId ? parseApprovalButtonId(buttonId) : null
+          if (parsed) {
+            // SECURITY — forgery guard. `approval_id` is a small
+            // sequential integer, trivially guessable, and Meta's
+            // webhook payload carries no cryptographic proof of who
+            // tapped the button beyond `message.from`. This check MUST
+            // run first, before any HTTP call to the AI SDR worker or
+            // any write to `aisdr_approval_forwards` — an unauthorized
+            // sender must not be able to trigger network calls or DB
+            // writes just by sending well-shaped button ids (DoS via
+            // wasted retries/queue rows). See
+            // isAuthorizedApprover/getAuthorizedApproverPhones in
+            // aisdr-approval-forward.ts for the fail-closed allowlist.
+            if (!isAuthorizedApprover(message.from)) {
+              console.error(
+                '[webhook] SEGURANÇA: tentativa de aprovação AI SDR de remetente não autorizado — ' +
+                  `from=${message.from} approval_id=${parsed.approvalId} decisao=${parsed.decision} ` +
+                  `wa_message_id=${message.id} — recusado antes de qualquer chamada de rede ou escrita em BD. ` +
+                  'Ver AISDR_APPROVER_PHONES em docs/eter-agent-config.md.',
+              )
+              continue
+            }
+
+            // Context-id check — see verifyApprovalContext's doc
+            // comment: PREPARED BUT INACTIVE (this repo has no stored
+            // mapping from approval_id to the outbound approval
+            // message's wamid yet). Logged for future audit; never
+            // gates today since it can only ever return 'not_provided'
+            // or 'unverifiable'. If it's ever wired to return
+            // 'mismatch', treat that identically to an unauthorized
+            // sender above.
+            const contextCheck = verifyApprovalContext(message.context?.id, parsed.approvalId)
+            if (contextCheck === 'mismatch') {
+              console.error(
+                '[webhook] SEGURANÇA: aprovação AI SDR com context.id que não corresponde à ' +
+                  `mensagem de aprovação enviada — approval_id=${parsed.approvalId} recusado.`,
+              )
+              continue
+            }
+
+            await forwardApprovalDecision(supabaseAdmin(), {
+              accountId: config.account_id,
+              waMessageId: message.id,
+              approvalId: parsed.approvalId,
+              decision: parsed.decision,
+            }).catch((err) => {
+              // forwardApprovalDecision documents that it never throws
+              // (every failure path ends in a queued row + alert) —
+              // this catch is belt-and-braces only, matching the rest
+              // of this cascade, so an unexpected exception here can
+              // never take down the webhook's other messages.
+              console.error('[webhook] forwardApprovalDecision threw unexpectedly:', err)
+            })
+            continue
+          }
+        }
 
         await processMessage(
           message,
@@ -725,6 +807,42 @@ async function processMessage(
   await cancelFollowUpCadence(supabaseAdmin(), accountId, conversation.id).catch((err) =>
     console.error('[webhook] failed to cancel follow-up cadence:', err)
   )
+
+  // RGPD data-deletion trigger (data_deletion_requests, migration 041).
+  // Checked BEFORE flow/automation/AI dispatch, and only for plain text
+  // messages, so an "APAGAR"/"CANCELAR" reply is honoured deterministically
+  // regardless of what flow or automation state the conversation is in.
+  // A match short-circuits the rest of the cascade below (flows,
+  // automations, pending-confirmation, AI auto-reply) the same way the
+  // reaction short-circuit does earlier in this function, so a lead who
+  // is mid-flow and asks to be forgotten does not also get an unrelated
+  // flow/automation reply on top of the deletion confirmation.
+  if (message.type === 'text' && message.text?.body) {
+    const dataDeletionOutcome = await handleInboundDataDeletionRequest({
+      db: supabaseAdmin(),
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
+      userId: configOwnerUserId,
+      phone: senderPhone,
+      profileName: contactName || null,
+      rawText: message.text.body,
+    }).catch((err) => {
+      console.error('[webhook] data-deletion handling failed:', err)
+      return 'none' as const
+    })
+
+    if (dataDeletionOutcome !== 'none') {
+      await dispatchWebhookEvent(supabaseAdmin(), accountId, 'message.received', {
+        conversation_id: conversation.id,
+        contact_id: contactRecord.id,
+        whatsapp_message_id: message.id,
+        content_type: contentType,
+        text: contentText,
+      })
+      return
+    }
+  }
 
   // ============================================================
   // Flow runner dispatch.

@@ -122,6 +122,136 @@ Duas peças novas, ligadas ao webhook inbound do WhatsApp
    motivo em `agent_scheduled_messages.error` — nunca envia texto livre
    fora da janela, nunca falha em silêncio.
 
+## AI SDR — aprovação de decisões via WhatsApp (042_aisdr_approval_forward_queue.sql)
+
+`src/lib/eter/aisdr-approval-forward.ts` reencaminha os botões
+[Enviar]/[Descartar] que o Ricardo toca no WhatsApp (aprovação de
+mensagens de outreach do AI SDR) para o worker do AI SDR. Guardado
+atrás de `AISDR_APPROVAL_FORWARD_ENABLED` (`false` por omissão).
+
+**Protecção contra forjadura (CRÍTICO).** `approval_id` é um inteiro
+sequencial pequeno, adivinhável. O guarda em
+`src/app/api/whatsapp/webhook/route.ts` só reencaminha uma decisão
+quando o remetente (`message.from`) está na lista de aprovadores
+autorizados:
+
+```bash
+# Números autorizados a aprovar/descartar via WhatsApp (separados por
+# vírgula, qualquer formatação — normalizado internamente). Falha
+# FECHADA: por omissão (variável ausente/vazia), TODAS as tentativas de
+# aprovação são recusadas, nunca aceites.
+AISDR_APPROVER_PHONES=351916944664
+```
+
+A verificação acontece ANTES de qualquer chamada de rede ou escrita em
+BD (`isAuthorizedApprover`, `aisdr-approval-forward.ts`) — um
+remetente não autorizado nunca chega a tocar em
+`aisdr_approval_forwards` nem no worker do AI SDR. Sem
+`AISDR_APPROVER_PHONES` configurada, `AISDR_APPROVAL_FORWARD_ENABLED=true`
+regista um aviso alto nos logs no arranque (primeira chamada) a dizer
+que todas as aprovações vão ser recusadas até a variável ser definida.
+
+A verificação adicional por `message.context.id` (a resposta tem de
+apontar para a mensagem de aprovação exacta que enviámos) está
+**preparada mas inactiva** — `verifyApprovalContext` em
+`aisdr-approval-forward.ts` — porque este repositório não guarda hoje
+o wamid da mensagem de aprovação de saída (essa mensagem é enviada por
+um serviço diferente, o worker do AI SDR via `WHATSAPP_AGENT_URL`). Ver
+o comentário da função para o que seria preciso para activar isto.
+
+## Alertas operacionais por WhatsApp
+
+`src/lib/notifications/whatsapp-admin-alert.ts` é o emissor partilhado
+usado por `aisdr-approval-alert.ts` (falhas a reencaminhar aprovações)
+e `data-deletion-email.ts` (pedidos RGPD, ver secção abaixo) — SEMPRE
+ligado por omissão, sem nenhum passo de configuração extra.
+
+```bash
+# Número do Ricardo que recebe os alertas operacionais (aprovações AI
+# SDR falhadas, pedidos de eliminação RGPD com falha de registo, cron
+# parado). Sem esta variável, os alertas ficam só em log (alto, nunca
+# silencioso) e NÃO são enviados por WhatsApp.
+AISDR_ALERT_ADMIN_PHONE=351900000000
+```
+
+O envio usa o `whatsapp_config` da conta a que o alerta pertence
+(mesmo número de negócio que recebeu o toque de aprovação, ou que
+recebeu o "APAGAR"). Fora da janela de 24h de atendimento ao cliente
+do WhatsApp, cai automaticamente para um template APROVADO (nunca
+tenta texto livre outra vez):
+
+```
+eter_admin_alert
+```
+
+Provisionar este template no WhatsApp Manager com um único parâmetro
+de corpo (`{{1}}`) que carrega o texto do alerta. Sem o template
+aprovado, um alerta fora da janela fica apenas registado em log
+(`reason: 'outside_window_no_template'`), nunca falha em silêncio.
+
+## Cron de reprocessamento das aprovações AI SDR (`/api/eter-agent/aisdr-approvals/cron`)
+
+Drena `aisdr_approval_forwards` presas em `failed` (todas as
+tentativas dentro do grupo original, no momento do webhook, foram
+esgotadas — ver `forwardApprovalDecision`) para mais um grupo de
+tentativas, até `MAX_QUEUE_ATTEMPTS` (5) antes de desistir em
+definitivo (`gave_up`).
+
+Mesmo padrão de autenticação dos outros crons: segredo partilhado via
+cabeçalho `x-cron-secret`, reutilizando `AUTOMATION_CRON_SECRET`.
+
+**Agendamento (cadência pretendida: a cada 15 minutos)**, ex. crontab
+externo:
+
+```bash
+*/15 * * * * curl -fsS -H "x-cron-secret: $AUTOMATION_CRON_SECRET" \
+  https://<deployment>/api/eter-agent/aisdr-approvals/cron
+```
+
+**Sinal de vida.** Cada execução bem sucedida regista
+`cron_heartbeats.last_success_at` (migração 044). No INÍCIO de cada
+execução, compara o heartbeat ANTERIOR com agora: se passaram mais de
+45 minutos (3x a cadência de 15 min — tolera uma falha isolada de tick
+sem alarme falso, mas apanha um agendador realmente parado em menos de
+uma hora) desde a última execução bem sucedida, dispara um alerta por
+WhatsApp (ver secção acima). **Limitação documentada:** esta verificação
+só corre quando o cron É INVOCADO — se o agendador externo nunca
+chegar a ser configurado (ou parar de todo), este código nunca corre e
+nenhum alerta dispara; isso precisa de monitorização externa (ex.:
+health-check ping) fora do âmbito deste repositório. O que ESTE
+mecanismo apanha: o cron a ser chamado no horário certo mas a falhar
+antes de chegar a escrever o seu próprio heartbeat (segredo errado,
+Supabase em baixo, bug).
+
+O alerta de heartbeat precisa de uma conta para resolver o
+`whatsapp_config` a partir do qual enviar (o sweep em si não está
+ligado a uma única conta):
+
+```bash
+# Conta cujo WhatsApp Business number envia o alerta de "cron parado".
+# Sem esta variável, o alerta fica só em log.
+AISDR_ALERT_ACCOUNT_ID=<uuid da conta>
+```
+
+## Cron de reprocessamento dos pedidos RGPD (`/api/eter-agent/data-deletion-retries/cron`)
+
+Mesma protecção dada às aprovações AI SDR, aplicada ao pedido "APAGAR"
+(ver `src/lib/eter/data-deletion.ts`). Se o INSERT em
+`data_deletion_requests` falhar (erro transitório de BD), a tentativa
+é registada em `data_deletion_insert_failures` (migração 043) em vez
+de se perder — este cron drena essas linhas `failed` até
+`MAX_INSERT_RETRY_ATTEMPTS` (5) tentativas antes de desistir em
+definitivo.
+
+Mesmo padrão de auth, mesma cadência recomendada e o mesmo mecanismo de
+heartbeat/staleness (`cron_heartbeats`, limiar de 45 min) que o cron de
+aprovações acima — ver essa secção para o racional completo.
+
+```bash
+*/15 * * * * curl -fsS -H "x-cron-secret: $AUTOMATION_CRON_SECRET" \
+  https://<deployment>/api/eter-agent/data-deletion-retries/cron
+```
+
 ## Nota sobre persistência (037_eter_agent.sql / 038_eter_agent_pending_actions.sql)
 
 Ricardo confirmou (Fase 2): manter Supabase por agora, desacoplar mais

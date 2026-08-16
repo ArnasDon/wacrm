@@ -808,3 +808,47 @@ Calendar/Meet/cotizaciones/correo/recordatorios).
 `src/lib/probe_delete_test.txt` permanece intacto y fuera de los cambios. No
 se modificaron datos reales ni configuraciones de canales — todo el trabajo
 de esta sesión es local, sin tocar el proyecto Supabase real.
+
+### 2026-08-15 — Claude Code (Bloque 1: migración aplicada y código publicado)
+
+**Hecho:** Con confirmación explícita de Angel, verifiqué el estado remoto
+real antes de tocar nada (`list_migrations` no es confiable para este
+proyecto — varias migraciones de sesiones anteriores se aplicaron por SQL
+Editor y no quedaron registradas ahí; verifiqué directamente por
+`information_schema` que 043–049 sí están aplicadas). Confirmé que la cuenta
+real tenía solo 1 fila de `whatsapp_config`, 2 `accounts`, 6 `conversations`,
+0 `message_templates` y 0 `broadcasts` — volumen mínimo, riesgo bajo, no
+hizo falta una rama de Supabase. Apliqué
+`050_multiple_whatsapp_numbers.sql` contra `puvbwzwmojpjplhdfnmk` vía MCP de
+Supabase. Publiqué el commit `b2c10b1` en `origin/main`.
+
+**Probado:** Tras aplicar, verifiqué por SQL que la fila existente de
+`whatsapp_config` quedó marcada `is_default = true`; que el índice nuevo
+`idx_conversations_account_contact_config` reemplazó al de la migración 036;
+que el índice nuevo de plantillas `message_templates_config_name_language_key`
+existe; que el `UNIQUE(account_id)` viejo de `whatsapp_config` ya no existe;
+y que solo las 2 conversaciones de canal `whatsapp` recibieron
+`whatsapp_config_id` (las de Instagram/Facebook quedaron sin tocar, como
+correspondía). `get_advisors` (seguridad) no reportó ningún hallazgo nuevo —
+todo lo listado ya existía antes de este bloque, y `create_broadcast_with_recipients`
+no aparece entre las funciones ejecutables por `anon`/`authenticated`,
+confirmando que el `REVOKE`/`GRANT` de la migración quedó correcto.
+
+**Pendiente / siguiente paso:** No tengo forma de verificar por mi cuenta
+que el despliegue automático de EasyPanel terminó ni de navegar a la URL
+productiva (no hay herramienta de navegador ni acceso a EasyPanel en esta
+sesión) — Angel debe confirmar que el deploy terminó y, si quiere, validar
+agregando un segundo número de WhatsApp de prueba a una cuenta real:
+confirmar que ambas conexiones aparecen en Configuración, marcar una como
+predeterminada, y (sin usar un número de un tercero sin autorización)
+confirmar que un mensaje entrante a cada número cae en una conversación
+separada. Después de esa validación, este bloque queda cerrado y se abre la
+planificación del Bloque 2 (webhooks firmados por empresa + eventos
+comerciales ampliados + reintentos/log/desactivación + diseño n8n para
+Calendar/Meet/cotizaciones/correo/recordatorios).
+
+**Notas:** No se modificaron filas de negocio reales más allá del backfill
+propio de la migración (marcar la conexión existente como predeterminada y
+vincular las 2 conversaciones de WhatsApp existentes a ella — reversible,
+documentado en el archivo de migración). `src/lib/probe_delete_test.txt`
+permanece intacto y fuera del commit.

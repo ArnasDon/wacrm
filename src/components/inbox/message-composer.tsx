@@ -307,6 +307,13 @@ export function MessageComposer({
   const [locked, setLocked] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const recorderRef = useRef<import("opus-recorder").default | null>(null);
+  // The in-flight beginCapture() promise. Any stop request awaits this
+  // before touching recorderRef — otherwise a stop arriving while the
+  // recorder is still being constructed (dynamic import + getUserMedia +
+  // encoder init) finds recorderRef.current still null, no-ops silently,
+  // and the recorder ends up starting *after* the UI already moved past
+  // "recording" with nothing left to ever stop it.
+  const captureReadyRef = useRef<Promise<void> | null>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Set once the encoded+uploaded file is ready, so a Send/Trash tap that
@@ -614,6 +621,19 @@ export function MessageComposer({
     }
   }, [clearTimer, finalizeRecording, t]);
 
+  // Every "stop the mic" action funnels through here instead of touching
+  // recorderRef directly, so it always waits out any in-flight
+  // beginCapture() first — see captureReadyRef above for why.
+  const stopRecorder = useCallback(async () => {
+    try {
+      await captureReadyRef.current;
+    } catch {
+      // beginCapture() never actually rejects (it handles its own failure
+      // path internally) — guarded anyway so a stop request can't hang.
+    }
+    void recorderRef.current?.stop().catch(() => {});
+  }, []);
+
   // ---- Mic pointer gesture (press-and-hold, drag-up-to-lock) ---------
   //
   // Pointer Events (not separate touch/mouse handlers) so the exact same
@@ -634,7 +654,10 @@ export function MessageComposer({
       setMicPhase("recording");
       clearTimer();
       timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-      void beginCapture();
+      // Stored so any stop request (below) can wait for this specific
+      // capture attempt to finish initializing before touching the
+      // recorder — see captureReadyRef / stopRecorder.
+      captureReadyRef.current = beginCapture();
     },
     [inputsDisabled, busy, micPhase, clearTimer, beginCapture],
   );
@@ -674,9 +697,9 @@ export function MessageComposer({
       if (locked || micPhase !== "recording") return;
       clearTimer();
       setMicPhase("paused");
-      void recorderRef.current?.stop().catch(() => {});
+      void stopRecorder();
     },
-    [locked, micPhase, clearTimer],
+    [locked, micPhase, clearTimer, stopRecorder],
   );
 
   const handleDiscardRecording = useCallback(() => {
@@ -689,7 +712,7 @@ export function MessageComposer({
       clearTimer();
       setMicPhase("idle");
       setLocked(false);
-      void recorderRef.current?.stop().catch(() => {});
+      void stopRecorder();
       return;
     }
     if (micPhase === "paused") {
@@ -704,7 +727,7 @@ export function MessageComposer({
       }
       setLocked(false);
     }
-  }, [micPhase, clearTimer, removeStaged]);
+  }, [micPhase, clearTimer, removeStaged, stopRecorder]);
 
   const handleSendRecording = useCallback(() => {
     if (micPhase === "recording") {
@@ -715,7 +738,7 @@ export function MessageComposer({
       clearTimer();
       pendingActionRef.current = "send";
       setMicPhase("sending");
-      void recorderRef.current?.stop().catch(() => {});
+      void stopRecorder();
       return;
     }
     if (micPhase === "paused") {
@@ -732,7 +755,7 @@ export function MessageComposer({
       }
       setLocked(false);
     }
-  }, [micPhase, clearTimer, onSendMedia, replyTo?.id, onClearReply]);
+  }, [micPhase, clearTimer, onSendMedia, replyTo?.id, onClearReply, stopRecorder]);
 
   // Auto-stop at the cap so a forgotten recording can't blow the upload
   // size limit — pauses exactly like an unlocked release (keeps what was
@@ -741,9 +764,9 @@ export function MessageComposer({
     if (micPhase === "recording" && recordSeconds >= MAX_RECORDING_SECONDS) {
       clearTimer();
       setMicPhase("paused");
-      void recorderRef.current?.stop().catch(() => {});
+      void stopRecorder();
     }
-  }, [micPhase, recordSeconds, clearTimer]);
+  }, [micPhase, recordSeconds, clearTimer, stopRecorder]);
 
   // Tear down any live recording + timer on unmount so a mid-record
   // navigation doesn't leak the mic, and GC any staged-but-unsent
@@ -754,11 +777,11 @@ export function MessageComposer({
       clearTimer();
       cancelledRef.current = true;
       // stop() releases the mic stream + audio context inside opus-recorder.
-      void recorderRef.current?.stop().catch(() => {});
+      void stopRecorder();
       removeStaged(draftRef.current?.path);
       removeStaged(uploadedAudioRef.current?.path);
     };
-  }, [clearTimer, removeStaged]);
+  }, [clearTimer, removeStaged, stopRecorder]);
 
   // ---- Draft send / discard (image/video/document) --------------------
 

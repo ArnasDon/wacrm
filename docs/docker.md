@@ -60,7 +60,11 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   README.
 - Nothing inside the container is scheduled. If you use automation
   Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  `GET /api/automations/cron`, `GET /api/flows/cron`,
+  `GET /api/eter-agent/cron`,
+  `GET /api/eter-agent/aisdr-approvals/cron` and
+  `GET /api/eter-agent/data-deletion-retries/cron` on this deployment,
+  sending the shared secret in the `x-cron-secret` header
+  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). All return 503
+  until that variable is set — see docs/eter-agent-config.md for exact
+  scheduling commands and cadence.

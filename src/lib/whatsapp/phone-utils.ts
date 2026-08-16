@@ -102,3 +102,13 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/**
+ * Returns true when the Meta API error indicates a free-text send was
+ * rejected because it fell outside the 24h customer-service session
+ * window (error code 131047, "re-engagement message"). Callers must
+ * fall back to an APPROVED template rather than retrying free text.
+ */
+export function isOutsideSessionWindowError(message: string): boolean {
+  return /131047|24 hours have passed|outside the allowed window|re-?engagement/i.test(message)
+}

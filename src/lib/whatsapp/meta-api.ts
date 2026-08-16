@@ -9,8 +9,15 @@
  * instead of a runtime rejection from Meta.
  */
 
-const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+/**
+ * Graph API version used for every WhatsApp Cloud API / Business
+ * Management API call in this module. Overridable via
+ * META_GRAPH_API_VERSION so a stuck deployment can be pinned to an
+ * older version without a code change; defaults to the version this
+ * codebase is verified against.
+ */
+export const META_API_VERSION = process.env.META_GRAPH_API_VERSION || 'v26.0'
+export const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
 export interface MetaSendResult {
   messageId: string

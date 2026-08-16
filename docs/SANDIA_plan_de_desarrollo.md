@@ -1474,13 +1474,20 @@ dedicadas a `dashboard/queries.ts` en el repo (no existían antes de este
 cambio tampoco) — no se agregaron en este bloque para no ampliar el
 alcance sin que Angel lo pida.
 
-**Pendiente / siguiente paso:** publicar, confirmar el deploy en
-EasyPanel, y validar en el Dashboard real que: (1) "Proceso de Ventas"
-aparece con sus 3 negocios reales (~$450, todos en USD) separado de
-"Sales Pipeline" (vacío, "No open deals"), y (2) crear un negocio de
-prueba en GTQ y confirmar que aparece como un total aparte (no sumado al
-de USD) tanto en el widget de pipelines como en la tarjeta "Open Deals
-Value" de arriba — y borrarlo después.
+**Publicado y validado en producción:** Angel autorizó el push
+(`979d8da`). Con la sesión real de Angel en Chrome, en el Dashboard
+confirmé exactamente lo esperado: "Sales Pipeline" en $0/"No open deals"
+y "Proceso de Ventas" en $450 con sus etapas reales ("Cliente reciente"
+2 negocios $150, "Convencimiento" 1 negocio $300) — coincide con los 3
+negocios reales de Angel verificados por SQL (David Duran $300, ".."
+$50, "Sandia" $100). Creé un negocio de prueba en GTQ (Q1200, contacto
+"El Gallo más Gallo Guatemala", vía el "+ New" del Inbox) y confirmé que
+tanto la tarjeta "Open Deals Value" ("1200 GTQ · 450 US$, 4 open deals")
+como el widget de pipelines ("Sales Pipeline: Q1.2k" separado de
+"Proceso de Ventas: $450") muestran las dos monedas por separado, sin
+sumarlas — exactamente lo pedido. Borré el negocio de prueba después
+(`DELETE ... WHERE title = 'Prueba GTQ (borrar)'`), no quedó nada de
+prueba en `deals`.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

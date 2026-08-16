@@ -653,8 +653,8 @@ describe('buildFlowText — Copiar fluxo', () => {
         'Unidade 101',
         '',
         'Entrada: R$ 30000',
-        'Parcelas (48x) de R$ 75000',
-        'Intercaladas (8x) de R$ 75000',
+        'Parcelas (48x) de R$ 1563',
+        'Intercaladas (8x) de R$ 9375',
         'Chaves: R$ 120000',
         '',
         'Valor total: R$ 300000',
@@ -662,7 +662,7 @@ describe('buildFlowText — Copiar fluxo', () => {
     );
   });
 
-  it('an installments line shows the etapa TOTAL, not the per-installment split', () => {
+  it('an installments line shows the per-installment value, same as the on-screen row', () => {
     const text = buildFlowText({
       projectName: 'Mahal',
       unit: '1203',
@@ -672,8 +672,8 @@ describe('buildFlowText — Copiar fluxo', () => {
     });
     expect(text.startsWith('MAHAL\nUnidade 1203')).toBe(true);
     expect(text).toContain('Entrada: R$ 50000');
-    expect(text).toContain('Mensais (36x) de R$ 90000'); // 36 × 2.500
-    expect(text).toContain('Intermediárias (4x) de R$ 60000'); // 4 × 15.000
+    expect(text).toContain('Mensais (36x) de R$ 2500');
+    expect(text).toContain('Intermediárias (4x) de R$ 15000');
     expect(text).toContain('Financiamento: R$ 300000');
     expect(text).toContain('Valor total: R$ 500000');
     expect(text).not.toContain('Valor do imóvel');

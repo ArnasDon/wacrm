@@ -489,21 +489,19 @@ export function applyLockToggle(propertyValue: number, items: FlowItem[], id: st
  *   Unidade 101
  *
  *   Entrada: R$ 30.000,00
- *   Parcelas (48x) de R$ 75.000,00
- *   Intercaladas (8x) de R$ 75.000,00
+ *   Parcelas (48x) de R$ 1.562,50
+ *   Intercaladas (8x) de R$ 9.375,00
  *   Chaves: R$ 120.000,00
  *
  *   Valor total: R$ 300.000,00
  *
  * Header lines (project name, then "Unidade N") appear only when a
  * project/unit is known — Fluxo Livre has neither, so the text starts
- * directly at the component lines. An installments line always shows
- * the etapa's TOTAL contribution (`amountOf`, i.e. percent × property
- * value) alongside its count — "(48x) de R$ 75.000,00" — never the
- * per-installment split; that split is still what `item.value` holds
- * internally and what the on-screen row/resumo show, this is purely
- * about what gets copied to the client. No percent, no emojis, no
- * extra copy — same rule as always.
+ * directly at the component lines. An installments line shows the
+ * PER-INSTALLMENT value (`item.value`) alongside its count —
+ * "(48x) de R$ 1.562,50" — the same figure already shown on-screen
+ * in the row and resumo, never the etapa's total (`amountOf`). No
+ * percent, no emojis, no extra copy — same rule as always.
  */
 export function buildFlowText(params: {
   projectName: string;
@@ -528,7 +526,7 @@ export function buildFlowText(params: {
     if (item.kind === 'single') {
       lines.push(`${item.label}: ${formatMoney(item.value)}`);
     } else {
-      lines.push(`${item.label} (${item.count}x) de ${formatMoney(amountOf(item))}`);
+      lines.push(`${item.label} (${item.count}x) de ${formatMoney(item.value)}`);
     }
   }
 

@@ -478,6 +478,10 @@ export interface Quote {
   status: QuoteStatus;
   pdf_url?: string | null;
   sent_at?: string | null;
+  /** True while waiting for the contact's WhatsApp messaging window to
+   *  open so the auto-send flow can deliver its PDF — see migration
+   *  057_quote_auto_send.sql. */
+  auto_send_pending?: boolean;
   created_at: string;
   updated_at: string;
   contact?: Contact;

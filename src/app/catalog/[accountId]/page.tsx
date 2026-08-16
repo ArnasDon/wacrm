@@ -5,12 +5,14 @@
 //
 // No auth, not in middleware.protectedPaths. A company shares this
 // link on WhatsApp/Instagram/Facebook; visitors pick products +
-// quantities and submit name/phone to request a quote. The server
+// quantities, enter name/phone, and tap "Me lo llevo". The server
 // creates an exact-selection quote (see
 // src/app/api/public/catalog/[accountId]/quote-request/route.ts) and
-// hands back a wa.me link so the VISITOR starts the WhatsApp chat —
-// the quote is already sitting in the company's pipeline by the time
-// that message lands in their inbox.
+// either delivers its PDF straight into an already-open WhatsApp
+// conversation (`delivered: true` — nothing left to do here) or, if no
+// conversation is currently inside Meta's messaging window, hands back
+// a wa.me link so the VISITOR starts the chat themselves and the PDF
+// follows automatically once they do.
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -63,7 +65,9 @@ export default function PublicCatalogPage() {
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ delivered: boolean; whatsappUrl: string | null } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!accountId) return;
@@ -141,6 +145,7 @@ export default function PublicCatalogPage() {
       });
       const payload = (await res.json().catch(() => ({}))) as {
         error?: string;
+        delivered?: boolean;
         whatsapp_url?: string | null;
       };
       if (!res.ok) {
@@ -148,7 +153,7 @@ export default function PublicCatalogPage() {
         setSubmitting(false);
         return;
       }
-      setWhatsappUrl(payload.whatsapp_url ?? null);
+      setResult({ delivered: !!payload.delivered, whatsappUrl: payload.whatsapp_url ?? null });
     } catch (err) {
       console.error('[catalog] quote-request error:', err);
       toast.error('No se pudo conectar con el servidor');
@@ -159,13 +164,14 @@ export default function PublicCatalogPage() {
 
   function resetDialog() {
     setDialogOpen(false);
-    setWhatsappUrl(null);
+    const hadResult = result !== null;
+    setResult(null);
     setName('');
     setPhone('');
     setNit('');
     setEmail('');
     setAddress('');
-    if (whatsappUrl) {
+    if (hadResult) {
       setQuantities({});
     }
   }
@@ -275,7 +281,7 @@ export default function PublicCatalogPage() {
               </p>
             </div>
             <Button onClick={() => setDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
-              Solicitar cotización
+              Me lo llevo
             </Button>
           </div>
         </div>
@@ -283,10 +289,10 @@ export default function PublicCatalogPage() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}>
         <DialogContent className="bg-popover border-border sm:max-w-md">
-          {whatsappUrl === null ? (
+          {result === null ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-popover-foreground">Solicitar cotización</DialogTitle>
+                <DialogTitle className="text-popover-foreground">Me lo llevo</DialogTitle>
                 <DialogDescription className="text-muted-foreground">
                   {totalCount} {totalCount === 1 ? 'producto seleccionado' : 'productos seleccionados'} —{' '}
                   {formatCurrency(total, data.currency)}
@@ -367,7 +373,11 @@ export default function PublicCatalogPage() {
               <DialogHeader>
                 <DialogTitle className="text-popover-foreground">¡Listo!</DialogTitle>
                 <DialogDescription className="text-muted-foreground">
-                  Tu cotización fue creada. {whatsappUrl ? 'Continúa por WhatsApp para dar seguimiento.' : 'Pronto se pondrán en contacto contigo.'}
+                  {result.delivered
+                    ? 'Ya te enviamos el PDF de tu cotización por WhatsApp — revisa el chat.'
+                    : result.whatsappUrl
+                      ? 'Tu cotización fue creada. Continúa por WhatsApp para recibir el PDF.'
+                      : 'Tu cotización fue creada. Pronto se pondrán en contacto contigo.'}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="bg-popover border-border">
@@ -378,8 +388,8 @@ export default function PublicCatalogPage() {
                 >
                   Cerrar
                 </Button>
-                {whatsappUrl && (
-                  <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                {!result.delivered && result.whatsappUrl && (
+                  <a href={result.whatsappUrl} target="_blank" rel="noopener noreferrer">
                     <Button className="gap-2 bg-[#25D366] text-white hover:bg-[#1ebe5a]">
                       <MessageCircle className="size-4" />
                       Continuar por WhatsApp

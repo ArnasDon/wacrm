@@ -3,13 +3,22 @@
 //
 // Public — no auth required. A visitor on the public catalog page
 // (src/app/catalog/[accountId]/page.tsx) selects products + quantities
-// and submits name + phone (nit/email/address optional) here. We
-// find-or-create their contact, create an exact-selection quote (never
-// AI-parsed, never a caller-supplied price), and hand back a
-// wa.me/<number>?text=... link so the VISITOR initiates the WhatsApp
-// conversation — sidesteps Meta's 24h outbound-messaging window
-// entirely, and the quote is already sitting in the pipeline by the
-// time that chat lands in the inbox.
+// and taps "Me lo llevo". We find-or-create their contact and create an
+// exact-selection quote (never AI-parsed, never a caller-supplied
+// price), then try to deliver it two ways:
+//
+//   1. Instant push — if this contact already has a conversation whose
+//      messaging window is open (they were just chatting with us, e.g.
+//      the AI shared this very link mid-conversation), we send the
+//      quote PDF straight into that conversation right now. Every agent
+//      who opens the chat sees it immediately; the visitor doesn't have
+//      to leave the page.
+//   2. wa.me fallback — no open window (a cold link, first-ever
+//      contact). Meta requires the CUSTOMER to message first before we
+//      can send anything free-form, so we hand back a wa.me link with
+//      their order pre-filled, and flag the quote `auto_send_pending`.
+//      The WhatsApp webhook auto-sends the PDF the moment their message
+//      (re)opens the window — see src/app/api/whatsapp/webhook/route.ts.
 // ============================================================
 
 import { NextResponse } from 'next/server'
@@ -17,6 +26,11 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { findOrCreateContact, resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
+import {
+  findRecentConversation,
+  isWithinMessagingWindow,
+  sendQuoteToConversation,
+} from '@/lib/quotes/send-quote'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 
 function getClientIp(request: Request): string {
@@ -107,30 +121,50 @@ export async function POST(
       allowFreeItems: false,
     })
 
-    const { data: whatsapp } = await db
-      .from('whatsapp_config')
-      .select('public_phone_number')
-      .eq('account_id', accountId)
-      .eq('is_default', true)
-      .maybeSingle()
-
-    let whatsappUrl: string | null = null
-    const configuredNumber = whatsapp?.public_phone_number
-      ? sanitizePhoneForMeta(whatsapp.public_phone_number)
-      : ''
-    if (configuredNumber) {
-      // Spell out exactly what was selected so the message that lands
-      // in the inbox already tells the agent/AI what to quote — the
-      // visitor shouldn't have to retype their order once they're in
-      // the chat.
-      const itemsSummary = quoteItems
-        .map((item) => `${item.quantity}x ${item.description}`)
-        .join(', ')
-      const message = `Hola, soy ${name}. Quiero cotizar: ${itemsSummary}.`
-      whatsappUrl = `https://wa.me/${configuredNumber}?text=${encodeURIComponent(message)}`
+    // Try the instant path first: does this contact already have a
+    // conversation whose messaging window is currently open?
+    let delivered = false
+    const conversation = await findRecentConversation(db, accountId, contactId)
+    if (conversation && (await isWithinMessagingWindow(db, conversation.id))) {
+      try {
+        await sendQuoteToConversation(db, accountId, quote.id, conversation.id)
+        delivered = true
+      } catch (err) {
+        // Falls through to the wa.me path below — a failed instant
+        // send (e.g. a transient Meta error) must not strand the
+        // visitor with neither delivery method.
+        console.error('[public/catalog/quote-request] instant send failed, falling back to wa.me:', err)
+      }
     }
 
-    return NextResponse.json({ ok: true, quote_id: quote.id, whatsapp_url: whatsappUrl })
+    let whatsappUrl: string | null = null
+    if (!delivered) {
+      await db.from('quotes').update({ auto_send_pending: true }).eq('id', quote.id)
+
+      const { data: whatsapp } = await db
+        .from('whatsapp_config')
+        .select('public_phone_number')
+        .eq('account_id', accountId)
+        .eq('is_default', true)
+        .maybeSingle()
+
+      const configuredNumber = whatsapp?.public_phone_number
+        ? sanitizePhoneForMeta(whatsapp.public_phone_number)
+        : ''
+      if (configuredNumber) {
+        // Spell out exactly what was selected so the message that lands
+        // in the inbox already tells the agent/AI what to quote — the
+        // visitor shouldn't have to retype their order once they're in
+        // the chat. Once they send this, the webhook auto-sends the PDF.
+        const itemsSummary = quoteItems
+          .map((item) => `${item.quantity}x ${item.description}`)
+          .join(', ')
+        const message = `Hola, soy ${name}. Quiero cotizar: ${itemsSummary}.`
+        whatsappUrl = `https://wa.me/${configuredNumber}?text=${encodeURIComponent(message)}`
+      }
+    }
+
+    return NextResponse.json({ ok: true, quote_id: quote.id, delivered, whatsapp_url: whatsappUrl })
   } catch (err) {
     if (err instanceof ContactError || err instanceof CreateQuoteError) {
       return NextResponse.json({ error: err.message }, { status: err.status })

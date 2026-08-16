@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { renderQuotePdf } from '@/lib/pdf/quote-pdf'
-import { uploadCatalogPdf } from '@/lib/pdf/upload-pdf'
-import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
-import type { Quote, QuoteItem } from '@/types'
+import { sendQuoteToConversation, SendQuoteError } from '@/lib/quotes/send-quote'
 
 /**
  * POST /api/quotes/[id]/send  (agent+)
@@ -34,7 +31,7 @@ export async function POST(
 
     const { data: quote, error: quoteError } = await db
       .from('quotes')
-      .select('*')
+      .select('contact_id')
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .maybeSingle()
@@ -68,43 +65,15 @@ export async function POST(
       conversationId = conv.id as string
     }
 
-    let pdfUrl = quote.pdf_url as string | null
-    if (!pdfUrl) {
-      const { data: items, error: itemsError } = await db
-        .from('quote_items')
-        .select('*')
-        .eq('quote_id', id)
-        .order('position')
-      if (itemsError) return NextResponse.json({ error: itemsError.message }, { status: 500 })
-
-      const { data: account } = await db.from('accounts').select('name').eq('id', ctx.accountId).maybeSingle()
-      const pdf = await renderQuotePdf(quote as Quote, (items ?? []) as QuoteItem[], account?.name ?? 'Chat Sandía')
-      pdfUrl = await uploadCatalogPdf(db, ctx.accountId, `cotizacion-${id}.pdf`, pdf)
-      await db.from('quotes').update({ pdf_url: pdfUrl }).eq('id', id).eq('account_id', ctx.accountId)
-    }
-
     try {
-      await sendMessageToConversation(db, ctx.accountId, {
-        conversationId,
-        messageType: 'document',
-        mediaUrl: pdfUrl,
-        filename: `cotizacion-${id}.pdf`,
-        contentText: 'Cotización',
-      })
+      const { pdfUrl } = await sendQuoteToConversation(db, ctx.accountId, id, conversationId)
+      return NextResponse.json({ ok: true, pdf_url: pdfUrl })
     } catch (err) {
-      if (err instanceof SendMessageError) {
+      if (err instanceof SendQuoteError) {
         return NextResponse.json({ error: err.message }, { status: err.status })
       }
       throw err
     }
-
-    await db
-      .from('quotes')
-      .update({ sent_at: new Date().toISOString(), status: 'sent' })
-      .eq('id', id)
-      .eq('account_id', ctx.accountId)
-
-    return NextResponse.json({ ok: true, pdf_url: pdfUrl })
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -10,6 +10,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { sendQuoteToConversation } from '@/lib/quotes/send-quote'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -778,6 +779,29 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // Public catalog "Me lo llevo" (Bloque 8) follow-up: this contact may
+  // have requested a quote while no conversation of theirs was inside
+  // Meta's messaging window, in which case it was flagged
+  // `auto_send_pending` instead of sent immediately (see
+  // src/app/api/public/catalog/[accountId]/quote-request/route.ts).
+  // Their message just (re)opened that window — send it now. Wrapped so
+  // a failure here (rare — a bad PDF render, a transient Meta error)
+  // never breaks the rest of inbound processing.
+  try {
+    const { data: pendingQuotes } = await supabaseAdmin()
+      .from('quotes')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactRecord.id)
+      .eq('auto_send_pending', true)
+      .is('sent_at', null)
+    for (const pending of pendingQuotes ?? []) {
+      await sendQuoteToConversation(supabaseAdmin(), accountId, pending.id as string, conversation.id)
+    }
+  } catch (err) {
+    console.error('[webhook] auto-send pending quote failed:', err)
+  }
 
   // ============================================================
   // Flow runner dispatch.

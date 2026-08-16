@@ -2193,3 +2193,44 @@ un número real. El auto-envío del webhook tampoco se probó con un
 mensaje real de Meta (no hay forma de simular la firma del webhook
 desde aquí); la cobertura de esa ruta descansa en los tests unitarios
 de `send-quote.ts` y en que el bloque nuevo está aislado con try/catch.
+
+**Actualización — Angel probó el flujo completo (push instantáneo +
+fallback) con una conversación real: "funciona a la perfección".**
+
+### 2026-08-16 — Claude Code — Catálogo público: rediseño visual (tienda clara, sin filtros)
+
+**Hecho:** Angel pidió que `/catalog/[accountId]` se viera más como una
+página de e-commerce real — mandó como referencia una categoría de
+intelaf.com (fondo blanco, tarjetas de producto con imagen contenida,
+precio en negrita, grilla limpia) pero explícitamente sin filtros,
+buscador ni barra de categorías, porque este catálogo siempre muestra
+los productos de una sola empresa.
+
+- Rediseñé `catalog/[accountId]/page.tsx` con clases claras
+  (`bg-gray-50`, `bg-white`, `text-gray-900`, acento `emerald-600/700`)
+  **hardcodeadas en vez de los tokens de tema del dashboard**
+  (`bg-background`, `text-foreground`, etc.) — decisión deliberada: esta
+  página la ve el cliente final, no el dueño de la cuenta, así que no
+  debe heredar el tema oscuro/acento que Angel eligió para su propio
+  panel. `catalog/layout.tsx` también pasó de `bg-background` a
+  `bg-gray-50` por la misma razón.
+- Imagen del producto contenida (`object-contain` sobre fondo gris
+  claro) en vez de recortada a sangre completa (`object-cover`) —
+  replica el estilo "foto de producto flotando en blanco" de la
+  referencia. Grilla de 2/3/4 columnas según ancho de pantalla.
+- **Bug encontrado y corregido en el mismo commit siguiente:** los
+  botones `variant="outline"` (los +/- de cantidad, "Cancelar",
+  "Cerrar") usan `bg-background` como fondo por defecto
+  (`button.tsx`) — como esta página no está envuelta por el proveedor
+  de tema claro/oscuro del dashboard, `:root` sin calificar resuelve al
+  valor oscuro, y esos botones salían con relleno casi negro en vez de
+  blanco. Se agregó `bg-white` explícito a los 4 usos. Angel lo detectó
+  visualmente y confirmó el arreglo ("ya se ve mejor").
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios en ambos
+commits, `npx vitest run`: 951/953 (mismas 2 fallas preexistentes, sin
+tests nuevos — es un cambio puramente visual). Publicado (`e1d82e3`,
+`d9e19b5`). Validado por Angel directamente en producción (la
+herramienta de captura de pantalla de Chrome falló con un error propio
+de la extensión durante esta sesión — no relacionado con el código —
+así que la confirmación visual final fue de Angel, no mía).

@@ -1835,3 +1835,76 @@ Todavía no publicado — Angel pidió avanzar con los Bloques 8, 9 y 10
 antes de desplegar, así que este commit queda local junto con el Bloque
 7 hasta que decida el momento del deploy. Sigue el Bloque 9 (botón de
 soporte por correo).
+
+### 2026-08-16 — Claude Code — Bloque 9 (botón de soporte por correo)
+
+**Hecho:** primera capacidad de envío de correo del proyecto — antes de
+esto no existía ninguna (confirmado en la investigación previa al plan).
+`npm install nodemailer @types/nodemailer` (nota abajo sobre el
+lockfile). Nuevo `src/lib/email/send.ts`: `sendEmail({account, to,
+subject, text, attachments})` vía SMTP de Gmail (`nodemailer`,
+`service: 'gmail'`), con `account: 'support' | 'payments'` seleccionando
+cuál de las dos casillas de Chat Sandía envía (cada una con su propio
+par de variables de entorno — `SUPPORT_GMAIL_USER`/
+`SUPPORT_GMAIL_APP_PASSWORD` para este bloque, `PAYMENTS_GMAIL_USER`/
+`PAYMENTS_GMAIL_APP_PASSWORD` quedan reservadas para el Bloque 10).
+Lanza `EmailError` (503) si las variables del par pedido no están
+configuradas todavía, para que la ruta responda con un error legible en
+vez de un stack de SMTP.
+
+- **`POST /api/support/report`** (cualquier rol autenticado,
+  `multipart/form-data`, rate-limited `supportReport` 5/min por
+  usuario): nombre, descripción del error, hasta 5 capturas
+  (`image/*`, 5MB cada una). Arma el correo a `soportesandia1@gmail.com`
+  con cuenta (id + nombre), quién reporta (nombre + correo de sesión) y
+  el texto del error; las capturas van como adjuntos directos del correo
+  — **no se suben a Supabase Storage**, por decisión explícita del plan
+  (evita un histórico permanente de capturas que pueden traer datos
+  sensibles de clientes de Angel).
+- **Botón "Reportar un problema":** nuevo `SupportReportDialog`
+  (`src/components/layout/support-report-dialog.tsx`), enganchado en el
+  menú de cuenta del pie del sidebar (`sidebar.tsx`, entre
+  Configuración y Cerrar sesión) — visible para cualquier usuario
+  logueado. Nombre precargado desde el perfil (se resincroniza cada vez
+  que el diálogo se abre, por si el perfil todavía estaba cargando la
+  primera vez), descripción obligatoria, capturas opcionales con
+  vista previa de nombre de archivo y opción de quitar una antes de
+  enviar.
+- Nuevo bucket de rate limit `supportReport` (5/min por usuario) en
+  `src/lib/rate-limit.ts`, y `paymentReport` (5/min) reservado ya mismo
+  para el Bloque 10 para no tener que volver a tocar ese archivo.
+
+**Nota de lockfile:** `npm install` volvió a regenerar
+`package-lock.json` sin la entrada
+`next-intl/node_modules/@swc/helpers` (el mismo problema ya documentado
+en sesiones anteriores — es una resolución de peer opcional no
+determinística de npm, no algo que este proyecto dejó de necesitar: el
+paquete sigue físicamente en `node_modules/next-intl/node_modules/@swc/`
+y `next-intl`'s `@swc/core` anidado sigue declarándolo como peer
+opcional). La reinserté a mano en el mismo lugar del archivo antes de
+hacer commit — necesaria para que el build de Docker de EasyPanel
+(`node:20-alpine`, `npm ci`) no se rompa. Si un futuro `npm install`
+vuelve a quitarla, el arreglo es el mismo: confirmar que
+`node_modules/next-intl/node_modules/@swc/helpers` sigue en disco y
+reinsertar el bloque JSON idéntico (versión `0.5.23`) antes de
+`node_modules/node-addon-api` en `package-lock.json`.
+
+**Probado:** `npm run typecheck` limpio, `npx eslint` sobre los 5
+archivos tocados/nuevos (0 errores/warnings), `npm run build` limpio
+(`/api/support/report` aparece listada), `git diff --stat
+package-lock.json` solo con adiciones (sin el `@swc/helpers` de menos),
+`npx vitest run`: 931/933 (mismas 2 fallas preexistentes). Sin tests
+nuevos — `send.ts` es un envoltorio delgado sobre `nodemailer` (poco
+valor en mockear todo el transporte SMTP) y la validación de la ruta es
+directa.
+
+**Pendiente / siguiente paso:** Angel debe generar una contraseña de
+aplicación de Gmail para `soportesandia1@gmail.com` (Cuenta de Google →
+Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones) y
+cargar `SUPPORT_GMAIL_USER`/`SUPPORT_GMAIL_APP_PASSWORD` en EasyPanel —
+sin eso la ruta responde 503 con un mensaje claro en vez de fallar en
+silencio. No se puede probar el envío real de punta a punta hasta que
+esas variables existan en producción (Claude no puede recibir el
+correo). Todavía no publicado, mismo criterio que el Bloque 8. Sigue el
+Bloque 10 (botón de reportar pago + panel de suscripciones en
+`/admin`).

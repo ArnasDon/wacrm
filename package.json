@@ -55,6 +55,7 @@
     "lucide-react": "^1.28.0",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
+    "nodemailer": "^9.0.5",
     "opus-recorder": "^8.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -67,6 +68,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^26",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

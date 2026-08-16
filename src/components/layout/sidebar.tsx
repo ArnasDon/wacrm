@@ -14,6 +14,7 @@ import {
   GitBranch,
   LayoutDashboard,
   Building2,
+  LifeBuoy,
   LogOut,
   MessageSquare,
   Package,
@@ -115,11 +116,14 @@ interface SidebarProps {
 }
 
 import { useTranslations } from "next-intl";
+import { useState } from "react";
+import { SupportReportDialog } from "./support-report-dialog";
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, isPlatformAdmin, signOut } = useAuth();
+  const [reportOpen, setReportOpen] = useState(false);
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -409,6 +413,16 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 <Settings className="size-4" />
                 {t("menuSettings")}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  onClose?.();
+                  setReportOpen(true);
+                }}
+                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+              >
+                <LifeBuoy className="size-4" />
+                Reportar un problema
+              </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-border" />
               <DropdownMenuItem
                 onClick={signOut}
@@ -421,6 +435,12 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </DropdownMenu>
         </div>
       </aside>
+
+      <SupportReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        defaultName={profile?.full_name ?? ""}
+      />
     </>
   );
 }

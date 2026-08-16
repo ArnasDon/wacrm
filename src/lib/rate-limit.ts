@@ -227,6 +227,14 @@ export const RATE_LIMITS = {
    *  contact + quote + deal), so tighter than the read — still enough
    *  for a genuine visitor to retry a typo without hitting the wall. */
   publicCatalogQuote: { limit: 10, windowMs: 60_000 },
+  /** Support-issue report (sends an email with attachments), per user.
+   *  Low — this is a "something's broken" button, not a chat; 5/min
+   *  still lets someone retry after a validation error without being
+   *  able to spam soportesandia1@gmail.com. */
+  supportReport: { limit: 5, windowMs: 60_000 },
+  /** Payment report (sends an email), per user. Same reasoning as
+   *  supportReport — an occasional, human-triggered action. */
+  paymentReport: { limit: 5, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

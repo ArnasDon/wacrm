@@ -13,6 +13,14 @@
 // conversation is currently inside Meta's messaging window, hands back
 // a wa.me link so the VISITOR starts the chat themselves and the PDF
 // follows automatically once they do.
+//
+// Deliberately styled as a plain light storefront (hardcoded gray/white
+// classes, not the dashboard's dark theme tokens) — this page is the
+// company's public face, shown to customers who never see the admin
+// UI, so it shouldn't inherit whatever dark/accent theme the account
+// owner picked for their own dashboard. Single-brand catalog, so no
+// search bar, filters, or category sidebar — every product shown here
+// already belongs to this one company.
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -24,7 +32,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -178,10 +185,10 @@ export default function PublicCatalogPage() {
 
   if (loadError) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4 text-center">
-        <PackageX className="size-10 text-muted-foreground" />
-        <p className="text-lg font-medium text-foreground">Catálogo no disponible</p>
-        <p className="max-w-sm text-sm text-muted-foreground">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 px-4 text-center">
+        <PackageX className="size-10 text-gray-400" />
+        <p className="text-lg font-medium text-gray-900">Catálogo no disponible</p>
+        <p className="max-w-sm text-sm text-gray-500">
           Este enlace no es válido o la empresa aún no tiene un catálogo público.
         </p>
       </div>
@@ -190,97 +197,107 @@ export default function PublicCatalogPage() {
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="size-6 animate-spin text-emerald-600" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-32 pt-8">
-      <header className="mb-8 text-center">
-        <h1 className="text-2xl font-semibold text-foreground">{data.account_name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Catálogo de productos</p>
+    <div className="min-h-screen bg-gray-50">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-6 text-center">
+          <h1 className="text-2xl font-semibold text-gray-900">{data.account_name}</h1>
+          <p className="mt-1 text-sm text-gray-500">Catálogo de productos</p>
+        </div>
       </header>
 
-      {data.products.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <PackageX className="size-10 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Todavía no hay productos publicados.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.products.map((product) => {
-            const qty = quantities[product.id] ?? 0;
-            return (
-              <Card key={product.id} className="overflow-hidden border-border bg-card">
-                <div className="relative aspect-square w-full bg-muted">
-                  {product.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <ShoppingCart className="size-8 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-                <CardContent className="flex flex-col gap-2 p-4">
-                  <h3 className="line-clamp-1 font-medium text-foreground">{product.name}</h3>
-                  {product.description && (
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {product.description}
-                    </p>
-                  )}
-                  <p className="text-sm font-semibold text-primary">
-                    {formatCurrency(product.price, data.currency)}
-                  </p>
-                  <div className="mt-1 flex items-center justify-between">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => setQuantity(product.id, Math.max(0, qty - 1))}
-                      disabled={qty === 0}
-                    >
-                      <Minus className="size-3.5" />
-                    </Button>
-                    <span className="w-8 text-center text-sm font-medium text-foreground">
-                      {qty}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => setQuantity(product.id, qty + 1)}
-                    >
-                      <Plus className="size-3.5" />
-                    </Button>
+      <div className="mx-auto max-w-6xl px-4 pb-32 pt-6">
+        {data.products.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <PackageX className="size-10 text-gray-400" />
+            <p className="text-sm text-gray-500">Todavía no hay productos publicados.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {data.products.map((product) => {
+              const qty = quantities[product.id] ?? 0;
+              return (
+                <div
+                  key={product.id}
+                  className="overflow-hidden rounded-xl border border-gray-200 bg-white transition-shadow hover:shadow-md"
+                >
+                  <div className="relative aspect-square w-full bg-gray-50 p-4">
+                    {product.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <ShoppingCart className="size-8 text-gray-300" />
+                      </div>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                  <div className="flex flex-col gap-1.5 border-t border-gray-100 p-4">
+                    <h3 className="line-clamp-2 text-sm font-semibold text-gray-900">
+                      {product.name}
+                    </h3>
+                    {product.description && (
+                      <p className="line-clamp-2 text-xs text-gray-500">{product.description}</p>
+                    )}
+                    <p className="mt-0.5 text-base font-bold text-emerald-700">
+                      {formatCurrency(product.price, data.currency)}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 border-gray-300 text-gray-700 hover:bg-gray-100"
+                        onClick={() => setQuantity(product.id, Math.max(0, qty - 1))}
+                        disabled={qty === 0}
+                      >
+                        <Minus className="size-3.5" />
+                      </Button>
+                      <span className="w-8 text-center text-sm font-medium text-gray-900">
+                        {qty}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 border-gray-300 text-gray-700 hover:bg-gray-100"
+                        onClick={() => setQuantity(product.id, qty + 1)}
+                      >
+                        <Plus className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {totalCount > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-card/95 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
+        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
             <div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-gray-500">
                 {totalCount} {totalCount === 1 ? 'producto' : 'productos'}
               </p>
-              <p className="text-base font-semibold text-foreground">
+              <p className="text-base font-semibold text-gray-900">
                 {formatCurrency(total, data.currency)}
               </p>
             </div>
-            <Button onClick={() => setDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button
+              onClick={() => setDialogOpen(true)}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
               Me lo llevo
             </Button>
           </div>
@@ -288,74 +305,74 @@ export default function PublicCatalogPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}>
-        <DialogContent className="bg-popover border-border sm:max-w-md">
+        <DialogContent className="border-gray-200 bg-white sm:max-w-md">
           {result === null ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-popover-foreground">Me lo llevo</DialogTitle>
-                <DialogDescription className="text-muted-foreground">
+                <DialogTitle className="text-gray-900">Me lo llevo</DialogTitle>
+                <DialogDescription className="text-gray-500">
                   {totalCount} {totalCount === 1 ? 'producto seleccionado' : 'productos seleccionados'} —{' '}
                   {formatCurrency(total, data.currency)}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 py-2">
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground">Nombre *</Label>
+                  <Label className="text-gray-600">Nombre *</Label>
                   <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="bg-muted border-border text-foreground"
+                    className="border-gray-300 bg-white text-gray-900"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground">Teléfono *</Label>
+                  <Label className="text-gray-600">Teléfono *</Label>
                   <Input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+502 5555 5555"
-                    className="bg-muted border-border text-foreground"
+                    className="border-gray-300 bg-white text-gray-900"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground">NIT (opcional)</Label>
+                    <Label className="text-gray-600">NIT (opcional)</Label>
                     <Input
                       value={nit}
                       onChange={(e) => setNit(e.target.value)}
-                      className="bg-muted border-border text-foreground"
+                      className="border-gray-300 bg-white text-gray-900"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground">Correo (opcional)</Label>
+                    <Label className="text-gray-600">Correo (opcional)</Label>
                     <Input
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="bg-muted border-border text-foreground"
+                      className="border-gray-300 bg-white text-gray-900"
                     />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground">Dirección (opcional)</Label>
+                  <Label className="text-gray-600">Dirección (opcional)</Label>
                   <Textarea
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     rows={2}
-                    className="bg-muted border-border text-foreground"
+                    className="border-gray-300 bg-white text-gray-900"
                   />
                 </div>
               </div>
-              <DialogFooter className="bg-popover border-border">
+              <DialogFooter className="bg-white">
                 <Button
                   variant="outline"
                   onClick={() => setDialogOpen(false)}
-                  className="border-border text-popover-foreground hover:bg-muted"
+                  className="border-gray-300 text-gray-700 hover:bg-gray-100"
                 >
                   Cancelar
                 </Button>
                 <Button
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                   {submitting ? (
                     <>
@@ -371,8 +388,8 @@ export default function PublicCatalogPage() {
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle className="text-popover-foreground">¡Listo!</DialogTitle>
-                <DialogDescription className="text-muted-foreground">
+                <DialogTitle className="text-gray-900">¡Listo!</DialogTitle>
+                <DialogDescription className="text-gray-500">
                   {result.delivered
                     ? 'Ya te enviamos el PDF de tu cotización por WhatsApp — revisa el chat.'
                     : result.whatsappUrl
@@ -380,11 +397,11 @@ export default function PublicCatalogPage() {
                       : 'Tu cotización fue creada. Pronto se pondrán en contacto contigo.'}
                 </DialogDescription>
               </DialogHeader>
-              <DialogFooter className="bg-popover border-border">
+              <DialogFooter className="bg-white">
                 <Button
                   variant="outline"
                   onClick={resetDialog}
-                  className="border-border text-popover-foreground hover:bg-muted"
+                  className="border-gray-300 text-gray-700 hover:bg-gray-100"
                 >
                   Cerrar
                 </Button>

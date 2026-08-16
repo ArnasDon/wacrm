@@ -1373,11 +1373,47 @@ tengo forma de autenticarme sin escribir la contraseña de Angel — pedirle
 la contraseña o generar un enlace mágico con la service role key para
 sortear el login está fuera de lo que puedo hacer sin permiso explícito, y
 el intento de generar el enlace fue bloqueado por el propio entorno.
-**Pendiente / siguiente paso:** publicar este commit, confirmar el deploy
-en EasyPanel, y validar a mano en producción: abrir un chat sin negocios,
-crear uno con "+ Nuevo" eligiendo la etapa "Cotización" o "Venta cerrada"
-del pipeline "Proceso de Ventas", confirmar que aparece correctamente y
-que moverlo después con el selector ya existente sigue funcionando.
+**Publicado y validado en producción:** Angel autorizó el push
+(`e4a8cda`). EasyPanel desplegó y, ya con sesión real de Angel en Chrome,
+abrí el chat de David Duran (sin negocios) y confirmé que el botón
+"+ New" y el formulario inline aparecen correctamente.
+
+**Bug preexistente encontrado durante la validación (corregido en el
+mismo bloque, commit separado):** al abrir el formulario, los `Select` de
+pipeline y etapa mostraban el UUID crudo (`fc41db9f-502d-4480-...`) en vez
+del nombre ("Sales Pipeline", "Cotización", etc.) — completamente
+ilegible. No es un bug que yo introduje: el selector de etapa que **ya
+existía** para negocios con negocio propio (el mismo que Angel pidió
+asegurar que fuera "fácil de usar") tenía exactamente el mismo problema,
+confirmado revisando una captura de pantalla de la sesión anterior donde
+aparecía "27d98150-a146-45b8-bd3a-86…" en vez de "New Lead" — lo había
+interpretado mal como texto legible en su momento.
+
+Causa raíz: el componente base (`src/components/ui/select.tsx`, sobre
+`@base-ui/react/select` — librería nueva de Next.js 16, ver `AGENTS.md`)
+usa `<Select.Value>`, que solo puede mostrar el nombre de la opción
+seleccionada si el `<Select.Root>` recibe una prop `items` (mapa
+valor→etiqueta) o si `<Select.Value>` recibe una función `children` de
+formateo — ninguno de los call sites del proyecto la pasaba. Corregí los
+cuatro `Select` de `contact-sidebar.tsx` (temperatura, selector de etapa
+por negocio existente, y los dos nuevos de pipeline/etapa del formulario
+rápido) agregando `items={Object.fromEntries(...)}` a cada uno.
+**No** audité el resto de la app — es muy probable que otros `Select` en
+Configuración, Pipelines, etc. tengan el mismo problema; queda como
+hallazgo para una sesión futura, no se tocó nada fuera de este archivo.
+
+**Probado tras el fix:** `npm run typecheck`, `npx eslint` (0 errores, el
+mismo warning preexistente de `<img>` sin relación) y `npm run build`
+limpios; `package-lock.json` sin cambios. Publiqué el commit `[pendiente
+de hash — ver git log]` y, tras el deploy, verifiqué en producción con la
+sesión de Angel que el selector de pipeline/etapa del formulario nuevo ya
+muestra los nombres correctos ("Sales Pipeline" / "Cotización" / etc.) en
+vez del UUID.
+
+**Pendiente / siguiente paso:** confirmar que el selector de etapa de un
+negocio *ya existente* (el que originaba la duda de Angel) también
+muestra el nombre correcto ahora, y decidir si vale la pena auditar el
+resto de los `Select` custom del proyecto para el mismo problema.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

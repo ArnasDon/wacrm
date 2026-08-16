@@ -464,8 +464,14 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
               />
               <Select
                 value={temperature}
-                onValueChange={(value) => handleTemperatureChange(value as LeadTemperature | "unclassified")}
+                onValueChange={(value) => value && handleTemperatureChange(value as LeadTemperature | "unclassified")}
                 disabled={savingTemperature}
+                items={{
+                  unclassified: tTemp("temperatureUnclassified"),
+                  cold: tTemp("temperatureCold"),
+                  warm: tTemp("temperatureWarm"),
+                  hot: tTemp("temperatureHot"),
+                }}
               >
                 <SelectTrigger className="h-7 flex-1 bg-muted border-border text-xs">
                   <SelectValue />
@@ -546,6 +552,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
                     <Select
                       value={newDealPipelineId}
                       onValueChange={(v) => v && handleNewDealPipelineChange(v)}
+                      items={Object.fromEntries(pipelines.map((p) => [p.id, p.name]))}
                     >
                       <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
                         <SelectValue />
@@ -562,6 +569,12 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
                   <Select
                     value={newDealStageId}
                     onValueChange={(v) => v && setNewDealStageId(v)}
+                    items={Object.fromEntries(
+                      (pipelines.find((p) => p.id === newDealPipelineId)?.stages ?? []).map((s) => [
+                        s.id,
+                        s.name,
+                      ]),
+                    )}
                   >
                     <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
                       <SelectValue placeholder={tSidebar("dealStagePlaceholder")} />
@@ -664,6 +677,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
                               if (stageId && stageId !== deal.stage_id) moveDealStage(deal, stageId);
                             }}
                             disabled={busy}
+                            items={Object.fromEntries(stages.map((s) => [s.id, s.name]))}
                           >
                             <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
                               <SelectValue />

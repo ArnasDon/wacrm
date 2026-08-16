@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { formatCurrency } from '@/lib/currency'
+import { formatCurrencyTotals } from '@/lib/currency'
 import {
   MessageSquare,
   UserPlus,
@@ -15,14 +15,14 @@ import {
   loadActivity,
   loadConversationsSeries,
   loadMetrics,
-  loadPipelineDonut,
+  loadPipelinesOverview,
   loadResponseTime,
 } from '@/lib/dashboard/queries'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
-  PipelineDonutData,
+  PipelineSummary,
   ResponseTimeSummary,
 } from '@/lib/dashboard/types'
 
@@ -30,7 +30,7 @@ import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
-import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
+import { PipelinesOverview } from '@/components/dashboard/pipelines-overview'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 
@@ -55,7 +55,7 @@ export default function DashboardPage() {
   })
   const [seriesLoading, setSeriesLoading] = useState(true)
 
-  const [pipeline, setPipeline] = useState<PipelineDonutData | null>(null)
+  const [pipelines, setPipelines] = useState<PipelineSummary[] | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
 
   const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
@@ -80,8 +80,8 @@ export default function DashboardPage() {
       .catch((err) => console.error('[dashboard] series failed:', err))
       .finally(() => setSeriesLoading(false))
 
-    void loadPipelineDonut(db)
-      .then((p) => setPipeline(p))
+    void loadPipelinesOverview(db)
+      .then((p) => setPipelines(p))
       .catch((err) => console.error('[dashboard] pipeline failed:', err))
       .finally(() => setPipelineLoading(false))
 
@@ -166,7 +166,9 @@ export default function DashboardPage() {
             />
             <MetricCard
               title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
+              value={formatCurrencyTotals(metrics.openDealsByCurrency, {
+                fallbackCurrency: defaultCurrency,
+              })}
               icon={DollarSign}
               subtitle={t('openDeals', { count: metrics.openDealsCount })}
             />
@@ -208,11 +210,7 @@ export default function DashboardPage() {
           />
         </div>
         <div className="h-full lg:col-span-2">
-          <PipelineDonut
-            data={pipeline}
-            loading={pipelineLoading}
-            currency={defaultCurrency}
-          />
+          <PipelinesOverview data={pipelines} loading={pipelineLoading} />
         </div>
       </div>
 

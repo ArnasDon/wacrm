@@ -1431,5 +1431,59 @@ también muestra el nombre en vez del UUID, y decida si vale la pena
 auditar el resto de los `Select` custom del proyecto (Configuración,
 Pipelines, etc.) para el mismo problema.
 
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Dashboard: pipelines por separado + multi-moneda
+
+**Hecho:** Angel pidió un "vistazo rápido" de los pipelines desde el
+Dashboard, y que los montos pudieran verse en Quetzales también. El
+widget de pipeline ya existía (`pipeline-donut.tsx`, un anillo SVG), pero
+tenía dos problemas de fondo: (1) mezclaba las etapas de **todas** las
+pipelines de la cuenta en un solo anillo — con dos pipelines reales
+(Sales Pipeline y Proceso de Ventas) el resultado no distinguía una de
+otra; (2) sumaba `deals.value` de todos los negocios abiertos sin mirar
+`deals.currency` — un negocio en USD y uno en GTQ se sumaban como si
+fueran la misma moneda, mostrando un total falso formateado con la
+moneda por defecto de la cuenta. Lo mismo aplicaba a la tarjeta "Open
+Deals Value" de arriba (mismo bug, mismo origen).
+
+Con dos decisiones de Angel (separar por pipeline en vez de un widget
+combinado; mostrar cada moneda por separado en vez de forzar todo a la
+moneda de la cuenta), rediseñé la capa de datos y el widget:
+
+- `src/lib/currency.ts`: nuevo tipo `CurrencyTotal` y
+  `formatCurrencyTotals()` — junta totales por moneda sin sumarlos entre
+  sí (`"$450 · Q1,200"` en vez de un número mezclado); con una sola
+  moneda se ve igual que antes.
+- `src/lib/dashboard/queries.ts`: `loadPipelineDonut()` (un anillo, todas
+  las pipelines juntas) → `loadPipelinesOverview()` (un desglose por
+  pipeline, y dentro de cada etapa un desglose por moneda). `loadMetrics()`
+  ahora agrupa `openDealsValue` en `openDealsByCurrency` con el mismo
+  principio — nunca suma monedas distintas.
+- `src/components/dashboard/pipeline-donut.tsx` (anillo SVG) →
+  `pipelines-overview.tsx`: una lista compacta por pipeline (nombre +
+  total), y debajo sus etapas con conteo y monto — sin anillo, más legible
+  con dos o más pipelines reales. Diseño aprobado por Angel antes de
+  implementarlo (vía preview).
+- `src/app/(dashboard)/dashboard/page.tsx` actualizado a los nuevos tipos
+  y componente; la tarjeta "Open Deals Value" usa `formatCurrencyTotals`.
+
+**Probado:** `npm run typecheck`, `npx eslint` sobre los archivos
+tocados (0 errores/warnings), `npm run build` limpio, `package-lock.json`
+sin cambios. `npx vitest run`: 907/909 (mismas 2 fallas preexistentes de
+`mondayIndex`/zona horaria, sin relación). No hay pruebas unitarias
+dedicadas a `dashboard/queries.ts` en el repo (no existían antes de este
+cambio tampoco) — no se agregaron en este bloque para no ampliar el
+alcance sin que Angel lo pida.
+
+**Pendiente / siguiente paso:** publicar, confirmar el deploy en
+EasyPanel, y validar en el Dashboard real que: (1) "Proceso de Ventas"
+aparece con sus 3 negocios reales (~$450, todos en USD) separado de
+"Sales Pipeline" (vacío, "No open deals"), y (2) crear un negocio de
+prueba en GTQ y confirmar que aparece como un total aparte (no sumado al
+de USD) tanto en el widget de pipelines como en la tarjeta "Open Deals
+Value" de arriba — y borrarlo después.
+
+**Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
+commit.
+
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.

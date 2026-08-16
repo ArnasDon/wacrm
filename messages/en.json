@@ -113,13 +113,12 @@
       "ariaLabel": "Conversations per day"
     },
     "pipelineDonut": {
-      "title": "Pipeline Value",
-      "description": "Open deals by stage",
+      "title": "Pipelines",
+      "description": "Open deals by pipeline and stage",
       "noOpenDeals": "No open deals yet",
       "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
-      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}",
-      "total": "Total",
-      "ariaLabel": "Pipeline value by stage"
+      "noOpenDealsForPipeline": "No open deals",
+      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}"
     },
     "responseTimeChart": {
       "title": "Average First Response Time",

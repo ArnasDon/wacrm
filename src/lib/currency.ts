@@ -81,6 +81,29 @@ export function formatCurrency(
   }
 }
 
+export interface CurrencyTotal {
+  currency: string;
+  value: number;
+}
+
+/**
+ * Joins per-currency totals for display without ever summing across
+ * currencies, e.g. `[{currency:"USD",value:450},{currency:"GTQ",value:1200}]`
+ * → `"$450 · Q1,200"`. An empty list renders as a zero amount in
+ * `fallbackCurrency` so callers don't need a separate empty-state branch
+ * just for formatting.
+ */
+export function formatCurrencyTotals(
+  totals: CurrencyTotal[],
+  options?: { short?: boolean; fallbackCurrency?: string },
+): string {
+  const format = options?.short ? formatCurrencyShort : formatCurrency;
+  if (totals.length === 0) {
+    return format(0, options?.fallbackCurrency ?? DEFAULT_CURRENCY);
+  }
+  return totals.map((t) => format(t.value, t.currency)).join(" · ");
+}
+
 /**
  * Compact currency for tight spaces (donut center, legend rows):
  * "$1.2M" / "€34.5k" / "₹900". Uses the currency's symbol from

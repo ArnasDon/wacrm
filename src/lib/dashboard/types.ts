@@ -2,6 +2,8 @@
 // here so each component stays thin and the page-level loader wires
 // them up without type gymnastics.
 
+import type { CurrencyTotal } from '@/lib/currency'
+
 export interface MetricDelta {
   current: number
   previous: number
@@ -10,7 +12,9 @@ export interface MetricDelta {
 export interface MetricsBundle {
   activeConversations: MetricDelta
   newContactsToday: MetricDelta
-  openDealsValue: number
+  /** Open-deal value, kept separate per currency — never summed across
+   *  currencies (a $100 deal and a Q100 deal are not $200). */
+  openDealsByCurrency: CurrencyTotal[]
   openDealsCount: number
   messagesSentToday: MetricDelta
 }
@@ -26,12 +30,17 @@ export interface PipelineStageSlice {
   name: string
   color: string
   dealCount: number
-  totalValue: number
+  /** Open-deal totals for this stage, kept separate per currency. */
+  totalsByCurrency: CurrencyTotal[]
 }
 
-export interface PipelineDonutData {
+/** One pipeline's open-deal breakdown, stage by stage. */
+export interface PipelineSummary {
+  id: string
+  name: string
   stages: PipelineStageSlice[]
-  totalValue: number
+  dealCount: number
+  totalsByCurrency: CurrencyTotal[]
 }
 
 export interface ResponseTimeBucket {

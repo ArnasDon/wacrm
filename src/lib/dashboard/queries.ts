@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CurrencyTotal } from '@/lib/currency'
 import {
   daysAgoStart,
   DOW_SHORT_MON_FIRST,
@@ -11,11 +12,24 @@ import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
-  PipelineDonutData,
   PipelineStageSlice,
+  PipelineSummary,
   ResponseTimeBucket,
   ResponseTimeSummary,
 } from './types'
+
+// Accumulates per-currency totals without ever summing across
+// currencies. Shared by the open-deals metric and the pipeline
+// breakdown so both use the exact same (correct) aggregation.
+function addToCurrencyTotals(totals: Map<string, number>, currency: string | null, amount: number) {
+  const code = currency || 'USD'
+  totals.set(code, (totals.get(code) ?? 0) + amount)
+}
+function toCurrencyTotalsArray(totals: Map<string, number>): CurrencyTotal[] {
+  return Array.from(totals.entries())
+    .map(([currency, value]) => ({ currency, value }))
+    .sort((a, b) => b.value - a.value)
+}
 
 // ------------------------------------------------------------
 // All client-side aggregation. RLS scopes every query to the
@@ -61,7 +75,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .select('id', { count: 'exact', head: true })
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    db.from('deals').select('value, status').eq('status', 'open'),
+    db.from('deals').select('value, currency, status').eq('status', 'open'),
     db
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -75,8 +89,9 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .lt('created_at', todayStart),
   ])
 
-  const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
-  const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+  const openDealsRows = (openDeals.data ?? []) as { value: number | null; currency: string | null }[]
+  const openDealsTotals = new Map<string, number>()
+  for (const d of openDealsRows) addToCurrencyTotals(openDealsTotals, d.currency, d.value ?? 0)
 
   return {
     activeConversations: {
@@ -90,7 +105,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: newContactsToday.count ?? 0,
       previous: newContactsYesterday.count ?? 0,
     },
-    openDealsValue,
+    openDealsByCurrency: toCurrencyTotalsArray(openDealsTotals),
     openDealsCount: openDealsRows.length,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
@@ -128,43 +143,66 @@ export async function loadConversationsSeries(
   return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
 }
 
-// --- 3. Pipeline donut -------------------------------------------------
+// --- 3. Pipelines overview ----------------------------------------------
+//
+// One breakdown per pipeline (accounts can run more than one — e.g. a
+// separate pipeline per market/language) instead of pooling every
+// pipeline's stages into a single ring. Totals are kept per currency:
+// a deal's `value` is only ever added to other deals sharing its exact
+// `currency`, never blended across currencies.
 
-export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
-  const [stagesRes, dealsRes] = await Promise.all([
+export async function loadPipelinesOverview(db: DB): Promise<PipelineSummary[]> {
+  const [pipelinesRes, stagesRes, dealsRes] = await Promise.all([
+    db.from('pipelines').select('id, name').order('created_at'),
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('stage_id, value, status').eq('status', 'open'),
+    db.from('deals').select('pipeline_id, stage_id, value, currency, status').eq('status', 'open'),
   ])
 
+  const pipelines = (pipelinesRes.data ?? []) as { id: string; name: string }[]
   const stages =
-    (stagesRes.data ?? []) as { id: string; name: string; color: string }[]
-  const deals = (dealsRes.data ?? []) as { stage_id: string; value: number | null }[]
+    (stagesRes.data ?? []) as { id: string; name: string; color: string; pipeline_id: string }[]
+  const deals =
+    (dealsRes.data ?? []) as { pipeline_id: string; stage_id: string; value: number | null; currency: string | null }[]
 
-  const byStage = new Map<string, { count: number; total: number }>()
+  const dealsByStage = new Map<string, typeof deals>()
   for (const d of deals) {
-    const row = byStage.get(d.stage_id) ?? { count: 0, total: 0 }
-    row.count += 1
-    row.total += d.value ?? 0
-    byStage.set(d.stage_id, row)
+    const bucket = dealsByStage.get(d.stage_id) ?? []
+    bucket.push(d)
+    dealsByStage.set(d.stage_id, bucket)
   }
 
-  const slices: PipelineStageSlice[] = stages
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      color: s.color || '#64748b',
-      dealCount: byStage.get(s.id)?.count ?? 0,
-      totalValue: byStage.get(s.id)?.total ?? 0,
-    }))
-    // Hide empty stages from the ring (but we'd still show them in the
-    // legend if the user wanted a full breakdown — trimming keeps the
-    // visual clean for the common case).
-    .filter((s) => s.totalValue > 0 || s.dealCount > 0)
+  return pipelines.map((p): PipelineSummary => {
+    const pipelineStages = stages.filter((s) => s.pipeline_id === p.id)
+    const pipelineTotals = new Map<string, number>()
+    let pipelineDealCount = 0
 
-  return {
-    stages: slices,
-    totalValue: slices.reduce((sum, s) => sum + s.totalValue, 0),
-  }
+    const stageSlices: PipelineStageSlice[] = pipelineStages.map((s) => {
+      const stageDeals = dealsByStage.get(s.id) ?? []
+      const stageTotals = new Map<string, number>()
+      for (const d of stageDeals) {
+        addToCurrencyTotals(stageTotals, d.currency, d.value ?? 0)
+        addToCurrencyTotals(pipelineTotals, d.currency, d.value ?? 0)
+      }
+      pipelineDealCount += stageDeals.length
+      return {
+        id: s.id,
+        name: s.name,
+        color: s.color || '#64748b',
+        dealCount: stageDeals.length,
+        totalsByCurrency: toCurrencyTotalsArray(stageTotals),
+      }
+    })
+
+    return {
+      id: p.id,
+      name: p.name,
+      // Hide stages with no open deals — keeps the breakdown focused on
+      // where the pipeline's value actually sits.
+      stages: stageSlices.filter((s) => s.dealCount > 0),
+      dealCount: pipelineDealCount,
+      totalsByCurrency: toCurrencyTotalsArray(pipelineTotals),
+    }
+  })
 }
 
 // --- 4. Response time by day of week ----------------------------------

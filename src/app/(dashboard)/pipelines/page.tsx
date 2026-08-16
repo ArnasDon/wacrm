@@ -36,13 +36,17 @@ import { useTranslations } from "next-intl";
 // agent+. The two CTAs gate on different `useCan` capabilities,
 // not on different copy.
 
-// Spec-defined seed — name and color per the product spec.
+// Spec-defined seed — the sales funnel Angel asked for (Bloque 2),
+// used both to lazily seed an account's first pipeline and by "New
+// pipeline". Names are hardcoded Spanish (not next-intl) because
+// they're literal row data an admin can rename per-pipeline
+// afterward, same reasoning as the whatsapp-config default labels —
+// Chat Sandía targets Guatemala. Only the last stage is `is_won`.
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "Cliente reciente", color: "#3b82f6", position: 0, is_won: false }, // blue — just wrote in, sent general info
+  { name: "Cotización", color: "#eab308", position: 1, is_won: false }, // yellow — validating interest against the catalog
+  { name: "Convencimiento", color: "#f97316", position: 2, is_won: false }, // orange — resolving doubts, use cases
+  { name: "Venta cerrada", color: "#22c55e", position: 3, is_won: true }, // green — closed
 ];
 
 export default function PipelinesPage() {
@@ -134,6 +138,7 @@ export default function PipelinesPage() {
       name: s.name,
       color: s.color,
       position: s.position,
+      is_won: s.is_won,
     }));
     await supabase.from("pipeline_stages").insert(stagesPayload);
 
@@ -220,16 +225,27 @@ export default function PipelinesPage() {
       setDeals((prev) =>
         prev.map((d) => (d.id === dealId ? { ...d, stage_id: newStageId } : d)),
       );
-      const { error } = await supabase
-        .from("deals")
-        .update({ stage_id: newStageId })
-        .eq("id", dealId);
-      if (error) {
+      const res = await fetch(`/api/deals/${dealId}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage_id: newStageId }),
+      });
+      if (!res.ok) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
+        return;
+      }
+      // The target stage may be marked "Venta cerrada" (is_won), which
+      // the route also flips deals.status to 'won' for — reflect that
+      // in local state without a full refetch.
+      const { deal } = await res.json();
+      if (deal?.status) {
+        setDeals((prev) =>
+          prev.map((d) => (d.id === dealId ? { ...d, status: deal.status } : d)),
+        );
       }
     },
-    [supabase, refreshDeals, t],
+    [refreshDeals, t],
   );
 
   const handleAddDeal = useCallback(
@@ -284,6 +300,7 @@ export default function PipelinesPage() {
       name: s.name,
       color: s.color,
       position: s.position,
+      is_won: s.is_won,
     }));
     await supabase.from("pipeline_stages").insert(stagesPayload);
 

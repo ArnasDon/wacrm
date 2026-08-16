@@ -644,11 +644,15 @@ export function MessageThread({
     async (status: ConversationStatus) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      await supabase
-        .from("conversations")
-        .update({ status })
-        .eq("id", conversation.id);
+      const res = await fetch(`/api/conversations/${conversation.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        console.error("Failed to update conversation status");
+        return;
+      }
 
       onStatusChange(conversation.id, status);
     },

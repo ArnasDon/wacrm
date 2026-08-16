@@ -8,14 +8,20 @@
 // delivery must not affect the 200 OK returned to Meta.
 //
 // Delivery semantics (documented in docs/public-api.md):
-//   - At-most-once per event, single attempt with a short timeout.
-//   - Each consecutive failure bumps `failure_count`; once it crosses
-//     MAX_CONSECUTIVE_FAILURES the endpoint is auto-disabled
-//     (`is_active = false`) so a dead sink stops being hit. A success
-//     resets the counter and stamps `last_delivery_at`.
-//   - Durable retry-with-backoff would need a queue/worker (a
-//     follow-up); in-process retries inside `after()` would burn the
-//     route's duration budget without a real durability guarantee.
+//   - At-least-once per event: every attempt is logged as a
+//     `webhook_deliveries` row. The first attempt happens inline; on
+//     failure it's left `pending` with a `next_retry_at` (exponential
+//     backoff: 1 min, 5 min, 30 min) for `/api/webhooks/cron` to pick
+//     up. After the retry schedule is exhausted the row is marked
+//     `failed` and stays that way — no further attempts.
+//   - Each consecutive failed *attempt* (inline or retried) bumps the
+//     endpoint's `failure_count`, unchanged from before retries
+//     existed; once it crosses MAX_CONSECUTIVE_FAILURES the endpoint
+//     is auto-disabled (`is_active = false`). A success resets the
+//     counter and stamps `last_delivery_at`. This is deliberately
+//     independent of the per-delivery retry state — an endpoint that's
+//     been flaky across many different events still auto-disables even
+//     if any single delivery hasn't exhausted its own retries yet.
 // ============================================================
 
 import { randomUUID } from 'node:crypto';
@@ -32,6 +38,16 @@ export const DELIVERY_TIMEOUT_MS = 5000;
 
 /** Auto-disable an endpoint after this many consecutive failures. */
 export const MAX_CONSECUTIVE_FAILURES = 15;
+
+/**
+ * Delay before each successive retry, indexed by (attempt_count at the
+ * time it failed) - 1. Attempt 1 (inline) failing schedules retry at
+ * +1min; that retry (attempt 2) failing schedules +5min; that one
+ * (attempt 3) failing schedules +30min; attempt 4 failing exhausts the
+ * schedule and the delivery is marked `failed`.
+ */
+export const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000];
+export const MAX_DELIVERY_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 interface EndpointRow {
   id: string;
@@ -63,18 +79,19 @@ export async function dispatchWebhookEvent(
     // HMAC over the raw request body. `id` is a per-delivery uuid the
     // receiver can dedupe on (deliveries are at-least-once and may
     // repeat / arrive out of order).
-    const payload = JSON.stringify({
+    const payloadObj = {
       id: randomUUID(),
       event,
       occurred_at: new Date().toISOString(),
       account_id: accountId,
       data,
-    });
+    };
+    const payload = JSON.stringify(payloadObj);
     const tsSeconds = Math.floor(Date.now() / 1000);
 
     await Promise.allSettled(
       (rows as EndpointRow[]).map((row) =>
-        deliverOne(db, row, event, payload, tsSeconds)
+        deliverAndLog(db, row, accountId, event, payloadObj, payload, tsSeconds)
       )
     );
   } catch (err) {
@@ -83,31 +100,63 @@ export async function dispatchWebhookEvent(
   }
 }
 
-async function deliverOne(
+/** Insert the delivery-log row, attempt #1, and record the outcome. */
+async function deliverAndLog(
+  db: SupabaseClient,
+  row: EndpointRow,
+  accountId: string,
+  event: WebhookEvent,
+  payloadObj: unknown,
+  payload: string,
+  tsSeconds: number
+): Promise<void> {
+  const { data: delivery, error: insertErr } = await db
+    .from('webhook_deliveries')
+    .insert({
+      endpoint_id: row.id,
+      account_id: accountId,
+      event,
+      payload: payloadObj,
+      status: 'pending',
+      attempt_count: 0,
+    })
+    .select('id')
+    .single();
+
+  if (insertErr || !delivery) {
+    // Can't log it, but the endpoint should still get its event —
+    // deliver without a tracked row rather than dropping the event.
+    console.error('[webhooks] failed to create delivery log row:', insertErr);
+    await attemptDelivery(db, row, event, payload, tsSeconds);
+    return;
+  }
+
+  await attemptAndRecord(db, row, delivery.id as string, event, 1, payload, tsSeconds);
+}
+
+/**
+ * One HTTP attempt: SSRF guard → decrypt secret → sign → POST.
+ * Returns the outcome without touching `webhook_deliveries` or
+ * `webhook_endpoints` — callers own the bookkeeping.
+ */
+async function attemptDelivery(
   db: SupabaseClient,
   row: EndpointRow,
   event: WebhookEvent,
   payload: string,
   tsSeconds: number
-): Promise<void> {
-  // SSRF guard: refuse to POST to a host that resolves to a private /
-  // loopback / link-local address. Counts as a failure so a
-  // misconfigured internal URL surfaces and eventually auto-disables.
+): Promise<{ ok: true; status: number } | { ok: false; status: number | null; message: string }> {
   if (!(await isDeliverableUrl(row.url))) {
     console.warn('[webhooks] refusing non-public delivery target for', row.id);
-    await recordFailure(db, row);
-    return;
+    return { ok: false, status: null, message: 'refused: non-public delivery target' };
   }
 
   let secret: string;
   try {
     secret = decrypt(row.secret);
   } catch (err) {
-    // A row whose secret can't be decrypted can never produce a valid
-    // signature — count it as a failure so it eventually auto-disables.
     console.error('[webhooks] secret decrypt failed for', row.id, err);
-    await recordFailure(db, row);
-    return;
+    return { ok: false, status: null, message: 'secret could not be decrypted' };
   }
 
   try {
@@ -126,20 +175,119 @@ async function deliverOne(
       redirect: 'manual',
       signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`endpoint responded ${res.status}`);
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: `endpoint responded ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[webhooks] delivery to ${row.id} failed:`, message);
+    return { ok: false, status: null, message };
+  }
+}
 
-    // Success: clear the failure streak.
+/**
+ * Run one attempt and persist both the endpoint-level failure streak
+ * (unchanged historical behavior) and the delivery-row state (new:
+ * `delivered` / `pending` with a scheduled retry / `failed` once
+ * exhausted). Shared between the inline first attempt and the cron
+ * retry path (`retryDelivery` below).
+ */
+async function attemptAndRecord(
+  db: SupabaseClient,
+  row: EndpointRow,
+  deliveryId: string,
+  event: WebhookEvent,
+  attemptCount: number,
+  payload: string,
+  tsSeconds: number
+): Promise<void> {
+  const outcome = await attemptDelivery(db, row, event, payload, tsSeconds);
+  const nowIso = new Date().toISOString();
+
+  if (outcome.ok) {
     await db
       .from('webhook_endpoints')
-      .update({ failure_count: 0, last_delivery_at: new Date().toISOString() })
+      .update({ failure_count: 0, last_delivery_at: nowIso })
       .eq('id', row.id);
-  } catch (err) {
-    console.warn(
-      `[webhooks] delivery to ${row.id} failed:`,
-      err instanceof Error ? err.message : err
-    );
-    await recordFailure(db, row);
+    await db
+      .from('webhook_deliveries')
+      .update({
+        status: 'delivered',
+        attempt_count: attemptCount,
+        last_attempt_at: nowIso,
+        response_status: outcome.status,
+        next_retry_at: null,
+      })
+      .eq('id', deliveryId);
+    return;
   }
+
+  // Every failed attempt still bumps the endpoint's consecutive-failure
+  // streak — auto-disable cares about a chronically unreliable
+  // endpoint across all its events, not about any one delivery's own
+  // retry budget.
+  await recordFailure(db, row);
+
+  const nextDelay = RETRY_DELAYS_MS[attemptCount - 1];
+  await db
+    .from('webhook_deliveries')
+    .update({
+      status: nextDelay != null ? 'pending' : 'failed',
+      attempt_count: attemptCount,
+      last_attempt_at: nowIso,
+      response_status: outcome.status,
+      response_snippet: outcome.message.slice(0, 500),
+      next_retry_at: nextDelay != null ? new Date(Date.now() + nextDelay).toISOString() : null,
+    })
+    .eq('id', deliveryId);
+}
+
+/**
+ * Re-attempt a `pending` delivery row whose `next_retry_at` is due.
+ * Re-reads the endpoint's CURRENT url/secret (an admin may have
+ * rotated them since the original attempt) but replays the ORIGINAL
+ * signed payload, so a receiver sees the same event content and
+ * dedupe id no matter how many attempts it took. Used by
+ * `/api/webhooks/cron`.
+ */
+export async function retryDelivery(
+  db: SupabaseClient,
+  delivery: {
+    id: string;
+    endpoint_id: string;
+    event: WebhookEvent;
+    attempt_count: number;
+    payload: unknown;
+  }
+): Promise<void> {
+  const { data: endpoint, error } = await db
+    .from('webhook_endpoints')
+    .select('id, url, secret, is_active')
+    .eq('id', delivery.endpoint_id)
+    .maybeSingle();
+
+  if (error || !endpoint || !endpoint.is_active) {
+    // Endpoint was deleted or disabled since this delivery was queued
+    // — nothing left to retry it against.
+    await db
+      .from('webhook_deliveries')
+      .update({ status: 'failed', next_retry_at: null, last_attempt_at: new Date().toISOString() })
+      .eq('id', delivery.id);
+    return;
+  }
+
+  const payload = JSON.stringify(delivery.payload);
+  const tsSeconds = Math.floor(Date.now() / 1000);
+  await attemptAndRecord(
+    db,
+    endpoint as EndpointRow,
+    delivery.id,
+    delivery.event,
+    delivery.attempt_count + 1,
+    payload,
+    tsSeconds
+  );
 }
 
 async function recordFailure(db: SupabaseClient, row: EndpointRow): Promise<void> {

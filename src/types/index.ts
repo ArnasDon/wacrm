@@ -397,6 +397,8 @@ export interface PipelineStage {
   name: string;
   position: number;
   color: string;
+  /** "Venta cerrada" — a deal landing here sets status='won' and fires deal.won. */
+  is_won: boolean;
   created_at: string;
 }
 

@@ -214,20 +214,21 @@ export function ContactDetailView({
     }
 
     setSavingDetails(true);
-    const { error } = await supabase
-      .from('contacts')
-      .update({
+    const res = await fetch(`/api/contacts/${contactId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         name: editName.trim() || null,
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
         lead_temperature: editLeadTemperature === 'unclassified' ? null : editLeadTemperature,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', contactId);
+      }),
+    });
 
-    if (error) {
-      toast.error(t('toastUpdateFailed'));
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || t('toastUpdateFailed'));
     } else {
       toast.success(t('toastUpdated'));
       fetchContact();

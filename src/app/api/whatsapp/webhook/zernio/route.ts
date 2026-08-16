@@ -398,7 +398,15 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
   if (!flowConsumed) {
     automationTriggers.push('new_message_received', 'keyword_match')
   }
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+  if (contactOutcome.wasCreated) {
+    automationTriggers.unshift('new_contact_created')
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'contact.created', {
+      contact_id: contactRecord.id,
+      phone: contactRecord.phone,
+      name: contactRecord.name,
+      source: 'whatsapp',
+    })
+  }
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
 
   for (const triggerType of automationTriggers) {

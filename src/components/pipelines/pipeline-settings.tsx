@@ -116,6 +116,7 @@ export function PipelineSettings({
       name: s.name,
       color: s.color,
       position: i,
+      is_won: s.is_won,
     }));
 
     const [renameRes, stagesRes] = await Promise.all([
@@ -274,6 +275,11 @@ export function PipelineSettings({
                             updated[index] = { ...updated[index], color: v };
                             setLocalStages(updated);
                           }}
+                          onIsWonChange={(v) => {
+                            const updated = [...localStages];
+                            updated[index] = { ...updated[index], is_won: v };
+                            setLocalStages(updated);
+                          }}
                           onRemove={() => handleRemoveStage(stage.id)}
                           colors={STAGE_COLORS}
                           t={t}
@@ -368,6 +374,7 @@ function SortableStageRow({
   stage,
   onNameChange,
   onColorChange,
+  onIsWonChange,
   onRemove,
   colors,
   t,
@@ -375,6 +382,7 @@ function SortableStageRow({
   stage: PipelineStage;
   onNameChange: (v: string) => void;
   onColorChange: (v: string) => void;
+  onIsWonChange: (v: boolean) => void;
   onRemove: () => void;
   colors: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -410,6 +418,18 @@ function SortableStageRow({
         onChange={(e) => onNameChange(e.target.value)}
         className="h-7 flex-1 border-transparent bg-transparent text-sm text-foreground focus:border-border"
       />
+      <label
+        className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+        title={t("isWonHint")}
+      >
+        <input
+          type="checkbox"
+          checked={stage.is_won ?? false}
+          onChange={(e) => onIsWonChange(e.target.checked)}
+          className="size-3.5 rounded border-border"
+        />
+        {t("isWon")}
+      </label>
       <Button
         variant="ghost"
         size="icon-xs"

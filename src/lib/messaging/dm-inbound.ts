@@ -313,7 +313,15 @@ export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmM
       automationTriggers.push('interactive_reply')
     }
   }
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+  if (contactOutcome.wasCreated) {
+    automationTriggers.unshift('new_contact_created')
+    await dispatchWebhookEvent(db, accountId, 'contact.created', {
+      contact_id: contactRecord.id,
+      phone: contactRecord.phone,
+      name: contactRecord.name,
+      source: channel,
+    })
+  }
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
 
   for (const triggerType of automationTriggers) {

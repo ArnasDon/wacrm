@@ -29,6 +29,8 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config';
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { supabaseAdmin } from '@/lib/webhooks/admin-client';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -404,11 +406,23 @@ export async function finalizeBroadcastStatus(
     .select('id', { count: 'exact', head: true })
     .eq('broadcast_id', broadcastId);
 
-  await db
+  const finalStatus = failed > 0 && failed === (total ?? 0) ? 'failed' : 'sent';
+  const { data: updated } = await db
     .from('broadcasts')
     .update({
-      status: failed > 0 && failed === (total ?? 0) ? 'failed' : 'sent',
+      status: finalStatus,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', broadcastId);
+    .eq('id', broadcastId)
+    .select('id, account_id')
+    .maybeSingle();
+
+  if (updated) {
+    void dispatchWebhookEvent(supabaseAdmin(), updated.account_id, 'broadcast.completed', {
+      broadcast_id: updated.id,
+      status: finalStatus,
+      failed_count: failed,
+      total_recipients: total ?? 0,
+    });
+  }
 }

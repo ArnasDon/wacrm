@@ -9,9 +9,15 @@ import type { Contact, Tag, ContactTag, LeadTemperature } from '@/types';
 import {
   findExistingContact,
   isExactMatch,
-  isUniqueViolation,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
+
+/** Thrown when /api/contacts[/:id] responds non-2xx; carries the HTTP status. */
+class ApiConflictError extends Error {
+  constructor(readonly status: number, message?: string) {
+    super(message || 'Request failed');
+  }
+}
 import {
   Dialog,
   DialogContent,
@@ -158,35 +164,33 @@ export function ContactForm({
 
       let contactId = contact?.id;
 
+      const payload = {
+        name: name.trim() || null,
+        phone: phone.trim(),
+        email: email.trim() || null,
+        company: company.trim() || null,
+        lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
+      };
+
       if (isEdit && contactId) {
-        const { error } = await supabase
-          .from('contacts')
-          .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', contactId);
-        if (error) throw error;
+        const res = await fetch(`/api/contacts/${contactId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new ApiConflictError(res.status, data.error);
+        }
       } else {
-        const { data, error } = await supabase
-          .from('contacts')
-          .insert({
-            user_id: user.id,
-            account_id: accountId,
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
-          })
-          .select('id')
-          .single();
-        if (error) throw error;
-        contactId = data.id;
+        const res = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new ApiConflictError(res.status, data.error);
+        contactId = data.contact.id;
       }
 
       // Sync tags
@@ -210,9 +214,10 @@ export function ContactForm({
     } catch (err: unknown) {
       // The unique index (migration 022) rejects a duplicate phone that
       // slipped past the on-blur check (race, or a format that
-      // normalizes equal). Surface it as the friendly duplicate notice
-      // and, for new contacts, point the user at the existing record.
-      if (isUniqueViolation(err)) {
+      // normalizes equal) — the API route maps that to a 409. Surface
+      // it as the friendly duplicate notice and, for new contacts,
+      // point the user at the existing record.
+      if (err instanceof ApiConflictError && err.status === 409) {
         toast.error(t('toastConflict'));
         if (!isEdit && accountId) {
           const existing = await findExistingContact(

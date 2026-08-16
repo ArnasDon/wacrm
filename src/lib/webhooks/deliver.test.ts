@@ -11,38 +11,84 @@ vi.mock('@/lib/webhooks/ssrf', () => ({
   isDeliverableUrl: vi.fn(async () => true),
 }));
 
-import { dispatchWebhookEvent, MAX_CONSECUTIVE_FAILURES } from './deliver';
+import {
+  dispatchWebhookEvent,
+  retryDelivery,
+  MAX_CONSECUTIVE_FAILURES,
+  RETRY_DELAYS_MS,
+} from './deliver';
 import { isDeliverableUrl } from './ssrf';
 
-interface Row {
+interface EndpointRow {
   id: string;
   url: string;
   secret: string;
+  is_active?: boolean;
 }
 interface Calls {
-  updates: { id: string; payload: Record<string, unknown> }[];
+  endpointUpdates: { id: string; payload: Record<string, unknown> }[];
+  deliveryInserts: Record<string, unknown>[];
+  deliveryUpdates: { id: string; payload: Record<string, unknown> }[];
   rpcs: { name: string; args: Record<string, unknown> }[];
 }
 
-function makeDb(rows: Row[], calls: Calls) {
-  const from = () => {
-    let mode: 'select' | 'update' = 'select';
-    let payload: Record<string, unknown> = {};
-    let id: string | null = null;
+/**
+ * Per-table fake. `webhook_endpoints` behaves as before (select the
+ * subscribed rows, or a single row by id for retryDelivery; update
+ * captured). `webhook_deliveries` supports insert (returns a fresh id)
+ * and update (captured) — the two new query shapes `deliver.ts` needs
+ * post-retry-log.
+ */
+function makeDb(endpointRows: EndpointRow[], calls: Calls, deliveryIdSeq = 'd'): SupabaseClient {
+  let deliveryCounter = 0;
+  const from = (table: string) => {
+    let mode: 'select' | 'update' | 'insert' = 'select';
+    let updatePayload: Record<string, unknown> = {};
+    let updateId: string | null = null;
+    let eqById: string | null = null;
+
     const b: Record<string, unknown> = {
       select: () => b,
       eq: (col: string, val: string) => {
-        if (col === 'id') id = val;
+        if (col === 'id') {
+          updateId = val;
+          eqById = val;
+        }
         return b;
       },
       update: (p: Record<string, unknown>) => {
         mode = 'update';
-        payload = p;
+        updatePayload = p;
         return b;
       },
-      contains: () => Promise.resolve({ data: rows, error: null }),
+      insert: (p: Record<string, unknown>) => {
+        mode = 'insert';
+        if (table === 'webhook_deliveries') calls.deliveryInserts.push(p);
+        return b;
+      },
+      contains: () => Promise.resolve({ data: endpointRows, error: null }),
+      maybeSingle: async () => {
+        if (table === 'webhook_endpoints') {
+          const row = endpointRows.find((r) => r.id === eqById) ?? null;
+          return { data: row, error: null };
+        }
+        return { data: null, error: null };
+      },
+      single: async () => {
+        if (table === 'webhook_deliveries' && mode === 'insert') {
+          deliveryCounter++;
+          return { data: { id: `${deliveryIdSeq}${deliveryCounter}` }, error: null };
+        }
+        return { data: null, error: null };
+      },
       then: (resolve: (v: unknown) => unknown) => {
-        if (mode === 'update' && id) calls.updates.push({ id, payload });
+        if (mode === 'update' && updateId) {
+          if (table === 'webhook_endpoints') {
+            calls.endpointUpdates.push({ id: updateId, payload: updatePayload });
+          } else if (table === 'webhook_deliveries') {
+            calls.deliveryUpdates.push({ id: updateId, payload: updatePayload });
+          }
+        }
         return resolve({ data: null, error: null });
       },
     };
@@ -55,7 +101,12 @@ function makeDb(rows: Row[], calls: Calls) {
   return { from, rpc } as unknown as SupabaseClient;
 }
 
-const emptyCalls = (): Calls => ({ updates: [], rpcs: [] });
+const emptyCalls = (): Calls => ({
+  endpointUpdates: [],
+  deliveryInserts: [],
+  deliveryUpdates: [],
+  rpcs: [],
+});
 
 beforeEach(() => {
   vi.mocked(isDeliverableUrl).mockResolvedValue(true);
@@ -64,7 +115,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('dispatchWebhookEvent', () => {
-  it('signs + POSTs (no redirect follow) and resets failure_count on success', async () => {
+  it('signs + POSTs (no redirect follow), logs the attempt, and resets failure_count on success', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response);
     vi.stubGlobal('fetch', fetchMock);
     const calls = emptyCalls();
@@ -84,11 +135,18 @@ describe('dispatchWebhookEvent', () => {
     expect(opts.headers['X-Wacrm-Signature']).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
     // Payload carries a dedupe id.
     expect(JSON.parse(opts.body).id).toMatch(/[0-9a-f-]{36}/);
-    expect(calls.updates[0]).toMatchObject({ id: 'a', payload: { failure_count: 0 } });
+    expect(calls.endpointUpdates[0]).toMatchObject({ id: 'a', payload: { failure_count: 0 } });
     expect(calls.rpcs).toHaveLength(0);
+
+    // A delivery-log row was created up front and marked delivered.
+    expect(calls.deliveryInserts).toHaveLength(1);
+    expect(calls.deliveryInserts[0]).toMatchObject({ endpoint_id: 'a', event: 'message.received', status: 'pending' });
+    expect(calls.deliveryUpdates[0]).toMatchObject({
+      payload: { status: 'delivered', attempt_count: 1, response_status: 200, next_retry_at: null },
+    });
   });
 
-  it('records an atomic failure (RPC) when the endpoint errors', async () => {
+  it('records an atomic endpoint failure (RPC) AND schedules the first retry when an attempt errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response));
     const calls = emptyCalls();
 
@@ -103,10 +161,20 @@ describe('dispatchWebhookEvent', () => {
       name: 'record_webhook_failure',
       args: { endpoint_id: 'b', max_failures: MAX_CONSECUTIVE_FAILURES },
     });
-    expect(calls.updates).toHaveLength(0);
+    expect(calls.endpointUpdates).toHaveLength(0);
+
+    // attempt_count=1 failing schedules the first retry delay, stays pending.
+    expect(calls.deliveryUpdates[0].payload).toMatchObject({
+      status: 'pending',
+      attempt_count: 1,
+      response_status: 500,
+    });
+    const scheduled = new Date(calls.deliveryUpdates[0].payload.next_retry_at as string).getTime();
+    expect(scheduled).toBeGreaterThan(Date.now() + RETRY_DELAYS_MS[0] - 5000);
+    expect(scheduled).toBeLessThanOrEqual(Date.now() + RETRY_DELAYS_MS[0] + 5000);
   });
 
-  it('blocks a non-public target (SSRF guard) without fetching', async () => {
+  it('blocks a non-public target (SSRF guard) without fetching, still logs + schedules retry', async () => {
     vi.mocked(isDeliverableUrl).mockResolvedValue(false);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -121,6 +189,7 @@ describe('dispatchWebhookEvent', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(calls.rpcs[0].name).toBe('record_webhook_failure');
+    expect(calls.deliveryUpdates[0].payload.status).toBe('pending');
   });
 
   it('does nothing when no endpoints are subscribed', async () => {
@@ -130,6 +199,88 @@ describe('dispatchWebhookEvent', () => {
     await dispatchWebhookEvent(makeDb([], calls), 'acct-1', 'message.received', {});
     expect(fetchMock).not.toHaveBeenCalled();
     expect(calls.rpcs).toHaveLength(0);
-    expect(calls.updates).toHaveLength(0);
+    expect(calls.endpointUpdates).toHaveLength(0);
+    expect(calls.deliveryInserts).toHaveLength(0);
+  });
+});
+
+describe('retryDelivery', () => {
+  it('marks delivered on a successful retry and clears next_retry_at', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response));
+    const calls = emptyCalls();
+    const db = makeDb([{ id: 'e1', url: 'https://e1.test/hook', secret: 's', is_active: true }], calls);
+
+    await retryDelivery(db, {
+      id: 'del-1',
+      endpoint_id: 'e1',
+      event: 'deal.won',
+      attempt_count: 1,
+      payload: { id: 'evt-1', event: 'deal.won', data: {} },
+    });
+
+    expect(calls.deliveryUpdates[0]).toMatchObject({
+      id: 'del-1',
+      payload: { status: 'delivered', attempt_count: 2, next_retry_at: null },
+    });
+  });
+
+  it('schedules the next backoff step on a second consecutive failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 } as Response));
+    const calls = emptyCalls();
+    const db = makeDb([{ id: 'e2', url: 'https://e2.test/hook', secret: 's', is_active: true }], calls);
+
+    await retryDelivery(db, {
+      id: 'del-2',
+      endpoint_id: 'e2',
+      event: 'deal.won',
+      attempt_count: 1,
+      payload: { id: 'evt-2', event: 'deal.won', data: {} },
+    });
+
+    expect(calls.deliveryUpdates[0].payload).toMatchObject({ status: 'pending', attempt_count: 2 });
+    const scheduled = new Date(calls.deliveryUpdates[0].payload.next_retry_at as string).getTime();
+    expect(scheduled).toBeGreaterThan(Date.now() + RETRY_DELAYS_MS[1] - 5000);
+  });
+
+  it('exhausts the schedule after the final retry and marks the delivery failed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response));
+    const calls = emptyCalls();
+    const db = makeDb([{ id: 'e3', url: 'https://e3.test/hook', secret: 's', is_active: true }], calls);
+
+    // attempt_count 3 failing is the last scheduled retry (RETRY_DELAYS_MS
+    // has 3 entries) — this call becomes attempt 4, which exhausts it.
+    await retryDelivery(db, {
+      id: 'del-3',
+      endpoint_id: 'e3',
+      event: 'deal.won',
+      attempt_count: RETRY_DELAYS_MS.length,
+      payload: { id: 'evt-3', event: 'deal.won', data: {} },
+    });
+
+    expect(calls.deliveryUpdates[0].payload).toMatchObject({
+      status: 'failed',
+      attempt_count: RETRY_DELAYS_MS.length + 1,
+      next_retry_at: null,
+    });
+    // Still bumps the endpoint's consecutive-failure streak like every attempt.
+    expect(calls.rpcs[0].name).toBe('record_webhook_failure');
+  });
+
+  it('marks the delivery failed without attempting when the endpoint was disabled/deleted since queuing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const calls = emptyCalls();
+    const db = makeDb([{ id: 'e4', url: 'https://e4.test/hook', secret: 's', is_active: false }], calls);
+
+    await retryDelivery(db, {
+      id: 'del-4',
+      endpoint_id: 'e4',
+      event: 'deal.won',
+      attempt_count: 1,
+      payload: { id: 'evt-4', event: 'deal.won', data: {} },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(calls.deliveryUpdates[0]).toMatchObject({ id: 'del-4', payload: { status: 'failed' } });
   });
 });

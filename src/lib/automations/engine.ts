@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 // ------------------------------------------------------------
 // Public API
@@ -611,11 +612,19 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'close_conversation': {
       if (!args.contactId) throw new Error('close_conversation needs a contact')
-      await db
+      const { data: closed } = await db
         .from('conversations')
         .update({ status: 'closed', updated_at: new Date().toISOString() })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
+        .select('id')
+        .maybeSingle()
+      if (closed) {
+        void dispatchWebhookEvent(db, args.automation.account_id, 'conversation.closed', {
+          conversation_id: closed.id,
+          closed_by: 'automation',
+        })
+      }
       return 'conversation closed'
     }
 

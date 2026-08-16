@@ -882,3 +882,87 @@ quiere continuar.
 destructiva — el "cancelado" del primer intento fue responsabilidad de
 EasyPanel al recibir un segundo push, no de un `git push --force` ni de
 ningún comando destructivo.
+
+### 2026-08-16 — Claude Code (Bloque 2: webhooks empresariales + n8n, código completo)
+
+**Hecho:** Investigué el sistema de webhooks existente
+(`src/lib/webhooks/{endpoints,deliver,events,sign,ssrf}.ts`, migración 028)
+y confirmé que ya era sólido (secreto HMAC cifrado por endpoint — ya
+"independiente por empresa" —, guarda SSRF, auto-desactivación) pero sin
+tabla de log de entregas, sin reintentos, y sin UI de Settings. También
+encontré un hallazgo clave: casi todas las mutaciones humanas relevantes
+(mover un negocio en el Kanban, cerrar conversación desde el inbox,
+crear/editar contacto, cambiar temperatura) se hacían con escritura directa
+del navegador a Supabase — imposible disparar un webhook desde ahí. Con
+confirmación explícita de Angel, moví esas 4 mutaciones a rutas de servidor
+y agregué `pipeline_stages.is_won` ("Venta cerrada", no "Ganado") con una
+plantilla de pipeline por defecto nueva (Cliente reciente → Cotización →
+Convencimiento → Venta cerrada) para las cuentas nuevas.
+
+- Migración `051_webhook_deliveries_and_deal_won.sql` (todavía sin
+  aplicar): `pipeline_stages.is_won`; tabla nueva `webhook_deliveries` con
+  RLS de solo lectura para miembros de la cuenta, escritura solo por
+  `service_role`.
+- `src/lib/webhooks/deliver.ts` reescrito: cada intento se registra en
+  `webhook_deliveries`; un fallo agenda reintento con backoff exponencial
+  (1 min → 5 min → 30 min, tope 3 reintentos) vía `next_retry_at`, y al
+  agotarse se marca `failed`. El `failure_count` del endpoint (y su
+  auto-desactivación) se sigue incrementando en cada intento fallido, sin
+  cambios de comportamiento ahí. Nuevo `GET /api/webhooks/cron` (mismo
+  patrón que `automations/cron`, secreto compartido `WEBHOOK_CRON_SECRET`)
+  drena los reintentos vencidos.
+- Catálogo de eventos ampliado (`src/lib/webhooks/events.ts`):
+  `deal.won`, `deal.stage_changed`, `contact.created`,
+  `contact.lead_temperature_changed`, `conversation.closed`,
+  `broadcast.completed`, agregados a los 3 que ya existían.
+- Nuevo helper compartido `src/lib/pipelines/move-deal.ts` (`moveDeal`),
+  usado tanto por la acción de IA (`business-actions.ts`) como por la
+  ruta nueva `PATCH /api/deals/[id]/stage` — valida pertenencia de la
+  etapa a la cuenta y pone `status='won'` cuando la etapa es `is_won`.
+- Rutas nuevas: `PATCH /api/deals/[id]/stage`,
+  `PATCH /api/conversations/[id]/status`, `POST /api/contacts`,
+  `PATCH /api/contacts/[id]` — reemplazan las escrituras directas del
+  cliente en `pipelines/page.tsx`, `message-thread.tsx`, `contact-form.tsx`
+  y `contact-detail-view.tsx`, conservando la actualización optimista de
+  la UI.
+- Gestión de webhooks en Settings: `src/app/api/account/webhooks/**`
+  (lista/crear/editar/eliminar/log de entregas/reintentar ahora, mismo
+  patrón de sesión que `account/api-keys`, reutilizando los helpers de
+  `src/lib/webhooks/{endpoints,events}.ts`) + nuevo
+  `src/components/settings/webhooks-settings.tsx` (nueva pestaña
+  "Webhooks" en Configuración).
+- Diseño de integración con n8n: sin código nuevo — n8n consume el
+  sistema de webhooks ya reforzado con su propio nodo Webhook, verificando
+  `X-Wacrm-Signature`. Calendar/Meet/cotizaciones/correo/recordatorios se
+  resuelven dentro de los workflows de n8n, no dentro de Chat Sandía; el
+  CRM sigue siendo la fuente de datos, permisos, confirmaciones y
+  auditoría.
+
+**Probado:** `npm run typecheck` limpio. `npm test`: 860 pruebas, 858
+pasan (las 2 fallas restantes son las de `mondayIndex` ya documentadas
+como preexistentes, sin relación). Pruebas nuevas:
+`src/lib/webhooks/deliver.test.ts` (extendido con reintentos/backoff/log),
+`src/lib/pipelines/move-deal.test.ts`,
+`src/app/api/account/webhooks/route.test.ts` (aislamiento multiempresa +
+control de admin, mismo patrón que el Bloque 1). `npm run build` generó 63
+rutas sin errores, incluyendo todas las rutas nuevas.
+
+**Pendiente / siguiente paso:** Nada de esto se aplicó ni se desplegó a
+producción — falta, en el mismo orden que el Bloque 1: (1) aplicar
+`051_webhook_deliveries_and_deal_won.sql` contra `puvbwzwmojpjplhdfnmk`
+(volumen de datos real es mínimo, riesgo bajo), (2) `get_advisors`
+después de aplicar, (3) configurar `WEBHOOK_CRON_SECRET` en el entorno de
+producción (EasyPanel) y un disparador periódico (cron externo o Vercel
+Cron) apuntando a `GET /api/webhooks/cron` con el header
+`x-cron-secret` — sin esto los reintentos nunca se procesan, solo el
+primer intento inline sigue funcionando, (4) publicar el código en un solo
+push (evitar el problema de builds cancelados del Bloque 1) y validar en
+producción: crear un webhook de prueba, mover un negocio a "Venta
+cerrada", cerrar una conversación, confirmar que las entregas aparecen en
+el log con firma válida. Después de validar, abrir la planificación del
+Bloque 3 (acciones de IA en interfaz conversacional).
+
+**Notas:** No se borró ni revirtió código existente.
+`src/lib/probe_delete_test.txt` permanece intacto y fuera de los cambios.
+No se modificaron datos reales — todo el trabajo de esta sesión es local,
+sin tocar el proyecto Supabase real todavía.

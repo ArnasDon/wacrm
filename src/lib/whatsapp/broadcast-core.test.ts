@@ -14,6 +14,15 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 vi.mock('@/lib/api/v1/contacts', () => ({
   findOrCreateContact: vi.fn(async () => ({ id: 'c1' })),
 }));
+// finalizeBroadcastStatus's webhook dispatch is covered by
+// deliver.test.ts — stub it here so these tests focus on the status
+// derivation logic instead of re-mocking the whole delivery chain.
+vi.mock('@/lib/webhooks/deliver', () => ({
+  dispatchWebhookEvent: vi.fn(async () => {}),
+}));
+vi.mock('@/lib/webhooks/admin-client', () => ({
+  supabaseAdmin: () => ({}),
+}));
 
 // These assertions all fire in the pure validation prologue, before
 // any Supabase call — a bare stub is enough.
@@ -172,6 +181,10 @@ function statusDb(
           if (table === 'broadcasts') writes.update = row;
           return b;
         },
+        // finalizeBroadcastStatus reads the updated row back
+        // (id, account_id) to know who to dispatch broadcast.completed
+        // to — dispatch itself is mocked above.
+        maybeSingle: async () => ({ data: { id: 'b-1', account_id: 'acct-1' }, error: null }),
         then: (resolve: (r: { count: number; error: null }) => unknown) =>
           resolve({
             count: status === null ? total : (counts[status] ?? 0),

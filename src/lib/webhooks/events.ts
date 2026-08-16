@@ -11,6 +11,12 @@ export const WEBHOOK_EVENTS = [
   'message.received', // an inbound WhatsApp message landed
   'message.status_updated', // a sent message advanced (sent/delivered/read)
   'conversation.created', // a new conversation was opened for a contact
+  'conversation.closed', // a conversation was marked closed (agent, AI action, or automation)
+  'contact.created', // a new contact/lead was created
+  'contact.lead_temperature_changed', // a contact's cold/warm/hot classification changed
+  'deal.stage_changed', // a deal moved to a different pipeline stage
+  'deal.won', // a deal landed on a stage marked "Venta cerrada" (is_won)
+  'broadcast.completed', // a broadcast campaign reached a terminal status (sent/failed)
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -21,6 +27,12 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   'message.status_updated':
     'A message you sent changed delivery status (sent/delivered/read/failed)',
   'conversation.created': 'A new conversation was opened',
+  'conversation.closed': 'A conversation was marked closed',
+  'contact.created': 'A new contact/lead was created',
+  'contact.lead_temperature_changed': "A contact's temperature (cold/warm/hot) changed",
+  'deal.stage_changed': 'A deal moved to a different pipeline stage',
+  'deal.won': 'A deal reached a "Venta cerrada" (closed-won) stage',
+  'broadcast.completed': 'A broadcast campaign finished sending',
 };
 
 /** Type-narrow an unknown value into a valid `WebhookEvent`. */

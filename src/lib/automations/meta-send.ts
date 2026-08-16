@@ -26,6 +26,7 @@ import {
   engineSendFacebookQuickReplies,
 } from '@/lib/facebook/engine-send'
 import { sendWhatsAppTextViaZernio, sendWhatsAppTemplateViaZernio, type ZernioSendContext } from '@/lib/whatsapp/zernio-send'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 /**
  * Which channel is `conversationId` on? Automation steps are written
@@ -59,6 +60,19 @@ async function loadZernioConversationId(
     .eq('id', conversationId)
     .maybeSingle()
   return data?.zernio_conversation_id ?? null
+}
+
+/** `conversations.whatsapp_config_id` — which number this thread is pinned to. */
+async function loadConversationWhatsAppConfigId(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from('conversations')
+    .select('whatsapp_config_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.whatsapp_config_id ?? null
 }
 
 // ------------------------------------------------------------
@@ -216,12 +230,12 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
+  const config = await resolveWhatsAppConfig(
+    db,
+    input.accountId,
+    await loadConversationWhatsAppConfigId(db, input.conversationId),
+  )
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
 
@@ -239,6 +253,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
             input.accountId,
             input.templateName,
             input.language,
+            config.id,
           )
         ).row
       : null

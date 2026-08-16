@@ -13,8 +13,12 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  Plus,
+  Star,
+  Pencil,
+  Trash2,
+  ArrowLeft,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -29,7 +33,6 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -37,176 +40,314 @@ type Provider = 'meta' | 'zernio';
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | 'zernio_api_error' | null;
 
+interface ConfigSummary {
+  id: string;
+  provider: Provider;
+  display_name: string | null;
+  phone_number_id: string | null;
+  waba_id: string | null;
+  zernio_account_id: string | null;
+  status: 'connected' | 'disconnected';
+  is_default: boolean;
+  connected_at: string | null;
+  registered_at: string | null;
+  subscribed_apps_at: string | null;
+  last_registration_error: string | null;
+}
+
+/**
+ * Settings > WhatsApp — list of the account's connections, with an
+ * add/edit form for one at a time. Multiple connections per account
+ * shipped alongside migration 050; this used to be a single-connection
+ * form (one row per account was a DB-level UNIQUE constraint).
+ */
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
-  const supabase = createClient();
-  // After multi-user, whatsapp_config is one-row-per-account, not
-  // one-row-per-user. We pull `accountId` straight off the auth
-  // context and key every read off it — so a teammate who just
-  // joined an account sees the inviter's saved config without
-  // having to re-enter anything.
   const { user, accountId, loading: authLoading, profileLoading } = useAuth();
 
-  const [loading, setLoading] = useState(true);
+  const [configs, setConfigs] = useState<ConfigSummary[] | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  // 'list' | 'new' | <config id being edited>
+  const [view, setView] = useState<'list' | 'new' | string>('list');
+  const loadedAccountIdRef = useRef<string | null>(null);
+
+  const fetchConfigs = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const res = await fetch('/api/whatsapp/config');
+      const data = await res.json();
+      setConfigs(Array.isArray(data?.configs) ? data.configs : []);
+    } catch (err) {
+      console.error('Failed to load WhatsApp connections:', err);
+      toast.error(t('loadFailed'));
+      setConfigs([]);
+    } finally {
+      setLoadingList(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (authLoading || profileLoading) return;
+    if (!user || !accountId) {
+      loadedAccountIdRef.current = null;
+      setLoadingList(false);
+      return;
+    }
+    if (loadedAccountIdRef.current === accountId) return;
+    loadedAccountIdRef.current = accountId;
+    fetchConfigs();
+  }, [authLoading, profileLoading, user?.id, accountId, fetchConfigs]);
+
+  async function handleSetDefault(id: string) {
+    try {
+      const res = await fetch(`/api/whatsapp/config/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_default: true }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || t('setDefaultFailed'));
+        return;
+      }
+      toast.success(t('setDefaultSuccess'));
+      fetchConfigs();
+    } catch (err) {
+      console.error('Set default error:', err);
+      toast.error(t('setDefaultFailed'));
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm(t('deleteConfirm'))) return;
+    try {
+      const res = await fetch(`/api/whatsapp/config/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || t('deleteFailed'));
+        return;
+      }
+      toast.success(t('deleteSuccess'));
+      fetchConfigs();
+    } catch (err) {
+      console.error('Delete connection error:', err);
+      toast.error(t('deleteFailed'));
+    }
+  }
+
+  if (view !== 'list') {
+    const editing = view !== 'new' ? (configs ?? []).find((c) => c.id === view) ?? null : null;
+    return (
+      <section className="animate-in fade-in-50 duration-200">
+        <SettingsPanelHead title={t('title')} description={t('description')} />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setView('list')}
+          className="mb-4 border-border text-muted-foreground hover:bg-muted"
+        >
+          <ArrowLeft className="size-4" />
+          {t('backToList')}
+        </Button>
+        <ConnectionForm
+          configId={view === 'new' ? null : view}
+          initialData={editing}
+          isFirstConnection={(configs?.length ?? 0) === 0}
+          onSaved={(id) => {
+            setView(id);
+            fetchConfigs();
+          }}
+          onDeleted={() => {
+            setView('list');
+            fetchConfigs();
+          }}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="animate-in fade-in-50 duration-200">
+      <SettingsPanelHead title={t('title')} description={t('description')} />
+
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-foreground">{t('listTitle')}</h3>
+        <Button
+          size="sm"
+          onClick={() => setView('new')}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+        >
+          <Plus className="size-4" />
+          {t('addConnection')}
+        </Button>
+      </div>
+
+      {loadingList ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="size-6 animate-spin text-primary" />
+        </div>
+      ) : !configs || configs.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            {t('noConnections')}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3">
+          {configs.map((c) => (
+            <Card key={c.id}>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  {c.status === 'connected' ? (
+                    <CheckCircle2 className="size-4 text-primary shrink-0" />
+                  ) : (
+                    <XCircle className="size-4 text-red-500 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-foreground truncate">
+                        {c.display_name || c.phone_number_id || c.zernio_account_id || c.id}
+                      </span>
+                      {c.is_default && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                          <Star className="size-2.5" />
+                          {t('defaultBadge')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {c.provider === 'zernio' ? t('providerZernio') : t('providerMeta')}
+                      {c.phone_number_id ? ` · ${c.phone_number_id}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!c.is_default && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSetDefault(c.id)}
+                      className="border-border text-muted-foreground hover:bg-muted"
+                    >
+                      <Star className="size-3.5" />
+                      {t('setAsDefault')}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setView(c.id)}
+                    className="border-border text-muted-foreground hover:bg-muted"
+                  >
+                    <Pencil className="size-3.5" />
+                    {t('edit')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDelete(c.id)}
+                    className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t('delete')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ConnectionForm({
+  configId,
+  initialData,
+  isFirstConnection,
+  onSaved,
+  onDeleted,
+}: {
+  configId: string | null;
+  initialData: ConfigSummary | null;
+  isFirstConnection: boolean;
+  onSaved: (id: string) => void;
+  onDeleted: () => void;
+}) {
+  const t = useTranslations('Settings.whatsapp');
+  const isEditing = configId != null;
+
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
-  // Guards against re-hydrating the form when the load effect below
-  // re-runs for reasons unrelated to actually switching accounts —
-  // e.g. Supabase's onAuthStateChange fires a token refresh (new
-  // `user` object, profileLoading flips true/false) when the browser
-  // tab regains focus. Without this, that churn calls fetchConfig()
-  // again and overwrites whatever the user typed but hadn't saved yet.
-  const loadedAccountIdRef = useRef<string | null>(null);
 
-  const [provider, setProvider] = useState<Provider>('meta');
+  const [provider, setProvider] = useState<Provider>(initialData?.provider ?? 'meta');
+  const [displayName, setDisplayName] = useState(initialData?.display_name ?? '');
+  const [makeDefault, setMakeDefault] = useState(isFirstConnection || initialData?.is_default || false);
 
-  const [phoneNumberId, setPhoneNumberId] = useState('');
-  const [wabaId, setWabaId] = useState('');
-  const [accessToken, setAccessToken] = useState('');
+  const [phoneNumberId, setPhoneNumberId] = useState(initialData?.phone_number_id ?? '');
+  const [wabaId, setWabaId] = useState(initialData?.waba_id ?? '');
+  const [accessToken, setAccessToken] = useState(isEditing ? MASKED_TOKEN : '');
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
-  const [zernioAccountId, setZernioAccountId] = useState('');
-  const [zernioApiKey, setZernioApiKey] = useState('');
+  const [zernioAccountId, setZernioAccountId] = useState(initialData?.zernio_account_id ?? '');
+  const [zernioApiKey, setZernioApiKey] = useState(isEditing ? MASKED_TOKEN : '');
   const [zernioApiKeyEdited, setZernioApiKeyEdited] = useState(false);
   const [showZernioApiKey, setShowZernioApiKey] = useState(false);
-  // Only ever populated right after a fresh save that generated a new
-  // one — the server never returns an existing secret.
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
 
-  // True once /register has succeeded on Meta's side (timestamp set
-  // in the row). When false, the saved config is metadata-only and
-  // Meta will silently drop every inbound event — that's the
-  // multi-number bug that prompted this work.
-  const isRegistered = Boolean(config?.registered_at);
-  const lastRegistrationError = config?.last_registration_error ?? null;
+  const isRegistered = Boolean(initialData?.registered_at);
+  const lastRegistrationError = initialData?.last_registration_error ?? null;
 
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
   type RegistrationProbe = {
     live: boolean;
     checks: Record<string, boolean | null>;
     errors?: string[];
-    last_registration_error?: string | null;
-    registered_at?: string | null;
-    subscribed_apps_at?: string | null;
   };
-  const [registrationProbe, setRegistrationProbe] =
-    useState<RegistrationProbe | null>(null);
+  const [registrationProbe, setRegistrationProbe] = useState<RegistrationProbe | null>(null);
 
   const webhookUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/whatsapp/webhook${provider === 'zernio' ? '/zernio' : ''}`
       : '';
 
-  const fetchConfig = useCallback(async (acctId: string) => {
-    setLoading(true);
+  const runHealthCheck = useCallback(async (id: string) => {
     try {
-      // Load form values from Supabase (shows what's in DB).
-      // Switched from `user_id` (which would only match the row's
-      // original author) to `account_id` so every member of the
-      // account sees the same saved configuration. UNIQUE(account_id)
-      // on the table guarantees the .maybeSingle() return type
-      // remains accurate.
-      const { data, error } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', acctId)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Failed to load config row:', error);
-      }
-
-      if (data) {
-        setConfig(data);
-        setProvider(data.provider === 'zernio' ? 'zernio' : 'meta');
-        setPhoneNumberId(data.phone_number_id || '');
-        setWabaId(data.waba_id || '');
-        setAccessToken(MASKED_TOKEN);
-        setVerifyToken('');
-        setPin('');
-        setTokenEdited(false);
-        setZernioAccountId(data.zernio_account_id || '');
-        setZernioApiKey(data.zernio_api_key ? MASKED_TOKEN : '');
-        setZernioApiKeyEdited(false);
-      } else {
-        setConfig(null);
-        setPhoneNumberId('');
-        setWabaId('');
-        setAccessToken('');
-        setVerifyToken('');
-        setPin('');
-        setTokenEdited(false);
-        setZernioAccountId('');
-        setZernioApiKey('');
-        setZernioApiKeyEdited(false);
-      }
-      // Clear any stale probe result when reloading the row.
-      setRegistrationProbe(null);
-
-      // Then verify health via the API (decrypts token + pings Meta)
-      if (data) {
-        try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-          const payload = await res.json();
-
-          if (payload.connected) {
-            setConnectionStatus('connected');
-            setResetReason(null);
-            setStatusMessage('');
-          } else {
-            setConnectionStatus('disconnected');
-            setResetReason(
-              payload.needs_reset
-                ? 'token_corrupted'
-                : payload.reason === 'meta_api_error'
-                  ? 'meta_api_error'
-                  : payload.reason === 'zernio_api_error'
-                    ? 'zernio_api_error'
-                    : null,
-            );
-            setStatusMessage(payload.message || '');
-          }
-        } catch (err) {
-          console.error('Health check failed:', err);
-          setConnectionStatus('disconnected');
-        }
-      } else {
-        setConnectionStatus('disconnected');
+      const res = await fetch(`/api/whatsapp/config/${id}`, { method: 'GET' });
+      const payload = await res.json();
+      if (payload.connected) {
+        setConnectionStatus('connected');
         setResetReason(null);
         setStatusMessage('');
+      } else {
+        setConnectionStatus('disconnected');
+        setResetReason(
+          payload.needs_reset
+            ? 'token_corrupted'
+            : payload.reason === 'meta_api_error'
+              ? 'meta_api_error'
+              : payload.reason === 'zernio_api_error'
+                ? 'zernio_api_error'
+                : null,
+        );
+        setStatusMessage(payload.message || '');
       }
     } catch (err) {
-      console.error('fetchConfig error:', err);
-      toast.error('Failed to load WhatsApp configuration');
-    } finally {
-      setLoading(false);
+      console.error('Health check failed:', err);
+      setConnectionStatus('disconnected');
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
-    // Need both the auth session (`!authLoading`) AND the profile
-    // (`!profileLoading`, which carries `accountId`). Without the
-    // second guard, the effect would fire with `accountId === null`
-    // for the first render window and bail without ever retrying
-    // once the profile arrives.
-    if (authLoading || profileLoading) return;
-    if (!user || !accountId) {
-      loadedAccountIdRef.current = null;
-      setLoading(false);
-      return;
-    }
-    if (loadedAccountIdRef.current === accountId) return;
-    loadedAccountIdRef.current = accountId;
-    fetchConfig(accountId);
-  }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+    if (configId) runHealthCheck(configId);
+  }, [configId, runHealthCheck]);
 
   async function handleSave() {
     if (provider === 'zernio') {
@@ -218,95 +359,74 @@ export function WhatsAppConfig() {
 
   async function handleSaveMeta() {
     if (!phoneNumberId.trim()) {
-      toast.error('Phone Number ID is required');
+      toast.error(t('phoneNumberIdRequired'));
       return;
     }
-    if (!config && (!accessToken.trim() || !tokenEdited)) {
-      toast.error('Access Token is required for initial setup');
+    if (!isEditing && (!accessToken.trim() || !tokenEdited)) {
+      toast.error(t('accessTokenRequired'));
       return;
     }
 
     try {
       setSaving(true);
 
-      // Always POST through the API — it verifies with Meta and encrypts
-      // the access_token server-side with ENCRYPTION_KEY. Skipping this
-      // and writing direct to Supabase stores the token in plaintext,
-      // which then fails decryption on every subsequent health check.
       const payload: Record<string, unknown> = {
         provider: 'meta',
-        phone_number_id: phoneNumberId.trim(),
-        waba_id: wabaId.trim() || null,
-        verify_token: verifyToken.trim() || null,
-        // Optional — only sent when the user filled it in. The server
-        // requires it on first save or when changing numbers; for a
-        // simple token rotation, leaving it blank skips re-register.
-        pin: pin.trim() || null,
+        display_name: displayName.trim() || null,
+        is_default: makeDefault,
       };
 
-      if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
-        payload.access_token = accessToken.trim();
-      } else if (config) {
-        // Existing config — reuse stored encrypted token by decrypting on the
-        // server. But our POST handler requires an access_token to verify
-        // with Meta. If the user didn't change the token, we need to signal
-        // that. Simplest: require token re-entry if they're updating.
-        toast.error('Please re-enter the Access Token to save changes');
-        setSaving(false);
-        return;
+      if (!isEditing || tokenEdited) {
+        payload.phone_number_id = phoneNumberId.trim();
+        payload.waba_id = wabaId.trim() || null;
+        payload.verify_token = verifyToken.trim() || null;
+        payload.pin = pin.trim() || null;
+        if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
+          payload.access_token = accessToken.trim();
+        } else if (isEditing) {
+          toast.error(t('accessTokenRequired'));
+          setSaving(false);
+          return;
+        }
       }
 
-      const res = await fetch('/api/whatsapp/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        isEditing ? `/api/whatsapp/config/${configId}` : '/api/whatsapp/config',
+        {
+          method: isEditing ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to save configuration');
+        toast.error(data.error || t('saveFailed'));
         setSaving(false);
         return;
       }
 
-      // The route now returns a structured outcome:
-      //   * registered=true   → number is live, events will flow
-      //   * registered=false  → credentials saved but /register
-      //                         failed; UI shows the specific error
-      //                         and a retry path. registration_error
-      //                         is human-readable from Meta.
       if (data.registered === false && data.registration_error) {
-        toast.error(
-          `Saved, but Meta couldn't register the number: ${data.registration_error}`,
-          { duration: 12000 },
-        );
+        toast.error(t('savedRegistrationFailed', { error: data.registration_error }), {
+          duration: 12000,
+        });
       } else if (data.registration_skipped) {
-        // Credentials saved + verified, but /register was skipped
-        // because no PIN was supplied (e.g. a Meta test number).
-        // Don't claim the number is "Live" — point at the
-        // Registration status banner instead.
-        toast.success(
-          'Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.',
-          { duration: 10000 },
-        );
+        toast.success(t('savedRegistrationSkipped'), { duration: 10000 });
         setPin('');
       } else {
         toast.success(
           data.phone_info?.verified_name
-            ? `Live — ${data.phone_info.verified_name} can now receive events.`
-            : 'WhatsApp connected. Events will start flowing within a minute.',
+            ? t('savedLive', { name: data.phone_info.verified_name })
+            : t('savedConnected'),
         );
-        // Clear the PIN so subsequent saves don't accidentally
-        // re-register (which would void the active subscription if
-        // the PIN became stale).
         setPin('');
       }
 
-      if (accountId) await fetchConfig(accountId);
+      onSaved(data.id ?? configId ?? '');
     } catch (err) {
       console.error('Save error:', err);
-      toast.error('Failed to save configuration');
+      toast.error(t('saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -314,11 +434,11 @@ export function WhatsAppConfig() {
 
   async function handleSaveZernio() {
     if (!zernioAccountId.trim()) {
-      toast.error('Zernio WhatsApp Account ID is required');
+      toast.error(t('zernioAccountIdRequired'));
       return;
     }
-    if (!config && (!zernioApiKey.trim() || !zernioApiKeyEdited)) {
-      toast.error('Zernio API Key is required for initial setup');
+    if (!isEditing && (!zernioApiKey.trim() || !zernioApiKeyEdited)) {
+      toast.error(t('zernioApiKeyRequired'));
       return;
     }
 
@@ -327,27 +447,32 @@ export function WhatsAppConfig() {
 
       const payload: Record<string, unknown> = {
         provider: 'zernio',
+        display_name: displayName.trim() || null,
+        is_default: makeDefault,
         zernio_account_id: zernioAccountId.trim(),
       };
 
       if (zernioApiKeyEdited && zernioApiKey !== MASKED_TOKEN && zernioApiKey.trim()) {
         payload.zernio_api_key = zernioApiKey.trim();
-      } else if (config) {
-        toast.error('Please re-enter the Zernio API Key to save changes');
+      } else if (isEditing) {
+        toast.error(t('zernioApiKeyRequired'));
         setSaving(false);
         return;
       }
 
-      const res = await fetch('/api/whatsapp/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        isEditing ? `/api/whatsapp/config/${configId}` : '/api/whatsapp/config',
+        {
+          method: isEditing ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+      );
 
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to save configuration');
+        toast.error(data.error || t('saveFailed'));
         setSaving(false);
         return;
       }
@@ -358,247 +483,160 @@ export function WhatsAppConfig() {
 
       toast.success(
         data.phone_info?.verified_name
-          ? `Connected — ${data.phone_info.verified_name} can now send and receive messages via Zernio.`
-          : 'Zernio connected. Add the webhook in your Zernio dashboard to start receiving events.',
+          ? t('zernioSavedConnected', { name: data.phone_info.verified_name })
+          : t('zernioSavedGeneric'),
       );
 
-      if (accountId) await fetchConfig(accountId);
+      onSaved(data.id ?? configId ?? '');
     } catch (err) {
       console.error('Save error:', err);
-      toast.error('Failed to save configuration');
+      toast.error(t('saveFailed'));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleTestConnection() {
+    if (!configId) return;
     try {
       setTesting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-      const payload = await res.json();
-
-      if (payload.connected) {
-        setConnectionStatus('connected');
-        setResetReason(null);
-        setStatusMessage('');
-        toast.success(
-          payload.phone_info?.verified_name
-            ? `Connected to ${payload.phone_info.verified_name}`
-            : 'API connection successful'
-        );
-      } else {
-        setConnectionStatus('disconnected');
-        setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
-        setStatusMessage(payload.message || '');
-        toast.error(payload.message || 'API connection failed');
-      }
-    } catch (err) {
-      console.error('Test connection error:', err);
-      setConnectionStatus('disconnected');
-      toast.error('Connection test failed. Check network and try again.');
+      await runHealthCheck(configId);
+      toast.success(t('testConnectionTriggered'));
     } finally {
       setTesting(false);
     }
   }
 
   async function handleVerifyRegistration() {
+    if (!configId) return;
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
-      const res = await fetch('/api/whatsapp/config/verify-registration', {
+      const res = await fetch(`/api/whatsapp/config/${configId}/verify-registration`, {
         method: 'GET',
       });
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
-        toast.success('Number is fully wired — Meta is delivering events.');
+        toast.success(t('verifyLive'));
       } else {
-        toast.error(
-          'Number is not fully registered. See the checks below for which step failed.',
-          { duration: 8000 },
-        );
+        toast.error(t('verifyNotLive'), { duration: 8000 });
       }
-      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('verify-registration failed:', err);
-      toast.error('Could not reach the verification endpoint.');
+      toast.error(t('verifyUnreachable'));
     } finally {
       setVerifyingRegistration(false);
     }
   }
 
-  async function handleReset() {
-    if (!confirm('This will delete the current WhatsApp config so you can re-enter it. Continue?')) {
-      return;
-    }
-
+  async function handleDelete() {
+    if (!configId) return;
+    if (!confirm(t('deleteConfirm'))) return;
     try {
-      setResetting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
+      setDeleting(true);
+      const res = await fetch(`/api/whatsapp/config/${configId}`, { method: 'DELETE' });
       const data = await res.json();
-
       if (!res.ok) {
-        toast.error(data.error || 'Failed to reset configuration');
+        toast.error(data.error || t('deleteFailed'));
         return;
       }
-
-      toast.success('Configuration cleared. You can now re-enter your credentials.');
-      setConfig(null);
-      setPhoneNumberId('');
-      setWabaId('');
-      setAccessToken('');
-      setVerifyToken('');
-      setTokenEdited(false);
-      setZernioAccountId('');
-      setZernioApiKey('');
-      setZernioApiKeyEdited(false);
-      setWebhookSecret(null);
-      setConnectionStatus('disconnected');
-      setResetReason(null);
-      setStatusMessage('');
+      toast.success(t('deleteSuccess'));
+      onDeleted();
     } catch (err) {
-      console.error('Reset error:', err);
-      toast.error('Failed to reset configuration');
+      console.error('Delete error:', err);
+      toast.error(t('deleteFailed'));
     } finally {
-      setResetting(false);
+      setDeleting(false);
     }
   }
 
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
-    toast.success('Webhook URL copied to clipboard');
+    toast.success(t('webhookUrlCopied'));
   }
 
   function handleCopyWebhookSecret() {
     if (!webhookSecret) return;
     navigator.clipboard.writeText(webhookSecret);
-    toast.success('Webhook secret copied to clipboard');
+    toast.success(t('webhookSecretCopied'));
   }
 
   function handleProviderChange(next: Provider) {
+    if (isEditing) return; // provider is fixed once a connection exists — delete + re-add to switch.
     if (next === provider) return;
     setProvider(next);
     setWebhookSecret(null);
   }
 
-  if (loading) {
-    return (
-      <section className="animate-in fade-in-50 duration-200">
-        <SettingsPanelHead
-          title={t("title")}
-          description={t("description")}
-        />
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
-        </div>
-      </section>
-    );
-  }
-
   const showResetBanner = resetReason === 'token_corrupted';
 
   return (
-    <section className="animate-in fade-in-50 duration-200">
-      <SettingsPanelHead
-        title={t("title")}
-        description={t("description")}
-      />
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      {/* Main config form */}
+    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       <div className="space-y-6">
-        {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="bg-amber-950/40 border-amber-600/40">
             <div className="flex items-start gap-3">
               <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <AlertTitle className="text-amber-200 mb-1">
-                  Stored token can&apos;t be decrypted
-                </AlertTitle>
-                <AlertDescription className="text-amber-100/80 text-sm">
-                  {statusMessage}
-                </AlertDescription>
-                <Button
-                  onClick={handleReset}
-                  disabled={resetting}
-                  size="sm"
-                  className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
-                >
-                  {resetting ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      {t('resetting')}
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="size-4" />
-                      {t('resetConfig')}
-                    </>
-                  )}
-                </Button>
+                <AlertTitle className="text-amber-200 mb-1">{t('tokenCorruptedTitle')}</AlertTitle>
+                <AlertDescription className="text-amber-100/80 text-sm">{statusMessage}</AlertDescription>
               </div>
             </div>
           </Alert>
         )}
 
-        {/* Connection Status */}
-        <Alert className="bg-card border-border">
-          <div className="flex items-center gap-2">
-            {connectionStatus === 'connected' ? (
-              <CheckCircle2 className="size-4 text-primary" />
-            ) : (
-              <XCircle className="size-4 text-red-500" />
-            )}
-            <AlertTitle className="text-foreground mb-0">
-              {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
-            </AlertTitle>
-          </div>
-          <AlertDescription className="text-muted-foreground">
-            {connectionStatus === 'connected'
-              ? provider === 'zernio' ? t('zernioConnectedDesc') : t('connectedDesc')
-              : statusMessage ||
-                t('notConnectedDesc')}
-          </AlertDescription>
-        </Alert>
+        {isEditing && (
+          <Alert className="bg-card border-border">
+            <div className="flex items-center gap-2">
+              {connectionStatus === 'connected' ? (
+                <CheckCircle2 className="size-4 text-primary" />
+              ) : (
+                <XCircle className="size-4 text-red-500" />
+              )}
+              <AlertTitle className="text-foreground mb-0">
+                {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
+              </AlertTitle>
+            </div>
+            <AlertDescription className="text-muted-foreground">
+              {connectionStatus === 'connected'
+                ? provider === 'zernio' ? t('zernioConnectedDesc') : t('connectedDesc')
+                : statusMessage || t('notConnectedDesc')}
+            </AlertDescription>
+          </Alert>
+        )}
 
-        {/* Connection Method */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">{t('providerSectionTitle')}</CardTitle>
-            <CardDescription className="text-muted-foreground">{t('providerSectionDesc')}</CardDescription>
+            <CardTitle className="text-foreground">{t('connectionDetailsTitle')}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => handleProviderChange('meta')}
-                className={`text-left rounded-lg border p-3 transition-colors ${
-                  provider === 'meta' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
-                }`}
-              >
-                <div className="font-medium text-foreground">{t('providerMeta')}</div>
-                <div className="text-xs text-muted-foreground mt-1">{t('providerMetaDesc')}</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleProviderChange('zernio')}
-                className={`text-left rounded-lg border p-3 transition-colors ${
-                  provider === 'zernio' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
-                }`}
-              >
-                <div className="font-medium text-foreground">{t('providerZernio')}</div>
-                <div className="text-xs text-muted-foreground mt-1">{t('providerZernioDesc')}</div>
-              </button>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('displayName')}</Label>
+              <Input
+                placeholder={t('displayNamePlaceholder')}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">{t('displayNameHint')}</p>
             </div>
+            {!(isFirstConnection && !isEditing) && (
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={makeDefault}
+                  onChange={(e) => setMakeDefault(e.target.checked)}
+                  disabled={isEditing && Boolean(initialData?.is_default)}
+                  className="size-4 rounded border-border"
+                />
+                {t('makeDefaultConnection')}
+              </label>
+            )}
           </CardContent>
         </Card>
 
-        {/* Registration Status — the "is it actually live?" check.
-            Credentials being valid is necessary but not sufficient;
-            without a successful /register call the number won't
-            receive inbound events. Surface this dimension separately
-            so users don't trust a misleading green banner. */}
-        {config && provider === 'meta' && (
+        {isEditing && provider === 'meta' && (
           <Alert
             className={
               isRegistered
@@ -613,14 +651,8 @@ export function WhatsAppConfig() {
                 ) : (
                   <AlertTriangle className="size-4 text-amber-400" />
                 )}
-                <AlertTitle
-                  className={
-                    'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')
-                  }
-                >
-                  {isRegistered
-                    ? t('registered')
-                    : t('notRegistered')}
+                <AlertTitle className={'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')}>
+                  {isRegistered ? t('registered') : t('notRegistered')}
                 </AlertTitle>
               </div>
               <Button
@@ -643,8 +675,8 @@ export function WhatsAppConfig() {
                 <span
                   dangerouslySetInnerHTML={{
                     __html: t('subscribedSince', {
-                      date: config.registered_at
-                        ? new Date(config.registered_at).toLocaleString()
+                      date: initialData?.registered_at
+                        ? new Date(initialData.registered_at).toLocaleString()
                         : t('unknownDate'),
                     }),
                   }}
@@ -652,10 +684,7 @@ export function WhatsAppConfig() {
               ) : lastRegistrationError ? (
                 <>
                   {t('lastAttemptFailed')}
-                  <span className="text-red-300">
-                    &quot;{lastRegistrationError}&quot;
-                  </span>
-                  . {t('retryHint')}
+                  <span className="text-red-300">&quot;{lastRegistrationError}&quot;</span>. {t('retryHint')}
                 </>
               ) : (
                 <>{t('noRegistrationHint')}</>
@@ -696,7 +725,39 @@ export function WhatsAppConfig() {
           </Alert>
         )}
 
-        {/* API Credentials */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-foreground">{t('providerSectionTitle')}</CardTitle>
+            <CardDescription className="text-muted-foreground">{t('providerSectionDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => handleProviderChange('meta')}
+                disabled={isEditing}
+                className={`text-left rounded-lg border p-3 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                  provider === 'meta' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
+                }`}
+              >
+                <div className="font-medium text-foreground">{t('providerMeta')}</div>
+                <div className="text-xs text-muted-foreground mt-1">{t('providerMetaDesc')}</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleProviderChange('zernio')}
+                disabled={isEditing}
+                className={`text-left rounded-lg border p-3 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                  provider === 'zernio' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
+                }`}
+              >
+                <div className="font-medium text-foreground">{t('providerZernio')}</div>
+                <div className="text-xs text-muted-foreground mt-1">{t('providerZernioDesc')}</div>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
@@ -754,10 +815,8 @@ export function WhatsAppConfig() {
                       {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
-                  {config && !tokenEdited && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('tokenHidden')}
-                    </p>
+                  {isEditing && !tokenEdited && (
+                    <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
                   )}
                 </div>
 
@@ -769,9 +828,7 @@ export function WhatsAppConfig() {
                     onChange={(e) => setVerifyToken(e.target.value)}
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {t('webhookVerifyTokenHint')}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t('webhookVerifyTokenHint')}</p>
                 </div>
 
                 <div className="space-y-2">
@@ -785,9 +842,7 @@ export function WhatsAppConfig() {
                     maxLength={6}
                     placeholder={t('pinPlaceholder')}
                     value={pin}
-                    onChange={(e) =>
-                      setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground tracking-widest"
                   />
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -835,7 +890,7 @@ export function WhatsAppConfig() {
                       {showZernioApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </div>
-                  {config && !zernioApiKeyEdited && (
+                  {isEditing && !zernioApiKeyEdited && (
                     <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
                   )}
                   <p className="text-xs text-muted-foreground">{t('zernioApiKeyHint')}</p>
@@ -845,7 +900,6 @@ export function WhatsAppConfig() {
           </CardContent>
         </Card>
 
-        {/* Webhook URL */}
         <Card>
           <CardHeader>
             <CardTitle className="text-foreground">{t('webhookTitle')}</CardTitle>
@@ -896,14 +950,13 @@ export function WhatsAppConfig() {
                     <p className="text-xs text-amber-400">{t('webhookSecretGenerated')}</p>
                   </>
                 ) : (
-                  config && <p className="text-xs text-muted-foreground">{t('webhookSecretAlreadySet')}</p>
+                  isEditing && <p className="text-xs text-muted-foreground">{t('webhookSecretAlreadySet')}</p>
                 )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={handleSave}
@@ -919,40 +972,42 @@ export function WhatsAppConfig() {
               t('saveConfig')
             )}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleTestConnection}
-            disabled={testing || !config}
-            className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-          >
-            {testing ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                {t('testing')}
-              </>
-            ) : (
-              <>
-                <Zap className="size-4" />
-                {t('testConnection')}
-              </>
-            )}
-          </Button>
-          {config && (
+          {isEditing && (
             <Button
               variant="outline"
-              onClick={handleReset}
-              disabled={resetting}
-              className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+              onClick={handleTestConnection}
+              disabled={testing}
+              className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
             >
-              {resetting ? (
+              {testing ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t('resetting')}
+                  {t('testing')}
+                </>
+              ) : (
+                <>
+                  <Zap className="size-4" />
+                  {t('testConnection')}
+                </>
+              )}
+            </Button>
+          )}
+          {isEditing && (
+            <Button
+              variant="outline"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t('deleting')}
                 </>
               ) : (
                 <>
                   <RotateCcw className="size-4" />
-                  {t('resetConfig')}
+                  {t('deleteConnection')}
                 </>
               )}
             </Button>
@@ -960,14 +1015,11 @@ export function WhatsAppConfig() {
         </div>
       </div>
 
-      {/* Setup Instructions Sidebar */}
       <div>
         <Card>
           <CardHeader>
             <CardTitle className="text-foreground text-base">{t('setupInstructions')}</CardTitle>
-            <CardDescription className="text-muted-foreground">
-              {t('setupInstructionsDesc')}
-            </CardDescription>
+            <CardDescription className="text-muted-foreground">{t('setupInstructionsDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             {provider === 'meta' ? (
@@ -1105,6 +1157,5 @@ export function WhatsAppConfig() {
         </Card>
       </div>
     </div>
-    </section>
   );
 }

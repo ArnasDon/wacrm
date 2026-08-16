@@ -23,11 +23,20 @@ interface AudienceConfig {
   csvContacts?: { phone: string; name?: string }[];
 }
 
+interface WhatsAppConfigOption {
+  id: string;
+  display_name: string | null;
+  phone_number_id: string | null;
+  is_default: boolean;
+}
+
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
+  whatsappConfigId: string | null;
+  onWhatsappConfigIdChange: (id: string) => void;
   onSend: () => void;
   onSaveDraft?: () => void;
   onBack: () => void;
@@ -40,6 +49,8 @@ export function Step4ScheduleSend({
   onNameChange,
   template,
   audience,
+  whatsappConfigId,
+  onWhatsappConfigIdChange,
   onSend,
   onSaveDraft,
   onBack,
@@ -50,6 +61,28 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
+  const [configs, setConfigs] = useState<WhatsAppConfigOption[]>([]);
+
+  // Only shown when the account has more than one connection — a
+  // single-number account keeps sending through it with no picker.
+  useEffect(() => {
+    async function loadConfigs() {
+      try {
+        const res = await fetch('/api/whatsapp/config');
+        const data = await res.json();
+        const rows: WhatsAppConfigOption[] = Array.isArray(data?.configs) ? data.configs : [];
+        setConfigs(rows);
+        if (!whatsappConfigId) {
+          const defaultRow = rows.find((r) => r.is_default) ?? rows[0];
+          if (defaultRow) onWhatsappConfigIdChange(defaultRow.id);
+        }
+      } catch {
+        // Non-fatal — the send falls back to the account default server-side.
+      }
+    }
+    loadConfigs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     async function calculateReach() {
@@ -111,6 +144,27 @@ export function Step4ScheduleSend({
           className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
         />
       </div>
+
+      {/* WhatsApp number — only when the account has more than one */}
+      {configs.length > 1 && (
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">
+            {t('scheduleSend.whatsappNumber')}
+          </label>
+          <select
+            value={whatsappConfigId ?? ''}
+            onChange={(e) => onWhatsappConfigIdChange(e.target.value)}
+            className="w-full rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground"
+          >
+            {configs.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.display_name || c.phone_number_id || c.id}
+                {c.is_default ? ` (${t('scheduleSend.whatsappNumberDefault')})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Summary Card */}
       <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">

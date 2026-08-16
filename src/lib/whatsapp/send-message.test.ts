@@ -210,6 +210,7 @@ function sendPathDb(
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
+    whatsapp_config_id: 'cfg-1',
     contact: { id: 'ct-1', phone: '+15551234567' },
   };
   const config = {
@@ -223,6 +224,8 @@ function sendPathDb(
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
+        order: () => builder,
+        limit: () => builder,
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') captured.message = row;
           return builder;
@@ -231,7 +234,15 @@ function sendPathDb(
           if (table === 'conversations') captured.conversation = row;
           return builder;
         },
-        maybeSingle: async () => ({ data: null, error: null }),
+        // resolveWhatsAppConfig only ever calls .maybeSingle() on
+        // whatsapp_config — mirror .single()'s per-table dispatch so
+        // both terminal methods agree regardless of which one a given
+        // query path uses.
+        maybeSingle: async () => {
+          if (table === 'conversations') return { data: conversation, error: null };
+          if (table === 'whatsapp_config') return { data: config, error: null };
+          return { data: null, error: null };
+        },
         single: async () => {
           if (table === 'conversations') {
             return { data: conversation, error: null };

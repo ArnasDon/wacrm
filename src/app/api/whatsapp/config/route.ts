@@ -1,228 +1,86 @@
 import { NextResponse } from 'next/server'
-import crypto from 'node:crypto'
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
-  registerPhoneNumber,
-  subscribeWabaToApp,
-  verifyPhoneNumber,
-} from '@/lib/whatsapp/meta-api'
-import { verifyZernioAccount } from '@/lib/zernio/api'
-import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-
-/**
- * Resolve the caller's account_id from their profile. Inlined here
- * (rather than going through `@/lib/auth/account.getCurrentAccount`)
- * because the GET handler wants to return shaped 200s for every
- * non-auth failure mode, not throw — keeping the helper minimal lets
- * the existing response branches stay as-is.
- *
- * Returns null if the user has no profile or no account; callers
- * should treat that the same as "not connected".
- */
-async function resolveAccountId(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error || !data?.account_id) return null
-  return data.account_id as string
-}
-
-// Lazy-initialised service-role client. We need it to detect a
-// phone_number_id already claimed by a *different* user — under RLS,
-// the user's own session can't see other users' rows, so the conflict
-// would be invisible without the service role.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminClient: any = null
-function supabaseAdmin() {
-  if (!_adminClient) {
-    _adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-  }
-  return _adminClient
-}
+  ConfigConnectError,
+  assertPhoneNumberUnclaimed,
+  assertZernioAccountUnclaimed,
+  connectMetaWhatsApp,
+  connectZernioWhatsApp,
+  setDefaultWhatsAppConfig,
+} from '@/lib/whatsapp/config-connect'
 
 /**
  * GET /api/whatsapp/config
  *
- * Used by the "Test API Connection" button and by the page to check
- * whether the saved config is healthy. Returns 200 in all non-auth cases
- * so the UI can render an appropriate message rather than show a 500.
+ * Lists every WhatsApp connection for the caller's account. No live
+ * Meta/Zernio verification here — that would mean one outbound API
+ * call per row on every settings page load, which doesn't scale past
+ * a couple of numbers. Use GET /api/whatsapp/config/[id] ("Test
+ * Connection" on a specific row) for the live check.
  *
- * Response shape:
- *   { connected: true,  phone_info: {...} }
- *   { connected: false, reason: 'no_config',        message: '...' }
- *   { connected: false, reason: 'token_corrupted',  message: '...', needs_reset: true }
- *   { connected: false, reason: 'meta_api_error',   message: '...' }
+ * Never returns secrets (access_token, zernio_api_key, verify_token,
+ * zernio_webhook_secret) — only the metadata the list/health UI needs.
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const { supabase, accountId } = await requireRole('viewer')
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'no_account',
-          message: 'Your profile is not linked to an account.',
-        },
-        { status: 200 },
-      )
-    }
-
-    const { data: config, error: configError } = await supabase
+    const { data, error } = await supabase
       .from('whatsapp_config')
-      .select('provider, phone_number_id, access_token, zernio_api_key, zernio_account_id, status')
+      .select(
+        'id, provider, display_name, phone_number_id, waba_id, zernio_account_id, status, is_default, connected_at, registered_at, subscribed_apps_at, last_registration_error'
+      )
       .eq('account_id', accountId)
-      .maybeSingle()
+      .order('is_default', { ascending: false })
+      .order('connected_at', { ascending: true, nullsFirst: false })
 
-    if (configError) {
-      console.error('Error fetching whatsapp_config:', configError)
-      return NextResponse.json(
-        { connected: false, reason: 'db_error', message: 'Failed to fetch configuration' },
-        { status: 200 }
-      )
+    if (error) {
+      console.error('Error listing whatsapp_config:', error)
+      return NextResponse.json({ error: 'Failed to load configuration' }, { status: 500 })
     }
 
-    if (!config) {
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'no_config',
-          message: 'No WhatsApp configuration saved yet. Fill in the form and click Save Configuration.',
-        },
-        { status: 200 }
-      )
-    }
-
-    if (config.provider === 'zernio') {
-      let zApiKey: string
-      try {
-        zApiKey = decrypt(config.zernio_api_key)
-      } catch (err) {
-        console.error('[whatsapp/config GET] Zernio key decryption failed:', err)
-        return NextResponse.json(
-          {
-            connected: false,
-            reason: 'token_corrupted',
-            needs_reset: true,
-            message:
-              'The stored Zernio API key cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments. Click "Reset Configuration" below, then re-save.',
-          },
-          { status: 200 }
-        )
-      }
-      try {
-        const accountInfo = await verifyZernioAccount({ apiKey: zApiKey, accountId: config.zernio_account_id, expectedPlatform: 'whatsapp' })
-        return NextResponse.json({
-          connected: true,
-          phone_info: { display_phone_number: accountInfo.username, verified_name: accountInfo.displayName },
-        })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
-        console.error('[whatsapp/config GET] Zernio API verification failed:', message)
-        return NextResponse.json(
-          { connected: false, reason: 'zernio_api_error', message: `Zernio API rejected the credentials: ${message}` },
-          { status: 200 }
-        )
-      }
-    }
-
-    // Try to decrypt the stored token with the current ENCRYPTION_KEY.
-    // If this fails, the key changed (or was never consistent across envs).
-    let accessToken: string
-    try {
-      accessToken = decrypt(config.access_token)
-    } catch (err) {
-      console.error('[whatsapp/config GET] Token decryption failed:', err)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'token_corrupted',
-          needs_reset: true,
-          message:
-            'The stored access token cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments (local vs Hostinger vs Vercel). Click "Reset Configuration" below, then re-save.',
-        },
-        { status: 200 }
-      )
-    }
-
-    // Validate credentials against Meta
-    try {
-      const phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-      })
-      return NextResponse.json({ connected: true, phone_info: phoneInfo })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
-        },
-        { status: 200 }
-      )
-    }
+    return NextResponse.json({ configs: data ?? [] })
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
-    return NextResponse.json(
-      { connected: false, reason: 'unknown', message: 'Internal server error' },
-      { status: 500 }
-    )
+    return toErrorResponse(error)
   }
 }
 
 /**
  * POST /api/whatsapp/config
  *
- * Saves or updates the WhatsApp config for the authenticated user.
- * Verifies credentials with Meta first, then encrypts and stores.
+ * Adds a new WhatsApp connection to the caller's account. Verifies
+ * credentials with Meta/Zernio first, then encrypts and stores. The
+ * first connection an account ever creates is always the default;
+ * later ones respect the `is_default` flag the caller sends (default
+ * false), so adding a second number never silently steals the
+ * "default" flag away from the first without the caller asking for it.
+ *
+ * To rotate credentials on an EXISTING connection, use
+ * PATCH /api/whatsapp/config/[id] instead — this route only creates.
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    const { supabase, accountId, userId } = await requireRole('admin')
 
     const body = await request.json()
 
+    const { count: existingCount } = await supabase
+      .from('whatsapp_config')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+    const isFirstConnection = (existingCount ?? 0) === 0
+    const displayName: string | null =
+      typeof body.display_name === 'string' && body.display_name.trim()
+        ? body.display_name.trim()
+        : null
+    const requestedDefault = isFirstConnection || body.is_default === true
+
     if (body.provider === 'zernio') {
-      return await saveZernioWhatsAppConfig(supabase, accountId, user.id, body)
+      return await createZernioWhatsAppConfig(supabase, accountId, userId, body, {
+        displayName,
+        makeDefault: requestedDefault,
+      })
     }
 
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -236,409 +94,120 @@ export async function POST(request: Request) {
 
     if (pin !== undefined && pin !== null && pin !== '') {
       if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) {
-        return NextResponse.json(
-          { error: 'PIN must be exactly 6 digits.' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'PIN must be exactly 6 digits.' }, { status: 400 })
       }
     }
 
-    // Reject if another account has already claimed this phone_number_id.
-    // wacrm is single-tenant-per-WhatsApp-number — letting two accounts
-    // bind the same number causes the webhook's `.single()` lookup to
-    // throw PGRST116 ("multiple rows"), silently dropping every
-    // inbound message. See issue #136. Post-multi-user we key on
-    // account_id (not user_id) since teammates inside the same account
-    // all share one config; the conflict is between accounts.
-    const { data: claimed, error: claimedError } = await supabaseAdmin()
+    await assertPhoneNumberUnclaimed(phone_number_id, accountId)
+
+    const connected = await connectMetaWhatsApp({
+      phoneNumberId: phone_number_id,
+      wabaId: waba_id || null,
+      accessToken: access_token,
+      verifyToken: verify_token || null,
+      pin: pin || null,
+      sameNumberAlreadyRegistered: false,
+    })
+
+    const { data: inserted, error: insertError } = await supabase
       .from('whatsapp_config')
-      .select('account_id')
-      .eq('phone_number_id', phone_number_id)
-      .neq('account_id', accountId)
-      .maybeSingle()
-
-    if (claimedError) {
-      console.error('Error checking phone_number_id ownership:', claimedError)
-      return NextResponse.json(
-        { error: 'Failed to validate configuration' },
-        { status: 500 }
-      )
-    }
-
-    if (claimed) {
-      return NextResponse.json(
-        {
-          error:
-            'This WhatsApp phone number is already linked to another account on this instance. Each phone number can only be connected to one Chat Sandía account.',
-        },
-        { status: 409 }
-      )
-    }
-
-    // Verify credentials with Meta BEFORE saving
-    let phoneInfo
-    try {
-      phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: phone_number_id,
-        accessToken: access_token,
+      .insert({
+        account_id: accountId,
+        user_id: userId,
+        display_name: displayName,
+        is_default: requestedDefault,
+        ...connected.row,
       })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API verification failed during save:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 400 }
-      )
+      .select('id')
+      .single()
+
+    if (insertError || !inserted) {
+      console.error('Error inserting whatsapp_config:', insertError)
+      return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
     }
 
-    // Encrypt sensitive tokens before storing
-    let encryptedAccessToken: string
-    let encryptedVerifyToken: string | null
-    try {
-      encryptedAccessToken = encrypt(access_token)
-      encryptedVerifyToken = verify_token ? encrypt(verify_token) : null
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown encryption error'
-      console.error('Encryption failed:', message)
-      return NextResponse.json(
-        {
-          error:
-            'Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
-        },
-        { status: 500 }
-      )
+    if (requestedDefault && !isFirstConnection) {
+      await setDefaultWhatsAppConfig(supabase, accountId, inserted.id)
     }
 
-    // Look up any pre-existing row for this account so we know whether
-    // this number is already registered with Meta — if so we can skip
-    // /register when the user didn't provide a PIN this time around.
-    const { data: existing } = await supabase
-      .from('whatsapp_config')
-      .select('id, registered_at, phone_number_id')
-      .eq('account_id', accountId)
-      .maybeSingle()
-
-    const sameNumber =
-      existing?.phone_number_id === phone_number_id &&
-      existing?.registered_at != null
-
-    // Step 1: register the phone number for inbound webhooks.
-    //
-    // Attempted on first save AND whenever the user supplies a fresh
-    // PIN (e.g. they rotated the 2FA PIN in Meta Manager). Skipped
-    // when the same number is already registered and no PIN was
-    // supplied — re-registering an already-active number with a
-    // stale PIN would actually fail and undo the active subscription.
-    let registeredAt: string | null = existing?.registered_at ?? null
-    let registrationError: string | null = null
-    // True when registration was deliberately skipped because no PIN
-    // was supplied (see below). Distinct from registrationError — this
-    // is not a failure, just an incomplete-but-valid save.
-    let registrationSkipped = false
-
-    const needsRegistration = !sameNumber || (typeof pin === 'string' && pin.length > 0)
-    if (needsRegistration) {
-      if (!pin) {
-        // No PIN provided. Meta TEST numbers (Developer Console) are
-        // pre-registered by Meta and expose no two-step verification
-        // PIN to set, so requiring one made them impossible to connect
-        // (issue #242). The /register + PIN step only matters for
-        // production numbers under a shared WABA (issue #136), so treat
-        // it as best-effort: skip it, save the (already Meta-verified)
-        // credentials as connected, and leave registered_at null. The
-        // UI surfaces a separate "Not registered" banner with a path to
-        // add a PIN later for users who do need inbound webhook routing.
-        registrationSkipped = true
-      } else {
-        try {
-          await registerPhoneNumber({
-            phoneNumberId: phone_number_id,
-            accessToken: access_token,
-            pin,
-          })
-          registeredAt = new Date().toISOString()
-        } catch (err) {
-          registrationError =
-            err instanceof Error ? err.message : 'Unknown Meta API error'
-          console.error('Phone number /register failed:', registrationError)
-          // We deliberately fall through and still save the row so the
-          // user can retry without re-entering everything. The UI
-          // surfaces `last_registration_error` so they see WHY it's
-          // not actually live yet.
-        }
-      }
-    }
-
-    // Step 2: subscribe the WABA to this app. Idempotent on Meta's
-    // side, so we call on every save and persist the timestamp.
-    // Skipped only when there's no waba_id (legacy rows from before
-    // we required it).
-    let subscribedAppsAt: string | null = null
-    if (waba_id) {
-      try {
-        await subscribeWabaToApp({
-          wabaId: waba_id,
-          accessToken: access_token,
-        })
-        subscribedAppsAt = new Date().toISOString()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.warn('WABA subscribed_apps failed (non-fatal):', message)
-        // Subscription failures are rare once the App has the right
-        // permissions; we don't block save on them — the diagnostic
-        // endpoint surfaces this state too.
-      }
-    }
-
-    // Persist everything in one shot. If /register failed we still
-    // store the credentials and the error so the UI can guide the
-    // user through a retry.
-    const baseRow = {
-      provider: 'meta',
-      phone_number_id,
-      waba_id: waba_id || null,
-      access_token: encryptedAccessToken,
-      verify_token: encryptedVerifyToken,
-      // Cleared so a provider switch doesn't leave a stale Zernio
-      // credential set sitting next to the newly-active Meta one.
-      zernio_api_key: null,
-      zernio_account_id: null,
-      zernio_webhook_secret: null,
-      status: registrationError ? 'disconnected' : 'connected',
-      connected_at: registrationError ? null : new Date().toISOString(),
-      registered_at: registrationError ? null : registeredAt,
-      subscribed_apps_at: subscribedAppsAt ?? null,
-      last_registration_error: registrationError,
-      updated_at: new Date().toISOString(),
-    }
-
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('whatsapp_config')
-        .update(baseRow)
-        .eq('account_id', accountId)
-
-      if (updateError) {
-        console.error('Error updating whatsapp_config:', updateError)
-        return NextResponse.json(
-          { error: 'Failed to update configuration' },
-          { status: 500 }
-        )
-      }
-    } else {
-      // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
-      // up-front), `user_id` is the audit column identifying which
-      // member of the account saved the config.
-      const { error: insertError } = await supabase
-        .from('whatsapp_config')
-        .insert({
-          account_id: accountId,
-          user_id: user.id,
-          ...baseRow,
-        })
-
-      if (insertError) {
-        console.error('Error inserting whatsapp_config:', insertError)
-        return NextResponse.json(
-          { error: 'Failed to save configuration' },
-          { status: 500 }
-        )
-      }
-    }
-
-    if (registrationError) {
-      // Save succeeded but the number isn't actually live. Return
-      // 200 with a structured error so the UI can show the specific
-      // remediation step instead of a generic toast.
+    if (connected.registrationError) {
       return NextResponse.json({
         success: false,
         saved: true,
+        id: inserted.id,
         registered: false,
-        registration_error: registrationError,
-        phone_info: phoneInfo,
+        registration_error: connected.registrationError,
+        phone_info: connected.phoneInfo,
       })
     }
 
     return NextResponse.json({
       success: true,
       saved: true,
-      registered: registeredAt != null,
-      // Credentials are valid and saved, but inbound webhook
-      // registration was skipped because no PIN was supplied (e.g. a
-      // Meta test number). The UI shows the "Not registered" banner
-      // rather than claiming the number is fully live.
-      registration_skipped: registrationSkipped,
-      phone_info: phoneInfo,
+      id: inserted.id,
+      registered: connected.registrationError == null,
+      registration_skipped: connected.registrationSkipped,
+      phone_info: connected.phoneInfo,
     })
   } catch (error) {
+    if (error instanceof ConfigConnectError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Error in WhatsApp config POST:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
-async function saveZernioWhatsAppConfig(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+async function createZernioWhatsAppConfig(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
   accountId: string,
   userId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   body: any,
+  opts: { displayName: string | null; makeDefault: boolean }
 ) {
   const { zernio_api_key, zernio_account_id } = body
 
   if (!zernio_api_key || !zernio_account_id) {
-    return NextResponse.json({ error: 'zernio_api_key and zernio_account_id are required' }, { status: 400 })
-  }
-
-  const { data: existing } = await supabase
-    .from('whatsapp_config')
-    .select('id, zernio_webhook_secret')
-    .eq('account_id', accountId)
-    .maybeSingle()
-
-  // Same "can't be claimed by two wacrm accounts" guarantee the Meta
-  // path enforces on phone_number_id — see idx_whatsapp_config_zernio_account.
-  const { data: claimed, error: claimedError } = await supabaseAdmin()
-    .from('whatsapp_config')
-    .select('account_id')
-    .eq('zernio_account_id', zernio_account_id)
-    .neq('account_id', accountId)
-    .maybeSingle()
-
-  if (claimedError) {
-    console.error('Error checking zernio_account_id ownership:', claimedError)
-    return NextResponse.json({ error: 'Failed to validate configuration' }, { status: 500 })
-  }
-  if (claimed) {
     return NextResponse.json(
-      {
-        error:
-          'This Zernio account is already linked to another account on this instance. Each Zernio-connected WhatsApp number can only be connected to one Chat Sandía account.',
-      },
-      { status: 409 },
+      { error: 'zernio_api_key and zernio_account_id are required' },
+      { status: 400 }
     )
   }
 
-  let accountInfo
-  try {
-    accountInfo = await verifyZernioAccount({ apiKey: zernio_api_key, accountId: zernio_account_id, expectedPlatform: 'whatsapp' })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
-    console.error('Zernio API verification failed during save:', message)
-    return NextResponse.json({ error: `Zernio API error: ${message}` }, { status: 400 })
-  }
+  await assertZernioAccountUnclaimed(zernio_account_id, accountId)
 
-  // The webhook secret is generated once and kept stable across
-  // re-saves — see the Instagram config route's identical comment.
-  const isNewSecret = !existing?.zernio_webhook_secret
-  const plaintextSecret = isNewSecret ? crypto.randomBytes(32).toString('hex') : null
+  const connected = await connectZernioWhatsApp({
+    zernioApiKey: zernio_api_key,
+    zernioAccountId: zernio_account_id,
+    existingEncryptedSecret: null,
+  })
 
-  let encryptedApiKey: string
-  let encryptedSecret: string | null
-  try {
-    encryptedApiKey = encrypt(zernio_api_key)
-    encryptedSecret = plaintextSecret ? encrypt(plaintextSecret) : existing!.zernio_webhook_secret
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown encryption error'
-    console.error('Encryption failed:', message)
-    return NextResponse.json(
-      {
-        error:
-          'Failed to encrypt credentials. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
-      },
-      { status: 500 },
-    )
-  }
+  const { data: inserted, error: insertError } = await supabase
+    .from('whatsapp_config')
+    .insert({
+      account_id: accountId,
+      user_id: userId,
+      display_name: opts.displayName,
+      is_default: opts.makeDefault,
+      ...connected.row,
+    })
+    .select('id')
+    .single()
 
-  const baseRow = {
-    provider: 'zernio',
-    zernio_api_key: encryptedApiKey,
-    zernio_account_id,
-    zernio_webhook_secret: encryptedSecret,
-    // Cleared so a provider switch doesn't leave a stale Meta
-    // credential set sitting next to the newly-active Zernio one.
-    phone_number_id: null,
-    waba_id: null,
-    access_token: null,
-    verify_token: null,
-    registered_at: null,
-    subscribed_apps_at: null,
-    last_registration_error: null,
-    status: 'connected',
-    connected_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-
-  if (existing) {
-    const { error: updateError } = await supabase.from('whatsapp_config').update(baseRow).eq('account_id', accountId)
-    if (updateError) {
-      console.error('Error updating whatsapp_config:', updateError)
-      return NextResponse.json({ error: 'Failed to update configuration' }, { status: 500 })
-    }
-  } else {
-    const { error: insertError } = await supabase
-      .from('whatsapp_config')
-      .insert({ account_id: accountId, user_id: userId, ...baseRow })
-    if (insertError) {
-      console.error('Error inserting whatsapp_config:', insertError)
-      return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
-    }
+  if (insertError || !inserted) {
+    console.error('Error inserting whatsapp_config:', insertError)
+    return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
   }
 
   return NextResponse.json({
     success: true,
     saved: true,
+    id: inserted.id,
     registered: true,
     registration_skipped: false,
-    phone_info: { display_phone_number: accountInfo.username, verified_name: accountInfo.displayName },
-    webhook_secret: plaintextSecret,
+    phone_info: connected.phoneInfo,
+    webhook_secret: connected.webhookSecret,
   })
-}
-
-/**
- * DELETE /api/whatsapp/config
- *
- * Removes the authenticated user's WhatsApp configuration row.
- * Used by the "Reset Configuration" button to recover from a corrupted
- * encrypted token (mismatched ENCRYPTION_KEY across environments).
- */
-export async function DELETE() {
-  try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
-
-    const { error: deleteError } = await supabase
-      .from('whatsapp_config')
-      .delete()
-      .eq('account_id', accountId)
-
-    if (deleteError) {
-      console.error('Error deleting whatsapp_config:', deleteError)
-      return NextResponse.json(
-        { error: 'Failed to delete configuration' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error in WhatsApp config DELETE:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
 }

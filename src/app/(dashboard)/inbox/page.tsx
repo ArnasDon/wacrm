@@ -200,13 +200,17 @@ function InboxPageInner() {
         return;
       }
 
+      // Post multi-number, an account can have several rows — this
+      // banner only needs to know "is at least one connected", so
+      // `.maybeSingle()` (which throws on ≥2 rows) is wrong here.
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
-        .maybeSingle();
+        .eq("status", "connected")
+        .limit(1);
 
-      setWhatsappConnected(data?.status === "connected");
+      setWhatsappConnected((data?.length ?? 0) > 0);
     };
 
     checkConnection();

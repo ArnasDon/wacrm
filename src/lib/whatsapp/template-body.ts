@@ -92,13 +92,27 @@ export async function resolveTemplateRow(
   db: SupabaseClient,
   accountId: string,
   templateName: string,
-  requestedLanguage?: string | null
+  requestedLanguage?: string | null,
+  /**
+   * Which of the account's (possibly several) WhatsApp numbers to match
+   * against. Meta templates are approved per-WABA, so two numbers on the
+   * same account can each hold a same-named template with different
+   * components — omitting this would pick an arbitrary one. Optional
+   * (rather than required) only so existing tests that don't care about
+   * multi-number keep passing unmodified; every production caller now
+   * supplies it.
+   */
+  whatsappConfigId?: string | null
 ): Promise<ResolvedTemplate> {
-  const { data } = await db
+  let query = db
     .from('message_templates')
     .select('*')
     .eq('account_id', accountId)
     .eq('name', templateName);
+  if (whatsappConfigId) {
+    query = query.eq('whatsapp_config_id', whatsappConfigId);
+  }
+  const { data } = await query;
 
   // Sorted here rather than with `.order()` so the only query-builder
   // surface this helper depends on is select + eq — the same shape the

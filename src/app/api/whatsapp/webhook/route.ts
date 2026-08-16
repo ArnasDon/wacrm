@@ -312,7 +312,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          // Which of the account's (possibly several) numbers this
+          // message arrived on — pins the conversation to it so
+          // replies go out on the same number the customer wrote to.
+          config.id
         )
       }
     }
@@ -592,7 +596,11 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  // The specific whatsapp_config row this message arrived on — see
+  // findOrCreateConversation below for why this is now part of the
+  // conversation identity, not just the account.
+  whatsappConfigId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -611,7 +619,8 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    whatsappConfigId
   )
   if (!convResult) return
   const conversation = convResult.conversation
@@ -1139,8 +1148,14 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  whatsappConfigId: string,
 ) {
-  // Look for an existing conversation in this account, oldest-first.
+  // Look for an existing conversation in this account, oldest-first,
+  // scoped to the number the message arrived on — post multi-number,
+  // the same contact writing to two different company numbers gets two
+  // separate threads (each pinned to its own whatsapp_config_id) rather
+  // than being merged into one, so a reply always goes out on the
+  // number the customer actually messaged.
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on
   // *both* 0 rows and ≥2 rows, and the old code treated any error as
@@ -1151,13 +1166,14 @@ async function findOrCreateConversation(
   // snowballing into a wall of duplicate chats (issue #363).
   //
   // Ordering oldest-first and taking one row makes the lookup resolve to
-  // the same canonical survivor the dedup migration (036) keeps, so any
-  // pre-existing duplicates converge instead of compounding.
+  // the same canonical survivor the dedup migration (036/050) keeps, so
+  // any pre-existing duplicates converge instead of compounding.
   const { data: existingRows, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('whatsapp_config_id', whatsappConfigId)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -1178,6 +1194,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select()
     .single()
@@ -1185,7 +1202,7 @@ async function findOrCreateConversation(
   if (createError) {
     // Lost a race: a concurrent inbound delivery created the
     // conversation between our lookup and insert, and the unique index
-    // (migration 036) rejected the duplicate. Re-resolve the winning
+    // (migration 036/050) rejected the duplicate. Re-resolve the winning
     // row instead of dropping the message — mirrors findOrCreateContact.
     if (isUniqueViolation(createError)) {
       const { data: raced } = await supabaseAdmin()
@@ -1193,6 +1210,7 @@ async function findOrCreateConversation(
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('whatsapp_config_id', whatsappConfigId)
         .order('created_at', { ascending: true })
         .limit(1)
       if (raced && raced.length > 0) {

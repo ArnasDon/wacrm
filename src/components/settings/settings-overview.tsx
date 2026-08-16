@@ -133,21 +133,28 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
+    // WhatsApp connection status — slower, independent. Post
+    // multi-number, an account can have several rows, so this only
+    // needs "is at least one configured / connected" — the list
+    // endpoint (no live Meta check, for speed) is enough for that.
     (async () => {
       setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
+      const [row, list] = await Promise.allSettled([
         supabase
           .from('whatsapp_config')
           .select('phone_number_id')
           .eq('account_id', acctId)
-          .maybeSingle(),
+          .limit(1),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (cancelled) return;
+      const configs =
+        list.status === 'fulfilled' && Array.isArray(list.value?.configs)
+          ? list.value.configs
+          : [];
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
+        configured: (row.status === 'fulfilled' && (row.value.data?.length ?? 0) > 0),
+        connected: configs.some((c: { status?: string }) => c.status === 'connected'),
       });
       setWhatsappLoading(false);
     })();

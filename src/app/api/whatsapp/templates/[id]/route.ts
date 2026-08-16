@@ -6,6 +6,7 @@ import {
   editMessageTemplate,
 } from '@/lib/whatsapp/meta-api'
 import { updateZernioTemplate, deleteZernioTemplate } from '@/lib/zernio/api'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -92,7 +93,7 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select('id, name, status, meta_template_id, language, whatsapp_config_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -139,12 +140,14 @@ export async function PATCH(
     }
 
     if (!isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
+      // Use the exact number this template belongs to (Meta templates
+      // are per-WABA), not "the account's" config.
+      const config = await resolveWhatsAppConfig(
+        supabase,
+        accountId,
+        existing.whatsapp_config_id,
+      )
+      if (!config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured.' },
           { status: 400 },
@@ -302,7 +305,7 @@ export async function DELETE(
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, meta_template_id')
+      .select('id, name, meta_template_id, whatsapp_config_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -311,12 +314,12 @@ export async function DELETE(
     }
 
     if (existing.meta_template_id && !isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
+      const config = await resolveWhatsAppConfig(
+        supabase,
+        accountId,
+        existing.whatsapp_config_id,
+      )
+      if (!config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },
           { status: 400 },

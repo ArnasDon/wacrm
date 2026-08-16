@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 
 export interface ResolvedConversation {
@@ -54,12 +55,10 @@ export async function resolveConversationByPhone(
   }
 
   // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
+  // connected — the same error the send would raise anyway. The public
+  // API doesn't let the caller pick a number, so a contact reached this
+  // way is always attached to the account's default connection.
+  const config = await resolveWhatsAppConfig(db, accountId, null);
   if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
@@ -137,16 +136,18 @@ export async function resolveConversationByPhone(
   }
 
   // ---- conversation -------------------------------------------
-  // One conversation per (account, contact) — same convention as the
-  // webhook. Order oldest-first and take one row rather than
-  // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
-  // unique index (migration 036), we resolve to the canonical survivor
-  // instead of falling through and creating yet another (issue #363).
+  // One conversation per (account, contact, whatsapp_config_id) — same
+  // convention as the webhook. Order oldest-first and take one row
+  // rather than `.maybeSingle()`, which errors on ≥2 rows: if
+  // duplicates predate the unique index (migration 036/050), we resolve
+  // to the canonical survivor instead of falling through and creating
+  // yet another (issue #363).
   const conversationId = await findOrCreateConversationRow(
     db,
     accountId,
     contactId,
-    ownerUserId
+    ownerUserId,
+    config.id
   );
 
   return { conversationId, contactId, contactCreated };
@@ -162,13 +163,15 @@ async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  ownerUserId: string
+  ownerUserId: string,
+  whatsappConfigId: string
 ): Promise<string> {
   const { data: existing, error: findErr } = await db
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('whatsapp_config_id', whatsappConfigId)
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -187,6 +190,7 @@ async function findOrCreateConversationRow(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select('id')
     .single();
@@ -198,6 +202,7 @@ async function findOrCreateConversationRow(
         .select('id')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('whatsapp_config_id', whatsappConfigId)
         .order('created_at', { ascending: true })
         .limit(1);
       if (raced && raced.length > 0) {

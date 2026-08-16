@@ -7,6 +7,7 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
 import { createZernioTemplate } from '@/lib/zernio/api'
 import {
@@ -30,6 +31,7 @@ function buildUpsertRow(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
+    whatsappConfigId: string | null
   },
 ) {
   return {
@@ -37,10 +39,12 @@ function buildUpsertRow(
     // of migration 017. Without this an INSERT throws on the
     // not-null constraint.
     account_id: accountId,
-    // Original author — kept as audit only. The unique index is
-    // still on (user_id, name, language) — see the upsert helper
-    // for the cross-teammate dedup follow-up.
+    // Original author — kept as audit only. The identity/conflict
+    // target is whatsapp_config_id (migration 050) — Meta templates
+    // are approved per-WABA, not per-account, so two numbers on the
+    // same account can each hold a template with the same name.
     user_id: userId,
+    whatsapp_config_id: extras.whatsappConfigId,
     name: payload.name,
     category: payload.category,
     language: payload.language,
@@ -66,14 +70,14 @@ async function upsertTemplateRow(
   supabase: SupabaseClient,
   row: ReturnType<typeof buildUpsertRow>,
 ) {
-  // TODO(account-sharing): conflict target is still scoped to
-  // user_id. Once a follow-up migration drops the legacy unique
-  // index on (user_id, name, language) and adds (account_id,
-  // name, language), switch `onConflict` here so two teammates
-  // can't shadow each other's same-named template.
+  // Conflict target is (whatsapp_config_id, name, language) — migration
+  // 050 replaced the legacy (user_id, name, language) index, which both
+  // let two teammates shadow each other's same-named template AND
+  // couldn't model that the same template name is legitimately distinct
+  // per WABA/number.
   return supabase
     .from('message_templates')
-    .upsert(row, { onConflict: 'user_id,name,language' })
+    .upsert(row, { onConflict: 'whatsapp_config_id,name,language' })
     .select()
     .single()
 }
@@ -81,9 +85,11 @@ async function upsertTemplateRow(
 /**
  * Submit a template to Meta for approval AND persist it locally.
  *
- * Auth → fetch whatsapp_config → validate → (DRY_RUN short-circuit) →
- * POST to Meta → upsert local row by (user_id, name, language) with
- * status, meta_template_id, sample_values, last_submitted_at.
+ * Auth → fetch whatsapp_config (optionally a specific `whatsapp_config_id`
+ * from the request body; defaults to the account's default connection) →
+ * validate → (DRY_RUN short-circuit) → POST to Meta → upsert local row by
+ * (whatsapp_config_id, name, language) with status, meta_template_id,
+ * sample_values, last_submitted_at.
  *
  * When WHATSAPP_TEMPLATES_DRY_RUN=true, we skip the network call and
  * insert a row with a synthetic `dry-run-<uuid>` meta_template_id so
@@ -103,8 +109,13 @@ export async function POST(request: Request) {
     const { supabase, accountId, userId } = await requireRole('admin')
 
     let payload: TemplatePayload
+    let requestedConfigId: string | null = null
     try {
-      payload = (await request.json()) as TemplatePayload
+      const body = (await request.json()) as TemplatePayload & {
+        whatsapp_config_id?: string
+      }
+      requestedConfigId = body.whatsapp_config_id ?? null
+      payload = body
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
     }
@@ -134,17 +145,21 @@ export async function POST(request: Request) {
 
     let metaTemplateId: string
     let metaStatus: string
+    // Resolved once, up front, so both the dry-run and real-submit
+    // branches stamp the same whatsapp_config_id on the local row.
+    const resolvedConfig = await resolveWhatsAppConfig(
+      supabase,
+      accountId,
+      requestedConfigId,
+    )
+    const resolvedConfigId: string | null = resolvedConfig?.id ?? null
 
     if (dryRun) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
+      const config = resolvedConfig
+      if (!config) {
         return NextResponse.json(
           {
             error:
@@ -189,6 +204,7 @@ export async function POST(request: Request) {
               status: 'DRAFT',
               metaTemplateId: null,
               submissionError: message,
+              whatsappConfigId: resolvedConfigId,
             }),
           )
           return NextResponse.json({ error: message }, { status: 502 })
@@ -238,6 +254,7 @@ export async function POST(request: Request) {
               status: 'DRAFT',
               metaTemplateId: null,
               submissionError: message,
+              whatsappConfigId: resolvedConfigId,
             }),
           )
           const isRateLimit = /\b429\b/.test(message)
@@ -259,6 +276,7 @@ export async function POST(request: Request) {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,
+        whatsappConfigId: resolvedConfigId,
       }),
     )
 

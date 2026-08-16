@@ -34,7 +34,19 @@ completo antes de tocar código.
 
 ## Estado actual
 
-**(actualizado 2026-08-15, última sesión: Codex)**
+**(actualizado 2026-08-15, última sesión: Claude Code)**
+
+**Bloque 1 (múltiples números de WhatsApp por empresa) está completo en
+código pero SIN APLICAR a producción.** La migración
+`050_multiple_whatsapp_numbers.sql` sigue sin ejecutarse contra
+`puvbwzwmojpjplhdfnmk` — el código ya es compatible (API de configuración,
+envío, webhooks, plantillas, difusiones, flows/automations y UI adaptados),
+`npm run typecheck`, `npm test` (846 pruebas, 844 pasan; las 2 que fallan son
+las preexistentes de `mondayIndex` sensibles a zona horaria, documentadas en
+sesiones anteriores, no relacionadas con este trabajo) y `npm run build`
+(61 rutas) quedan limpios, pero falta el paso de aplicar la migración,
+desplegar y validar en producción antes de darlo por terminado. Ver la
+entrada de bitácora de hoy para el detalle completo y los próximos pasos.
 
 El rebranding visible inicial de la sección 1 ya está implementado: metadata,
 sidebar, alta de usuarios, invitaciones, mensajes de conexión, README y
@@ -717,3 +729,82 @@ limpio.
 **Validado en producción:** EasyPanel completó el despliegue y `/admin` volvió
 a mostrar las dos empresas con sus conversaciones, mensajes y tokens IA. No se
 observaron errores en la consola del navegador.
+
+### 2026-08-15 — Claude Code (Bloque 1: múltiples números de WhatsApp, código completo)
+
+**Hecho:** Leí `AGENTS.md`, `docs/SANDIA_plan_de_desarrollo.md`,
+`docs/SANDIA_vision_producto.md` y `docs/SANDIA_diagnostico_tecnico.md`
+completos, confirmé que no había `npm run dev` corriendo localmente, y
+mapé con tres agentes de exploración el estado exacto de multi-número,
+webhooks/acciones IA y i18n/CSP/rate-limit. Con dos decisiones de producto
+confirmadas por Angel (una conversación por número; soporte completo de
+plantillas y difusiones por número desde este bloque), implementé de punta
+a punta el Bloque 1:
+
+- Revisé `050_multiple_whatsapp_numbers.sql` (todavía sin aplicar): agrega
+  `display_name`/`is_default` a `whatsapp_config`; agrega
+  `whatsapp_config_id` a `conversations` (con `UNIQUE(account_id,
+  contact_id, whatsapp_config_id)` reemplazando el índice de la migración
+  036 — una conversación por número, no por cuenta) y a `message_templates`
+  (con `UNIQUE(whatsapp_config_id, name, language)`, resolviendo de paso el
+  TODO de account-sharing que quedaba en `user_id`) y a `broadcasts`
+  (congelado en creación); y redefine `create_broadcast_with_recipients`
+  (migraciones 037/038) para fijar `whatsapp_config_id` de forma atómica
+  con la fila padre, sin una escritura de seguimiento separada.
+- Nuevo helper `src/lib/whatsapp/resolve-config.ts`
+  (`resolveWhatsAppConfig`): resuelve el número correcto — explícito →
+  predeterminado de la cuenta → más reciente conectado — reutilizado por
+  todos los puntos de envío.
+- API de configuración reescrita como colección:
+  `GET/POST /api/whatsapp/config` (listar/crear) y nuevos
+  `GET/PATCH/DELETE /api/whatsapp/config/[id]` +
+  `GET /api/whatsapp/config/[id]/verify-registration` (reemplaza la ruta
+  antigua de una sola fila). Lógica de conexión compartida en
+  `src/lib/whatsapp/config-connect.ts` para no duplicar el flujo de
+  verificación/registro entre crear y editar.
+- Adaptados: envío (`send-message.ts`, `react/route.ts`), webhooks entrantes
+  (Meta y Zernio — la resolución por `phone_number_id`/`zernio_account_id`
+  ya era correcta; solo faltaba fijar `whatsapp_config_id` en la
+  conversación nueva), `resolve-conversation.ts` (API pública),
+  `flows/meta-send.ts` y `automations/meta-send.ts`, plantillas
+  (`sync`/`submit`/`[id]`), difusiones (`broadcast-core.ts`,
+  `broadcast-resume.ts`, `broadcast/route.ts`) y los dos widgets del
+  dashboard que usaban `.maybeSingle()` sobre `whatsapp_config`
+  (`settings-overview.tsx`, `inbox/page.tsx`).
+- UI: `whatsapp-config.tsx` pasó de formulario de una sola conexión a lista
+  con agregar/editar/eliminar/marcar predeterminado; selector de número en
+  el paso final del asistente de difusión (`step4-schedule-send.tsx`,
+  oculto si solo hay un número). Claves nuevas en `messages/en.json` y
+  `messages/ko.json` (español todavía no existe — Bloque 4).
+
+**Probado:** `npm run typecheck` limpio. `npm test`: 846 pruebas, 844 pasan
+(las 2 fallas restantes son las de `mondayIndex` ya documentadas como
+preexistentes y no relacionadas). Actualicé los mocks de Supabase en
+`webhook/route.test.ts`, `send/route.test.ts`, `broadcast-core.test.ts`,
+`broadcast-resume.test.ts`, `send-message.test.ts` y
+`resolve-conversation.test.ts` para las nuevas formas de consulta, y agregué
+`resolve-config.test.ts` (unitario del helper de resolución) y
+`config/route.test.ts` (aislamiento multiempresa del listado — una cuenta
+nunca consulta `whatsapp_config` de otra — y la regla de "el primer número
+de una cuenta siempre es predeterminado, los siguientes respetan lo que pida
+quien llama"). `npm run build` generó 61 rutas sin errores, incluyendo
+`/api/whatsapp/config/[id]` y `/api/whatsapp/config/[id]/verify-registration`.
+
+**Pendiente / siguiente paso:** Nada de esto se aplicó ni se desplegó a
+producción — falta, en orden: (1) aplicar `050_multiple_whatsapp_numbers.sql`
+contra `puvbwzwmojpjplhdfnmk` (revisar con `list_migrations` el estado
+remoto primero; considerar una rama de Supabase dado que cambia el índice
+único de `conversations`, aunque el riesgo es bajo con las 2 empresas reales
+actuales), (2) `get_advisors` después de aplicar, (3) publicar el código y
+validar en producción agregando un segundo número de prueba en una cuenta,
+confirmando que ambas conexiones aparecen, marcando una como predeterminada,
+y (si es posible sin usar un número de un tercero) confirmando que mensajes
+entrantes a cada número caen en conversaciones separadas. Después de validar,
+abrir la planificación del Bloque 2 (webhooks firmados por empresa + eventos
+comerciales ampliados + reintentos/log/desactivación + diseño n8n para
+Calendar/Meet/cotizaciones/correo/recordatorios).
+
+**Notas:** No se borró ni revirtió código existente.
+`src/lib/probe_delete_test.txt` permanece intacto y fuera de los cambios. No
+se modificaron datos reales ni configuraciones de canales — todo el trabajo
+de esta sesión es local, sin tocar el proyecto Supabase real.

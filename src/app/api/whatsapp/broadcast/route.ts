@@ -4,6 +4,7 @@ import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { sendWhatsAppTemplateViaZernio, type ZernioSendContext } from '@/lib/whatsapp/zernio-send'
 import { findExistingContact } from '@/lib/contacts/dedupe'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      whatsapp_config_id,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -122,13 +124,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // This batch continues the campaign the browser tab started
+    // (`broadcasts.whatsapp_config_id`, frozen at creation) — falls
+    // back to the account default when the caller didn't pick one.
+    const config = await resolveWhatsAppConfig(supabase, accountId, whatsapp_config_id)
 
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         {
           error:
@@ -150,6 +151,7 @@ export async function POST(request: Request) {
       accountId,
       template_name,
       template_language,
+      config.id,
     )
     if (resolvedTemplate.malformed) {
       return NextResponse.json(

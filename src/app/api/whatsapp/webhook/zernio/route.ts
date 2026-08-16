@@ -234,12 +234,20 @@ async function findOrCreateContact(accountId: string, configOwnerUserId: string,
   return { contact: newContact as ContactRow, wasCreated: true }
 }
 
-async function findOrCreateConversation(accountId: string, configOwnerUserId: string, contactId: string) {
+async function findOrCreateConversation(
+  accountId: string,
+  configOwnerUserId: string,
+  contactId: string,
+  whatsappConfigId: string,
+) {
+  // Scoped to the number the message arrived on — see the Meta webhook's
+  // identical comment for why (one thread per contact per number).
   const { data: existingRows, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('whatsapp_config_id', whatsappConfigId)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -253,7 +261,13 @@ async function findOrCreateConversation(accountId: string, configOwnerUserId: st
 
   const { data: newConv, error: createError } = await supabaseAdmin()
     .from('conversations')
-    .insert({ account_id: accountId, user_id: configOwnerUserId, contact_id: contactId, channel: 'whatsapp' })
+    .insert({
+      account_id: accountId,
+      user_id: configOwnerUserId,
+      contact_id: contactId,
+      channel: 'whatsapp',
+      whatsapp_config_id: whatsappConfigId,
+    })
     .select()
     .single()
 
@@ -264,6 +278,7 @@ async function findOrCreateConversation(accountId: string, configOwnerUserId: st
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('whatsapp_config_id', whatsappConfigId)
         .order('created_at', { ascending: true })
         .limit(1)
       if (raced && raced.length > 0) return { conversation: raced[0], created: false }
@@ -294,7 +309,7 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id)
+  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id)
   if (!convResult) return
   const conversation = convResult.conversation
 

@@ -33,6 +33,7 @@ import {
   sendWhatsAppInteractiveViaZernio,
   type ZernioSendContext,
 } from '@/lib/whatsapp/zernio-send'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 /** `conversations.zernio_conversation_id` for a WhatsApp-via-Zernio send. */
 async function loadZernioConversationId(
@@ -67,6 +68,19 @@ async function resolveConversationChannel(
   if (data?.channel === 'instagram') return 'instagram'
   if (data?.channel === 'facebook') return 'facebook'
   return 'whatsapp'
+}
+
+/** `conversations.whatsapp_config_id` — which number this thread is pinned to. */
+async function loadConversationWhatsAppConfigId(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+): Promise<string | null> {
+  const { data } = await db
+    .from('conversations')
+    .select('whatsapp_config_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+  return data?.whatsapp_config_id ?? null
 }
 
 // ------------------------------------------------------------
@@ -142,12 +156,12 @@ export async function engineSendText(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single()
-  if (configErr || !config) {
+  const config = await resolveWhatsAppConfig(
+    db,
+    args.accountId,
+    await loadConversationWhatsAppConfigId(db, args.conversationId),
+  )
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
 
@@ -307,12 +321,12 @@ export async function engineSendMedia(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single()
-  if (configErr || !config) {
+  const config = await resolveWhatsAppConfig(
+    db,
+    args.accountId,
+    await loadConversationWhatsAppConfigId(db, args.conversationId),
+  )
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
 
@@ -511,12 +525,12 @@ async function sendInteractiveViaMeta(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
+  const config = await resolveWhatsAppConfig(
+    db,
+    input.accountId,
+    await loadConversationWhatsAppConfigId(db, input.conversationId),
+  )
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
 

@@ -45,6 +45,7 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+  const [whatsappConfigId, setWhatsappConfigId] = useState<string | null>(null);
 
   async function handleSend() {
     if (!template) return;
@@ -62,6 +63,7 @@ export default function NewBroadcastPage() {
         },
         variables,
         headerMediaUrl,
+        whatsappConfigId,
       });
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
@@ -108,6 +110,7 @@ export default function NewBroadcastPage() {
       template_name: template.name,
       template_language: template.language ?? 'en_US',
       template_variables: variables,
+      whatsapp_config_id: whatsappConfigId,
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
@@ -221,6 +224,8 @@ export default function NewBroadcastPage() {
               onNameChange={setName}
               template={template}
               audience={audience}
+              whatsappConfigId={whatsappConfigId}
+              onWhatsappConfigIdChange={setWhatsappConfigId}
               onSend={handleSend}
               onSaveDraft={handleSaveDraft}
               onBack={() => setCurrentStep(2)}

@@ -132,6 +132,7 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
         select: () => b,
         eq: () => b,
         order: () => b,
+        limit: () => b,
         in: (col: string, vals: unknown) => {
           if (col === 'status') writes.statusFilter = vals;
           if (col === 'id') writes.failedIds = vals;
@@ -141,10 +142,19 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
           writes.failedUpdate = row;
           return b;
         },
-        maybeSingle: async () => ({
-          data: fx.broadcast === undefined ? null : fx.broadcast,
-          error: null,
-        }),
+        // resolveWhatsAppConfig only ever calls .maybeSingle() on
+        // whatsapp_config now (not .single()) — dispatch both terminal
+        // methods by table so a caller can't accidentally get the
+        // broadcast row back when it asked for the config, or vice versa.
+        maybeSingle: async () => {
+          if (table === 'whatsapp_config') {
+            return { data: fx.config === undefined ? null : fx.config, error: null };
+          }
+          return {
+            data: fx.broadcast === undefined ? null : fx.broadcast,
+            error: null,
+          };
+        },
         single: async () => ({
           data: fx.config === undefined ? null : fx.config,
           error: null,
@@ -170,7 +180,7 @@ const BROADCAST = {
   template_language: 'en_US',
 };
 
-const CONFIG = { phone_number_id: 'pn-1', access_token: 'tok' };
+const CONFIG = { id: 'cfg-1', provider: 'meta', phone_number_id: 'pn-1', access_token: 'tok' };
 
 function recipient(
   id: string,

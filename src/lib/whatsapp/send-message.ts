@@ -35,6 +35,7 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -245,14 +246,16 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
+  // WhatsApp config — the specific number this conversation is pinned
+  // to (falls back to the account's default connection for legacy
+  // conversations with no `whatsapp_config_id` yet).
+  const config = await resolveWhatsAppConfig(
+    db,
+    accountId,
+    conversation.whatsapp_config_id
+  );
 
-  if (configError || !config) {
+  if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -322,7 +325,8 @@ export async function sendMessageToConversation(
       db,
       accountId,
       templateName,
-      templateLanguage
+      templateLanguage,
+      config.id
     );
     if (resolved.malformed) {
       throw new SendMessageError(

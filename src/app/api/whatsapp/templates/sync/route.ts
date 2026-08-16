@@ -6,6 +6,7 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { listZernioTemplates } from '@/lib/zernio/api'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
@@ -128,21 +129,28 @@ function extractSampleValues(
   return sv
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    // Syncing rewrites the account-wide template catalog, which is
+    // Syncing rewrites one connection's template catalog, which is
     // settings-class data: `canEditSettings` and the message_templates
     // insert/update RLS policies (migration 017) both require 'admin'.
     // Resolving account_id off the profile only proved membership.
     const { supabase, accountId, userId } = await requireRole('admin')
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // Optional body: { whatsapp_config_id }. Defaults to the account's
+    // default connection so existing single-number callers keep working
+    // unchanged.
+    let requestedConfigId: string | null = null
+    try {
+      const body = (await request.json()) as { whatsapp_config_id?: string }
+      requestedConfigId = body?.whatsapp_config_id ?? null
+    } catch {
+      // No body / not JSON — fine, fall through to the default connection.
+    }
 
-    if (configError || !config) {
+    const config = await resolveWhatsAppConfig(supabase, accountId, requestedConfigId)
+
+    if (!config) {
       return NextResponse.json(
         {
           error:
@@ -241,9 +249,12 @@ export async function POST() {
       const row = {
         // Account tenancy + user audit, same split as the submit
         // route. account_id is NOT NULL on message_templates
-        // post-017, so an INSERT without it errors.
+        // post-017, so an INSERT without it errors. whatsapp_config_id
+        // (migration 050) is the real identity for dedup — Meta
+        // templates are approved per-WABA, not per-account.
         account_id: accountId,
         user_id: userId,
+        whatsapp_config_id: config.id,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
@@ -264,6 +275,7 @@ export async function POST() {
         .from('message_templates')
         .select('id')
         .eq('account_id', accountId)
+        .eq('whatsapp_config_id', config.id)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

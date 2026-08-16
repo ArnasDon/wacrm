@@ -1556,3 +1556,112 @@ bajo de que alguno se comporte distinto.
 
 **Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
 commit.
+
+### 2026-08-16 — Claude (Cowork, control de Chrome) — Avance autónomo de etapas + cierre siempre humano
+
+**Hecho:** Angel pidió que la IA mueva negocios de etapa sola conforme
+conversa con el cliente (ej. a "Negociación"), preguntando primero cómo
+quería acotar el riesgo. Dos decisiones suyas, confirmadas explícitamente:
+(1) solo avanza negocios que **ya existen** — no crea negocios nuevos
+desde cero; (2) "Venta cerrada" deja de cerrarse sola — **reemplaza** el
+comportamiento autónomo que ya existía (Bloque 3, aprobado en su momento):
+antes, si el cliente confirmaba la compra con palabras explícitas, la IA
+movía el negocio a "Venta cerrada" sin que nadie lo revisara; ahora, ante
+esa misma señal, la IA se detiene y le entrega la conversación a un
+asesor humano (igual que ya hace hoy cuando "no sabe qué responder") para
+que él la cierre. Angel también pidió dos contadores para un "tablero de
+resultados" (cuántas veces la IA avanza una etapa sola; cuántos clientes
+"resuelve" sin necesitar un humano) y que se notifique a alguien cuando
+una venta está por cerrarse.
+
+**Diseño:**
+- `src/lib/ai/defaults.ts`: nuevo sentinel parametrizado
+  `[[ACTION:move_deal:<nombre exacto de etapa>]]` (a diferencia de
+  `[[ACTION:mark_deal_won]]`, que es un marcador fijo). El prompt de
+  auto-reply ahora incluye, cuando el contacto tiene un negocio abierto,
+  la etapa actual y el resto de etapas **no ganadoras** de su pipeline —
+  el modelo solo puede elegir un nombre de esa lista, nunca inventar uno
+  ni apuntar a la etapa de "Venta cerrada" por esta vía (esa sigue siendo
+  exclusiva del otro marcador). Reescribí también el texto del marcador
+  de compra confirmada: ya no dice "esto cierra la venta sola", dice
+  "esto entrega la conversación a un humano para que la cierre él".
+- `src/lib/ai/generate.ts`: `parseGeneration` ahora extrae el nombre de
+  etapa del nuevo marcador con una regex y lo devuelve como
+  `moveToStageName` (antes solo devolvía `handoff`/`markDealWon`).
+- `src/lib/ai/auto-reply.ts` — el cambio más grande:
+  - Antes de generar la respuesta, `loadDealStageOptions()` carga el
+    negocio abierto del contacto (si existe) y las etapas no-ganadoras de
+    su pipeline, para que el prompt las incluya.
+  - `autoMarkDealWon()` (que antes movía el negocio a "Venta cerrada"
+    sola) se **eliminó por completo** y se reemplazó por
+    `flagDealClosing()`: pausa el bot, asigna la conversación al asesor
+    configurado en "Hand off to" (mismo campo que ya existía para el
+    handoff por "no sé responder"), dejando un resumen específico
+    ("El cliente confirmó la compra..."), y registra el evento en
+    `ai_action_log` con la acción nueva `flag_deal_closing` — nunca
+    toca la tabla `deals`.
+  - `autoMoveDealStage()` (nueva): resuelve el negocio del contacto de
+    nuevo (fresco, no reutiliza el de la construcción del prompt),
+    empareja el nombre de etapa que devolvió el modelo contra las etapas
+    no-ganadoras del pipeline (comparación sin distinguir mayúsculas),
+    mueve el negocio con el mismo `moveDeal()` que ya usa todo el resto
+    de la app, y registra `move_deal` en `ai_action_log` con
+    `source: "auto_reply_autonomous"` — mismo patrón de auditoría que ya
+    existía, más el evento de webhook `deal.stage_changed`.
+  - Si el modelo emite ambos marcadores en el mismo turno, la
+    confirmación de compra gana (se prioriza sobre el avance de etapa).
+- **Notificación:** reutilicé el trigger de base de datos que ya existe
+  (`notify_conversation_assigned`, migración 027) — al asignar la
+  conversación al asesor de handoff, ya genera automáticamente una
+  notificación en la campanita. **No es un mensaje específico de "venta
+  cerrando"** (el trigger tiene un título/cuerpo genérico de "conversación
+  asignada"), pero el asesor sí ve la notificación y, al abrir el chat, el
+  resumen (`ai_handoff_summary`) le explica exactamente por qué. No
+  construí un tipo de notificación nuevo para mantener el alcance
+  acotado — si Angel quiere un texto específico ("🎉 Venta lista para
+  cerrar"), es un cambio pequeño para otra sesión.
+- **Migración `054_ai_deal_closing_flag.sql`** (aplicada): agrega
+  `flag_deal_closing` al CHECK de `ai_action_log.action`.
+- **Tablero de resultados:** extendí `GET /api/ai/usage` con
+  `results: { deals_auto_advanced, conversations_resolved }` en la misma
+  ventana de días ya seleccionable. `deals_auto_advanced` cuenta filas de
+  `ai_action_log` con `action='move_deal'` y
+  `input->>source='auto_reply_autonomous'`. `conversations_resolved`
+  cuenta conversaciones `status='closed'` con `assigned_agent_id IS NULL`
+  y `ai_reply_count > 0` — la definición que Angel confirmó ("resolvió
+  la duda sin pasar por un humano"), calculada con datos que ya existían,
+  sin pedirle nada nuevo al modelo. Se muestran como dos tarjetas nuevas
+  en `AI Agents → Usage` (`src/components/agents/ai-usage.tsx`), junto a
+  las de tokens que ya había.
+
+**Probado:** `npm run typecheck`, `npx eslint` sobre los 8 archivos
+tocados (0 errores/warnings) y `npm run build` limpios;
+`package-lock.json` sin cambios. `npx vitest run`: 918/920 (mismas 2
+fallas preexistentes de `mondayIndex`/zona horaria). Reescribí
+`auto-reply.test.ts` por completo — el bloque "autonomous mark_deal_won"
+pasó a probar que `flagDealClosing` nunca toca `deals` y sí pausa/asigna/
+audita; agregué un bloque nuevo "autonomous move_deal" (avanza a la etapa
+correcta, empareja sin distinguir mayúsculas, no hace nada si el nombre
+no existe entre las etapas no-ganadoras o si ya es la etapa actual, no
+revienta si `moveDeal` falla) y un bloque para el contexto de etapas en
+el prompt. Extendí `generate.test.ts` para el nuevo sentinel parametrizado
+(nombres con acentos/espacios, y el caso de ambos marcadores juntos).
+Migración `054` aplicada contra `puvbwzwmojpjplhdfnmk`; `get_advisors`
+no reportó ningún hallazgo nuevo relacionado (la lista completa son
+hallazgos preexistentes de sesiones anteriores, ninguno toca
+`ai_action_log`).
+
+**Pendiente / siguiente paso:** publicar, confirmar el deploy en
+EasyPanel, y validar en producción con cautela — es la pieza de mayor
+riesgo de esta sesión porque toca conversaciones reales de clientes.
+Sugerido: (1) revisar `GET /api/ai/usage` en el navegador para confirmar
+que las dos tarjetas nuevas cargan sin error; (2) si Angel tiene una
+conversación real de prueba disponible, seguirla y confirmar que al
+avanzar naturalmente hacia una etapa distinta el negocio se mueve solo, y
+que al confirmar una compra la conversación se pausa y se asigna en vez
+de cerrarse sola; (3) revisar `ai_action_log` por SQL después para
+confirmar que las filas nuevas (`move_deal`/`flag_deal_closing` con
+`source: auto_reply_autonomous`) tienen sentido.
+
+**Notas:** `src/lib/probe_delete_test.txt` permanece intacto y fuera del
+commit.

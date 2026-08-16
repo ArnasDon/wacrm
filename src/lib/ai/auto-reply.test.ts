@@ -9,7 +9,6 @@ const h = vi.hoisted(() => ({
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   moveDeal: vi.fn(),
-  findWonStageId: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
@@ -17,7 +16,8 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
-    openDeal: null as { id: string; pipeline_id: string } | null,
+    openDeal: null as { id: string; pipeline_id: string; stage_id: string } | null,
+    stages: [] as { id: string; name: string }[],
     aiActionLogInserts: [] as Record<string, unknown>[],
   },
 }))
@@ -30,7 +30,6 @@ vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
 vi.mock('@/lib/pipelines/move-deal', () => ({
   moveDeal: h.moveDeal,
-  findWonStageId: h.findWonStageId,
   MoveDealError: class MoveDealError extends Error {
     status: number
     constructor(message: string, status = 400) {
@@ -39,6 +38,23 @@ vi.mock('@/lib/pipelines/move-deal', () => ({
     }
   },
 }))
+
+// `.select().eq().eq().order()` (or without `.order()`) → a multi-row
+// select, resolved lazily whenever the chain is awaited (every step
+// returns the same thenable chain, so it doesn't matter which call is
+// last — mirrors how the real supabase-js query builder is itself a
+// thenable, no separate terminal call required for a plain select-many).
+function selectManyChain(getData: () => unknown) {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    order: () => chain,
+    then: (resolve: (v: { data: unknown; error: null }) => void) =>
+      resolve({ data: getData(), error: null }),
+  }
+  return chain
+}
+
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -64,6 +80,9 @@ vi.mock('./admin-client', () => ({
           maybeSingle: () => Promise.resolve({ data: h.state.openDeal, error: null }),
         }
         return chain
+      }
+      if (table === 'pipeline_stages') {
+        return selectManyChain(() => h.state.stages)
       }
       if (table === 'ai_action_log') {
         return {
@@ -129,17 +148,22 @@ beforeEach(() => {
   h.state.updatePayload = null
   h.state.rpcCalls = []
   h.state.openDeal = null
+  h.state.stages = []
   h.state.aiActionLogInserts = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false, markDealWon: false })
+  h.generateReply.mockResolvedValue({
+    text: 'Hello!',
+    handoff: false,
+    markDealWon: false,
+    moveToStageName: null,
+  })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.moveDeal.mockResolvedValue({
-    deal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-won-1', status: 'won' },
-    isWonStage: true,
+    deal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-b', status: 'open' },
+    isWonStage: false,
   })
-  h.findWonStageId.mockResolvedValue('stage-won-1')
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
 })
 
@@ -233,7 +257,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 
 describe('dispatchInboundToAiReply — handoff', () => {
   it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
-    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.rpcCalls).toHaveLength(0)
@@ -247,7 +271,7 @@ describe('dispatchInboundToAiReply — handoff', () => {
 
   it('routes to the configured handoff agent on handoff', async () => {
     h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
-    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.updatePayload).toMatchObject({
       ai_autoreply_disabled: true,
@@ -256,72 +280,219 @@ describe('dispatchInboundToAiReply — handoff', () => {
   })
 })
 
-describe('dispatchInboundToAiReply — autonomous mark_deal_won', () => {
-  it('marks the contact\'s open deal won, with no confirmation gate, when the model signals it', async () => {
-    h.generateReply.mockResolvedValue({ text: 'All set, thanks!', handoff: false, markDealWon: true })
-    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1' }
+describe('dispatchInboundToAiReply — deal-stage prompt context', () => {
+  it('tells the model the current stage and the other non-won stages it can move to', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+      { id: 'stage-c', name: 'Convencimiento' },
+    ]
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('"Cotización"')
+    expect(systemPrompt).toContain('"Negociación"')
+    expect(systemPrompt).toContain('"Convencimiento"')
+  })
+
+  it('says nothing about stage options when the contact has no open deal', async () => {
+    h.state.openDeal = null
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('ACTION:move_deal')
+  })
+
+  it('says nothing about stage options when the deal has no other stage to offer', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [{ id: 'stage-a', name: 'Cotización' }]
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('ACTION:move_deal')
+  })
+})
+
+describe('dispatchInboundToAiReply — purchase confirmation hands off to close', () => {
+  it('pauses the bot, assigns the handoff agent, and logs flag_deal_closing — never touches the deal', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    h.generateReply.mockResolvedValue({
+      text: 'All set, thanks!',
+      handoff: false,
+      markDealWon: true,
+      moveToStageName: null,
+    })
 
     await dispatchInboundToAiReply(ARGS)
 
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'All set, thanks!' }),
     )
-    expect(h.findWonStageId).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'pipe-1')
-    expect(h.moveDeal).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'deal-1', 'stage-won-1')
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      assigned_agent_id: 'agent-7',
+    })
+    expect(h.moveDeal).not.toHaveBeenCalled()
     expect(h.state.aiActionLogInserts).toEqual([
       expect.objectContaining({
         account_id: 'acct-1',
         actor_user_id: 'user-1',
-        action: 'mark_deal_won',
-        target_id: 'deal-1',
+        action: 'flag_deal_closing',
+        target_id: 'conv-1',
         input: { source: 'auto_reply_autonomous' },
+      }),
+    ])
+  })
+
+  it('leaves the conversation unassigned when no handoff agent is configured', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'All set!',
+      handoff: false,
+      markDealWon: true,
+      moveToStageName: null,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+    expect(h.state.aiActionLogInserts).toHaveLength(1)
+  })
+
+  it('does not touch any deal when the model does not signal confirmation', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    await dispatchInboundToAiReply(ARGS) // default mock: markDealWon: false
+    expect(h.moveDeal).not.toHaveBeenCalled()
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous move_deal', () => {
+  it('advances the deal to the named stage and logs it', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Perfecto, seguimos.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.moveDeal).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'deal-1', 'stage-b')
+    expect(h.state.aiActionLogInserts).toEqual([
+      expect.objectContaining({
+        account_id: 'acct-1',
+        actor_user_id: 'user-1',
+        action: 'move_deal',
+        target_id: 'deal-1',
+        input: { stageId: 'stage-b', stageName: 'Negociación', source: 'auto_reply_autonomous' },
       }),
     ])
     expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
       expect.anything(),
       'acct-1',
-      'deal.won',
-      { deal_id: 'deal-1', source: 'auto_reply_autonomous' },
+      'deal.stage_changed',
+      expect.objectContaining({ deal_id: 'deal-1', source: 'auto_reply_autonomous' }),
     )
   })
 
-  it('does not touch any deal when the model does not signal confirmation', async () => {
-    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1' }
-    await dispatchInboundToAiReply(ARGS) // default mock: markDealWon: false
+  it('matches the stage name case-insensitively', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'negociación',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.moveDeal).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'deal-1', 'stage-b')
+  })
+
+  it('does nothing when the named stage does not match any of the pipeline\'s non-won stages', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [{ id: 'stage-a', name: 'Cotización' }]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Etapa inventada',
+    })
+    await dispatchInboundToAiReply(ARGS)
     expect(h.moveDeal).not.toHaveBeenCalled()
     expect(h.state.aiActionLogInserts).toEqual([])
   })
 
+  it('does nothing when the named stage is already the deal\'s current stage', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Cotización',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.moveDeal).not.toHaveBeenCalled()
+  })
+
   it('still sends the reply, and logs nothing, when the contact has no open deal', async () => {
-    h.generateReply.mockResolvedValue({ text: 'Sure thing!', handoff: false, markDealWon: true })
+    h.generateReply.mockResolvedValue({
+      text: 'Sure thing!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+    })
     h.state.openDeal = null
 
     await dispatchInboundToAiReply(ARGS)
 
     expect(h.engineSendText).toHaveBeenCalled()
-    expect(h.findWonStageId).not.toHaveBeenCalled()
-    expect(h.moveDeal).not.toHaveBeenCalled()
-    expect(h.state.aiActionLogInserts).toEqual([])
-  })
-
-  it('does not move the deal when the pipeline has no stage flagged is_won', async () => {
-    h.generateReply.mockResolvedValue({ text: 'Sure thing!', handoff: false, markDealWon: true })
-    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1' }
-    h.findWonStageId.mockResolvedValue(null)
-
-    await dispatchInboundToAiReply(ARGS)
-
     expect(h.moveDeal).not.toHaveBeenCalled()
     expect(h.state.aiActionLogInserts).toEqual([])
   })
 
   it('swallows a moveDeal failure — the already-sent reply is unaffected', async () => {
-    h.generateReply.mockResolvedValue({ text: 'Sure thing!', handoff: false, markDealWon: true })
-    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1' }
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Sure thing!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+    })
     h.moveDeal.mockRejectedValue(new Error('deal not found in this pipeline'))
 
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).toHaveBeenCalled()
     expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('a purchase confirmation takes priority over a same-turn stage-move signal', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'All set!',
+      handoff: false,
+      markDealWon: true,
+      moveToStageName: 'Negociación',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.moveDeal).not.toHaveBeenCalled()
+    expect(h.state.aiActionLogInserts).toEqual([
+      expect.objectContaining({ action: 'flag_deal_closing' }),
+    ])
   })
 })

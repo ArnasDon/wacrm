@@ -44,6 +44,7 @@ describe('parseGeneration', () => {
       text: 'Hello there',
       handoff: false,
       markDealWon: false,
+      moveToStageName: null,
       usage: null,
     })
   })
@@ -53,12 +54,14 @@ describe('parseGeneration', () => {
       text: '',
       handoff: true,
       markDealWon: false,
+      moveToStageName: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
       markDealWon: false,
+      moveToStageName: null,
       usage: null,
     })
   })
@@ -68,6 +71,7 @@ describe('parseGeneration', () => {
       text: 'Great, all set!',
       handoff: false,
       markDealWon: true,
+      moveToStageName: null,
       usage: null,
     })
   })
@@ -79,12 +83,38 @@ describe('parseGeneration', () => {
     expect(res.text).toBe('')
   })
 
+  it('detects + strips the move-deal sentinel, capturing the stage name', () => {
+    expect(parseGeneration('Sounds great! [[ACTION:move_deal:Negotiation]]')).toEqual({
+      text: 'Sounds great!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negotiation',
+      usage: null,
+    })
+  })
+
+  it('captures a multi-word / accented stage name verbatim', () => {
+    const res = parseGeneration('Perfecto. [[ACTION:move_deal:Cotización enviada]]')
+    expect(res.moveToStageName).toBe('Cotización enviada')
+    expect(res.text).toBe('Perfecto.')
+  })
+
+  it('allows the purchase-confirmation and move-deal markers to appear together', () => {
+    const res = parseGeneration(
+      'All set! [[ACTION:move_deal:Negotiation]] [[ACTION:mark_deal_won]]',
+    )
+    expect(res.markDealWon).toBe(true)
+    expect(res.moveToStageName).toBe('Negotiation')
+    expect(res.text).toBe('All set!')
+  })
+
   it('passes usage straight through', () => {
     const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
     expect(parseGeneration('Hi', usage)).toEqual({
       text: 'Hi',
       handoff: false,
       markDealWon: false,
+      moveToStageName: null,
       usage,
     })
   })
@@ -110,6 +140,7 @@ describe('generateReply — OpenAI', () => {
       text: 'Sure — happy to help!',
       handoff: false,
       markDealWon: false,
+      moveToStageName: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -170,6 +201,7 @@ describe('generateReply — Anthropic', () => {
       text: 'Hi there!',
       handoff: false,
       markDealWon: false,
+      moveToStageName: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

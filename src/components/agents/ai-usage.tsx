@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Bot, PencilLine } from 'lucide-react';
+import { BarChart3, Bot, PencilLine, GitBranch, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import {
@@ -44,6 +44,10 @@ interface UsageResponse {
     tokens: number;
   }[];
   daily: { date: string; tokens: number; calls: number }[];
+  results: {
+    deals_auto_advanced: number;
+    conversations_resolved: number;
+  };
 }
 
 const WINDOWS = [7, 30, 90] as const;
@@ -105,11 +109,12 @@ export function AiUsageCard() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-primary" /> Token usage
+              <BarChart3 className="h-4 w-4 text-primary" /> Token usage &amp; results
             </CardTitle>
             <CardDescription>
               Tokens spent on your provider key by drafts and the auto-reply
-              bot. Counts only — no message content is stored here.
+              bot, plus what the bot actually did with them. Counts only —
+              no message content is stored here.
             </CardDescription>
           </div>
           <Select
@@ -143,7 +148,7 @@ export function AiUsageCard() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Stat label="Total tokens" value={formatCompactNumber(data.totals.total_tokens)} />
               <Stat label="LLM calls" value={String(data.totals.calls)} />
               <Stat
@@ -155,6 +160,16 @@ export function AiUsageCard() {
                 label="Drafts"
                 value={formatCompactNumber(data.by_mode.draft.tokens)}
                 icon={PencilLine}
+              />
+              <Stat
+                label="Deals auto-advanced"
+                value={String(data.results.deals_auto_advanced)}
+                icon={GitBranch}
+              />
+              <Stat
+                label="Resolved without a human"
+                value={String(data.results.conversations_resolved)}
+                icon={CheckCircle2}
               />
             </div>
 

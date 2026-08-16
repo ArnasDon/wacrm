@@ -61,8 +61,15 @@ export interface GenerateResult {
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
   /** True when the model signaled the customer confirmed the purchase
-   *  (auto-reply mode only) — see `MARK_DEAL_WON_SENTINEL`. */
+   *  (auto-reply mode only) — see `MARK_DEAL_WON_SENTINEL`. Hands the
+   *  conversation off to a human to close the deal; the bot never marks
+   *  a deal won by itself. */
   markDealWon: boolean
+  /** The pipeline stage name the model signaled the deal should move to
+   *  (auto-reply mode only), or null — see `MOVE_DEAL_SENTINEL_PREFIX`.
+   *  Always one of the stage names the model was shown; never the
+   *  account's "won" stage (that's `markDealWon`'s job). */
+  moveToStageName: string | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

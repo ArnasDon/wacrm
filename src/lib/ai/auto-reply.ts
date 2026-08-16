@@ -10,7 +10,7 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
-import { moveDeal, findWonStageId, MoveDealError } from '@/lib/pipelines/move-deal'
+import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 interface DispatchArgs {
@@ -109,13 +109,22 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages),
     )
 
+    // Business context for autonomous stage progression: the contact's
+    // currently open deal (if any) and its pipeline's non-won stages,
+    // shown to the model so it can only ever pick a real option — never
+    // invent one. Deliberately excludes the "won" stage: closing a deal
+    // always goes through the separate, stricter purchase-confirmation
+    // marker below, handled by a person, never this one.
+    const dealStageOptions = await loadDealStageOptions({ db, accountId, contactId })
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      dealStageOptions,
     })
 
-    const { text, handoff, markDealWon, usage } = await generateReply({
+    const { text, handoff, markDealWon, moveToStageName, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -191,17 +200,25 @@ export async function dispatchInboundToAiReply(
       aiGenerated: true,
     })
 
-    // Autonomous "mark deal won" — explicit product decision, no human
-    // confirmation gate (unlike every other business action, which goes
-    // through POST /api/ai/actions's two-step confirm flow). Runs after
-    // the send so a failure here can never prevent the customer-facing
-    // reply from going out; it's always logged to ai_action_log for
-    // review, and reversible by hand from the pipeline.
+    // Autonomous business actions — explicit product decision, no human
+    // confirmation gate for either (unlike every other business action,
+    // which goes through POST /api/ai/actions's two-step confirm flow).
+    // Both run after the send so a failure here can never prevent the
+    // customer-facing reply from going out. At most one fires per
+    // inbound: a purchase confirmation always wins over an ordinary
+    // stage-progress signal (the model is told to emit at most one
+    // "closing" marker, but code stays defensive about that).
     if (markDealWon) {
       try {
-        await autoMarkDealWon({ db, accountId, contactId, configOwnerUserId })
+        await flagDealClosing({ db, accountId, conversationId, configOwnerUserId, handoffAgentId: config.handoffAgentId, alreadyAssigned: Boolean(conv.assigned_agent_id) })
       } catch (err) {
-        console.error('[ai auto-reply] autonomous mark_deal_won failed:', err)
+        console.error('[ai auto-reply] flagDealClosing failed:', err)
+      }
+    } else if (moveToStageName) {
+      try {
+        await autoMoveDealStage({ db, accountId, contactId, configOwnerUserId, stageName: moveToStageName })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous move_deal failed:', err)
       }
     }
   } catch (err) {
@@ -210,23 +227,108 @@ export async function dispatchInboundToAiReply(
 }
 
 /**
- * Resolves "the deal this conversation is about" as the contact's most
- * recently updated open deal — `deals` has no populated `conversation_id`
- * today, so there's no other signal to disambiguate. No-ops (logs and
- * returns) when there's no open deal or the pipeline has no stage
- * flagged `is_won`.
+ * Loads the prompt-time stage options for `buildSystemPrompt`: the
+ * contact's most recently updated open deal (same "which deal is this
+ * conversation about" resolution every autonomous action here uses —
+ * `deals` has no populated `conversation_id` today) and its pipeline's
+ * non-won stage names. Returns null when there's no open deal, or the
+ * deal's current stage can't be resolved among the pipeline's non-won
+ * stages, or there are no other stages to offer.
  */
-async function autoMarkDealWon(args: {
+async function loadDealStageOptions(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+}): Promise<{ currentStageName: string; otherStageNames: string[] } | null> {
+  const { db, accountId, contactId } = args
+
+  const { data: deal } = await db
+    .from('deals')
+    .select('id, pipeline_id, stage_id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .eq('status', 'open')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!deal) return null
+
+  const { data: stages } = await db
+    .from('pipeline_stages')
+    .select('id, name')
+    .eq('pipeline_id', deal.pipeline_id)
+    .eq('is_won', false)
+    .order('position')
+  const all = stages ?? []
+  const current = all.find((s) => s.id === deal.stage_id)
+  if (!current) return null
+
+  const otherStageNames = all.filter((s) => s.id !== deal.stage_id).map((s) => s.name)
+  if (otherStageNames.length === 0) return null
+
+  return { currentStageName: current.name, otherStageNames }
+}
+
+/**
+ * The customer explicitly confirmed the purchase. By product decision
+ * the bot never marks a deal won itself — a person always finalizes a
+ * sale — so this hands the conversation off exactly like `HANDOFF_SENTINEL`
+ * does (pauses the bot, routes to the configured teammate, leaves a
+ * summary) and logs the event to `ai_action_log` so it can be counted
+ * on the AI results dashboard. Never touches `deals` at all.
+ */
+async function flagDealClosing(args: {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  configOwnerUserId: string
+  handoffAgentId: string | null
+  alreadyAssigned: boolean
+}): Promise<void> {
+  const { db, accountId, conversationId, configOwnerUserId, handoffAgentId, alreadyAssigned } = args
+
+  const update: Record<string, unknown> = {
+    ai_autoreply_disabled: true,
+    ai_handoff_summary:
+      'The customer explicitly confirmed the purchase. The AI assistant handed this conversation off so a teammate can close the sale.',
+  }
+  if (handoffAgentId && !alreadyAssigned) {
+    update.assigned_agent_id = handoffAgentId
+  }
+  await db.from('conversations').update(update).eq('id', conversationId)
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'flag_deal_closing',
+    target_id: conversationId,
+    input: { source: 'auto_reply_autonomous' },
+    result: { conversation_id: conversationId, handed_off_to: handoffAgentId },
+  })
+}
+
+/**
+ * Resolves "the deal this conversation is about" fresh (same rule as
+ * `loadDealStageOptions`) and moves it to the stage the model named —
+ * matched case-insensitively against that deal's own pipeline's
+ * non-won stages only, so the model can never route a deal to a stage
+ * it wasn't explicitly offered (or to "won" through this path — that's
+ * `flagDealClosing`'s job). No-ops quietly whenever the deal, the named
+ * stage, or an actual change can't be resolved; a failed move never
+ * affects the already-sent customer-facing reply.
+ */
+async function autoMoveDealStage(args: {
   db: SupabaseClient
   accountId: string
   contactId: string
   configOwnerUserId: string
+  stageName: string
 }): Promise<void> {
-  const { db, accountId, contactId, configOwnerUserId } = args
+  const { db, accountId, contactId, configOwnerUserId, stageName } = args
 
   const { data: deal, error: dealErr } = await db
     .from('deals')
-    .select('id, pipeline_id')
+    .select('id, pipeline_id, stage_id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .eq('status', 'open')
@@ -235,15 +337,22 @@ async function autoMarkDealWon(args: {
     .maybeSingle()
   if (dealErr || !deal) return
 
-  const wonStageId = await findWonStageId(db, accountId, deal.pipeline_id)
-  if (!wonStageId) return
+  const { data: stages } = await db
+    .from('pipeline_stages')
+    .select('id, name')
+    .eq('pipeline_id', deal.pipeline_id)
+    .eq('is_won', false)
+  const target = (stages ?? []).find(
+    (s) => s.name.trim().toLowerCase() === stageName.trim().toLowerCase(),
+  )
+  if (!target || target.id === deal.stage_id) return
 
   let moved
   try {
-    moved = await moveDeal(db, accountId, deal.id, wonStageId)
+    moved = await moveDeal(db, accountId, deal.id, target.id)
   } catch (err) {
     if (err instanceof MoveDealError) {
-      console.error('[ai auto-reply] autonomous moveDeal failed:', err.message)
+      console.error('[ai auto-reply] autonomous move_deal failed:', err.message)
       return
     }
     throw err
@@ -252,14 +361,16 @@ async function autoMarkDealWon(args: {
   await db.from('ai_action_log').insert({
     account_id: accountId,
     actor_user_id: configOwnerUserId,
-    action: 'mark_deal_won',
+    action: 'move_deal',
     target_id: deal.id,
-    input: { source: 'auto_reply_autonomous' },
+    input: { stageId: target.id, stageName: target.name, source: 'auto_reply_autonomous' },
     result: moved.deal,
   })
 
-  void dispatchWebhookEvent(db, accountId, 'deal.won', {
-    deal_id: deal.id,
+  void dispatchWebhookEvent(db, accountId, 'deal.stage_changed', {
+    deal_id: moved.deal.id,
+    pipeline_id: moved.deal.pipeline_id,
+    stage_id: moved.deal.stage_id,
     source: 'auto_reply_autonomous',
   })
 }

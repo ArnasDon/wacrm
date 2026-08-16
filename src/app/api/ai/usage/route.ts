@@ -51,22 +51,54 @@ export async function GET(request: Request) {
     // chart (see lib/dashboard/date-utils).
     const since = daysAgoStart(days - 1)
 
-    const { data, error } = await supabase
-      .from('ai_usage_log')
-      .select(
-        'created_at, mode, provider, model, prompt_tokens, completion_tokens, total_tokens',
-      )
-      .eq('account_id', accountId)
-      .gte('created_at', since.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(MAX_ROWS + 1)
+    const [usageRes, autoAdvancedRes, resolvedRes] = await Promise.all([
+      supabase
+        .from('ai_usage_log')
+        .select(
+          'created_at, mode, provider, model, prompt_tokens, completion_tokens, total_tokens',
+        )
+        .eq('account_id', accountId)
+        .gte('created_at', since.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(MAX_ROWS + 1),
+      // Deals the bot advanced to a different stage on its own, as the
+      // conversation itself showed it progressing (see `auto-reply.ts`'s
+      // `autoMoveDealStage`) — never the "won" stage, that's tracked
+      // separately below.
+      supabase
+        .from('ai_action_log')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .eq('action', 'move_deal')
+        .eq('input->>source', 'auto_reply_autonomous')
+        .gte('created_at', since.toISOString()),
+      // Conversations the bot handled start to finish with no teammate
+      // ever assigned — the proxy for "resolved a customer's questions
+      // without a human" (closed, at least one auto-reply sent, never
+      // handed to or claimed by an agent).
+      supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .eq('status', 'closed')
+        .is('assigned_agent_id', null)
+        .gt('ai_reply_count', 0)
+        .gte('created_at', since.toISOString()),
+    ])
 
+    const { data, error } = usageRes
     if (error) {
       console.error('[ai/usage GET] fetch error:', error)
       return NextResponse.json(
         { error: 'Failed to load usage' },
         { status: 500 },
       )
+    }
+    if (autoAdvancedRes.error) {
+      console.error('[ai/usage GET] auto-advanced count error:', autoAdvancedRes.error)
+    }
+    if (resolvedRes.error) {
+      console.error('[ai/usage GET] resolved count error:', resolvedRes.error)
     }
 
     const all = (data ?? []) as UsageRow[]
@@ -134,6 +166,10 @@ export async function GET(request: Request) {
       by_mode: byMode,
       by_model: byModel,
       daily: [...daily.values()],
+      results: {
+        deals_auto_advanced: autoAdvancedRes.count ?? 0,
+        conversations_resolved: resolvedRes.count ?? 0,
+      },
     })
   } catch (err) {
     return toErrorResponse(err)

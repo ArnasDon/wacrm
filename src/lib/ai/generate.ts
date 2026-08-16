@@ -5,7 +5,13 @@ import {
   type ChatMessage,
   type GenerateResult,
 } from './types'
-import { HANDOFF_SENTINEL, MARK_DEAL_WON_SENTINEL, aiRequestTimeoutMs } from './defaults'
+import {
+  HANDOFF_SENTINEL,
+  MARK_DEAL_WON_SENTINEL,
+  MOVE_DEAL_SENTINEL_PREFIX,
+  MOVE_DEAL_SENTINEL_SUFFIX,
+  aiRequestTimeoutMs,
+} from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
@@ -52,10 +58,11 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
- * Split the raw model output into `{ text, handoff, markDealWon, usage }`.
- * Either sentinel can appear alone or trailing a partial reply; either
- * way we strip the marker from the text sent to the customer. `usage`
- * is passed straight through (null when the provider didn't report it).
+ * Split the raw model output into
+ * `{ text, handoff, markDealWon, moveToStageName, usage }`. Any sentinel
+ * can appear alone or trailing a partial reply; either way we strip the
+ * marker(s) from the text sent to the customer. `usage` is passed
+ * straight through (null when the provider didn't report it).
  */
 export function parseGeneration(
   raw: string,
@@ -63,11 +70,25 @@ export function parseGeneration(
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
   const markDealWon = raw.includes(MARK_DEAL_WON_SENTINEL)
+
+  const moveMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(MOVE_DEAL_SENTINEL_PREFIX)}(.+?)${escapeRegExp(MOVE_DEAL_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  const moveToStageName = moveMatch ? moveMatch[1].trim() : null
+
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
     .split(MARK_DEAL_WON_SENTINEL)
     .join('')
+    .replace(moveMatch ? moveMatch[0] : '', '')
     .trim()
-  return { text, handoff, markDealWon, usage }
+
+  return { text, handoff, markDealWon, moveToStageName, usage }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

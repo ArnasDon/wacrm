@@ -964,5 +964,39 @@ Bloque 3 (acciones de IA en interfaz conversacional).
 
 **Notas:** No se borró ni revirtió código existente.
 `src/lib/probe_delete_test.txt` permanece intacto y fuera de los cambios.
-No se modificaron datos reales — todo el trabajo de esta sesión es local,
-sin tocar el proyecto Supabase real todavía.
+
+### 2026-08-16 — Claude Code (Bloque 2: migración, cron y código publicados)
+
+**Hecho:** Con confirmación de Angel, apliqué `051_webhook_deliveries_and_deal_won.sql`
+contra `puvbwzwmojpjplhdfnmk` (volumen real mínimo: 5 etapas de pipeline, 0
+webhooks, 0 negocios — riesgo bajo). Habilité las extensiones `pg_cron` y
+`pg_net` en el proyecto y programé el job `webhook-retry-sweep` (cada 5
+minutos) que llama `GET https://sandia-sandia-crm.kmencc.easypanel.host/api/webhooks/cron`
+con el header `x-cron-secret` — usando la URL pública de EasyPanel, no la
+dirección interna de Docker (`http://sandia_sandia_crm:80/`, que Supabase no
+puede alcanzar). El secreto se generó con `crypto.randomBytes(32)` y se
+programó vía `execute_sql` (no `apply_migration`) para no dejarlo persistido
+en el historial de migraciones ni en ningún archivo del repo. Publiqué el
+commit `0213ece` en `origin/main` en un solo push (evitando el problema de
+builds cancelados del Bloque 1).
+
+**Probado:** Verifiqué por SQL que `pipeline_stages.is_won` y
+`webhook_deliveries` existen tras la migración. `get_advisors` no reportó
+hallazgos nuevos. El job de `cron.schedule` se registró (`schedule: 1`).
+
+**Pendiente / siguiente paso — requiere que Angel lo haga manualmente:**
+1. Agregar la variable de entorno `WEBHOOK_CRON_SECRET` en EasyPanel (servicio
+   `sandia_sandia_crm`) con el mismo valor generado en esta sesión, y
+   reiniciar/redeploy el servicio para que la tome.
+2. Confirmar que el deploy de `0213ece` terminó en verde en EasyPanel.
+3. Validar en producción: en Configuración → Webhooks, crear un endpoint de
+   prueba; mover un negocio a la etapa "Venta cerrada" y confirmar que llega
+   `deal.won`; cerrar una conversación desde el inbox y confirmar
+   `conversation.closed`; revisar que el log de entregas muestre las firmas
+   correctas. Después de validar, este bloque queda cerrado y se abre la
+   planificación del Bloque 3 (acciones de IA en interfaz conversacional).
+
+**Notas:** No se modificaron filas de negocio reales — el único cambio de
+datos fue el backfill aditivo propio de la migración
+(`pipeline_stages.is_won` default `false`, sin afectar etapas existentes).
+`src/lib/probe_delete_test.txt` permanece intacto y fuera del commit.

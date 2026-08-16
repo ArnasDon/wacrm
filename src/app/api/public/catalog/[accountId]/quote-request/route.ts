@@ -90,7 +90,7 @@ export async function POST(
       name,
     })
 
-    const { quote } = await createQuote({
+    const { quote, items: quoteItems } = await createQuote({
       db,
       accountId,
       userId: auditUserId,
@@ -119,7 +119,14 @@ export async function POST(
       ? sanitizePhoneForMeta(whatsapp.public_phone_number)
       : ''
     if (configuredNumber) {
-      const message = `Hola, acabo de solicitar una cotización en su catálogo (${name}).`
+      // Spell out exactly what was selected so the message that lands
+      // in the inbox already tells the agent/AI what to quote — the
+      // visitor shouldn't have to retype their order once they're in
+      // the chat.
+      const itemsSummary = quoteItems
+        .map((item) => `${item.quantity}x ${item.description}`)
+        .join(', ')
+      const message = `Hola, soy ${name}. Quiero cotizar: ${itemsSummary}.`
       whatsappUrl = `https://wa.me/${configuredNumber}?text=${encodeURIComponent(message)}`
     }
 

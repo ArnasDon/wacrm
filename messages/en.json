@@ -1062,6 +1062,10 @@
           "label": "First Message from Contact",
           "hint": "First time this contact ever messages you (works for manually-added contacts too)"
         },
+        "first_agent_message": {
+          "label": "First Message Sent by Agent",
+          "hint": "When an agent sends the first outbound message in this conversation"
+        },
         "keyword_match": {
           "label": "Keyword Match",
           "hint": "Message contains specific keyword(s)"

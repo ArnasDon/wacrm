@@ -132,6 +132,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
 const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "new_message_received" },
   { value: "first_inbound_message" },
+  { value: "first_agent_message" },
   { value: "keyword_match" },
   { value: "interactive_reply" },
   { value: "new_contact_created" },

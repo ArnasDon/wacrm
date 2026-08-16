@@ -16,6 +16,7 @@ const PILL_CLASS: Record<AutomationTriggerType, string> = {
   tag_added: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   time_based: 'border-slate-500/30 bg-slate-500/10 text-muted-foreground',
   interactive_reply: 'border-pink-500/30 bg-pink-500/10 text-pink-300',
+  first_agent_message: 'border-green-500/30 bg-green-500/10 text-green-300',
 }
 
 const UNKNOWN_PILL_CLASS = 'border-slate-500/30 bg-slate-500/10 text-muted-foreground'

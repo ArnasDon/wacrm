@@ -1062,6 +1062,10 @@
           "label": "Primeira mensagem do contato",
           "hint": "Primeira vez que este contato te envia uma mensagem (funciona também para contatos adicionados manualmente)"
         },
+        "first_agent_message": {
+          "label": "Primeira mensagem enviada pelo atendente",
+          "hint": "Quando um atendente envia a primeira mensagem outbound desta conversa"
+        },
         "keyword_match": {
           "label": "Correspondência de palavra-chave",
           "hint": "A mensagem contém palavra(s)-chave específica(s)"

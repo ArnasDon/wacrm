@@ -21,6 +21,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { runAutomationsForTrigger } from '@/lib/automations/engine';
 import {
   sendTextMessage,
   sendTemplateMessage,
@@ -462,6 +463,20 @@ export async function sendMessageToConversation(
       .eq('id', contact.id);
   }
 
+  // "first_agent_message" trigger: computed BEFORE the insert below so
+  // the count doesn't include this very message — same idempotency
+  // pattern as `isFirstInboundMessage` in the webhook route. Only
+  // counts sender_type='agent' rows, which this function is the sole
+  // writer of (automation/flow/AI sends persist as sender_type='bot'),
+  // so this can only be true for a genuine agent send, and only once
+  // per conversation.
+  const { count: priorAgentMessageCount } = await db
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'agent');
+  const isFirstAgentMessage = (priorAgentMessageCount ?? 0) === 0;
+
   // Persist the sent message. Field names MUST match the messages
   // schema (see 001_initial_schema.sql).
   // Interactive messages persist the body as content_text (so the
@@ -496,6 +511,23 @@ export async function sendMessageToConversation(
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
       500
     );
+  }
+
+  // Fire "first_agent_message" — awaited (not fire-and-forget): this
+  // route has no after()-style keep-alive, so a detached dispatch risks
+  // being frozen mid-flight once the response is sent (same reasoning
+  // as the webhook route's automation dispatch). runAutomationsForTrigger
+  // never throws; the .catch is belt-and-braces only.
+  if (isFirstAgentMessage) {
+    await runAutomationsForTrigger({
+      accountId,
+      triggerType: 'first_agent_message',
+      contactId: contact.id,
+      context: {
+        message_text: contentText ?? undefined,
+        conversation_id: conversationId,
+      },
+    }).catch((err) => console.error('[automations] first_agent_message dispatch failed:', err));
   }
 
   // Best-effort — an agent reply is a genuine "empresa responde"

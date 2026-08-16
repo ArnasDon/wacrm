@@ -643,7 +643,12 @@ export type AutomationTriggerType =
   | 'time_based'
   /** Customer tapped a reply button / list row whose id matches; lets
    *  multi-step menus be chained across automations. */
-  | 'interactive_reply';
+  | 'interactive_reply'
+  /** A human agent's first outbound (sender_type='agent') message in a
+   *  conversation — fires once per conversation, never for automation/
+   *  bot sends (those persist as sender_type='bot') and never again
+   *  once the agent has sent a prior message there. */
+  | 'first_agent_message';
 
 export type AutomationStepType =
   | 'send_message'

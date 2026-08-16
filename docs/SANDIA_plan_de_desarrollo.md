@@ -1021,3 +1021,38 @@ dar el bloque por desplegado, ya que la infraestructura de entrega y
 reintentos quedó confirmada extremo a extremo. Después de esa validación,
 abrir la planificación del Bloque 3 (acciones de IA en interfaz
 conversacional).
+
+### 2026-08-16 — Claude Code (corrección de seguridad: fuga de perfiles entre empresas)
+
+**Hecho:** Angel reportó en producción que la empresa de David Emanuel
+aparecía en el menú "Assign" (asignar chat a un miembro) de su propia
+cuenta, pese a que David es dueño de una empresa afiliada totalmente
+separada, no miembro de la organización de Angel. Investigué y confirmé la
+causa raíz: la migración 043 (panel de plataforma) agregó una política RLS
+aditiva `platform_admin_profiles_select` que permite a cualquier
+`is_platform_admin` leer **todas** las filas de `profiles` sin importar
+`account_id` — correcta y necesaria para el panel `/admin`, pero dos
+consultas de UI (`src/components/inbox/message-thread.tsx`, el selector
+"Assign"; `src/components/pipelines/deal-form.tsx`, el selector de
+responsable de un negocio) hacían `supabase.from("profiles").select("*")`
+**sin filtrar explícitamente por `account_id`**, confiando únicamente en
+RLS para acotar el resultado — válido para un miembro normal (cuya política
+RLS sí es por cuenta) pero no para Angel, cuya sesión de platform admin ve
+todas las filas por la política aditiva. Agregué `.eq("account_id",
+accountId)` explícito en ambos lugares (defensa en profundidad, mismo
+principio que ya usa el resto del proyecto de no confiar solo en RLS).
+Barrí el resto de `src/components` y `src/app/api` buscando el mismo patrón
+— ningún otro selector de miembros tenía el problema (el resto ya filtraba
+por `account_id`/`user_id`, o usa la ruta ya segura `/api/account/members`).
+
+**Probado:** `npm run typecheck`, `npm test` (858/860, mismas 2 fallas
+preexistentes de zona horaria) y `npm run build` limpios.
+
+**Pendiente / siguiente paso:** Publicar este fix cuanto antes dado que es
+una corrección de seguridad activa en producción (aunque de severidad baja
+— solo expone qué usuarios existen en otras empresas dentro de un dropdown,
+no conversaciones ni datos de negocio — vale la pena cerrarla ya). Después,
+retomar la validación pendiente del Bloque 2 y abrir el Bloque 3.
+
+**Notas:** No se modificaron datos reales. `src/lib/probe_delete_test.txt`
+permanece intacto y fuera del commit.

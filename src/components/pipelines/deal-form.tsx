@@ -107,14 +107,20 @@ export function DealForm({
   }, [open, deal, defaultStageId, stages, defaultCurrency]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Load supporting data once the sheet is open
+  // Load supporting data once the sheet is open. The profiles query is
+  // explicitly scoped by account_id rather than relying on RLS alone —
+  // a platform admin's session (migration 043) can read EVERY account's
+  // profiles under RLS (platform_admin_profiles_select is an additive
+  // policy, by design, for the /admin roster), so an unfiltered query
+  // here would let a platform admin assign a deal to a user outside
+  // their own organization.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !accountId) return;
     let cancelled = false;
     (async () => {
       const [c, p] = await Promise.all([
         supabase.from("contacts").select("*").order("name"),
-        supabase.from("profiles").select("*").order("full_name"),
+        supabase.from("profiles").select("*").eq("account_id", accountId).order("full_name"),
       ]);
       if (cancelled) return;
       setContacts((c.data ?? []) as Contact[]);
@@ -123,7 +129,7 @@ export function DealForm({
     return () => {
       cancelled = true;
     };
-  }, [open, supabase]);
+  }, [open, supabase, accountId]);
 
   // Fetch linked conversation for the selected contact (newest open one).
   // Clearing on no-selection is sync with prop state; the populated

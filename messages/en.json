@@ -118,7 +118,7 @@
       "noOpenDeals": "No open deals yet",
       "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
       "noOpenDealsForPipeline": "No open deals",
-      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}"
+      "personCount": "{count} {count, plural, =1 {person} other {people}}"
     },
     "responseTimeChart": {
       "title": "Average First Response Time",

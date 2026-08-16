@@ -29,7 +29,9 @@ export interface PipelineStageSlice {
   id: string
   name: string
   color: string
-  dealCount: number
+  /** Distinct contacts with an open deal in this stage — a contact
+   *  with two open deals here still counts once. */
+  peopleCount: number
   /** Open-deal totals for this stage, kept separate per currency. */
   totalsByCurrency: CurrencyTotal[]
 }
@@ -39,7 +41,8 @@ export interface PipelineSummary {
   id: string
   name: string
   stages: PipelineStageSlice[]
-  dealCount: number
+  /** Distinct contacts with an open deal anywhere in this pipeline. */
+  peopleCount: number
   totalsByCurrency: CurrencyTotal[]
 }
 

@@ -59,7 +59,7 @@ export function PipelinesOverview({ data, loading }: PipelinesOverviewProps) {
                       />
                       <span className="flex-1 truncate text-muted-foreground">{s.name}</span>
                       <span className="text-muted-foreground tabular-nums">
-                        {t('dealCount', { count: s.dealCount })}
+                        {t('personCount', { count: s.peopleCount })}
                       </span>
                       <span className="w-24 shrink-0 text-right text-muted-foreground tabular-nums">
                         {formatCurrencyTotals(s.totalsByCurrency, { short: true })}

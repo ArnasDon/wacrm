@@ -155,14 +155,20 @@ export async function loadPipelinesOverview(db: DB): Promise<PipelineSummary[]> 
   const [pipelinesRes, stagesRes, dealsRes] = await Promise.all([
     db.from('pipelines').select('id, name').order('created_at'),
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('pipeline_id, stage_id, value, currency, status').eq('status', 'open'),
+    db.from('deals').select('pipeline_id, stage_id, contact_id, value, currency, status').eq('status', 'open'),
   ])
 
   const pipelines = (pipelinesRes.data ?? []) as { id: string; name: string }[]
   const stages =
     (stagesRes.data ?? []) as { id: string; name: string; color: string; pipeline_id: string }[]
   const deals =
-    (dealsRes.data ?? []) as { pipeline_id: string; stage_id: string; value: number | null; currency: string | null }[]
+    (dealsRes.data ?? []) as {
+      pipeline_id: string
+      stage_id: string
+      contact_id: string | null
+      value: number | null
+      currency: string | null
+    }[]
 
   const dealsByStage = new Map<string, typeof deals>()
   for (const d of deals) {
@@ -174,21 +180,30 @@ export async function loadPipelinesOverview(db: DB): Promise<PipelineSummary[]> 
   return pipelines.map((p): PipelineSummary => {
     const pipelineStages = stages.filter((s) => s.pipeline_id === p.id)
     const pipelineTotals = new Map<string, number>()
-    let pipelineDealCount = 0
+    // Distinct contacts across the whole pipeline, not a sum of each
+    // stage's count — a contact with deals in two stages of the same
+    // pipeline is still one person.
+    const pipelinePeople = new Set<string>()
 
     const stageSlices: PipelineStageSlice[] = pipelineStages.map((s) => {
       const stageDeals = dealsByStage.get(s.id) ?? []
       const stageTotals = new Map<string, number>()
+      // People, not deal rows: a contact with two open deals in the
+      // same stage is still one person waiting there.
+      const stagePeople = new Set<string>()
       for (const d of stageDeals) {
         addToCurrencyTotals(stageTotals, d.currency, d.value ?? 0)
         addToCurrencyTotals(pipelineTotals, d.currency, d.value ?? 0)
+        if (d.contact_id) {
+          stagePeople.add(d.contact_id)
+          pipelinePeople.add(d.contact_id)
+        }
       }
-      pipelineDealCount += stageDeals.length
       return {
         id: s.id,
         name: s.name,
         color: s.color || '#64748b',
-        dealCount: stageDeals.length,
+        peopleCount: stagePeople.size,
         totalsByCurrency: toCurrencyTotalsArray(stageTotals),
       }
     })
@@ -198,8 +213,8 @@ export async function loadPipelinesOverview(db: DB): Promise<PipelineSummary[]> 
       name: p.name,
       // Hide stages with no open deals — keeps the breakdown focused on
       // where the pipeline's value actually sits.
-      stages: stageSlices.filter((s) => s.dealCount > 0),
-      dealCount: pipelineDealCount,
+      stages: stageSlices.filter((s) => s.peopleCount > 0),
+      peopleCount: pipelinePeople.size,
       totalsByCurrency: toCurrencyTotalsArray(pipelineTotals),
     }
   })

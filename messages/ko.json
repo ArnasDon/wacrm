@@ -118,7 +118,7 @@
       "noOpenDeals": "아직 진행 중인 딜이 없습니다",
       "noOpenDealsHint": "파이프라인에서 딜을 만들면 단계별 분포를 여기서 확인할 수 있습니다.",
       "noOpenDealsForPipeline": "진행 중인 딜 없음",
-      "dealCount": "딜 {count}건"
+      "personCount": "{count}명"
     },
     "responseTimeChart": {
       "title": "평균 첫 응답 시간",

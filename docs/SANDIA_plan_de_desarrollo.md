@@ -2003,3 +2003,100 @@ esas variables existan en producción (Claude no puede recibir el
 correo). Todavía no publicado, mismo criterio que el Bloque 8. Sigue el
 Bloque 10 (botón de reportar pago + panel de suscripciones en
 `/admin`).
+
+### 2026-08-16 — Claude Code — Publicación de los Bloques 6-10 + validación en producción + rediseño del cron de suscripciones
+
+**Hecho:** Angel decidió publicar los Bloques 7-10 en paquete (el 6 ya
+estaba en producción). Antes de darle push, cambié los dos correos de
+destino que el plan original tenía hardcodeados
+(`soportesandia1@gmail.com`, `pagosandia@gmail.com`) a una sola casilla
+que Angel prefirió usar, `asistentedechat@gmail.com` — el cambio fue
+mínimo porque el diseño ya separaba "cuenta que envía" (env vars
+`SUPPORT_GMAIL_USER`/`PAYMENTS_GMAIL_USER`) de "bandeja de destino"
+(`SUPPORT_INBOX`/`PAYMENTS_INBOX`, constantes en cada ruta) — bastó con
+cambiar esas dos constantes y los comentarios que las mencionaban
+(commit `b5e60fa`). Push de los 5 commits pendientes
+(`ea70c9e`..`b5e60fa`), aplicadas las migraciones `055_whatsapp_public_number`
+y `056_billing` contra producción.
+
+**Validación en producción (todo con la cuenta real de Angel):**
+- Bloque 6: dashboard muestra "2 people" en la etapa con 2 negocios del
+  mismo contacto — confirmado.
+- Bloque 7: en el playground, sin pedir el catálogo explícitamente el
+  bot decidió solo mandar el PDF (`send_catalog`); forzando respuesta en
+  texto, citó los 2 productos reales con sus precios exactos ($500 y
+  $1,000) — confirmado que el contexto de catálogo llega al modelo y no
+  alucina precios.
+- Bloque 8: `/catalog/<account_id>` carga con los 2 productos reales
+  (imagen, precio, descripción); probé `POST
+  /api/public/catalog/.../quote-request` de punta a punta (creó
+  contacto + cotización + deal), confirmé y borré los datos de prueba.
+  El campo "Público WhatsApp number" ya vive en Configuración →
+  WhatsApp → Editar.
+- Bloque 9: `POST /api/support/report` con datos de prueba → 200 OK.
+  Angel confirmó que el correo sí llegó a `asistentedechat@gmail.com`.
+- Bloque 10: `/admin` muestra las 2 empresas con columna "Próximo pago"
+  y botones "Marcar pagada"/"Suspender"; Configuración → Facturación
+  muestra los datos bancarios reales que Angel cargó (Banco Industrial,
+  cuenta de ahorro); `POST /api/billing/report-payment` → 200 OK,
+  correo confirmado recibido.
+
+**Nota de proceso:** el menú de acciones (⋯) de las tablas de Contactos
+y del header de cuenta resultó intermitente para la automatización de
+Chrome (el mismo problema de popovers ya documentado con los `Select`
+en sesiones anteriores — el click a veces cierra el menú sin ejecutar
+la acción). Cuando pasa, el atajo es llamar la ruta API subyacente
+directo por `fetch()` desde la pestaña autenticada en vez de pelear con
+el click — así se validaron soporte/pagos/cotización de prueba. Para
+acciones sin ruta API equivalente (como borrar un contacto, que solo
+existe como `supabase.from('contacts').delete()` directo desde el
+cliente), toca que un humano haga el click.
+
+**Cambio de diseño del Bloque 10 — Angel pidió NO suspender
+automático.** Su instrucción exacta: quiere una alerta 3 días antes del
+vencimiento, y otra el último día avisando que debe suspenderse — pero
+la suspensión la hace él a mano desde `/admin` (el botón "Suspender" ya
+existía y sigue intacto). Reescribí `src/lib/admin/subscriptions.ts`:
+
+- Eliminé `suspendOverdueAccounts()` (ya no se usa — nada muta cuentas
+  automáticamente).
+- Nueva `findAccountsDueInDays(db, days)`: compara por día calendario en
+  UTC (no por ventana de 24h), así que no importa a qué hora del día
+  corra el cron. Con `days=3` dispara el aviso temprano.
+- Nueva `sendSubscriptionAlerts(db)`: manda dos correos independientes a
+  `asistentedechat@gmail.com` (reusa `sendEmail` del Bloque 9, `account:
+  'payments'`) — uno para las cuentas que hoy caen exactamente 3 días
+  antes de su vencimiento (dispara una sola vez, porque la comparación
+  de día solo coincide ese día), y otro para las cuentas ya vencidas y
+  activas (repite todos los días que el cron corra mientras siga
+  vencida — decidí que un aviso único del "último día" corre el riesgo
+  de perderse si Angel no lo ve ese día, así que insiste a diario hasta
+  que él la marca pagada o la suspende a mano).
+- `GET /api/admin/subscriptions/cron` ya no ejecuta ninguna mutación:
+  sin `dry_run` manda las alertas que correspondan; con `?dry_run=true`
+  devuelve `{ due_soon, overdue }` sin mandar nada.
+- 7 tests nuevos en `subscriptions.test.ts` (día exacto, no confunde
+  día 2/4, no depende de la hora del día, cruce de mes, y 3 casos de
+  `sendSubscriptionAlerts` con `sendEmail` mockeado).
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios,
+`npx vitest run`: 938/940 (mismas 2 fallas preexistentes de
+`mondayIndex` — el resto pasa, incluyendo los 7 tests nuevos). Commit
+`a5e4978`, push con confirmación de Angel. Confirmé en producción con
+`curl` + el secreto real que `?dry_run=true` devuelve
+`{"due_soon":[],"overdue":[]}` — ninguna cuenta dispara nada hoy, tal
+como se esperaba (ninguna tiene `next_payment_due_at` asignado
+todavía).
+
+**Programé el `pg_cron` diario** (`subscriptions-alert-sweep`, jobid 3,
+`0 13 * * *` UTC = 7am hora Guatemala) apuntando a
+`/api/admin/subscriptions/cron` con `SUBSCRIPTIONS_CRON_SECRET`, mismo
+patrón que `webhook-retry-sweep`/`conversation-reassign-sweep`. No hace
+nada hasta que Angel le asigne una fecha de "Próximo pago" a una
+empresa desde `/admin`.
+
+**Pendiente:** un contacto de prueba del Bloque 8 ("Prueba Bloque 8
+(borrar)") quedó sin borrar en Contactos — la automatización no logró
+completar el click de borrado; Angel lo borró manualmente. Con esto,
+**los cinco bloques (6-10) quedan completos, publicados, validados en
+producción y con el cron de alertas de pago activo.**

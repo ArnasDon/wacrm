@@ -43,6 +43,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hello there')).toEqual({
       text: 'Hello there',
       handoff: false,
+      markDealWon: false,
       usage: null,
     })
   })
@@ -51,13 +52,31 @@ describe('parseGeneration', () => {
     expect(parseGeneration('[[HANDOFF]]')).toEqual({
       text: '',
       handoff: true,
+      markDealWon: false,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
+      markDealWon: false,
       usage: null,
     })
+  })
+
+  it('detects + strips the mark-deal-won sentinel', () => {
+    expect(parseGeneration('Great, all set! [[ACTION:mark_deal_won]]')).toEqual({
+      text: 'Great, all set!',
+      handoff: false,
+      markDealWon: true,
+      usage: null,
+    })
+  })
+
+  it('never signals both handoff and markDealWon confusingly — each sentinel is independent', () => {
+    const res = parseGeneration('[[ACTION:mark_deal_won]]')
+    expect(res.handoff).toBe(false)
+    expect(res.markDealWon).toBe(true)
+    expect(res.text).toBe('')
   })
 
   it('passes usage straight through', () => {
@@ -65,6 +84,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hi', usage)).toEqual({
       text: 'Hi',
       handoff: false,
+      markDealWon: false,
       usage,
     })
   })
@@ -89,6 +109,7 @@ describe('generateReply — OpenAI', () => {
     expect(res).toEqual({
       text: 'Sure — happy to help!',
       handoff: false,
+      markDealWon: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -148,6 +169,7 @@ describe('generateReply — Anthropic', () => {
     expect(res).toEqual({
       text: 'Hi there!',
       handoff: false,
+      markDealWon: false,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

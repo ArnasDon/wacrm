@@ -72,6 +72,7 @@ export function AiConfig() {
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
+  const [unclaimedTimeoutMinutes, setUnclaimedTimeoutMinutes] = useState(10);
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
@@ -99,6 +100,7 @@ export function AiConfig() {
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
+        setUnclaimedTimeoutMinutes(data.unclaimed_conversation_timeout_minutes ?? 10);
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
@@ -150,6 +152,7 @@ export function AiConfig() {
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
+    unclaimed_conversation_timeout_minutes: unclaimedTimeoutMinutes,
     handoff_agent_id: handoffAgentId || null,
   });
 
@@ -482,6 +485,29 @@ export function AiConfig() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-unclaimed-timeout">{t('unclaimedTimeout')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('unclaimedTimeoutDesc')}
+                </p>
+              </div>
+              <Input
+                id="ai-unclaimed-timeout"
+                type="number"
+                min={1}
+                max={1440}
+                value={unclaimedTimeoutMinutes}
+                onChange={(e) =>
+                  setUnclaimedTimeoutMinutes(
+                    Math.min(1440, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+                disabled={disabled}
+                className="w-20"
+              />
             </div>
           </CardContent>
         </Card>

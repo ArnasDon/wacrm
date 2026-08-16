@@ -3,7 +3,12 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { BusinessActionError, confirmationPhrase, executeBusinessAction, type BusinessAction } from '@/lib/ai/business-actions'
 
-const ACTIONS = new Set<BusinessAction>(['close_conversation', 'mark_deal_won', 'move_deal'])
+const ACTIONS = new Set<BusinessAction>([
+  'close_conversation',
+  'mark_deal_won',
+  'move_deal',
+  'set_lead_temperature',
+])
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +32,7 @@ export async function POST(request: Request) {
     const result = await executeBusinessAction({
       db: supabase, accountId, userId, action, targetId,
       stageId: typeof body?.stageId === 'string' ? body.stageId : undefined,
+      temperature: typeof body?.temperature === 'string' ? body.temperature : undefined,
     })
     return NextResponse.json({ ok: true, action, result })
   } catch (error) {

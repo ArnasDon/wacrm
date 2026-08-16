@@ -1061,3 +1061,90 @@ permanece intacto y fuera del commit.
 EasyPanel (build completo, 63 rutas, `Success`) y confirmó en la app que el
 menú "Assign" ya no muestra la empresa de David Emanuel. Corrección cerrada
 y verificada de punta a punta.
+
+### 2026-08-16 — Claude Code (Bloque 3: acciones de IA — código completo, migración 052 aplicada)
+
+**Hecho:** Implementé el Bloque 3 completo según la planificación aprobada
+(botones manuales, sugerencia a pedido, cierre autónomo de venta, y
+reasignación por tiempo):
+
+1. **Consistencia de "marcar venta ganada":** `mark_deal_won` en
+   `src/lib/ai/business-actions.ts` ahora resuelve la etapa `is_won` de la
+   pipeline del negocio y usa `moveDeal()` (mismo camino que el Kanban),
+   con respaldo al status directo si la pipeline no tiene ninguna etapa
+   marcada `is_won`.
+2. **Nueva acción `set_lead_temperature`:** cuarta acción de IA, escribe
+   `contacts.lead_temperature`, auditada en `ai_action_log` como las demás
+   (con confirmación, no autónoma).
+3. **Panel de acciones manuales en el Inbox:** `src/components/inbox/contact-sidebar.tsx`
+   ahora permite, por cada negocio del contacto: marcar "Venta cerrada" (con
+   diálogo de confirmación), mover a otra etapa (`Select`), y cambiar la
+   temperatura del lead (`Select` + `LeadTemperatureBadge`) — todo sobre
+   las rutas `PATCH /api/deals/[id]/stage` y `PATCH /api/contacts/[id]` ya
+   existentes del Bloque 2.
+4. **Botón "¿Qué sugieres?"** junto al de redactar con IA
+   (`src/components/inbox/message-composer.tsx`): llama a la nueva
+   `POST /api/ai/suggest-action`, que analiza la conversación + negocios
+   abiertos del contacto y devuelve una de las 4 acciones (o ninguna) en
+   JSON estricto. La tarjeta de sugerencia encadena las dos llamadas de
+   confirmación de `POST /api/ai/actions` de forma transparente.
+5. **Cierre autónomo de venta (sin confirmación):** nuevo sentinel
+   `[[ACTION:mark_deal_won]]` que el modo `auto_reply` puede emitir cuando
+   el cliente confirma expresamente la compra (`src/lib/ai/defaults.ts`,
+   `src/lib/ai/generate.ts`). `src/lib/ai/auto-reply.ts` lo detecta después
+   de enviar la respuesta al cliente, resuelve el negocio abierto más
+   reciente del contacto, mueve la etapa vía `moveDeal()` y registra en
+   `ai_action_log` con `input.source: "auto_reply_autonomous"` — sin pasar
+   por el flujo de confirmación humana, decisión explícita de Angel. Un
+   fallo aquí nunca afecta el envío del mensaje (corre después, con su
+   propio try/catch).
+6. **Reasignación automática por tiempo:** nueva columna
+   `ai_configs.unclaimed_conversation_timeout_minutes` (default 10,
+   configurable 1-1440 en Configuración → Agentes IA). Nuevo
+   `GET /api/conversations/cron` (`src/lib/conversations/reassign.ts` +
+   `src/lib/conversations/admin-client.ts`), mismo patrón de secreto
+   (`CONVERSATIONS_CRON_SECRET` vía `x-cron-secret`) que los otros 3 cron.
+   Asigna conversaciones abiertas sin asesor que superaron el timeout de su
+   cuenta al asesor disponible (`member_presence` online, no obsoleto) con
+   menos conversaciones abiertas asignadas; si nadie está en línea, no
+   asigna y lo deja para el siguiente barrido.
+7. **Migración `052_ai_action_temperature_and_conversation_sla.sql`** —
+   aplicada contra `puvbwzwmojpjplhdfnmk`: extiende el CHECK de
+   `ai_action_log.action`, agrega la columna de timeout con su rango, e
+   índice parcial en `conversations` para el barrido.
+8. **`.env.local.example`** documentado con `CONVERSATIONS_CRON_SECRET` y,
+   retroactivamente, `WEBHOOK_CRON_SECRET` (nunca se había documentado ahí).
+
+**Probado:** `npm run typecheck`, `npx eslint .` (0 errores, mismos
+warnings preexistentes) y `npm run build` limpios (67 rutas, incluye
+`/api/ai/suggest-action` y `/api/conversations/cron`). `npx vitest run`:
+888/890 (mismas 2 fallas preexistentes de zona horaria en
+`date-utils.test.ts`, ajenas a este bloque). Tests nuevos: 14 en
+`business-actions.test.ts`, 9 en `reassign.test.ts`, 5 nuevos en
+`auto-reply.test.ts` (camino autónomo), extensiones en `generate.test.ts`
+para el nuevo sentinel — todos verifican explícitamente el filtro
+`account_id` en las consultas (mismo principio que la corrección de
+seguridad anterior). `get_advisors` tras aplicar la migración 052 no
+reportó hallazgos nuevos.
+
+**Pendiente / siguiente paso — requiere que Angel lo haga manualmente:**
+1. Agregar la variable `CONVERSATIONS_CRON_SECRET` en EasyPanel (mismo
+   procedimiento que `WEBHOOK_CRON_SECRET` en el Bloque 2).
+2. Decidir si programar ahora un job `pg_cron` adicional apuntando a
+   `GET /api/conversations/cron` (sugerido: cada 5 minutos, igual que el
+   de webhooks) o dejarlo para después — no se activó automáticamente.
+3. Confirmar el deploy en EasyPanel una vez publicado (un solo push).
+4. Validación funcional en producción: probar el panel de acciones
+   manuales en un chat real, el botón "¿Qué sugieres?", y —
+   opcionalmente, con cautela dado que es la pieza de mayor riesgo del
+   bloque — una conversación de prueba donde el cliente confirme una
+   compra, para revisar que `ai_action_log` registre la entrada con
+   `input.source: "auto_reply_autonomous"` correctamente.
+5. Después de validar, retomar: la validación manual pendiente del
+   Bloque 2 (webhook.site), y abrir la planificación de Catálogo +
+   Cotizaciones (propuesta por Claude, aceptada por Angel, aún sin
+   iniciar) y los Bloques 4 (i18n español) y 5 (CSP + rate limits).
+
+**Notas:** No se modificaron datos reales — la migración 052 es puramente
+aditiva. `src/lib/probe_delete_test.txt` permanece intacto y fuera de los
+cambios.

@@ -213,7 +213,19 @@
       "send": "보내기",
       "quickReplyNamePrompt": "이 빠른 답장의 이름을 지정하세요:",
       "quickReplySaved": "빠른 답장으로 저장되었습니다.",
-      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다."
+      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다.",
+      "suggestAction": "무엇을 제안하시나요?",
+      "suggestionTitle": "AI 제안",
+      "suggestionConfirm": "확인",
+      "suggestionDiscard": "무시",
+      "suggestionNoneApplies": "지금은 해당하는 작업이 없습니다.",
+      "suggestionFetchFailed": "제안을 가져오지 못했습니다.",
+      "suggestionConfirmSuccess": "작업이 적용되었습니다.",
+      "suggestionConfirmFailed": "제안된 작업을 적용하지 못했습니다.",
+      "suggestionActionCloseConversation": "대화 종료",
+      "suggestionActionMarkDealWon": "딜 성사 처리",
+      "suggestionActionMoveDeal": "딜을 다른 단계로 이동",
+      "suggestionActionSetLeadTemperature": "리드 온도 업데이트"
     },
     "bubble": {
       "photo": "사진",
@@ -290,7 +302,16 @@
       "deals": "딜",
       "noTags": "태그 없음",
       "noDeals": "딜 없음",
-      "addNotePlaceholder": "메모 추가..."
+      "addNotePlaceholder": "메모 추가...",
+      "temperature": "온도",
+      "markWon": "딜 성사 처리",
+      "confirmWonTitle": "이 딜을 성사 처리하시겠습니까?",
+      "confirmWonDesc": "\"{title}\"이(가) 계정의 성사 단계로 이동합니다. 이 작업은 파이프라인에서 수동으로 되돌릴 수 있습니다.",
+      "confirmWonBtn": "성사 처리",
+      "cancel": "취소",
+      "dealMoveSuccess": "딜이 업데이트되었습니다",
+      "dealMoveFailed": "딜을 업데이트하지 못했습니다",
+      "temperatureSaveFailed": "리드 온도를 업데이트하지 못했습니다"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
@@ -1957,6 +1978,8 @@
       "handoffTo": "인계 대상",
       "handoffToDesc": "봇이 도움을 줄 수 없거나 응답 한도에 도달하면 일시 중지하고 무슨 일이 있었는지 짧은 메모와 함께 이 대상에게 대화를 넘깁니다.",
       "handoffQueue": "미배정 대기열 (모든 상담원이 처리 가능)",
+      "unclaimedTimeout": "미배정 대화 타임아웃 (분)",
+      "unclaimedTimeoutDesc": "열린 대화가 담당자 없이 이 시간만큼 지나면 온라인 상태인 상담원에게 자동으로 배정됩니다.",
       "remove": "제거",
       "save": "저장",
       "missingModel": "모델 이름을 입력하세요.",

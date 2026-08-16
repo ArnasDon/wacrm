@@ -3,22 +3,40 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, PipelineStage, LeadTemperature } from "@/types";
 import {
   Phone,
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
   Plus,
   Camera,
+  Trophy,
+  Loader2,
+  Thermometer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { LeadTemperatureBadge } from "@/components/contacts/lead-temperature-badge";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
@@ -29,6 +47,7 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+  const tTemp = useTranslations("Contacts.detailView");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -37,6 +56,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+
+  // Deal-action state: stages per pipeline (for the "move stage" picker
+  // and to know which stage is "Venta cerrada"), a busy flag per deal
+  // so two buttons on the same card don't fight, and the deal pending
+  // the "mark won" confirm dialog.
+  const [stagesByPipeline, setStagesByPipeline] = useState<Record<string, PipelineStage[]>>({});
+  const [busyDealId, setBusyDealId] = useState<string | null>(null);
+  const [confirmWinDeal, setConfirmWinDeal] = useState<Deal | null>(null);
+
+  const [temperature, setTemperature] = useState<LeadTemperature | "unclassified">("unclassified");
+  const [savingTemperature, setSavingTemperature] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -61,7 +91,30 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .eq("contact_id", contact.id),
     ]);
 
-    if (dealsRes.data) setDeals(dealsRes.data);
+    if (dealsRes.data) {
+      setDeals(dealsRes.data);
+      // Load every stage of every pipeline these deals belong to, so
+      // the "move stage" picker and the "is there a won stage at all"
+      // check don't need a round-trip per deal.
+      const pipelineIds = [...new Set(dealsRes.data.map((d) => d.pipeline_id))];
+      if (pipelineIds.length > 0) {
+        const { data: stages } = await supabase
+          .from("pipeline_stages")
+          .select("*")
+          .in("pipeline_id", pipelineIds)
+          .order("position");
+        const grouped: Record<string, PipelineStage[]> = {};
+        for (const stage of stages ?? []) {
+          (grouped[stage.pipeline_id] ??= []).push(stage);
+        }
+        setStagesByPipeline(grouped);
+      } else {
+        setStagesByPipeline({});
+      }
+    } else {
+      setDeals([]);
+      setStagesByPipeline({});
+    }
     if (notesRes.data) setNotes(notesRes.data);
     if (tagsRes.data) {
       const mapped = tagsRes.data
@@ -72,12 +125,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    setTemperature((contact.lead_temperature as LeadTemperature | null) ?? "unclassified");
   }, [contact]);
 
-  // Load on contact change. setContactData/setTags run inside async
-  // Supabase callbacks, not synchronously in the effect body.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
 
@@ -119,6 +170,66 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     }
     setAddingNote(false);
   }, [contact, newNote, accountId]);
+
+  const wonStageIdFor = useCallback(
+    (pipelineId: string): string | null => {
+      const stage = (stagesByPipeline[pipelineId] ?? []).find((s) => s.is_won);
+      return stage?.id ?? null;
+    },
+    [stagesByPipeline],
+  );
+
+  async function moveDealStage(deal: Deal, stageId: string) {
+    setBusyDealId(deal.id);
+    try {
+      const res = await fetch(`/api/deals/${deal.id}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage_id: stageId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || tSidebar("dealMoveFailed"));
+        return;
+      }
+      toast.success(tSidebar("dealMoveSuccess"));
+      await fetchContactData();
+    } finally {
+      setBusyDealId(null);
+    }
+  }
+
+  async function handleConfirmWon() {
+    if (!confirmWinDeal) return;
+    const wonStageId = wonStageIdFor(confirmWinDeal.pipeline_id);
+    if (!wonStageId) {
+      setConfirmWinDeal(null);
+      return;
+    }
+    const deal = confirmWinDeal;
+    setConfirmWinDeal(null);
+    await moveDealStage(deal, wonStageId);
+  }
+
+  async function handleTemperatureChange(value: LeadTemperature | "unclassified") {
+    if (!contact) return;
+    setTemperature(value);
+    setSavingTemperature(true);
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_temperature: value === "unclassified" ? null : value }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || tSidebar("temperatureSaveFailed"));
+        return;
+      }
+    } finally {
+      setSavingTemperature(false);
+    }
+  }
 
   if (!contact) {
     return (
@@ -189,6 +300,42 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
+          {/* Temperature */}
+          <div>
+            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <Thermometer className="h-3 w-3" />
+              {tSidebar("temperature")}
+            </div>
+            <div className="mt-2 flex items-center gap-2 px-1">
+              <LeadTemperatureBadge
+                value={temperature === "unclassified" ? null : temperature}
+                labels={{
+                  cold: tTemp("temperatureCold"),
+                  warm: tTemp("temperatureWarm"),
+                  hot: tTemp("temperatureHot"),
+                }}
+              />
+              <Select
+                value={temperature}
+                onValueChange={(value) => handleTemperatureChange(value as LeadTemperature | "unclassified")}
+                disabled={savingTemperature}
+              >
+                <SelectTrigger className="h-7 flex-1 bg-muted border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unclassified">{tTemp("temperatureUnclassified")}</SelectItem>
+                  <SelectItem value="cold">{tTemp("temperatureCold")}</SelectItem>
+                  <SelectItem value="warm">{tTemp("temperatureWarm")}</SelectItem>
+                  <SelectItem value="hot">{tTemp("temperatureHot")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
           {/* Tags */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -228,33 +375,78 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               {deals.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
               ) : (
-                deals.map((deal) => (
-                  <div
-                    key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
-                    <p className="text-sm font-medium text-foreground">
-                      {deal.title}
-                    </p>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
-                      </span>
-                      {deal.stage && (
-                        <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            backgroundColor: `${deal.stage.color}20`,
-                            color: deal.stage.color,
-                          }}
-                        >
-                          {deal.stage.name}
+                deals.map((deal) => {
+                  const stages = stagesByPipeline[deal.pipeline_id] ?? [];
+                  const wonStageId = wonStageIdFor(deal.pipeline_id);
+                  const isWon = deal.status === "won" || deal.stage_id === wonStageId;
+                  const busy = busyDealId === deal.id;
+                  return (
+                    <div
+                      key={deal.id}
+                      className="rounded-lg bg-muted px-3 py-2"
+                    >
+                      <p className="text-sm font-medium text-foreground">
+                        {deal.title}
+                      </p>
+                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {deal.currency ?? "$"}
+                          {deal.value.toLocaleString()}
                         </span>
+                        {deal.stage && (
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-[10px]"
+                            style={{
+                              backgroundColor: `${deal.stage.color}20`,
+                              color: deal.stage.color,
+                            }}
+                          >
+                            {deal.stage.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {stages.length > 0 && (
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          <Select
+                            value={deal.stage_id}
+                            onValueChange={(stageId) => {
+                              if (stageId && stageId !== deal.stage_id) moveDealStage(deal, stageId);
+                            }}
+                            disabled={busy}
+                          >
+                            <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {stages.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {!isWon && wonStageId && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 w-full border-emerald-700/50 bg-emerald-950/20 text-emerald-300 hover:bg-emerald-950/40 text-xs"
+                              disabled={busy}
+                              onClick={() => setConfirmWinDeal(deal)}
+                            >
+                              {busy ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Trophy className="size-3" />
+                              )}
+                              {tSidebar("markWon")}
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -306,6 +498,33 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
         </div>
       </ScrollArea>
+
+      <Dialog open={confirmWinDeal != null} onOpenChange={(open) => !open && setConfirmWinDeal(null)}>
+        <DialogContent className="border-border bg-popover sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">{tSidebar("confirmWonTitle")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {tSidebar("confirmWonDesc", { title: confirmWinDeal?.title ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmWinDeal(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              {tSidebar("cancel")}
+            </Button>
+            <Button
+              onClick={handleConfirmWon}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Trophy className="size-4" />
+              {tSidebar("confirmWonBtn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
@@ -9,6 +10,8 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { moveDeal, findWonStageId, MoveDealError } from '@/lib/pipelines/move-deal'
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -112,7 +115,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, markDealWon, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -187,7 +190,76 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    // Autonomous "mark deal won" — explicit product decision, no human
+    // confirmation gate (unlike every other business action, which goes
+    // through POST /api/ai/actions's two-step confirm flow). Runs after
+    // the send so a failure here can never prevent the customer-facing
+    // reply from going out; it's always logged to ai_action_log for
+    // review, and reversible by hand from the pipeline.
+    if (markDealWon) {
+      try {
+        await autoMarkDealWon({ db, accountId, contactId, configOwnerUserId })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous mark_deal_won failed:', err)
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
+}
+
+/**
+ * Resolves "the deal this conversation is about" as the contact's most
+ * recently updated open deal — `deals` has no populated `conversation_id`
+ * today, so there's no other signal to disambiguate. No-ops (logs and
+ * returns) when there's no open deal or the pipeline has no stage
+ * flagged `is_won`.
+ */
+async function autoMarkDealWon(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  configOwnerUserId: string
+}): Promise<void> {
+  const { db, accountId, contactId, configOwnerUserId } = args
+
+  const { data: deal, error: dealErr } = await db
+    .from('deals')
+    .select('id, pipeline_id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .eq('status', 'open')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (dealErr || !deal) return
+
+  const wonStageId = await findWonStageId(db, accountId, deal.pipeline_id)
+  if (!wonStageId) return
+
+  let moved
+  try {
+    moved = await moveDeal(db, accountId, deal.id, wonStageId)
+  } catch (err) {
+    if (err instanceof MoveDealError) {
+      console.error('[ai auto-reply] autonomous moveDeal failed:', err.message)
+      return
+    }
+    throw err
+  }
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'mark_deal_won',
+    target_id: deal.id,
+    input: { source: 'auto_reply_autonomous' },
+    result: moved.deal,
+  })
+
+  void dispatchWebhookEvent(db, accountId, 'deal.won', {
+    deal_id: deal.id,
+    source: 'auto_reply_autonomous',
+  })
 }

@@ -73,3 +73,28 @@ export async function moveDeal(
 
   return { deal: data as MovedDeal, isWonStage };
 }
+
+/**
+ * Find the "Venta cerrada" stage for `pipelineId`, if the account has
+ * flagged one. Shared by every "mark this deal won" caller
+ * (`business-actions.ts`'s `mark_deal_won`, the autonomous auto-reply
+ * path) so they all land on the same stage a human dragging a card
+ * there would — and so `deals.stage_id` and `status` never drift apart
+ * for a "won" deal. Returns null when the pipeline has no stage marked
+ * `is_won` (callers fall back to a direct status flip, or skip).
+ */
+export async function findWonStageId(
+  db: SupabaseClient,
+  accountId: string,
+  pipelineId: string
+): Promise<string | null> {
+  const { data } = await db
+    .from('pipeline_stages')
+    .select('id, pipelines!inner(account_id)')
+    .eq('pipeline_id', pipelineId)
+    .eq('pipelines.account_id', accountId)
+    .eq('is_won', true)
+    .limit(1)
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}

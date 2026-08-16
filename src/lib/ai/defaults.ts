@@ -22,6 +22,15 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
+/**
+ * Sentinel the model is instructed to append (in auto-reply mode only)
+ * when the customer has explicitly confirmed a purchase. Triggers the
+ * autonomous "mark deal won" path in `dispatchInboundToAiReply` — no
+ * human confirmation gate, by explicit product decision. Parsed and
+ * stripped by `generateReply` like `HANDOFF_SENTINEL`.
+ */
+export const MARK_DEAL_WON_SENTINEL = '[[ACTION:mark_deal_won]]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -69,6 +78,9 @@ export function buildSystemPrompt(args: {
   if (mode === 'auto_reply') {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
+    )
+    parts.push(
+      `If, and only if, the customer has just explicitly and unambiguously confirmed they want to buy / go ahead with the purchase (e.g. "yes, I'll take it", "let's do it", "confirmed, please proceed") — not merely showing interest, asking about price, or being polite — append ${MARK_DEAL_WON_SENTINEL} at the very end of your reply, after your normal customer-facing message. This automatically marks the deal as won with no human review, so only use it when the confirmation is explicit and unmistakable; when in doubt, do not use it. Never mention this marker to the customer.`,
     )
   }
 

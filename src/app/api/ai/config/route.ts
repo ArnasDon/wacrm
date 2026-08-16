@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, unclaimed_conversation_timeout_minutes, handoff_agent_id, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -94,6 +94,13 @@ export async function POST(request: Request) {
     let maxPer = Number(body.auto_reply_max_per_conversation)
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+
+    // How long an open, unassigned conversation sits before
+    // /api/conversations/cron auto-assigns it — same clamp range as the
+    // migration's CHECK constraint (1-1440 minutes, i.e. up to 24h).
+    let unclaimedTimeoutMinutes = Number(body.unclaimed_conversation_timeout_minutes)
+    if (!Number.isFinite(unclaimedTimeoutMinutes)) unclaimedTimeoutMinutes = 10
+    unclaimedTimeoutMinutes = Math.min(1440, Math.max(1, Math.floor(unclaimedTimeoutMinutes)))
 
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
@@ -205,6 +212,7 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      unclaimed_conversation_timeout_minutes: unclaimedTimeoutMinutes,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

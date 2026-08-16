@@ -22,6 +22,7 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -87,6 +88,19 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
+}
+
+/** Mirrors the shape POST /api/ai/suggest-action returns — kept as a
+ *  plain local type instead of importing from the server-only
+ *  business-actions module. */
+type SuggestedAction = "close_conversation" | "mark_deal_won" | "move_deal" | "set_lead_temperature";
+
+interface ActionSuggestion {
+  action: SuggestedAction | null;
+  targetId: string | null;
+  stageId: string | null;
+  temperature: string | null;
+  reason: string;
 }
 
 // Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
@@ -158,6 +172,9 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState<ActionSuggestion | null>(null);
+  const [confirmingSuggestion, setConfirmingSuggestion] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Interactive-message builder dialog + quick-reply picker.
@@ -309,6 +326,101 @@ export function MessageComposer({
       setDrafting(false);
     }
   }, [drafting, conversationId, adjustHeight]);
+
+  // Ask the AI to suggest one of the four business actions (close the
+  // conversation, mark a deal won, move a deal, update lead temperature)
+  // based on the conversation so far. Purely advisory — nothing is
+  // executed until the agent confirms the card below.
+  const handleSuggestAction = useCallback(async () => {
+    if (suggesting) return;
+    setSuggesting(true);
+    setSuggestion(null);
+    try {
+      const res = await fetch("/api/ai/suggest-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === "ai_not_configured") {
+          toast.error("AI isn't set up yet — enable it in Settings → AI Assistant.");
+        } else {
+          toast.error(data.error ?? t("suggestionFetchFailed"));
+        }
+        return;
+      }
+      const result = data.suggestion as ActionSuggestion | undefined;
+      if (!result?.action) {
+        toast.info(result?.reason || t("suggestionNoneApplies"));
+        return;
+      }
+      setSuggestion(result);
+    } catch {
+      toast.error(t("suggestionFetchFailed"));
+    } finally {
+      setSuggesting(false);
+    }
+  }, [suggesting, conversationId, t]);
+
+  // Confirm the suggestion card — chains the two POST /api/ai/actions
+  // calls the existing confirmation flow requires (first without
+  // `confirmation` to get the exact phrase back in a 409, then again
+  // with it) so the agent only has to click once.
+  const handleConfirmSuggestion = useCallback(async () => {
+    if (!suggestion?.action || !suggestion.targetId || confirmingSuggestion) return;
+    setConfirmingSuggestion(true);
+    try {
+      const payload = {
+        action: suggestion.action,
+        targetId: suggestion.targetId,
+        stageId: suggestion.stageId ?? undefined,
+        temperature: suggestion.temperature ?? undefined,
+      };
+      const first = await fetch("/api/ai/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const firstData = await first.json().catch(() => ({}));
+      if (first.status !== 409 || !firstData.confirmation) {
+        toast.error(firstData.error ?? t("suggestionConfirmFailed"));
+        return;
+      }
+      const second = await fetch("/api/ai/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, confirmation: firstData.confirmation }),
+      });
+      const secondData = await second.json().catch(() => ({}));
+      if (!second.ok) {
+        toast.error(secondData.error ?? t("suggestionConfirmFailed"));
+        return;
+      }
+      toast.success(t("suggestionConfirmSuccess"));
+      setSuggestion(null);
+    } catch {
+      toast.error(t("suggestionConfirmFailed"));
+    } finally {
+      setConfirmingSuggestion(false);
+    }
+  }, [suggestion, confirmingSuggestion, t]);
+
+  const suggestionActionLabel = useCallback(
+    (action: SuggestedAction) => {
+      switch (action) {
+        case "close_conversation":
+          return t("suggestionActionCloseConversation");
+        case "mark_deal_won":
+          return t("suggestionActionMarkDealWon");
+        case "move_deal":
+          return t("suggestionActionMoveDeal");
+        case "set_lead_temperature":
+          return t("suggestionActionSetLeadTemperature");
+      }
+    },
+    [t],
+  );
 
   // ---- Interactive message + quick replies --------------------------
 
@@ -575,6 +687,43 @@ export function MessageComposer({
         </div>
       )}
 
+      {suggestion?.action && (
+        <div className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <div className="flex items-start gap-2">
+            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div className="flex-1">
+              <p className="text-xs font-medium text-foreground">
+                {t("suggestionTitle")}: {suggestionActionLabel(suggestion.action)}
+              </p>
+              {suggestion.reason && (
+                <p className="mt-0.5 text-xs text-muted-foreground">{suggestion.reason}</p>
+              )}
+            </div>
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSuggestion(null)}
+              disabled={confirmingSuggestion}
+              className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              {t("suggestionDiscard")}
+            </button>
+            <Button
+              size="sm"
+              onClick={handleConfirmSuggestion}
+              disabled={confirmingSuggestion}
+              className="h-7 bg-primary px-2 text-xs hover:bg-primary/90"
+            >
+              {confirmingSuggestion ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : null}
+              {t("suggestionConfirm")}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Hidden file inputs driven by the attach menu. */}
       <input
         ref={imageInputRef}
@@ -739,6 +888,23 @@ export function MessageComposer({
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Sparkles className="h-4 w-4" />
+            )}
+          </GatedButton>
+
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            disabled={suggesting}
+            title={readOnly ? undefined : t("suggestAction")}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
+            onClick={handleSuggestAction}
+          >
+            {suggesting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Lightbulb className="h-4 w-4" />
             )}
           </GatedButton>
 

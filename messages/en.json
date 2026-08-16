@@ -213,7 +213,19 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "suggestAction": "What do you suggest?",
+      "suggestionTitle": "AI suggests",
+      "suggestionConfirm": "Confirm",
+      "suggestionDiscard": "Discard",
+      "suggestionNoneApplies": "No action applies right now.",
+      "suggestionFetchFailed": "Couldn't get a suggestion.",
+      "suggestionConfirmSuccess": "Action applied.",
+      "suggestionConfirmFailed": "Couldn't apply the suggested action.",
+      "suggestionActionCloseConversation": "Close conversation",
+      "suggestionActionMarkDealWon": "Mark deal as won",
+      "suggestionActionMoveDeal": "Move deal to a new stage",
+      "suggestionActionSetLeadTemperature": "Update lead temperature"
     },
     "bubble": {
       "photo": "Photo",
@@ -290,7 +302,16 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "temperature": "Temperature",
+      "markWon": "Mark deal won",
+      "confirmWonTitle": "Mark deal as won?",
+      "confirmWonDesc": "This will move \"{title}\" to the account's won stage. This action can be undone manually from the pipeline.",
+      "confirmWonBtn": "Mark as won",
+      "cancel": "Cancel",
+      "dealMoveSuccess": "Deal updated",
+      "dealMoveFailed": "Couldn't update the deal",
+      "temperatureSaveFailed": "Couldn't update the lead temperature"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
@@ -1957,6 +1978,8 @@
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",
+      "unclaimedTimeout": "Unassigned conversation timeout (minutes)",
+      "unclaimedTimeoutDesc": "If an open conversation sits this long with no agent assigned, it's automatically assigned to an available (online) advisor.",
       "remove": "Remove",
       "save": "Save",
       "missingModel": "Enter a model name.",

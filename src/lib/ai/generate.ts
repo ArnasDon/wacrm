@@ -5,7 +5,7 @@ import {
   type ChatMessage,
   type GenerateResult,
 } from './types'
-import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
+import { HANDOFF_SENTINEL, MARK_DEAL_WON_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
@@ -52,17 +52,22 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
- * Split the raw model output into `{ text, handoff, usage }`. The
- * sentinel can appear alone or trailing a partial reply; either way we
- * treat the turn as a handoff and strip the marker from any remaining
- * text. `usage` is passed straight through (null when the provider
- * didn't report it).
+ * Split the raw model output into `{ text, handoff, markDealWon, usage }`.
+ * Either sentinel can appear alone or trailing a partial reply; either
+ * way we strip the marker from the text sent to the customer. `usage`
+ * is passed straight through (null when the provider didn't report it).
  */
 export function parseGeneration(
   raw: string,
   usage: AiUsage | null = null,
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
-  const text = raw.split(HANDOFF_SENTINEL).join('').trim()
-  return { text, handoff, usage }
+  const markDealWon = raw.includes(MARK_DEAL_WON_SENTINEL)
+  const text = raw
+    .split(HANDOFF_SENTINEL)
+    .join('')
+    .split(MARK_DEAL_WON_SENTINEL)
+    .join('')
+    .trim()
+  return { text, handoff, markDealWon, usage }
 }

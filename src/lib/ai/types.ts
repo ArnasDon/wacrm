@@ -56,10 +56,13 @@ export interface ProviderResult {
 
 /** Outcome of a generation call. */
 export interface GenerateResult {
-  /** The reply text, with any handoff sentinel stripped. */
+  /** The reply text, with any handoff/action sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** True when the model signaled the customer confirmed the purchase
+   *  (auto-reply mode only) — see `MARK_DEAL_WON_SENTINEL`. */
+  markDealWon: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

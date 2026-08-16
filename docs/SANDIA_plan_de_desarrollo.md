@@ -852,3 +852,33 @@ propio de la migración (marcar la conexión existente como predeterminada y
 vincular las 2 conversaciones de WhatsApp existentes a ella — reversible,
 documentado en el archivo de migración). `src/lib/probe_delete_test.txt`
 permanece intacto y fuera del commit.
+
+### 2026-08-16 — Claude Code (Bloque 1: deploy confirmado)
+
+**Hecho:** El primer intento de deploy en EasyPanel para `b2c10b1` quedó
+`CANCELED` a los 60s ("context canceled") — causado por haber publicado dos
+commits seguidos (`b2c10b1` y el de bitácora `721a604`), cuyo segundo push
+disparó un nuevo deploy que canceló al primero a medio construir. Angel
+confirmó por el log que no fue un fallo de código (el build local ya había
+terminado limpio), y disparó manualmente un redeploy del commit más
+reciente sin más pushes de por medio.
+
+**Probado:** Angel confirmó que ese redeploy terminó en verde (éxito) en el
+historial de EasyPanel.
+
+**Estado del Bloque 1:** Migración `050` aplicada y verificada en Supabase,
+código en `origin/main`, deploy en producción confirmado en verde. Falta
+solo la validación funcional en la app en vivo (agregar un segundo número,
+confirmarlo en la lista, marcarlo predeterminado) — pendiente de que Angel
+la haga cuando le convenga, no bloquea dar el bloque por desplegado.
+
+**Pendiente / siguiente paso:** Abrir la planificación del Bloque 2
+(webhooks firmados por empresa + eventos comerciales ampliados +
+reintentos/log/desactivación + diseño n8n para
+Calendar/Meet/cotizaciones/correo/recordatorios) cuando Angel confirme que
+quiere continuar.
+
+**Notas:** No se modificaron datos reales en esta sesión. Ninguna acción
+destructiva — el "cancelado" del primer intento fue responsabilidad de
+EasyPanel al recibir un segundo push, no de un `git push --force` ni de
+ningún comando destructivo.

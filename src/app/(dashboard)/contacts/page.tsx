@@ -763,7 +763,14 @@ export default function ContactsPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         contactId={detailContactId}
-        onUpdated={fetchContacts}
+        onUpdated={() => {
+          fetchContacts();
+          // A tag may have just been created inline from the detail
+          // sheet's Tags tab — refresh this page's own tag list too,
+          // or the new tag won't show up in "Filter by tags" (or the
+          // Tags column) until a full reload.
+          fetchTags();
+        }}
       />
 
       {/* Import Modal */}

@@ -572,7 +572,11 @@
       },
       "tagsTab": {
         "clickTagDesc": "Click a tag to add or remove it from this contact.",
-        "noTagsAvailable": "No tags available. Create tags in Settings."
+        "noTagsAvailable": "No tags yet — create the first one below.",
+        "newTagPlaceholder": "New tag name...",
+        "createTag": "Add tag",
+        "createSuccess": "Tag created and added",
+        "createFailed": "Couldn't create the tag"
       },
       "sendTemplateBtn": "Send template",
       "saveChangesBtn": "Save Changes",

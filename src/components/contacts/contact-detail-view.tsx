@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate, LeadTemperature } from '@/types';
@@ -65,7 +66,12 @@ export function ContactDetailView({
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, user, defaultCurrency } = useAuth();
+  // Creating a brand-new tag (as opposed to toggling an existing one
+  // on/off this contact, which any agent may already do) requires
+  // admin per the `tags` table's RLS policy — gate the inline create
+  // UI to match instead of letting a non-admin hit a silent RLS error.
+  const canCreateTags = useCan('edit-settings');
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +95,12 @@ export function ContactDetailView({
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [contactTagIds, setContactTagIds] = useState<string[]>([]);
   const [savingTags, setSavingTags] = useState(false);
+  // Inline "create a new tag" — the account might not have any tags
+  // yet (nothing to toggle), and even when it does, requiring a trip
+  // to Settings just to add one more is a needless detour from the
+  // exact place someone actually wants to use it: tagging a contact.
+  const [newTagName, setNewTagName] = useState('');
+  const [creatingTag, setCreatingTag] = useState(false);
 
   // Notes tab
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -256,6 +268,47 @@ export function ContactDetailView({
       toast.error(error instanceof Error ? error.message : t('toastUpdateFailed'));
     }
     setSavingTags(false);
+  }
+
+  // Cycles through the same preset palette Settings' tag manager
+  // offers, keyed off how many tags already exist — new tags created
+  // from here get a readable, varied color without needing a picker
+  // in this compact space.
+  const NEW_TAG_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+
+  async function handleCreateTag() {
+    const name = newTagName.trim();
+    if (!name || !contactId || !accountId || !user) return;
+    setCreatingTag(true);
+    try {
+      const { data: created, error } = await supabase
+        .from('tags')
+        .insert({
+          user_id: user.id,
+          account_id: accountId,
+          name,
+          color: NEW_TAG_COLORS[allTags.length % NEW_TAG_COLORS.length],
+        })
+        .select()
+        .single();
+      if (error || !created) {
+        toast.error(t('tagsTab.createFailed'));
+        return;
+      }
+      setAllTags((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewTagName('');
+      // Applying it to this contact immediately matches the intent of
+      // creating a tag from inside a contact's Tags tab in the first
+      // place — nobody comes here to build an unused tag library.
+      await addContactTag(contactId, created.id);
+      setContactTagIds((prev) => [...prev, created.id]);
+      onUpdated();
+      toast.success(t('tagsTab.createSuccess'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('tagsTab.createFailed'));
+    } finally {
+      setCreatingTag(false);
+    }
   }
 
   async function addNote() {
@@ -621,6 +674,39 @@ export function ContactDetailView({
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* Inline create — the account may have no tags yet,
+                      or the one you need just doesn't exist; either way
+                      you shouldn't have to leave this tab to fix it.
+                      Admin+ only, matching the `tags` table's RLS. */}
+                  {canCreateTags && (
+                    <div className="flex items-center gap-2 border-t border-border pt-3">
+                      <Input
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleCreateTag();
+                        }}
+                        placeholder={t('tagsTab.newTagPlaceholder')}
+                        maxLength={40}
+                        disabled={creatingTag}
+                        className="h-8 flex-1 text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCreateTag}
+                        disabled={creatingTag || !newTagName.trim()}
+                      >
+                        {creatingTag ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="size-3.5" />
+                        )}
+                        {t('tagsTab.createTag')}
+                      </Button>
                     </div>
                   )}
                 </div>

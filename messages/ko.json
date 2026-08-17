@@ -572,7 +572,11 @@
       },
       "tagsTab": {
         "clickTagDesc": "태그를 클릭해 이 연락처에 추가하거나 제거하세요.",
-        "noTagsAvailable": "사용 가능한 태그가 없습니다. 설정에서 태그를 만드세요."
+        "noTagsAvailable": "아직 태그가 없습니다 — 아래에서 첫 태그를 만드세요.",
+        "newTagPlaceholder": "새 태그 이름...",
+        "createTag": "태그 추가",
+        "createSuccess": "태그가 생성되어 추가되었습니다",
+        "createFailed": "태그를 생성하지 못했습니다"
       },
       "sendTemplateBtn": "템플릿 보내기",
       "saveChangesBtn": "변경 사항 저장",

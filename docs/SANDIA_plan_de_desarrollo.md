@@ -2599,3 +2599,80 @@ detalle ya construido es el lugar natural para recibirla.
 el reintento automático sí construyó bien (~5 min). Confirmado en el
 catálogo público real: el producto abre el diálogo de detalle con
 imagen, precio, descripción completa y scroll interno funcionando.
+
+### 2026-08-17 — Claude Code (moneda a Quetzales, borrar deals/quotes, tags habilitados, export de contactos filtrados)
+
+Angel reportó cuatro cosas más sobre lo desplegado en las dos
+entradas anteriores, todas resueltas y publicadas.
+
+**1. Todo el sistema (catálogo, deals, quotes, KPIs) mostraba
+dólares.** No era un bug de código — `accounts.default_currency` de
+la cuenta de Angel estaba literalmente en `'USD'` en la base de
+datos; toda la app ya lee ese campo correctamente en todos lados
+(catálogo público, `QuoteBuilder`, KPIs). Cambiado a `GTQ` **a través
+de la misma pantalla de Configuración → Deals & currency** que Angel
+usaría (no por script directo — un intento de UPDATE directo a la
+base de datos fue bloqueado por el clasificador de auto-modo de
+Claude Code, correctamente: es un cambio de configuración de cuenta
+real, no algo para hacer por script). Confirmado con el endpoint
+público del catálogo devolviendo `"currency":"GTQ"` de inmediato. Sin
+commit de código — es un dato, no algo que se despliega.
+
+**2. Botón para borrar deals y quotes, en el panel de contacto del
+Inbox (`584dfb0`).** Ya existían las piezas por separado — un deal se
+podía borrar desde el Kanban de Pipelines (`deal-form.tsx`), y
+`DELETE /api/quotes/[id]` ya existía en el backend — pero ninguna
+llegaba al panel de contacto del Inbox, que es desde donde Angel
+realmente trabaja mientras chatea. Agregado un ícono de basura por
+tarjeta (con confirmación) en ambas secciones.
+
+**3. Tags "no permitía agregar ni ingresarlos" (`83c9573`).**
+Investigado a fondo antes de tocar código: Configuración → Fields &
+tags **sí funcionaba** (probado creando y borrando un tag real ahí
+mismo) — el problema real es que la cuenta tenía **cero tags creados
+en la base de datos**, y el único lugar donde Angel probablemente
+intentó usarlos — la pestaña "Tags" de un contacto en la página de
+Contacts — solo permite marcar/desmarcar tags que ya existen, sin
+ninguna forma de crear uno ahí si la lista está vacía. Agregado un
+input de creación inline en esa misma pestaña (solo admin+, mismo
+requisito que la tabla `tags` ya exige por RLS) que crea el tag Y lo
+aplica al contacto de una vez. De paso se encontró y corrigió un bug
+relacionado: la página de lista de Contacts no refrescaba su propio
+`tagsMap` después de esto, así que un tag recién creado no aparecía
+en "Filter by tags" hasta recargar la página — el `onUpdated` del
+panel de detalle solo llamaba `fetchContacts`, nunca `fetchTags`.
+
+**4. Botón para descargar los contactos filtrados por
+búsqueda/tags, en la página de Contacts (`02ce792`).** Nuevo
+`src/lib/contacts/export-excel.ts` (mismo patrón separado
+build/download que `src/lib/kpis/export-excel.ts`, testeable sin
+DOM). El botón "Download" reusa las mismas dos rutas de consulta que
+ya tiene `fetchContacts` (RPC `filter_contacts_by_tags` cuando hay
+tags seleccionados, `ilike` simple si no) pero sin paginar, para
+traer TODO lo que coincide con el filtro actual, no solo la página
+cargada en pantalla.
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios, `npx
+vitest run`: 1040/1042 (mismas 2 fallas preexistentes; +4 tests
+nuevos para el export de contactos). Todo verificado en el navegador
+contra datos y sesión reales antes de comitear: deal y quote de
+prueba creados y borrados con los nuevos botones (sin tocar los
+deals/quotes reales del contacto); tag de prueba creado, aplicado,
+verificado en el filtro de Contacts, y borrado después; export
+probado con un filtro de tag real generando un `.xlsx` válido.
+Publicado en 3 commits, confirmación explícita de Angel antes del
+push — el primer intento de `git push` devolvió un 401 transitorio
+seguido de un 503 en el segundo intento, pero el segundo sí completó
+el push (confirmado con `git fetch` + comparación de SHA antes de
+seguir).
+
+**Validado en producción:** el build tardó ~7 minutos (más que lo
+usual, sin causa aparente, pero terminó en verde). Confirmado con la
+sesión real de Angel: botón "Download" presente en `/contacts` y
+genera un `.xlsx` real (7,086 bytes) con los 9 contactos de la cuenta.
+
+**Pendiente / siguiente paso:** ninguno específico. Si Angel quiere
+que la creación de tags también sea posible desde el panel de
+contacto del Inbox (hoy solo se puede aplicar/crear desde la página
+de Contacts), es una extensión natural del mismo patrón ya construido
+aquí.

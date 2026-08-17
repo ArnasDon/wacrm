@@ -3,7 +3,7 @@
 //
 // Public — no auth required. A visitor on the public catalog page
 // (src/app/catalog/[accountId]/page.tsx) selects products + quantities
-// and taps "Me lo llevo". We find-or-create their contact and create an
+// and taps "Me lo llevo". We resolve their contact and create an
 // exact-selection quote (never AI-parsed, never a caller-supplied
 // price), then try to deliver it two ways:
 //
@@ -13,12 +13,22 @@
 //      quote PDF straight into that conversation right now. Every agent
 //      who opens the chat sees it immediately; the visitor doesn't have
 //      to leave the page.
-//   2. wa.me fallback — no open window (a cold link, first-ever
-//      contact). Meta requires the CUSTOMER to message first before we
-//      can send anything free-form, so we hand back a wa.me link with
-//      their order pre-filled, and flag the quote `auto_send_pending`.
-//      The WhatsApp webhook auto-sends the PDF the moment their message
-//      (re)opens the window — see src/app/api/whatsapp/webhook/route.ts.
+//   2. wa.me fallback — no open window and no known conversation (a
+//      cold link, first-ever contact). Meta requires the CUSTOMER to
+//      message first before we can send anything free-form, so we hand
+//      back a wa.me link with their order pre-filled, and flag the
+//      quote `auto_send_pending`. The WhatsApp webhook auto-sends the
+//      PDF the moment their message (re)opens the window — see
+//      src/app/api/whatsapp/webhook/route.ts. Never offered to a
+//      contact we know is chatting on Instagram/Facebook instead.
+//
+// Contact resolution: when the visitor's link carries `?c=<conversationId>`
+// (every channel's catalog link does — see sendCatalogToConversation),
+// that conversation's own contact is used directly instead of
+// find-or-creating one by the phone number typed into the form. This
+// matters most for Instagram/Facebook visitors, who have no phone
+// identity — resolving by phone would silently create an unrelated
+// contact and the quote would never reach their actual chat.
 // ============================================================
 
 import { NextResponse } from 'next/server'
@@ -106,10 +116,61 @@ export async function POST(
   try {
     const auditUserId = await resolveAuditUserId(db, accountId)
 
-    const { id: contactId } = await findOrCreateContact(db, accountId, auditUserId, {
-      phone,
-      name,
-    })
+    // If this visitor's link carries `?c=<conversationId>` (see
+    // sendCatalogToConversation), that conversation already has the
+    // real contact — an Instagram/Facebook visitor has no phone
+    // identity, so blindly find-or-creating a contact BY the phone
+    // they just typed into this form would resolve to a completely
+    // different (likely brand-new) contact than the one actually
+    // chatting, and the "does this conversation belong to this
+    // contact" check further down would then always fail — silently
+    // routing every non-WhatsApp visitor to the wa.me fallback below,
+    // which makes no sense for a channel that isn't WhatsApp. Resolve
+    // the conversation's own contact first and skip the phone lookup
+    // entirely whenever we have one.
+    const requestedConversationId = body?.conversation_id?.trim()
+    const requestedConv = requestedConversationId
+      ? (
+          await db
+            .from('conversations')
+            .select('id, contact_id, channel')
+            .eq('id', requestedConversationId)
+            .eq('account_id', accountId)
+            .maybeSingle()
+        ).data
+      : null
+
+    let contactId: string
+    let conversationChannel: string | null = null
+    const conversationContactVerified = !!requestedConv?.contact_id
+    if (requestedConv?.contact_id) {
+      contactId = requestedConv.contact_id as string
+      conversationChannel = (requestedConv.channel as string | null) ?? 'whatsapp'
+    } else {
+      const created = await findOrCreateContact(db, accountId, auditUserId, { phone, name })
+      contactId = created.id
+    }
+
+    // The visitor typed a phone into the form but we resolved their
+    // existing (Instagram/Facebook-originated) contact instead of
+    // creating one from it — save it onto that contact if it doesn't
+    // have one yet, so it shows up in the contact sidebar and the
+    // KPIs Excel export instead of being silently dropped. Best-effort:
+    // a bad format or a collision with another contact's number must
+    // not block the quote itself.
+    if (conversationContactVerified) {
+      const { data: existingContact } = await db
+        .from('contacts')
+        .select('phone')
+        .eq('id', contactId)
+        .maybeSingle()
+      if (!existingContact?.phone) {
+        await db.from('contacts').update({ phone }).eq('id', contactId).then(
+          () => {},
+          () => {},
+        )
+      }
+    }
 
     const { quote, items: quoteItems } = await createQuote({
       db,
@@ -130,29 +191,16 @@ export async function POST(
 
     // Try the instant path first: does this contact already have a
     // conversation whose messaging window is currently open? Prefer the
-    // conversation the visitor's catalog link actually came from (the
-    // client-supplied `conversation_id`) — but never trust it blindly:
-    // verify it's a real conversation belonging to both this account
-    // AND the contact we just resolved before using it. Only fall back
-    // to "most recently updated, any channel" when there's no such
-    // conversation (a cold/organic visitor who never came from a
-    // tracked conversation).
+    // conversation the visitor's catalog link actually came from —
+    // already verified above (contactId was resolved FROM that row, so
+    // it's guaranteed to belong to both this account and this contact).
+    // Only fall back to "most recently updated, any channel" when there
+    // wasn't one (a cold/organic visitor who never came from a tracked
+    // conversation).
     let delivered = false
-    let conversation: { id: string } | null = null
-    const requestedConversationId = body?.conversation_id?.trim()
-    if (requestedConversationId) {
-      const { data: requested } = await db
-        .from('conversations')
-        .select('id')
-        .eq('id', requestedConversationId)
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .maybeSingle()
-      conversation = (requested as { id: string } | null) ?? null
-    }
-    if (!conversation) {
-      conversation = await findRecentConversation(db, accountId, contactId)
-    }
+    const conversation: { id: string } | null = conversationContactVerified
+      ? { id: requestedConversationId! }
+      : await findRecentConversation(db, accountId, contactId)
     if (conversation && (await isWithinMessagingWindow(db, conversation.id))) {
       try {
         await sendQuoteToConversation(db, accountId, quote.id, conversation.id)
@@ -166,15 +214,26 @@ export async function POST(
     }
 
     let whatsappUrl: string | null = null
+    // A wa.me link only makes sense when this visitor either has no
+    // known conversation yet (organic/cold — WhatsApp is the product's
+    // default entry point) or is already chatting on WhatsApp. Offering
+    // it to a verified Instagram/Facebook conversation whose window
+    // happened to close would send them to the wrong channel entirely;
+    // their quote stays `auto_send_pending` and reaches them the normal
+    // way (an agent replies, or they message again and reopen the
+    // window) instead.
+    const whatsappFallbackEligible = !conversationContactVerified || conversationChannel === 'whatsapp'
     if (!delivered) {
       await db.from('quotes').update({ auto_send_pending: true }).eq('id', quote.id)
 
-      const { data: whatsapp } = await db
-        .from('whatsapp_config')
-        .select('public_phone_number')
-        .eq('account_id', accountId)
-        .eq('is_default', true)
-        .maybeSingle()
+      const { data: whatsapp } = whatsappFallbackEligible
+        ? await db
+            .from('whatsapp_config')
+            .select('public_phone_number')
+            .eq('account_id', accountId)
+            .eq('is_default', true)
+            .maybeSingle()
+        : { data: null }
 
       const configuredNumber = whatsapp?.public_phone_number
         ? sanitizePhoneForMeta(whatsapp.public_phone_number)

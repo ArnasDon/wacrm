@@ -69,6 +69,17 @@ export const viewport: Viewport = {
   // it iOS always reports 0 and safe-area padding (e.g. on the inbox
   // composer) has no effect.
   viewportFit: "cover",
+  // App-wide no-zoom: locks the page at 1x and tells the browser not to
+  // offer pinch/double-tap zoom at all. Alone this isn't fully reliable
+  // on iOS Safari/PWA (WebKit ignores it for pinch on some versions,
+  // for accessibility reasons) — the gesture-event listeners in
+  // NO_ZOOM_BOOT_SCRIPT below are the actual enforcement; this is the
+  // first line of defense and what covers everywhere else (Android
+  // Chrome, desktop).
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -121,6 +132,45 @@ const VIEWPORT_BOOT_SCRIPT = `
 })();
 `;
 
+// App-wide zoom lock. The `viewport` export above (maximumScale: 1,
+// userScalable: false) is necessary but not sufficient on iOS Safari/
+// PWA — WebKit has ignored viewport-meta zoom limits for pinch since
+// iOS 10 (an accessibility carve-out that applies regardless of what
+// the page asks for), so pinch and double-tap zoom both still need to
+// be blocked at the gesture-event level. Attached once here, before
+// hydration, on `document` — global for every route, no per-page
+// wiring. `{ passive: false }` is required on both touch listeners:
+// browsers default touch listeners to passive, which silently no-ops
+// preventDefault() otherwise. Only ever preventDefaults on a 2+-finger
+// touchmove or a same-spot-in-time double tap, so normal one-finger
+// scrolling and single taps/clicks are untouched.
+const NO_ZOOM_BOOT_SCRIPT = `
+(function(){
+  try {
+    // Pinch-to-zoom — WebKit's own multi-touch gesture events (iOS
+    // Safari/PWA) ...
+    document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+    document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+    document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+    // ...plus a touchmove fallback for engines that never fire
+    // gesturestart at all (e.g. Android Chrome).
+    document.addEventListener('touchmove', function(e) {
+      if (e.touches && e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+
+    // Double-tap-to-zoom — two touchend events landing within 300ms of
+    // each other. A single tap (and the click it produces) is never
+    // touched, only the second tap of a fast double-tap.
+    var lastTouchEnd = 0;
+    document.addEventListener('touchend', function(e) {
+      var now = Date.now();
+      if (now - lastTouchEnd <= 300) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+  } catch (_e) {}
+})();
+`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -154,6 +204,11 @@ export default async function RootLayout({
           id="viewport-height-boot"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: VIEWPORT_BOOT_SCRIPT }}
+        />
+        <Script
+          id="no-zoom-boot"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: NO_ZOOM_BOOT_SCRIPT }}
         />
       </head>
       <body className="min-h-full bg-background text-foreground font-sans">

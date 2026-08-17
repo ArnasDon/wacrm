@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { LeadTemperatureBadge } from "@/components/contacts/lead-temperature-badge";
 import { QuoteBuilder } from "@/components/products/quote-builder";
+import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -66,7 +67,14 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
-  const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  // Every tag the account has (not just this contact's) — lets the
+  // sidebar show a full toggle list instead of a read-only chip row.
+  // Creating a *new* tag stays Settings-only (Angel's call — the
+  // account owner already knows where that is); this only applies or
+  // removes ones that exist.
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [savingTagId, setSavingTagId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -170,10 +178,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
-        .map((ct: Record<string, unknown>) => ({
-          ...(ct.tags as Tag),
-          contact_tag_id: ct.id as string,
-        }));
+        .map((ct: Record<string, unknown>) => ct.tags as Tag);
       setTags(mapped);
     }
     setTemperature((contact.lead_temperature as LeadTemperature | null) ?? "unclassified");
@@ -215,12 +220,48 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     };
   }, [accountId]);
 
+  // Account-level tag list, loaded once (not per-contact) so the
+  // sidebar can show every tag as a toggle instead of just the ones
+  // already applied here.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase.from("tags").select("*").order("name");
+      if (!cancelled) setAllTags(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
   const handleCopyPhone = useCallback(async () => {
     if (!phone) return;
     await navigator.clipboard.writeText(phone);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [phone]);
+
+  async function toggleTag(tagId: string) {
+    if (!contact) return;
+    setSavingTagId(tagId);
+    try {
+      const isApplied = tags.some((t) => t.id === tagId);
+      if (isApplied) {
+        await deleteContactTag(contact.id, tagId);
+        setTags((prev) => prev.filter((t) => t.id !== tagId));
+      } else {
+        await addContactTag(contact.id, tagId);
+        const tag = allTags.find((t) => t.id === tagId);
+        if (tag) setTags((prev) => [...prev, tag]);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : tSidebar("tagUpdateFailed"));
+    } finally {
+      setSavingTagId(null);
+    }
+  }
 
   const handleAddNote = useCallback(async () => {
     if (!contact || !newNote.trim()) return;
@@ -638,28 +679,44 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Tags */}
+          {/* Tags — click any tag to apply/remove it from this contact.
+              Creating a brand-new tag stays Settings-only (Fields &
+              tags); this list only toggles ones that already exist. */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <TagIcon className="h-3 w-3" />
               {tSidebar("tags")}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              {tags.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTags")}</p>
+              {allTags.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTagsInAccount")}</p>
               ) : (
-                tags.map((tag) => (
-                  <span
-                    key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: `${tag.color}20`,
-                      color: tag.color,
-                    }}
-                  >
-                    {tag.name}
-                  </span>
-                ))
+                allTags.map((tag) => {
+                  const applied = tags.some((t) => t.id === tag.id);
+                  const saving = savingTagId === tag.id;
+                  return (
+                    <button
+                      key={tag.id}
+                      onClick={() => toggleTag(tag.id)}
+                      disabled={saving}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-opacity ${
+                        applied ? "" : "opacity-50 hover:opacity-80"
+                      }`}
+                      style={{
+                        backgroundColor: `${tag.color}20`,
+                        color: tag.color,
+                        ...(applied ? { boxShadow: `inset 0 0 0 1px ${tag.color}` } : {}),
+                      }}
+                    >
+                      {saving ? (
+                        <Loader2 className="size-2.5 animate-spin" />
+                      ) : (
+                        applied && <Check className="size-2.5" />
+                      )}
+                      {tag.name}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>

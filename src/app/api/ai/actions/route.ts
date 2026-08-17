@@ -10,6 +10,7 @@ const ACTIONS = new Set<BusinessAction>([
   'move_deal',
   'set_lead_temperature',
   'create_quote',
+  'schedule_appointment',
 ])
 
 export async function POST(request: Request) {
@@ -40,6 +41,11 @@ export async function POST(request: Request) {
       customerEmail: typeof body?.customerEmail === 'string' ? body.customerEmail : undefined,
       customerPhone: typeof body?.customerPhone === 'string' ? body.customerPhone : undefined,
       customerAddress: typeof body?.customerAddress === 'string' ? body.customerAddress : undefined,
+      startTime: typeof body?.startTime === 'string' ? body.startTime : undefined,
+      endTime: typeof body?.endTime === 'string' ? body.endTime : undefined,
+      attendeeEmail: typeof body?.attendeeEmail === 'string' ? body.attendeeEmail : undefined,
+      appointmentSummary: typeof body?.appointmentSummary === 'string' ? body.appointmentSummary : undefined,
+      appointmentDescription: typeof body?.appointmentDescription === 'string' ? body.appointmentDescription : undefined,
     })
     return NextResponse.json({ ok: true, action, result })
   } catch (error) {

@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   findWonStageId: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   createQuote: vi.fn(),
+  createEvent: vi.fn(),
 }))
 
 vi.mock('@/lib/pipelines/move-deal', () => ({
@@ -31,6 +32,7 @@ vi.mock('@/lib/quotes/create-quote', () => ({
     }
   },
 }))
+vi.mock('@/lib/google-calendar/api', () => ({ createEvent: h.createEvent }))
 
 import { executeBusinessAction, confirmationPhrase, BusinessActionError } from './business-actions'
 
@@ -39,7 +41,7 @@ interface Fixture {
   deal?: { id: string; pipeline_id: string } | null
   /** Result of the fallback `deals.update({status:'won'})` path (no is_won stage configured). */
   dealFallbackResult?: { id: string; pipeline_id: string; stage_id: string; status: string } | null
-  contact?: { id: string; lead_temperature: string | null } | null
+  contact?: { id: string; lead_temperature: string | null; name?: string | null } | null
   auditError?: boolean
 }
 
@@ -88,12 +90,14 @@ function makeDb(fx: Fixture) {
             return { data: fx.deal ?? null, error: null }
           }
           if (table === 'contacts') {
-            return {
-              data: fx.contact && updatePayload
-                ? { id: fx.contact.id, lead_temperature: updatePayload.lead_temperature }
-                : null,
-              error: null,
+            if (updatePayload) {
+              return {
+                data: fx.contact ? { id: fx.contact.id, lead_temperature: updatePayload.lead_temperature } : null,
+                error: null,
+              }
             }
+            // schedule_appointment's read-only `.select('id, name')` lookup.
+            return { data: fx.contact ? { id: fx.contact.id, name: fx.contact.name ?? null } : null, error: null }
           }
           return { data: null, error: null }
         },
@@ -110,6 +114,7 @@ beforeEach(() => {
   h.findWonStageId.mockReset()
   h.dispatchWebhookEvent.mockReset().mockResolvedValue(undefined)
   h.createQuote.mockReset()
+  h.createEvent.mockReset()
 })
 
 describe('confirmationPhrase', () => {
@@ -334,6 +339,89 @@ describe('executeBusinessAction — create_quote', () => {
         customerNit: '123', customerEmail: 'a@b.com', customerPhone: '+502...', customerAddress: 'Zona 1',
       }),
     ).rejects.toBeInstanceOf(BusinessActionError)
+  })
+})
+
+describe('executeBusinessAction — schedule_appointment', () => {
+  it('creates the calendar event and dispatches appointment.scheduled', async () => {
+    const { db, inserts } = makeDb({ contact: { id: 'contact-1', lead_temperature: null, name: 'Ana' } })
+    h.createEvent.mockResolvedValue({
+      eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc',
+    })
+
+    const result = await executeBusinessAction({
+      db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1',
+      startTime: '2026-06-01T15:00:00.000Z', endTime: '2026-06-01T16:00:00.000Z',
+      attendeeEmail: 'ana@example.com',
+    })
+
+    expect(h.createEvent).toHaveBeenCalledWith(
+      db, 'acct-1',
+      expect.objectContaining({
+        summary: 'Cita con Ana',
+        startISO: '2026-06-01T15:00:00.000Z',
+        endISO: '2026-06-01T16:00:00.000Z',
+        attendeeEmail: 'ana@example.com',
+      }),
+    )
+    expect(result).toMatchObject({ event_id: 'evt-1', attendee_email: 'ana@example.com' })
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(), 'acct-1', 'appointment.scheduled',
+      expect.objectContaining({ contact_id: 'contact-1', event_id: 'evt-1', source: 'ai_action' }),
+    )
+    expect(inserts).toEqual([
+      expect.objectContaining({ table: 'ai_action_log', action: 'schedule_appointment', target_id: 'contact-1' }),
+    ])
+  })
+
+  it('requires startTime, endTime, and attendeeEmail', async () => {
+    const { db } = makeDb({ contact: { id: 'contact-1', lead_temperature: null } })
+    await expect(
+      executeBusinessAction({ db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1' }),
+    ).rejects.toBeInstanceOf(BusinessActionError)
+  })
+
+  it('rejects an invalid attendeeEmail', async () => {
+    const { db } = makeDb({ contact: { id: 'contact-1', lead_temperature: null } })
+    await expect(
+      executeBusinessAction({
+        db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1',
+        startTime: '2026-06-01T15:00:00.000Z', endTime: '2026-06-01T16:00:00.000Z', attendeeEmail: 'not-an-email',
+      }),
+    ).rejects.toBeInstanceOf(BusinessActionError)
+  })
+
+  it('rejects an endTime that is not after startTime', async () => {
+    const { db } = makeDb({ contact: { id: 'contact-1', lead_temperature: null } })
+    await expect(
+      executeBusinessAction({
+        db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1',
+        startTime: '2026-06-01T16:00:00.000Z', endTime: '2026-06-01T15:00:00.000Z', attendeeEmail: 'a@b.com',
+      }),
+    ).rejects.toBeInstanceOf(BusinessActionError)
+  })
+
+  it('throws 404 when the contact is not found (cross-tenant or missing)', async () => {
+    const { db } = makeDb({ contact: null })
+    await expect(
+      executeBusinessAction({
+        db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-x',
+        startTime: '2026-06-01T15:00:00.000Z', endTime: '2026-06-01T16:00:00.000Z', attendeeEmail: 'a@b.com',
+      }),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('propagates a GoogleCalendarError from createEvent() as a BusinessActionError with the same status', async () => {
+    const { db } = makeDb({ contact: { id: 'contact-1', lead_temperature: null, name: 'Ana' } })
+    const { GoogleCalendarError } = await import('@/lib/google-calendar/oauth')
+    h.createEvent.mockRejectedValue(new GoogleCalendarError('Google Calendar is not connected for this account.', 400))
+
+    await expect(
+      executeBusinessAction({
+        db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1',
+        startTime: '2026-06-01T15:00:00.000Z', endTime: '2026-06-01T16:00:00.000Z', attendeeEmail: 'a@b.com',
+      }),
+    ).rejects.toMatchObject({ status: 400 })
   })
 })
 

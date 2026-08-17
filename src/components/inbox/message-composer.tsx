@@ -94,14 +94,39 @@ interface ReplyDraft {
 /** Mirrors the shape POST /api/ai/suggest-action returns — kept as a
  *  plain local type instead of importing from the server-only
  *  business-actions module. */
-type SuggestedAction = "close_conversation" | "mark_deal_won" | "move_deal" | "set_lead_temperature";
+type SuggestedAction =
+  | "close_conversation"
+  | "mark_deal_won"
+  | "move_deal"
+  | "set_lead_temperature"
+  | "schedule_appointment";
 
 interface ActionSuggestion {
   action: SuggestedAction | null;
   targetId: string | null;
   stageId: string | null;
   temperature: string | null;
+  proposedStart: string | null;
+  proposedEnd: string | null;
+  attendeeEmail: string | null;
   reason: string;
+}
+
+/** `datetime-local` inputs need `YYYY-MM-DDTHH:mm` in the browser's own
+ *  timezone (no trailing `Z`/offset) — this converts an ISO string
+ *  from the AI's suggestion into that shape, and back. Falls back to
+ *  now on an unparsable/missing value so the input never renders
+ *  blank/invalid. */
+function isoToLocalInput(iso: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  const valid = Number.isNaN(d.getTime()) ? new Date() : d;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${valid.getFullYear()}-${pad(valid.getMonth() + 1)}-${pad(valid.getDate())}T${pad(valid.getHours())}:${pad(valid.getMinutes())}`;
+}
+
+function localInputToIso(local: string): string {
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
 // Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
@@ -183,6 +208,13 @@ export function MessageComposer({
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState<ActionSuggestion | null>(null);
   const [confirmingSuggestion, setConfirmingSuggestion] = useState(false);
+  // schedule_appointment only — editable copies of the AI's proposed
+  // slot/email, seeded from the suggestion but never sent verbatim:
+  // the agent reviews and can correct either before confirming (see
+  // plan: appointments always need a human-picked/verified email).
+  const [appointmentStart, setAppointmentStart] = useState("");
+  const [appointmentEnd, setAppointmentEnd] = useState("");
+  const [appointmentEmail, setAppointmentEmail] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Interactive-message builder dialog + quick-reply picker.
@@ -388,6 +420,17 @@ export function MessageComposer({
         return;
       }
       setSuggestion(result);
+      if (result.action === "schedule_appointment") {
+        const start = result.proposedStart
+          ? new Date(result.proposedStart)
+          : new Date(Date.now() + 60 * 60 * 1000);
+        const end = result.proposedEnd
+          ? new Date(result.proposedEnd)
+          : new Date(start.getTime() + 60 * 60 * 1000);
+        setAppointmentStart(isoToLocalInput(start.toISOString()));
+        setAppointmentEnd(isoToLocalInput(end.toISOString()));
+        setAppointmentEmail(result.attendeeEmail ?? "");
+      }
     } catch {
       toast.error(t("suggestionFetchFailed"));
     } finally {
@@ -401,13 +444,21 @@ export function MessageComposer({
   // with it) so the agent only has to click once.
   const handleConfirmSuggestion = useCallback(async () => {
     if (!suggestion?.action || !suggestion.targetId || confirmingSuggestion) return;
+    if (suggestion.action === "schedule_appointment" && !appointmentEmail.trim()) {
+      toast.error(t("suggestionAppointmentEmailRequired"));
+      return;
+    }
     setConfirmingSuggestion(true);
     try {
+      const isAppointment = suggestion.action === "schedule_appointment";
       const payload = {
         action: suggestion.action,
         targetId: suggestion.targetId,
         stageId: suggestion.stageId ?? undefined,
         temperature: suggestion.temperature ?? undefined,
+        startTime: isAppointment ? localInputToIso(appointmentStart) : undefined,
+        endTime: isAppointment ? localInputToIso(appointmentEnd) : undefined,
+        attendeeEmail: isAppointment ? appointmentEmail.trim() : undefined,
       };
       const first = await fetch("/api/ai/actions", {
         method: "POST",
@@ -436,7 +487,7 @@ export function MessageComposer({
     } finally {
       setConfirmingSuggestion(false);
     }
-  }, [suggestion, confirmingSuggestion, t]);
+  }, [suggestion, confirmingSuggestion, appointmentStart, appointmentEnd, appointmentEmail, t]);
 
   const suggestionActionLabel = useCallback(
     (action: SuggestedAction) => {
@@ -449,6 +500,8 @@ export function MessageComposer({
           return t("suggestionActionMoveDeal");
         case "set_lead_temperature":
           return t("suggestionActionSetLeadTemperature");
+        case "schedule_appointment":
+          return t("suggestionActionScheduleAppointment");
       }
     },
     [t],
@@ -729,6 +782,38 @@ export function MessageComposer({
               </p>
               {suggestion.reason && (
                 <p className="mt-0.5 text-xs text-muted-foreground">{suggestion.reason}</p>
+              )}
+              {suggestion.action === "schedule_appointment" && (
+                <div className="mt-2 grid gap-1.5">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="w-10 shrink-0">{t("suggestionAppointmentStart")}</span>
+                    <input
+                      type="datetime-local"
+                      value={appointmentStart}
+                      onChange={(e) => setAppointmentStart(e.target.value)}
+                      className="flex-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="w-10 shrink-0">{t("suggestionAppointmentEnd")}</span>
+                    <input
+                      type="datetime-local"
+                      value={appointmentEnd}
+                      onChange={(e) => setAppointmentEnd(e.target.value)}
+                      className="flex-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="w-10 shrink-0">{t("suggestionAppointmentEmail")}</span>
+                    <input
+                      type="email"
+                      value={appointmentEmail}
+                      onChange={(e) => setAppointmentEmail(e.target.value)}
+                      placeholder={t("suggestionAppointmentEmailPlaceholder")}
+                      className="flex-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+                    />
+                  </label>
+                </div>
               )}
             </div>
           </div>

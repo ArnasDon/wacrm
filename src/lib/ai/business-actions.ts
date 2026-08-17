@@ -3,6 +3,8 @@ import { moveDeal, findWonStageId, MoveDealError } from '@/lib/pipelines/move-de
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { supabaseAdmin } from '@/lib/webhooks/admin-client'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
+import { createEvent } from '@/lib/google-calendar/api'
+import { GoogleCalendarError } from '@/lib/google-calendar/oauth'
 import type { LeadTemperature } from '@/types'
 
 export type BusinessAction =
@@ -11,6 +13,9 @@ export type BusinessAction =
   | 'move_deal'
   | 'set_lead_temperature'
   | 'create_quote'
+  | 'schedule_appointment'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const LEAD_TEMPERATURES: readonly LeadTemperature[] = ['cold', 'warm', 'hot']
 
@@ -28,10 +33,14 @@ export async function executeBusinessAction(args: {
   /** create_quote only — targetId is the contact_id. */
   items?: QuoteItemInput[]
   customerNit?: string; customerEmail?: string; customerPhone?: string; customerAddress?: string
+  /** schedule_appointment only — targetId is the contact_id. ISO datetimes. */
+  startTime?: string; endTime?: string; attendeeEmail?: string
+  appointmentSummary?: string; appointmentDescription?: string
 }) {
   const {
     db, accountId, userId, action, targetId, stageId, temperature,
     items, customerNit, customerEmail, customerPhone, customerAddress,
+    startTime, endTime, attendeeEmail, appointmentSummary, appointmentDescription,
   } = args
   let result: Record<string, unknown>
 
@@ -137,6 +146,49 @@ export async function executeBusinessAction(args: {
     void dispatchWebhookEvent(webhookDb, accountId, 'quote.created', {
       quote_id: (result as { id: string }).id, contact_id: targetId, source: 'ai_action',
     })
+  } else if (action === 'schedule_appointment') {
+    // targetId is a contact_id, like create_quote/set_lead_temperature.
+    // Always confirmed by a human first (POST /api/ai/actions'
+    // two-step flow) — this action never runs as an autonomous
+    // sentinel, unlike move_deal/set_lead_temperature, because it has
+    // an immediate real-world effect (a real calendar event + a real
+    // email to a real customer).
+    if (!startTime || !endTime || !attendeeEmail) {
+      throw new BusinessActionError('startTime, endTime, and attendeeEmail are required')
+    }
+    if (!EMAIL_RE.test(attendeeEmail)) throw new BusinessActionError('attendeeEmail is not a valid email address')
+    const start = new Date(startTime)
+    const end = new Date(endTime)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      throw new BusinessActionError('startTime/endTime must be valid, with endTime after startTime')
+    }
+
+    const { data: contact, error: contactError } = await db.from('contacts')
+      .select('id, name').eq('id', targetId).eq('account_id', accountId).maybeSingle()
+    if (contactError) throw new BusinessActionError(contactError.message, 500)
+    if (!contact) throw new BusinessActionError('Contact not found', 404)
+
+    let created
+    try {
+      created = await createEvent(db, accountId, {
+        summary: appointmentSummary?.trim() || `Cita con ${contact.name ?? 'cliente'}`,
+        description: appointmentDescription,
+        startISO: start.toISOString(),
+        endISO: end.toISOString(),
+        attendeeEmail,
+      })
+    } catch (err) {
+      if (err instanceof GoogleCalendarError) throw new BusinessActionError(err.message, err.status)
+      throw err
+    }
+    result = {
+      event_id: created.eventId, html_link: created.htmlLink, meet_link: created.meetLink,
+      start: start.toISOString(), end: end.toISOString(), attendee_email: attendeeEmail,
+    }
+    void dispatchWebhookEvent(webhookDb, accountId, 'appointment.scheduled', {
+      contact_id: targetId, event_id: created.eventId,
+      start: start.toISOString(), end: end.toISOString(), source: 'ai_action',
+    })
   } else {
     throw new BusinessActionError(`Unsupported action: ${action as string}`)
   }
@@ -147,6 +199,7 @@ export async function executeBusinessAction(args: {
       ...(stageId ? { stageId } : {}),
       ...(temperature ? { temperature } : {}),
       ...(action === 'create_quote' ? { items, customerNit, customerEmail, customerPhone, customerAddress } : {}),
+      ...(action === 'schedule_appointment' ? { startTime, endTime, attendeeEmail, appointmentSummary } : {}),
     },
     result,
   })

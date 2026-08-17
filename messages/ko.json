@@ -227,6 +227,12 @@
       "suggestionActionMarkDealWon": "딜 성사 처리",
       "suggestionActionMoveDeal": "딜을 다른 단계로 이동",
       "suggestionActionSetLeadTemperature": "리드 온도 업데이트",
+      "suggestionActionScheduleAppointment": "약속 예약",
+      "suggestionAppointmentStart": "시작",
+      "suggestionAppointmentEnd": "종료",
+      "suggestionAppointmentEmail": "이메일",
+      "suggestionAppointmentEmailPlaceholder": "customer@email.com",
+      "suggestionAppointmentEmailRequired": "확인하기 전에 고객의 이메일을 입력하세요.",
       "sendCatalog": "카탈로그 보내기",
       "sendCatalogSuccess": "카탈로그를 보냈습니다.",
       "sendCatalogFailed": "카탈로그를 보내지 못했습니다."

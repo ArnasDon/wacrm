@@ -29,10 +29,22 @@ export async function GET() {
 
     try {
       const accessToken = await getValidAccessToken(supabase, accountId)
-      const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(config.calendar_id)}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
-      )
+      // A plain `calendars.get` needs the `calendar`/`calendar.readonly`
+      // scope, which this app deliberately never requests (see oauth.ts).
+      // `freeBusy.query` is covered by the narrower `calendar.freebusy`
+      // scope we do have, so it doubles as the live connectivity check —
+      // a 1-minute window starting now is cheap and returns 200 as long
+      // as the token/calendar are valid, regardless of what's on it.
+      const now = new Date()
+      const res = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          timeMin: now.toISOString(),
+          timeMax: new Date(now.getTime() + 60_000).toISOString(),
+          items: [{ id: config.calendar_id }],
+        }),
+      })
       if (!res.ok) {
         const body = await res.text().catch(() => '')
         return NextResponse.json(

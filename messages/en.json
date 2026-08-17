@@ -227,6 +227,12 @@
       "suggestionActionMarkDealWon": "Mark deal as won",
       "suggestionActionMoveDeal": "Move deal to a new stage",
       "suggestionActionSetLeadTemperature": "Update lead temperature",
+      "suggestionActionScheduleAppointment": "Schedule an appointment",
+      "suggestionAppointmentStart": "Start",
+      "suggestionAppointmentEnd": "End",
+      "suggestionAppointmentEmail": "Email",
+      "suggestionAppointmentEmailPlaceholder": "customer@email.com",
+      "suggestionAppointmentEmailRequired": "Enter the customer's email before confirming.",
       "sendCatalog": "Send catalog",
       "sendCatalogSuccess": "Catalog sent.",
       "sendCatalogFailed": "Couldn't send the catalog."

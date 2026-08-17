@@ -60,6 +60,20 @@ export const MOVE_DEAL_SENTINEL_SUFFIX = ']]'
  */
 export const SEND_CATALOG_SENTINEL = '[[ACTION:send_catalog]]'
 
+/**
+ * Sentinel prefix/suffix the model is instructed to wrap a temperature
+ * word (`hot` | `warm` | `cold`) in (auto-reply mode only) to classify
+ * the contact's buying interest as the conversation reveals it — always
+ * available, unlike `MOVE_DEAL_SENTINEL_PREFIX`, since temperature is a
+ * property of the contact, not of a deal, so it doesn't need one to
+ * exist yet. Low-risk (a label, not a mutation of pipeline state), so
+ * like `MOVE_DEAL_SENTINEL_PREFIX` it runs with no human confirmation
+ * gate. `dispatchInboundToAiReply` only ever writes one of the three
+ * literal words — anything else parses to null and is ignored.
+ */
+export const SET_TEMPERATURE_SENTINEL_PREFIX = '[[ACTION:set_temperature:'
+export const SET_TEMPERATURE_SENTINEL_SUFFIX = ']]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -92,10 +106,14 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
-  /** The contact's current open deal, if any (auto-reply mode only) —
-   *  lets the model advance it through non-won stages as the
-   *  conversation progresses. Omit/null when there's no open deal. */
-  dealStageOptions?: { currentStageName: string; otherStageNames: string[] } | null
+  /** Deal-stage options for this contact (auto-reply mode only): when
+   *  `hasDeal` is true, `currentStageName` is the deal's stage and
+   *  `otherStageNames` are the other non-won stages it could advance
+   *  to; when `hasDeal` is false, `currentStageName` is null and
+   *  `otherStageNames` are the account's default pipeline's non-won
+   *  stages the model may create a brand-new deal into. Omit/null when
+   *  there's no pipeline configured at all. */
+  dealStageOptions?: { hasDeal: boolean; currentStageName: string | null; otherStageNames: string[] } | null
   /** Compact active-catalog lines (see `loadCatalogContext`), or null
    *  when the account has no active products. */
   catalog?: string[] | null
@@ -120,10 +138,20 @@ export function buildSystemPrompt(args: {
     )
 
     if (dealStageOptions && dealStageOptions.otherStageNames.length > 0) {
-      parts.push(
-        `This contact has an open deal currently at the "${dealStageOptions.currentStageName}" stage. If — and only if — the conversation itself clearly shows the deal has moved forward to one of these other stages: ${dealStageOptions.otherStageNames.map((n) => `"${n}"`).join(', ')}, append ${MOVE_DEAL_SENTINEL_PREFIX}<exact stage name>${MOVE_DEAL_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after the purchase-confirmation marker above if both apply), using the exact stage name as written above — never a name outside this list, never the deal's current stage, and never a guess when the signal is ambiguous. This is for ordinary progress (e.g. the customer asked for a quote, or is now negotiating terms) — it is separate from, and does not replace, the purchase-confirmation marker above. Never mention this marker to the customer.`,
-      )
+      if (dealStageOptions.hasDeal) {
+        parts.push(
+          `This contact has an open deal currently at the "${dealStageOptions.currentStageName}" stage. If — and only if — the conversation itself clearly shows the deal has moved forward to one of these other stages: ${dealStageOptions.otherStageNames.map((n) => `"${n}"`).join(', ')}, append ${MOVE_DEAL_SENTINEL_PREFIX}<exact stage name>${MOVE_DEAL_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after the purchase-confirmation marker above if both apply), using the exact stage name as written above — never a name outside this list, never the deal's current stage, and never a guess when the signal is ambiguous. This is for ordinary progress (e.g. the customer asked for a quote, or is now negotiating terms) — it is separate from, and does not replace, the purchase-confirmation marker above. Never mention this marker to the customer.`,
+        )
+      } else {
+        parts.push(
+          `This contact does not have a deal yet. If — and only if — the conversation clearly shows real buying interest (they're asking about pricing to buy, want next steps to purchase, are negotiating, etc. — not idle chit-chat or a vague "maybe later"), append ${MOVE_DEAL_SENTINEL_PREFIX}<exact stage name>${MOVE_DEAL_SENTINEL_SUFFIX} at the very end of your reply, using one of these exact stage names: ${dealStageOptions.otherStageNames.map((n) => `"${n}"`).join(', ')}. This creates a new deal directly at that stage — pick the stage that best matches how far along they already are, never a name outside this list, and never use it just because the customer said hello. Never mention this marker to the customer.`,
+        )
+      }
     }
+
+    parts.push(
+      `Assess this contact's buying interest based on the conversation so far and, if you can make a confident judgment, append ${SET_TEMPERATURE_SENTINEL_PREFIX}hot${SET_TEMPERATURE_SENTINEL_SUFFIX}, ${SET_TEMPERATURE_SENTINEL_PREFIX}warm${SET_TEMPERATURE_SENTINEL_SUFFIX}, or ${SET_TEMPERATURE_SENTINEL_PREFIX}cold${SET_TEMPERATURE_SENTINEL_SUFFIX} at the very end of your reply (after every other marker above, if any apply) — use exactly one of those three words. "hot" = ready to buy now or asking to close/pay; "warm" = engaged, asking real questions, interested but not urgent; "cold" = just browsing, vague, or unlikely to buy soon. Skip this marker entirely if you genuinely can't tell yet. Never mention this marker to the customer.`,
+    )
 
     if (catalog && catalog.length > 0) {
       parts.push(

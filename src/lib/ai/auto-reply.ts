@@ -14,6 +14,7 @@ import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send-catalog'
+import type { LeadTemperature } from '@/types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -132,7 +133,7 @@ export async function dispatchInboundToAiReply(
       catalog,
     })
 
-    const { text, handoff, markDealWon, moveToStageName, sendCatalog, usage } = await generateReply({
+    const { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -216,8 +217,9 @@ export async function dispatchInboundToAiReply(
     // deal-mutating ones are mutually exclusive per inbound: a purchase
     // confirmation always wins over an ordinary stage-progress signal
     // (the model is told to emit at most one "closing" marker, but code
-    // stays defensive about that). Sending the catalog is independent —
-    // it mutates nothing, so it can fire alongside either.
+    // stays defensive about that). Sending the catalog and setting the
+    // lead temperature are both independent — neither touches `deals`,
+    // so either can fire alongside any of the above.
     if (markDealWon) {
       try {
         await flagDealClosing({ db, accountId, conversationId, configOwnerUserId, handoffAgentId: config.handoffAgentId, alreadyAssigned: Boolean(conv.assigned_agent_id) })
@@ -243,25 +245,39 @@ export async function dispatchInboundToAiReply(
         }
       }
     }
+
+    if (leadTemperature) {
+      try {
+        await autoSetLeadTemperature({ db, accountId, contactId, configOwnerUserId, temperature: leadTemperature })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous set_temperature failed:', err)
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
 }
 
 /**
- * Loads the prompt-time stage options for `buildSystemPrompt`: the
- * contact's most recently updated open deal (same "which deal is this
- * conversation about" resolution every autonomous action here uses —
- * `deals` has no populated `conversation_id` today) and its pipeline's
- * non-won stage names. Returns null when there's no open deal, or the
- * deal's current stage can't be resolved among the pipeline's non-won
- * stages, or there are no other stages to offer.
+ * Loads the prompt-time stage options for `buildSystemPrompt`. Resolves
+ * "which deal is this conversation about" the same way every autonomous
+ * action here does: the contact's most recently updated open deal
+ * (`deals` has no populated `conversation_id` today).
+ *
+ * When one exists, returns its current stage + the pipeline's other
+ * non-won stage names (`hasDeal: true`) — same as before this contact
+ * could also have no deal at all. When there's no open deal, instead
+ * offers the account's default pipeline's non-won stage names
+ * (`hasDeal: false`, `currentStageName: null`) so the model can still
+ * signal real buying interest and `autoMoveDealStage` creates a deal
+ * directly at that stage. Returns null only when there's truly nothing
+ * to offer (no pipeline configured at all, or a single-stage pipeline).
  */
 async function loadDealStageOptions(args: {
   db: SupabaseClient
   accountId: string
   contactId: string
-}): Promise<{ currentStageName: string; otherStageNames: string[] } | null> {
+}): Promise<{ hasDeal: boolean; currentStageName: string | null; otherStageNames: string[] } | null> {
   const { db, accountId, contactId } = args
 
   const { data: deal } = await db
@@ -273,22 +289,58 @@ async function loadDealStageOptions(args: {
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (!deal) return null
+
+  if (deal) {
+    const { data: stages } = await db
+      .from('pipeline_stages')
+      .select('id, name')
+      .eq('pipeline_id', deal.pipeline_id)
+      .eq('is_won', false)
+      .order('position')
+    const all = stages ?? []
+    const current = all.find((s) => s.id === deal.stage_id)
+    if (!current) return null
+
+    const otherStageNames = all.filter((s) => s.id !== deal.stage_id).map((s) => s.name)
+    if (otherStageNames.length === 0) return null
+
+    return { hasDeal: true, currentStageName: current.name, otherStageNames }
+  }
+
+  const pipeline = await loadDefaultPipeline(db, accountId)
+  if (!pipeline) return null
 
   const { data: stages } = await db
     .from('pipeline_stages')
-    .select('id, name')
-    .eq('pipeline_id', deal.pipeline_id)
+    .select('name')
+    .eq('pipeline_id', pipeline.id)
     .eq('is_won', false)
     .order('position')
-  const all = stages ?? []
-  const current = all.find((s) => s.id === deal.stage_id)
-  if (!current) return null
-
-  const otherStageNames = all.filter((s) => s.id !== deal.stage_id).map((s) => s.name)
+  const otherStageNames = (stages ?? []).map((s) => s.name)
   if (otherStageNames.length === 0) return null
 
-  return { currentStageName: current.name, otherStageNames }
+  return { hasDeal: false, currentStageName: null, otherStageNames }
+}
+
+/**
+ * "The account's default pipeline" — oldest one, same convention
+ * `createQuote()` uses for a brand-new deal with no pipeline specified.
+ * Shared by `loadDealStageOptions` and `autoMoveDealStage` so a
+ * newly-created deal always lands in the same pipeline the model was
+ * shown stage names from.
+ */
+async function loadDefaultPipeline(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<{ id: string } | null> {
+  const { data } = await db
+    .from('pipelines')
+    .select('id')
+    .eq('account_id', accountId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return (data as { id: string } | null) ?? null
 }
 
 /**
@@ -331,13 +383,25 @@ async function flagDealClosing(args: {
 
 /**
  * Resolves "the deal this conversation is about" fresh (same rule as
- * `loadDealStageOptions`) and moves it to the stage the model named —
- * matched case-insensitively against that deal's own pipeline's
- * non-won stages only, so the model can never route a deal to a stage
- * it wasn't explicitly offered (or to "won" through this path — that's
- * `flagDealClosing`'s job). No-ops quietly whenever the deal, the named
- * stage, or an actual change can't be resolved; a failed move never
- * affects the already-sent customer-facing reply.
+ * `loadDealStageOptions`). If one exists, moves it to the stage the
+ * model named — matched case-insensitively against that deal's own
+ * pipeline's non-won stages only, so the model can never route a deal
+ * to a stage it wasn't explicitly offered (or to "won" through this
+ * path — that's `flagDealClosing`'s job).
+ *
+ * If the contact has no open deal, this CREATES one directly at the
+ * named stage instead (Angel's explicit product decision, 2026-08-16 —
+ * previously the bot could only ever advance a deal a human had already
+ * created, which left most real conversations invisible to the
+ * pipeline). Same default-pipeline resolution as `loadDealStageOptions`,
+ * titled after the contact — matching the human "+ New" quick-create
+ * convention in the inbox sidebar — with `value: 0` (the bot never
+ * invents a price; a linked quote, if any, sets the real value
+ * separately via `createQuote`).
+ *
+ * No-ops quietly whenever the target stage or an actual change can't be
+ * resolved; a failure here never affects the already-sent
+ * customer-facing reply.
  */
 async function autoMoveDealStage(args: {
   db: SupabaseClient
@@ -357,42 +421,151 @@ async function autoMoveDealStage(args: {
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (dealErr || !deal) return
+  if (dealErr) return
+
+  if (deal) {
+    const { data: stages } = await db
+      .from('pipeline_stages')
+      .select('id, name')
+      .eq('pipeline_id', deal.pipeline_id)
+      .eq('is_won', false)
+    const target = (stages ?? []).find(
+      (s) => s.name.trim().toLowerCase() === stageName.trim().toLowerCase(),
+    )
+    if (!target || target.id === deal.stage_id) return
+
+    let moved
+    try {
+      moved = await moveDeal(db, accountId, deal.id, target.id)
+    } catch (err) {
+      if (err instanceof MoveDealError) {
+        console.error('[ai auto-reply] autonomous move_deal failed:', err.message)
+        return
+      }
+      throw err
+    }
+
+    await db.from('ai_action_log').insert({
+      account_id: accountId,
+      actor_user_id: configOwnerUserId,
+      action: 'move_deal',
+      target_id: deal.id,
+      input: { stageId: target.id, stageName: target.name, source: 'auto_reply_autonomous' },
+      result: moved.deal,
+    })
+
+    void dispatchWebhookEvent(db, accountId, 'deal.stage_changed', {
+      deal_id: moved.deal.id,
+      pipeline_id: moved.deal.pipeline_id,
+      stage_id: moved.deal.stage_id,
+      source: 'auto_reply_autonomous',
+    })
+    return
+  }
+
+  const pipeline = await loadDefaultPipeline(db, accountId)
+  if (!pipeline) return
 
   const { data: stages } = await db
     .from('pipeline_stages')
     .select('id, name')
-    .eq('pipeline_id', deal.pipeline_id)
+    .eq('pipeline_id', pipeline.id)
     .eq('is_won', false)
   const target = (stages ?? []).find(
     (s) => s.name.trim().toLowerCase() === stageName.trim().toLowerCase(),
   )
-  if (!target || target.id === deal.stage_id) return
+  if (!target) return
 
-  let moved
-  try {
-    moved = await moveDeal(db, accountId, deal.id, target.id)
-  } catch (err) {
-    if (err instanceof MoveDealError) {
-      console.error('[ai auto-reply] autonomous move_deal failed:', err.message)
-      return
-    }
-    throw err
+  const [{ data: contact }, { data: account }] = await Promise.all([
+    db.from('contacts').select('name, phone').eq('id', contactId).maybeSingle(),
+    db.from('accounts').select('default_currency').eq('id', accountId).maybeSingle(),
+  ])
+  const title = contact?.name || contact?.phone || 'Nuevo negocio'
+
+  const { data: created, error: createErr } = await db
+    .from('deals')
+    .insert({
+      account_id: accountId,
+      user_id: configOwnerUserId,
+      pipeline_id: pipeline.id,
+      stage_id: target.id,
+      contact_id: contactId,
+      title,
+      value: 0,
+      currency: account?.default_currency ?? 'USD',
+      status: 'open',
+    })
+    .select('*')
+    .single()
+  if (createErr || !created) {
+    console.error('[ai auto-reply] autonomous create_deal failed:', createErr)
+    return
   }
 
   await db.from('ai_action_log').insert({
     account_id: accountId,
     actor_user_id: configOwnerUserId,
-    action: 'move_deal',
-    target_id: deal.id,
-    input: { stageId: target.id, stageName: target.name, source: 'auto_reply_autonomous' },
-    result: moved.deal,
+    action: 'create_deal',
+    target_id: created.id,
+    input: { pipelineId: pipeline.id, stageId: target.id, stageName: target.name, source: 'auto_reply_autonomous' },
+    result: created,
   })
 
   void dispatchWebhookEvent(db, accountId, 'deal.stage_changed', {
-    deal_id: moved.deal.id,
-    pipeline_id: moved.deal.pipeline_id,
-    stage_id: moved.deal.stage_id,
+    deal_id: created.id,
+    pipeline_id: created.pipeline_id,
+    stage_id: created.stage_id,
     source: 'auto_reply_autonomous',
+  })
+}
+
+/**
+ * Sets the contact's `lead_temperature` from the model's own autonomous
+ * assessment — no human confirmation, unlike the confirmed
+ * `set_lead_temperature` business action (`POST /api/ai/actions`,
+ * `src/lib/ai/business-actions.ts`), which still exists as a
+ * human-reviewed alternative. Skips the write entirely when the value
+ * hasn't changed, so this can safely run on every reply without
+ * spamming `ai_action_log` or the webhook with no-op updates.
+ */
+async function autoSetLeadTemperature(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  configOwnerUserId: string
+  temperature: LeadTemperature
+}): Promise<void> {
+  const { db, accountId, contactId, configOwnerUserId, temperature } = args
+
+  const { data: contact } = await db
+    .from('contacts')
+    .select('lead_temperature')
+    .eq('id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!contact || contact.lead_temperature === temperature) return
+
+  const { error } = await db
+    .from('contacts')
+    .update({ lead_temperature: temperature, updated_at: new Date().toISOString() })
+    .eq('id', contactId)
+    .eq('account_id', accountId)
+  if (error) {
+    console.error('[ai auto-reply] autonomous set_temperature update failed:', error)
+    return
+  }
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'set_lead_temperature',
+    target_id: contactId,
+    input: { temperature, source: 'auto_reply_autonomous' },
+    result: { contact_id: contactId, lead_temperature: temperature },
+  })
+
+  void dispatchWebhookEvent(db, accountId, 'contact.lead_temperature_changed', {
+    contact_id: contactId,
+    lead_temperature: temperature,
   })
 }

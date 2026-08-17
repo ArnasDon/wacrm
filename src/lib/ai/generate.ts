@@ -11,8 +11,13 @@ import {
   MOVE_DEAL_SENTINEL_PREFIX,
   MOVE_DEAL_SENTINEL_SUFFIX,
   SEND_CATALOG_SENTINEL,
+  SET_TEMPERATURE_SENTINEL_PREFIX,
+  SET_TEMPERATURE_SENTINEL_SUFFIX,
   aiRequestTimeoutMs,
 } from './defaults'
+import type { LeadTemperature } from '@/types'
+
+const VALID_TEMPERATURES = new Set<LeadTemperature>(['cold', 'warm', 'hot'])
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 
@@ -80,6 +85,16 @@ export function parseGeneration(
   )
   const moveToStageName = moveMatch ? moveMatch[1].trim() : null
 
+  const temperatureMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(SET_TEMPERATURE_SENTINEL_PREFIX)}(.+?)${escapeRegExp(SET_TEMPERATURE_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  const temperatureRaw = temperatureMatch ? temperatureMatch[1].trim().toLowerCase() : null
+  const leadTemperature = VALID_TEMPERATURES.has(temperatureRaw as LeadTemperature)
+    ? (temperatureRaw as LeadTemperature)
+    : null
+
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -88,9 +103,10 @@ export function parseGeneration(
     .split(SEND_CATALOG_SENTINEL)
     .join('')
     .replace(moveMatch ? moveMatch[0] : '', '')
+    .replace(temperatureMatch ? temperatureMatch[0] : '', '')
     .trim()
 
-  return { text, handoff, markDealWon, moveToStageName, sendCatalog, usage }
+  return { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, usage }
 }
 
 function escapeRegExp(s: string): string {

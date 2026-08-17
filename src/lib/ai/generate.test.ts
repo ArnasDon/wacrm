@@ -46,6 +46,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: null,
     })
   })
@@ -57,6 +58,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -65,6 +67,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: null,
     })
   })
@@ -76,6 +79,7 @@ describe('parseGeneration', () => {
       markDealWon: true,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: null,
     })
   })
@@ -94,6 +98,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: 'Negotiation',
       sendCatalog: false,
+      leadTemperature: null,
       usage: null,
     })
   })
@@ -120,6 +125,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: true,
+      leadTemperature: null,
       usage: null,
     })
   })
@@ -133,6 +139,38 @@ describe('parseGeneration', () => {
     expect(res.text).toBe('Claro, aquí tienes.')
   })
 
+  it('detects + strips the set-temperature sentinel', () => {
+    expect(parseGeneration('Claro que sí! [[ACTION:set_temperature:hot]]')).toEqual({
+      text: 'Claro que sí!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      leadTemperature: 'hot',
+      usage: null,
+    })
+  })
+
+  it('accepts warm and cold, case-insensitively', () => {
+    expect(parseGeneration('ok [[ACTION:set_temperature:WARM]]').leadTemperature).toBe('warm')
+    expect(parseGeneration('ok [[ACTION:set_temperature:Cold]]').leadTemperature).toBe('cold')
+  })
+
+  it('ignores an invalid temperature value instead of trusting it', () => {
+    const res = parseGeneration('ok [[ACTION:set_temperature:lukewarm]]')
+    expect(res.leadTemperature).toBeNull()
+  })
+
+  it('allows set-temperature to appear alongside move-deal and send-catalog', () => {
+    const res = parseGeneration(
+      'Perfecto. [[ACTION:move_deal:Negociación]] [[ACTION:send_catalog]] [[ACTION:set_temperature:hot]]',
+    )
+    expect(res.moveToStageName).toBe('Negociación')
+    expect(res.sendCatalog).toBe(true)
+    expect(res.leadTemperature).toBe('hot')
+    expect(res.text).toBe('Perfecto.')
+  })
+
   it('passes usage straight through', () => {
     const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
     expect(parseGeneration('Hi', usage)).toEqual({
@@ -141,6 +179,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage,
     })
   })
@@ -168,6 +207,7 @@ describe('generateReply — OpenAI', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -230,6 +270,7 @@ describe('generateReply — Anthropic', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      leadTemperature: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

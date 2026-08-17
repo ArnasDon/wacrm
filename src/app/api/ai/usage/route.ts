@@ -63,13 +63,14 @@ export async function GET(request: Request) {
         .limit(MAX_ROWS + 1),
       // Deals the bot advanced to a different stage on its own, as the
       // conversation itself showed it progressing (see `auto-reply.ts`'s
-      // `autoMoveDealStage`) — never the "won" stage, that's tracked
-      // separately below.
+      // `autoMoveDealStage`) — including a brand-new deal it created
+      // directly at a stage when the contact had none yet. Never the
+      // "won" stage, that's tracked separately below.
       supabase
         .from('ai_action_log')
         .select('id', { count: 'exact', head: true })
         .eq('account_id', accountId)
-        .eq('action', 'move_deal')
+        .in('action', ['move_deal', 'create_deal'])
         .eq('input->>source', 'auto_reply_autonomous')
         .gte('created_at', since.toISOString()),
       // Conversations the bot handled start to finish with no teammate

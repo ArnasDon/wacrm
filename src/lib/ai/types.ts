@@ -73,6 +73,10 @@ export interface GenerateResult {
   /** True when the model asked to send the product catalog (auto-reply
    *  mode only) — see `SEND_CATALOG_SENTINEL`. */
   sendCatalog: boolean
+  /** The contact's assessed buying-interest temperature (auto-reply
+   *  mode only), or null when the model didn't emit a (valid) marker —
+   *  see `SET_TEMPERATURE_SENTINEL_PREFIX`. */
+  leadTemperature: 'cold' | 'warm' | 'hot' | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

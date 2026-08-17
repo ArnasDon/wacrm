@@ -21,6 +21,12 @@ const h = vi.hoisted(() => ({
     openDeal: null as { id: string; pipeline_id: string; stage_id: string } | null,
     stages: [] as { id: string; name: string }[],
     aiActionLogInserts: [] as Record<string, unknown>[],
+    pipeline: null as { id: string } | null,
+    contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234' },
+    account: { default_currency: 'USD' },
+    dealInserts: [] as Record<string, unknown>[],
+    createdDeal: { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' } as Record<string, unknown>,
+    contactUpdates: [] as Record<string, unknown>[],
   },
 }))
 
@@ -51,6 +57,14 @@ vi.mock('@/lib/products/send-catalog', () => ({
     }
   },
 }))
+// The real limiter is an in-memory counter shared across every test in
+// this file (same accountId) — mocked so the growing number of tests
+// here can't tip a shared counter over the real 30/min cap and start
+// skipping later tests. Rate-limiting itself isn't what's under test.
+vi.mock('@/lib/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/rate-limit')>()
+  return { ...actual, checkSharedRateLimit: vi.fn().mockResolvedValue({ success: true }) }
+})
 
 // `.select().eq().eq().order()` (or without `.order()`) → a multi-row
 // select, resolved lazily whenever the chain is awaited (every step
@@ -85,12 +99,36 @@ vi.mock('./admin-client', () => ({
       if (table === 'deals') {
         // .select().eq().eq().eq().order().limit().maybeSingle() → most
         // recently updated open deal for the contact.
+        const readChain = {
+          select: () => readChain,
+          eq: () => readChain,
+          order: () => readChain,
+          limit: () => readChain,
+          maybeSingle: () => Promise.resolve({ data: h.state.openDeal, error: null }),
+        }
+        return {
+          ...readChain,
+          // .insert(payload).select().single() → autonomous deal creation
+          // when the contact has no open deal yet.
+          insert: (payload: Record<string, unknown>) => {
+            h.state.dealInserts.push(payload)
+            const insertChain = {
+              select: () => insertChain,
+              single: () => Promise.resolve({ data: h.state.createdDeal, error: null }),
+            }
+            return insertChain
+          },
+        }
+      }
+      if (table === 'pipelines') {
+        // .select('id').eq().order().limit().maybeSingle() → account's
+        // default (oldest) pipeline.
         const chain = {
           select: () => chain,
           eq: () => chain,
           order: () => chain,
           limit: () => chain,
-          maybeSingle: () => Promise.resolve({ data: h.state.openDeal, error: null }),
+          maybeSingle: () => Promise.resolve({ data: h.state.pipeline, error: null }),
         }
         return chain
       }
@@ -103,6 +141,31 @@ vi.mock('./admin-client', () => ({
             h.state.aiActionLogInserts.push(payload)
             return Promise.resolve({ data: null, error: null })
           },
+        }
+      }
+      if (table === 'contacts') {
+        // .select('lead_temperature' | 'name, phone').eq()...maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: h.state.contact, error: null }),
+        }
+        return {
+          ...chain,
+          update: (payload: Record<string, unknown>) => {
+            h.state.contactUpdates.push(payload)
+            const updateChain = { eq: () => updateChain }
+            return updateChain
+          },
+        }
+      }
+      if (table === 'accounts') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: h.state.account, error: null }),
+            }),
+          }),
         }
       }
       // conversations
@@ -164,6 +227,12 @@ beforeEach(() => {
   h.state.openDeal = null
   h.state.stages = []
   h.state.aiActionLogInserts = []
+  h.state.pipeline = null
+  h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234' }
+  h.state.account = { default_currency: 'USD' }
+  h.state.dealInserts = []
+  h.state.createdDeal = { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+  h.state.contactUpdates = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -312,11 +381,26 @@ describe('dispatchInboundToAiReply — deal-stage prompt context', () => {
     expect(systemPrompt).toContain('"Convencimiento"')
   })
 
-  it('says nothing about stage options when the contact has no open deal', async () => {
+  it('says nothing about stage options when the contact has no open deal and no pipeline is configured', async () => {
     h.state.openDeal = null
+    h.state.pipeline = null
     await dispatchInboundToAiReply(ARGS)
     const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).not.toContain('ACTION:move_deal')
+  })
+
+  it('offers the default pipeline\'s stages to create a deal into when the contact has none yet', async () => {
+    h.state.openDeal = null
+    h.state.pipeline = { id: 'pipe-1' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('does not have a deal yet')
+    expect(systemPrompt).toContain('"Cotización"')
+    expect(systemPrompt).toContain('"Negociación"')
   })
 
   it('says nothing about stage options when the deal has no other stage to offer', async () => {
@@ -459,7 +543,7 @@ describe('dispatchInboundToAiReply — autonomous move_deal', () => {
     expect(h.moveDeal).not.toHaveBeenCalled()
   })
 
-  it('still sends the reply, and logs nothing, when the contact has no open deal', async () => {
+  it('creates a deal at the named stage instead of moving one, when the contact has no open deal', async () => {
     h.generateReply.mockResolvedValue({
       text: 'Sure thing!',
       handoff: false,
@@ -467,12 +551,30 @@ describe('dispatchInboundToAiReply — autonomous move_deal', () => {
       moveToStageName: 'Negociación',
     })
     h.state.openDeal = null
+    h.state.pipeline = { id: 'pipe-1' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
 
     await dispatchInboundToAiReply(ARGS)
 
     expect(h.engineSendText).toHaveBeenCalled()
     expect(h.moveDeal).not.toHaveBeenCalled()
-    expect(h.state.aiActionLogInserts).toEqual([])
+    expect(h.state.dealInserts).toHaveLength(1)
+    expect(h.state.dealInserts[0]).toMatchObject({
+      account_id: 'acct-1',
+      pipeline_id: 'pipe-1',
+      stage_id: 'stage-b',
+      contact_id: 'contact-1',
+      title: 'Juan Pérez',
+      value: 0,
+      currency: 'USD',
+      status: 'open',
+    })
+    expect(h.state.aiActionLogInserts).toEqual([
+      expect.objectContaining({ action: 'create_deal', target_id: 'new-deal-1' }),
+    ])
   })
 
   it('swallows a moveDeal failure — the already-sent reply is unaffected', async () => {
@@ -510,6 +612,142 @@ describe('dispatchInboundToAiReply — autonomous move_deal', () => {
     expect(h.moveDeal).not.toHaveBeenCalled()
     expect(h.state.aiActionLogInserts).toEqual([
       expect.objectContaining({ action: 'flag_deal_closing' }),
+    ])
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous create_deal', () => {
+  it('does nothing when no pipeline is configured at all', async () => {
+    h.state.openDeal = null
+    h.state.pipeline = null
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.dealInserts).toEqual([])
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('does nothing when the named stage does not match any of the default pipeline\'s stages', async () => {
+    h.state.openDeal = null
+    h.state.pipeline = { id: 'pipe-1' }
+    h.state.stages = [{ id: 'stage-a', name: 'Cotización' }]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Etapa inventada',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.dealInserts).toEqual([])
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('falls back to the phone number as the title when the contact has no name', async () => {
+    h.state.openDeal = null
+    h.state.pipeline = { id: 'pipe-1' }
+    h.state.stages = [{ id: 'stage-a', name: 'Cotización' }]
+    h.state.contact = { lead_temperature: null, name: '', phone: '50255551234' } as unknown as typeof h.state.contact
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Cotización',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.dealInserts[0]).toMatchObject({ title: '50255551234' })
+  })
+
+  it('dispatches deal.stage_changed for a newly created deal', async () => {
+    h.state.openDeal = null
+    h.state.pipeline = { id: 'pipe-1' }
+    h.state.stages = [{ id: 'stage-a', name: 'Cotización' }]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Cotización',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'deal.stage_changed',
+      expect.objectContaining({ deal_id: 'new-deal-1', source: 'auto_reply_autonomous' }),
+    )
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous set_temperature', () => {
+  it('sets the temperature and logs it when the model signals a new value', async () => {
+    h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234' }
+    h.generateReply.mockResolvedValue({
+      text: 'Claro que sí!',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      leadTemperature: 'hot',
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.contactUpdates).toEqual([
+      expect.objectContaining({ lead_temperature: 'hot' }),
+    ])
+    expect(h.state.aiActionLogInserts).toEqual([
+      expect.objectContaining({
+        action: 'set_lead_temperature',
+        target_id: 'contact-1',
+        input: { temperature: 'hot', source: 'auto_reply_autonomous' },
+      }),
+    ])
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'contact.lead_temperature_changed',
+      expect.objectContaining({ contact_id: 'contact-1', lead_temperature: 'hot' }),
+    )
+  })
+
+  it('does nothing when the model does not signal a temperature', async () => {
+    await dispatchInboundToAiReply(ARGS) // default mock: no leadTemperature
+    expect(h.state.contactUpdates).toEqual([])
+  })
+
+  it('skips the write when the temperature is unchanged', async () => {
+    h.state.contact = { lead_temperature: 'warm', name: 'Juan Pérez', phone: '50255551234' }
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      leadTemperature: 'warm',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.contactUpdates).toEqual([])
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('fires independently alongside an autonomous stage move in the same turn', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización' },
+      { id: 'stage-b', name: 'Negociación' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Perfecto, seguimos.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Negociación',
+      leadTemperature: 'hot',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.moveDeal).toHaveBeenCalled()
+    expect(h.state.contactUpdates).toEqual([
+      expect.objectContaining({ lead_temperature: 'hot' }),
     ])
   })
 })

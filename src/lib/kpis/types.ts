@@ -61,6 +61,26 @@ export interface SpendEntry {
   currency: string
 }
 
+/** One contact who wrote in during the window, shaped for the
+ *  "Contacts" export sheet — name/phone/channel/stage the KPIs page
+ *  itself never needs on screen, so this is fetched lazily on export
+ *  click rather than folded into `KpiDataset`. */
+export interface ContactExportRow {
+  id: string
+  name: string
+  phone: string | null
+  channel: 'whatsapp' | 'instagram' | 'facebook'
+  createdAt: string
+  /** Every `contact_notes` row for this contact, oldest first, joined
+   *  with " | " — there's no dedicated "reason for inquiry" field, so
+   *  this is the closest real data to it (see contact-sidebar.tsx's
+   *  notes section, the same table). */
+  notes: string
+  /** Name of the stage of this contact's most recent deal, or null if
+   *  they have none yet. */
+  stage: string | null
+}
+
 /** Everything the KPIs page needs for one render, bundled so the
  *  page component and the Excel exporter both consume the exact same
  *  shape. */

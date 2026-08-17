@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { temperatureDistribution } from './compute'
-import type { DateWindow, KpiDataset, LeadRow, SpendEntry, WonDealRow } from './types'
+import type { ContactExportRow, DateWindow, KpiDataset, LeadRow, SpendEntry, WonDealRow } from './types'
 import type { BucketGranularity } from '@/lib/dashboard/date-utils'
 
 type DB = SupabaseClient
@@ -103,6 +103,80 @@ export async function saveSpendForWindow(
     { onConflict: 'account_id,period_start,period_end' },
   )
   if (error) throw error
+}
+
+/** Every contact who wrote in during `window`, with the fields the
+ *  "Contacts" export sheet needs — name, phone, derived channel, all
+ *  their notes, and their most recent deal's stage. Three queries
+ *  (contacts, then notes + deals in parallel, keyed by contact id)
+ *  instead of one deep join: notes/deals are one-to-many, and a
+ *  Supabase embedded-join would multiply the contact row per note or
+ *  deal instead of collapsing it back down. Only called on export
+ *  click, never for the on-screen KPIs, so the extra round-trips
+ *  don't cost anything on page load. */
+export async function loadContactExportRows(db: DB, window: DateWindow): Promise<ContactExportRow[]> {
+  const { data: contacts, error } = await db
+    .from('contacts')
+    .select('id, name, phone, instagram_id, instagram_username, facebook_id, facebook_username, created_at')
+    .gte('created_at', window.start.toISOString())
+    .lt('created_at', endExclusive(window.end))
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  if (!contacts || contacts.length === 0) return []
+
+  const ids = contacts.map((c) => c.id as string)
+  const [notesRes, dealsRes] = await Promise.all([
+    db
+      .from('contact_notes')
+      .select('contact_id, note_text, created_at')
+      .in('contact_id', ids)
+      .order('created_at', { ascending: true }),
+    db
+      .from('deals')
+      .select('contact_id, created_at, stage:pipeline_stages(name)')
+      .in('contact_id', ids)
+      .order('created_at', { ascending: false }),
+  ])
+  if (notesRes.error) throw notesRes.error
+  if (dealsRes.error) throw dealsRes.error
+
+  const notesByContact = new Map<string, string[]>()
+  for (const n of notesRes.data ?? []) {
+    const row = n as Record<string, unknown>
+    const contactId = row.contact_id as string
+    const arr = notesByContact.get(contactId) ?? []
+    arr.push(row.note_text as string)
+    notesByContact.set(contactId, arr)
+  }
+
+  // Deals came back newest-first, so the first hit per contact is
+  // their most recent — later ones for the same contact are ignored.
+  const stageByContact = new Map<string, string>()
+  for (const d of dealsRes.data ?? []) {
+    const row = d as Record<string, unknown>
+    const contactId = row.contact_id as string
+    if (stageByContact.has(contactId)) continue
+    const stage = row.stage as { name?: string } | null
+    if (stage?.name) stageByContact.set(contactId, stage.name)
+  }
+
+  return contacts.map((c) => {
+    const row = c as Record<string, unknown>
+    const channel: ContactExportRow['channel'] = row.instagram_id
+      ? 'instagram'
+      : row.facebook_id
+        ? 'facebook'
+        : 'whatsapp'
+    return {
+      id: row.id as string,
+      name: (row.name || row.instagram_username || row.facebook_username || row.phone || '') as string,
+      phone: (row.phone as string | null) ?? null,
+      channel,
+      createdAt: row.created_at as string,
+      notes: (notesByContact.get(row.id as string) ?? []).join(' | '),
+      stage: stageByContact.get(row.id as string) ?? null,
+    }
+  })
 }
 
 /**

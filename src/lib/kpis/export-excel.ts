@@ -8,7 +8,7 @@ import {
   qualifiedLeadsSeries,
   wonDealsSeries,
 } from './compute'
-import type { KpiDataset } from './types'
+import type { ContactExportRow, KpiDataset } from './types'
 
 // Fixed English labels (not routed through next-intl) — this module
 // is a plain function, not a component, and the rest of the app has
@@ -40,6 +40,7 @@ export async function buildKpiWorkbook(
   data: KpiDataset,
   currency: string,
   granularity: BucketGranularity,
+  contacts: ContactExportRow[],
 ): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook()
   wb.creator = 'Chat Sandía'
@@ -74,6 +75,33 @@ export async function buildKpiWorkbook(
     previous: '',
   })
   summary.addRow({ kpi: 'Deals won', current: wonCount, previous: data.previousWonCount })
+
+  // --- Contacts ------------------------------------------------------
+  // Raw per-person detail behind "Leads generated" — every contact who
+  // wrote in during the period, with what an agent needs to follow up:
+  // name, phone, which channel they came in on, whatever notes were
+  // logged on them (closest thing to a "reason for inquiry" — there's
+  // no dedicated field for it), and where their pipeline left off.
+  const contactsSheet = wb.addWorksheet('Contacts')
+  contactsSheet.columns = [
+    { header: 'Name', key: 'name', width: 24 },
+    { header: 'Phone', key: 'phone', width: 16 },
+    { header: 'Channel', key: 'channel', width: 12 },
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Notes', key: 'notes', width: 40 },
+    { header: 'Stage', key: 'stage', width: 20 },
+  ]
+  styleHeaderRow(contactsSheet.getRow(1))
+  for (const contact of contacts) {
+    contactsSheet.addRow({
+      name: contact.name,
+      phone: contact.phone ?? '',
+      channel: contact.channel,
+      date: new Date(contact.createdAt).toLocaleDateString('en-US'),
+      notes: contact.notes,
+      stage: contact.stage ?? '',
+    })
+  }
 
   // --- Leads generated ----------------------------------------------
   const leadsSheet = wb.addWorksheet('Leads generated')
@@ -146,8 +174,9 @@ export async function downloadKpiExcel(
   data: KpiDataset,
   currency: string,
   granularity: BucketGranularity,
+  contacts: ContactExportRow[],
 ): Promise<void> {
-  const wb = await buildKpiWorkbook(data, currency, granularity)
+  const wb = await buildKpiWorkbook(data, currency, granularity, contacts)
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

@@ -14,7 +14,7 @@ import {
   granularityForRangeDays,
   startOfLocalDay,
 } from '@/lib/dashboard/date-utils'
-import { loadKpiDataset, saveSpendForWindow, countWonDealsInWindow } from '@/lib/kpis/queries'
+import { loadKpiDataset, saveSpendForWindow, countWonDealsInWindow, loadContactExportRows } from '@/lib/kpis/queries'
 import {
   cac,
   conversionRate,
@@ -136,7 +136,9 @@ export default function KpisPage() {
     if (!dataset) return
     setExporting(true)
     try {
-      await downloadKpiExcel(dataset, defaultCurrency, granularity)
+      const db = createClient()
+      const contacts = await loadContactExportRows(db, dataset.window)
+      await downloadKpiExcel(dataset, defaultCurrency, granularity, contacts)
     } catch (err) {
       console.error('[kpis] export failed:', err)
       toast.error(t('exportFailed'))

@@ -1897,6 +1897,26 @@
       "step3_3": "\"message.received\" 이벤트를 선택",
       "zernioDocs": "Zernio API 문서"
     },
+    "googleCalendar": {
+      "title": "Google Calendar",
+      "description": "Google Calendar를 연결하면 AI 어시스턴트가 실제 일정을 확인하고 약속을 잡을 수 있습니다 — 고객에게는 Google이 자동으로 초대 이메일을 보냅니다.",
+      "cardTitle": "연결",
+      "connected": "연결됨",
+      "connectedAs": "{email}(으)로 연결됨",
+      "notConnected": "연결되지 않음",
+      "connectionIssue": "연결 문제",
+      "connect": "Google Calendar 연결",
+      "disconnect": "연결 해제",
+      "disconnecting": "연결 해제 중...",
+      "disconnectConfirm": "Chat Sandía에서 Google Calendar 연결이 해제됩니다 — 다시 연결할 때까지 AI가 일정을 확인하거나 약속을 잡을 수 없습니다. 계속하시겠습니까?",
+      "toastConnected": "Google Calendar가 연결되었습니다.",
+      "toastConnectFailed": "Google Calendar를 연결하지 못했습니다 ({error}).",
+      "toastDisconnected": "Google Calendar 연결이 해제되었습니다.",
+      "toastDisconnectFailed": "Google Calendar 연결 해제에 실패했습니다.",
+      "aboutTitle": "이 연결에 대하여",
+      "aboutBody": "Chat Sandía는 일정의 여유/예약 여부 확인과 이벤트 생성 권한만 요청합니다 — 다른 일정의 세부 내용은 절대 읽지 않습니다.",
+      "aboutLink": "Google Calendar 열기"
+    },
     "sections": {
       "overview": "개요",
       "profile": "내 프로필",
@@ -1912,7 +1932,8 @@
       "members": "팀원",
       "api": "API 키",
       "webhooks": "웹훅",
-      "billing": "청구"
+      "billing": "청구",
+      "google-calendar": "Google Calendar"
     },
     "groups": {
       "account": "계정",

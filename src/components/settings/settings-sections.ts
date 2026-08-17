@@ -1,6 +1,7 @@
 import {
   Banknote,
   Camera,
+  CalendarDays,
   Coins,
   FileText,
   KeyRound,
@@ -41,6 +42,7 @@ export const SETTINGS_SECTIONS = [
   'api',
   'webhooks',
   'billing',
+  'google-calendar',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -71,6 +73,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
   webhooks: { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'workspace' },
   billing: { id: 'billing', label: 'Billing', icon: Banknote, group: 'workspace' },
+  'google-calendar': { id: 'google-calendar', label: 'Google Calendar', icon: CalendarDays, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

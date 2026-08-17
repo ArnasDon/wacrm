@@ -1897,6 +1897,26 @@
       "step3_3": "Select the \"message.received\" event",
       "zernioDocs": "Zernio API Documentation"
     },
+    "googleCalendar": {
+      "title": "Google Calendar",
+      "description": "Connect your Google Calendar so the AI assistant can check your real availability and schedule appointments — the customer gets Google's own invite email automatically.",
+      "cardTitle": "Connection",
+      "connected": "Connected",
+      "connectedAs": "Connected as {email}",
+      "notConnected": "Not connected",
+      "connectionIssue": "Connection issue",
+      "connect": "Connect Google Calendar",
+      "disconnect": "Disconnect",
+      "disconnecting": "Disconnecting...",
+      "disconnectConfirm": "This disconnects Google Calendar from Chat Sandía — the AI won't be able to check availability or schedule appointments until you reconnect. Continue?",
+      "toastConnected": "Google Calendar connected.",
+      "toastConnectFailed": "Couldn't connect Google Calendar ({error}).",
+      "toastDisconnected": "Google Calendar disconnected.",
+      "toastDisconnectFailed": "Failed to disconnect Google Calendar.",
+      "aboutTitle": "About this connection",
+      "aboutBody": "Chat Sandía only requests permission to check free/busy times and create events — never to read the details of your other events.",
+      "aboutLink": "Open Google Calendar"
+    },
     "sections": {
       "overview": "Overview",
       "profile": "Your profile",
@@ -1912,7 +1932,8 @@
       "members": "Team members",
       "api": "API keys",
       "webhooks": "Webhooks",
-      "billing": "Billing"
+      "billing": "Billing",
+      "google-calendar": "Google Calendar"
     },
     "groups": {
       "account": "Account",

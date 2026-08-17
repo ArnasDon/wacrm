@@ -482,7 +482,10 @@
       "toastFailedDelete": "Failed to delete contact",
       "toastDeleted": "Contact deleted",
       "toastBulkFailedDelete": "Failed to delete contacts",
-      "toastBulkDeleted": "{count} contacts deleted"
+      "toastBulkDeleted": "{count} contacts deleted",
+      "exportBtn": "Download",
+      "toastExportEmpty": "No contacts match the current filters",
+      "toastExportFailed": "Failed to export contacts"
     },
     "form": {
       "addTitle": "Add Contact",

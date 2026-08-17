@@ -482,7 +482,10 @@
       "toastFailedDelete": "연락처를 삭제하지 못했습니다",
       "toastDeleted": "연락처가 삭제되었습니다",
       "toastBulkFailedDelete": "연락처를 삭제하지 못했습니다",
-      "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다"
+      "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다",
+      "exportBtn": "다운로드",
+      "toastExportEmpty": "현재 필터와 일치하는 연락처가 없습니다",
+      "toastExportFailed": "연락처를 내보내지 못했습니다"
     },
     "form": {
       "addTitle": "연락처 추가",

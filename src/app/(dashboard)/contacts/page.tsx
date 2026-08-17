@@ -39,6 +39,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -55,6 +56,7 @@ import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { downloadContactsExcel, toContactExportRow } from '@/lib/contacts/export-excel';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -90,6 +92,7 @@ export default function ContactsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -210,17 +213,77 @@ export default function ContactsPage() {
     setLoading(false);
   }, [supabase, page, search, selectedTagIds, tagsMap, t]);
 
+  /** Exports every contact matching the CURRENT search + tag filters —
+   *  not just the loaded page — to Excel. Mirrors fetchContacts' two
+   *  query paths (tag-filtered via the RPC vs. plain search) but
+   *  without pagination, since a full export needs every match. A
+   *  huge account could make this a large single request; the RPC's
+   *  own `p_limit` already saved us from unbounded IN-clauses, and
+   *  this account's contact volume today doesn't warrant chunking
+   *  yet — revisit if that changes. */
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const term = search.trim();
+      let allContacts: Contact[];
+
+      if (selectedTagIds.length > 0) {
+        const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
+          p_tag_ids: selectedTagIds,
+          p_search: term || null,
+          p_limit: 100000,
+          p_offset: 0,
+        });
+        if (error) throw error;
+        const rows = (data ?? []) as { contact: Contact }[];
+        allContacts = rows.map((r) => r.contact);
+      } else {
+        let query = supabase.from('contacts').select('*').order('created_at', { ascending: false });
+        if (term) {
+          const like = `%${term}%`;
+          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        allContacts = data ?? [];
+      }
+
+      if (allContacts.length === 0) {
+        toast.error(t('toastExportEmpty'));
+        return;
+      }
+
+      const contactIds = allContacts.map((c) => c.id);
+      const { data: contactTags } = await supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', contactIds);
+      const tagNamesByContact: Record<string, string[]> = {};
+      contactTags?.forEach((ct) => {
+        const name = tagsMap[ct.tag_id]?.name;
+        if (!name) return;
+        (tagNamesByContact[ct.contact_id] ??= []).push(name);
+      });
+
+      const rows = allContacts.map((c) => toContactExportRow(c, tagNamesByContact[c.id] ?? []));
+      await downloadContactsExcel(rows);
+    } catch (err) {
+      console.error('[contacts] export failed:', err);
+      toast.error(t('toastExportFailed'));
+    } finally {
+      setExporting(false);
+    }
+  }, [supabase, search, selectedTagIds, tagsMap, t]);
+
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
   // synchronously in the effect body, so the cascade the lint rule
   // warns about doesn't apply here.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
   }, [fetchTags]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
 
@@ -461,6 +524,20 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={exporting || totalCount === 0}
+            className="border-border text-muted-foreground hover:bg-muted shrink-0"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {t('exportBtn')}
+          </Button>
         </div>
 
         {/* Active tag-filter chips */}

@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install the Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           # Pinned rather than `latest`: this check is infrastructure,
           # and a CLI release changing behaviour should be a deliberate

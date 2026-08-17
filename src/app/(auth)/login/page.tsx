@@ -150,7 +150,7 @@ function LoginPageInner() {
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t('noAccount')}{" "}
+            {inviteToken ? t('noAccount') : t('noAccountOpen')}{" "}
             <Link
               href={
                 inviteToken
@@ -159,7 +159,7 @@ function LoginPageInner() {
               }
               className="text-primary hover:text-primary/80"
             >
-              {t('createAccount')}
+              {inviteToken ? t('createAccount') : t('requestAccess')}
             </Link>
           </p>
         </CardContent>

@@ -12,7 +12,9 @@
     "signingIn": "Signing in...",
     "signIn": "Sign in",
     "noAccount": "Don't have an account?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "noAccountOpen": "Want to try Chat Sandía?",
+    "requestAccess": "Request access"
   },
   "Sidebar": {
     "title": "Chat Sandía",

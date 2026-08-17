@@ -12,7 +12,9 @@
     "signingIn": "로그인 중...",
     "signIn": "로그인",
     "noAccount": "계정이 없으신가요?",
-    "createAccount": "계정 만들기"
+    "createAccount": "계정 만들기",
+    "noAccountOpen": "Chat Sandía를 체험해보고 싶으신가요?",
+    "requestAccess": "계정 요청하기"
   },
   "Sidebar": {
     "title": "Chat Sandía",

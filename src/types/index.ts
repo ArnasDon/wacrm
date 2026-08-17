@@ -425,6 +425,9 @@ export interface ActionItem {
   description?: string | null;
   /** Required (enforced by DB constraint) when type === 'followup'. */
   due_date?: string | null;
+  /** Required alongside due_date (enforced by DB constraint) when
+   *  type === 'followup' — migration 068. "HH:mm:ss" (Postgres `time`). */
+  due_time?: string | null;
   status: ActionItemStatus;
   source_suggestion_id?: string | null;
   created_by?: string | null;

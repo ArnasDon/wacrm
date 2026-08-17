@@ -68,8 +68,10 @@ import { ContactNotesPanel } from "./contact-notes-panel";
 import { MediaGallery } from "./media-gallery";
 import { AppointmentFormDialog } from "@/components/appointments/appointment-form-dialog";
 import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
+import { FollowupRequirementDialog } from "@/components/action-items/followup-requirement-dialog";
 import { ArchiveDealDialog } from "@/components/pipelines/archive-deal-dialog";
 import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
+import { useFollowupGate } from "@/hooks/use-followup-gate";
 
 interface ReplyDraft {
   id: string;
@@ -268,6 +270,7 @@ export function MessageThread({
   // fetch/update implementation and stay in sync with each other.
   const { deal: pipelineDeal, stages: pipelineStages, moveToStage } =
     useLeadPipelineStage(contact?.id);
+  const followupGate = useFollowupGate();
 
   // Profiles are bounded by RLS to rows the current user is allowed to
   // see — today that's just the current user, but the dropdown keeps the
@@ -939,15 +942,26 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  // AGENTS task: moving into "Follow-up" from here requires motivo +
+  // prazo, same global gate every other entry point uses — see
+  // useFollowupGate. Every other stage stays a plain, immediate move.
   const handleMoveStage = useCallback(
-    async (stageId: string) => {
-      const { error } = await moveToStage(stageId);
-      if (error) {
-        console.error("Failed to update pipeline stage:", error);
-        toast.error("Failed to update pipeline stage");
-      }
+    (stageId: string) => {
+      if (!pipelineDeal) return;
+      followupGate.guardMove({
+        deal: pipelineDeal,
+        stages: pipelineStages,
+        targetStageId: stageId,
+        performMove: async () => {
+          const { error } = await moveToStage(stageId);
+          if (error) {
+            console.error("Failed to update pipeline stage:", error);
+            toast.error("Failed to update pipeline stage");
+          }
+        },
+      });
     },
-    [moveToStage],
+    [pipelineDeal, pipelineStages, followupGate, moveToStage],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active
@@ -1302,6 +1316,10 @@ export function MessageThread({
           );
         }}
       />
+
+      {/* Global "moving into Follow-up requires motivo+prazo" gate —
+          catches the "⋮ → Mover para" submenu entry point. */}
+      <FollowupRequirementDialog {...followupGate} />
 
       {/* "Ver mídias" — derived entirely from `messages`, already loaded
           for this thread; no separate fetch, no new storage. */}

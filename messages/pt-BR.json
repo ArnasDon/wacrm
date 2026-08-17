@@ -134,9 +134,20 @@
       "saveError": "Não foi possível salvar. Tente novamente."
     },
     "dueDateShortcuts": {
+      "timeLabel": "Horário do próximo contato",
       "plus10": "+10 dias",
       "plus20": "+20 dias",
       "plus30": "+30 dias"
+    },
+    "followupGate": {
+      "title": "Mover {name} para Follow-up",
+      "description": "Para mover este lead para Follow-up, informe o motivo e o prazo de retorno.",
+      "reasonLabel": "Motivo do Follow-up",
+      "reasonPlaceholder": "Ex.: Cliente pediu para retornar em 15 dias",
+      "dueDateLabel": "Retornar em",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "saving": "Salvando..."
     },
     "outcomeDialog": {
       "title": "O que aconteceu após este contato?",
@@ -168,6 +179,7 @@
       "contextLabel": "Contexto/observação",
       "noContext": "Sem contexto adicional",
       "dueDateLabel": "Data do próximo contato",
+      "atTime": "às {time}",
       "newDueDateLabel": "Nova data de contato",
       "titleRequired": "Descreva a ação necessária.",
       "dueDateRequired": "Defina a data do próximo contato.",

@@ -125,6 +125,7 @@ export interface CreateActionItemInput {
   title: string;
   description?: string | null;
   due_date?: string | null;
+  due_time?: string | null;
   source_suggestion_id?: string | null;
   created_by?: string | null;
 }
@@ -144,6 +145,7 @@ export async function createActionItem(
       title: input.title,
       description: input.description || null,
       due_date: input.due_date ?? null,
+      due_time: input.due_time ?? null,
       source_suggestion_id: input.source_suggestion_id ?? null,
       created_by: input.created_by ?? null,
     })
@@ -165,6 +167,7 @@ export interface EditActionItemInput {
   title: string;
   description?: string | null;
   due_date?: string | null;
+  due_time?: string | null;
 }
 
 export async function editActionItem(
@@ -179,6 +182,7 @@ export async function editActionItem(
       title: patch.title,
       description: patch.description || null,
       due_date: patch.due_date ?? item.due_date ?? null,
+      due_time: patch.due_time ?? item.due_time ?? null,
     })
     .eq("id", item.id);
   if (error) throw error;
@@ -221,12 +225,13 @@ export async function rescheduleFollowup(
   db: SupabaseClient,
   item: ActionItem,
   newDueDate: string,
+  newDueTime: string,
   note: string | null,
   actedBy: string | null,
 ): Promise<void> {
   const { error } = await db
     .from("action_items")
-    .update({ due_date: newDueDate })
+    .update({ due_date: newDueDate, due_time: newDueTime })
     .eq("id", item.id);
   if (error) throw error;
 
@@ -235,7 +240,13 @@ export async function rescheduleFollowup(
     accountId: item.account_id,
     type: "rescheduled",
     createdBy: actedBy,
-    payload: { from_due_date: item.due_date, to_due_date: newDueDate, note },
+    payload: {
+      from_due_date: item.due_date,
+      from_due_time: item.due_time,
+      to_due_date: newDueDate,
+      to_due_time: newDueTime,
+      note,
+    },
   });
 }
 

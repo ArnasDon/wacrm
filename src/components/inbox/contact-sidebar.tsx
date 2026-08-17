@@ -31,6 +31,8 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ContactNotesPanel } from "./contact-notes-panel";
 import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
+import { useFollowupGate } from "@/hooks/use-followup-gate";
+import { FollowupRequirementDialog } from "@/components/action-items/followup-requirement-dialog";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -49,6 +51,7 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   // — one fetch/update implementation for both entry points.
   const { deal: pipelineDeal, stages: pipelineStages, moveToStage } =
     useLeadPipelineStage(contact?.id);
+  const followupGate = useFollowupGate();
   // BLOCO 3/4 — discreet count of pending Central de IA suggestions for
   // this contact (any category — pipeline moves, follow-ups, etc.).
   // Keeps the Inbox itself free of AI clutter: just a small hint here
@@ -370,9 +373,21 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
                   {pipelineStages.map((stage) => (
                     <DropdownMenuItem
                       key={stage.id}
-                      onClick={async () => {
-                        const { error } = await moveToStage(stage.id);
-                        if (error) toast.error("Failed to update pipeline stage");
+                      onClick={() => {
+                        if (!pipelineDeal) return;
+                        // AGENTS task: moving into "Follow-up" from here
+                        // requires motivo + prazo, same global gate every
+                        // other entry point uses. Every other stage stays
+                        // a plain, immediate move.
+                        followupGate.guardMove({
+                          deal: pipelineDeal,
+                          stages: pipelineStages,
+                          targetStageId: stage.id,
+                          performMove: async () => {
+                            const { error } = await moveToStage(stage.id);
+                            if (error) toast.error("Failed to update pipeline stage");
+                          },
+                        });
                       }}
                       className={cn(
                         "text-sm",
@@ -405,6 +420,10 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
           <ContactNotesPanel contact={contact} />
         </div>
       </ScrollArea>
+
+      {/* Global "moving into Follow-up requires motivo+prazo" gate —
+          catches this sidebar's own "Mudar etapa" entry point. */}
+      <FollowupRequirementDialog {...followupGate} />
     </div>
   );
 }

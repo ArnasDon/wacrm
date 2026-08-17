@@ -134,9 +134,20 @@
       "saveError": "Couldn't save. Try again."
     },
     "dueDateShortcuts": {
+      "timeLabel": "Next contact time",
       "plus10": "+10 days",
       "plus20": "+20 days",
       "plus30": "+30 days"
+    },
+    "followupGate": {
+      "title": "Move {name} to Follow-up",
+      "description": "To move this lead to Follow-up, provide the reason and the follow-up deadline.",
+      "reasonLabel": "Follow-up reason",
+      "reasonPlaceholder": "E.g.: Client asked to follow up in 15 days",
+      "dueDateLabel": "Follow up on",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "saving": "Saving..."
     },
     "outcomeDialog": {
       "title": "What happened after this contact?",
@@ -168,6 +179,7 @@
       "contextLabel": "Context/notes",
       "noContext": "No additional context",
       "dueDateLabel": "Next contact date",
+      "atTime": "at {time}",
       "newDueDateLabel": "New contact date",
       "titleRequired": "Describe the action needed.",
       "dueDateRequired": "Set the next contact date.",

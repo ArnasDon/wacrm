@@ -13,6 +13,7 @@ import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
 import { ArchivedDealsList } from "@/components/pipelines/archived-deals-list";
 import { ArchiveDealDialog } from "@/components/pipelines/archive-deal-dialog";
+import { FollowupRequirementDialog } from "@/components/action-items/followup-requirement-dialog";
 import { DeleteLeadDialog } from "@/components/contacts/delete-lead-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ import { GitBranch, Plus, ChevronDown, Settings, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
+import { useFollowupGate } from "@/hooks/use-followup-gate";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useTranslations } from "next-intl";
 
@@ -58,6 +60,7 @@ export default function PipelinesPage() {
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const { accountId } = useAuth();
+  const followupGate = useFollowupGate();
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
@@ -336,7 +339,10 @@ export default function PipelinesPage() {
     };
   }, [view, selectedPipelineId, loadArchivedDeals]);
 
-  const handleDealsReordered = useCallback(
+  // Split out from handleDealsReordered so the Follow-up gate (below)
+  // can defer this exact same persist step until motivo/prazo are
+  // saved, instead of duplicating it.
+  const persistDealRows = useCallback(
     async (rows: DealPositionUpdate[]) => {
       // Optimistic update — the board already animated the drag live;
       // this just persists the final `stage_id`/`position` for whichever
@@ -369,6 +375,38 @@ export default function PipelinesPage() {
       }
     },
     [supabase, refreshDeals, t],
+  );
+
+  // AGENTS task: dragging a card into "Follow-up" requires motivo +
+  // prazo, same as every other entry point (useFollowupGate). `rows`
+  // carries every deal whose column membership changed — the actually-
+  // dragged deal is the one row whose stage_id differs from its
+  // current state (the rest are same-column reposition rows). If that
+  // target is Follow-up, defer the whole persist until the gate dialog
+  // is confirmed; the board visually settles back to the origin column
+  // in the meantime (nothing was written yet), so a cancel needs no
+  // separate revert.
+  const handleDealsReordered = useCallback(
+    (rows: DealPositionUpdate[]) => {
+      const movedRow = rows.find((r) => {
+        const current = deals.find((d) => d.id === r.id);
+        return current && current.stage_id !== r.stage_id;
+      });
+      if (movedRow) {
+        const deal = deals.find((d) => d.id === movedRow.id);
+        if (deal) {
+          followupGate.guardMove({
+            deal,
+            stages,
+            targetStageId: movedRow.stage_id,
+            performMove: () => persistDealRows(rows),
+          });
+          return;
+        }
+      }
+      void persistDealRows(rows);
+    },
+    [deals, stages, followupGate, persistDealRows],
   );
 
   const handleOpenDeal = useCallback((deal: Deal, originRect?: DOMRect) => {
@@ -680,6 +718,10 @@ export default function PipelinesPage() {
         dealName={archiveDealTarget?.name ?? ""}
         onArchived={handleDealArchived}
       />
+
+      {/* Global "moving into Follow-up requires motivo+prazo" gate —
+          catches the Pipeline drag-and-drop entry point. */}
+      <FollowupRequirementDialog {...followupGate} />
 
       {/* New Pipeline Dialog */}
       <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>

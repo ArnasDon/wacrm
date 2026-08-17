@@ -13,16 +13,30 @@ function addDays(days: number): string {
 }
 
 interface DueDateFieldProps {
-  value: string;
-  onChange: (value: string) => void;
+  dateValue: string;
+  timeValue: string;
+  onDateChange: (value: string) => void;
+  onTimeChange: (value: string) => void;
   label: string;
   id?: string;
 }
 
-/** Shared "próximo contato" date field — native date input + the
- *  +10/+20/+30 dias shortcuts required by AGENTS.md §5/§22. Used both
- *  when creating/editing a follow-up and when rescheduling one. */
-export function DueDateField({ value, onChange, label, id = "due-date" }: DueDateFieldProps) {
+/** Shared "próximo contato" date+hora field — native date/time inputs
+ *  plus the +10/+20/+30 dias shortcuts required by AGENTS.md §5/§22
+ *  (shortcuts only ever touch the date; the time is always a deliberate
+ *  choice). Both date and time are required wherever a Follow-up is
+ *  created or rescheduled — the global "motivo + prazo (data e hora)"
+ *  rule for entering Follow-up. Used when creating/editing a follow-up,
+ *  rescheduling one, and by the cross-cutting move-to-Follow-up gate
+ *  (useFollowupGate). */
+export function DueDateField({
+  dateValue,
+  timeValue,
+  onDateChange,
+  onTimeChange,
+  label,
+  id = "due-date",
+}: DueDateFieldProps) {
   const t = useTranslations("ActionCenter.dueDateShortcuts");
   return (
     <div className="space-y-1.5">
@@ -33,18 +47,26 @@ export function DueDateField({ value, onChange, label, id = "due-date" }: DueDat
         <Input
           id={id}
           type="date"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={dateValue}
+          onChange={(e) => onDateChange(e.target.value)}
           className="w-auto"
         />
+        <Input
+          id={`${id}-time`}
+          type="time"
+          value={timeValue}
+          onChange={(e) => onTimeChange(e.target.value)}
+          className="w-auto"
+          aria-label={t("timeLabel")}
+        />
         <div className="flex gap-1">
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(addDays(10))}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onDateChange(addDays(10))}>
             {t("plus10")}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(addDays(20))}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onDateChange(addDays(20))}>
             {t("plus20")}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => onChange(addDays(30))}>
+          <Button type="button" variant="outline" size="sm" onClick={() => onDateChange(addDays(30))}>
             {t("plus30")}
           </Button>
         </div>

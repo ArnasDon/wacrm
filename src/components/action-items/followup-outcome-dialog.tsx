@@ -44,6 +44,7 @@ export function FollowupOutcomeDialog({ open, onOpenChange, item, onDone }: Foll
   const [terminalOutcome, setTerminalOutcome] = useState<FollowupOutcome>("no_response");
   const [note, setNote] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
+  const [newDueTime, setNewDueTime] = useState("");
   const [advanceStageId, setAdvanceStageId] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -52,6 +53,7 @@ export function FollowupOutcomeDialog({ open, onOpenChange, item, onDone }: Foll
     setStep("choose");
     setNote("");
     setNewDueDate("");
+    setNewDueTime("");
     setAdvanceStageId("");
   }, [open, item?.id]);
 
@@ -60,14 +62,14 @@ export function FollowupOutcomeDialog({ open, onOpenChange, item, onDone }: Foll
 
   async function handleContinue() {
     if (!item) return;
-    if (!newDueDate) {
+    if (!newDueDate || !newDueTime) {
       toast.error(t("dueDateRequired"));
       return;
     }
     setSaving(true);
     try {
       const db = createClient();
-      await rescheduleFollowup(db, item, newDueDate, note.trim() || null, user?.id ?? null);
+      await rescheduleFollowup(db, item, newDueDate, newDueTime, note.trim() || null, user?.id ?? null);
       toast.success(t("continuedToast"));
       onOpenChange(false);
       onDone();
@@ -161,7 +163,14 @@ export function FollowupOutcomeDialog({ open, onOpenChange, item, onDone }: Foll
 
         {step === "continue" && (
           <div className="space-y-4">
-            <DueDateField value={newDueDate} onChange={setNewDueDate} label={t("newDueDateLabel")} id="continue-due-date" />
+            <DueDateField
+              dateValue={newDueDate}
+              timeValue={newDueTime}
+              onDateChange={setNewDueDate}
+              onTimeChange={setNewDueTime}
+              label={t("newDueDateLabel")}
+              id="continue-due-date"
+            />
             <div className="space-y-1.5">
               <Label htmlFor="continue-note" className="text-muted-foreground">
                 {t("noteLabel")}

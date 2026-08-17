@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { useFollowupGate } from "@/hooks/use-followup-gate";
+import { FollowupRequirementDialog } from "@/components/action-items/followup-requirement-dialog";
 
 interface DealFormProps {
   open: boolean;
@@ -56,6 +58,7 @@ export function DealForm({
   const t = useTranslations("Pipelines.form");
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
+  const followupGate = useFollowupGate();
 
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
@@ -151,11 +154,7 @@ export function DealForm({
     };
   }, [open, contactId, supabase]);
 
-  async function handleSave() {
-    if (!title.trim() || !contactId || !stageId) {
-      toast.error(t("toastRequired"));
-      return;
-    }
+  async function doSave() {
     setSaving(true);
 
     const payload = {
@@ -211,6 +210,27 @@ export function DealForm({
     onSaved();
   }
 
+  // AGENTS task: saving this form into "Follow-up" (the Etapa select)
+  // requires motivo + prazo, same global gate every other entry point
+  // uses. Only gated for an existing deal being edited — "creating a
+  // new deal" through this form isn't reachable from the current UI
+  // (deals are auto-created from the first inbound WhatsApp message;
+  // see pipelines/page.tsx), so there's no "current stage" to compare
+  // against there. `guardMove` itself is a no-op when the stage didn't
+  // actually change or isn't Follow-up, so this never adds a prompt to
+  // an ordinary save.
+  async function handleSave() {
+    if (!title.trim() || !contactId || !stageId) {
+      toast.error(t("toastRequired"));
+      return;
+    }
+    if (deal) {
+      followupGate.guardMove({ deal, stages, targetStageId: stageId, performMove: doSave });
+      return;
+    }
+    await doSave();
+  }
+
   async function handleStatusChange(status: DealStatus) {
     if (!deal) return;
     setStatusAction(status);
@@ -246,6 +266,7 @@ export function DealForm({
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
@@ -492,5 +513,10 @@ export function DealForm({
         </div>
       </SheetContent>
     </Sheet>
+
+    {/* Global "moving into Follow-up requires motivo+prazo" gate —
+        catches this form's own Etapa select. */}
+    <FollowupRequirementDialog {...followupGate} />
+    </>
   );
 }

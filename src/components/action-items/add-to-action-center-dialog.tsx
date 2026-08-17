@@ -69,6 +69,7 @@ export function AddToActionCenterDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [dueTime, setDueTime] = useState("");
   const [existing, setExisting] = useState<ActionItem | null>(null);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [aiHint, setAiHint] = useState<AiHint | null>(null);
@@ -79,6 +80,7 @@ export function AddToActionCenterDialog({
     setTitle("");
     setDescription("");
     setDueDate("");
+    setDueTime("");
     setExisting(null);
     setShowDuplicateWarning(false);
     setAiHint(null);
@@ -110,6 +112,7 @@ export function AddToActionCenterDialog({
           setTitle(active.title);
           setDescription(active.description ?? "");
           setDueDate(active.due_date ?? "");
+          setDueTime(active.due_time?.slice(0, 5) ?? "");
         } else {
           // Interesse: surface the duplicate-prevention choice (§10)
           // instead of silently editing or silently duplicating.
@@ -171,7 +174,7 @@ export function AddToActionCenterDialog({
       toast.error(t("titleRequired"));
       return;
     }
-    if (type === "followup" && !dueDate) {
+    if (type === "followup" && (!dueDate || !dueTime)) {
       toast.error(t("dueDateRequired"));
       return;
     }
@@ -198,7 +201,12 @@ export function AddToActionCenterDialog({
         await editActionItem(
           db,
           existing,
-          { title: title.trim(), description: description.trim() || null, due_date: type === "followup" ? dueDate : null },
+          {
+            title: title.trim(),
+            description: description.trim() || null,
+            due_date: type === "followup" ? dueDate : null,
+            due_time: type === "followup" ? dueTime : null,
+          },
           user?.id ?? null,
         );
       } else {
@@ -211,6 +219,7 @@ export function AddToActionCenterDialog({
           title: title.trim(),
           description: description.trim() || null,
           due_date: type === "followup" ? dueDate : null,
+          due_time: type === "followup" ? dueTime : null,
           source_suggestion_id: aiHint?.id ?? null,
           created_by: user?.id ?? null,
         });
@@ -320,7 +329,14 @@ export function AddToActionCenterDialog({
                       placeholder={t("followupTitlePlaceholder")}
                     />
                   </div>
-                  <DueDateField value={dueDate} onChange={setDueDate} label={t("dueDateLabel")} id="followup-due-date" />
+                  <DueDateField
+                    dateValue={dueDate}
+                    timeValue={dueTime}
+                    onDateChange={setDueDate}
+                    onTimeChange={setDueTime}
+                    label={t("dueDateLabel")}
+                    id="followup-due-date"
+                  />
                   <div className="space-y-1.5">
                     <Label htmlFor="followup-desc" className="text-muted-foreground">
                       {t("observationLabel")}

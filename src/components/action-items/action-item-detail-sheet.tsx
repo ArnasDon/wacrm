@@ -57,6 +57,7 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
 
   const [rescheduling, setRescheduling] = useState(false);
   const [newDueDate, setNewDueDate] = useState("");
+  const [newDueTime, setNewDueTime] = useState("");
 
   const [outcomeDialogOpen, setOutcomeDialogOpen] = useState(false);
 
@@ -71,6 +72,7 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
       setEditTitle(item.title);
       setEditDescription(item.description ?? "");
       setNewDueDate(item.due_date ?? "");
+      setNewDueTime(item.due_time?.slice(0, 5) ?? "");
     }
   }, [item]);
 
@@ -109,14 +111,14 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
 
   async function saveReschedule() {
     if (!item) return;
-    if (!newDueDate) {
+    if (!newDueDate || !newDueTime) {
       toast.error(t("dueDateRequired"));
       return;
     }
     setSaving(true);
     try {
       const db = createClient();
-      await rescheduleFollowup(db, item, newDueDate, null, user?.id ?? null);
+      await rescheduleFollowup(db, item, newDueDate, newDueTime, null, user?.id ?? null);
       toast.success(t("savedToast"));
       setRescheduling(false);
       onChanged();
@@ -228,14 +230,28 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
               <DetailRow label={item.type === "interest" ? t("interestTitleLabel") : t("followupTitleLabel")} value={item.title} multiline />
               <DetailRow label={t("contextLabel")} value={item.description || t("noContext")} multiline />
               {item.type === "followup" && item.due_date && (
-                <DetailRow label={t("dueDateLabel")} value={formatDateLabel(item.due_date, locale)} />
+                <DetailRow
+                  label={t("dueDateLabel")}
+                  value={
+                    item.due_time
+                      ? `${formatDateLabel(item.due_date, locale)} ${t("atTime", { time: item.due_time.slice(0, 5) })}`
+                      : formatDateLabel(item.due_date, locale)
+                  }
+                />
               )}
             </dl>
           )}
 
           {rescheduling && (
             <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
-              <DueDateField value={newDueDate} onChange={setNewDueDate} label={t("newDueDateLabel")} id="detail-reschedule-date" />
+              <DueDateField
+                dateValue={newDueDate}
+                timeValue={newDueTime}
+                onDateChange={setNewDueDate}
+                onTimeChange={setNewDueTime}
+                label={t("newDueDateLabel")}
+                id="detail-reschedule-date"
+              />
               <div className="flex justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setRescheduling(false)} disabled={saving}>
                   {t("cancel")}

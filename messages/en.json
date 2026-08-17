@@ -403,7 +403,12 @@
       "resend": "Resend",
       "quotePdfFailed": "Couldn't generate the PDF",
       "quoteSendFailed": "Couldn't send the quote",
-      "quoteSendSuccess": "Quote sent"
+      "quoteSendSuccess": "Quote sent",
+      "addPhone": "Add phone number",
+      "editPhone": "Edit phone number",
+      "copyPhone": "Copy phone number",
+      "phoneSaveFailed": "Couldn't save the phone number",
+      "phoneSaveSuccess": "Phone number saved"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

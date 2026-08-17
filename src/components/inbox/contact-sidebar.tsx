@@ -21,6 +21,8 @@ import {
   Thermometer,
   FileText,
   Send,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +96,18 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const [temperature, setTemperature] = useState<LeadTemperature | "unclassified">("unclassified");
   const [savingTemperature, setSavingTemperature] = useState(false);
 
+  // Phone is editable in place — an Instagram/Facebook contact has no
+  // phone identity by construction (see the Contact type's comment),
+  // but an agent or the AI often learns the customer's real number
+  // mid-conversation and needs somewhere to record it. Kept as local
+  // state (mirroring `temperature` above) rather than mutating the
+  // `contact` prop directly, and re-synced whenever the selected
+  // contact changes via fetchContactData below.
+  const [phone, setPhone] = useState<string | null>(null);
+  const [phoneEditing, setPhoneEditing] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
+
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
@@ -158,6 +172,8 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
       setTags(mapped);
     }
     setTemperature((contact.lead_temperature as LeadTemperature | null) ?? "unclassified");
+    setPhone(contact.phone ?? null);
+    setPhoneEditing(false);
   }, [contact]);
 
   useEffect(() => {
@@ -195,14 +211,11 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   }, [accountId]);
 
   const handleCopyPhone = useCallback(async () => {
-    if (!contact?.phone) return;
-    await navigator.clipboard.writeText(contact.phone);
+    if (!phone) return;
+    await navigator.clipboard.writeText(phone);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    // Dep is the whole `contact` object (not `contact?.phone`) so the
-    // React Compiler's inference agrees with the manual dep list —
-    // fixes the `preserve-manual-memoization` lint error.
-  }, [contact]);
+  }, [phone]);
 
   const handleAddNote = useCallback(async () => {
     if (!contact || !newNote.trim()) return;
@@ -343,6 +356,33 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     }
   }
 
+  function startEditingPhone() {
+    setPhoneDraft(phone ?? "");
+    setPhoneEditing(true);
+  }
+
+  async function handleSavePhone() {
+    if (!contact || !phoneDraft.trim()) return;
+    setSavingPhone(true);
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneDraft.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || tSidebar("phoneSaveFailed"));
+        return;
+      }
+      setPhone((data.phone as string | undefined) ?? phoneDraft.trim());
+      setPhoneEditing(false);
+      toast.success(tSidebar("phoneSaveSuccess"));
+    } finally {
+      setSavingPhone(false);
+    }
+  }
+
   async function handleViewQuotePdf(quote: Quote) {
     let url = quote.pdf_url;
     if (!url) {
@@ -414,27 +454,96 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
             )}
           </div>
 
-          {/* Phone */}
+          {/* Phone — always shown and editable, even for an
+              Instagram/Facebook contact with no phone identity yet, so
+              an agent or the AI has somewhere to record the number once
+              the customer shares it in chat. That number then feeds the
+              KPIs Excel export's Contacts sheet automatically. */}
           <div className="mt-4 space-y-2">
-            {contact.phone ? (
+            {phoneEditing ? (
+              <div className="flex items-center gap-1.5 px-1">
+                <Input
+                  autoFocus
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSavePhone();
+                    if (e.key === "Escape") setPhoneEditing(false);
+                  }}
+                  placeholder="+502 5555 5555"
+                  className="h-8 flex-1 border-border bg-muted text-sm"
+                />
+                <Button
+                  size="sm"
+                  className="h-8 w-8 bg-primary p-0 hover:bg-primary/90"
+                  disabled={!phoneDraft.trim() || savingPhone}
+                  onClick={handleSavePhone}
+                >
+                  {savingPhone ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  disabled={savingPhone}
+                  onClick={() => setPhoneEditing(false)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            ) : phone ? (
+              <div className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <button onClick={handleCopyPhone} className="flex-1 text-left">
+                  {phone}
+                </button>
+                <button
+                  onClick={handleCopyPhone}
+                  aria-label={tSidebar("copyPhone")}
+                  className="shrink-0"
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 text-primary" />
+                  ) : (
+                    <Copy className="h-3 w-3 text-muted-foreground" />
+                  )}
+                </button>
+                <button
+                  onClick={startEditingPhone}
+                  aria-label={tSidebar("editPhone")}
+                  className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={handleCopyPhone}
+                onClick={startEditingPhone}
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
               >
                 <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="flex-1 text-left">{contact.phone}</span>
-                {copied ? (
-                  <Check className="h-3 w-3 text-primary" />
-                ) : (
-                  <Copy className="h-3 w-3 text-muted-foreground" />
-                )}
+                <span className="flex-1 text-left">{tSidebar("addPhone")}</span>
+                <Plus className="h-3 w-3 text-muted-foreground" />
               </button>
-            ) : contact.instagram_username ? (
+            )}
+
+            {contact.instagram_username && (
               <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
                 <Camera className="h-4 w-4 text-muted-foreground" />
                 <span className="flex-1 text-left">@{contact.instagram_username}</span>
               </div>
-            ) : null}
+            )}
+
+            {contact.facebook_username && (
+              <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
+                <Camera className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{contact.facebook_username}</span>
+              </div>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">

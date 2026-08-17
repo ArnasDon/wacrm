@@ -403,7 +403,12 @@
       "resend": "다시 보내기",
       "quotePdfFailed": "PDF를 생성하지 못했습니다",
       "quoteSendFailed": "견적서를 보내지 못했습니다",
-      "quoteSendSuccess": "견적서를 보냈습니다"
+      "quoteSendSuccess": "견적서를 보냈습니다",
+      "addPhone": "전화번호 추가",
+      "editPhone": "전화번호 수정",
+      "copyPhone": "전화번호 복사",
+      "phoneSaveFailed": "전화번호를 저장하지 못했습니다",
+      "phoneSaveSuccess": "전화번호가 저장되었습니다"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",

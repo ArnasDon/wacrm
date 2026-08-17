@@ -116,6 +116,11 @@ export interface Contact {
    */
   instagram_id?: string;
   instagram_username?: string;
+  /** Page-Scoped ID (migration 041) — set only for contacts that came
+   *  from Facebook Messenger, same mutual-exclusivity pattern as
+   *  `instagram_id`. */
+  facebook_id?: string;
+  facebook_username?: string;
   name?: string;
   email?: string;
   company?: string;

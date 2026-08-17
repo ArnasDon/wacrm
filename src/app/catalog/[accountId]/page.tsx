@@ -84,6 +84,7 @@ function PublicCatalogPageInner() {
   const [data, setData] = useState<CatalogData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -248,31 +249,42 @@ function PublicCatalogPageInner() {
                   key={product.id}
                   className="overflow-hidden rounded-xl border border-gray-200 bg-white transition-shadow hover:shadow-md"
                 >
-                  <div className="relative aspect-square w-full bg-gray-50 p-4">
-                    {product.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        className="h-full w-full object-contain"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <ShoppingCart className="size-8 text-gray-300" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1.5 border-t border-gray-100 p-4">
-                    <h3 className="line-clamp-2 text-sm font-semibold text-gray-900">
-                      {product.name}
-                    </h3>
-                    {product.description && (
-                      <p className="line-clamp-2 text-xs text-gray-500">{product.description}</p>
-                    )}
-                    <p className="mt-0.5 text-base font-bold text-emerald-700">
-                      {formatCurrency(product.price, data.currency)}
-                    </p>
-                    <div className="mt-2 flex items-center justify-between">
+                  {/* Opens the detail dialog — the quantity stepper below
+                      is a sibling, not nested inside this button, so its
+                      own clicks never bubble into "open detail". */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProduct(product)}
+                    className="block w-full text-left"
+                  >
+                    <div className="relative aspect-square w-full bg-gray-50 p-4">
+                      {product.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
+                        <img
+                          src={product.image_url}
+                          alt={product.name}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <ShoppingCart className="size-8 text-gray-300" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5 border-t border-gray-100 p-4 pb-0">
+                      <h3 className="line-clamp-2 text-sm font-semibold text-gray-900">
+                        {product.name}
+                      </h3>
+                      {product.description && (
+                        <p className="line-clamp-2 text-xs text-gray-500">{product.description}</p>
+                      )}
+                      <p className="mt-0.5 text-base font-bold text-emerald-700">
+                        {formatCurrency(product.price, data.currency)}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="p-4">
+                    <div className="flex items-center justify-between">
                       <Button
                         type="button"
                         variant="outline"
@@ -303,6 +315,73 @@ function PublicCatalogPageInner() {
           </div>
         )}
       </div>
+
+      <Dialog open={selectedProduct !== null} onOpenChange={(open) => !open && setSelectedProduct(null)}>
+        <DialogContent className="border-gray-200 bg-white sm:max-w-md">
+          {selectedProduct && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-gray-900">{selectedProduct.name}</DialogTitle>
+              </DialogHeader>
+              <div className="relative aspect-square w-full rounded-lg bg-gray-50 p-6">
+                {selectedProduct.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
+                  <img
+                    src={selectedProduct.image_url}
+                    alt={selectedProduct.name}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <ShoppingCart className="size-12 text-gray-300" />
+                  </div>
+                )}
+              </div>
+              <p className="text-lg font-bold text-emerald-700">
+                {formatCurrency(selectedProduct.price, data.currency)}
+              </p>
+              <p className="whitespace-pre-wrap text-sm text-gray-600">
+                {selectedProduct.description || 'Sin descripción.'}
+              </p>
+              <div className="flex items-center justify-center gap-4 border-t border-gray-100 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-9 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                  onClick={() =>
+                    setQuantity(selectedProduct.id, Math.max(0, (quantities[selectedProduct.id] ?? 0) - 1))
+                  }
+                  disabled={(quantities[selectedProduct.id] ?? 0) === 0}
+                >
+                  <Minus className="size-4" />
+                </Button>
+                <span className="w-10 text-center text-base font-medium text-gray-900">
+                  {quantities[selectedProduct.id] ?? 0}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-9 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                  onClick={() => setQuantity(selectedProduct.id, (quantities[selectedProduct.id] ?? 0) + 1)}
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
+              <DialogFooter className="bg-white">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedProduct(null)}
+                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                >
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {totalCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white/95 backdrop-blur">

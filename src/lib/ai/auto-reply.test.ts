@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
     openDeal: null as { id: string; pipeline_id: string; stage_id: string } | null,
-    stages: [] as { id: string; name: string }[],
+    stages: [] as { id: string; name: string; is_won?: boolean }[],
     aiActionLogInserts: [] as Record<string, unknown>[],
     pipeline: null as { id: string } | null,
     contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234' },
@@ -410,6 +410,20 @@ describe('dispatchInboundToAiReply — deal-stage prompt context', () => {
     const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).not.toContain('ACTION:move_deal')
   })
+
+  it('excludes a non-won stage positioned after the won stage (e.g. a post-sale "delivery follow-up" stage)', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización', is_won: false },
+      { id: 'stage-b', name: 'Convencimiento', is_won: false },
+      { id: 'stage-c', name: 'Venta cerrada', is_won: true },
+      { id: 'stage-d', name: 'Seguimiento entrega', is_won: false },
+    ]
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('"Convencimiento"')
+    expect(systemPrompt).not.toContain('Seguimiento entrega')
+  })
 })
 
 describe('dispatchInboundToAiReply — purchase confirmation hands off to close', () => {
@@ -521,6 +535,24 @@ describe('dispatchInboundToAiReply — autonomous move_deal', () => {
       handoff: false,
       markDealWon: false,
       moveToStageName: 'Etapa inventada',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.moveDeal).not.toHaveBeenCalled()
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('refuses to move into a post-sale stage even if the model names it exactly', async () => {
+    h.state.openDeal = { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
+    h.state.stages = [
+      { id: 'stage-a', name: 'Cotización', is_won: false },
+      { id: 'stage-c', name: 'Venta cerrada', is_won: true },
+      { id: 'stage-d', name: 'Seguimiento entrega', is_won: false },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: 'Seguimiento entrega',
     })
     await dispatchInboundToAiReply(ARGS)
     expect(h.moveDeal).not.toHaveBeenCalled()

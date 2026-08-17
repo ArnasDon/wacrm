@@ -291,17 +291,11 @@ async function loadDealStageOptions(args: {
     .maybeSingle()
 
   if (deal) {
-    const { data: stages } = await db
-      .from('pipeline_stages')
-      .select('id, name')
-      .eq('pipeline_id', deal.pipeline_id)
-      .eq('is_won', false)
-      .order('position')
-    const all = stages ?? []
-    const current = all.find((s) => s.id === deal.stage_id)
+    const preSale = await loadPreSaleStages(db, deal.pipeline_id)
+    const current = preSale.find((s) => s.id === deal.stage_id)
     if (!current) return null
 
-    const otherStageNames = all.filter((s) => s.id !== deal.stage_id).map((s) => s.name)
+    const otherStageNames = preSale.filter((s) => s.id !== deal.stage_id).map((s) => s.name)
     if (otherStageNames.length === 0) return null
 
     return { hasDeal: true, currentStageName: current.name, otherStageNames }
@@ -310,13 +304,8 @@ async function loadDealStageOptions(args: {
   const pipeline = await loadDefaultPipeline(db, accountId)
   if (!pipeline) return null
 
-  const { data: stages } = await db
-    .from('pipeline_stages')
-    .select('name')
-    .eq('pipeline_id', pipeline.id)
-    .eq('is_won', false)
-    .order('position')
-  const otherStageNames = (stages ?? []).map((s) => s.name)
+  const preSale = await loadPreSaleStages(db, pipeline.id)
+  const otherStageNames = preSale.map((s) => s.name)
   if (otherStageNames.length === 0) return null
 
   return { hasDeal: false, currentStageName: null, otherStageNames }
@@ -341,6 +330,34 @@ async function loadDefaultPipeline(
     .limit(1)
     .maybeSingle()
   return (data as { id: string } | null) ?? null
+}
+
+/**
+ * The pipeline's pre-sale stages, in position order — every stage
+ * strictly BEFORE the won stage. `is_won = false` alone isn't enough:
+ * an account can have an operational stage positioned AFTER "won" (e.g.
+ * Angel's own "Seguimiento entrega" — delivery follow-up, `is_won:
+ * false` but `position` greater than "Venta cerrada"'s), and offering
+ * that as a candidate for autonomous move/create would let the model
+ * park a still-negotiating deal in a post-sale stage, or treat it as
+ * "the most advanced" option when reasoning about progress. Falls back
+ * to every non-won stage (old behavior) only if the pipeline has no
+ * won stage marked at all.
+ */
+async function loadPreSaleStages(
+  db: SupabaseClient,
+  pipelineId: string,
+): Promise<{ id: string; name: string }[]> {
+  const { data } = await db
+    .from('pipeline_stages')
+    .select('id, name, is_won')
+    .eq('pipeline_id', pipelineId)
+    .order('position')
+  const all = (data ?? []) as { id: string; name: string; is_won: boolean }[]
+
+  const wonIndex = all.findIndex((s) => s.is_won)
+  const preSale = wonIndex === -1 ? all.filter((s) => !s.is_won) : all.slice(0, wonIndex)
+  return preSale.map((s) => ({ id: s.id, name: s.name }))
 }
 
 /**
@@ -424,12 +441,8 @@ async function autoMoveDealStage(args: {
   if (dealErr) return
 
   if (deal) {
-    const { data: stages } = await db
-      .from('pipeline_stages')
-      .select('id, name')
-      .eq('pipeline_id', deal.pipeline_id)
-      .eq('is_won', false)
-    const target = (stages ?? []).find(
+    const stages = await loadPreSaleStages(db, deal.pipeline_id)
+    const target = stages.find(
       (s) => s.name.trim().toLowerCase() === stageName.trim().toLowerCase(),
     )
     if (!target || target.id === deal.stage_id) return
@@ -466,12 +479,8 @@ async function autoMoveDealStage(args: {
   const pipeline = await loadDefaultPipeline(db, accountId)
   if (!pipeline) return
 
-  const { data: stages } = await db
-    .from('pipeline_stages')
-    .select('id, name')
-    .eq('pipeline_id', pipeline.id)
-    .eq('is_won', false)
-  const target = (stages ?? []).find(
+  const stages = await loadPreSaleStages(db, pipeline.id)
+  const target = stages.find(
     (s) => s.name.trim().toLowerCase() === stageName.trim().toLowerCase(),
   )
   if (!target) return

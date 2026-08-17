@@ -17,6 +17,7 @@
   "Sidebar": {
     "title": "Chat Sandía",
     "dashboard": "Dashboard",
+    "kpis": "KPIs",
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
@@ -43,6 +44,7 @@
   },
   "Header": {
     "dashboard": "Dashboard",
+    "kpis": "KPIs",
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
@@ -131,6 +133,72 @@
     },
     "emptyState": {
       "title": "Not enough data yet"
+    }
+  },
+  "Kpis": {
+    "title": "Sales KPIs",
+    "description": "The essential sales metrics — trends, funnel, and lead-temperature breakdown — with a full Excel export.",
+    "adminOnlyTitle": "Admins only",
+    "adminOnlyHint": "This page includes financial information (acquisition cost). Ask an account admin to review it.",
+    "loadFailed": "Couldn't load your KPIs.",
+    "exportFailed": "Couldn't build the Excel file.",
+    "downloadExcel": "Download Excel",
+    "periodLabel": "Period: {range}",
+    "rangeDays": "{count} days",
+    "rangeYear": "1 year",
+    "vsPreviousPeriod": "vs previous period",
+    "cards": {
+      "leadsGenerated": "Leads generated",
+      "qualifiedLeads": "Qualified leads",
+      "qualifiedSubtitle": "{pct}% of leads generated",
+      "conversionRate": "Conversion rate",
+      "noLeadsYet": "No leads generated yet",
+      "cac": "Customer Acquisition Cost",
+      "cacSubtitle": "{count} customers acquired",
+      "cacSubtitleMissing": "Enter this period's spend below"
+    },
+    "charts": {
+      "leadsGenerated": "Leads generated over time",
+      "leadsGeneratedDesc": "New contacts created in the selected period.",
+      "qualifiedLeads": "Qualified leads over time",
+      "qualifiedLeadsDesc": "Contacts currently showing warm or hot buying interest.",
+      "conversionRate": "Conversion / closing rate",
+      "conversionRateDesc": "Deals won ÷ leads generated, per period.",
+      "temperature": "Lead temperature distribution",
+      "temperatureDesc": "How the leads generated in this period are currently classified.",
+      "funnel": "Sales funnel",
+      "funnelDesc": "How leads generated narrow down to qualified leads and won deals.",
+      "comparison": "Current vs previous period",
+      "comparisonDesc": "Side-by-side comparison of the same length period right before this one.",
+      "cacHistory": "CAC history",
+      "cacHistoryDesc": "Customer Acquisition Cost for every period you've logged spend for.",
+      "cacHistoryEmptyHint": "Log a spend figure below to start tracking CAC over time."
+    },
+    "funnel": {
+      "leads": "Leads generated",
+      "qualified": "Qualified leads",
+      "won": "Deals won"
+    },
+    "temperature": {
+      "hot": "Hot",
+      "warm": "Warm",
+      "cold": "Cold",
+      "unclassified": "Unclassified"
+    },
+    "comparison": {
+      "current": "Current period",
+      "previous": "Previous period"
+    },
+    "cac": {
+      "title": "Customer Acquisition Cost (CAC)",
+      "description": "Total acquisition investment ÷ customers acquired in the period. Enter what you spent this period to calculate it.",
+      "spendLabel": "Spend this period ({currency})",
+      "save": "Save",
+      "resultLabel": "CAC for this period ({count} customers acquired)",
+      "noCustomersHint": "No customers acquired in this period yet.",
+      "enterSpendHint": "Enter this period's spend to calculate CAC.",
+      "saveSuccess": "Spend saved.",
+      "saveFailed": "Couldn't save the spend figure."
     }
   },
   "Inbox": {

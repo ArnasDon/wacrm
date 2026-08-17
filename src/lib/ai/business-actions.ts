@@ -80,7 +80,7 @@ export async function executeBusinessAction(args: {
       }
       result = { ...moved.deal }
     } else {
-      const { data, error } = await db.from('deals').update({ status: 'won' })
+      const { data, error } = await db.from('deals').update({ status: 'won', won_at: new Date().toISOString() })
         .eq('id', targetId).eq('account_id', accountId)
         .select('id, pipeline_id, stage_id, status').maybeSingle()
       if (error) throw new BusinessActionError(error.message, 500)

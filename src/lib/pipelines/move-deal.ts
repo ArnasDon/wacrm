@@ -58,7 +58,10 @@ export async function moveDeal(
 
   const isWonStage = Boolean(stage.is_won);
   const updates: Record<string, unknown> = { stage_id: stageId };
-  if (isWonStage) updates.status = 'won';
+  if (isWonStage) {
+    updates.status = 'won';
+    updates.won_at = new Date().toISOString();
+  }
 
   const { data, error } = await db
     .from('deals')

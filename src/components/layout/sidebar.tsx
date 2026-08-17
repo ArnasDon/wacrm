@@ -21,6 +21,7 @@ import {
   Radio,
   Settings,
   Shield,
+  TrendingUp,
   User,
   UserCog,
   Users,
@@ -94,6 +95,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/kpis", labelKey: "kpis", icon: TrendingUp },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },

@@ -17,6 +17,7 @@
   "Sidebar": {
     "title": "Chat Sandía",
     "dashboard": "대시보드",
+    "kpis": "KPI",
     "inbox": "인박스",
     "notifications": "알림",
     "contacts": "연락처",
@@ -43,6 +44,7 @@
   },
   "Header": {
     "dashboard": "대시보드",
+    "kpis": "KPI",
     "inbox": "인박스",
     "notifications": "알림",
     "contacts": "연락처",
@@ -131,6 +133,72 @@
     },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
+    }
+  },
+  "Kpis": {
+    "title": "영업 KPI",
+    "description": "핵심 영업 지표 — 추이, 퍼널, 리드 온도 분포 — 전체 엑셀 내보내기 포함.",
+    "adminOnlyTitle": "관리자 전용",
+    "adminOnlyHint": "이 페이지에는 재무 정보(획득 비용)가 포함되어 있습니다. 계정 관리자에게 확인을 요청하세요.",
+    "loadFailed": "KPI를 불러오지 못했습니다.",
+    "exportFailed": "엑셀 파일을 생성하지 못했습니다.",
+    "downloadExcel": "엑셀 다운로드",
+    "periodLabel": "기간: {range}",
+    "rangeDays": "{count}일",
+    "rangeYear": "1년",
+    "vsPreviousPeriod": "이전 기간 대비",
+    "cards": {
+      "leadsGenerated": "생성된 리드",
+      "qualifiedLeads": "자격을 갖춘 리드",
+      "qualifiedSubtitle": "생성된 리드의 {pct}%",
+      "conversionRate": "전환율",
+      "noLeadsYet": "아직 생성된 리드가 없습니다",
+      "cac": "고객 획득 비용",
+      "cacSubtitle": "획득한 고객 {count}명",
+      "cacSubtitleMissing": "아래에 이번 기간의 지출을 입력하세요"
+    },
+    "charts": {
+      "leadsGenerated": "시간별 생성된 리드",
+      "leadsGeneratedDesc": "선택한 기간에 생성된 새 연락처.",
+      "qualifiedLeads": "시간별 자격을 갖춘 리드",
+      "qualifiedLeadsDesc": "현재 관심도가 따뜻하거나 뜨거운 것으로 표시된 연락처.",
+      "conversionRate": "전환율 / 성사율",
+      "conversionRateDesc": "성사된 딜 ÷ 생성된 리드, 기간별.",
+      "temperature": "리드 온도 분포",
+      "temperatureDesc": "이 기간에 생성된 리드가 현재 어떻게 분류되어 있는지.",
+      "funnel": "영업 퍼널",
+      "funnelDesc": "생성된 리드가 자격을 갖춘 리드와 성사된 딜로 좁혀지는 과정.",
+      "comparison": "현재 기간 vs 이전 기간",
+      "comparisonDesc": "바로 이전의 동일한 길이의 기간과 나란히 비교.",
+      "cacHistory": "CAC 이력",
+      "cacHistoryDesc": "지출을 기록한 모든 기간의 고객 획득 비용.",
+      "cacHistoryEmptyHint": "아래에 지출 금액을 기록하면 CAC 추이를 추적할 수 있습니다."
+    },
+    "funnel": {
+      "leads": "생성된 리드",
+      "qualified": "자격을 갖춘 리드",
+      "won": "성사된 딜"
+    },
+    "temperature": {
+      "hot": "뜨거움",
+      "warm": "따뜻함",
+      "cold": "차가움",
+      "unclassified": "미분류"
+    },
+    "comparison": {
+      "current": "현재 기간",
+      "previous": "이전 기간"
+    },
+    "cac": {
+      "title": "고객 획득 비용 (CAC)",
+      "description": "해당 기간의 총 획득 투자 ÷ 획득한 고객 수. 계산하려면 이번 기간에 지출한 금액을 입력하세요.",
+      "spendLabel": "이번 기간 지출 ({currency})",
+      "save": "저장",
+      "resultLabel": "이번 기간 CAC (획득 고객 {count}명)",
+      "noCustomersHint": "아직 이 기간에 획득한 고객이 없습니다.",
+      "enterSpendHint": "CAC를 계산하려면 이번 기간의 지출을 입력하세요.",
+      "saveSuccess": "지출이 저장되었습니다.",
+      "saveFailed": "지출 금액을 저장하지 못했습니다."
     }
   },
   "Inbox": {

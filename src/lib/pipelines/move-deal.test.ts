@@ -10,13 +10,16 @@ interface Fixture {
   updatedDeal?: { id: string; pipeline_id: string; stage_id: string; status: string } | null;
 }
 
-function makeDb(fx: Fixture): SupabaseClient {
+function makeDb(fx: Fixture, updatePayloads: Record<string, unknown>[] = []): SupabaseClient {
   return {
     from(table: string) {
       const b: Record<string, unknown> = {
         select: () => b,
         eq: () => b,
-        update: () => b,
+        update: (payload: Record<string, unknown>) => {
+          updatePayloads.push(payload);
+          return b;
+        },
         maybeSingle: async () => {
           if (table === 'pipeline_stages') {
             return { data: fx.stage ?? null, error: null };
@@ -57,6 +60,39 @@ describe('moveDeal', () => {
 
     expect(result.isWonStage).toBe(true);
     expect(result.deal.status).toBe('won');
+  });
+
+  it('stamps won_at when the target stage is is_won, for accurate "won in this date range" KPI reporting', async () => {
+    const updatePayloads: Record<string, unknown>[] = [];
+    const db = makeDb(
+      {
+        stage: { id: 'stage-4', pipeline_id: 'pipe-1', is_won: true },
+        updatedDeal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-4', status: 'won' },
+      },
+      updatePayloads,
+    );
+
+    await moveDeal(db, 'acct-1', 'deal-1', 'stage-4');
+
+    const dealsUpdate = updatePayloads.find((p) => 'status' in p);
+    expect(dealsUpdate).toMatchObject({ status: 'won' });
+    expect(typeof dealsUpdate?.won_at).toBe('string');
+    expect(Number.isNaN(new Date(dealsUpdate?.won_at as string).getTime())).toBe(false);
+  });
+
+  it('does not stamp won_at when the target stage is not is_won', async () => {
+    const updatePayloads: Record<string, unknown>[] = [];
+    const db = makeDb(
+      {
+        stage: { id: 'stage-2', pipeline_id: 'pipe-1', is_won: false },
+        updatedDeal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-2', status: 'active' },
+      },
+      updatePayloads,
+    );
+
+    await moveDeal(db, 'acct-1', 'deal-1', 'stage-2');
+
+    expect(updatePayloads[0]).toEqual({ stage_id: 'stage-2' });
   });
 
   it('throws 404 when the stage does not belong to the caller account (cross-tenant)', async () => {

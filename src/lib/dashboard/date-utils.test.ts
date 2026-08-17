@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DOW_SHORT_MON_FIRST,
+  bucketKey,
+  bucketRangeKeys,
   daysAgoStart,
+  formatBucketLabel,
+  formatDateRangeLabel,
+  granularityForRangeDays,
   lastNDayKeys,
   localDayKey,
   mondayIndex,
@@ -119,5 +124,97 @@ describe("mondayIndex", () => {
     expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24"))]).toBe(
       "Sun",
     );
+  });
+});
+
+describe("granularityForRangeDays", () => {
+  it("buckets short ranges by day", () => {
+    expect(granularityForRangeDays(7)).toBe("day");
+    expect(granularityForRangeDays(31)).toBe("day");
+  });
+
+  it("buckets medium ranges by week", () => {
+    expect(granularityForRangeDays(32)).toBe("week");
+    expect(granularityForRangeDays(120)).toBe("week");
+  });
+
+  it("buckets long ranges by month", () => {
+    expect(granularityForRangeDays(121)).toBe("month");
+    expect(granularityForRangeDays(365)).toBe("month");
+  });
+});
+
+describe("bucketKey", () => {
+  // Local (non-UTC) Date constructors throughout — new Date("YYYY-MM-DD")
+  // parses as UTC, which is exactly what makes mondayIndex's pre-existing
+  // tests above fail in a UTC-6 environment; these avoid that trap.
+  it("day granularity matches localDayKey", () => {
+    const d = new Date(2026, 7, 16); // Aug 16, 2026 — a Sunday
+    expect(bucketKey(d, "day")).toBe("2026-08-16");
+  });
+
+  it("week granularity keys on that week's Monday", () => {
+    const sunday = new Date(2026, 7, 16); // Sun Aug 16
+    const wednesday = new Date(2026, 7, 12); // Wed Aug 12, same week
+    const monday = new Date(2026, 7, 10); // Mon Aug 10
+    expect(bucketKey(sunday, "week")).toBe("2026-08-10");
+    expect(bucketKey(wednesday, "week")).toBe("2026-08-10");
+    expect(bucketKey(monday, "week")).toBe("2026-08-10");
+  });
+
+  it("month granularity keys on YYYY-MM", () => {
+    expect(bucketKey(new Date(2026, 7, 1), "month")).toBe("2026-08");
+    expect(bucketKey(new Date(2026, 7, 31), "month")).toBe("2026-08");
+  });
+});
+
+describe("bucketRangeKeys", () => {
+  it("day granularity returns one key per calendar day, inclusive", () => {
+    const start = new Date(2026, 7, 1);
+    const end = new Date(2026, 7, 3);
+    expect(bucketRangeKeys(start, end, "day")).toEqual([
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+    ]);
+  });
+
+  it("week granularity steps 7 days from the range start's Monday", () => {
+    const start = new Date(2026, 7, 10); // Mon Aug 10
+    const end = new Date(2026, 7, 24); // Mon Aug 24 (2 weeks later)
+    expect(bucketRangeKeys(start, end, "week")).toEqual([
+      "2026-08-10",
+      "2026-08-17",
+      "2026-08-24",
+    ]);
+  });
+
+  it("month granularity returns one key per calendar month, inclusive, across a year boundary", () => {
+    const start = new Date(2026, 10, 15); // Nov 2026
+    const end = new Date(2027, 1, 1); // Feb 2027
+    expect(bucketRangeKeys(start, end, "month")).toEqual([
+      "2026-11",
+      "2026-12",
+      "2027-01",
+      "2027-02",
+    ]);
+  });
+});
+
+describe("formatBucketLabel", () => {
+  it("formats a day/week key as a short month+day", () => {
+    expect(formatBucketLabel("2026-08-16", "day")).toMatch(/Aug/);
+  });
+
+  it("formats a month key as short month+2-digit year", () => {
+    expect(formatBucketLabel("2026-08", "month")).toMatch(/Aug/);
+  });
+});
+
+describe("formatDateRangeLabel", () => {
+  it("joins two formatted dates with an en dash", () => {
+    const label = formatDateRangeLabel(new Date(2026, 7, 1), new Date(2026, 7, 16));
+    expect(label).toContain("–");
+    expect(label).toMatch(/Aug/);
   });
 });

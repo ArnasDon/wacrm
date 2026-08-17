@@ -53,6 +53,7 @@ interface Fixture {
 function makeDb(fx: Fixture) {
   const inserts: Record<string, unknown>[] = []
   const eqCallsByTable: Record<string, [string, unknown][]> = {}
+  const updatePayloadsByTable: Record<string, Record<string, unknown>[]> = {}
 
   const db = {
     from(table: string) {
@@ -68,6 +69,7 @@ function makeDb(fx: Fixture) {
         },
         update: (payload: Record<string, unknown>) => {
           updatePayload = payload
+          ;(updatePayloadsByTable[table] ??= []).push(payload)
           return b
         },
         insert: (payload: Record<string, unknown>) => {
@@ -110,7 +112,7 @@ function makeDb(fx: Fixture) {
     },
   }
 
-  return { db: db as unknown as SupabaseClient, inserts, eqCallsByTable }
+  return { db: db as unknown as SupabaseClient, inserts, eqCallsByTable, updatePayloadsByTable }
 }
 
 beforeEach(() => {
@@ -191,6 +193,23 @@ describe('executeBusinessAction — mark_deal_won', () => {
 
     expect(h.moveDeal).not.toHaveBeenCalled()
     expect(result).toEqual({ id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-2', status: 'won' })
+  })
+
+  it('stamps won_at on the fallback status flip too, for accurate "won in this date range" KPI reporting', async () => {
+    const { db, updatePayloadsByTable } = makeDb({
+      deal: { id: 'deal-1', pipeline_id: 'pipe-1' },
+      dealFallbackResult: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-2', status: 'won' },
+    })
+    h.findWonStageId.mockResolvedValue(null)
+
+    await executeBusinessAction({
+      db, accountId: 'acct-1', userId: 'user-1', action: 'mark_deal_won', targetId: 'deal-1',
+    })
+
+    const dealsUpdate = updatePayloadsByTable.deals?.[0]
+    expect(dealsUpdate).toMatchObject({ status: 'won' })
+    expect(typeof dealsUpdate?.won_at).toBe('string')
+    expect(Number.isNaN(new Date(dealsUpdate?.won_at as string).getTime())).toBe(false)
   })
 
   it('throws 404 when the deal is not found (cross-tenant or missing)', async () => {

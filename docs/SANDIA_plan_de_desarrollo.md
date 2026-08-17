@@ -2378,3 +2378,62 @@ temperatura), y se crea el evento con un enlace de Google Meet incluido
 automáticamente (`conferenceData`/`conferenceDataVersion=1`, confirmado
 con Angel que sí se puede) — Google manda la invitación por correo
 solo, sin que haya que tocar `src/lib/email/send.ts`.
+
+### 2026-08-17 — Claude Code (deploy roto por lockfile + hueco de middleware en /kpis)
+
+Angel pidió validar que el commit `9c4443f` (página de KPIs de ventas,
+sesión anterior) hubiera llegado a producción. No había llegado: el
+build de EasyPanel falló en `npm ci` con `Missing: @swc/helpers@0.5.23
+from lock file`.
+
+**Causa raíz:** `package-lock.json` se regeneró para ese commit (por
+`exceljs`) con `npm install` corriendo en Windows bajo npm 11, que
+tolera un peer-dependency sin resolver de `@swc/core` (requerido
+opcionalmente por `next-intl`) y no escribe la copia anidada
+`next-intl/node_modules/@swc/helpers@0.5.23` que satisface ese peer.
+El commit anterior sí tenía esa entrada. El build de EasyPanel corre
+en Linux con npm 10.8.2 (`node:20-alpine`), que sí valida ese peer en
+`npm ci` y falla si falta. Diagnosticado reproduciendo `npm ci` en
+local con `npx npm@10.8.2` — reprodujo el error exacto; con npm
+11.17.0 (versión local por defecto) el mismo lockfile instala sin
+quejarse, lo que explica por qué nadie lo vio antes de hacer push.
+**Lección para sesiones futuras:** si un build de Docker falla en
+`npm ci` con "missing from lock file" pero `npm install` local no
+reproduce el problema, sospechar primero de una diferencia de versión
+de npm entre el entorno local y la imagen base del Dockerfile
+(`node:20-alpine` trae npm 10.8.2, no el npm que trae el Node del
+desarrollador) antes de asumir que el lockfile está corrupto.
+
+**Fix 1 (`e17616b`):** regenerado `package-lock.json` con
+`npx npm@10.8.2 install --package-lock-only` — diff de 11 líneas,
+exactamente la entrada anidada que faltaba. Validado con `npm ci`
+limpio usando npm 10.8.2 antes de commitear.
+
+**Hallazgo adicional al validar en producción:** con el build ya
+corregido, `/kpis` respondía `200` a un visitante sin sesión en vez
+del `307` a `/login` que dan todas las demás rutas del dashboard
+(`/dashboard`, `/contacts`, `/pipelines`, etc.). Causa: `/kpis` nunca
+se agregó a `protectedPaths` en `src/middleware.ts` — el mismo tipo de
+omisión que el diagnóstico técnico ya había señalado para `/flows`
+(ese caso ya está corregido; este es nuevo, del commit de KPIs). No
+hay fuga de datos real (la página es `'use client'` puro, las
+consultas a Supabase están detrás de RLS), pero rompe el patrón de
+defensa en profundidad del proyecto y el propio commit dice que la
+página es "admin+ only". **Fix 2 (`2ea0731`):** una línea, agregar
+`'/kpis'` a `protectedPaths`.
+
+**Probado (ambos fixes):** `npm run typecheck`/`eslint`/`build`
+limpios, `npx vitest run`: 1035/1037 (mismas 2 fallas preexistentes de
+`mondayIndex`/timezone). Confirmado `package-lock.json` sin diff extra
+después del segundo fix. Publicados en dos commits separados,
+confirmación explícita de Angel antes de cada push.
+
+**Validado en producción (ambos):** después de `e17616b`, `/kpis`
+pasó de `404` a `200` con HTML real de Next.js (confirma que el build
+por fin incluye el commit de KPIs). Después de `2ea0731`, `/kpis` pasa
+a `307` hacia `/login` igual que el resto de rutas protegidas.
+
+**Pendiente / siguiente paso:** ninguno específico de este trabajo —
+la página de KPIs está desplegada y protegida. Sigue el Bloque B de
+Google Calendar (ver entrada anterior), pendiente de que Angel cargue
+las credenciales de Google Cloud en EasyPanel.

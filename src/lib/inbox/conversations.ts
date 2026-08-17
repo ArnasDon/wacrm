@@ -72,6 +72,36 @@ export function matchesContactFilters(
 }
 
 /**
+ * Conversation ids whose message history contains `query` — powers the
+ * Inbox search box's "search inside the conversation" mode, alongside
+ * the client-side name/phone/last-message match already done in
+ * conversation-list.tsx (this only adds full-history coverage; the
+ * fields it doesn't cover already work today). RLS on `messages`
+ * (migration 017) already scopes every row to the caller's account via
+ * its conversation's account_id, so no explicit account filter is
+ * needed here. `content_text` is the single column used for both plain
+ * text and media captions (see message-composer.tsx), so this covers
+ * both without extra branching — a NULL content_text (media with no
+ * caption) simply never matches. Capped at 500 rows as a sanity limit
+ * on a very common search term; the caller also debounces so this
+ * isn't fired on every keystroke.
+ */
+export async function searchConversationIdsByMessageText(
+  db: SupabaseClient,
+  query: string,
+): Promise<Set<string>> {
+  const trimmed = query.trim();
+  if (!trimmed) return new Set();
+  const { data, error } = await db
+    .from("messages")
+    .select("conversation_id")
+    .ilike("content_text", `%${trimmed}%`)
+    .limit(500);
+  if (error) throw error;
+  return new Set((data ?? []).map((row) => row.conversation_id as string));
+}
+
+/**
  * Ids of conversations that are "unanswered" — the same rule the
  * dashboard's "Leads Não Respondidos" card counts via
  * `count_unanswered_conversations` (migration 042/047): not closed,

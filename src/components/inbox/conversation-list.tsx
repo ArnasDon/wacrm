@@ -7,6 +7,7 @@ import {
   loadUnansweredConversationIds,
   matchesContactFilters,
   normalizeConversations,
+  searchConversationIdsByMessageText,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import {
@@ -141,6 +142,13 @@ export function ConversationList({
   const t = useTranslations("Inbox.conversationList");
 
   const [search, setSearch] = useState("");
+  // Conversation ids whose message *history* (not just the cached
+  // last-message text below) contains the current search term —
+  // fetched server-side, debounced, and unioned into the local filter
+  // below. Empty until a search of 2+ chars has actually resolved.
+  const [messageMatchIds, setMessageMatchIds] = useState<Set<string>>(
+    new Set(),
+  );
   // The dropdown that used to set this manually is gone from this screen
   // (WACRM inbox redesign task) — `filter` is now seeded once from the
   // dashboard's `?filter=unanswered` deep link (`initialFilter`) and
@@ -226,6 +234,35 @@ export function ConversationList({
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
   }, [resyncToken]);
+
+  // Search-inside-messages — debounced (300ms) so this fires once the
+  // agent pauses typing, not on every keystroke, and skipped entirely
+  // below 2 chars to avoid a near-match-everything query. Local name/
+  // phone/last-message filtering (in `filtered` below) stays instant;
+  // this just unions in any additional conversations once it resolves.
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMessageMatchIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const supabase = createClient();
+      searchConversationIdsByMessageText(supabase, trimmed)
+        .then((ids) => {
+          if (!cancelled) setMessageMatchIds(ids);
+        })
+        .catch((error) => {
+          console.error("Failed to search message content:", error);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
 
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.
@@ -326,7 +363,15 @@ export function ConversationList({
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+        // messageMatchIds covers the rest of the conversation's history
+        // (searchConversationIdsByMessageText) — name/phone/last-message
+        // stay instant/local, this just widens the match once it resolves.
+        return (
+          name.includes(q) ||
+          phone.includes(q) ||
+          lastMsg.includes(q) ||
+          messageMatchIds.has(c.id)
+        );
       });
     }
 
@@ -341,6 +386,7 @@ export function ConversationList({
     conversations,
     filter,
     search,
+    messageMatchIds,
     selectedTagIds,
     selectedCompany,
     unansweredIds,

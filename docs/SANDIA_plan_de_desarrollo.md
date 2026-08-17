@@ -2234,3 +2234,147 @@ tests nuevos — es un cambio puramente visual). Publicado (`e1d82e3`,
 herramienta de captura de pantalla de Chrome falló con un error propio
 de la extensión durante esta sesión — no relacionado con el código —
 así que la confirmación visual final fue de Angel, no mía).
+
+### 2026-08-16/17 — Claude Code — IA: temperatura y avance de etapas confiables + negocios automáticos + tablero en vivo
+
+**Hecho:** Angel probó en real (WhatsApp y Facebook) y encontró tres
+problemas encadenados en lo que se construyó antes en la sesión:
+
+1. **La IA nunca creaba un negocio para chats sin uno.** Confirmado con
+   datos reales: de 7 contactos de Angel, solo 2 tenían un negocio —
+   los otros 5 quedaban invisibles para el sistema de avance automático
+   por diseño anterior ("solo mover negocios existentes"). Angel pidió
+   explícitamente que la IA también los cree sola. `autoMoveDealStage()`
+   en `src/lib/ai/auto-reply.ts` ahora, cuando el contacto no tiene
+   negocio abierto, lo **crea** directo en la etapa nombrada (pipeline
+   por defecto de la cuenta, título = nombre del contacto — misma
+   convención que el botón manual "+ New" del inbox, `value: 0` porque
+   la IA nunca inventa un precio). Se registra como acción nueva
+   `create_deal` en `ai_action_log` (migración `058`), contada en el
+   mismo indicador `deals_auto_advanced` del dashboard de IA que
+   `move_deal`.
+2. **La temperatura nunca se marcaba sola.** Existía como sugerencia
+   que requería confirmación humana (`set_lead_temperature` vía
+   `POST /api/ai/actions`), nunca conectada al modo autónomo. Nuevo
+   marcador `[[ACTION:set_temperature:hot|warm|cold]]`, siempre
+   disponible en modo auto-reply (la temperatura es del contacto, no
+   depende de que exista un negocio) — sin confirmación humana, igual
+   que mover etapa/mandar catálogo. Solo escribe si el valor cambió,
+   para no saturar el registro de auditoría ni el webhook.
+3. **Encontrado con pruebas reales, en dos rondas:** el modelo (Claude
+   Haiku 4.5) marcaba temperatura de forma confiable pero omitía el
+   marcador de mover/crear negocio en el mismo turno cuando también
+   estaba razonando sobre la confirmación de compra — aunque el cliente
+   preguntara precio explícitamente ("cuáles son los precios?") o
+   nombrara el producto que quería. Se corrigió aplicando el mismo
+   ajuste que ya funcionó para temperatura: subir la instrucción de
+   mover/crear negocio de la 4ª posición (de 5) a la 2ª, con lenguaje
+   más insistente ("revisa esto en cada respuesta, no es opcional",
+   "mover es de bajo riesgo, ante la duda prefiere mover") y ejemplos
+   concretos tomados de las pruebas reales de Angel en vez de abstractos.
+4. **Bug real encontrado en el camino:** el pipeline de Angel tiene una
+   etapa "Seguimiento entrega" (para después de la venta) posicionada
+   después de "Venta cerrada" pero sin marcar como ganada — el filtro
+   viejo (`is_won = false`) la ofrecía como una etapa de negociación
+   normal, rompiendo el criterio de "etapa intermedia/avanzada". Nueva
+   `loadPreSaleStages()` corta la lista de etapas justo antes de la
+   primera etapa marcada como ganada, sin importar cuántas etapas
+   tenga cada pipeline — funciona igual para cualquier empresa con
+   cualquier configuración de etapas.
+5. **El tablero de Pipelines no se actualizaba solo.** Confirmado con
+   timestamps reales: la IA sí mueve todo en ~8-10 segundos desde el
+   mensaje del cliente (tiempo de la llamada al modelo + envío por
+   WhatsApp/Facebook), pero la página solo cargaba `deals`/`contacts`
+   una vez al entrar — un cambio en segundo plano nunca aparecía sin
+   refrescar. Migración `059`: agrega `deals` y `contacts` a la
+   publicación `supabase_realtime` (junto a `conversations`/`messages`,
+   que ya la usan desde antes). La página de Pipelines se suscribe y
+   refresca sola ante cualquier cambio — probado moviendo un negocio
+   directo en la base de datos y confirmando que la tarjeta se movió
+   sola en pantalla sin recargar.
+
+**Decisión de diseño confirmada con Angel:** el cierre de venta
+("Venta cerrada") sigue siendo exclusivamente manual — la IA detecta
+la confirmación de compra y entrega la conversación a un humano
+(`flagDealClosing`, ya existente), pero nunca mueve la tarjeta ella
+misma. Angel lo confirmó como comportamiento correcto tras revisar los
+timestamps reales.
+
+**Probado:** cada uno de los commits pasó
+`npm run typecheck`/`eslint`/`build` limpios y la suite completa de
+`vitest` (llegó a 975/977, mismas 2 fallas preexistentes de
+`mondayIndex`) — incluye tests nuevos para `create_deal`, la exclusión
+de etapas post-venta, y los helpers de `loadPreSaleStages`. Validado
+en producción con conversaciones reales de Angel por WhatsApp y
+Facebook (no simulaciones) — encontró los tres problemas anteriores
+exactamente así, probando de nuevo después de cada corrección.
+
+**Pendiente / siguiente paso:** ninguno — Angel confirmó que el flujo
+completo (temperatura, avance de etapas, creación de negocios,
+actualización en vivo del tablero) ya funciona de punta a punta.
+
+### 2026-08-17 — Claude Code — Google Calendar: Bloque A (conexión OAuth)
+
+**Hecho:** Angel pidió que la IA pueda agendar citas usando su Google
+Calendar real (no un calendario interno) y que el cliente reciba el
+correo de invitación — eligiendo explícitamente la opción con OAuth
+real sobre un calendario interno con `.ics`, sabiendo que implica el
+proceso de verificación de Google más adelante. Planeado en modo plan
+(dos exploraciones en paralelo) — hallazgo clave: **este proyecto no
+tenía ningún flujo OAuth hasta ahora** — WhatsApp/Instagram/Facebook
+usan formularios de "pega tu token" manual, no un botón que redirige y
+regresa. Esta es la primera integración OAuth real, sin patrón previo
+que copiar.
+
+- **Migración `060_google_calendar_config.sql`:** una conexión por
+  cuenta (`UNIQUE(account_id)`, mismo patrón de RLS vía
+  `is_account_member()` que `instagram_config`/`facebook_config`).
+  `refresh_token`/`access_token` cifrados con el mismo
+  `encrypt()`/`decrypt()` de `src/lib/whatsapp/encryption.ts`
+  (AES-256-GCM, `ENCRYPTION_KEY`) que ya usa todo el proyecto. Primera
+  tabla de config con `token_expiry` — ninguna integración anterior
+  necesitaba renovación porque todos sus tokens son de larga duración.
+- **`src/lib/google-calendar/oauth.ts`:** `buildAuthUrl`,
+  `exchangeCodeForTokens`, `getValidAccessToken` (revisa vencimiento,
+  renueva y vuelve a guardar cifrado automáticamente si hace falta —
+  la pieza sin precedente en el proyecto). Permisos acotados
+  (`calendar.events` + `calendar.freebusy` + `userinfo.email`) en vez
+  del permiso completo de Calendar, para quedar en el nivel de
+  verificación "sensible" de Google en vez del más estricto
+  "restringido".
+- **`GET /api/google-calendar/oauth/start`** (admin+): guarda un
+  `state` anti-CSRF en una cookie httpOnly de 10 minutos y redirige a
+  la pantalla de consentimiento de Google con `access_type=offline` +
+  `prompt=consent` (garantiza un `refresh_token` incluso al reconectar).
+  **`GET /api/google-calendar/oauth/callback`:** valida el `state`,
+  intercambia el código, guarda los tokens cifrados, redirige de vuelta
+  a Configuración. **`GET`/`DELETE /api/google-calendar/config`:**
+  estado de conexión verificado en vivo contra la API real + desconectar,
+  mismo contrato que `instagram/config`/`facebook/config`.
+- **Configuración → Google Calendar:** mismo esqueleto visual que los
+  otros paneles de conexión, pero el botón es "Connect Google Calendar"
+  (redirige a `/oauth/start`) en vez de un formulario para pegar
+  credenciales.
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios, 9 tests
+nuevos para `getValidAccessToken`/`buildAuthUrl` (la única lógica de
+negocio real aquí — las rutas son envoltorios delgados), `npx vitest
+run`: 975/977 (mismas 2 fallas preexistentes). Publicado (`9466965`),
+migración `060` aplicada. Validado en producción: la sección
+"Google Calendar" aparece en Configuración, muestra "Not connected" y
+el botón "Connect Google Calendar" apunta correctamente a
+`/api/google-calendar/oauth/start`.
+
+**Pendiente / siguiente paso:** Angel todavía tiene que crear el
+proyecto en Google Cloud, activar la Calendar API, configurar la
+pantalla de consentimiento y generar las credenciales (`GOOGLE_CALENDAR
+_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET`) — instrucciones paso a
+paso ya se las di, pendientes de que las cargue en EasyPanel. Sin eso
+no se puede probar la conexión real de punta a punta. Sigue el
+Bloque B: la IA consulta disponibilidad real (`checkFreeBusy`), sugiere
+un horario, un humano confirma desde el Inbox (mismo patrón ya
+existente de "IA sugiere, humano confirma" que usa mover etapa/
+temperatura), y se crea el evento con un enlace de Google Meet incluido
+automáticamente (`conferenceData`/`conferenceDataVersion=1`, confirmado
+con Angel que sí se puede) — Google manda la invitación por correo
+solo, sin que haya que tocar `src/lib/email/send.ts`.

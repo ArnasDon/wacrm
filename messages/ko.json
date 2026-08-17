@@ -581,11 +581,25 @@
       "toastFailedMoveDeal": "딜을 이동하지 못했습니다",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
-      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
+      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "salesView": "영업 파이프라인",
+      "temperatureView": "고객 온도"
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요",
       "addDeal": "딜 추가"
+    },
+    "temperature": {
+      "description": "채팅 카드를 열 사이로 드래그해서 다시 분류하세요 — AI도 대화가 진행되면서 자동으로 업데이트합니다.",
+      "unclassified": "미분류",
+      "cold": "차가움",
+      "warm": "따뜻함",
+      "hot": "뜨거움",
+      "dropContactHere": "여기에 채팅을 놓으세요",
+      "noName": "이름 없음",
+      "noContactsYet": "아직 연락처가 없습니다",
+      "toastFailedMoveContact": "온도를 업데이트하지 못했습니다",
+      "toastContactMoved": "온도가 업데이트되었습니다"
     },
     "card": {
       "noContact": "연락처 없음",

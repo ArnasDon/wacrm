@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Pipeline, PipelineStage, Deal } from "@/types";
+import type { Pipeline, PipelineStage, Deal, Contact, LeadTemperature } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { PipelineAnalytics } from "@/components/pipelines/pipeline-analytics";
+import { TemperatureBoard } from "@/components/pipelines/temperature-board";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,6 +52,7 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const t = useTranslations("Pipelines.page");
+  const tTemp = useTranslations("Pipelines.temperature");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
@@ -61,6 +63,15 @@ export default function PipelinesPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // "Sales Pipeline" (deals by stage) vs "Customer Temperature" (all
+  // contacts by lead_temperature) — visually similar Kanban boards, but
+  // the temperature one isn't a pipeline: no stage order, no "won"
+  // state, just a classification any contact can have regardless of
+  // whether they have a deal.
+  const [view, setView] = useState<"pipeline" | "temperature">("pipeline");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
 
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
@@ -87,6 +98,18 @@ export default function PipelinesPage() {
       return [];
     }
     return data ?? [];
+  }, [supabase]);
+
+  const loadContacts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("id, name, phone, instagram_username, lead_temperature")
+      .order("updated_at", { ascending: false });
+    if (error) {
+      console.error("Failed to load contacts:", error.message);
+      return [];
+    }
+    return (data ?? []) as Contact[];
   }, [supabase]);
 
   const loadStages = useCallback(
@@ -200,6 +223,42 @@ export default function PipelinesPage() {
       cancelled = true;
     };
   }, [selectedPipelineId, loadStages, loadDeals]);
+
+  // Lazy: the temperature tab's data is only fetched the first time the
+  // user switches to it, so accounts that never touch this view never
+  // pay for the extra query.
+  useEffect(() => {
+    if (view !== "temperature" || contactsLoaded) return;
+    let cancelled = false;
+    (async () => {
+      const list = await loadContacts();
+      if (cancelled) return;
+      setContacts(list);
+      setContactsLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, contactsLoaded, loadContacts]);
+
+  const handleContactMoved = useCallback(
+    async (contactId: string, temperature: LeadTemperature) => {
+      const previous = contacts;
+      setContacts((prev) =>
+        prev.map((c) => (c.id === contactId ? { ...c, lead_temperature: temperature } : c)),
+      );
+      const res = await fetch(`/api/contacts/${contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_temperature: temperature }),
+      });
+      if (!res.ok) {
+        toast.error(tTemp("toastFailedMoveContact"));
+        setContacts(previous);
+      }
+    },
+    [contacts, tTemp],
+  );
 
   const refreshPipelines = useCallback(async () => {
     const list = await loadPipelines();
@@ -332,8 +391,36 @@ export default function PipelinesPage() {
 
   return (
     <div className="space-y-6">
+      {/* View toggle: sales pipeline vs. customer temperature */}
+      <div className="inline-flex rounded-lg border border-border bg-card p-1">
+        <button
+          type="button"
+          onClick={() => setView("pipeline")}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            view === "pipeline"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t("salesView")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("temperature")}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            view === "temperature"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t("temperatureView")}
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
+        {view === "pipeline" ? (
+        <>
         <div className="flex items-center gap-3">
           {/* Pipeline selector dropdown */}
           <DropdownMenu>
@@ -405,10 +492,16 @@ export default function PipelinesPage() {
             {t("addDeal")}
           </GatedButton>
         </div>
+        </>
+        ) : (
+          <p className="text-sm text-muted-foreground">{tTemp("description")}</p>
+        )}
       </div>
 
       {/* Board */}
-      {pipelines.length === 0 ? (
+      {view === "temperature" ? (
+        <TemperatureBoard contacts={contacts} onContactMoved={handleContactMoved} />
+      ) : pipelines.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
           <GitBranch className="h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-medium text-foreground">

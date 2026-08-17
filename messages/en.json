@@ -581,11 +581,25 @@
       "toastFailedMoveDeal": "Failed to move deal",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
-      "toastNotLinkedToAccount": "Your profile is not linked to an account."
+      "toastNotLinkedToAccount": "Your profile is not linked to an account.",
+      "salesView": "Sales Pipeline",
+      "temperatureView": "Customer Temperature"
     },
     "board": {
       "dropDealHere": "Drop a deal here",
       "addDeal": "Add Deal"
+    },
+    "temperature": {
+      "description": "Drag a chat between columns to reclassify it — the AI also updates this on its own as conversations happen.",
+      "unclassified": "Unclassified",
+      "cold": "Cold",
+      "warm": "Warm",
+      "hot": "Hot",
+      "dropContactHere": "Drop a chat here",
+      "noName": "No name",
+      "noContactsYet": "No contacts yet",
+      "toastFailedMoveContact": "Failed to update temperature",
+      "toastContactMoved": "Temperature updated"
     },
     "card": {
       "noContact": "No contact",

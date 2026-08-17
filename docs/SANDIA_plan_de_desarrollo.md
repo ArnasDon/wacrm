@@ -2511,3 +2511,91 @@ que "por mes" debía ser un mes calendario exacto (no el rango de
 7/30/90/365 días existente), o que el motivo de consulta necesita su
 propio campo en vez de reusar notas, son cambios de seguimiento
 puntuales sobre lo ya construido aquí.
+
+### 2026-08-17 — Claude Code (bug real de cotizaciones IG/Facebook, teléfono editable, detalle de producto)
+
+Cuatro pedidos de Angel sobre el catálogo público y el panel de
+contacto, encadenados a la sesión anterior.
+
+**1. Bug real: las cotizaciones del catálogo nunca llegaban al chat
+de Instagram/Facebook (`f6e4211`).** Angel propuso un sistema de
+"número de ticket" como solución alterna, pero la causa raíz era más
+simple y ya arreglable de raíz: `quote-request/route.ts` siempre
+resolvía el contacto por el teléfono que la persona tecleaba en el
+formulario del catálogo, incluso cuando el link ya traía
+`?c=<conversationId>` (todo link de catálogo lo trae, sin importar el
+canal — ver `sendCatalogToConversation`). Un contacto de
+Instagram/Facebook no tiene teléfono por diseño, así que ese
+find-or-create-por-teléfono siempre creaba un contacto nuevo y
+distinto al que realmente estaba chateando — la verificación "¿esta
+conversación es de este contacto?" fallaba en silencio y el flujo
+caía siempre al link de WhatsApp, que no tiene sentido para alguien
+que escribió por otro canal. Corregido: cuando `conversation_id` es
+válido, se usa el contacto de esa conversación directamente (se salta
+la búsqueda por teléfono por completo), y el teléfono que la persona
+escribió en el formulario se guarda en ese contacto si no tenía uno
+— cerrando el círculo con el punto 3. También se dejó de ofrecer el
+link de WhatsApp cuando la conversación verificada es de
+Instagram/Facebook y su ventana está cerrada (antes se ofrecía sin
+sentido). **No hizo falta el sistema de ticket** — el link ya
+resuelve el problema sin que el cliente tenga que copiar nada.
+Validado con un contacto/conversación de prueba aislados (creados y
+borrados por script, sin tocar conversaciones reales) más un chequeo
+de regresión del flujo original (visitante frío sin conversación).
+
+**2. Campo "Teléfono" siempre visible y editable en el panel de
+contacto (`e646235`).** Antes se mostraba teléfono O usuario de
+Instagram, nunca ambos, y no había forma de agregar un teléfono a un
+contacto que no lo tenía. Ahora Teléfono es una fila siempre visible
+("Add phone number" si está vacío), editable en línea, guarda vía el
+mismo `PATCH /api/contacts/[id]` que ya existía (con manejo de
+colisión de único ya incluido). Ese teléfono alimenta directamente la
+hoja "Contacts" del export de KPIs de la sesión anterior, porque esa
+hoja ya lee `contact.phone`. De paso se agregó `facebook_id`/
+`facebook_username` al tipo `Contact` (existen en la BD desde la
+migración 041, nunca se habían tipado) para mostrar también la
+identidad de Facebook en el panel.
+
+**3. Detalle de producto clicable en el catálogo público
+(`6e3a9d2`).** Antes no había forma de entrar a un producto —
+tocarlo no hacía nada, y la descripción se cortaba a 2 líneas.
+**Decisión de alcance con Angel:** el modelo de datos no tiene
+soporte para varias fotos por producto (solo `image_url`, una sola)
+— eso requeriría una migración + tabla `product_images` + pantalla de
+subida en el admin, así que se acordó ir por partes: ahora, cada
+producto abre un diálogo de detalle con imagen más grande y
+descripción completa (sin cortar); la galería de varias fotos queda
+como siguiente paso, con el diálogo de detalle ya listo para
+recibirla.
+
+**Hallazgo de paso: `DialogContent` (componente compartido) no tenía
+tope de altura ni scroll interno (`4d21fc2`).** Al construir el
+diálogo de detalle (el primero de la app con suficiente contenido
+para notarlo) se encontró que en una ventana baja (probado con
+478px de alto real) el diálogo se salía de la pantalla por arriba Y
+por abajo sin ninguna forma de hacer scroll — ni el título ni el
+botón de cerrar eran alcanzables. Arreglado en el componente
+compartido (`max-h-[85vh] overflow-y-auto`), beneficia a todos los
+diálogos de la app; los que ya cabían en pantalla no cambian en nada
+porque el límite solo actúa cuando el contenido lo excede.
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios, `npx
+vitest run`: 1036/1038 (mismas 2 fallas preexistentes). Todo
+verificado en el navegador contra datos y sesión reales antes de
+comitear: cotización de prueba aislada limpiada después; teléfono
+guardado y luego revertido en un contacto real
+(`estiloyconfort_mueble`) para no dejar dato inventado; diálogo de
+detalle probado con scroll, stepper de cantidad, y confirmación de
+que el carrito se actualiza al cerrar. Publicado en 4 commits
+separados, confirmación explícita de Angel antes del push.
+
+**Pendiente / siguiente paso:** galería de varias fotos por producto
+(migración `product_images` + subida en el admin + carrusel en el
+diálogo de detalle) queda pendiente si Angel la pide — el diálogo de
+detalle ya construido es el lugar natural para recibirla.
+
+**Validado en producción:** el primer intento de deploy de
+`6e3a9d2` falló en EasyPanel (17s, sin detalle visible desde aquí);
+el reintento automático sí construyó bien (~5 min). Confirmado en el
+catálogo público real: el producto abre el diálogo de detalle con
+imagen, precio, descripción completa y scroll interno funcionando.

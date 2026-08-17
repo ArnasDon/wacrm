@@ -273,9 +273,24 @@ html[data-theme="rose"] {
      html/body. */
   body {
     @apply bg-background text-foreground overscroll-y-none overflow-hidden;
+    /* Disables pinch-zoom and double-tap-zoom at the WebKit gesture-
+       recognizer level. This is the part that actually matters on iOS
+       — in a standalone PWA (WKWebView), pinch-to-zoom is driven by a
+       native UIKit gesture recognizer that runs independently of the
+       DOM touch-event pipeline, so a JS touchmove/gesturestart
+       `preventDefault()` (still kept in layout.tsx as a secondary
+       layer, e.g. for non-WebKit engines) is not reliably enough to
+       stop it — confirmed not blocking pinch-zoom in real device
+       testing. `touch-action` is read directly by the OS/WebKit gesture
+       layer before any JS runs, which is why it's the one that actually
+       works. `pan-x pan-y` (not `manipulation`, which explicitly keeps
+       pinch-zoom enabled) permits ordinary one- or two-finger scrolling
+       in both axes while omitting the `pinch-zoom` keyword entirely. */
+    touch-action: pan-x pan-y;
   }
   html {
     @apply bg-background font-sans overscroll-y-none overflow-hidden;
+    touch-action: pan-x pan-y;
   }
 }
 

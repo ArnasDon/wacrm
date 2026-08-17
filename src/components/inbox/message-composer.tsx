@@ -515,11 +515,85 @@ export function MessageComposer({
     [removeStaged, t],
   );
 
-  const handlePicked = useCallback(
-    (kind: "image" | "video" | "document", file: File | undefined) => {
-      if (file) void stageUpload(kind, file);
+  // Upload + send a single file immediately, bypassing the draft/caption
+  // step above. Used only when multiple files are picked at once — a
+  // per-file caption UI doesn't apply to a batch, so each file just goes
+  // out as its own message as soon as it's uploaded. Mirrors stageUpload's
+  // validation exactly (same size cap, same MIME whitelist, same .mov
+  // transcode), kept as a separate function so the existing single-file
+  // draft/caption/send flow above is completely untouched.
+  const uploadAndSend = useCallback(
+    async (kind: Exclude<ComposerMediaKind, "audio">, pickedFile: File) => {
+      let file = pickedFile;
+      if (kind === "video" && isQuickTimeVideo(file)) {
+        try {
+          file = await convertMovToMp4ViaWebCodecs(file);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : t("unsupportedVideoType"));
+          return;
+        }
+      }
+      const max = MEDIA_MAX_BYTES_BY_KIND[kind];
+      if (file.size > max) {
+        toast.error(
+          t("fileTooLarge", {
+            sizeMb: (file.size / 1024 / 1024).toFixed(1),
+            kind: t(kind === "image" ? "photo" : kind),
+            limitMb: Math.round(max / 1024 / 1024),
+          }),
+        );
+        return;
+      }
+      const allowed = ALLOWED_MIME_TYPES_BY_KIND[kind] as readonly string[];
+      if (!allowed.includes(file.type)) {
+        toast.error(kind === "video" ? t("unsupportedVideoType") : t("unsupportedFileType"));
+        return;
+      }
+      try {
+        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+        onSendMedia({
+          kind,
+          mediaUrl: publicUrl,
+          path,
+          filename: kind === "document" ? file.name : undefined,
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Upload failed.");
+      }
     },
-    [stageUpload],
+    [onSendMedia, t],
+  );
+
+  const handlePicked = useCallback(
+    (kind: "image" | "video" | "document", fileList: FileList | null) => {
+      if (!fileList || fileList.length === 0) return;
+      const files = Array.from(fileList);
+
+      // Exactly one file — unchanged behavior: stage it as a draft with
+      // a caption field, wait for an explicit Send tap.
+      if (files.length === 1) {
+        void stageUpload(kind, files[0]);
+        return;
+      }
+
+      // Multiple files — no per-file caption step, so upload and send
+      // each one as soon as it's ready. Sequential (not Promise.all): on
+      // iOS Safari/PWA (WKWebView) running several uploads — and
+      // possible .mov→.mp4 transcodes — at once is the kind of thing
+      // that's flaky on-device; one at a time is slower but reliable
+      // everywhere, and keeps messages landing in the order they were
+      // picked. `busy` covers the whole batch, same as it does for a
+      // single staged upload — disables the attach button/shows the
+      // spinner until every file has been handled.
+      setBusy(true);
+      void (async () => {
+        for (const file of files) {
+          await uploadAndSend(kind, file);
+        }
+        setBusy(false);
+      })();
+    },
+    [stageUpload, uploadAndSend],
   );
 
   // The encoded Ogg/Opus file from opus-recorder. WhatsApp renders Ogg/
@@ -851,34 +925,41 @@ export function MessageComposer({
         </div>
       )}
 
-      {/* Hidden file inputs driven by the attach menu. */}
+      {/* Hidden file inputs driven by the attach menu. `multiple` lets
+          the OS picker (Photos/Files on iOS Safari + the installed PWA,
+          the native picker on Chrome/desktop) return more than one file;
+          handlePicked reads every entry off e.target.files, not just
+          the first. */}
       <input
         ref={imageInputRef}
         type="file"
+        multiple
         accept={PICKER_ACCEPT.image}
         className="hidden"
         onChange={(e) => {
-          handlePicked("image", e.target.files?.[0]);
+          handlePicked("image", e.target.files);
           e.target.value = "";
         }}
       />
       <input
         ref={videoInputRef}
         type="file"
+        multiple
         accept={PICKER_ACCEPT.video}
         className="hidden"
         onChange={(e) => {
-          handlePicked("video", e.target.files?.[0]);
+          handlePicked("video", e.target.files);
           e.target.value = "";
         }}
       />
       <input
         ref={documentInputRef}
         type="file"
+        multiple
         accept={PICKER_ACCEPT.document}
         className="hidden"
         onChange={(e) => {
-          handlePicked("document", e.target.files?.[0]);
+          handlePicked("document", e.target.files);
           e.target.value = "";
         }}
       />

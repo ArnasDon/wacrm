@@ -2437,3 +2437,77 @@ a `307` hacia `/login` igual que el resto de rutas protegidas.
 la página de KPIs está desplegada y protegida. Sigue el Bloque B de
 Google Calendar (ver entrada anterior), pendiente de que Angel cargue
 las credenciales de Google Cloud en EasyPanel.
+
+### 2026-08-17 — Claude Code (export de contactos en KPIs + scroll del panel de contacto en Inbox)
+
+Dos pedidos de Angel sobre lo desplegado en la entrada anterior:
+
+**1. Nueva hoja "Contacts" en el export de Excel de `/kpis`
+(`9d6cec8`).** Angel pidió poder descargar, por período, la lista de
+personas que escribieron: nombre, número, canal, motivo de la
+consulta (aclaró que puede vivir en notas) y etapa en la que se
+quedó. No existe un campo de "canal" en `contacts` (sí en
+`conversations`) ni un campo dedicado de "motivo de consulta" — se
+resolvieron así:
+- **Canal:** derivado de cuál de `instagram_id` / `facebook_id` /
+  `phone` tiene la fila (son mutuamente excluyentes por diseño, migr.
+  039/041).
+- **Motivo de consulta:** no hay campo dedicado — se usa cada fila de
+  `contact_notes` de ese contacto, unida con " | ". Vacío si nadie
+  dejó notas (caso común hoy, confirmado con datos reales).
+- **Etapa:** el `stage` del deal más reciente del contacto (o vacío si
+  no tiene ninguno).
+- **Alcance temporal:** el mismo rango de fecha ya seleccionado en la
+  página (7/30/90/365 días) — no se agregó un selector de "mes
+  calendario" nuevo; 30 días cubre razonablemente el caso "por mes"
+  que pidió Angel. Si en el futuro pide un mes calendario exacto,
+  revisar esta decisión.
+- `loadContactExportRows` (nuevo, `src/lib/kpis/queries.ts`) se
+  llama solo al hacer clic en "Download Excel", no en cada render de
+  la página — 3 queries (contactos, luego notas + deals en paralelo,
+  cruzadas por `contact_id`) para no inflar la carga normal de la
+  página con datos que la mayoría de las veces no se descargan.
+- **Validado con datos reales de producción** (servidor de desarrollo
+  apuntando al mismo proyecto de Supabase, sesión real de Angel en el
+  navegador): los 7 contactos del período salieron con nombre,
+  teléfono, canal (whatsapp/instagram/facebook) y etapa correctos,
+  coincidiendo con lo que ya se ve en pantalla.
+
+**2. Panel de contacto del Inbox no hacía scroll (`5f81d65`).** Bug
+real encontrado (no solo percepción): al `ScrollArea` que envuelve
+Etiquetas/Negociaciones/Cotizaciones/Notas le faltaba `min-h-0` — como
+hijo de un flex-column, sin eso crece para caber todo su contenido en
+vez de quedar acotado y hacer scroll interno. Es exactamente el mismo
+fix que `conversation-list.tsx` ya tiene (con un comentario propio
+explicando el porqué — `min-height:auto` por defecto en un flex item
+gana sobre `flex-1` si no se fuerza `min-h-0`). Un contacto con varias
+negociaciones o notas quedaba cortado sin forma de llegar al resto.
+
+Angel también pidió que el panel *en sí* fuera plegable, "para que los
+mensajes del chat sean más grandes" — eso ya existía: el header del
+hilo de mensajes tiene un botón (ícono de panel, junto al de refrescar)
+que oculta/muestra el panel de contacto completo y le da todo el ancho
+al hilo (issue #258, con persistencia en localStorage). Verificado en
+el navegador que funciona — no hizo falta código nuevo para esa parte.
+
+**Probado:** `npm run typecheck`/`eslint`/`build` limpios, `npx vitest
+run`: 1036/1038 (mismas 2 fallas preexistentes). Servidor de
+desarrollo local levantado y probado en el navegador contra datos
+reales de producción antes de commitear (export de Excel con blob real
+de 12,584 bytes conteniendo la hoja "Contacts"; scroll del panel de
+contacto verificado bajando hasta Notes; toggle del panel completo
+verificado ocultando/mostrando). Publicado, sin diff en
+`package-lock.json`.
+
+**Validado en producción (después del push):** export de Excel
+descargado con sesión real de Angel — blob de 12,584 bytes, idéntico
+en tamaño al probado en local, confirma que la hoja "Contacts" está
+en el build live. Panel de contacto de la conversación "Sandia" (2
+negociaciones + 3 cotizaciones, uno de los casos más cargados que hay
+en la cuenta real) scrolleó completo hasta Notes sin cortarse.
+
+**Pendiente / siguiente paso:** ninguno específico. Si Angel encuentra
+que "por mes" debía ser un mes calendario exacto (no el rango de
+7/30/90/365 días existente), o que el motivo de consulta necesita su
+propio campo en vez de reusar notas, son cambios de seguimiento
+puntuales sobre lo ya construido aquí.

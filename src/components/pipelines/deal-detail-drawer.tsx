@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquare, Pencil, Tag as TagIcon, X as XIcon } from "lucide-react";
+import { ListChecks, MessageSquare, Pencil, Tag as TagIcon, X as XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Conversation, Deal, PipelineStage } from "@/types";
 import { DealForm } from "./deal-form";
+import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
 
 interface DealDetailDrawerProps {
   /** Null hides the drawer — the parent owns "which deal", this
@@ -51,6 +52,7 @@ export function DealDetailDrawer({
   const locale = useLocale();
 
   const [editOpen, setEditOpen] = useState(false);
+  const [actionCenterOpen, setActionCenterOpen] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
 
   // Same "most recent conversation for this contact" lookup DealForm
@@ -281,29 +283,35 @@ export function DealDetailDrawer({
             </dd>
           </div>
 
-          <DialogFooter className="gap-2 sm:justify-between">
-            {conversation ? (
-              // `conversation` only resolves once its async Supabase fetch
-              // (above) finishes, which lands independently of — and often
-              // slightly after — the FLIP entrance animation. Without this,
-              // the link's mount is a hard DOM swap from the empty `<span>`
-              // placeholder straight to full opacity, which reads as a
-              // stutter right as the rest of the open sequence is settling.
-              // `animate-in fade-in` just gives *this* element its own
-              // 200ms entrance regardless of when it actually mounts, so a
-              // late resolve looks like an intentional soft reveal instead
-              // of a pop-in — the FLIP animation's own duration/curve/
-              // transform are untouched.
-              <Link
-                href={`/inbox?c=${conversation.id}`}
-                className="inline-flex animate-in items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground fade-in duration-200 hover:bg-muted"
-              >
-                <MessageSquare className="h-4 w-4" />
-                {t("openConversation")}
-              </Link>
-            ) : (
-              <span />
-            )}
+          <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {conversation && (
+                // `conversation` only resolves once its async Supabase fetch
+                // (above) finishes, which lands independently of — and often
+                // slightly after — the FLIP entrance animation. Without this,
+                // the link's mount is a hard DOM swap from the empty `<span>`
+                // placeholder straight to full opacity, which reads as a
+                // stutter right as the rest of the open sequence is settling.
+                // `animate-in fade-in` just gives *this* element its own
+                // 200ms entrance regardless of when it actually mounts, so a
+                // late resolve looks like an intentional soft reveal instead
+                // of a pop-in — the FLIP animation's own duration/curve/
+                // transform are untouched.
+                <Link
+                  href={`/inbox?c=${conversation.id}`}
+                  className="inline-flex animate-in items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground fade-in duration-200 hover:bg-muted"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  {t("openConversation")}
+                </Link>
+              )}
+              {deal.contact_id && (
+                <Button variant="outline" onClick={() => setActionCenterOpen(true)}>
+                  <ListChecks className="h-4 w-4" />
+                  {t("addToActionCenter")}
+                </Button>
+              )}
+            </div>
             <Button onClick={() => setEditOpen(true)}>
               <Pencil className="h-4 w-4" />
               {t("edit")}
@@ -324,6 +332,17 @@ export function DealDetailDrawer({
           onClose();
         }}
       />
+
+      {deal.contact_id && (
+        <AddToActionCenterDialog
+          open={actionCenterOpen}
+          onOpenChange={setActionCenterOpen}
+          contactId={deal.contact_id}
+          contactName={displayName}
+          conversationId={conversation?.id ?? deal.conversation_id ?? null}
+          onSaved={onChanged}
+        />
+      )}
 
       <style jsx>{`
         /* :global() — styled-jsx's automatic scoping-class injection only

@@ -30,6 +30,7 @@ import {
   CalendarPlus,
   Images,
   Kanban,
+  ListChecks,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -66,6 +67,7 @@ import { consumeFollowupDraft, type FollowupDraft } from "@/lib/inbox/followup-d
 import { ContactNotesPanel } from "./contact-notes-panel";
 import { MediaGallery } from "./media-gallery";
 import { AppointmentFormDialog } from "@/components/appointments/appointment-form-dialog";
+import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
 import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
 
 interface ReplyDraft {
@@ -258,6 +260,7 @@ export function MessageThread({
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
   const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+  const [actionCenterOpen, setActionCenterOpen] = useState(false);
   // "Mover para" submenu — same hook the sidebar's "Etapa da Pipeline"
   // card uses (contact-sidebar.tsx), so both entry points share one
   // fetch/update implementation and stay in sync with each other.
@@ -1174,6 +1177,14 @@ export function MessageThread({
               </DropdownMenuSub>
 
               <DropdownMenuItem
+                onClick={() => setActionCenterOpen(true)}
+                className="text-sm text-popover-foreground"
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+                {t("menuActionCenter")}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
                 onClick={() => setNotesDialogOpen(true)}
                 className="text-sm text-popover-foreground"
               >
@@ -1239,6 +1250,15 @@ export function MessageThread({
         defaultContactId={contact.id}
         defaultClientName={displayName}
         onSaved={() => {}}
+      />
+
+      {/* "Adicionar à Central de Ações" — Inbox entry point (AGENTS.md §7). */}
+      <AddToActionCenterDialog
+        open={actionCenterOpen}
+        onOpenChange={setActionCenterOpen}
+        contactId={contact.id}
+        contactName={displayName}
+        conversationId={conversation.id}
       />
 
       {/* "Ver mídias" — derived entirely from `messages`, already loaded

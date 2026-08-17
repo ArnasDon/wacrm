@@ -398,6 +398,55 @@ export interface AiSuggestion {
   contact?: { id: string; name: string; avatar_url?: string } | null;
 }
 
+// ============================================================
+// Central de Ações (migration 066)
+// ============================================================
+
+export type ActionItemType = 'interest' | 'followup';
+export type ActionItemStatus = 'pending' | 'completed' | 'cancelled';
+export type ActionItemEventType =
+  | 'created'
+  | 'completed'
+  | 'rescheduled'
+  | 'context_changed'
+  | 'outcome_recorded'
+  | 'cancelled';
+
+export interface ActionItem {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  deal_id?: string | null;
+  conversation_id?: string | null;
+  type: ActionItemType;
+  /** Interesse: "ação necessária". Follow-up: "motivo/contexto". */
+  title: string;
+  /** Optional context/observação for both types. */
+  description?: string | null;
+  /** Required (enforced by DB constraint) when type === 'followup'. */
+  due_date?: string | null;
+  status: ActionItemStatus;
+  source_suggestion_id?: string | null;
+  created_by?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by list queries. */
+  contact?: Contact | null;
+  deal?: Deal | null;
+}
+
+export interface ActionItemEvent {
+  id: string;
+  action_item_id: string;
+  account_id: string;
+  type: ActionItemEventType;
+  payload?: Record<string, unknown>;
+  created_by?: string | null;
+  created_at: string;
+}
+
 export type SenderType = 'customer' | 'agent' | 'bot';
 export type ContentType =
   | 'text'

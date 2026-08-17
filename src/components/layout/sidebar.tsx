@@ -6,14 +6,14 @@ import { useEffect, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
-import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { usePendingActionItemsCount } from "@/hooks/use-pending-action-items-count";
 import {
-  Bell,
   BrainCircuit,
   Calculator,
   Crown,
   GitBranch,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   MessageSquare,
   Radio,
@@ -100,7 +100,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
-  { href: "/notifications", labelKey: "notifications", icon: Bell },
+  { href: "/notifications", labelKey: "actionCenter", icon: ListChecks },
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
@@ -135,7 +135,7 @@ export function Sidebar({ open = false, onClose, asideRef, backdropRef }: Sideba
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
-  const unreadNotifications = useUnreadNotifications();
+  const pendingActionItems = usePendingActionItemsCount();
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
   // (the 017 signup trigger seeds it from `full_name`), so showing it
@@ -247,12 +247,12 @@ export function Sidebar({ open = false, onClose, asideRef, backdropRef }: Sideba
               const showUnreadDot =
                 item.href === "/inbox" && totalUnread > 0 && !isActive;
 
-              // Unlike the inbox dot, the notifications count stays visible
-              // even while the page is active — it reflects unread state
-              // (cleared by marking notifications read), not "currently
-              // viewing this section".
-              const showNotificationBadge =
-                item.href === "/notifications" && unreadNotifications > 0;
+              // Unlike the inbox dot, this count stays visible even while
+              // the page is active — it reflects pending Interesses +
+              // this week's Follow-ups, not "currently viewing this
+              // section".
+              const showActionItemsBadge =
+                item.href === "/notifications" && pendingActionItems > 0;
 
               return (
                 <li key={item.href}>
@@ -287,12 +287,12 @@ export function Sidebar({ open = false, onClose, asideRef, backdropRef }: Sideba
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
                       </span>
                     )}
-                    {showNotificationBadge && (
+                    {showActionItemsBadge && (
                       <span
-                        aria-label={t("unreadNotifications", { count: unreadNotifications })}
+                        aria-label={t("pendingActionItems", { count: pendingActionItems })}
                         className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
                       >
-                        {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                        {pendingActionItems > 9 ? "9+" : pendingActionItems}
                       </span>
                     )}
                   </Link>

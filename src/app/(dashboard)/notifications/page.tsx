@@ -1,50 +1,35 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { ListChecks, Loader2, Target } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import type { Notification } from "@/types";
-import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { useLocale, useTranslations } from "next-intl";
-import { getDateFnsLocale } from "@/lib/date-fns-locale";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import {
+  listInterestActionItems,
+  listWeekFollowupActionItems,
+} from "@/lib/action-items/queries";
+import { ActionItemCard } from "@/components/action-items/action-item-card";
+import { ActionItemDetailSheet } from "@/components/action-items/action-item-detail-sheet";
+import { AssignedNotificationsPopover } from "@/components/action-items/assigned-notifications-popover";
+import type { ActionItem } from "@/types";
 
-// Icon per notification type. Only one type exists today
-// (conversation_assigned) but this keeps future types a one-line add.
-const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
-  conversation_assigned: UserPlus,
-};
-
-export default function NotificationsPage() {
-  const t = useTranslations("Notifications.page");
-  const appLocale = useLocale();
-  const dateFnsLocale = getDateFnsLocale(appLocale);
-  const router = useRouter();
+export default function ActionCenterPage() {
+  const t = useTranslations("ActionCenter.page");
   const { accountId } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[] | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [markingAll, setMarkingAll] = useState(false);
+  const [interests, setInterests] = useState<ActionItem[] | null>(null);
+  const [followups, setFollowups] = useState<ActionItem[] | null>(null);
+  const [selected, setSelected] = useState<ActionItem | null>(null);
 
   const load = useCallback(async () => {
     if (!accountId) return;
-    const supabase = createClient();
-    const { data, error: fetchErr } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("account_id", accountId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (fetchErr) {
-      setError(fetchErr.message);
-      return;
-    }
-    setNotifications((data ?? []) as Notification[]);
+    const db = createClient();
+    const [interestRows, followupRows] = await Promise.all([
+      listInterestActionItems(db, accountId),
+      listWeekFollowupActionItems(db, accountId),
+    ]);
+    setInterests(interestRows);
+    setFollowups(followupRows);
   }, [accountId]);
 
   useEffect(() => {
@@ -52,222 +37,102 @@ export default function NotificationsPage() {
     load();
   }, [load]);
 
-  // Realtime — new assignments appear without a refresh, and a
-  // "mark all read" fired from another tab/device stays in sync here.
+  // Realtime — a card created/edited/completed from the Inbox or
+  // Pipeline (or another tab) shows up here without a refresh. Also
+  // listens for the Pipeline's own stage-move event, since dragging a
+  // lead in/out of the Follow-up stage changes the weekly list without
+  // touching action_items itself (§29).
   useEffect(() => {
+    if (!accountId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel("notifications-page")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "notifications" },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const row = payload.new as Notification;
-            setNotifications((prev) => {
-              if (!prev) return [row];
-              if (prev.some((n) => n.id === row.id)) return prev;
-              return [row, ...prev];
-            });
-          } else if (payload.eventType === "UPDATE") {
-            const row = payload.new as Notification;
-            setNotifications((prev) =>
-              prev?.map((n) => (n.id === row.id ? { ...n, ...row } : n)) ??
-              prev,
-            );
-          } else if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as Partial<Notification>;
-            setNotifications(
-              (prev) => prev?.filter((n) => n.id !== oldRow.id) ?? prev,
-            );
-          }
-        },
-      )
+      .channel("action-center-page")
+      .on("postgres_changes", { event: "*", schema: "public", table: "action_items" }, load)
       .subscribe();
-
+    window.addEventListener("wacrm:deal-stage-changed", load);
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener("wacrm:deal-stage-changed", load);
     };
-  }, []);
+  }, [accountId, load]);
 
-  const markRead = useCallback(
-    async (id: string) => {
-      // Optimistic — the row is already visually "read" by the time the
-      // request lands, so the UI doesn't wait on the round-trip.
-      setNotifications(
-        (prev) =>
-          prev?.map((n) =>
-            n.id === id && !n.read_at
-              ? { ...n, read_at: new Date().toISOString() }
-              : n,
-          ) ?? prev,
-      );
-      const supabase = createClient();
-      const { error: updateErr } = await supabase
-        .from("notifications")
-        .update({ read_at: new Date().toISOString() })
-        .eq("id", id)
-        .is("read_at", null);
-      if (updateErr) {
-        toast.error(t("toastMarkReadError"));
-        load();
-      }
-    },
-    [load, t],
-  );
-
-  const handleClick = useCallback(
-    (n: Notification) => {
-      if (!n.read_at) markRead(n.id);
-      if (n.conversation_id) {
-        router.push(`/inbox?c=${n.conversation_id}`);
-      }
-    },
-    [markRead, router],
-  );
-
-  const unreadIds = notifications?.filter((n) => !n.read_at).map((n) => n.id) ?? [];
-
-  const markAllRead = useCallback(async () => {
-    if (unreadIds.length === 0) return;
-    setMarkingAll(true);
-    const now = new Date().toISOString();
-    setNotifications(
-      (prev) => prev?.map((n) => (n.read_at ? n : { ...n, read_at: now })) ?? prev,
-    );
-    const supabase = createClient();
-    const { error: updateErr } = await supabase
-      .from("notifications")
-      .update({ read_at: now })
-      .is("read_at", null);
-    setMarkingAll(false);
-    if (updateErr) {
-      toast.error(t("toastMarkAllError"));
-      load();
-    }
-  }, [unreadIds.length, load, t]);
-
-  if (error) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-destructive">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          {t("retry")}
-        </Button>
-      </div>
-    );
-  }
-
-  if (notifications === null) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const loading = interests === null || followups === null;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("subtitle")}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={unreadIds.length === 0 || markingAll}
-          onClick={markAllRead}
-        >
-          {markingAll ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CheckCheck className="h-4 w-4" />
-          )}
-          {t("markAllRead")}
-        </Button>
+        <AssignedNotificationsPopover />
       </div>
 
-      {notifications.length === 0 ? (
-        <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/40">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <Bell className="h-6 w-6 text-primary" />
-          </div>
-          <p className="mt-3 text-sm font-medium text-foreground">
-            {t("emptyTitle")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("emptyDesc")}
-          </p>
+      {loading ? (
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : (
-        <ul className="space-y-2">
-          {notifications.map((n) => {
-            const Icon = TYPE_ICON[n.type] ?? Bell;
-            const isUnread = !n.read_at;
-            return (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  onClick={() => handleClick(n)}
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
-                    isUnread
-                      ? "border-primary/30 bg-primary/5 hover:border-primary/50"
-                      : "border-border bg-card hover:border-border/70",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg",
-                      isUnread ? "bg-primary/15" : "bg-muted",
-                    )}
-                    aria-hidden
-                  >
-                    <Icon
-                      className={cn(
-                        "h-5 w-5",
-                        isUnread ? "text-primary" : "text-muted-foreground",
-                      )}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "truncate text-sm font-semibold",
-                          isUnread ? "text-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        {n.title}
-                      </span>
-                      {isUnread && (
-                        <span
-                          aria-label={t("unreadAria")}
-                          className="h-2 w-2 flex-shrink-0 rounded-full bg-primary"
-                        />
-                      )}
-                    </div>
-                    {n.body && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {n.body}
-                      </p>
-                    )}
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      {formatDistanceToNow(new Date(n.created_at), {
-                        addSuffix: true,
-                        locale: dateFnsLocale,
-                      })}
-                    </p>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <section>
+            <SectionHeader icon={Target} title={t("interestsTitle")} count={interests.length} />
+            {interests.length === 0 ? (
+              <EmptyState message={t("interestsEmpty")} />
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {interests.map((item) => (
+                  <ActionItemCard key={item.id} item={item} onClick={() => setSelected(item)} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <div className="border-t border-border" />
+
+          <section>
+            <SectionHeader icon={ListChecks} title={t("followupsTitle")} count={followups.length} />
+            {followups.length === 0 ? (
+              <EmptyState message={t("followupsEmpty")} />
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {followups.map((item) => (
+                  <ActionItemCard key={item.id} item={item} onClick={() => setSelected(item)} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
       )}
+
+      <ActionItemDetailSheet item={selected} onClose={() => setSelected(null)} onChanged={load} />
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  count,
+}: {
+  icon: typeof Target;
+  title: string;
+  count: number;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+        {count}
+      </span>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border bg-muted/40">
+      <p className="text-xs text-muted-foreground">{message}</p>
     </div>
   );
 }

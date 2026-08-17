@@ -11,6 +11,8 @@ import {
 } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealDetailDrawer } from "@/components/pipelines/deal-detail-drawer";
+import { ArchivedDealsList } from "@/components/pipelines/archived-deals-list";
+import { ArchiveDealDialog } from "@/components/pipelines/archive-deal-dialog";
 import { DeleteLeadDialog } from "@/components/contacts/delete-lead-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
+import { GitBranch, Plus, ChevronDown, Settings, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
@@ -52,6 +54,7 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const t = useTranslations("Pipelines.page");
+  const tArchive = useTranslations("Pipelines.archiveDialog");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const { accountId } = useAuth();
@@ -61,6 +64,15 @@ export default function PipelinesPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // "Leads Arquivados" toggle — a separate flat view of deals with
+  // `archived_at` set, replacing the Kanban board while active (see
+  // AGENTS spec: "alternar entre a visão da Pipeline normal e a nova
+  // visão de Arquivados"). Its own list/loading state, loaded lazily
+  // only while this view is showing.
+  const [view, setView] = useState<"active" | "archived">("active");
+  const [archivedDeals, setArchivedDeals] = useState<Deal[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
 
   // `<main>` (dashboard-shell.tsx) is `overflow-y-auto` by default, needed
   // for pages taller than the viewport. This page instead wants each
@@ -108,6 +120,14 @@ export default function PipelinesPage() {
     name: string;
   } | null>(null);
 
+  // "Arquivar" confirmation (AGENTS spec §3) — keyed by deal id, unlike
+  // delete which is keyed by contact id (archiving never touches the
+  // contact/deal row's identity, only sets archived_at).
+  const [archiveDealTarget, setArchiveDealTarget] = useState<{
+    dealId: string;
+    name: string;
+  } | null>(null);
+
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
 
@@ -148,6 +168,10 @@ export default function PipelinesPage() {
             .from("deals")
             .select(DEAL_SELECT)
             .eq("pipeline_id", pipelineId)
+            // Archived deals live off the active board entirely
+            // (migration 067) — the archived view fetches them
+            // separately via loadArchivedDeals below.
+            .is("archived_at", null)
             .order("position", { ascending: true }),
           supabase.from("profiles").select("*"),
           fetchAssignedAgentMap(supabase).catch((error) => {
@@ -163,6 +187,23 @@ export default function PipelinesPage() {
           profiles ?? [],
         ),
       }));
+    },
+    [supabase],
+  );
+
+  const loadArchivedDeals = useCallback(
+    async (pipelineId: string) => {
+      const { data, error } = await supabase
+        .from("deals")
+        .select(DEAL_SELECT)
+        .eq("pipeline_id", pipelineId)
+        .not("archived_at", "is", null)
+        .order("archived_at", { ascending: false });
+      if (error) {
+        console.error("Failed to load archived deals:", error.message);
+        return [];
+      }
+      return normalizeDeals(data ?? []);
     },
     [supabase],
   );
@@ -272,6 +313,29 @@ export default function PipelinesPage() {
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
 
+  const refreshArchivedDeals = useCallback(async () => {
+    if (!selectedPipelineId) return;
+    setArchivedDeals(await loadArchivedDeals(selectedPipelineId));
+  }, [loadArchivedDeals, selectedPipelineId]);
+
+  // Loaded lazily, only while the "Arquivados" view is actually showing
+  // — switching pipelines while already on that view refetches for the
+  // new pipeline too.
+  useEffect(() => {
+    if (view !== "archived" || !selectedPipelineId) return;
+    let cancelled = false;
+    (async () => {
+      setArchivedLoading(true);
+      const rows = await loadArchivedDeals(selectedPipelineId);
+      if (cancelled) return;
+      setArchivedDeals(rows);
+      setArchivedLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, selectedPipelineId, loadArchivedDeals]);
+
   const handleDealsReordered = useCallback(
     async (rows: DealPositionUpdate[]) => {
       // Optimistic update — the board already animated the drag live;
@@ -333,12 +397,52 @@ export default function PipelinesPage() {
     // The deleted contact's deal(s) are gone too (contact_tags/contact_notes/
     // conversations CASCADE; the deal itself isn't a contacts-cascade target,
     // but with contact_id now null it no longer belongs on this board as a
-    // "lead" card) — simplest correct state is a full refetch.
-    refreshDeals();
+    // "lead" card) — simplest correct state is a full refetch. Reachable
+    // from either view (delete is still offered on archived cards too),
+    // so refresh whichever list is currently showing.
+    if (view === "archived") refreshArchivedDeals();
+    else refreshDeals();
     if (selectedDeal?.contact_id === deleteLeadTarget?.contactId) {
       setSelectedDeal(null);
     }
-  }, [refreshDeals, selectedDeal, deleteLeadTarget]);
+  }, [view, refreshDeals, refreshArchivedDeals, selectedDeal, deleteLeadTarget]);
+
+  const handleRequestArchiveDeal = useCallback((deal: Deal) => {
+    setArchiveDealTarget({
+      dealId: deal.id,
+      name: deal.contact?.name || deal.contact?.phone || deal.title,
+    });
+  }, []);
+
+  const handleDealArchived = useCallback(
+    (dealId: string) => {
+      setArchiveDealTarget(null);
+      // Optimistic — drop it from the active board immediately instead
+      // of waiting on a refetch (AGENTS spec: "remove o card dinamicamente
+      // ... sem precisar recarregar a página").
+      setDeals((prev) => prev.filter((d) => d.id !== dealId));
+      if (selectedDeal?.id === dealId) setSelectedDeal(null);
+    },
+    [selectedDeal],
+  );
+
+  const handleRestoreDeal = useCallback(
+    async (deal: Deal) => {
+      const { error } = await supabase
+        .from("deals")
+        .update({ archived_at: null })
+        .eq("id", deal.id);
+      if (error) {
+        console.error("[pipelines] restore failed:", error);
+        toast.error(tArchive("toastFailedRestore"));
+        return;
+      }
+      toast.success(tArchive("toastRestored"));
+      setArchivedDeals((prev) => prev.filter((d) => d.id !== deal.id));
+      if (selectedDeal?.id === deal.id) setSelectedDeal(null);
+    },
+    [supabase, selectedDeal, tArchive],
+  );
 
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
@@ -457,19 +561,52 @@ export default function PipelinesPage() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* "Leads Arquivados" toggle — sits immediately next to the
+              "Clientes" pipeline-selector trigger, per spec. Same
+              height/padding/border-radius/hover as that trigger
+              (classes copied verbatim, not the generic Button component,
+              so the two stay pixel-identical). The active/pressed state
+              (viewing archived) reuses the primary tint already used
+              elsewhere for a toggled-on affordance (e.g. the sidebar's
+              `highlight` nav item). */}
+          <button
+            type="button"
+            onClick={() => {
+              // Switching back to the active board needs a fresh fetch —
+              // a lead restored while viewing "Arquivados" only patched
+              // `archivedDeals` locally (see handleRestoreDeal), so the
+              // stale `deals` snapshot from before that restore wouldn't
+              // otherwise show it again until some other refetch happened.
+              if (view === "archived") refreshDeals();
+              setView(view === "archived" ? "active" : "archived");
+            }}
+            className={
+              view === "archived"
+                ? "inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary transition-colors hover:bg-primary/15"
+                : "inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+            }
+          >
+            <Archive className="h-4 w-4" />
+            <span className="font-semibold">
+              {view === "archived" ? t("activePipelineButton") : t("archivedButton")}
+            </span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
-          <GatedButton
-            variant="outline"
-            canAct={canEditSettings}
-            gateReason="criar pipelines"
-            onClick={() => setNewPipelineOpen(true)}
-            className="border-border bg-card text-foreground hover:bg-muted"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("addPipeline")}
-          </GatedButton>
+          {view === "active" && (
+            <GatedButton
+              variant="outline"
+              canAct={canEditSettings}
+              gateReason="criar pipelines"
+              onClick={() => setNewPipelineOpen(true)}
+              className="border-border bg-card text-foreground hover:bg-muted"
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              {t("addPipeline")}
+            </GatedButton>
+          )}
         </div>
       </div>
 
@@ -496,6 +633,22 @@ export default function PipelinesPage() {
             {t("createPipeline")}
           </GatedButton>
         </div>
+      ) : view === "archived" ? (
+        archivedLoading ? (
+          <div className="flex gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-32 w-72 animate-pulse rounded-xl bg-muted/50" />
+            ))}
+          </div>
+        ) : (
+          <ArchivedDealsList
+            deals={archivedDeals}
+            stages={stages}
+            onEditDeal={handleOpenDeal}
+            onRequestRestoreDeal={handleRestoreDeal}
+            onRequestDeleteDeal={handleRequestDeleteDeal}
+          />
+        )
       ) : (
         <PipelineBoard
           stages={stages}
@@ -503,6 +656,7 @@ export default function PipelinesPage() {
           onDealsReordered={handleDealsReordered}
           onEditDeal={handleOpenDeal}
           onRequestDeleteDeal={handleRequestDeleteDeal}
+          onRequestArchiveDeal={handleRequestArchiveDeal}
         />
       )}
       </div>
@@ -515,6 +669,16 @@ export default function PipelinesPage() {
         contactId={deleteLeadTarget?.contactId ?? null}
         contactName={deleteLeadTarget?.name ?? ""}
         onDeleted={handleLeadDeleted}
+      />
+
+      <ArchiveDealDialog
+        open={!!archiveDealTarget}
+        onOpenChange={(open) => {
+          if (!open) setArchiveDealTarget(null);
+        }}
+        dealId={archiveDealTarget?.dealId ?? null}
+        dealName={archiveDealTarget?.name ?? ""}
+        onArchived={handleDealArchived}
       />
 
       {/* New Pipeline Dialog */}
@@ -582,7 +746,7 @@ export default function PipelinesPage() {
         stages={stages}
         originRect={dealOriginRect}
         onClose={() => setSelectedDeal(null)}
-        onChanged={refreshDeals}
+        onChanged={view === "archived" ? refreshArchivedDeals : refreshDeals}
       />
     </div>
   );

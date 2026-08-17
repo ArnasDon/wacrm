@@ -1,7 +1,7 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X, MoreVertical, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Calendar, Check, X, MoreVertical, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { RESPONDER_COLOR_CLASS } from "@/lib/responder-color";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 interface DealCardProps {
@@ -23,6 +24,11 @@ interface DealCardProps {
   /** Opens the shared delete-lead confirmation — omitted on the drag
    *  overlay copy, which is a static preview with no menu. */
   onRequestDelete?: (deal: Deal) => void;
+  /** "Arquivar" — omitted on the drag overlay and on the archived list
+   *  (which passes `onRequestRestore` instead). */
+  onRequestArchive?: (deal: Deal) => void;
+  /** "Restaurar" — only ever passed by the archived-leads view. */
+  onRequestRestore?: (deal: Deal) => void;
   isOverlay?: boolean;
 }
 
@@ -40,7 +46,15 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: DealCardProps) {
+export function DealCard({
+  deal,
+  stage,
+  onEdit,
+  onRequestDelete,
+  onRequestArchive,
+  onRequestRestore,
+  isOverlay,
+}: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const tLeads = useTranslations("Leads.deleteDialog");
   const contact = deal.contact;
@@ -133,7 +147,7 @@ export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: De
             {t("lost")}
           </span>
         )}
-        {!isOverlay && onRequestDelete && (
+        {!isOverlay && (onRequestDelete || onRequestArchive || onRequestRestore) && (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -149,16 +163,43 @@ export function DealCard({ deal, stage, onEdit, onRequestDelete, isOverlay }: De
               <MoreVertical className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="border-border bg-popover">
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRequestDelete(deal);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                {tLeads("menuLabel")}
-              </DropdownMenuItem>
+              {onRequestArchive && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestArchive(deal);
+                  }}
+                >
+                  <Archive className="h-4 w-4" />
+                  {t("archiveMenuLabel")}
+                </DropdownMenuItem>
+              )}
+              {onRequestRestore && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestRestore(deal);
+                  }}
+                >
+                  <ArchiveRestore className="h-4 w-4" />
+                  {t("restoreMenuLabel")}
+                </DropdownMenuItem>
+              )}
+              {(onRequestArchive || onRequestRestore) && onRequestDelete && (
+                <DropdownMenuSeparator className="bg-border" />
+              )}
+              {onRequestDelete && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestDelete(deal);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {tLeads("menuLabel")}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

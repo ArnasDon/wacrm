@@ -802,7 +802,10 @@
       "toastNoLeadToDelete": "This card has no linked lead to delete.",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
-      "toastNotLinkedToAccount": "Your profile is not linked to an account."
+      "toastNotLinkedToAccount": "Your profile is not linked to an account.",
+      "archivedButton": "Archived",
+      "activePipelineButton": "Active pipeline",
+      "toastFailedLoadArchived": "Failed to load archived leads"
     },
     "board": {
       "dropDealHere": "Drop a deal here"
@@ -810,7 +813,9 @@
     "card": {
       "noContact": "No contact",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "archiveMenuLabel": "Archive",
+      "restoreMenuLabel": "Restore"
     },
     "detail": {
       "tags": "Tags",
@@ -865,7 +870,28 @@
       "toastMarkedLost": "Marked as lost",
       "toastReopened": "Deal reopened",
       "toastFailedDelete": "Failed to delete deal",
-      "toastDeleted": "Deal deleted"
+      "toastDeleted": "Deal deleted",
+      "stageLockedArchived": "Restore the lead to change its stage."
+    },
+    "archiveDialog": {
+      "title": "Archive {name}?",
+      "description": "This lead will be removed from your pipeline, but will remain stored in the CRM and can be restored at any time.",
+      "cancel": "Cancel",
+      "archiveBtn": "Archive",
+      "archiving": "Archiving...",
+      "toastArchived": "Lead archived.",
+      "toastFailedArchive": "Couldn't archive the lead.",
+      "toastRestored": "Lead restored.",
+      "toastFailedRestore": "Couldn't restore the lead."
+    },
+    "archived": {
+      "title": "Archived Leads",
+      "subtitle": "Leads removed from the active pipeline. Still stored with their full history.",
+      "searchPlaceholder": "Search by name or phone...",
+      "allTags": "All tags",
+      "empty": "No archived leads.",
+      "noResults": "No archived leads match your search.",
+      "stagePrefix": "Original stage:"
     },
     "settings": {
       "managePipeline": "Manage Pipeline",

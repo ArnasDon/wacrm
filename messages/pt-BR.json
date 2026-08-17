@@ -802,7 +802,10 @@
       "toastNoLeadToDelete": "Este card não tem um lead vinculado para excluir.",
       "toastFailedCreatePipeline": "Falha ao criar pipeline",
       "toastPipelineCreated": "Pipeline criado",
-      "toastNotLinkedToAccount": "Seu perfil não está vinculado a uma conta."
+      "toastNotLinkedToAccount": "Seu perfil não está vinculado a uma conta.",
+      "archivedButton": "Arquivados",
+      "activePipelineButton": "Pipeline ativa",
+      "toastFailedLoadArchived": "Falha ao carregar leads arquivados"
     },
     "board": {
       "dropDealHere": "Solte um negócio aqui"
@@ -810,7 +813,9 @@
     "card": {
       "noContact": "Sem contato",
       "won": "Ganho",
-      "lost": "Perdido"
+      "lost": "Perdido",
+      "archiveMenuLabel": "Arquivar",
+      "restoreMenuLabel": "Restaurar"
     },
     "detail": {
       "tags": "Tags",
@@ -865,7 +870,28 @@
       "toastMarkedLost": "Marcado como perdido",
       "toastReopened": "Negócio reaberto",
       "toastFailedDelete": "Falha ao excluir negócio",
-      "toastDeleted": "Negócio excluído"
+      "toastDeleted": "Negócio excluído",
+      "stageLockedArchived": "Restaure o lead para poder mover de etapa."
+    },
+    "archiveDialog": {
+      "title": "Arquivar {name}?",
+      "description": "Este lead será removido da sua pipeline, mas continuará armazenado no CRM e poderá ser restaurado a qualquer momento.",
+      "cancel": "Cancelar",
+      "archiveBtn": "Arquivar",
+      "archiving": "Arquivando...",
+      "toastArchived": "Lead arquivado.",
+      "toastFailedArchive": "Não foi possível arquivar o lead.",
+      "toastRestored": "Lead restaurado.",
+      "toastFailedRestore": "Não foi possível restaurar o lead."
+    },
+    "archived": {
+      "title": "Leads Arquivados",
+      "subtitle": "Leads removidos da pipeline ativa. Continuam armazenados com todo o histórico.",
+      "searchPlaceholder": "Buscar por nome ou telefone...",
+      "allTags": "Todas as tags",
+      "empty": "Nenhum lead arquivado.",
+      "noResults": "Nenhum lead arquivado corresponde à busca.",
+      "stagePrefix": "Etapa original:"
     },
     "settings": {
       "managePipeline": "Gerenciar pipeline",

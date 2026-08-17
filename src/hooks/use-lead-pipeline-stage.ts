@@ -31,6 +31,11 @@ export function useLeadPipelineStage(contactId: string | null | undefined) {
       .from("deals")
       .select("*, stage:pipeline_stages(*)")
       .eq("contact_id", contactId)
+      // Archived deals are off the active board on purpose — this hook
+      // backs "Mover para" (Inbox) and the contact sidebar's stage
+      // card, neither of which should target/resurrect an archived
+      // deal (migration 067).
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(1);
 

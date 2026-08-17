@@ -55,6 +55,7 @@ interface PipelineBoardProps {
   // out of the card instead of just fading/zooming in centered.
   onEditDeal: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDeleteDeal: (deal: Deal) => void;
+  onRequestArchiveDeal: (deal: Deal) => void;
 }
 
 /** Per-stage ordered id lists — the only thing that mutates at drag speed.
@@ -88,6 +89,7 @@ export function PipelineBoard({
   onDealsReordered,
   onEditDeal,
   onRequestDeleteDeal,
+  onRequestArchiveDeal,
 }: PipelineBoardProps) {
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
   // Non-null only for the duration of a drag — see handleDragStart/End.
@@ -401,6 +403,7 @@ export function PipelineBoard({
               deals={stageDeals}
               onEditDeal={onEditDeal}
               onRequestDeleteDeal={onRequestDeleteDeal}
+              onRequestArchiveDeal={onRequestArchiveDeal}
             />
           );
         })}
@@ -525,6 +528,7 @@ function StageColumn({
   deals,
   onEditDeal,
   onRequestDeleteDeal,
+  onRequestArchiveDeal,
 }: {
   stage: PipelineStage;
   deals: Deal[];
@@ -533,6 +537,7 @@ function StageColumn({
   // out of the card instead of just fading/zooming in centered.
   onEditDeal: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDeleteDeal: (deal: Deal) => void;
+  onRequestArchiveDeal: (deal: Deal) => void;
 }) {
   const t = useTranslations("Pipelines.board");
   // Fallback drop target for an empty column — SortableContext has
@@ -586,6 +591,7 @@ function StageColumn({
                 stage={stage}
                 onEdit={onEditDeal}
                 onRequestDelete={onRequestDeleteDeal}
+                onRequestArchive={onRequestArchiveDeal}
               />
             ))}
           </SortableContext>
@@ -600,11 +606,13 @@ function SortableDealCard({
   stage,
   onEdit,
   onRequestDelete,
+  onRequestArchive,
 }: {
   deal: Deal;
   stage: PipelineStage;
   onEdit: (deal: Deal, originRect?: DOMRect) => void;
   onRequestDelete: (deal: Deal) => void;
+  onRequestArchive: (deal: Deal) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } =
     useSortable({ id: deal.id });
@@ -645,7 +653,13 @@ function SortableDealCard({
           actual moving copy the pointer follows is the DragOverlay
           instance above, not this one. */}
       <div className={isDragging ? "invisible" : undefined}>
-        <DealCard deal={deal} stage={stage} onEdit={onEdit} onRequestDelete={onRequestDelete} />
+        <DealCard
+          deal={deal}
+          stage={stage}
+          onEdit={onEdit}
+          onRequestDelete={onRequestDelete}
+          onRequestArchive={onRequestArchive}
+        />
       </div>
     </div>
   );

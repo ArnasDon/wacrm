@@ -616,6 +616,10 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Migration 067 — set when the lead was removed from the active
+   *  Pipeline board ("Arquivar"). Null/undefined = active. Independent
+   *  of `status`: an archived deal can still be open/won/lost. */
+  archived_at?: string | null;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

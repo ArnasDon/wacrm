@@ -802,7 +802,10 @@
       "toastNoLeadToDelete": "이 카드에는 삭제할 연결된 리드가 없습니다.",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
-      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
+      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "archivedButton": "보관됨",
+      "activePipelineButton": "활성 파이프라인",
+      "toastFailedLoadArchived": "보관된 리드를 불러오지 못했습니다"
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요"
@@ -810,7 +813,9 @@
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
-      "lost": "실패"
+      "lost": "실패",
+      "archiveMenuLabel": "보관",
+      "restoreMenuLabel": "복원"
     },
     "detail": {
       "tags": "태그",
@@ -865,7 +870,28 @@
       "toastMarkedLost": "실패로 표시했습니다",
       "toastReopened": "딜이 재개되었습니다",
       "toastFailedDelete": "딜을 삭제하지 못했습니다",
-      "toastDeleted": "딜이 삭제되었습니다"
+      "toastDeleted": "딜이 삭제되었습니다",
+      "stageLockedArchived": "단계를 변경하려면 리드를 복원하세요."
+    },
+    "archiveDialog": {
+      "title": "{name}을(를) 보관할까요?",
+      "description": "이 리드는 파이프라인에서 제거되지만 CRM에 계속 저장되며 언제든지 복원할 수 있습니다.",
+      "cancel": "취소",
+      "archiveBtn": "보관",
+      "archiving": "보관 중...",
+      "toastArchived": "리드가 보관되었습니다.",
+      "toastFailedArchive": "리드를 보관하지 못했습니다.",
+      "toastRestored": "리드가 복원되었습니다.",
+      "toastFailedRestore": "리드를 복원하지 못했습니다."
+    },
+    "archived": {
+      "title": "보관된 리드",
+      "subtitle": "활성 파이프라인에서 제거된 리드입니다. 전체 기록과 함께 계속 저장됩니다.",
+      "searchPlaceholder": "이름 또는 전화번호로 검색...",
+      "allTags": "모든 태그",
+      "empty": "보관된 리드가 없습니다.",
+      "noResults": "검색과 일치하는 보관된 리드가 없습니다.",
+      "stagePrefix": "원래 단계:"
     },
     "settings": {
       "managePipeline": "파이프라인 관리",

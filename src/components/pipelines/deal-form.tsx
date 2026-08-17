@@ -340,7 +340,8 @@ export function DealForm({
               <select
                 value={stageId}
                 onChange={(e) => setStageId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                disabled={!!deal?.archived_at}
+                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {stages.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -348,6 +349,14 @@ export function DealForm({
                   </option>
                 ))}
               </select>
+              {/* Archived leads are view-only for stage movement — the
+                  card intentionally has no way to change etapa while off
+                  the active board (AGENTS spec: "sem os botões de
+                  movimentação de etapa"). Restore it from the Pipeline
+                  card's "⋮" menu to unlock this again. */}
+              {deal?.archived_at && (
+                <p className="text-xs text-muted-foreground">{t("stageLockedArchived")}</p>
+              )}
             </div>
 
             <div className="grid gap-2">

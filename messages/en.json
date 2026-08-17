@@ -408,7 +408,19 @@
       "editPhone": "Edit phone number",
       "copyPhone": "Copy phone number",
       "phoneSaveFailed": "Couldn't save the phone number",
-      "phoneSaveSuccess": "Phone number saved"
+      "phoneSaveSuccess": "Phone number saved",
+      "deleteDeal": "Delete deal",
+      "deleteDealTitle": "Delete this deal?",
+      "deleteDealDesc": "This will permanently delete \"{title}\". This can't be undone.",
+      "deleteDealBtn": "Delete",
+      "dealDeleteSuccess": "Deal deleted",
+      "dealDeleteFailed": "Couldn't delete the deal",
+      "deleteQuote": "Delete quote",
+      "deleteQuoteTitle": "Delete this quote?",
+      "deleteQuoteDesc": "This will permanently delete the quote and its PDF link. This can't be undone.",
+      "deleteQuoteBtn": "Delete",
+      "quoteDeleteSuccess": "Quote deleted",
+      "quoteDeleteFailed": "Couldn't delete the quote"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",

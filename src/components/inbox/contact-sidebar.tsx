@@ -23,6 +23,7 @@ import {
   Send,
   Pencil,
   X,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,6 +80,10 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const [stagesByPipeline, setStagesByPipeline] = useState<Record<string, PipelineStage[]>>({});
   const [busyDealId, setBusyDealId] = useState<string | null>(null);
   const [confirmWinDeal, setConfirmWinDeal] = useState<Deal | null>(null);
+  const [confirmDeleteDeal, setConfirmDeleteDeal] = useState<Deal | null>(null);
+  const [deletingDeal, setDeletingDeal] = useState(false);
+  const [confirmDeleteQuote, setConfirmDeleteQuote] = useState<Quote | null>(null);
+  const [deletingQuote, setDeletingQuote] = useState(false);
 
   // All of the account's pipelines (with their stages), independent of
   // whether this contact has any deals yet — powers the "New deal"
@@ -334,6 +339,41 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
     const deal = confirmWinDeal;
     setConfirmWinDeal(null);
     await moveDealStage(deal, wonStageId);
+  }
+
+  async function handleDeleteDeal() {
+    if (!confirmDeleteDeal) return;
+    setDeletingDeal(true);
+    try {
+      const { error } = await createClient().from("deals").delete().eq("id", confirmDeleteDeal.id);
+      if (error) {
+        toast.error(tSidebar("dealDeleteFailed"));
+        return;
+      }
+      toast.success(tSidebar("dealDeleteSuccess"));
+      setConfirmDeleteDeal(null);
+      await fetchContactData();
+    } finally {
+      setDeletingDeal(false);
+    }
+  }
+
+  async function handleDeleteQuote() {
+    if (!confirmDeleteQuote) return;
+    setDeletingQuote(true);
+    try {
+      const res = await fetch(`/api/quotes/${confirmDeleteQuote.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || tSidebar("quoteDeleteFailed"));
+        return;
+      }
+      toast.success(tSidebar("quoteDeleteSuccess"));
+      setConfirmDeleteQuote(null);
+      await fetchContactData();
+    } finally {
+      setDeletingQuote(false);
+    }
   }
 
   async function handleTemperatureChange(value: LeadTemperature | "unclassified") {
@@ -755,11 +795,20 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
                   return (
                     <div
                       key={deal.id}
-                      className="rounded-lg bg-muted px-3 py-2"
+                      className="group rounded-lg bg-muted px-3 py-2"
                     >
-                      <p className="text-sm font-medium text-foreground">
-                        {deal.title}
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {deal.title}
+                        </p>
+                        <button
+                          onClick={() => setConfirmDeleteDeal(deal)}
+                          aria-label={tSidebar("deleteDeal")}
+                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
                       <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                         <span>
                           {deal.currency ?? "$"}
@@ -881,6 +930,16 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
                         )}
                         {tSidebar("resend")}
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 w-6 shrink-0 border-border p-0 text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+                        disabled={!canManageProducts}
+                        onClick={() => setConfirmDeleteQuote(quote)}
+                        aria-label={tSidebar("deleteQuote")}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
                     </div>
                   </div>
                 ))
@@ -958,6 +1017,64 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
             >
               <Trophy className="size-4" />
               {tSidebar("confirmWonBtn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteDeal != null} onOpenChange={(open) => !open && setConfirmDeleteDeal(null)}>
+        <DialogContent className="border-border bg-popover sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">{tSidebar("deleteDealTitle")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {tSidebar("deleteDealDesc", { title: confirmDeleteDeal?.title ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteDeal(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+              disabled={deletingDeal}
+            >
+              {tSidebar("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteDeal}
+              disabled={deletingDeal}
+            >
+              {deletingDeal ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {tSidebar("deleteDealBtn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteQuote != null} onOpenChange={(open) => !open && setConfirmDeleteQuote(null)}>
+        <DialogContent className="border-border bg-popover sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">{tSidebar("deleteQuoteTitle")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {tSidebar("deleteQuoteDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteQuote(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+              disabled={deletingQuote}
+            >
+              {tSidebar("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteQuote}
+              disabled={deletingQuote}
+            >
+              {deletingQuote ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {tSidebar("deleteQuoteBtn")}
             </Button>
           </DialogFooter>
         </DialogContent>

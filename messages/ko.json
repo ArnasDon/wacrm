@@ -408,7 +408,19 @@
       "editPhone": "전화번호 수정",
       "copyPhone": "전화번호 복사",
       "phoneSaveFailed": "전화번호를 저장하지 못했습니다",
-      "phoneSaveSuccess": "전화번호가 저장되었습니다"
+      "phoneSaveSuccess": "전화번호가 저장되었습니다",
+      "deleteDeal": "딜 삭제",
+      "deleteDealTitle": "이 딜을 삭제하시겠습니까?",
+      "deleteDealDesc": "\"{title}\"이(가) 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "deleteDealBtn": "삭제",
+      "dealDeleteSuccess": "딜이 삭제되었습니다",
+      "dealDeleteFailed": "딜을 삭제하지 못했습니다",
+      "deleteQuote": "견적서 삭제",
+      "deleteQuoteTitle": "이 견적서를 삭제하시겠습니까?",
+      "deleteQuoteDesc": "견적서와 PDF 링크가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "deleteQuoteBtn": "삭제",
+      "quoteDeleteSuccess": "견적서가 삭제되었습니다",
+      "quoteDeleteFailed": "견적서를 삭제하지 못했습니다"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",

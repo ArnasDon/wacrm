@@ -272,16 +272,13 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
             </div>
           )}
 
-          <DialogFooter className="flex-wrap gap-2 sm:justify-between">
-            <div className="flex flex-wrap gap-2">
+          <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {item.conversation_id && (
-                <Link
-                  href={`/inbox?c=${item.conversation_id}`}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground hover:bg-muted"
-                >
+                <Button variant="outline" size="sm" render={<Link href={`/inbox?c=${item.conversation_id}`} />}>
                   <MessageSquare className="h-4 w-4" />
                   {t("openConversation")}
-                </Link>
+                </Button>
               )}
               {!editing && (
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>

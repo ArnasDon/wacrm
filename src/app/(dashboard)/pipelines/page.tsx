@@ -278,6 +278,34 @@ export default function PipelinesPage() {
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
 
+  // Live updates: an AI action (autoMoveDealStage / autoSetLeadTemperature,
+  // src/lib/ai/auto-reply.ts) can change a deal's stage or a contact's
+  // temperature seconds after a customer message, in the background —
+  // without this the board only ever reflected what was true when the
+  // page first loaded, so a real-time win looked like nothing happened
+  // until the page was manually refreshed. `supabase` is a module-level
+  // singleton (see lib/supabase/client.ts), so it's a stable dependency.
+  useEffect(() => {
+    const channel = supabase
+      .channel("pipelines-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deals" },
+        () => refreshDeals(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "contacts" },
+        () => {
+          if (contactsLoaded) loadContacts().then(setContacts);
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, refreshDeals, loadContacts, contactsLoaded]);
+
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
       // Optimistic update — board already animated; just persist.

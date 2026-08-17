@@ -393,6 +393,7 @@
       "menuTransfer": "Transfer conversation",
       "menuMoveStage": "Move to",
       "noPipelineStages": "No stages configured",
+      "menuArchived": "Archived",
       "menuActionCenter": "Add to Action Center",
       "menuNotes": "Open notes",
       "menuAppointment": "Create appointment",

@@ -68,6 +68,7 @@ import { ContactNotesPanel } from "./contact-notes-panel";
 import { MediaGallery } from "./media-gallery";
 import { AppointmentFormDialog } from "@/components/appointments/appointment-form-dialog";
 import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
+import { ArchiveDealDialog } from "@/components/pipelines/archive-deal-dialog";
 import { useLeadPipelineStage } from "@/hooks/use-lead-pipeline-stage";
 
 interface ReplyDraft {
@@ -261,6 +262,7 @@ export function MessageThread({
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
   const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
   const [actionCenterOpen, setActionCenterOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   // "Mover para" submenu — same hook the sidebar's "Etapa da Pipeline"
   // card uses (contact-sidebar.tsx), so both entry points share one
   // fetch/update implementation and stay in sync with each other.
@@ -1173,6 +1175,24 @@ export function MessageThread({
                       );
                     })
                   )}
+                  <DropdownMenuSeparator className="bg-border" />
+                  {/* "Arquivados" — send-only here (no "Restaurar"; that
+                      flow lives exclusively in the Pipeline's dedicated
+                      Arquivados tab). Same gray used as the neutral/no-
+                      stage dot elsewhere (deal-card.tsx's stage-color
+                      fallback), so it reads as "off the board" rather
+                      than a real stage. */}
+                  <DropdownMenuItem
+                    disabled={!pipelineDeal}
+                    onClick={() => setArchiveDialogOpen(true)}
+                    className="text-sm text-popover-foreground"
+                  >
+                    <span
+                      className="mr-2 h-2 w-2 rounded-full"
+                      style={{ backgroundColor: "#94a3b8" }}
+                    />
+                    <span className="flex-1">{t("menuArchived")}</span>
+                  </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
 
@@ -1259,6 +1279,28 @@ export function MessageThread({
         contactId={contact.id}
         contactName={displayName}
         conversationId={conversation.id}
+      />
+
+      {/* "Arquivados" (Mover para submenu) — same shared confirmation +
+          mutation as the Pipeline card's "⋮ → Arquivar" (AGENTS.md:
+          reuses `deals.archived_at`, not a parallel implementation).
+          Send-only here; restoring stays exclusive to the Pipeline's
+          Arquivados tab. */}
+      <ArchiveDealDialog
+        open={archiveDialogOpen}
+        onOpenChange={setArchiveDialogOpen}
+        dealId={pipelineDeal?.id ?? null}
+        dealName={displayName}
+        onArchived={() => {
+          // useLeadPipelineStage's own sync channel — refetches this
+          // instance's `deal`/`stages` (and the contact sidebar's, if
+          // mounted) so the header's "Mover para" and the sidebar's
+          // stage card both drop the now-archived deal immediately,
+          // no page reload.
+          window.dispatchEvent(
+            new CustomEvent("wacrm:deal-stage-changed", { detail: { contactId: contact.id } }),
+          );
+        }}
       />
 
       {/* "Ver mídias" — derived entirely from `messages`, already loaded

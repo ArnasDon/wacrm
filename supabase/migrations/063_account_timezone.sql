@@ -1,0 +1,33 @@
+-- ============================================================
+-- 063_account_timezone.sql — account-level IANA timezone
+--
+-- Fixes a real bug: the AI's autonomous appointment-scheduling prompt
+-- showed the model raw UTC "now" (new Date().toISOString()) with no
+-- timezone context. For an account west of UTC (Guatemala, UTC-6),
+-- any time after 6pm local the UTC calendar date has already rolled
+-- to the next day, so the model reasoned about the wrong "today" —
+-- and, more subtly, would also propose the wrong hour-of-day for a
+-- booked event. See src/lib/timezone.ts's formatWithOffset(), now
+-- used by src/lib/ai/auto-reply.ts / suggest-action / business-actions
+-- wherever "now" is shown to the model or an event is booked.
+--
+-- Same one-column pattern as 021_account_default_currency.sql — no
+-- RLS change needed, the existing accounts_update policy (migration
+-- 017) already gates admin+ writes on this table.
+--
+-- Defaults to 'America/Guatemala': Chat Sandía's accounts are
+-- overwhelmingly Guatemala businesses (see
+-- docs/SANDIA_diagnostico_tecnico.md) — this backfills every existing
+-- account (including the one that hit this bug) with the correct
+-- value with no manual step required, while still being a real,
+-- editable per-account setting rather than a hardcoded assumption.
+--
+-- No CHECK constraint: IANA timezone identifiers are too varied to
+-- usefully regex-validate in SQL. Validated at the app layer via
+-- `isValidTimeZone()` (Intl.DateTimeFormat) before writes.
+--
+-- Idempotent — safe to re-run.
+-- ============================================================
+
+ALTER TABLE public.accounts
+  ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/Guatemala';

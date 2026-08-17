@@ -48,6 +48,13 @@ interface RequestBody {
   email?: string
   address?: string
   items?: { product_id?: string; quantity?: number }[]
+  /** The conversation this visitor's catalog link was sent from (see
+   *  sendCatalogToConversation's `?c=` param) — when present and valid,
+   *  delivers the quote there directly instead of guessing via
+   *  findRecentConversation's "most recently updated, any channel"
+   *  fallback, which could pick the wrong channel for a contact with
+   *  conversations on more than one. */
+  conversation_id?: string
 }
 
 export async function POST(
@@ -122,9 +129,30 @@ export async function POST(
     })
 
     // Try the instant path first: does this contact already have a
-    // conversation whose messaging window is currently open?
+    // conversation whose messaging window is currently open? Prefer the
+    // conversation the visitor's catalog link actually came from (the
+    // client-supplied `conversation_id`) — but never trust it blindly:
+    // verify it's a real conversation belonging to both this account
+    // AND the contact we just resolved before using it. Only fall back
+    // to "most recently updated, any channel" when there's no such
+    // conversation (a cold/organic visitor who never came from a
+    // tracked conversation).
     let delivered = false
-    const conversation = await findRecentConversation(db, accountId, contactId)
+    let conversation: { id: string } | null = null
+    const requestedConversationId = body?.conversation_id?.trim()
+    if (requestedConversationId) {
+      const { data: requested } = await db
+        .from('conversations')
+        .select('id')
+        .eq('id', requestedConversationId)
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .maybeSingle()
+      conversation = (requested as { id: string } | null) ?? null
+    }
+    if (!conversation) {
+      conversation = await findRecentConversation(db, accountId, contactId)
+    }
     if (conversation && (await isWithinMessagingWindow(db, conversation.id))) {
       try {
         await sendQuoteToConversation(db, accountId, quote.id, conversation.id)

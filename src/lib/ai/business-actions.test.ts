@@ -43,6 +43,7 @@ interface Fixture {
   dealFallbackResult?: { id: string; pipeline_id: string; stage_id: string; status: string } | null
   contact?: { id: string; lead_temperature: string | null; name?: string | null } | null
   auditError?: boolean
+  accountTimezone?: string | null
 }
 
 /** Records every `.eq(col, value)` call per query chain so tests can
@@ -98,6 +99,9 @@ function makeDb(fx: Fixture) {
             }
             // schedule_appointment's read-only `.select('id, name')` lookup.
             return { data: fx.contact ? { id: fx.contact.id, name: fx.contact.name ?? null } : null, error: null }
+          }
+          if (table === 'accounts') {
+            return { data: fx.accountTimezone ? { timezone: fx.accountTimezone } : null, error: null }
           }
           return { data: null, error: null }
         },
@@ -362,6 +366,7 @@ describe('executeBusinessAction — schedule_appointment', () => {
         startISO: '2026-06-01T15:00:00.000Z',
         endISO: '2026-06-01T16:00:00.000Z',
         attendeeEmail: 'ana@example.com',
+        timeZone: 'UTC',
       }),
     )
     expect(result).toMatchObject({ event_id: 'evt-1', attendee_email: 'ana@example.com' })
@@ -372,6 +377,24 @@ describe('executeBusinessAction — schedule_appointment', () => {
     expect(inserts).toEqual([
       expect.objectContaining({ table: 'ai_action_log', action: 'schedule_appointment', target_id: 'contact-1' }),
     ])
+  })
+
+  it("passes the account's real timezone to createEvent when one is set", async () => {
+    const { db } = makeDb({
+      contact: { id: 'contact-1', lead_temperature: null, name: 'Ana' },
+      accountTimezone: 'America/Guatemala',
+    })
+    h.createEvent.mockResolvedValue({ eventId: 'evt-1', htmlLink: null, meetLink: null })
+
+    await executeBusinessAction({
+      db, accountId: 'acct-1', userId: 'user-1', action: 'schedule_appointment', targetId: 'contact-1',
+      startTime: '2026-06-01T15:00:00.000Z', endTime: '2026-06-01T16:00:00.000Z',
+      attendeeEmail: 'ana@example.com',
+    })
+
+    expect(h.createEvent).toHaveBeenCalledWith(
+      db, 'acct-1', expect.objectContaining({ timeZone: 'America/Guatemala' }),
+    )
   })
 
   it('requires startTime, endTime, and attendeeEmail', async () => {

@@ -39,11 +39,11 @@ describe('sendCatalogToConversation', () => {
     const db = makeDb(2)
     const result = await sendCatalogToConversation(db, 'acct-1', 'conv-1')
 
-    expect(result).toEqual({ catalogUrl: 'https://crm.example.com/catalog/acct-1' })
+    expect(result).toEqual({ catalogUrl: 'https://crm.example.com/catalog/acct-1?c=conv-1' })
     expect(h.sendMessageToConversation).toHaveBeenCalledWith(db, 'acct-1', {
       conversationId: 'conv-1',
       messageType: 'text',
-      contentText: expect.stringContaining('https://crm.example.com/catalog/acct-1'),
+      contentText: expect.stringContaining('https://crm.example.com/catalog/acct-1?c=conv-1'),
     })
   })
 
@@ -51,7 +51,13 @@ describe('sendCatalogToConversation', () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://crm.example.com/'
     const db = makeDb(1)
     const result = await sendCatalogToConversation(db, 'acct-1', 'conv-1')
-    expect(result.catalogUrl).toBe('https://crm.example.com/catalog/acct-1')
+    expect(result.catalogUrl).toBe('https://crm.example.com/catalog/acct-1?c=conv-1')
+  })
+
+  it('carries the conversation id in the catalog URL so the quote-request route can deliver back onto the right channel', async () => {
+    const db = makeDb(1)
+    const result = await sendCatalogToConversation(db, 'acct-1', 'conv-ig-1')
+    expect(result.catalogUrl).toBe('https://crm.example.com/catalog/acct-1?c=conv-ig-1')
   })
 
   it('throws without sending when the account has no active products', async () => {

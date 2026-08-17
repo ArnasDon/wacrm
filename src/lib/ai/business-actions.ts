@@ -168,6 +168,9 @@ export async function executeBusinessAction(args: {
     if (contactError) throw new BusinessActionError(contactError.message, 500)
     if (!contact) throw new BusinessActionError('Contact not found', 404)
 
+    const { data: accountRow } = await db.from('accounts').select('timezone').eq('id', accountId).maybeSingle()
+    const timeZone = (accountRow as { timezone: string | null } | null)?.timezone || 'UTC'
+
     let created
     try {
       created = await createEvent(db, accountId, {
@@ -176,6 +179,7 @@ export async function executeBusinessAction(args: {
         startISO: start.toISOString(),
         endISO: end.toISOString(),
         attendeeEmail,
+        timeZone,
       })
     } catch (err) {
       if (err instanceof GoogleCalendarError) throw new BusinessActionError(err.message, err.status)

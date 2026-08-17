@@ -116,6 +116,14 @@ export function aiContextMessageLimit(): number {
  *  `auto-reply.ts`'s `loadCalendarContext` can share the exact shape
  *  instead of re-declaring it. */
 export interface AutoReplyCalendarContext {
+  /** The account's IANA timezone (`accounts.timezone`) — every
+   *  datetime below is formatted with this zone's real UTC offset
+   *  (see `formatWithOffset` in `src/lib/timezone.ts`), never a bare
+   *  UTC `Z` string. Passing raw UTC here previously caused a real
+   *  bug: after 6pm in a UTC-6 timezone the UTC calendar date has
+   *  already rolled to the next day, so the model reasoned about the
+   *  wrong "today" (and would propose the wrong hour for a slot). */
+  timeZone: string
   now: string
   lookaheadUntil: string
   busy: { start: string; end: string }[]
@@ -202,9 +210,9 @@ export function buildSystemPrompt(args: {
 
     if (calendar) {
       parts.push(
-        `You may book a REAL appointment on the business's calendar yourself, with no human confirmation, when the customer clearly wants to schedule a call/meeting/visit and gives (or agrees to) a specific time. The current date/time is ${calendar.now}. You may only propose a slot strictly between ${calendar.now} and ${calendar.lookaheadUntil}, exactly one hour long, that does NOT overlap any of these already-busy intervals on the real calendar: ${JSON.stringify(calendar.busy)} — never invent or assume availability outside this data. ` +
+        `You may book a REAL appointment on the business's calendar yourself, with no human confirmation, when the customer clearly wants to schedule a call/meeting/visit and gives (or agrees to) a specific time. The business's real-world timezone is ${calendar.timeZone}, and the current date/time THERE — not UTC — is ${calendar.now} (the trailing ${calendar.now.slice(-6)} is the UTC offset for that timezone; treat this as the one true "today"/"now", and always reason about dates and hours in this same local timezone, never in UTC). You may only propose a slot strictly between ${calendar.now} and ${calendar.lookaheadUntil}, exactly one hour long, that does NOT overlap any of these already-busy intervals on the real calendar: ${JSON.stringify(calendar.busy)} — never invent or assume availability outside this data. ` +
           `You need a real email to send the invite to: use ${calendar.contactEmail ? `"${calendar.contactEmail}" (this contact's email on file)` : 'an email address the customer has explicitly written in this conversation'}. If ${calendar.contactEmail ? 'that' : 'no such'} email is available, do NOT use this marker — instead ask the customer for their email in your reply text, and try again once they give it. ` +
-          `When you do have a real available slot and a real email, append ${SCHEDULE_APPOINTMENT_SENTINEL_PREFIX}<start ISO 8601>|<end ISO 8601>|<attendee email>${SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies), and tell the customer in your reply text that the appointment is confirmed for that time — do not ask them to confirm again, the marker already books it for real. Only ever use exact ISO 8601 datetimes, never a vague description. If the customer's request is vague ("let's talk sometime") with no real time, or the "business context and instructions" below tell you to schedule differently (a specific service, working hours, duration), follow those instead of guessing, or ask a clarifying question rather than using this marker. Never mention this marker to the customer.`,
+          `When you do have a real available slot and a real email, append ${SCHEDULE_APPOINTMENT_SENTINEL_PREFIX}<start ISO 8601>|<end ISO 8601>|<attendee email>${SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies), and tell the customer in your reply text that the appointment is confirmed for that time — do not ask them to confirm again, the marker already books it for real. The start/end you write MUST carry the exact same ${calendar.now.slice(-6)} UTC offset shown above (e.g. "2026-08-17T15:00:00${calendar.now.slice(-6)}"), never a bare UTC "Z" datetime and never a different offset — that offset is what makes "3pm" actually mean 3pm in the business's own timezone instead of somewhere else. If the customer's request is vague ("let's talk sometime") with no real time, or the "business context and instructions" below tell you to schedule differently (a specific service, working hours, duration), follow those instead of guessing, or ask a clarifying question rather than using this marker. Never mention this marker to the customer.`,
       )
     }
 

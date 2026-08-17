@@ -16,6 +16,7 @@ import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send-catalog'
 import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
+import { formatWithOffset } from '@/lib/timezone'
 import type { LeadTemperature } from '@/types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -276,7 +277,10 @@ export async function dispatchInboundToAiReply(
     // appointment on an account that has this switched off.
     if (appointmentProposal && config.autoScheduleAppointmentsEnabled) {
       try {
-        await autoScheduleAppointment({ db, accountId, contactId, configOwnerUserId, proposal: appointmentProposal })
+        await autoScheduleAppointment({
+          db, accountId, contactId, configOwnerUserId, proposal: appointmentProposal,
+          timeZone: calendarContext?.timeZone ?? 'UTC',
+        })
       } catch (err) {
         console.error('[ai auto-reply] autonomous schedule_appointment failed:', err)
       }
@@ -636,14 +640,23 @@ async function loadCalendarContext(args: {
   const now = new Date()
   const until = new Date(now.getTime() + APPOINTMENT_LOOKAHEAD_MS)
   try {
-    const [busy, contactRow] = await Promise.all([
+    const [busy, contactRow, accountRow] = await Promise.all([
       checkFreeBusy(db, accountId, now.toISOString(), until.toISOString()),
       db.from('contacts').select('email').eq('id', contactId).eq('account_id', accountId).maybeSingle(),
+      db.from('accounts').select('timezone').eq('id', accountId).maybeSingle(),
     ])
+    const timeZone = (accountRow.data as { timezone: string | null } | null)?.timezone || 'UTC'
     return {
-      now: now.toISOString(),
-      lookaheadUntil: until.toISOString(),
-      busy,
+      timeZone,
+      now: formatWithOffset(now, timeZone),
+      lookaheadUntil: formatWithOffset(until, timeZone),
+      // Google's freebusy response is UTC ("Z") — reformat each
+      // interval with the same offset as `now`/`lookaheadUntil` so the
+      // model reasons about all three in one consistent timezone.
+      busy: busy.map((b) => ({
+        start: formatWithOffset(new Date(b.start), timeZone),
+        end: formatWithOffset(new Date(b.end), timeZone),
+      })),
       contactEmail: (contactRow.data as { email: string | null } | null)?.email ?? null,
     }
   } catch (err) {
@@ -671,8 +684,13 @@ async function autoScheduleAppointment(args: {
   contactId: string
   configOwnerUserId: string
   proposal: { start: string; end: string; email: string }
+  /** Account's IANA timezone, for the created event's display timezone
+   *  — the actual booked instant is already correct regardless (the
+   *  proposal's offset-qualified datetime disambiguates it), this only
+   *  affects how the event's time is labeled/rendered in Calendar. */
+  timeZone: string
 }): Promise<void> {
-  const { db, accountId, contactId, configOwnerUserId, proposal } = args
+  const { db, accountId, contactId, configOwnerUserId, proposal, timeZone } = args
 
   const start = new Date(proposal.start)
   const end = new Date(proposal.end)
@@ -716,6 +734,7 @@ async function autoScheduleAppointment(args: {
       startISO: start.toISOString(),
       endISO: end.toISOString(),
       attendeeEmail: proposal.email,
+      timeZone,
     })
   } catch (err) {
     console.error('[ai auto-reply] autonomous schedule_appointment: createEvent failed:', err)

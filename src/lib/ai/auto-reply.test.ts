@@ -25,7 +25,7 @@ const h = vi.hoisted(() => ({
     aiActionLogInserts: [] as Record<string, unknown>[],
     pipeline: null as { id: string } | null,
     contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234', email: null as string | null },
-    account: { default_currency: 'USD' },
+    account: { default_currency: 'USD' } as { default_currency: string; timezone?: string },
     dealInserts: [] as Record<string, unknown>[],
     createdDeal: { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' } as Record<string, unknown>,
     contactUpdates: [] as Record<string, unknown>[],
@@ -839,7 +839,20 @@ describe('dispatchInboundToAiReply — autonomous schedule_appointment', () => {
     const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).toContain('ACTION:schedule_appointment')
     expect(systemPrompt).toContain('ana@example.com')
-    expect(systemPrompt).toContain('2026-06-01T10:00:00Z')
+    // Reformatted with an explicit offset (falls back to UTC here since
+    // the mocked account has no `timezone` field) — never a bare "Z".
+    expect(systemPrompt).toContain('2026-06-01T10:00:00+00:00')
+  })
+
+  it('formats "now" using the account\'s real timezone, not bare UTC', async () => {
+    h.state.gcalStatus = 'connected'
+    h.state.account = { default_currency: 'USD', timezone: 'America/Guatemala' }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('America/Guatemala')
+    expect(systemPrompt).toContain('-06:00')
+    expect(systemPrompt).not.toMatch(/is \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/)
   })
 
   it('books the event, logs it, and dispatches the webhook when the model proposes a free slot', async () => {
@@ -861,7 +874,7 @@ describe('dispatchInboundToAiReply — autonomous schedule_appointment', () => {
 
     expect(h.createEvent).toHaveBeenCalledWith(
       expect.anything(), 'acct-1',
-      expect.objectContaining({ startISO: start, endISO: end, attendeeEmail: 'ana@example.com' }),
+      expect.objectContaining({ startISO: start, endISO: end, attendeeEmail: 'ana@example.com', timeZone: 'UTC' }),
     )
     expect(h.state.aiActionLogInserts).toContainEqual(
       expect.objectContaining({

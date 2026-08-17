@@ -49,7 +49,11 @@ export async function sendCatalogToConversation(
     throw new SendCatalogError('No active products in the catalog yet.')
   }
 
-  const catalogUrl = `${siteBaseUrl()}/catalog/${accountId}`
+  // Carries the originating conversation so the public catalog page can
+  // hand it straight back on "Me lo llevo" (see quote-request/route.ts)
+  // instead of having to guess which of the contact's conversations —
+  // possibly on a different channel — to deliver the quote into.
+  const catalogUrl = `${siteBaseUrl()}/catalog/${accountId}?c=${conversationId}`
 
   try {
     await sendMessageToConversation(db, accountId, {

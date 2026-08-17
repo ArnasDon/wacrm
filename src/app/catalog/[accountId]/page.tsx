@@ -23,8 +23,8 @@
 // already belongs to this one company.
 // ============================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2, Minus, Plus, PackageX, MessageCircle, ShoppingCart } from 'lucide-react';
 
@@ -57,9 +57,29 @@ interface CatalogData {
   products: CatalogProduct[];
 }
 
+// `useSearchParams` (for the `?c=<conversationId>` param — see
+// send-catalog.ts) opts this page out of static prerendering unless it
+// sits under a Suspense boundary; without one the production build
+// hits the "missing Suspense with CSR bailout" error. Mirrors the
+// login/signup and settings-page split: a thin wrapper supplies the
+// boundary, the inner component reads the query string.
 export default function PublicCatalogPage() {
+  return (
+    <Suspense fallback={null}>
+      <PublicCatalogPageInner />
+    </Suspense>
+  );
+}
+
+function PublicCatalogPageInner() {
   const params = useParams<{ accountId: string }>();
   const accountId = params?.accountId;
+  const searchParams = useSearchParams();
+  // The conversation this visitor's catalog link came from (see
+  // sendCatalogToConversation) — handed straight back to quote-request
+  // so it can deliver the quote onto the SAME channel/conversation the
+  // customer is already chatting on, instead of guessing.
+  const conversationId = searchParams.get('c');
 
   const [data, setData] = useState<CatalogData | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -148,6 +168,7 @@ export default function PublicCatalogPage() {
           email: email.trim() || undefined,
           address: address.trim() || undefined,
           items: selectedItems.map((i) => ({ product_id: i.product.id, quantity: i.quantity })),
+          conversation_id: conversationId || undefined,
         }),
       });
       const payload = (await res.json().catch(() => ({}))) as {
@@ -391,7 +412,7 @@ export default function PublicCatalogPage() {
                 <DialogTitle className="text-gray-900">¡Listo!</DialogTitle>
                 <DialogDescription className="text-gray-500">
                   {result.delivered
-                    ? 'Ya te enviamos el PDF de tu cotización por WhatsApp — revisa el chat.'
+                    ? 'Ya te enviamos el PDF de tu cotización — revisa el chat donde nos escribiste.'
                     : result.whatsappUrl
                       ? 'Tu cotización fue creada. Continúa por WhatsApp para recibir el PDF.'
                       : 'Tu cotización fue creada. Pronto se pondrán en contacto contigo.'}

@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
-  const { name, description, trigger_type, trigger_config, is_active, steps, template } = body
+  const { name, description, trigger_type, trigger_config, is_active, steps, template, source } = body
 
   let effectiveSteps: BuilderStepInput[] | undefined = steps
   let effectiveName = name
@@ -85,11 +85,19 @@ export async function POST(request: Request) {
     )
   }
 
+  // AI-assistant-originated automations are always created as a draft,
+  // never active, regardless of what the request body says — activating
+  // a rule is a separate, explicit step the owner takes afterward in
+  // Automations. Enforced here (not just in the assistant's own prompt
+  // or the frontend) so it holds even against a malformed client or a
+  // direct call to this endpoint with source=ai_assistant.
+  const effectiveIsActive = source === 'ai_assistant' ? false : !!is_active
+
   // Block activation of a clearly broken automation up-front instead of
   // letting every trigger silently produce a failed log row. Drafts
   // (is_active=false) are allowed to be incomplete so users can save
   // progress mid-build.
-  if (is_active) {
+  if (effectiveIsActive) {
     const issues = [
       ...validateTriggerForActivation(effectiveTriggerType, effectiveTriggerConfig ?? {}),
       ...validateStepsForActivation(
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
       description: effectiveDescription ?? null,
       trigger_type: effectiveTriggerType,
       trigger_config: effectiveTriggerConfig ?? {},
-      is_active: !!is_active,
+      is_active: effectiveIsActive,
     })
     .select()
     .single()
@@ -129,6 +137,27 @@ export async function POST(request: Request) {
   if (effectiveSteps && effectiveSteps.length > 0) {
     const err = await insertSteps(automation.id, effectiveSteps)
     if (err) return NextResponse.json({ error: err }, { status: 500 })
+  }
+
+  // Traceability for the owner-only AI assistant (see
+  // src/lib/ai/assistant/*): when it proposed this automation and the
+  // owner confirmed, log the creation to the same audit trail every
+  // other AI-originated mutation gets — via the caller's own
+  // RLS-scoped client, exactly like `executeBusinessAction`'s audit
+  // insert, so it's provably this account's owner creating it in
+  // their own account, never a service-role bypass. Best-effort: a
+  // logging failure must not undo an automation the owner already
+  // confirmed.
+  if (source === 'ai_assistant') {
+    const { error: auditError } = await supabase.from('ai_action_log').insert({
+      account_id: accountId,
+      actor_user_id: user.id,
+      action: 'create_automation_rule',
+      target_id: automation.id,
+      input: { name: effectiveName, trigger_type: effectiveTriggerType, trigger_config: effectiveTriggerConfig, steps: effectiveSteps },
+      result: { automation_id: automation.id, is_active: effectiveIsActive },
+    })
+    if (auditError) console.error('[automations] ai_action_log insert failed:', auditError)
   }
 
   return NextResponse.json({ automation }, { status: 201 })

@@ -241,6 +241,13 @@ export const RATE_LIMITS = {
    *  than by user. Low limit: a genuine visitor submits once, maybe
    *  retries after a validation typo. */
   accountRequest: { limit: 5, windowMs: 60_000 },
+  /** Owner-only AI assistant chat (`/api/ai/assistant`), per user. Each
+   *  user turn can run several tool-calling round trips against the
+   *  account's own provider key (see `runAssistantTurn`), so this is
+   *  looser than `aiDraft` (one call per click) but still bounds a
+   *  script/hold-down — 15/min is generous for a person typing
+   *  questions one at a time. */
+  aiAssistant: { limit: 15, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

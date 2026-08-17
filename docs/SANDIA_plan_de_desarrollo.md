@@ -79,6 +79,17 @@ La Fase 2 ya comenzó con temperatura manual de clientes (`cold`, `warm`,
 `hot` o sin clasificar), disponible en el modelo, la API pública y la interfaz
 de Contactos.
 
+**EN PROGRESO (desde 2026-08-17, Claude Code): asistente de IA interno
+por empresa ("segundo trabajador" para el dueño).** **Código
+implementado y verificado localmente (typecheck/eslint/build/tests
+limpios), pero NADA aplicado/desplegado todavía:** la migración `066`
+(extiende `ai_action_log`/`ai_usage_log`) no está aplicada al proyecto
+Supabase real, no hay commit, y no se ha probado en el navegador contra
+datos reales (requiere una cuenta `owner` con clave de Anthropic
+configurada). Ver la entrada de bitácora de hoy (implementación) para el
+detalle completo de archivos y qué falta. Cualquier IA que continúe debe
+leer esa entrada antes de tocar más código.
+
 ### Encargos de Angel (estado al 2026-08-15)
 
 1. **Completado:** renombrar la marca del CRM a **"Chat Sandía"**.
@@ -2676,3 +2687,243 @@ que la creación de tags también sea posible desde el panel de
 contacto del Inbox (hoy solo se puede aplicar/crear desde la página
 de Contacts), es una extensión natural del mismo patrón ya construido
 aquí.
+
+### 2026-08-17 (sesión posterior) — Claude Code (diseño del asistente de IA interno por empresa — NO IMPLEMENTADO AÚN)
+
+Angel pidió que cada empresa tenga su propia IA, accesible desde el
+dashboard (no desde WhatsApp), como un "segundo trabajador" para el
+**dueño del negocio**: responder preguntas analíticas ("¿cuántas ventas
+ganamos/perdimos?"), dar propuestas de mejora, ejecutar acciones reales
+(mover tratos, marcar ventas ganadas, agendar citas, crear cotizaciones) y
+definir reglas de manejo de leads (automatizaciones) a partir de lenguaje
+natural. Esta sesión fue **solo de diseño** (modo plan de Claude Code) —
+se exploró el código a fondo y se cerró un plan aprobado por Angel, pero
+**no se escribió ni una línea de código todavía**. Lo que sigue es el
+resumen completo para que cualquier IA (Codex incluido) pueda continuar
+sin tener que rehacer el análisis.
+
+**Lo que ya existe y se reutiliza tal cual (no se toca ni se duplica):**
+- `src/lib/ai/business-actions.ts` → `executeBusinessAction()`: ya ejecuta
+  `close_conversation`, `mark_deal_won`, `move_deal`, `set_lead_temperature`,
+  `create_quote`, `schedule_appointment`, con auditoría (`ai_action_log`) y
+  webhooks salientes.
+- `src/app/api/ai/actions/route.ts`: confirmación en dos pasos
+  (`confirmationPhrase` → segundo POST con `confirmation`) — se reutiliza
+  igual, el frontend nuevo solo llama a este mismo endpoint.
+- `src/lib/ai/business-metrics.ts` → `loadBusinessMetrics()`: ya da
+  deals ganados/perdidos/abiertos, contactos por temperatura,
+  conversaciones por estado.
+- `src/lib/automations/*` (`engine.ts`, `templates.ts`, `steps-tree.ts`,
+  `validate.ts`) + `POST /api/automations`: el motor de "reglas" ya existe
+  completo (triggers, acciones, condiciones) — es lo que alimenta la parte
+  de "reglas para mis leads" que pidió Angel, sin inventar un motor nuevo.
+
+**Lo que falta y es el trabajo real de este feature:** ni
+`src/lib/ai/providers/anthropic.ts` ni `providers/openai.ts` soportan
+tool-calling real hoy — el AI actual (`src/lib/ai/generate.ts`) es una
+sola llamada de texto plano con "sentinels" (marcadores en el texto) para
+un set fijo de acciones ya conocidas por id. Ese patrón no alcanza para un
+asistente de preguntas libres del dueño (necesita buscar un trato/contacto
+**por nombre**, encadenar varias consultas, decidir libremente qué
+herramienta usar) — por eso hace falta un loop de tool-calling real
+(Anthropic `tools` + `tool_use`/`tool_result`), como superficie nueva y
+separada del auto-reply a clientes (que no se toca, sigue igual).
+
+**Decisiones aprobadas por Angel:**
+1. **Acceso: solo rol `owner`** de la cuenta — no `admin`, no `agent`.
+2. **Proveedor: solo Anthropic en v1.** Si la cuenta tiene OpenAI
+   configurado, el tab muestra "no disponible con tu proveedor actual,
+   cambia a Anthropic en Setup". El auto-reply a clientes sigue
+   soportando ambos proveedores igual que hoy, no se toca.
+3. **Sin persistencia en v1** — transcripción solo en el navegador, igual
+   que el Playground actual (`src/components/agents/ai-playground.tsx`).
+4. **Garantía de seguridad — estructural, no de prompt:** todo tool call
+   corre con el cliente Supabase de la sesión del propio dueño (RLS
+   activo), nunca con `supabaseAdmin()`; el endpoint completo exige
+   `requireRole('owner')`; el catálogo de herramientas es una lista
+   cerrada de operaciones que YA existen y YA están gateadas en el resto
+   del producto — la IA no obtiene ningún permiso nuevo que no tuviera ya
+   el botón equivalente del dashboard.
+5. **La IA nunca modifica el código/la plataforma en sí** — el catálogo de
+   herramientas es y será siempre operaciones de datos de CRM (deals,
+   contactos, conversaciones, automatizaciones), nunca acceso a archivos,
+   comandos, migraciones, variables de entorno, despliegue o git.
+6. **Nunca puede tocar facturación/planes/límites de uso** — ni para su
+   propia cuenta ni ninguna otra, ni ahora (no existe esa capa todavía,
+   ver Fase 5 del diagnóstico técnico) ni cuando se construya: eso queda
+   exclusivo del operador de la plataforma (Angel), nunca expuesto como
+   herramienta de este asistente.
+7. **Nunca puede recomendar cancelar/dejar la suscripción con Sandía** —
+   ni directa ni indirectamente (p.ej. dentro de una "propuesta para
+   mejorar"). Esto es distinto a los puntos anteriores porque es texto
+   libre, no una herramienta que se pueda quitar del catálogo: se aplica
+   como instrucción fija inyectada por el servidor en el system prompt de
+   este asistente, **no editable ni sobre-escribible** por las
+   instrucciones personalizadas de la cuenta (`config.systemPrompt`).
+
+**Arquitectura aprobada (resumen — el plan completo con más detalle de
+implementación vivió en un plan file local de Claude Code que no forma
+parte de este repo; este resumen es la fuente de verdad para continuar):**
+
+- **Catálogo de herramientas de lectura** (el loop las ejecuta y sigue
+  solo): `get_business_metrics` (envuelve `loadBusinessMetrics`),
+  `search_deals(query?, status?, limit?)`, `search_contacts(query?, limit?)`,
+  `list_pipelines_and_stages(pipeline_id?)`, `list_automations()`,
+  `check_calendar_availability(from, to)` (envuelve `checkFreeBusy` de
+  `src/lib/google-calendar/api.ts`).
+- **Catálogo de herramientas de escritura** (el loop se detiene, se
+  devuelve una propuesta pendiente, requieren confirmación explícita del
+  dueño en la UI antes de ejecutar — nunca autoejecutan): las 6 ya
+  soportadas por `executeBusinessAction` (mismos parámetros, sin forma
+  nueva) más `create_automation_rule(name, trigger_type, trigger_config,
+  steps)`, que valida con `validateTriggerForActivation`/
+  `validateStepsForActivation` y crea la automatización **siempre con
+  `is_active: false`** (borrador) — activarla es una confirmación aparte,
+  porque una regla activa empieza a disparar sobre conversaciones reales
+  de inmediato.
+- **Endpoint nuevo:** `POST /api/ai/assistant` (`requireRole('owner')`,
+  rate limit propio `RATE_LIMITS.aiAssistant` en `src/lib/rate-limit.ts`).
+  Body `{ messages }`, responde `{ reply, pendingAction? }`.
+- **Confirmación y ejecución — sin endpoint nuevo:** acciones de negocio
+  van al mismo `POST /api/ai/actions` en dos pasos que ya usa
+  `src/components/inbox/message-composer.tsx`; reglas van a
+  `POST /api/automations` (creada en borrador, activación aparte).
+- **UI:** nuevo tab "Asistente" en `src/app/(dashboard)/agents/page.tsx`,
+  visible solo si `accountRole === 'owner'`; nuevo componente
+  `src/components/agents/ai-assistant.tsx` basado en el patrón de
+  `ai-playground.tsx`, con tarjeta de confirmación inspirada en la de
+  `message-composer.tsx` (líneas ~775-838 al momento de este diseño).
+- **Archivos nuevos previstos:** `src/lib/ai/assistant/anthropic-tools.ts`
+  (loop de tool-calling), `src/lib/ai/assistant/tools.ts` (definición +
+  ejecutores de lectura), `src/app/api/ai/assistant/route.ts`,
+  `src/components/agents/ai-assistant.tsx`. Archivos a modificar:
+  `src/app/(dashboard)/agents/page.tsx`, `src/lib/rate-limit.ts`.
+
+**Verificación planeada (aún no ejecutada):** `npx vitest run` con tests
+nuevos para el parseo de `tool_use` y para `tools.ts` (patrón de
+`business-actions.test.ts`), typecheck/eslint en los archivos tocados, y
+prueba manual como `owner` en `/agents` → tab Asistente probando: conteo
+de ventas ganadas/perdidas, una propuesta de mejora, mover un trato real
+por nombre con confirmación explícita, proponer una regla de automatización
+en borrador desde lenguaje natural, y confirmar que el tab NO aparece para
+un usuario `admin`.
+
+**Pendiente / siguiente paso:** implementar el plan de arriba. No hay
+código, migraciones ni endpoints nuevos todavía — todo lo mencionado en
+"lo que ya existe" está sin tocar. Quien continúe puede empezar
+directamente por `src/lib/ai/assistant/tools.ts` (el catálogo) y
+`anthropic-tools.ts` (el loop), que no dependen de la UI.
+
+### 2026-08-17 (sesión posterior) — Claude Code (asistente de IA interno — implementado, SIN aplicar/desplegar)
+
+Implementación completa del diseño de la entrada anterior, con dos
+restricciones adicionales que Angel pidió durante el diseño (ya
+incorporadas en el system prompt fijo y en el código, no solo
+documentadas): la IA nunca modifica código/plataforma/facturación, y
+nunca recomienda cancelar la suscripción con Sandía, ni directa ni
+indirectamente.
+
+**Archivos nuevos:**
+- `src/lib/ai/assistant/tools.ts` — catálogo de herramientas Anthropic
+  (`ASSISTANT_TOOLS`) y ejecutores de las de lectura
+  (`executeReadTool`): `get_business_metrics`, `search_deals`,
+  `search_contacts`, `search_products` (agregada durante la
+  implementación — hacía falta para que `create_quote` pudiera resolver
+  `product_id` reales, `loadCatalogContext` no expone id), `list_pipelines_and_stages`,
+  `list_automations`, `check_calendar_availability`. Todas corren con el
+  cliente Supabase de sesión (RLS), nunca `supabaseAdmin()`.
+  `search_deals` evita a propósito un embed `deals -> contacts` de
+  PostgREST (dos queries planas en su lugar) por la misma razón de
+  fragilidad de caché de esquema que ya documenta `move-deal.ts`
+  (PGRST200, issue #294).
+- `src/lib/ai/assistant/anthropic-tools.ts` — `runAssistantTurn()`: loop
+  de tool-calling contra la Anthropic Messages API (`tools` +
+  `tool_use`/`tool_result`), tope `MAX_TOOL_ROUNDS = 6`. Ejecuta de
+  inmediato cualquier tool_use de lectura y sigue el loop; en cuanto
+  aparece un tool_use de escritura, **para ahí sin ejecutar nada** y lo
+  devuelve como `pendingAction`.
+- `src/app/api/ai/assistant/route.ts` — `POST /api/ai/assistant`,
+  `requireRole('owner')` (único endpoint de todo el feature, exacto
+  "solo dueño" porque `owner` ya es el rol más alto), rate limit nuevo
+  `RATE_LIMITS.aiAssistant` (15/min por usuario). Rechaza con
+  `unsupported_provider` si la cuenta no tiene Anthropic configurado
+  (Fase 1 confirmada: solo Anthropic, sin duplicar el loop para
+  OpenAI). El system prompt fijo (`ASSISTANT_SYSTEM_PROMPT`) es propio
+  de este endpoint — NO reutiliza `buildSystemPrompt`/las instrucciones
+  personalizadas de la cuenta (`ai_configs.system_prompt`), porque esa
+  persona es para el bot de cara al cliente, no para este chat interno
+  con el dueño — y ahí viven, con explicaciones de por qué, las tres
+  restricciones duras que no dependen de ninguna config: nunca tocar
+  código/despliegue/otras cuentas, nunca facturación/planes/límites de
+  uso, nunca recomendar cancelar la suscripción de Sandía (directa o
+  indirectamente).
+- `src/components/agents/ai-assistant.tsx` — UI de chat basada en el
+  patrón de `ai-playground.tsx`, con tarjeta de confirmación genérica
+  (etiqueta legible + lista de parámetros) para cualquier
+  `pendingAction`. Al confirmar: las 6 acciones de negocio van al mismo
+  `POST /api/ai/actions` en dos pasos que ya usa
+  `message-composer.tsx` (sin lógica nueva de ejecución);
+  `create_automation_rule` va a `POST /api/automations` con
+  `source: 'ai_assistant'`.
+- `supabase/migrations/066_ai_assistant_action_log.sql` — **sin aplicar
+  a producción todavía**: extiende el CHECK de `ai_action_log.action`
+  con `'create_automation_rule'` y el de `ai_usage_log.mode` con
+  `'assistant'`.
+
+**Archivos modificados:**
+- `src/app/api/automations/route.ts` — acepta `source: 'ai_assistant'`
+  opcional en el body. Cuando está presente: (a) **fuerza
+  `is_active = false` en el servidor** sin importar lo que mande el
+  body (`effectiveIsActive`), para que activar una regla creada por la
+  IA sea siempre un paso aparte y explícito del dueño, nunca algo que
+  empiece a disparar sobre clientes reales desde el chat; (b) registra
+  la creación en `ai_action_log` (`action: 'create_automation_rule'`)
+  usando el cliente de sesión del propio dueño — mismo patrón de
+  auditoría que `executeBusinessAction`, nunca el cliente admin, para
+  que quede trazado como "este dueño, en esta cuenta" y no como una
+  escritura de service-role.
+- `src/app/(dashboard)/agents/page.tsx` — nuevo tab "Assistant",
+  visible solo si `accountRole === 'owner'` (comparación exacta, no
+  `canEditSettings` que también deja pasar `admin`).
+- `src/lib/rate-limit.ts` — `RATE_LIMITS.aiAssistant`.
+- `src/lib/ai/usage.ts` — `LogAiUsageArgs.mode` ahora acepta
+  `'assistant'` además de `'auto_reply' | 'draft'`.
+
+**Alcance del catálogo de reglas de automatización de la IA (recorte
+deliberado, documentado en el tool schema que ve el modelo):** solo
+reglas lineales, sin condiciones/ramas, y solo estos `step_type`:
+`send_message`, `add_tag`, `remove_tag`, `assign_conversation`,
+`update_contact_field`, `wait`, `close_conversation`. Se excluyeron a
+propósito `send_buttons`/`send_list`/`send_template` (payloads
+interactivos de Meta, complejos) y `send_webhook` (URL arbitraria,
+sensible) del catálogo que la IA puede proponer — si el dueño necesita
+algo con rama condicional o webhook, se lo arma él mismo en el
+constructor visual de Automations; la IA solo cubre el caso lineal
+común.
+
+**Probado:** `npm run typecheck` limpio; `npx eslint` limpio en todos
+los archivos nuevos/tocados; `npm run build` limpio (79 rutas,
+`/api/ai/assistant` aparece registrada); `package-lock.json` sin diff;
+`npx vitest run`: **1053/1055** (mismas 2 fallas preexistentes de
+`mondayIndex`/timezone, +13 tests nuevos:
+`src/lib/ai/assistant/tools.test.ts` y
+`src/lib/ai/assistant/anthropic-tools.test.ts`, cubriendo la
+clasificación de herramientas de escritura, que el loop nunca ejecuta
+una propuesta de escritura, que sí ejecuta y re-alimenta las de
+lectura, manejo de error de una tool de lectura, y el tope de
+`MAX_TOOL_ROUNDS`). **No se probó todavía en el navegador contra datos
+reales** — falta una cuenta `owner` con clave de Anthropic configurada;
+queda para cuando Angel (o quien continúe) lo pruebe en vivo.
+
+**Pendiente / siguiente paso (en orden):**
+1. Aplicar la migración `066_ai_assistant_action_log.sql` al proyecto
+   Supabase real (`puvbwzwmojpjplhdfnmk`) — no aplicada.
+2. Confirmar con Angel antes de comitear (esta sesión no comiteó nada
+   por instrucción general de no comitear sin pedirlo explícitamente).
+3. Seguir la disciplina de despliegue habitual: commit → **preguntar
+   antes de `git push`** → push → validar en producción (probar los 5
+   casos de la sección "Verificación planeada" de la entrada de diseño:
+   conteo de ventas ganadas/perdidas, propuesta de mejora, mover un
+   trato real con confirmación, proponer una regla en borrador, y
+   confirmar que el tab no aparece para `admin`) → actualizar esta
+   bitácora con el resultado real en producción.

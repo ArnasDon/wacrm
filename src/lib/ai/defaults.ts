@@ -74,6 +74,23 @@ export const SEND_CATALOG_SENTINEL = '[[ACTION:send_catalog]]'
 export const SET_TEMPERATURE_SENTINEL_PREFIX = '[[ACTION:set_temperature:'
 export const SET_TEMPERATURE_SENTINEL_SUFFIX = ']]'
 
+/**
+ * Sentinel prefix/suffix the model is instructed to wrap
+ * `<start ISO 8601>|<end ISO 8601>|<attendee email>` in (auto-reply
+ * mode only, and only ever shown to the model when the account has
+ * explicitly opted into autonomous scheduling AND has a connected
+ * Google Calendar — see `ai_configs.auto_schedule_appointments_enabled`
+ * and `dispatchInboundToAiReply`'s `calendarContext`). Unlike
+ * `MOVE_DEAL_SENTINEL_PREFIX`/`SET_TEMPERATURE_SENTINEL_PREFIX`, this
+ * is a genuinely consequential autonomous action (a real calendar
+ * event + a real email to a real customer), so the prompt bar for
+ * using it is intentionally high and `autoScheduleAppointment` in
+ * `auto-reply.ts` re-validates the slot against fresh free/busy data
+ * right before booking rather than trusting the model's snapshot.
+ */
+export const SCHEDULE_APPOINTMENT_SENTINEL_PREFIX = '[[ACTION:schedule_appointment:'
+export const SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX = ']]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -92,6 +109,20 @@ export function aiRequestTimeoutMs(): number {
 export function aiContextMessageLimit(): number {
   const raw = Number(process.env.AI_CONTEXT_MESSAGE_LIMIT)
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CONTEXT_MESSAGE_LIMIT
+}
+
+/** Real Google Calendar free/busy data for `buildSystemPrompt`'s
+ *  `calendar` param — see that param's own doc comment. Exported so
+ *  `auto-reply.ts`'s `loadCalendarContext` can share the exact shape
+ *  instead of re-declaring it. */
+export interface AutoReplyCalendarContext {
+  now: string
+  lookaheadUntil: string
+  busy: { start: string; end: string }[]
+  /** The contact's email on file, or null if unknown — the model may
+   *  only use this or an email the customer explicitly wrote in the
+   *  conversation, never invent one. */
+  contactEmail: string | null
 }
 
 /**
@@ -117,8 +148,14 @@ export function buildSystemPrompt(args: {
   /** Compact active-catalog lines (see `loadCatalogContext`), or null
    *  when the account has no active products. */
   catalog?: string[] | null
+  /** Real Google Calendar free/busy data (auto-reply mode only) — only
+   *  ever passed when the account both opted into autonomous scheduling
+   *  (`ai_configs.auto_schedule_appointments_enabled`) AND has a
+   *  connected calendar. `null`/omitted means the model is never told
+   *  it can use `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` at all. */
+  calendar?: AutoReplyCalendarContext | null
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -162,6 +199,14 @@ export function buildSystemPrompt(args: {
     parts.push(
       `If, and only if, the customer has just explicitly and unambiguously confirmed they want to buy / go ahead with the purchase (e.g. "yes, I'll take it", "let's do it", "confirmed, please proceed") — not merely showing interest, asking about price, or being polite — append ${MARK_DEAL_WON_SENTINEL} at the very end of your reply, after your normal customer-facing message. This hands the conversation off to a human teammate to close the sale — a person always finalizes it, you never mark it won yourself — so only use it when the confirmation is explicit and unmistakable; when in doubt, do not use it. Never mention this marker to the customer.`,
     )
+
+    if (calendar) {
+      parts.push(
+        `You may book a REAL appointment on the business's calendar yourself, with no human confirmation, when the customer clearly wants to schedule a call/meeting/visit and gives (or agrees to) a specific time. The current date/time is ${calendar.now}. You may only propose a slot strictly between ${calendar.now} and ${calendar.lookaheadUntil}, exactly one hour long, that does NOT overlap any of these already-busy intervals on the real calendar: ${JSON.stringify(calendar.busy)} — never invent or assume availability outside this data. ` +
+          `You need a real email to send the invite to: use ${calendar.contactEmail ? `"${calendar.contactEmail}" (this contact's email on file)` : 'an email address the customer has explicitly written in this conversation'}. If ${calendar.contactEmail ? 'that' : 'no such'} email is available, do NOT use this marker — instead ask the customer for their email in your reply text, and try again once they give it. ` +
+          `When you do have a real available slot and a real email, append ${SCHEDULE_APPOINTMENT_SENTINEL_PREFIX}<start ISO 8601>|<end ISO 8601>|<attendee email>${SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies), and tell the customer in your reply text that the appointment is confirmed for that time — do not ask them to confirm again, the marker already books it for real. Only ever use exact ISO 8601 datetimes, never a vague description. If the customer's request is vague ("let's talk sometime") with no real time, or the "business context and instructions" below tell you to schedule differently (a specific service, working hours, duration), follow those instead of guessing, or ask a clarifying question rather than using this marker. Never mention this marker to the customer.`,
+      )
+    }
 
     if (catalog && catalog.length > 0) {
       parts.push(

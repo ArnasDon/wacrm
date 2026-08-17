@@ -5,7 +5,8 @@ import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { loadCatalogContext } from './catalog-context'
 import { generateReply } from './generate'
-import { buildSystemPrompt } from './defaults'
+import { buildSystemPrompt, type AutoReplyCalendarContext } from './defaults'
+import type { AiConfig } from './types'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
@@ -14,7 +15,10 @@ import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send-catalog'
+import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 import type { LeadTemperature } from '@/types'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -125,15 +129,24 @@ export async function dispatchInboundToAiReply(
     // guessing or staying silent about what the business sells.
     const catalog = await loadCatalogContext(db, accountId)
 
+    // Autonomous appointment scheduling — only ever offered to the
+    // model when the account explicitly opted in AND has a connected
+    // Google Calendar. A failed freebusy check (expired connection,
+    // Google outage) just drops the capability for this reply, same
+    // "degrade, never fail the reply" contract as the other autonomous
+    // lookups above.
+    const calendarContext = await loadCalendarContext({ db, accountId, contactId, config })
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       dealStageOptions,
       catalog,
+      calendar: calendarContext,
     })
 
-    const { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, usage } = await generateReply({
+    const { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -251,6 +264,21 @@ export async function dispatchInboundToAiReply(
         await autoSetLeadTemperature({ db, accountId, contactId, configOwnerUserId, temperature: leadTemperature })
       } catch (err) {
         console.error('[ai auto-reply] autonomous set_temperature failed:', err)
+      }
+    }
+
+    // Defense in depth: `buildSystemPrompt` only ever teaches the model
+    // this marker when the toggle is on (via `calendarContext` above),
+    // but re-check it here too rather than trusting that a marker in
+    // the raw output implies the account actually opted in — a stray
+    // hallucination or a customer-message injection attempt that gets
+    // the literal marker text into the reply must never book a real
+    // appointment on an account that has this switched off.
+    if (appointmentProposal && config.autoScheduleAppointmentsEnabled) {
+      try {
+        await autoScheduleAppointment({ db, accountId, contactId, configOwnerUserId, proposal: appointmentProposal })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous schedule_appointment failed:', err)
       }
     }
   } catch (err) {
@@ -576,5 +604,138 @@ async function autoSetLeadTemperature(args: {
   void dispatchWebhookEvent(db, accountId, 'contact.lead_temperature_changed', {
     contact_id: contactId,
     lead_temperature: temperature,
+  })
+}
+
+/**
+ * Loads real Google Calendar free/busy data + the contact's email for
+ * `buildSystemPrompt`'s `calendar` param — the AI is only ever shown
+ * this (and therefore only ever able to use
+ * `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX`) when the account explicitly
+ * opted into autonomous scheduling (`auto_schedule_appointments_enabled`)
+ * AND has a connected calendar. Returns null in every other case,
+ * including a failed freebusy call — that just silently drops the
+ * capability for this one reply rather than failing it.
+ */
+async function loadCalendarContext(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  config: AiConfig
+}): Promise<AutoReplyCalendarContext | null> {
+  const { db, accountId, contactId, config } = args
+  if (!config.autoScheduleAppointmentsEnabled) return null
+
+  const { data: gcalConfig } = await db
+    .from('google_calendar_config')
+    .select('status')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (gcalConfig?.status !== 'connected') return null
+
+  const now = new Date()
+  const until = new Date(now.getTime() + APPOINTMENT_LOOKAHEAD_MS)
+  try {
+    const [busy, contactRow] = await Promise.all([
+      checkFreeBusy(db, accountId, now.toISOString(), until.toISOString()),
+      db.from('contacts').select('email').eq('id', contactId).eq('account_id', accountId).maybeSingle(),
+    ])
+    return {
+      now: now.toISOString(),
+      lookaheadUntil: until.toISOString(),
+      busy,
+      contactEmail: (contactRow.data as { email: string | null } | null)?.email ?? null,
+    }
+  } catch (err) {
+    console.error('[ai auto-reply] freebusy check failed, dropping autonomous scheduling for this reply:', err)
+    return null
+  }
+}
+
+/**
+ * Books the real Google Calendar event the model proposed — the
+ * account's chosen autonomous-scheduling path, no human confirmation
+ * (unlike the suggest-action + inbox-card flow in
+ * src/lib/ai/business-actions.ts's `schedule_appointment`, which
+ * always requires one). Re-validates everything against fresh data
+ * rather than trusting the model's own text: the datetimes must
+ * parse, the slot must still be free (a beat may have passed since
+ * `loadCalendarContext`'s snapshot — e.g. a different conversation
+ * booked the same slot in between), and the email must look real.
+ * Any failure here is logged and silently dropped — it can never
+ * affect the customer-facing reply, which already went out.
+ */
+async function autoScheduleAppointment(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  configOwnerUserId: string
+  proposal: { start: string; end: string; email: string }
+}): Promise<void> {
+  const { db, accountId, contactId, configOwnerUserId, proposal } = args
+
+  const start = new Date(proposal.start)
+  const end = new Date(proposal.end)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    console.warn('[ai auto-reply] autonomous schedule_appointment: invalid start/end, skipping:', proposal)
+    return
+  }
+  if (start.getTime() < Date.now() - 60_000) {
+    console.warn('[ai auto-reply] autonomous schedule_appointment: proposed slot is in the past, skipping:', proposal)
+    return
+  }
+  if (!EMAIL_RE.test(proposal.email)) {
+    console.warn('[ai auto-reply] autonomous schedule_appointment: invalid attendee email, skipping:', proposal)
+    return
+  }
+
+  let busy: { start: string; end: string }[]
+  try {
+    busy = await checkFreeBusy(db, accountId, start.toISOString(), end.toISOString())
+  } catch (err) {
+    console.error('[ai auto-reply] autonomous schedule_appointment: freebusy re-check failed, skipping:', err)
+    return
+  }
+  const overlaps = busy.some((b) => new Date(b.start) < end && new Date(b.end) > start)
+  if (overlaps) {
+    console.warn('[ai auto-reply] autonomous schedule_appointment: slot is no longer free, skipping:', proposal)
+    return
+  }
+
+  const { data: contact } = await db
+    .from('contacts')
+    .select('name')
+    .eq('id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  let created
+  try {
+    created = await createEvent(db, accountId, {
+      summary: `Cita con ${contact?.name ?? 'cliente'}`,
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      attendeeEmail: proposal.email,
+    })
+  } catch (err) {
+    console.error('[ai auto-reply] autonomous schedule_appointment: createEvent failed:', err)
+    return
+  }
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'schedule_appointment',
+    target_id: contactId,
+    input: { startTime: proposal.start, endTime: proposal.end, attendeeEmail: proposal.email, source: 'auto_reply_autonomous' },
+    result: { event_id: created.eventId, html_link: created.htmlLink, meet_link: created.meetLink },
+  })
+
+  void dispatchWebhookEvent(db, accountId, 'appointment.scheduled', {
+    contact_id: contactId,
+    event_id: created.eventId,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    source: 'auto_reply_autonomous',
   })
 }

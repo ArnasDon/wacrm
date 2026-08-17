@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   moveDeal: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   sendCatalogToConversation: vi.fn(),
+  checkFreeBusy: vi.fn(),
+  createEvent: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -22,12 +24,20 @@ const h = vi.hoisted(() => ({
     stages: [] as { id: string; name: string; is_won?: boolean }[],
     aiActionLogInserts: [] as Record<string, unknown>[],
     pipeline: null as { id: string } | null,
-    contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234' },
+    contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234', email: null as string | null },
     account: { default_currency: 'USD' },
     dealInserts: [] as Record<string, unknown>[],
     createdDeal: { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' } as Record<string, unknown>,
     contactUpdates: [] as Record<string, unknown>[],
+    /** `google_calendar_config.status` — null means no row (not connected). */
+    gcalStatus: null as string | null,
   },
+}))
+
+vi.mock('@/lib/google-calendar/api', () => ({
+  checkFreeBusy: h.checkFreeBusy,
+  createEvent: h.createEvent,
+  APPOINTMENT_LOOKAHEAD_MS: 7 * 24 * 60 * 60 * 1000,
 }))
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
@@ -159,6 +169,19 @@ vi.mock('./admin-client', () => ({
           },
         }
       }
+      if (table === 'google_calendar_config') {
+        // .select('status').eq('account_id', ...).maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: h.state.gcalStatus ? { status: h.state.gcalStatus } : null,
+              error: null,
+            }),
+        }
+        return chain
+      }
       if (table === 'accounts') {
         return {
           select: () => ({
@@ -208,6 +231,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     isActive: true,
     autoReplyEnabled: true,
     autoReplyMaxPerConversation: 3,
+    autoScheduleAppointmentsEnabled: false,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,
@@ -228,11 +252,14 @@ beforeEach(() => {
   h.state.stages = []
   h.state.aiActionLogInserts = []
   h.state.pipeline = null
-  h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234' }
+  h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234', email: null }
   h.state.account = { default_currency: 'USD' }
   h.state.dealInserts = []
   h.state.createdDeal = { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
   h.state.contactUpdates = []
+  h.state.gcalStatus = null
+  h.checkFreeBusy.mockReset().mockResolvedValue([])
+  h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -715,7 +742,7 @@ describe('dispatchInboundToAiReply — autonomous create_deal', () => {
 
 describe('dispatchInboundToAiReply — autonomous set_temperature', () => {
   it('sets the temperature and logs it when the model signals a new value', async () => {
-    h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234' }
+    h.state.contact = { lead_temperature: null, name: 'Juan Pérez', phone: '50255551234', email: null }
     h.generateReply.mockResolvedValue({
       text: 'Claro que sí!',
       handoff: false,
@@ -750,7 +777,7 @@ describe('dispatchInboundToAiReply — autonomous set_temperature', () => {
   })
 
   it('skips the write when the temperature is unchanged', async () => {
-    h.state.contact = { lead_temperature: 'warm', name: 'Juan Pérez', phone: '50255551234' }
+    h.state.contact = { lead_temperature: 'warm', name: 'Juan Pérez', phone: '50255551234', email: null }
     h.generateReply.mockResolvedValue({
       text: 'ok',
       handoff: false,
@@ -781,6 +808,130 @@ describe('dispatchInboundToAiReply — autonomous set_temperature', () => {
     expect(h.state.contactUpdates).toEqual([
       expect.objectContaining({ lead_temperature: 'hot' }),
     ])
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous schedule_appointment', () => {
+  it('never mentions scheduling in the prompt when the toggle is off, even with Calendar connected', async () => {
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: false }))
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('ACTION:schedule_appointment')
+    expect(h.checkFreeBusy).not.toHaveBeenCalled()
+  })
+
+  it('never mentions scheduling when the toggle is on but Calendar is not connected', async () => {
+    h.state.gcalStatus = null
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('ACTION:schedule_appointment')
+    expect(h.checkFreeBusy).not.toHaveBeenCalled()
+  })
+
+  it('offers real free/busy data and the contact email in the prompt when toggle is on and Calendar is connected', async () => {
+    h.state.gcalStatus = 'connected'
+    h.state.contact = { lead_temperature: null, name: 'Ana', phone: '502...', email: 'ana@example.com' }
+    h.checkFreeBusy.mockResolvedValue([{ start: '2026-06-01T10:00:00Z', end: '2026-06-01T11:00:00Z' }])
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('ACTION:schedule_appointment')
+    expect(systemPrompt).toContain('ana@example.com')
+    expect(systemPrompt).toContain('2026-06-01T10:00:00Z')
+  })
+
+  it('books the event, logs it, and dispatches the webhook when the model proposes a free slot', async () => {
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const start = future.toISOString()
+    const end = new Date(future.getTime() + 60 * 60 * 1000).toISOString()
+    h.generateReply.mockResolvedValue({
+      text: 'Listo, tu cita queda confirmada.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      appointmentProposal: { start, end, email: 'ana@example.com' },
+    })
+    h.checkFreeBusy.mockResolvedValue([]) // both the prompt-time and pre-booking re-check see it free
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.createEvent).toHaveBeenCalledWith(
+      expect.anything(), 'acct-1',
+      expect.objectContaining({ startISO: start, endISO: end, attendeeEmail: 'ana@example.com' }),
+    )
+    expect(h.state.aiActionLogInserts).toContainEqual(
+      expect.objectContaining({
+        action: 'schedule_appointment', target_id: 'contact-1',
+        input: expect.objectContaining({ attendeeEmail: 'ana@example.com', source: 'auto_reply_autonomous' }),
+      }),
+    )
+    expect(h.dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.anything(), 'acct-1', 'appointment.scheduled',
+      expect.objectContaining({ contact_id: 'contact-1', event_id: 'evt-1', source: 'auto_reply_autonomous' }),
+    )
+  })
+
+  it('never books when the toggle is off, even if the model output somehow contains a proposal', async () => {
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: false }))
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      appointmentProposal: {
+        start: future.toISOString(),
+        end: new Date(future.getTime() + 60 * 60 * 1000).toISOString(),
+        email: 'ana@example.com',
+      },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.createEvent).not.toHaveBeenCalled()
+  })
+
+  it('skips booking when the fresh free/busy re-check shows the slot is no longer free', async () => {
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    const start = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const end = new Date(start.getTime() + 60 * 60 * 1000)
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      appointmentProposal: { start: start.toISOString(), end: end.toISOString(), email: 'ana@example.com' },
+    })
+    // Prompt-time freebusy sees it free; the pre-booking re-check (2nd
+    // call) sees it's since been taken.
+    h.checkFreeBusy.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { start: start.toISOString(), end: end.toISOString() },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.createEvent).not.toHaveBeenCalled()
+  })
+
+  it('skips booking when the proposed email is invalid', async () => {
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    h.generateReply.mockResolvedValue({
+      text: 'ok',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      appointmentProposal: {
+        start: future.toISOString(),
+        end: new Date(future.getTime() + 60 * 60 * 1000).toISOString(),
+        email: 'not-an-email',
+      },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.createEvent).not.toHaveBeenCalled()
   })
 })
 

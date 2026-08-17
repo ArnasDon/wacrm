@@ -11,6 +11,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     isActive: true,
     autoReplyEnabled: false,
     autoReplyMaxPerConversation: 3,
+    autoScheduleAppointmentsEnabled: false,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,
@@ -47,6 +48,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -59,6 +61,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -68,6 +71,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -80,6 +84,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -99,6 +104,7 @@ describe('parseGeneration', () => {
       moveToStageName: 'Negotiation',
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -126,6 +132,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: true,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -147,6 +154,7 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: 'hot',
+      appointmentProposal: null,
       usage: null,
     })
   })
@@ -180,8 +188,39 @@ describe('parseGeneration', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage,
     })
+  })
+
+  it('detects + strips the schedule-appointment sentinel, capturing start/end/email', () => {
+    const res = parseGeneration(
+      '¡Listo! Tu cita queda confirmada. [[ACTION:schedule_appointment:2026-06-01T15:00:00Z|2026-06-01T16:00:00Z|ana@example.com]]',
+    )
+    expect(res.appointmentProposal).toEqual({
+      start: '2026-06-01T15:00:00Z',
+      end: '2026-06-01T16:00:00Z',
+      email: 'ana@example.com',
+    })
+    expect(res.text).toBe('¡Listo! Tu cita queda confirmada.')
+  })
+
+  it('ignores a malformed schedule-appointment marker missing a part', () => {
+    const res = parseGeneration('ok [[ACTION:schedule_appointment:2026-06-01T15:00:00Z|2026-06-01T16:00:00Z]]')
+    expect(res.appointmentProposal).toBeNull()
+  })
+
+  it('allows schedule-appointment to appear alongside set-temperature', () => {
+    const res = parseGeneration(
+      'Confirmado. [[ACTION:set_temperature:hot]] [[ACTION:schedule_appointment:2026-06-01T15:00:00Z|2026-06-01T16:00:00Z|ana@example.com]]',
+    )
+    expect(res.leadTemperature).toBe('hot')
+    expect(res.appointmentProposal).toEqual({
+      start: '2026-06-01T15:00:00Z',
+      end: '2026-06-01T16:00:00Z',
+      email: 'ana@example.com',
+    })
+    expect(res.text).toBe('Confirmado.')
   })
 })
 
@@ -208,6 +247,7 @@ describe('generateReply — OpenAI', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -271,6 +311,7 @@ describe('generateReply — Anthropic', () => {
       moveToStageName: null,
       sendCatalog: false,
       leadTemperature: null,
+      appointmentProposal: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

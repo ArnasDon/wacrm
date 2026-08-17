@@ -2138,6 +2138,8 @@
       "enableAssistantDesc": "Master switch. Turns on the “Draft with AI” button in the inbox.",
       "autoReply": "Auto-reply to inbound messages",
       "autoReplyDesc": "The bot answers new inbound messages automatically (only when no flow handles them and no agent is assigned). Hands off to a human when it can’t help.",
+      "autoScheduleAppointments": "Schedule appointments autonomously",
+      "autoScheduleAppointmentsDesc": "When a customer clearly wants to book a time, the bot creates the real Google Calendar event itself — no confirmation step — using only slots your calendar actually shows as free, and only with an email it already knows or the customer wrote in the chat. Guide it with rules in “Business context & instructions” below. Requires Google Calendar connected in Settings → Google Calendar; otherwise this has no effect.",
       "maxAutoReplies": "Max auto-replies per conversation",
       "maxAutoRepliesDesc": "After this many bot replies in one thread, the bot goes quiet.",
       "handoffTo": "Hand off to",

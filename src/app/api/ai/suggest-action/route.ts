@@ -8,7 +8,7 @@ import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
 import type { BusinessAction } from '@/lib/ai/business-actions'
-import { checkFreeBusy } from '@/lib/google-calendar/api'
+import { checkFreeBusy, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 
 const ACTIONS = new Set<BusinessAction>([
   'close_conversation',
@@ -18,10 +18,6 @@ const ACTIONS = new Set<BusinessAction>([
   'schedule_appointment',
 ])
 const TEMPERATURES = new Set(['cold', 'warm', 'hot'])
-// How far ahead the AI is allowed to look when proposing an
-// appointment slot — a week is enough for "let's talk this week"
-// without the freebusy query (and the prompt payload) growing huge.
-const APPOINTMENT_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000
 
 interface Suggestion {
   action: BusinessAction | null

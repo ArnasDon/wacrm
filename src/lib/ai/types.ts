@@ -21,6 +21,12 @@ export interface AiConfig {
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number
+  /** Master switch for the AI to autonomously book a real Google
+   *  Calendar appointment — no human confirmation — when the customer
+   *  clearly wants to schedule one. Off by default; even when true,
+   *  `dispatchInboundToAiReply` only offers the capability to the
+   *  model when the account's Google Calendar is actually connected. */
+  autoScheduleAppointmentsEnabled: boolean
   /** Where auto-reply hands a conversation off when the model bails: an
    *  agent's `auth.users.id`, or null to leave it unassigned (drop into
    *  the shared queue). */
@@ -77,6 +83,12 @@ export interface GenerateResult {
    *  mode only), or null when the model didn't emit a (valid) marker —
    *  see `SET_TEMPERATURE_SENTINEL_PREFIX`. */
   leadTemperature: 'cold' | 'warm' | 'hot' | null
+  /** A real appointment slot the model proposed to book autonomously
+   *  (auto-reply mode only, account opted in AND Google Calendar
+   *  connected), or null — see `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX`.
+   *  `start`/`end` are the model's own text, re-validated (parseable,
+   *  in-range, non-overlapping) before anything is booked. */
+  appointmentProposal: { start: string; end: string; email: string } | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

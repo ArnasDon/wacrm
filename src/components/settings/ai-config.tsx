@@ -71,6 +71,7 @@ export function AiConfig() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoScheduleAppointmentsEnabled, setAutoScheduleAppointmentsEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   const [unclaimedTimeoutMinutes, setUnclaimedTimeoutMinutes] = useState(10);
   // Empty string = leave unassigned (shared queue).
@@ -99,6 +100,7 @@ export function AiConfig() {
         setSystemPrompt(data.system_prompt ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
+        setAutoScheduleAppointmentsEnabled(Boolean(data.auto_schedule_appointments_enabled));
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setUnclaimedTimeoutMinutes(data.unclaimed_conversation_timeout_minutes ?? 10);
         setHandoffAgentId(data.handoff_agent_id ?? '');
@@ -151,6 +153,7 @@ export function AiConfig() {
     system_prompt: systemPrompt.trim() || null,
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
+    auto_schedule_appointments_enabled: autoScheduleAppointmentsEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     unclaimed_conversation_timeout_minutes: unclaimedTimeoutMinutes,
     handoff_agent_id: handoffAgentId || null,
@@ -220,6 +223,7 @@ export function AiConfig() {
         setKeyEdited(false);
         setIsActive(false);
         setAutoReplyEnabled(false);
+        setAutoScheduleAppointmentsEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
       } else {
@@ -434,6 +438,22 @@ export function AiConfig() {
                 checked={autoReplyEnabled}
                 onCheckedChange={setAutoReplyEnabled}
                 disabled={disabled || !isActive}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('autoScheduleAppointments')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('autoScheduleAppointmentsDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={autoScheduleAppointmentsEnabled}
+                onCheckedChange={setAutoScheduleAppointmentsEnabled}
+                disabled={disabled || !autoReplyEnabled}
               />
             </div>
 

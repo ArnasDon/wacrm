@@ -13,6 +13,8 @@ import {
   SEND_CATALOG_SENTINEL,
   SET_TEMPERATURE_SENTINEL_PREFIX,
   SET_TEMPERATURE_SENTINEL_SUFFIX,
+  SCHEDULE_APPOINTMENT_SENTINEL_PREFIX,
+  SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX,
   aiRequestTimeoutMs,
 } from './defaults'
 import type { LeadTemperature } from '@/types'
@@ -95,6 +97,17 @@ export function parseGeneration(
     ? (temperatureRaw as LeadTemperature)
     : null
 
+  const appointmentMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(SCHEDULE_APPOINTMENT_SENTINEL_PREFIX)}(.+?)${escapeRegExp(SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  let appointmentProposal: { start: string; end: string; email: string } | null = null
+  if (appointmentMatch) {
+    const [start, end, email] = appointmentMatch[1].split('|').map((s) => s.trim())
+    if (start && end && email) appointmentProposal = { start, end, email }
+  }
+
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -104,9 +117,10 @@ export function parseGeneration(
     .join('')
     .replace(moveMatch ? moveMatch[0] : '', '')
     .replace(temperatureMatch ? temperatureMatch[0] : '', '')
+    .replace(appointmentMatch ? appointmentMatch[0] : '', '')
     .trim()
 
-  return { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, usage }
+  return { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, usage }
 }
 
 function escapeRegExp(s: string): string {

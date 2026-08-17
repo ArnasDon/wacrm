@@ -12,6 +12,12 @@ import { getValidAccessToken, GoogleCalendarError } from './oauth'
 
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
 
+/** How far ahead the AI (suggested or autonomous) is allowed to look
+ *  when proposing an appointment slot — shared so both paths reason
+ *  about the same window. A week is enough for "let's talk this week"
+ *  without the freebusy query growing huge. */
+export const APPOINTMENT_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000
+
 async function loadCalendarId(db: SupabaseClient, accountId: string): Promise<string> {
   const { data, error } = await db
     .from('google_calendar_config')

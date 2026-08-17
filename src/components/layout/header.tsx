@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { AssistantLauncher } from "@/components/agents/assistant-launcher";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "dashboard",
@@ -59,8 +60,8 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background px-4 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2 justify-self-start">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button
           type="button"
@@ -75,7 +76,14 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         </h1>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2">
+      {/* Center column collapses to 0 width for non-owners — AssistantLauncher
+          renders null, so the outer two columns behave exactly like the old
+          justify-between layout in that case. */}
+      <div className="justify-self-center">
+        <AssistantLauncher />
+      </div>
+
+      <div className="flex items-center justify-self-end gap-1 sm:gap-2">
         <ModeToggle />
 
         <DropdownMenu>

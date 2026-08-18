@@ -27,6 +27,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Info,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -38,8 +39,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChannelBadge } from "./channel-badge";
+import { ContactSidebar } from "./contact-sidebar";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MediaLightbox } from "./media-lightbox";
@@ -174,6 +177,11 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  // Mobile-only: the permanent contact sidebar (parent page) never
+  // renders below `lg` at all, so phones had no way to reach tags/
+  // temperature/notes/quotes — this opens the same ContactSidebar
+  // inside a dialog instead of a permanent side panel.
+  const [mobileContactOpen, setMobileContactOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -985,6 +993,22 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Contact-info button — mobile only (the permanent sidebar
+              this mirrors is lg:block-only in the parent page, so
+              phones need their own entry point to tags/temperature/
+              notes/quotes instead of no access at all). */}
+          {contact && (
+            <button
+              type="button"
+              onClick={() => setMobileContactOpen(true)}
+              aria-label={t("contactInfoTitle")}
+              title={t("contactInfoTitle")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          )}
+
           {/* Manual refresh — forces a refetch of the messages + the
               conversation list (the parent bumps its resyncToken). Useful
               when realtime missed an event or the agent just wants to be
@@ -1219,6 +1243,23 @@ export function MessageThread({
         onActiveIdChange={handleMediaChange}
         contactLabel={contactDisplayName}
       />
+
+      {/* Mobile contact-info dialog — see the Info button above. Reuses
+          ContactSidebar as-is (tags/temperature/notes/deals/quotes),
+          just with its desktop fixed-width/border chrome swapped for
+          one that fits a dialog. */}
+      <Dialog open={mobileContactOpen} onOpenChange={setMobileContactOpen}>
+        <DialogContent className="border-border bg-card p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-border px-4 py-3">
+            <DialogTitle className="text-foreground">{t("contactInfoTitle")}</DialogTitle>
+          </DialogHeader>
+          <ContactSidebar
+            contact={contact}
+            conversationId={conversation?.id ?? null}
+            className="h-auto w-full border-l-0"
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

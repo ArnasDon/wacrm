@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useCan } from "@/hooks/use-can";
@@ -55,9 +56,14 @@ interface ContactSidebarProps {
   /** Current open conversation, if any — lets a quote built here target
    *  it directly for "save and send" instead of resolving one server-side. */
   conversationId?: string | null;
+  /** Overrides the default fixed-width desktop-panel chrome (w-70,
+   *  border-l) — pass e.g. "w-full border-l-0" when embedding this in
+   *  something that already provides its own frame, like the mobile
+   *  contact-info dialog in message-thread.tsx. */
+  className?: string;
 }
 
-export function ContactSidebar({ contact, conversationId = null }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversationId = null, className }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
   const tTemp = useTranslations("Contacts.detailView");
@@ -501,7 +507,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
 
   if (!contact) {
     return (
-      <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
+      <div className={cn("flex h-full w-70 items-center justify-center border-l border-border bg-card", className)}>
         <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
       </div>
     );
@@ -511,7 +517,7 @@ export function ContactSidebar({ contact, conversationId = null }: ContactSideba
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
+    <div className={cn("flex h-full w-70 flex-col border-l border-border bg-card", className)}>
       <ScrollArea className="min-h-0 flex-1">
         <div className="p-4">
           {/* Contact Info */}

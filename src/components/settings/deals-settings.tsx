@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Coins, Loader2, Clock } from "lucide-react";
+import { Coins, Loader2, Clock, Building2 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { CURRENCIES } from "@/lib/currency";
 import { COMMON_TIMEZONES } from "@/lib/timezone";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -32,6 +33,7 @@ import { SettingsPanelHead } from "./settings-panel-head";
 export function DealsSettings() {
   const supabase = createClient();
   const {
+    account,
     accountId,
     defaultCurrency,
     canEditSettings,
@@ -42,6 +44,43 @@ export function DealsSettings() {
   const [selected, setSelected] = useState(defaultCurrency);
   const [saving, setSaving] = useState(false);
   const t = useTranslations("Settings.deals");
+
+  // Company name — goes through PATCH /api/account (not a direct
+  // Supabase update like currency/timezone below) because it's free
+  // text: that route already validates length/emptiness and rate-limits
+  // renames, and duplicating that here would just be a second place for
+  // those rules to drift out of sync.
+  const [companyName, setCompanyName] = useState(account?.name ?? "");
+  const [companyNameSaving, setCompanyNameSaving] = useState(false);
+
+  useEffect(() => {
+    setCompanyName(account?.name ?? "");
+  }, [account?.name]);
+
+  const companyNameDirty = companyName.trim() !== (account?.name ?? "") && companyName.trim().length > 0;
+
+  async function handleSaveCompanyName() {
+    if (!companyNameDirty) return;
+    setCompanyNameSaving(true);
+    try {
+      const res = await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: companyName.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || t("companyNameSaveFailed"));
+        return;
+      }
+      await refreshProfile();
+      toast.success(t("companyNameSaveSuccess"));
+    } catch {
+      toast.error(t("companyNameSaveFailed"));
+    } finally {
+      setCompanyNameSaving(false);
+    }
+  }
 
   // Keep the select in sync once the profile (and its account default)
   // resolves, and after a save round-trips through refreshProfile.
@@ -123,6 +162,50 @@ export function DealsSettings() {
         description={t("description")}
       />
       <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <Building2 className="size-4 text-primary" />
+            {t("companyNameTitle")}
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            {t("companyNameDesc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 sm:max-w-xs">
+            <Label className="text-muted-foreground">{t("companyNameLabel")}</Label>
+            <Input
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              disabled={!canEditSettings || profileLoading}
+              maxLength={80}
+              className="bg-muted border-border text-foreground"
+            />
+            {!canEditSettings && (
+              <p className="text-xs text-muted-foreground">{t("adminOnlyHint")}</p>
+            )}
+          </div>
+
+          {canEditSettings && (
+            <Button
+              onClick={handleSaveCompanyName}
+              disabled={companyNameSaving || !companyNameDirty}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {companyNameSaving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t("saving")}
+                </>
+              ) : (
+                t("save")
+              )}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <Coins className="size-4 text-primary" />

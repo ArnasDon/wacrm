@@ -231,6 +231,8 @@
       "noContactShort": "Sem cliente",
       "noPropertyShort": "Sem imóvel",
       "appointmentDetailsLabel": "Ver detalhes do compromisso",
+      "toggleCompleteLabel": "Marcar/desmarcar como concluído",
+      "toastCompleteFailed": "Não foi possível atualizar o status do compromisso.",
       "connectGoogleCalendar": "Conectar Google Calendar",
       "calendarConnectedAs": "Conectado como {email}",
       "calendarDisconnect": "Desconectar Google Calendar",
@@ -346,7 +348,11 @@
       "deleteConfirm": "Excluir \"{name}\"? Essa ação não pode ser desfeita.",
       "cancel": "Cancelar",
       "toastDeleted": "Compromisso excluído.",
-      "toastDeleteFailed": "Não foi possível excluir o compromisso."
+      "toastDeleteFailed": "Não foi possível excluir o compromisso.",
+      "markDone": "Feito",
+      "completedLabel": "Concluído",
+      "toastMarkedDone": "Compromisso concluído.",
+      "toastMarkDoneFailed": "Não foi possível concluir o compromisso."
     }
   },
   "Inbox": {

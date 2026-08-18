@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Check, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { useLocale, useTranslations } from 'next-intl';
 import type { Appointment } from '@/types';
-import { deleteAppointment } from '@/lib/appointments/queries';
+import { deleteAppointment, updateAppointmentStatus } from '@/lib/appointments/queries';
 import { AppointmentFormDialog } from './appointment-form-dialog';
 
 interface AppointmentDetailSheetProps {
@@ -41,8 +41,30 @@ export function AppointmentDetailSheet({
   const [editOpen, setEditOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [marking, setMarking] = useState(false);
 
   if (!appointment) return null;
+
+  const isCompleted = appointment.status === 'completed';
+
+  async function handleMarkDone() {
+    if (!appointment || appointment.status === 'completed') return;
+    setMarking(true);
+    try {
+      await updateAppointmentStatus(supabase, appointment.id, 'completed');
+      toast.success(t('toastMarkedDone'));
+      // Close so the Agenda da Semana grid (the caller's onChanged
+      // refetch) is what the user sees reflect the new state, same
+      // pattern as a successful edit/delete below.
+      onChanged();
+      onClose();
+    } catch (err) {
+      console.error('Failed to mark appointment as done:', err);
+      toast.error(t('toastMarkDoneFailed'));
+    } finally {
+      setMarking(false);
+    }
+  }
 
   async function handleDelete() {
     if (!appointment) return;
@@ -113,10 +135,16 @@ export function AppointmentDetailSheet({
               <Trash2 className="h-4 w-4" />
               {t('delete')}
             </Button>
-            <Button onClick={() => setEditOpen(true)}>
-              <Pencil className="h-4 w-4" />
-              {t('edit')}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleMarkDone} disabled={isCompleted || marking}>
+                {marking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {isCompleted ? t('completedLabel') : t('markDone')}
+              </Button>
+              <Button onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" />
+                {t('edit')}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

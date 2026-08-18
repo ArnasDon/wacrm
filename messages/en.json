@@ -231,6 +231,8 @@
       "noContactShort": "No client",
       "noPropertyShort": "No property",
       "appointmentDetailsLabel": "View appointment details",
+      "toggleCompleteLabel": "Mark/unmark as done",
+      "toastCompleteFailed": "Couldn't update the appointment's status.",
       "connectGoogleCalendar": "Connect Google Calendar",
       "calendarConnectedAs": "Connected as {email}",
       "calendarDisconnect": "Disconnect Google Calendar",
@@ -346,7 +348,11 @@
       "deleteConfirm": "Delete \"{name}\"? This cannot be undone.",
       "cancel": "Cancel",
       "toastDeleted": "Appointment deleted.",
-      "toastDeleteFailed": "Couldn't delete the appointment."
+      "toastDeleteFailed": "Couldn't delete the appointment.",
+      "markDone": "Done",
+      "completedLabel": "Completed",
+      "toastMarkedDone": "Appointment marked as done.",
+      "toastMarkDoneFailed": "Couldn't mark the appointment as done."
     }
   },
   "Inbox": {

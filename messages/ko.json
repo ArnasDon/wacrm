@@ -231,6 +231,8 @@
       "noContactShort": "고객 없음",
       "noPropertyShort": "매물 없음",
       "appointmentDetailsLabel": "일정 세부정보 보기",
+      "toggleCompleteLabel": "완료 표시/해제",
+      "toastCompleteFailed": "일정 상태를 업데이트하지 못했습니다.",
       "connectGoogleCalendar": "Google 캘린더 연결",
       "calendarConnectedAs": "{email}(으)로 연결됨",
       "calendarDisconnect": "Google 캘린더 연결 해제",
@@ -346,7 +348,11 @@
       "deleteConfirm": "\"{name}\"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
       "cancel": "취소",
       "toastDeleted": "일정이 삭제되었습니다.",
-      "toastDeleteFailed": "일정을 삭제하지 못했습니다."
+      "toastDeleteFailed": "일정을 삭제하지 못했습니다.",
+      "markDone": "완료",
+      "completedLabel": "완료됨",
+      "toastMarkedDone": "일정을 완료로 표시했습니다.",
+      "toastMarkDoneFailed": "일정을 완료로 표시하지 못했습니다."
     }
   },
   "Inbox": {

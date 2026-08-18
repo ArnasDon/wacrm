@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CalendarSync, ChevronLeft, ChevronRight, Info, LogOut, Plus } from 'lucide-react'
+import { CalendarSync, Check, ChevronLeft, ChevronRight, Info, LogOut, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
-import { listAppointmentsByDateRange } from '@/lib/appointments/queries'
+import { listAppointmentsByDateRange, updateAppointmentStatus } from '@/lib/appointments/queries'
 // Imported from the leaf module, not the '@/lib/calendar' barrel —
 // that barrel also re-exports GoogleCalendarProvider, which pulls in
 // `googleapis` (Node-only: relies on Node's http2/crypto, no browser
@@ -18,7 +18,7 @@ import { AppointmentDetailSheet } from '@/components/appointments/appointment-de
 import { Skeleton } from './skeleton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Appointment, AppointmentType } from '@/types'
+import type { Appointment, AppointmentStatus, AppointmentType } from '@/types'
 import { useTranslations } from 'next-intl'
 
 // Left-border accent per appointment type — a quiet extra signal on
@@ -184,6 +184,29 @@ export function AgendaWeek() {
     setFormOpen(true)
   }
 
+  // Single source of truth for the completed state: the same
+  // `status` column the "Feito" button in AppointmentDetailSheet
+  // writes to (via updateAppointmentStatus). Updates local state
+  // optimistically so the checkbox/card reflect instantly, then
+  // reverts on failure.
+  async function handleToggleComplete(appointment: Appointment) {
+    const previousStatus = appointment.status
+    const nextStatus: AppointmentStatus = previousStatus === 'completed' ? 'scheduled' : 'completed'
+    setAppointments((prev) =>
+      (prev ?? []).map((a) => (a.id === appointment.id ? { ...a, status: nextStatus } : a)),
+    )
+    try {
+      const db = createClient()
+      await updateAppointmentStatus(db, appointment.id, nextStatus)
+    } catch (err) {
+      console.error('[dashboard] appointment status toggle failed:', err)
+      setAppointments((prev) =>
+        (prev ?? []).map((a) => (a.id === appointment.id ? { ...a, status: previousStatus } : a)),
+      )
+      toast.error(t('toastCompleteFailed'))
+    }
+  }
+
   const byDay = new Map<string, Appointment[]>()
   for (const d of weekDates) byDay.set(d, [])
   for (const a of appointments ?? []) byDay.get(a.scheduled_date)?.push(a)
@@ -322,6 +345,7 @@ export function AgendaWeek() {
                         // (works with just the mouse, no JS) alongside the
                         // dedicated info icon below, which also works on tap.
                         const thirdLineTitleAttr = showsProperty ? (a.property?.name ?? undefined) : a.title
+                        const isCompleted = a.status === 'completed'
                         return (
                           // A `<div role="button">`, not a native `<button>`:
                           // the info icon below is itself a real `<button>`
@@ -341,9 +365,36 @@ export function AgendaWeek() {
                                 setDetailAppointment(a)
                               }
                             }}
-                            className={`w-full cursor-pointer rounded-md border border-l-2 border-border bg-card p-2.5 text-left transition-colors hover:border-primary/40 ${TYPE_BORDER_CLASSES[a.type]}`}
+                            className={`relative w-full cursor-pointer rounded-md border border-l-2 border-border bg-card p-2.5 pr-7 text-left transition-colors hover:border-primary/40 ${
+                              isCompleted ? 'border-l-[#00E5FF] opacity-[0.45]' : TYPE_BORDER_CLASSES[a.type]
+                            }`}
                           >
-                            <p className="truncate text-sm font-semibold text-foreground">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                // Keep the card's own onClick (open detail
+                                // sheet) from also firing on a checkbox
+                                // click — see the card's role="button"
+                                // comment above for why this can't be a
+                                // native nested <button>-in-<button> either
+                                // way; this is the checkbox itself, not
+                                // nested inside another button.
+                                e.stopPropagation()
+                                handleToggleComplete(a)
+                              }}
+                              aria-label={t('toggleCompleteLabel')}
+                              aria-pressed={isCompleted}
+                              className={`absolute right-3 top-3 flex h-[18px] w-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-[1.5px] transition-colors ${
+                                isCompleted
+                                  ? 'border-[#00E5FF] bg-[#00E5FF]'
+                                  : 'border-[#334155] bg-transparent hover:border-[#64748B]'
+                              }`}
+                            >
+                              {isCompleted && <Check className="h-3 w-3 text-black" strokeWidth={2} />}
+                            </button>
+                            <p
+                              className={`truncate text-sm font-semibold text-foreground ${isCompleted ? 'line-through' : ''}`}
+                            >
                               {a.contact?.name || a.contact?.phone || a.client_name || t('noContactShort')}
                             </p>
                             <p className="mt-0.5 text-xs tabular-nums text-foreground/80">

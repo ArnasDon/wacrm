@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Loader2, Pencil, Plus, ToggleLeft, ToggleRight, Wrench } from 'lucide-react'
+import { Clock, Loader2, Pencil, Plus, ToggleLeft, ToggleRight, Wrench } from 'lucide-react'
 
 interface ServiceRecord {
   id: string
@@ -70,6 +70,25 @@ function fmtCurrency(value: number | null) {
     currency: 'EUR',
     minimumFractionDigits: 2,
   })
+}
+
+function getServiceDuration(attributes: unknown): string | null {
+  if (!attributes) return null
+  let parsed = attributes
+  if (typeof attributes === 'string') {
+    try {
+      parsed = JSON.parse(attributes)
+    } catch {
+      return null
+    }
+  }
+  if (typeof parsed === 'object' && parsed !== null && 'duration' in parsed) {
+    const val = (parsed as Record<string, unknown>).duration
+    if (val != null && String(val).trim()) {
+      return String(val).trim()
+    }
+  }
+  return null
 }
 
 function normalizeAttributes(raw: string): unknown {
@@ -308,12 +327,24 @@ export default function ServicesPage() {
               <div className="space-y-3">
                 {items.map((service) => {
                   const active = getActiveValue(service)
+                  const duration = getServiceDuration(service.attributes)
                   return (
                     <div key={service.id} className="rounded-lg border border-border/70 bg-background/70 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-foreground">{service.title || 'Sans titre'}</p>
-                          <p className="mt-1 text-sm text-muted-foreground">{fmtCurrency(service.price)}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                            <span>{fmtCurrency(service.price)}</span>
+                            {duration && (
+                              <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                                {duration.includes('min') || duration.includes('h') ? duration : `${duration} min`}
+                              </span>
+                            )}
+                          </div>
+                          {service.description && (
+                            <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{service.description}</p>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-2">

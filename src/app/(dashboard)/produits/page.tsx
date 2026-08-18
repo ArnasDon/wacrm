@@ -41,6 +41,7 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
+  Tag,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -332,11 +333,17 @@ useEffect(() => {
       .not('level_3', 'is', null)
       .order('level_3')
     
-    setGpcLevel3Options((data ?? []).map((d: any) => ({
+    const opts = (data ?? []).map((d: any) => ({
       label: d.level_3,
       full_path: d.full_path
-    })))
-    setField('google_product_category', '')
+    }))
+    setGpcLevel3Options(opts)
+    // Si aucun niveau 3 → le niveau 2 est la valeur finale
+    if (opts.length === 0) {
+      setField('google_product_category', gpcLevel2)
+    } else {
+      setField('google_product_category', '')
+    }
   }
   fetchLevel3()
 }, [gpcLevel1, gpcLevel2, supabase])
@@ -384,11 +391,17 @@ useEffect(() => {
       .not('level_3', 'is', null)
       .order('level_3')
     
-    setFbpcLevel3Options((data ?? []).map((d: any) => ({
+    const opts = (data ?? []).map((d: any) => ({
       label: d.level_3,
       full_path: d.full_path
-    })))
-    setField('fb_product_category', '')
+    }))
+    setFbpcLevel3Options(opts)
+    // Si aucun niveau 3 → le niveau 2 est la valeur finale
+    if (opts.length === 0) {
+      setField('fb_product_category', fbpcLevel2)
+    } else {
+      setField('fb_product_category', '')
+    }
   }
   fetchLevel3()
 }, [fbpcLevel1, fbpcLevel2, supabase])
@@ -1013,101 +1026,123 @@ useEffect(() => {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="f-gpc">Catégorie Google</Label>
-                      <div className="flex flex-col gap-1">
-                          {/* Niveau 1 */}
-                        <select
-                          value={gpcLevel1}
-                          onChange={(e) => { setGpcLevel1(e.target.value); setGpcLevel2(''); }}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                        >
-                          {gpcLevel1Options.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                        {/* Niveau 2 */}
-                      {gpcLevel1 && (
+                {/* ── Catégorie Google ── */}
+                <div className="flex flex-col gap-2">
+                  <Label>Catégorie Google</Label>
+                  <div className="rounded-lg border border-input bg-muted/20 p-3 flex flex-col gap-2">
+                    {/* Niveau 1 */}
+                    <select
+                      value={gpcLevel1}
+                      onChange={(e) => { setGpcLevel1(e.target.value); setGpcLevel2(''); setField('google_product_category', ''); }}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="" hidden />
+                      {gpcLevel1Options.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    {/* Niveau 2 */}
+                    {gpcLevel1 && gpcLevel2Options.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <select
                           value={gpcLevel2}
                           onChange={(e) => setGpcLevel2(e.target.value)}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         >
+                          <option value="" hidden />
                           {gpcLevel2Options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
-                      )}
-                        {/* Niveau 3 */}
-                      {gpcLevel2 && (
+                      </div>
+                    )}
+                    {/* Niveau 3 */}
+                    {gpcLevel2 && gpcLevel3Options.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <select
                           value={formData.google_product_category}
                           onChange={(e) => {
                             const selected = gpcLevel3Options.find(opt => opt.full_path === e.target.value)
                             setField('google_product_category', selected?.label ?? e.target.value)
                           }}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         >
+                          <option value="" hidden />
                           {gpcLevel3Options.map((opt) => (
                             <option key={opt.full_path} value={opt.full_path}>{opt.label}</option>
                           ))}
                         </select>
-                      )}
-                      {/* Valeur finale sélectionnée */}
-                      {formData.google_product_category && (
-                        <p className="text-xs text-muted-foreground">{formData.google_product_category}</p>
-                      )}
                       </div>
+                    )}
+                    {/* Badge valeur finale */}
+                    {formData.google_product_category && (
+                      <div className="flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1.5">
+                        <Tag className="h-3 w-3 text-primary shrink-0" />
+                        <span className="text-xs font-medium text-primary truncate">{formData.google_product_category}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="f-fpc">Catégorie Facebook</Label>
-                      <div className="flex flex-col gap-1">
-                          {/* Niveau 1 */}
-                        <select
-                          value={fbpcLevel1}
-                          onChange={(e) => { setFbpcLevel1(e.target.value); setFbpcLevel2(''); }}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                        >
-                          
-                          {fbpcLevel1Options.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                        {/* Niveau 2 */}
-                      {fbpcLevel1 && (
+                </div>
+
+                {/* ── Catégorie Facebook ── */}
+                <div className="flex flex-col gap-2">
+                  <Label>Catégorie Facebook</Label>
+                  <div className="rounded-lg border border-input bg-muted/20 p-3 flex flex-col gap-2">
+                    {/* Niveau 1 */}
+                    <select
+                      value={fbpcLevel1}
+                      onChange={(e) => { setFbpcLevel1(e.target.value); setFbpcLevel2(''); setField('fb_product_category', ''); }}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="" hidden />
+                      {fbpcLevel1Options.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    {/* Niveau 2 */}
+                    {fbpcLevel1 && fbpcLevel2Options.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <select
                           value={fbpcLevel2}
                           onChange={(e) => setFbpcLevel2(e.target.value)}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         >
-                          
+                          <option value="" hidden />
                           {fbpcLevel2Options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
-                      )}
-                        {/* Niveau 3 */}
-                      {fbpcLevel2 && (
+                      </div>
+                    )}
+                    {/* Niveau 3 */}
+                    {fbpcLevel2 && fbpcLevel3Options.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <select
                           value={formData.fb_product_category}
                           onChange={(e) => {
                             const selected = fbpcLevel3Options.find(opt => opt.full_path === e.target.value)
                             setField('fb_product_category', selected?.label ?? e.target.value)
                           }}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                         >
-                          
+                          <option value="" hidden />
                           {fbpcLevel3Options.map((opt) => (
                             <option key={opt.full_path} value={opt.full_path}>{opt.label}</option>
                           ))}
                         </select>
-                      )}
-                      {/* Valeur finale sélectionnée */}
-                      {formData.fb_product_category && (
-                        <p className="text-xs text-muted-foreground">{formData.fb_product_category}</p>
-                      )}
                       </div>
+                    )}
+                    {/* Badge valeur finale */}
+                    {formData.fb_product_category && (
+                      <div className="flex items-center gap-1.5 rounded-md bg-blue-500/10 px-2.5 py-1.5">
+                        <Tag className="h-3 w-3 text-blue-500 shrink-0" />
+                        <span className="text-xs font-medium text-blue-500 truncate">{formData.fb_product_category}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">

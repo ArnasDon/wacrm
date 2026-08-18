@@ -95,6 +95,12 @@ interface ProductOption {
   sale_price_ends_at: string | null
 }
 
+interface ContactOption {
+  id: string
+  name: string | null
+  phone: string | null
+}
+
 interface OrderFormState {
   contactName: string
   productId: string
@@ -243,6 +249,7 @@ export default function CommandesPage() {
   const [page, setPage] = useState(0)
   const [totalGroups, setTotalGroups] = useState(0)
   const [products, setProducts] = useState<ProductOption[]>([])
+  const [contacts, setContacts] = useState<ContactOption[]>([])
   const [formOpen, setFormOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<RawItem | null>(null)
   const [formData, setFormData] = useState<OrderFormState>(EMPTY_ORDER_FORM)
@@ -335,6 +342,15 @@ export default function CommandesPage() {
     }
 
     void loadProducts()
+  }, [supabase])
+
+  useEffect(() => {
+    const loadContacts = async () => {
+      const { data } = await supabase.from('contacts').select('id,name,phone').order('name', { ascending: true })
+      setContacts((data ?? []) as ContactOption[])
+    }
+
+    void loadContacts()
   }, [supabase])
 
   function openCreateModal() {
@@ -610,29 +626,46 @@ export default function CommandesPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="contact-name">Contact</Label>
-              <Input
-                id="contact-name"
-                value={formData.contactName}
-                onChange={(e) => setFormData((prev) => ({ ...prev, contactName: e.target.value }))}
-                placeholder="Nom du contact"
-              />
+              <div className="rounded-lg border border-input bg-muted/20 p-2">
+                <select
+                  id="contact-name"
+                  value={formData.contactName}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, contactName: e.target.value }))}
+                  style={{ fontFamily: 'monospace' }}
+                  className="w-full rounded-md bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="" hidden />
+                  {contacts.map((contact) => {
+                    const name = contact.name ?? ''
+                    const phone = contact.phone ?? ''
+                    const label = phone ? name.padEnd(30, '\u00a0') + phone : name
+                    return (
+                      <option key={contact.id} value={name}>
+                        {label}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="product-id">Produit</Label>
-              <select
-                id="product-id"
-                value={formData.productId}
-                onChange={(e) => setFormData((prev) => ({ ...prev, productId: e.target.value }))}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">Sélectionner un produit</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.title || 'Produit sans nom'}
-                  </option>
-                ))}
-              </select>
+              <div className="rounded-lg border border-input bg-muted/20 p-2">
+                <select
+                  id="product-id"
+                  value={formData.productId}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, productId: e.target.value }))}
+                  className="w-full rounded-md bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="" hidden />
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.title || 'Produit sans nom'}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-2">

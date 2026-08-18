@@ -62,6 +62,18 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   };
   const database = {
     from(table: string) {
+      if (table === 'accounts') {
+        // demo_mode_enabled: false — these tests exercise the real
+        // Meta / RPC path, not DemoWhatsAppService.
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({ data: { demo_mode_enabled: false }, error: null }),
+            }),
+          }),
+        };
+      }
       if (table === 'whatsapp_config') {
         const configRow = { id: 'cfg-1', phone_number_id: 'pn-1', access_token: 'enc' };
         return {

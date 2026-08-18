@@ -21,7 +21,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-core';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
-import { resolveWhatsAppService } from '@/lib/whatsapp/service';
+import {
+  resolveWhatsAppServiceForBroadcast,
+  WhatsAppNotConfiguredError,
+} from '@/lib/whatsapp/service';
 
 /** Which recipients a resume pass picks up. */
 export type ResumeScope = 'pending' | 'failed' | 'all';
@@ -146,7 +149,7 @@ export async function planBroadcastResume(
 ): Promise<ResumePlan> {
   const { data: broadcast, error: bcError } = await db
     .from('broadcasts')
-    .select('id, template_name, template_language')
+    .select('id, template_name, template_language, is_demo')
     .eq('id', broadcastId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -205,7 +208,22 @@ export async function planBroadcastResume(
     );
   }
 
-  const { service, isDemo } = await resolveWhatsAppService(db, accountId);
+  // Must continue the SAME service the original send used — a resume
+  // never re-derives demo-vs-real from the account's current setting
+  // (see resolveWhatsAppServiceForBroadcast's own doc comment).
+  let service, isDemo;
+  try {
+    ({ service, isDemo } = await resolveWhatsAppServiceForBroadcast(
+      db,
+      accountId,
+      broadcast.is_demo
+    ));
+  } catch (err) {
+    if (err instanceof WhatsAppNotConfiguredError) {
+      throw new BroadcastError('whatsapp_not_configured', err.message, 400);
+    }
+    throw err;
+  }
 
   const resolvedTemplate = await resolveTemplateRow(
     db,

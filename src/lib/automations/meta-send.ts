@@ -196,6 +196,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     template_name,
     message_id: waMessageId,
     status: 'sent',
+    is_demo: isDemo,
   })
   if (msgErr) {
     // Meta already has the message; record the DB error but don't pretend

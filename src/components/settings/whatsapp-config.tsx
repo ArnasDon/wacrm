@@ -47,10 +47,12 @@ export function WhatsAppConfig() {
   // having to re-enter anything.
   const {
     user,
+    account,
     accountId,
     loading: authLoading,
     profileLoading,
     canEditSettings,
+    refreshProfile,
   } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -86,6 +88,22 @@ export function WhatsAppConfig() {
   // a viewer's toggle would match zero rows and appear to work.
   const [mirrorMedia, setMirrorMedia] = useState(true);
   const [savingMirror, setSavingMirror] = useState(false);
+
+  // Demo Mode (§15) — an account-level switch, not part of
+  // whatsapp_config, so it's meaningful (and shown) even when no
+  // config row exists yet: that's the primary out-of-the-box case
+  // (§3, §24 — a fresh account must run end-to-end with zero Meta
+  // credentials). Seeded from the shared auth context and kept in
+  // local state for the same "feel instant, roll back on failure"
+  // reason mirrorMedia is; `refreshProfile()` re-syncs the shared
+  // context afterwards so `DemoModeBanner` (rendered elsewhere in the
+  // app shell) picks up the change immediately too.
+  const [demoModeEnabled, setDemoModeEnabled] = useState(true);
+  const [savingDemoMode, setSavingDemoMode] = useState(false);
+
+  useEffect(() => {
+    if (account) setDemoModeEnabled(account.demo_mode_enabled);
+  }, [account]);
 
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
@@ -223,6 +241,31 @@ export function WhatsAppConfig() {
       toast.error(t('mirrorInboundSaveFailed'));
     } finally {
       setSavingMirror(false);
+    }
+  }
+
+  async function handleToggleDemoMode(next: boolean) {
+    if (!accountId || savingDemoMode) return;
+    const previous = demoModeEnabled;
+    setDemoModeEnabled(next);
+    setSavingDemoMode(true);
+    try {
+      // Direct write, same pattern as handleToggleMirrorMedia — RLS
+      // (accounts_update, migration 017) already restricts this to
+      // admins+, so canEditSettings below is a UX gate, not the real
+      // authorization boundary.
+      const { error } = await supabase
+        .from('accounts')
+        .update({ demo_mode_enabled: next })
+        .eq('id', accountId);
+      if (error) throw new Error(error.message);
+      await refreshProfile();
+    } catch (error) {
+      console.error('Failed to update Demo Mode setting:', error);
+      setDemoModeEnabled(previous);
+      toast.error(t('demoModeSaveFailed'));
+    } finally {
+      setSavingDemoMode(false);
     }
   }
 
@@ -474,6 +517,41 @@ export function WhatsAppConfig() {
             </div>
           </Alert>
         )}
+
+        {/* Demo Mode (§15) — decides whether sends here go through
+            DemoWhatsAppService or the real Meta Cloud API. Shown first
+            since it changes what everything below actually means. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-foreground">{t('demoModeTitle')}</CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t('demoModeDesc')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {demoModeEnabled ? t('demoModeOn') : t('demoModeOff')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {demoModeEnabled ? t('demoModeOnDesc') : t('demoModeOffDesc')}
+                </p>
+                {!demoModeEnabled && !config && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    {t('demoModeOffNoConfigWarning')}
+                  </p>
+                )}
+              </div>
+              <Switch
+                checked={demoModeEnabled}
+                onCheckedChange={handleToggleDemoMode}
+                disabled={savingDemoMode || !canEditSettings}
+                aria-label={t('demoModeTitle')}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Connection Status */}
         <Alert className="bg-card border-border">

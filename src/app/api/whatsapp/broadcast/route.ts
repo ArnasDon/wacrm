@@ -3,7 +3,10 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import { sanitizePhoneForMeta, isValidE164, phoneVariants } from '@/lib/whatsapp/phone-utils'
-import { resolveWhatsAppService } from '@/lib/whatsapp/service'
+import {
+  resolveWhatsAppService,
+  WhatsAppNotConfiguredError,
+} from '@/lib/whatsapp/service'
 import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate'
 import {
   checkRateLimit,
@@ -115,10 +118,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Real Meta service when whatsapp_config exists for this account,
-    // DemoWhatsAppService otherwise — §3 requires this to work end to
-    // end with zero Meta credentials, same as every other send path.
-    const { service, isDemo } = await resolveWhatsAppService(supabase, accountId)
+    // WhatsApp service — driven by the account's explicit Demo Mode
+    // setting (§15). Demo Mode off + no config fails loudly here.
+    let service, isDemo
+    try {
+      ;({ service, isDemo } = await resolveWhatsAppService(supabase, accountId))
+    } catch (err) {
+      if (err instanceof WhatsAppNotConfiguredError) {
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
+      throw err
+    }
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside

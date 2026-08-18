@@ -39,7 +39,11 @@ import {
   templateBodyParams,
   templateContentText,
 } from '@/lib/whatsapp/template-body';
-import { resolveWhatsAppService } from '@/lib/whatsapp/service';
+import {
+  resolveWhatsAppService,
+  WhatsAppNotConfiguredError,
+  type WhatsAppService,
+} from '@/lib/whatsapp/service';
 import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
@@ -244,11 +248,19 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp service — real Meta when `whatsapp_config` exists for this
-  // account, DemoWhatsAppService otherwise. §3 requires the app to run
-  // end-to-end with zero Meta credentials, so a missing config is no
-  // longer an error here — it's the signal to use the demo service.
-  const { service, isDemo } = await resolveWhatsAppService(db, accountId);
+  // WhatsApp service — driven by the account's explicit Demo Mode
+  // setting (§15), not inferred from whether whatsapp_config exists.
+  // Demo Mode off + no config fails loudly here, by design.
+  let service: WhatsAppService;
+  let isDemo: boolean;
+  try {
+    ({ service, isDemo } = await resolveWhatsAppService(db, accountId));
+  } catch (err) {
+    if (err instanceof WhatsAppNotConfiguredError) {
+      throw new SendMessageError('whatsapp_not_configured', err.message, 400);
+    }
+    throw err;
+  }
 
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote
@@ -419,6 +431,7 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      is_demo: isDemo,
     })
     .select()
     .single();

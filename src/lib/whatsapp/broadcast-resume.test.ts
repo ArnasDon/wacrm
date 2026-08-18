@@ -176,6 +176,7 @@ const BROADCAST = {
   id: 'bc-1',
   template_name: 'order_update',
   template_language: 'en_US',
+  is_demo: false,
 };
 
 const CONFIG = { phone_number_id: 'pn-1', access_token: 'tok' };

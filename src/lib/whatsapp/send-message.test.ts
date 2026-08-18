@@ -232,11 +232,15 @@ function sendPathDb(
           return builder;
         },
         maybeSingle: async () => {
-          // resolveWhatsAppService reads whatsapp_config with
-          // maybeSingle() (a missing row means "use the demo
-          // service", not an error) — every other maybeSingle() call
-          // in the send path (e.g. the reply-to-message lookup) still
-          // wants null-by-default.
+          // resolveWhatsAppService reads accounts.demo_mode_enabled
+          // (false here, so these tests exercise MetaWhatsAppService —
+          // matching their `wamid.*` assertions) then whatsapp_config
+          // with maybeSingle() (missing = fail loudly, not an error) —
+          // every other maybeSingle() call in the send path (e.g. the
+          // reply-to-message lookup) still wants null-by-default.
+          if (table === 'accounts') {
+            return { data: { demo_mode_enabled: false }, error: null };
+          }
           if (table === 'whatsapp_config') return { data: config, error: null };
           return { data: null, error: null };
         },

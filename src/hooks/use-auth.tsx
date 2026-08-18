@@ -43,6 +43,12 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** Explicit Demo Mode switch (§15) — NOT NULL DEFAULT true in the DB
+   *  (migration 052); narrowed to `true` when absent so an unmigrated
+   *  read never reads as "definitely live", matching
+   *  resolveWhatsAppService's own defensive fallback. Drives
+   *  `DemoModeBanner` and the WhatsApp send path. */
+  demo_mode_enabled: boolean;
 }
 
 /**
@@ -237,9 +243,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.account_id) {
           const { data: account, error: accountErr } = await supabase
             .from("accounts")
-            // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            // default_currency added in migration 021, demo_mode_enabled
+            // in migration 052; both narrowed below for older schemas
+            // where they'd read null.
+            .select("id, name, default_currency, demo_mode_enabled")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -254,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              demo_mode_enabled: account.demo_mode_enabled ?? true,
             };
           }
         }

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
-import { resolveWhatsAppService } from '@/lib/whatsapp/service';
+import {
+  resolveWhatsAppService,
+  WhatsAppNotConfiguredError,
+} from '@/lib/whatsapp/service';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -87,9 +90,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Real Meta service when whatsapp_config exists for this account,
-    // DemoWhatsAppService otherwise (§3).
-    const { service, isDemo } = await resolveWhatsAppService(supabase, accountId);
+    // WhatsApp service — driven by the account's explicit Demo Mode
+    // setting (§15). Demo Mode off + no config fails loudly here.
+    let service, isDemo;
+    try {
+      ({ service, isDemo } = await resolveWhatsAppService(supabase, accountId));
+    } catch (err) {
+      if (err instanceof WhatsAppNotConfiguredError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      throw err;
+    }
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {

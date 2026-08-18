@@ -26,7 +26,11 @@ import {
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
-import { resolveWhatsAppService, type WhatsAppService } from '@/lib/whatsapp/service';
+import {
+  resolveWhatsAppService,
+  WhatsAppNotConfiguredError,
+  type WhatsAppService,
+} from '@/lib/whatsapp/service';
 import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
@@ -107,10 +111,18 @@ export async function createBroadcast(
     );
   }
 
-  // WhatsApp service — real Meta when whatsapp_config exists for this
-  // account, DemoWhatsAppService otherwise (§3: zero Meta credentials
-  // must still work end-to-end, including broadcasts).
-  const { service, isDemo } = await resolveWhatsAppService(db, accountId);
+  // WhatsApp service — driven by the account's explicit Demo Mode
+  // setting (§15). Demo Mode off + no config fails loudly here.
+  let service: WhatsAppService;
+  let isDemo: boolean;
+  try {
+    ({ service, isDemo } = await resolveWhatsAppService(db, accountId));
+  } catch (err) {
+    if (err instanceof WhatsAppNotConfiguredError) {
+      throw new BroadcastError('whatsapp_not_configured', err.message, 400);
+    }
+    throw err;
+  }
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -199,6 +211,10 @@ export async function createBroadcast(
       // Frozen per-recipient params (migration 038) — without them a
       // resume of this broadcast has no way to reconstruct {{1}}.
       p_template_params: deduped.map((r) => r.params),
+      // Set once, at creation (migration 052) — a resume must never
+      // re-derive this from the account's current Demo Mode setting,
+      // see resolveWhatsAppServiceForBroadcast.
+      p_is_demo: isDemo,
     }
   );
   if (createErr || !createdRows || createdRows.length === 0) {

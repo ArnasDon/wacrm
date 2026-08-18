@@ -43,7 +43,14 @@ function makeSupabaseMock() {
             error: null,
           }
         case 'accounts':
-          return { data: { id: 'acct-1', name: 'Acme' }, error: null }
+          // demo_mode_enabled: false — these tests exercise the real
+          // Meta path (assert against `wamid-*` ids / sendTemplateMessage
+          // being called), so resolveWhatsAppService must not treat the
+          // account as Demo Mode.
+          return {
+            data: { id: 'acct-1', name: 'Acme', demo_mode_enabled: false },
+            error: null,
+          }
         case 'contacts':
           return { data: contactRow, error: null }
         case 'conversations':

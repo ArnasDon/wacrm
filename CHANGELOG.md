@@ -9,6 +9,90 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.12.0] — 2026-08-19
+
+Two corrections to the WhatsAppService rollout, requested before
+starting Phase 3:
+
+1. **Demo Mode is now an explicit Settings switch, not an inference.**
+   Previously an account silently used `DemoWhatsAppService` whenever
+   `whatsapp_config` happened to be missing. That's gone — whether an
+   account sends live or simulated traffic is now the
+   `accounts.demo_mode_enabled` toggle (Settings → WhatsApp, §15,
+   directly under the connection status). Demo Mode **on** wins even
+   if real config also exists (a deliberate override — an admin may
+   want to demo/train without risking a real send). Demo Mode **off**
+   with no config now **fails loudly** — `resolveWhatsAppService`
+   throws `WhatsAppNotConfiguredError` (mapped to a 400 at every call
+   site) instead of silently simulating. A persistent, non-dismissible
+   `DemoModeBanner` renders above every page whenever Demo Mode is on,
+   so an operator can never be left to discover it by accident.
+2. **Demo-originated records are now identifiable in the data.**
+   `messages.is_demo` mirrors the existing `messages.ai_generated`
+   precedent exactly — set at every send call site when
+   `DemoWhatsAppService` was used. `broadcasts.is_demo` extends the
+   same principle to campaigns, for the identical reason: demo and
+   real activity share the same tables and code path, so analytics
+   needs an explicit way to tell them apart.
+
+> **Migration required:** apply
+> `supabase/migrations/052_rimula_demo_mode_and_markers.sql`. It adds
+> `accounts.demo_mode_enabled` (`DEFAULT true`, then backfilled to
+> `false` specifically for accounts that already have a
+> `whatsapp_config` row — so an existing self-hosted deployment
+> already sending real WhatsApp traffic keeps doing so after
+> upgrading, rather than silently switching to simulated sends),
+> `messages.is_demo`, `broadcasts.is_demo`, and a new
+> `create_broadcast_with_recipients` overload carrying an `is_demo`
+> parameter through the atomic broadcast-creation RPC.
+
+### Added
+
+- `accounts.demo_mode_enabled` + the Settings toggle in
+  `WhatsAppConfig` (direct client-side update via RLS, mirroring the
+  existing `mirror_inbound_media` switch — no new API route). Shown
+  and usable even when no `whatsapp_config` row exists yet, since
+  that's the primary out-of-the-box case.
+- `DemoModeBanner` (`src/components/layout/demo-mode-banner.tsx`),
+  wired into `DashboardShell` alongside the existing
+  `AccountAccessAlert` — same "render nothing on the happy path,
+  otherwise be impossible to miss" precedent, applied to the opposite
+  problem (silent invisible *mode*, not silent invisible *error*).
+- `WhatsAppNotConfiguredError` (`service.ts`) and
+  `resolveWhatsAppServiceForBroadcast(db, accountId, wasDemo)` — the
+  latter is what a broadcast **resume** calls instead of
+  `resolveWhatsAppService`: a resume must never re-derive demo-vs-real
+  from the account's *current* setting, only continue whatever the
+  broadcast started as (its own persisted `is_demo`), so a campaign
+  can never switch mid-flight just because someone flipped the
+  account toggle between the original send and a later resume pass.
+- `messages.is_demo` set at all five message-persisting send call
+  sites (`send-message.ts`, `automations/meta-send.ts`,
+  `flows/meta-send.ts` ×3); `broadcasts.is_demo` set once at creation
+  in `broadcast-core.ts`.
+
+### Changed
+
+- `resolveWhatsAppService` reads `accounts.demo_mode_enabled` first;
+  `whatsapp_config` is only consulted when Demo Mode is off. Every
+  call site (`send-message.ts`, `broadcast-core.ts`,
+  `broadcast-resume.ts`, `/api/whatsapp/broadcast`,
+  `/api/whatsapp/react`) now catches `WhatsAppNotConfiguredError` and
+  maps it to the same 400 shape a missing config used to produce
+  before the previous commit's refactor — the "fail loudly" behavior
+  is back, now correctly conditioned on the explicit setting rather
+  than triggering it silently as a fallback.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (846/846 — 8 new/replaced cases directly covering the
+new demo_mode_enabled branch logic, incl. the resume-must-not-switch
+guarantee), and build all pass. format:check reports exactly the same
+361-file pre-existing baseline as before this change; the 3 files this
+commit fully owns (`service.ts`, `service.test.ts`,
+`demo-mode-banner.tsx`) are formatted clean. `en.json`/`ko.json` both
+gained the new `Settings.whatsapp.demoMode*` and `DemoMode.banner*`
+keys, kept in parallel per the existing bilingual-messages convention.
+
 ## [0.11.0] — 2026-08-19
 
 Completes the other half of Phase 2 (§23): the `WhatsAppService`

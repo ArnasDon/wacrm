@@ -1,1 +1,2 @@
 @AGENTS.md
+@docs/RIMULA_BUILD_SPEC.md

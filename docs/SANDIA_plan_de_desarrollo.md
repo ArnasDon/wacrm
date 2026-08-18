@@ -79,16 +79,61 @@ La Fase 2 ya comenzó con temperatura manual de clientes (`cold`, `warm`,
 `hot` o sin clasificar), disponible en el modelo, la API pública y la interfaz
 de Contactos.
 
-**EN PROGRESO (desde 2026-08-17, Claude Code): asistente de IA interno
-por empresa ("segundo trabajador" para el dueño).** **Código
-implementado y verificado localmente (typecheck/eslint/build/tests
-limpios), pero NADA aplicado/desplegado todavía:** la migración `066`
-(extiende `ai_action_log`/`ai_usage_log`) no está aplicada al proyecto
-Supabase real, no hay commit, y no se ha probado en el navegador contra
-datos reales (requiere una cuenta `owner` con clave de Anthropic
-configurada). Ver la entrada de bitácora de hoy (implementación) para el
-detalle completo de archivos y qué falta. Cualquier IA que continúe debe
-leer esa entrada antes de tocar más código.
+**(actualizado 2026-08-17, sesión larga — ver todas las entradas de hoy
+para el detalle completo de cada punto):**
+
+- **Asistente de IA interno por empresa** ("segundo trabajador" para el
+  dueño, solo rol `owner`) — desplegado y confirmado funcionando por
+  Angel para preguntas/lectura. El flujo de **acciones de escritura**
+  (mover un trato, crear una regla de automatización, etc.) está
+  implementado con el mismo rigor pero **no se ha confirmado
+  explícitamente en vivo todavía** — probarlo antes de darlo por
+  cerrado del todo.
+- **Invitación de empresa / "olvidé mi contraseña"** — estaban rotos en
+  producción (páginas de destino que nunca se construyeron, y luego un
+  bug real de resolución de URL detrás del proxy de EasyPanel que
+  mandaba los links a `https://0.0.0.0:80/...`). Ambos corregidos y
+  desplegados; **no se volvió a confirmar en vivo después del segundo
+  fix (el de la URL)** — Angel pasó a otros temas sin reportar más
+  fallas, pero conviene verificarlo la próxima vez que se use.
+- **Envío de WhatsApp vía Zernio daba error 502** — causa raíz real:
+  el webhook de WhatsApp por Zernio nunca guardaba
+  `zernio_conversation_id` en la conversación (bug de código, no de
+  configuración). Corregido — se autorepara con el siguiente mensaje
+  entrante de cada conversación afectada. Confirmado funcionando por
+  Angel.
+- **Endurecimiento de infraestructura:** timeouts en todas las
+  llamadas a APIs externas (WhatsApp/Instagram directo, Google
+  Calendar, Zernio — antes ninguna tenía límite de tiempo, lo que
+  podía colgar el proceso compartido entre todas las empresas) +
+  migración de las 16 rutas que faltaban al rate limiter compartido
+  por Supabase (ya existía, no hubo que construir infraestructura
+  nueva). Ambos desplegados.
+- **Nombre de empresa editable** (Settings → Deals & currency, rol
+  admin+) y **panel de contacto accesible en móvil** (Inbox — antes
+  era `hidden` por completo debajo de `lg`). Desplegados.
+- **Un dispositivo activo a la vez por usuario** — cada cuenta cliente
+  tiene esto activo por defecto (`accounts.enforce_single_session`,
+  migración 067); la cuenta propia de Chat Sandía está exenta.
+  Desplegado.
+- **Catálogo por PDF/fotos + Excel para productos + cotización
+  autónoma por chat** — cada empresa elige cómo entregar su catálogo
+  (página digital / PDF / fotos, sube lo que ya usaba antes de Chat
+  Sandía) desde `/products` → pestaña Catalog; import/export de
+  productos en Excel; y, solo cuando el catálogo es PDF/fotos, el bot
+  puede armar y mandar una cotización él solo cuando el cliente pide
+  precio de algo, preguntando primero si la quiere en PDF o en texto.
+  Desplegado — **la parte de cotización por chat toca el prompt del
+  bot y todavía necesita prueba en vivo**, igual que cualquier cambio
+  a `auto-reply.ts`.
+
+**Decisión de producto (2026-08-17, sin cambio de código):** un
+producto con varios precios (tallas, presentaciones, etc.) se maneja
+hoy creando una fila de producto separada por cada variante — el
+esquema de `products` no soporta variantes reales dentro de una sola
+ficha (decisión de alcance explícita del diagnóstico técnico original).
+Si en el futuro se pide soporte real de variantes, es un cambio de
+esquema más grande, no una extensión menor.
 
 ### Encargos de Angel (estado al 2026-08-15)
 
@@ -2915,15 +2960,220 @@ lectura, manejo de error de una tool de lectura, y el tope de
 reales** — falta una cuenta `owner` con clave de Anthropic configurada;
 queda para cuando Angel (o quien continúe) lo pruebe en vivo.
 
+**Actualización — migración aplicada, comiteado y pusheado
+(2026-08-17, mismo día):** migración `066` aplicada al proyecto
+Supabase real (`puvbwzwmojpjplhdfnmk`, confirmada con
+`list_migrations`). Commit `4683de3` ("feat: owner-only AI assistant
+with real tool-calling and lead-rule creation"), confirmación explícita
+de Angel antes de `git push origin main` (`0586b61..4683de3`). El
+deploy en EasyPanel se dispara solo por el webhook — no verificado
+todavía que haya terminado de construir ni probado en el navegador.
+
 **Pendiente / siguiente paso (en orden):**
-1. Aplicar la migración `066_ai_assistant_action_log.sql` al proyecto
-   Supabase real (`puvbwzwmojpjplhdfnmk`) — no aplicada.
-2. Confirmar con Angel antes de comitear (esta sesión no comiteó nada
-   por instrucción general de no comitear sin pedirlo explícitamente).
-3. Seguir la disciplina de despliegue habitual: commit → **preguntar
-   antes de `git push`** → push → validar en producción (probar los 5
-   casos de la sección "Verificación planeada" de la entrada de diseño:
-   conteo de ventas ganadas/perdidas, propuesta de mejora, mover un
-   trato real con confirmación, proponer una regla en borrador, y
-   confirmar que el tab no aparece para `admin`) → actualizar esta
-   bitácora con el resultado real en producción.
+1. Confirmar que el build de EasyPanel terminó en verde (el agente no
+   tiene acceso directo a EasyPanel — Angel lo confirma o pide
+   revisar `sandia-sandia-crm.kmencc.easypanel.host`).
+2. Probar en el navegador contra datos reales, como cuenta `owner` con
+   clave de Anthropic configurada en Setup: conteo de ventas
+   ganadas/perdidas, propuesta de mejora, mover un trato real con
+   confirmación, proponer una regla en borrador (verificar que aparece
+   en `/automations` como inactiva), y confirmar que el tab
+   "Assistant" no aparece para un usuario `admin`.
+3. Actualizar esta bitácora con el resultado real en producción.
+
+**Actualización — probado y confirmado por Angel (mismo día,
+2026-08-17):** el asistente responde preguntas y se puede acceder desde
+el botón nuevo del header en cualquier página del dashboard (ver más
+abajo). **Las acciones de escritura del asistente (mover un trato,
+crear una regla, etc.) no se probaron explícitamente en esta sesión**
+— solo el flujo de lectura/conversación. Queda pendiente confirmarlas
+en vivo la próxima vez.
+
+### 2026-08-17 (sesión larga, misma sesión que la del asistente de IA) — Claude Code
+
+Sesión muy larga con varios bugs de producción reportados por Angel en
+vivo, más features nuevas pedidas sobre la marcha. Resumen en el orden
+en que pasaron, cada uno ya comiteado y pusheado a `main` salvo que se
+diga lo contrario.
+
+**1. Botón global del asistente en el header
+(`30c8952`).** Angel pidió poder abrir el asistente desde cualquier
+página, no solo desde `/agents` → tab Assistant. Nuevo
+`src/components/agents/assistant-launcher.tsx`, botón centrado en el
+header (`src/components/layout/header.tsx`, que pasó de `flex` a un
+grid de 3 columnas para centrarlo de verdad sin romper el layout de
+título/menú de cuenta) — visible solo para `owner`, abre el mismo
+`AiAssistant` dentro de un `Dialog`.
+
+**2. Invitación de empresa y "olvidé mi contraseña" rotos en
+producción — dos bugs reales encadenados.**
+- **Bug 1 (`4a60c34`):** ambos flujos llamaban bien a Supabase Auth,
+  pero sus `redirectTo` apuntaban a páginas que nunca se construyeron
+  (`/auth/callback` no existía; el invite de empresa apuntaba a un
+  `/login` sin formulario para poner contraseña). Se construyeron
+  `src/app/auth/callback/route.ts` (intercambia el código PKCE por una
+  sesión real) y `src/app/(auth)/reset-password/page.tsx` (poner/
+  confirmar contraseña), y se apuntaron ambos flujos ahí.
+- **Bug 2 (`c0f6563`), encontrado por Angel probándolo en vivo:** el
+  link real llegaba como `https://0.0.0.0:80/reset-password` —
+  inalcanzable. Causa: `new URL(request.url).origin` detrás del proxy
+  de EasyPanel resuelve a la dirección interna del contenedor, no al
+  dominio público. Ya existía la solución correcta para esto en
+  `POST /api/account/invitations` (headers `X-Forwarded-Host`/`-Proto`
+  con `ALLOWED_INVITE_HOSTS` como defensa extra) — se extrajo a un
+  helper compartido nuevo `src/lib/http/base-url.ts`
+  (`resolveBaseUrl()`) y se usó en los tres lugares que construyen
+  links absolutos server-side. **No se volvió a confirmar en vivo
+  después de este segundo fix** — Angel pasó a otro bug sin reportar
+  más fallas aquí, pero no hay confirmación explícita.
+
+**3. Envío de WhatsApp vía Zernio: "Failed to send: HTTP 502" — causa
+raíz real encontrada revisando datos de producción, no adivinada.**
+- Primer intento (descartado): se sospechó configuración incorrecta
+  (`provider: meta` en vez de `zernio`) — resultó ser la cuenta
+  equivocada revisada por error, la cuenta de prueba real sí tenía
+  Zernio bien configurado.
+- Segundo intento (`197aabd`): ninguna llamada a la API de Zernio
+  tenía timeout — se agregó uno (`src/lib/zernio/api.ts`,
+  `zernioFetch()`, 20s) para que un colgado se vea como error claro en
+  vez de un 502 mudo del proxy. Necesario pero no era la causa real.
+- **Causa raíz real (`2055b7a`):** el webhook de WhatsApp por Zernio
+  (`src/app/api/whatsapp/webhook/zernio/route.ts`) tiene su propio
+  `findOrCreateConversation` (no usa el helper compartido
+  `handleInboundDmMessage` que sí usan Instagram/Facebook) y ese
+  código **nunca guardaba `zernio_conversation_id`** en la
+  conversación — confirmado consultando la base de datos real de
+  producción (las 3 conversaciones de WhatsApp de la cuenta de prueba
+  tenían el campo en `NULL`; la de Instagram, que sí usa el helper
+  compartido, lo tenía bien). Sin ese id, cada intento de responder
+  fallaba antes de siquiera tocar la API de Zernio — coincide
+  exactamente con "recibir funciona, responder no". Se agregó el mismo
+  chequeo condicional que ya hace `handleInboundDmMessage`, así que
+  las conversaciones ya rotas se autoreparan solas con su próximo
+  mensaje entrante (no hizo falta migración de datos). **Confirmado
+  funcionando por Angel** después de que le llegara un mensaje nuevo a
+  la conversación de prueba.
+- Auditoría de paso: se revisó si Instagram/Facebook tenían el mismo
+  tipo de bug — no, porque ya usan el helper compartido correcto. Sin
+  cambios ahí.
+
+**4. Endurecimiento de infraestructura — a partir de una pregunta
+directa de Angel ("¿qué riesgo corremos de que se sature/caiga/dé
+errores?").**
+- **Timeouts en todas las llamadas a APIs externas (`37d99d3`):**
+  mismo patrón que el fix de Zernio del punto 3, aplicado también a
+  `src/lib/whatsapp/meta-api.ts` (WhatsApp directo — 17 llamadas),
+  `src/lib/instagram/api.ts` (Instagram directo), y
+  `src/lib/google-calendar/api.ts`/`oauth.ts` (usado por el
+  `schedule_appointment` del asistente de IA). Antes de este fix, una
+  llamada colgada a cualquiera de estas APIs podía dejar ocupado el
+  proceso de Node compartido por **todas** las empresas de la
+  instancia — no solo la que tuvo el problema — durante minutos. Ahora
+  falla en máximo 20-60s con un mensaje claro.
+- **Rate limiting compartido en las 16 rutas que faltaban
+  (`0bd7938`):** se descubrió que el limitador compartido por Supabase
+  (`checkSharedRateLimit`, RPC `consume_rate_limit`, migración 048) ya
+  existía y ya estaba desplegado — no fue necesario Redis ni
+  infraestructura nueva, como se pensó al inicio de la conversación.
+  Solo hacía falta migrar 16 rutas (envío/difusión de WhatsApp,
+  invitaciones, API keys, etc.) de la versión en memoria
+  (`checkRateLimit`) a la compartida — mecánico, sin cambios de
+  comportamiento salvo que ahora protege de verdad si algún día corre
+  más de una instancia.
+- **Conclusión para Angel:** con esto, el punto más filoso del riesgo
+  de "una empresa afecta a las demás" (una llamada colgada bloqueando
+  el proceso compartido) ya quedó cerrado. Escalar a más de una
+  instancia sigue siendo una decisión de infraestructura aparte (ya no
+  bloqueada por el rate limiter), y el aislamiento completo entre
+  empresas (contenedores separados) se consideró sobre-construcción
+  para el tamaño actual.
+
+**5. Nombre de empresa editable + panel de contacto en móvil
+(`3c63725`).**
+- La ruta `PATCH /api/account` para renombrar la cuenta ya existía
+  (con validación y rate limit) pero no tenía ninguna UI. Se agregó
+  una tarjeta "Company name" arriba de moneda/zona horaria en
+  Settings → Deals & currency (mismo rol admin+). **Aclaración
+  importante para quien busque esto:** esto renombra la propia cuenta
+  del usuario que la usa — **no** existe (todavía) un botón para que
+  Angel, desde `/admin`, renombre el nombre de OTRAS empresas cliente;
+  ahí el nombre sigue siendo solo texto de solo lectura.
+- El panel de contacto del Inbox (`ContactSidebar` — tags, temperatura,
+  notas, cotizaciones) estaba `hidden` por completo debajo del
+  breakpoint `lg`, sin ninguna alternativa — un celular no tenía forma
+  de llegar a esa información. Se agregó un botón ⓘ nuevo (solo
+  visible en móvil) en el encabezado de la conversación que abre el
+  mismo `ContactSidebar` dentro de un diálogo.
+
+**6. Un dispositivo activo a la vez por usuario (`6ed0b9c`, migración
+`067`).** Pedido explícito de Angel: un usuario puede usar la
+plataforma desde varios dispositivos a lo largo del tiempo, pero nunca
+dos sesiones activas al mismo tiempo — al iniciar sesión en un
+dispositivo nuevo, el anterior se cierra solo con un mensaje explicando
+por qué. **Su propia cuenta/equipo de Chat Sandía queda exenta**
+(`accounts.enforce_single_session = false`, backfileado solo para esa
+cuenta; todas las demás cuentas cliente quedan en `true` por defecto).
+Aplicación real, no solo aviso visual: `claimSingleSession()`
+(`src/lib/auth/session-exclusivity.ts`), llamado desde el login justo
+después de autenticar, usa `supabase.auth.signOut({ scope: 'others' })`
+— revoca el refresh token de cualquier otra sesión del lado del
+servidor — más un broadcast de Supabase Realtime para que un
+dispositivo que esté abierto en ese momento reaccione al instante en
+vez de esperar a su próximo refresh de token (hasta ~1h).
+
+**7. Catálogo por PDF/fotos, Excel para productos, y cotización
+autónoma por chat (`1a4c7f1` + `d2e9b8b`, migración `068`).** Ver el
+diseño completo en el plan aprobado de esta sesión (multi-parte).
+Resumen:
+- Cada empresa elige cómo entregar su catálogo —
+  `accounts.catalog_delivery_mode` ('digital' | 'pdf' | 'photos') —
+  desde `/products` → pestaña nueva "Catalog". Para PDF/fotos, el
+  dueño **sube** lo que ya usaba antes de Chat Sandía (nunca se genera
+  automáticamente desde los productos) a un bucket nuevo
+  `catalog-media`. `sendCatalogToConversation` manda el archivo real
+  en vez del link cuando el modo no es digital.
+- Import/export de productos en Excel (`.xlsx`), reusando el patrón ya
+  probado de `exceljs` que ya usaban contactos/KPIs — exportar fue
+  trivial, importar no tenía precedente en el repo (solo existía CSV
+  para contactos) y se construyó de cero con vista previa antes de
+  confirmar (`src/components/products/products-import-dialog.tsx`,
+  `POST /api/products/bulk`).
+- **Cotización autónoma por chat** — pedido explícito de Angel: cuando
+  el catálogo es PDF/fotos (sin carrito digital propio), si un cliente
+  pide precio de un producto real por chat, el bot arma la cotización
+  él solo, preguntando primero si la quiere en PDF o en texto. Toca el
+  prompt del bot de auto-respuesta (`src/lib/ai/defaults.ts`, nuevo
+  `CREATE_QUOTE_SENTINEL_PREFIX`) — reutiliza `createQuote({
+  allowFreeItems: false })` sin modificarlo, así que no puede inventar
+  producto ni precio. **No probado en vivo todavía** — es la pieza más
+  delicada de todo lo de hoy, necesita confirmación con una
+  conversación real antes de darla por cerrada.
+
+**8. Decisión de producto — precios múltiples por producto (sin
+cambio de código, 2026-08-17).** Angel preguntó cómo manejar un
+producto con varios precios (tallas, presentaciones). Respuesta dada:
+crear una fila de producto separada por cada variante — el esquema no
+soporta variantes reales dentro de una sola ficha (decisión de alcance
+explícita ya documentada en el diagnóstico técnico original). Si se
+pide soporte real de variantes más adelante, es un cambio de esquema
+nuevo, no una extensión menor de lo que existe.
+
+**Probado en todos los puntos de código anteriores:** `npm run
+typecheck`, `eslint` en cada archivo tocado, `npm run build`, diff de
+`package-lock.json` limpio, y `npx vitest run` corrido después de cada
+punto — terminó la sesión en **1094/1096** (mismas 2 fallas
+preexistentes de `mondayIndex`/timezone, decenas de tests nuevos
+agregados a lo largo de la sesión). Cada migración (`066` a `068`) se
+aplicó a Supabase real (`puvbwzwmojpjplhdfnmk`) y se confirmó con una
+consulta antes de comitear/pushear ese punto.
+
+**Pendiente / siguiente paso (en orden de importancia):**
+1. Confirmar en vivo el flujo de cotización por chat (punto 7) — es lo
+   más nuevo y lo que más depende de que el prompt se comporte bien.
+2. Confirmar en vivo las acciones de escritura del asistente de IA
+   (mover trato, crear regla) — nunca se probaron explícitamente.
+3. Volver a confirmar que "olvidé mi contraseña"/invitación de empresa
+   funcionan de punta a punta después del fix de `resolveBaseUrl`
+   (punto 2) — no hubo confirmación explícita tras ese segundo fix.
+4. Si Angel quiere renombrar OTRAS empresas desde `/admin` (no la
+   propia), es una función nueva, no construida todavía (punto 5).

@@ -16,9 +16,11 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
 }
 
 /**
- * Sentinel the model is instructed to emit (in auto-reply mode) when it
- * can't confidently help and a human should take over. Parsed and
- * stripped by `generateReply`.
+ * Sentinel the model is instructed to emit (in auto-reply mode) once the
+ * customer has explicitly asked for a human AND then confirmed they
+ * still want to be transferred (see the two-step protocol in
+ * `buildSystemPrompt`) — never on the same turn as the initial request.
+ * Parsed and stripped by `generateReply`.
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
@@ -203,7 +205,7 @@ export function buildSystemPrompt(args: {
 
   if (mode === 'auto_reply') {
     parts.push(
-      `You are replying automatically with no human in the loop. Only hand off to a human when the customer explicitly asks to speak with a person / an agent / a human being (e.g. "can I talk to someone", "let me speak with a person", "I want to talk to an agent"). Do NOT hand off just because you are unsure, missing some information, or the customer seems upset or is complaining — in those cases still write your best reply yourself: say what you do know, ask a clarifying question about whatever is missing, or offer to follow up, but keep the conversation going. When, and only when, the customer explicitly asks for a human, reply with exactly ${HANDOFF_SENTINEL} and nothing else — no other text. A human agent will then take over.`,
+      `You are replying automatically with no human in the loop. Never hand off automatically the moment a human is mentioned — use this two-step protocol instead: (1) The FIRST time the customer explicitly asks to speak with a person / an agent / a human being (e.g. "can I talk to someone", "let me speak with a person", "I want to talk to an agent"), do NOT use ${HANDOFF_SENTINEL} yet — instead reply, in the customer's own language, asking them to confirm, e.g. "¿te gustaría que te conecte con alguien del equipo?" / "would you like me to connect you with someone from the team?", and wait for their answer. (2) Only once you can see in the conversation above that you already asked that exact question AND the customer has now clearly confirmed yes (not a new, different request) — reply with exactly ${HANDOFF_SENTINEL} and nothing else, no other text; a human agent will then take over. If instead they decline, ignore the question, or start talking about something else, do NOT hand off — keep helping them yourself and drop it. Do NOT hand off just because you are unsure, missing some information, or the customer seems upset or is complaining — in those cases still write your best reply yourself: say what you do know, ask a clarifying question about whatever is missing, or offer to follow up, but keep the conversation going.`,
     )
     parts.push(
       `On every single reply, separately assess this contact's buying-interest temperature from the whole conversation so far and append ${SET_TEMPERATURE_SENTINEL_PREFIX}hot${SET_TEMPERATURE_SENTINEL_SUFFIX}, ${SET_TEMPERATURE_SENTINEL_PREFIX}warm${SET_TEMPERATURE_SENTINEL_SUFFIX}, or ${SET_TEMPERATURE_SENTINEL_PREFIX}cold${SET_TEMPERATURE_SENTINEL_SUFFIX} at the very end of your reply — use exactly one of those three words. "hot" = ready to buy now, asking to close/pay, or has said things like "I'll take it" / "I want it" / "I'm very interested" even before a final purchase is confirmed; "warm" = engaged, asking real questions, interested but not urgent; "cold" = just browsing, a one-word greeting, or vague. This is completely independent of every other marker below — make this assessment and include the marker EVERY time there is any signal at all, even on a turn where you are also handing off, asking for final purchase confirmation, or moving a stage; do not skip it just because you're also doing something else this turn. Only skip it on a reply that truly carries no signal either way (e.g. the customer only said "ok" or asked something unrelated to interest). Never mention this marker to the customer.`,
@@ -277,7 +279,7 @@ export function buildSystemPrompt(args: {
   if (knowledge && knowledge.length > 0) {
     const fallback =
       mode === 'auto_reply'
-        ? `if they don't cover the question, do not guess — reply with exactly ${HANDOFF_SENTINEL} so a human can help`
+        ? "if they don't cover the question, do not guess — say you don't have that specific detail and offer to check and follow up, or ask a clarifying question; do not hand off just because of this"
         : "if they don't cover the question, don't guess — say you'll check and follow up"
     parts.push(
       'Knowledge base — excerpts from the business\'s own documentation, retrieved for this question. ' +

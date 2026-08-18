@@ -94,7 +94,9 @@ export async function POST(request: Request) {
 
     let maxPer = Number(body.auto_reply_max_per_conversation)
     if (!Number.isFinite(maxPer)) maxPer = 3
-    maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+    // Same clamp range as the migration's CHECK constraint (1-200,
+    // migration 069 — raised from the original 20).
+    maxPer = Math.min(200, Math.max(1, Math.floor(maxPer)))
 
     // How long an open, unassigned conversation sits before
     // /api/conversations/cron auto-assigns it — same clamp range as the

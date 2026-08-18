@@ -3276,3 +3276,33 @@ salvo los 2 fallos preexistentes y conocidos de
 `date-utils.test.ts` (`mondayIndex`/timezone, no relacionados). No
 probado aún contra WhatsApp real — pendiente que Angel lo valide en
 producción como hace siempre.
+
+**Sobre el mismo fix, pedido explícito de Angel antes de subir:** el
+hand-off no debía disparase de forma automática. Como el auto-reply
+corre sin ningún humano mirando en tiempo real, la única confirmación
+posible es la del propio cliente — se cambió el protocolo del
+sentinel `[[HANDOFF]]` (`defaults.ts`) a dos pasos: (1) la primera vez
+que el cliente pide explícitamente un humano, el bot NO transfiere
+todavía — responde preguntando si quiere que lo conecte con alguien
+del equipo, sin usar el marcador; (2) solo transfiere de verdad en el
+turno donde el modelo ve, en el propio historial, que ya hizo esa
+pregunta Y el cliente confirmó que sí. Si el cliente dice que no o
+cambia de tema, el bot sigue atendiendo normalmente. También se
+corrigió un segundo lugar en el mismo prompt (la sección de base de
+conocimiento) que todavía le decía al modelo que usara `[[HANDOFF]]`
+directamente cuando la pregunta no estaba cubierta — contradecía la
+regla nueva; ahora en ese caso el bot debe admitir que no tiene ese
+dato específico y ofrecer dar seguimiento, sin transferir. Esto sigue
+siendo disciplina de prompt (igual que el resto de sentinels del
+sistema — `move_deal`, `mark_deal_won`, etc. — no hay una verificación
+de código adicional), así que su fiabilidad depende de qué tan bien la
+sigue el modelo elegido en cada cuenta.
+
+**También pedido junto con lo anterior — subir el tope del límite de
+respuestas automáticas por conversación:** `auto_reply_max_per_conversation`
+(Configuración → IA, campo ya existente y editable) tenía un CHECK de
+base de datos de 1 a 20 (migración 029). Migración `069_raise_ai_reply_cap.sql`
+lo sube a 1–200, aplicada ya en el proyecto de Supabase vía MCP
+(`apply_migration`) además de quedar versionada en
+`supabase/migrations/`. Los clamps de la API (`/api/ai/config`) y del
+input del formulario (`ai-config.tsx`) se actualizaron al mismo rango.

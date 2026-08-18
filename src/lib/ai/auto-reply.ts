@@ -201,8 +201,12 @@ export async function dispatchInboundToAiReply(
     }
 
     if (handoff) {
-      // The customer explicitly asked for a human — stop auto-replying
-      // on this thread and hand it to one. We (a) pause the bot here
+      // The customer explicitly asked for a human AND then confirmed
+      // it (the two-step protocol taught in `buildSystemPrompt` — the
+      // model only ever emits this sentinel on that confirming turn,
+      // never on the same turn as the initial request). Stop
+      // auto-replying on this thread and hand it to one. We (a) pause
+      // the bot here
       // (sticky until re-enabled), (b) route the conversation to the
       // configured handoff agent — null leaves it in the shared queue —
       // and (c) leave a short internal note so whoever picks it up has

@@ -33,9 +33,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Package, Plus, Pencil, Trash2, Loader2, FileText, Send, ShoppingBag } from "lucide-react";
+import { Package, Plus, Pencil, Trash2, Loader2, FileText, Send, ShoppingBag, Upload, Download, LayoutGrid } from "lucide-react";
 import { ProductForm } from "@/components/products/product-form";
 import { QuoteBuilder } from "@/components/products/quote-builder";
+import { ProductsImportDialog } from "@/components/products/products-import-dialog";
+import { CatalogDeliverySettings } from "@/components/products/catalog-delivery-settings";
+import { downloadProductsExcel, toProductExportRow } from "@/lib/products/export-excel";
 
 const STATUS_VARIANT: Record<string, string> = {
   draft: "border-border bg-muted text-muted-foreground",
@@ -54,7 +57,7 @@ export default function ProductsPage() {
   const canManage = useCan("manage-products");
   const { defaultCurrency } = useAuth();
 
-  const [tab, setTab] = useState<"products" | "quotes">("products");
+  const [tab, setTab] = useState<"products" | "quotes" | "catalog">("products");
 
   // Products
   const [products, setProducts] = useState<Product[]>([]);
@@ -63,6 +66,7 @@ export default function ProductsPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Quotes
   const [quotes, setQuotes] = useState<QuoteWithContact[]>([]);
@@ -157,6 +161,10 @@ export default function ProductsPage() {
     }
   }
 
+  async function handleExport() {
+    await downloadProductsExcel(products.map(toProductExportRow));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -164,17 +172,39 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
           <p className="text-sm text-muted-foreground mt-1">{t("subtitle")}</p>
         </div>
-        {tab === "products" ? (
-          <GatedButton
-            canAct={canManage}
-            gateReason="manage the product catalog"
-            onClick={openAddForm}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            <Plus className="size-4" />
-            {t("addProductBtn")}
-          </GatedButton>
-        ) : (
+        {tab === "products" && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={products.length === 0}
+              className="border-border text-foreground hover:bg-muted"
+            >
+              <Download className="size-4" />
+              {t("exportBtn")}
+            </Button>
+            <GatedButton
+              canAct={canManage}
+              gateReason="manage the product catalog"
+              onClick={() => setImportOpen(true)}
+              variant="outline"
+              className="border-border text-foreground hover:bg-muted"
+            >
+              <Upload className="size-4" />
+              {t("importBtn")}
+            </GatedButton>
+            <GatedButton
+              canAct={canManage}
+              gateReason="manage the product catalog"
+              onClick={openAddForm}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              <Plus className="size-4" />
+              {t("addProductBtn")}
+            </GatedButton>
+          </div>
+        )}
+        {tab === "quotes" && (
           <GatedButton
             canAct={canManage}
             gateReason="build quotes"
@@ -187,10 +217,14 @@ export default function ProductsPage() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab((v as "products" | "quotes") ?? "products")}>
+      <Tabs value={tab} onValueChange={(v) => setTab((v as "products" | "quotes" | "catalog") ?? "products")}>
         <TabsList>
           <TabsTrigger value="products">{t("productsTab")}</TabsTrigger>
           <TabsTrigger value="quotes">{t("quotesTab")}</TabsTrigger>
+          <TabsTrigger value="catalog">
+            <LayoutGrid className="mr-1.5 size-4" />
+            {t("catalogTab")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="products" className="mt-4">
@@ -329,11 +363,17 @@ export default function ProductsPage() {
             </Table>
           </div>
         </TabsContent>
+
+        <TabsContent value="catalog" className="mt-4">
+          <CatalogDeliverySettings />
+        </TabsContent>
       </Tabs>
 
       <ProductForm open={formOpen} onOpenChange={setFormOpen} product={editProduct} onSaved={fetchProducts} />
 
       <QuoteBuilder open={builderOpen} onOpenChange={setBuilderOpen} contact={null} onSaved={fetchQuotes} />
+
+      <ProductsImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={fetchProducts} />
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">

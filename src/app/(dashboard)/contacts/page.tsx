@@ -45,6 +45,7 @@ import {
   MoreHorizontal,
   Pencil,
   Archive,
+  ArchiveRestore,
   Trash2,
   Loader2,
   Users,
@@ -105,6 +106,12 @@ function ContactsPageInner() {
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
+  // "Contatos" vs "Arquivados" toggle — same flat table, just switches
+  // which side of archived_at the query reads (mirrors the pipelines
+  // page's active/archived view toggle). Tag filter and the
+  // unclassified drill-through only make sense for active contacts,
+  // so fetchContacts below skips those branches while viewing archived.
+  const [view, setView] = useState<'active' | 'archived'>('active');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
@@ -170,7 +177,31 @@ function ContactsPageInner() {
     let contactRows: Contact[];
     let count: number;
 
-    if (isUnclassifiedFilter) {
+    if (view === 'archived') {
+      // Flat archived listing — no tag/unclassified drill-through here,
+      // same as the pipelines page's "Arquivados" view.
+      let query = supabase
+        .from('contacts')
+        .select('*', { count: 'exact' })
+        .not('archived_at', 'is', null)
+        .order('archived_at', { ascending: false })
+        .range(from, to);
+
+      if (term) {
+        const like = `%${term}%`;
+        query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+      }
+
+      const { data, count: exactCount, error } = await query;
+      if (seq !== fetchSeq.current) return; // superseded by a newer fetch
+      if (error) {
+        toast.error(t('toastFailedLoad'));
+        setLoading(false);
+        return;
+      }
+      contactRows = data ?? [];
+      count = exactCount ?? 0;
+    } else if (isUnclassifiedFilter) {
       // Special drill-through mode from the dashboard card — takes
       // priority over any manual tag selection (see toggleTagFilter,
       // which clears this URL param the moment the user picks a tag,
@@ -269,7 +300,7 @@ function ContactsPageInner() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, isUnclassifiedFilter, t]);
+  }, [supabase, page, search, selectedTagIds, tagFilterMode, tagsMap, isUnclassifiedFilter, view, t]);
 
   // Exports every contact matching the *current* filters (search + tag
   // selection, including the unclassified drill-through) — not just the
@@ -437,6 +468,20 @@ function ContactsPageInner() {
     }
   }
 
+  async function handleRestore(contact: Contact) {
+    const { error } = await supabase
+      .from('contacts')
+      .update({ archived_at: null })
+      .eq('id', contact.id);
+
+    if (error) {
+      toast.error(t('toastFailedRestore'));
+    } else {
+      toast.success(t('toastRestored'));
+      fetchContacts();
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -532,6 +577,12 @@ function ContactsPageInner() {
     setPage(0);
   }
 
+  function toggleView() {
+    setPage(0);
+    setSelected(new Set());
+    setView((prev) => (prev === 'archived' ? 'active' : 'archived'));
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -543,6 +594,25 @@ function ContactsPageInner() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* "Contatos" / "Arquivados" toggle — same table below, just
+              switches which side of archived_at fetchContacts reads
+              (mirrors the pipelines page's active/archived toggle). */}
+          <Button
+            variant="outline"
+            onClick={toggleView}
+            className={
+              view === 'archived'
+                ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            }
+          >
+            {view === 'archived' ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Archive className="size-4" />
+            )}
+            {view === 'archived' ? t('activeContactsButton') : t('archivedContactsButton')}
+          </Button>
           {canEditSettings && (
             <Button
               variant="outline"
@@ -553,47 +623,53 @@ function ContactsPageInner() {
               {t('customFieldsBtn')}
             </Button>
           )}
-          <GatedButton
-            variant="outline"
-            canAct={canEdit}
-            gateReason="adicionar ou importar contatos"
-            onClick={() => setImportOpen(true)}
-            className="border-border text-muted-foreground hover:bg-muted"
-          >
-            <Upload className="size-4" />
-            {t('importBtn')}
-          </GatedButton>
-          {/* Exports every contact matching the current search/tag
-              filters (see handleExportCsv), not just the loaded page —
-              read-only, so unlike Import/Add it isn't role-gated. */}
-          <Button
-            variant="outline"
-            onClick={handleExportCsv}
-            disabled={exporting || totalCount === 0}
-            title={totalCount === 0 ? t('toastExportEmpty') : undefined}
-            className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
-          >
-            {exporting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Download className="size-4" />
-            )}
-            {t('exportBtn')}
-          </Button>
-          <GatedButton
-            canAct={canEdit}
-            gateReason="adicionar ou importar contatos"
-            onClick={openAddForm}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            <Plus className="size-4" />
-            {t('addContactBtn')}
-          </GatedButton>
+          {view === 'active' && (
+            <>
+              <GatedButton
+                variant="outline"
+                canAct={canEdit}
+                gateReason="adicionar ou importar contatos"
+                onClick={() => setImportOpen(true)}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                <Upload className="size-4" />
+                {t('importBtn')}
+              </GatedButton>
+              {/* Exports every contact matching the current search/tag
+                  filters (see handleExportCsv), not just the loaded page —
+                  read-only, so unlike Import/Add it isn't role-gated. */}
+              <Button
+                variant="outline"
+                onClick={handleExportCsv}
+                disabled={exporting || totalCount === 0}
+                title={totalCount === 0 ? t('toastExportEmpty') : undefined}
+                className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+              >
+                {exporting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                {t('exportBtn')}
+              </Button>
+              <GatedButton
+                canAct={canEdit}
+                gateReason="adicionar ou importar contatos"
+                onClick={openAddForm}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <Plus className="size-4" />
+                {t('addContactBtn')}
+              </GatedButton>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Unclassified drill-through banner (?filter=unclassified) */}
-      {isUnclassifiedFilter && (
+      {/* Unclassified drill-through banner (?filter=unclassified) — only
+          meaningful for the active list, since fetchContacts ignores it
+          entirely while viewing archived. */}
+      {view === 'active' && isUnclassifiedFilter && (
         <div className="flex items-center gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
           <Tags className="size-4 shrink-0" />
           <span className="flex-1">{t('unclassifiedFilterBanner')}</span>
@@ -625,6 +701,9 @@ function ContactsPageInner() {
             />
           </div>
 
+          {/* Tag filter only applies to the active list — fetchContacts
+              skips selectedTagIds entirely while viewing archived. */}
+          {view === 'active' && (
           <Popover>
             <PopoverTrigger
               render={
@@ -712,10 +791,11 @@ function ContactsPageInner() {
               )}
             </PopoverContent>
           </Popover>
+          )}
         </div>
 
         {/* Active tag-filter chips */}
-        {selectedTagIds.length > 0 && (
+        {view === 'active' && selectedTagIds.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {selectedTagIds.map((id) => {
               const tag = tagsMap[id];
@@ -818,11 +898,13 @@ function ContactsPageInner() {
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      {hasActiveFilters
-                        ? t('noContactsMatch')
-                        : t('noContactsYet')}
+                      {view === 'archived'
+                        ? t('noArchivedContacts')
+                        : hasActiveFilters
+                          ? t('noContactsMatch')
+                          : t('noContactsYet')}
                     </p>
-                    {!hasActiveFilters && (
+                    {view === 'active' && !hasActiveFilters && (
                       <GatedButton
                         canAct={canEdit}
                         gateReason="adicionar ou importar contatos"
@@ -927,12 +1009,17 @@ function ContactsPageInner() {
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleArchive(contact);
+                            if (view === 'archived') handleRestore(contact);
+                            else handleArchive(contact);
                           }}
                           className="text-popover-foreground focus:bg-muted focus:text-foreground"
                         >
-                          <Archive className="size-4" />
-                          {t('archiveAction')}
+                          {view === 'archived' ? (
+                            <ArchiveRestore className="size-4" />
+                          ) : (
+                            <Archive className="size-4" />
+                          )}
+                          {view === 'archived' ? t('restoreAction') : t('archiveAction')}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator className="bg-border" />
                         <DropdownMenuItem

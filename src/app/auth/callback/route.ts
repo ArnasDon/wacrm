@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveBaseUrl } from '@/lib/http/base-url'
 
 /**
  * Lands here from a Supabase Auth email link (password recovery,
@@ -12,19 +13,26 @@ import { createClient } from '@/lib/supabase/server'
  * client so the session actually lands in the browser, not just this
  * one request — then forwards to `next` (the page that finishes the
  * flow, e.g. `/reset-password` to set a first/new password).
+ *
+ * Redirects are built from `resolveBaseUrl(request)`, never
+ * `new URL(request.url).origin` — behind EasyPanel's reverse proxy the
+ * raw request URL resolves to the container's internal bind address
+ * (`0.0.0.0:80`), not the public hostname, which sent the very first
+ * users through this route to an unreachable link.
  */
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
+  const baseUrl = resolveBaseUrl(request)
 
   if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
+      return NextResponse.redirect(`${baseUrl}${next}`)
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=invalid_or_expired_link`)
+  return NextResponse.redirect(`${baseUrl}/login?error=invalid_or_expired_link`)
 }

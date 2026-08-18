@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
 import { requirePlatformAdmin, toErrorResponse } from "@/lib/auth/account";
 import { platformAdminClient } from "@/lib/platform/admin-client";
+import { resolveBaseUrl } from "@/lib/http/base-url";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function platformInviteRedirectUrl(request: Request): string {
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  const baseUrl = configuredSiteUrl || new URL(request.url).origin;
   // Through /auth/callback, same as the forgot-password link — Supabase's
   // invite email carries a PKCE `code` that has to be exchanged for a
   // real session before the recipient can do anything, and /login has no
   // form to set an initial password. Previously this pointed straight at
   // /login, which left invited owners stuck looking at a sign-in form for
   // credentials they were never given.
-  return `${baseUrl.replace(/\/+$/, "")}/auth/callback?next=/reset-password`;
+  //
+  // `resolveBaseUrl` (not a bare `new URL(request.url).origin`) matters
+  // here specifically: behind EasyPanel's reverse proxy the raw request
+  // URL Next.js sees resolves to the container's internal bind address,
+  // not the public hostname — that's exactly the bug that shipped this
+  // fix as `https://0.0.0.0:80/reset-password`, unreachable for the
+  // invited owner.
+  return `${resolveBaseUrl(request)}/auth/callback?next=/reset-password`;
 }
 
 export async function GET() {

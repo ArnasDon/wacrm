@@ -20,6 +20,17 @@
 
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1'
 
+// No call here previously carried a timeout, so a slow/unresponsive
+// Zernio endpoint just hung until whatever reverse proxy sits in front
+// of the app (EasyPanel, in production) gave up first and returned its
+// own bare 502 with no body — the send route's real error handling
+// (SendMessageError → a proper JSON `{ error }`) never got a chance to
+// run, so the dashboard could only show the unhelpful "HTTP 502"
+// fallback. Bounding every call here well under a typical proxy
+// timeout turns that into a clear, fast "Zernio API request timed out"
+// the user actually sees.
+const ZERNIO_TIMEOUT_MS = 20_000
+
 export interface ZernioSendResult {
   /** Zernio's own internal message id (not the platform-native message id). */
   messageId: string
@@ -27,6 +38,22 @@ export interface ZernioSendResult {
 
 interface ZernioErrorResponse {
   error?: string
+}
+
+/** `fetch` to Zernio's API, bounded by `ZERNIO_TIMEOUT_MS` and with
+ *  network/timeout failures turned into a clear `Error` instead of a
+ *  raw `TypeError`/`DOMException` — every call site below uses this
+ *  instead of the bare global `fetch`. */
+async function zernioFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(ZERNIO_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error('Zernio API request timed out.')
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not reach the Zernio API: ${message}`)
+  }
 }
 
 async function throwZernioError(response: Response, fallback: string): Promise<never> {
@@ -66,7 +93,7 @@ export interface VerifyZernioAccountArgs {
  */
 export async function verifyZernioAccount(args: VerifyZernioAccountArgs): Promise<ZernioAccountInfo> {
   const { apiKey, accountId, expectedPlatform } = args
-  const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
+  const response = await zernioFetch(`${ZERNIO_API_BASE}/accounts`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   })
   if (!response.ok) {
@@ -101,7 +128,7 @@ export interface ZernioSendTextArgs {
 export async function sendZernioText(args: ZernioSendTextArgs): Promise<ZernioSendResult> {
   const { apiKey, conversationId, accountId, text } = args
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -141,7 +168,7 @@ export async function sendZernioMedia(args: ZernioSendMediaArgs): Promise<Zernio
   const { apiKey, conversationId, accountId, kind, link, caption, filename } = args
   if (!link) throw new Error('sendZernioMedia requires a link.')
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -188,7 +215,7 @@ export async function sendZernioQuickReplies(args: ZernioSendQuickRepliesArgs): 
   }
 
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -234,7 +261,7 @@ export interface ZernioSendTemplateArgs {
 export async function sendZernioTemplate(args: ZernioSendTemplateArgs): Promise<ZernioSendResult> {
   const { apiKey, conversationId, accountId, templateName, language, components } = args
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -280,7 +307,7 @@ export interface ZernioSendButtonsArgs {
 export async function sendZernioButtons(args: ZernioSendButtonsArgs): Promise<ZernioSendResult> {
   const { apiKey, conversationId, accountId, text, buttons } = args
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -311,7 +338,7 @@ export interface ZernioSendInteractiveArgs {
 export async function sendZernioInteractive(args: ZernioSendInteractiveArgs): Promise<ZernioSendResult> {
   const { apiKey, conversationId, accountId, interactive } = args
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -352,7 +379,7 @@ export interface ListZernioTemplatesArgs {
 export async function listZernioTemplates(args: ListZernioTemplatesArgs): Promise<ZernioTemplateInfo[]> {
   const { apiKey, accountId } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates?${new URLSearchParams({ accountId })}`
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
+  const response = await zernioFetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -372,7 +399,7 @@ export interface CreateZernioTemplateArgs {
 export async function createZernioTemplate(args: CreateZernioTemplateArgs): Promise<ZernioTemplateInfo> {
   const { apiKey, accountId, name, category, language, components } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -397,7 +424,7 @@ export interface UpdateZernioTemplateArgs {
 export async function updateZernioTemplate(args: UpdateZernioTemplateArgs): Promise<ZernioTemplateInfo> {
   const { apiKey, accountId, templateName, components } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates/${encodeURIComponent(templateName)}`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -421,7 +448,7 @@ export interface DeleteZernioTemplateArgs {
 export async function deleteZernioTemplate(args: DeleteZernioTemplateArgs): Promise<void> {
   const { apiKey, accountId, templateName } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates/${encodeURIComponent(templateName)}?${new URLSearchParams({ accountId })}`
-  const response = await fetch(url, {
+  const response = await zernioFetch(url, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${apiKey}` },
   })
@@ -452,7 +479,7 @@ export async function downloadZernioWhatsAppMedia(
 ): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
   const { apiKey, accountId, mediaId } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/media/${encodeURIComponent(mediaId)}?${new URLSearchParams({ accountId })}`
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
+  const response = await zernioFetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }

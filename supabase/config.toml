@@ -1,0 +1,24 @@
+# Supabase CLI configuration.
+#
+# This file exists for ONE reason: the CI job in
+# `.github/workflows/migrations.yml` needs a project directory the CLI
+# recognises before it can boot a throwaway Postgres and replay
+# `supabase/migrations/` against it.
+#
+# It is NOT a mirror of the hosted project's settings. Auth providers,
+# storage limits, SMTP, rate limits and the rest are configured in the
+# Supabase dashboard and are deliberately left out here rather than
+# duplicated into a second source of truth that would quietly drift.
+# Run `supabase init` if you ever want the CLI's full annotated
+# reference version of this file.
+project_id = "wacrm"
+
+[db]
+port = 54322
+shadow_port = 54320
+# Keep this aligned with the hosted project's Postgres version
+# (Dashboard → Settings → Infrastructure). A mismatch means CI can
+# green-light SQL the production database would reject, which is the
+# one failure mode this whole check exists to prevent. 17 is the CLI's
+# current default, not a reading of the live project.
+major_version = 17

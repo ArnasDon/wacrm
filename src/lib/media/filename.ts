@@ -4,19 +4,22 @@ import type { ContentType } from "@/types";
 /**
  * Works out the filename to save a chat attachment under.
  *
- * There is no `media_filename` column: the webhook drops the MIME type on
- * the floor (`route.ts` — "the schema has no media_type") and inbound media
- * is only ever a Meta media-id, so a name has to be reconstructed from what
- * the message row *does* carry. Three sources, in order of trustworthiness:
+ * There is no `media_filename` column, so a name has to be reconstructed
+ * from what the message row *does* carry. Three sources, in order of
+ * trustworthiness:
  *
  *   1. A document's `content_text`. That's where the webhook puts
  *      `document.filename`, and where the composer puts the uploaded file's
  *      name — but only when the sender typed no caption, hence the
  *      "does it look like a filename" guard.
- *   2. The basename of a `chat-media` bucket URL, minus the epoch-ms prefix
- *      `buildMediaPath` (`@/lib/storage/upload-media`) puts in front of it.
- *   3. A synthesised `whatsapp-<kind>-<timestamp>.<ext>`, with the extension
- *      taken from the MIME type the browser reports for the fetched bytes.
+ *   2. The basename of a `chat-media` bucket URL, minus the leading id/epoch
+ *      prefix that `buildMediaPath` (`@/lib/storage/upload-media`) puts in
+ *      front of it. Covers outbound uploads and, since migration 039,
+ *      inbound media mirrored into the same bucket.
+ *   3. A synthesised `whatsapp-<kind>-<timestamp>.<ext>`. The extension comes
+ *      from `media_type` when the row has one (migration 039 — the webhook
+ *      used to discard Meta's MIME type), falling back to whatever the
+ *      browser reported for the fetched bytes.
  */
 
 /**
@@ -129,13 +132,20 @@ export interface MediaFilenameInput {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /** Meta's MIME type for inbound media (migration 039); null on older rows. */
+  media_type?: string | null;
   created_at: string;
 }
 
 /**
  * Filename for a media message. `mimeType` is what the browser reported
- * for the downloaded bytes (`blob.type`) — pass it when available, since
- * it's the only reliable extension source for inbound media.
+ * for the downloaded bytes (`blob.type`) — pass it when available.
+ *
+ * The row's own `media_type` takes precedence over it: a `Blob` minted
+ * from a response with no usable `Content-Type` has `type === ""`, and
+ * some servers answer `application/octet-stream` for everything, both of
+ * which resolve to a useless `.bin`. `media_type` is what Meta said the
+ * file actually is.
  */
 export function mediaFilename(
   message: MediaFilenameInput,
@@ -161,10 +171,22 @@ export function mediaFilename(
   //    collide, and prefixed so they're greppable in a downloads folder.
   const stamp = formatStamp(message.created_at);
   const kind = message.content_type || "file";
-  const ext = extensionForMime(mimeType);
+  const ext = extensionForMime(
+    preferKnownMime(message.media_type) ?? mimeType,
+  );
   return sanitizeFilename(
     stamp ? `whatsapp-${kind}-${stamp}.${ext}` : `whatsapp-${kind}.${ext}`,
   );
+}
+
+/**
+ * The stored `media_type`, but only when it maps to a real extension —
+ * so a row carrying `application/octet-stream` doesn't beat a browser
+ * blob that knows it's a JPEG.
+ */
+function preferKnownMime(mediaType?: string | null): string | null {
+  if (!mediaType) return null;
+  return extensionForMime(mediaType) === "bin" ? null : mediaType;
 }
 
 function formatStamp(createdAt: string): string {

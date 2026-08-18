@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Broadcast, BroadcastRecipient, RecipientStatus } from '@/types';
@@ -32,6 +32,8 @@ import {
   Download,
   ChevronDown,
   Trash2,
+  PlayCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -158,38 +160,41 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resumingScope, setResumingScope] = useState<
+    'pending' | 'failed' | null
+  >(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const supabase = createClient();
+
+      const { data: bc, error: bcError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .single();
+
+      if (bcError) throw bcError;
+      setBroadcast(bc);
+
+      const { data: recs, error: recsError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', broadcastId)
+        .order('created_at', { ascending: false });
+
+      if (recsError) throw recsError;
+      setRecipients(recs ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notFound'));
+    } finally {
+      setLoading(false);
+    }
+  }, [broadcastId, t]);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const supabase = createClient();
-
-        const { data: bc, error: bcError } = await supabase
-          .from('broadcasts')
-          .select('*')
-          .eq('id', broadcastId)
-          .single();
-
-        if (bcError) throw bcError;
-        setBroadcast(bc);
-
-        const { data: recs, error: recsError } = await supabase
-          .from('broadcast_recipients')
-          .select('*, contact:contacts(*)')
-          .eq('broadcast_id', broadcastId)
-          .order('created_at', { ascending: false });
-
-        if (recsError) throw recsError;
-        setRecipients(recs ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('notFound'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, [broadcastId]);
+  }, [fetchData]);
 
   const filteredRecipients = useMemo(
     () =>
@@ -222,6 +227,55 @@ export default function BroadcastDetailPage() {
     const csv = toCsv([header, ...rows]);
     const safeName = broadcast.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
     downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
+  }
+
+  /**
+   * Hand the leftovers to the server (issue #472).
+   *
+   * The wizard's send loop lives in the tab that started the campaign,
+   * so navigating away strands the rest as 'pending' with the broadcast
+   * stuck 'sending'. This is the recovery, and the same call retries
+   * failed recipients.
+   */
+  async function handleResume(scope: 'pending' | 'failed') {
+    setResumingScope(scope);
+    try {
+      const res = await fetch(`/api/whatsapp/broadcast/${broadcastId}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope }),
+      });
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        toast.error(
+          t('toastResumeFailed', {
+            error: payload?.error || `HTTP ${res.status}`,
+          }),
+        );
+        return;
+      }
+
+      toast.success(
+        payload.remaining > 0
+          ? t('toastResumeStartedCapped', {
+              count: payload.resuming,
+              remaining: payload.remaining,
+            })
+          : t('toastResumeStarted', { count: payload.resuming }),
+      );
+      // Delivery runs server-side after the 202, so the counts here are
+      // a snapshot — reload to pick up the first of it.
+      await fetchData();
+    } catch (err) {
+      toast.error(
+        t('toastResumeFailed', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
+    } finally {
+      setResumingScope(null);
+    }
   }
 
   async function handleDelete() {
@@ -264,6 +318,13 @@ export default function BroadcastDetailPage() {
   }
 
   const status = getBroadcastStatus(broadcast.status);
+
+  const pendingCount = recipients.filter((r) => r.status === 'pending').length;
+  const retryableCount = recipients.filter((r) => r.status === 'failed').length;
+  // A campaign whose tab went away sits in 'sending' with recipients
+  // still pending and nothing left to move them. Name that state rather
+  // than leaving a permanently pulsing "sending" badge.
+  const isStalled = broadcast.status === 'sending' && pendingCount > 0;
 
   const funnelSteps: FunnelStep[] = [
     { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },
@@ -347,6 +408,55 @@ export default function BroadcastDetailPage() {
           </Button>
         )}
       </div>
+
+      {/* Resume / retry (issue #472). Only rendered when there is
+          actually something outstanding. */}
+      {(pendingCount > 0 || retryableCount > 0) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
+          <div className="text-sm">
+            <p className="font-medium text-foreground">
+              {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
+            </p>
+            <p className="mt-0.5 text-muted-foreground">
+              {isStalled
+                ? t('resumeStalledHint', { count: pendingCount })
+                : t('resumeHint', { count: retryableCount })}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingCount > 0 && (
+              <Button
+                size="sm"
+                onClick={() => handleResume('pending')}
+                disabled={resumingScope !== null}
+              >
+                {resumingScope === 'pending' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PlayCircle className="h-3.5 w-3.5" />
+                )}
+                {t('resumePending', { count: pendingCount })}
+              </Button>
+            )}
+            {retryableCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleResume('failed')}
+                disabled={resumingScope !== null}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                {resumingScope === 'failed' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                {t('retryFailed', { count: retryableCount })}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

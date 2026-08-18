@@ -60,10 +60,13 @@ function StatusIcon({ status }: { status: Message["status"] }) {
 function MessageContent({
   message,
   t,
+  isAgent,
   onOpenMedia,
 }: {
   message: Message;
   t: ReturnType<typeof useTranslations>;
+  /** Outbound bubbles sit on the primary fill — badges must invert. */
+  isAgent: boolean;
   onOpenMedia?: (messageId: string) => void;
 }) {
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
@@ -128,16 +131,36 @@ function MessageContent({
       return <MediaDocumentBubble message={message} t={t} />;
 
     case "template":
+      // Templates are almost always outbound, where the bubble fill IS
+      // `primary` — so the old `bg-primary/20 text-primary` chip was
+      // primary-on-primary and invisible. Paired with a null
+      // content_text (issue #483) that rendered a bubble with nothing
+      // in it at all. Invert on the primary fill, and fall back to the
+      // template's name when we have no stored body (legacy rows sent
+      // before the fix).
       return (
         <div>
-          <span className="mb-1 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span
+            className={cn(
+              "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              isAgent
+                ? "bg-primary-foreground/20 text-primary-foreground"
+                : "bg-primary/20 text-primary",
+            )}
+          >
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
-          {message.content_text && (
+          {message.content_text ? (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
+          ) : (
+            message.template_name && (
+              <p className="mt-1 break-words text-sm italic opacity-80">
+                {message.template_name}
+              </p>
+            )
           )}
         </div>
       );
@@ -229,7 +252,12 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} onOpenMedia={onOpenMedia} />
+        <MessageContent
+          message={message}
+          t={t}
+          isAgent={isAgent}
+          onOpenMedia={onOpenMedia}
+        />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

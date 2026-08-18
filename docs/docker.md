@@ -58,6 +58,14 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
 - Database migrations under `supabase/` are **not** run by the
   container — apply them with the Supabase CLI as described in the
   README.
+- Received attachments are copied into the `chat-media` Supabase
+  Storage bucket, because Meta deletes media roughly 30 days after it
+  arrives and the copy is the only thing that outlives that. It grows
+  with inbound volume, so it's worth watching your project's storage
+  quota. Turn it off per account under Settings → WhatsApp →
+  Attachment Storage; attachments received while it's off become
+  unviewable once Meta drops them. Files over 16 MB (the bucket's
+  limit) are never copied.
 - Nothing inside the container is scheduled. If you use automation
   Wait steps or flows, point an external scheduler at
   `GET /api/automations/cron` and `GET /api/flows/cron` on this

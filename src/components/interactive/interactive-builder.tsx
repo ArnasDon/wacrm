@@ -88,88 +88,97 @@ export function InteractiveBuilder({
   };
 
   return (
-    <div className="flex flex-col gap-4 md:flex-row">
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {/* Kind toggle */}
-        <div className="flex gap-2">
-          <KindButton
-            active={value.kind === "buttons"}
-            label="Reply buttons"
-            onClick={() => switchKind("buttons")}
-          />
-          <KindButton
-            active={value.kind === "list"}
-            label="List"
-            onClick={() => switchKind("list")}
-          />
-        </div>
+    // Editor and preview sit side by side only when the SPACE WE WERE
+    // GIVEN can hold both — a container query, not a viewport one. This
+    // builder is embedded in places far narrower than the screen (an
+    // automation step card, and a step nested in a condition branch is
+    // narrower still); keying the split to `md:` meant a desktop
+    // viewport forced a 280px preview column into a ~190px card and the
+    // whole editor overflowed (issue #474).
+    <div className="@container">
+      <div className="flex flex-col gap-4 @2xl:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {/* Kind toggle */}
+          <div className="flex gap-2">
+            <KindButton
+              active={value.kind === "buttons"}
+              label="Reply buttons"
+              onClick={() => switchKind("buttons")}
+            />
+            <KindButton
+              active={value.kind === "list"}
+              label="List"
+              onClick={() => switchKind("list")}
+            />
+          </div>
 
-        <Field label="Body" counter={`${value.body.length}/${INTERACTIVE_LIMITS.bodyMaxLength}`}>
-          <Textarea
-            value={value.body}
-            maxLength={INTERACTIVE_LIMITS.bodyMaxLength}
-            onChange={(e) => setField({ body: e.target.value })}
-            placeholder="What the customer reads above the options"
-            className="min-h-20 bg-muted text-foreground"
-          />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Field
-            label="Header (optional)"
-            counter={`${(value.header ?? "").length}/${INTERACTIVE_LIMITS.headerTextMaxLength}`}
-          >
-            <Input
-              value={value.header ?? ""}
-              maxLength={INTERACTIVE_LIMITS.headerTextMaxLength}
-              onChange={(e) => setField({ header: e.target.value })}
-              className="bg-muted text-foreground"
+          <Field label="Body" counter={`${value.body.length}/${INTERACTIVE_LIMITS.bodyMaxLength}`}>
+            <Textarea
+              value={value.body}
+              maxLength={INTERACTIVE_LIMITS.bodyMaxLength}
+              onChange={(e) => setField({ body: e.target.value })}
+              placeholder="What the customer reads above the options"
+              className="min-h-20 bg-muted text-foreground"
             />
           </Field>
-          <Field
-            label="Footer (optional)"
-            counter={`${(value.footer ?? "").length}/${INTERACTIVE_LIMITS.footerMaxLength}`}
-          >
-            <Input
-              value={value.footer ?? ""}
-              maxLength={INTERACTIVE_LIMITS.footerMaxLength}
-              onChange={(e) => setField({ footer: e.target.value })}
-              className="bg-muted text-foreground"
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field
+              label="Header (optional)"
+              counter={`${(value.header ?? "").length}/${INTERACTIVE_LIMITS.headerTextMaxLength}`}
+            >
+              <Input
+                value={value.header ?? ""}
+                maxLength={INTERACTIVE_LIMITS.headerTextMaxLength}
+                onChange={(e) => setField({ header: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            </Field>
+            <Field
+              label="Footer (optional)"
+              counter={`${(value.footer ?? "").length}/${INTERACTIVE_LIMITS.footerMaxLength}`}
+            >
+              <Input
+                value={value.footer ?? ""}
+                maxLength={INTERACTIVE_LIMITS.footerMaxLength}
+                onChange={(e) => setField({ footer: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            </Field>
+          </div>
+
+          {value.kind === "buttons" ? (
+            <ButtonsEditor value={value} onChange={onChange} advanced={advanced} />
+          ) : (
+            <ListEditor value={value} onChange={onChange} advanced={advanced} />
+          )}
+
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={advanced}
+              onChange={(e) => setAdvanced(e.target.checked)}
+              className="h-3.5 w-3.5 accent-primary"
             />
-          </Field>
+            Show reply IDs (advanced)
+          </label>
+
+          {!validation.ok && (
+            <p className="text-xs text-red-400">{validation.error}</p>
+          )}
         </div>
 
-        {value.kind === "buttons" ? (
-          <ButtonsEditor value={value} onChange={onChange} advanced={advanced} />
-        ) : (
-          <ListEditor value={value} onChange={onChange} advanced={advanced} />
-        )}
-
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={advanced}
-            onChange={(e) => setAdvanced(e.target.checked)}
-            className="h-3.5 w-3.5 accent-primary"
-          />
-          Show reply IDs (advanced)
-        </label>
-
-        {!validation.ok && (
-          <p className="text-xs text-red-400">{validation.error}</p>
+        {showPreview && (
+          <div className="flex shrink-0 flex-col gap-1.5 @2xl:w-[280px]">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Preview
+            </span>
+            <div className="rounded-lg bg-muted/40 p-3">
+              <InteractivePreview payload={value} />
+            </div>
+          </div>
         )}
       </div>
-
-      {showPreview && (
-        <div className="flex shrink-0 flex-col gap-1.5 md:w-[280px]">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Preview
-          </span>
-          <div className="rounded-lg bg-muted/40 p-3">
-            <InteractivePreview payload={value} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

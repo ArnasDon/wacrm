@@ -188,4 +188,66 @@ describe("mediaFilename", () => {
       ),
     ).toBe("whatsapp-video.mp4");
   });
+
+  it("takes the extension from the row's media_type when the blob has none", () => {
+    // A Blob minted from a response with no usable Content-Type reports
+    // `type === ""`, which would otherwise synthesise a useless `.bin`.
+    expect(
+      mediaFilename(
+        {
+          content_type: "audio",
+          media_url: "/api/whatsapp/media/42",
+          media_type: "audio/ogg; codecs=opus",
+          created_at: AT,
+        },
+        "",
+      ),
+    ).toMatch(/^whatsapp-audio-\d{8}-\d{6}\.ogg$/);
+  });
+
+  it("prefers media_type over a generic octet-stream from the browser", () => {
+    expect(
+      mediaFilename(
+        {
+          content_type: "image",
+          media_url: "/api/whatsapp/media/42",
+          media_type: "image/png",
+          created_at: AT,
+        },
+        "application/octet-stream",
+      ),
+    ).toMatch(/\.png$/);
+  });
+
+  it("ignores an unhelpful media_type in favour of what the browser saw", () => {
+    expect(
+      mediaFilename(
+        {
+          content_type: "image",
+          media_url: "/api/whatsapp/media/42",
+          media_type: "application/octet-stream",
+          created_at: AT,
+        },
+        "image/jpeg",
+      ),
+    ).toMatch(/\.jpg$/);
+  });
+
+  it("recovers the sender's filename from a mirrored inbound object path", () => {
+    // Migration 039 prefixes the object with Meta's media id; the same
+    // leading-digits rule that hides the outbound epoch stamp hides it.
+    expect(
+      mediaFilename(
+        {
+          content_type: "document",
+          content_text: "have a look at this",
+          media_url:
+            "https://x.supabase.co/storage/v1/object/public/chat-media/account-a/inbound/1234567890123456-invoice.pdf",
+          media_type: "application/pdf",
+          created_at: AT,
+        },
+        "application/pdf",
+      ),
+    ).toBe("invoice.pdf");
+  });
 });

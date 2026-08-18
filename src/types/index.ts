@@ -226,6 +226,12 @@ export interface Message {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /**
+   * MIME type of `media_url`'s content, as Meta reported it. Inbound
+   * media only — outbound URLs already carry a filename and extension.
+   * Null on every row written before migration 039.
+   */
+  media_type?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
@@ -285,6 +291,13 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /**
+   * When true (the default), the inbound webhook copies received media
+   * into the `chat-media` bucket so attachments outlive Meta's ~30-day
+   * retention. Turning it off keeps storage flat and accepts that
+   * inbound attachments expire. Migration 039.
+   */
+  mirror_inbound_media?: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
@@ -397,6 +410,12 @@ export interface Broadcast {
   read_count: number;
   replied_count: number;
   failed_count: number;
+  /**
+   * Set while a server-side delivery pass is fanning out, NULL when
+   * idle. Claimed with a conditional UPDATE so two resumes can't both
+   * send. Added in migration 038.
+   */
+  delivery_locked_at?: string | null;
   created_at: string;
 }
 
@@ -421,6 +440,13 @@ export interface BroadcastRecipient {
    * Added in migration 003.
    */
   whatsapp_message_id?: string;
+  /**
+   * Positional body values for this recipient's template send
+   * ({{1}}, {{2}}, …), frozen when the broadcast was planned so a
+   * server-side resume reproduces the original pass exactly.
+   * Added in migration 038; null on rows created before it.
+   */
+  template_params?: string[] | null;
   created_at: string;
   contact?: Contact;
 }

@@ -165,6 +165,16 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
+      // Debug breadcrumb: a handoff (especially an immediate one, reply
+      // #0) is otherwise a black box from the server logs alone — this
+      // is enough to tell "the model explicitly bailed" from "a tool
+      // call errored and it gave up" from "it answered but the reply
+      // came back empty", without needing DB access.
+      console.warn(
+        `[ai auto-reply] handoff on conversation ${conversationId}: ` +
+          `explicit=${handoff} emptyText=${!text} ` +
+          `tools=${(toolCalls ?? []).map((c) => `${c.toolName}:${c.result.ok ? 'ok' : `error(${c.result.error})`}`).join(',') || 'none'}`,
+      )
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human. We (a) pause the bot here
       // (sticky until re-enabled), (b) route the conversation to the

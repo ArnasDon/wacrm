@@ -21,9 +21,13 @@ export async function POST(
 ) {
   const { id } = await params
   try {
-    const { supabase, accountId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
 
-    const limit = checkRateLimit(`ai-toolcall:${accountId}`, RATE_LIMITS.aiToolCall)
+    // Keyed per-USER on the same bucket the tools CRUD routes use
+    // (`adminAction`), not the per-account `aiToolCall` bucket real
+    // auto-reply traffic depends on — an admin iterating on "Test tool"
+    // must never compete with (and starve) real customers' tool budget.
+    const limit = checkRateLimit(`ai-tools-test:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
     const tool = await loadAiToolById(supabase, accountId, id)

@@ -89,19 +89,28 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const toolLimit = checkRateLimit(`ai-toolcall:${accountId}`, RATE_LIMITS.aiToolCall)
-    const tools = toolLimit.success
-      ? await loadAiTools(supabase, accountId).catch((err) => {
-          console.error('[ai/playground] loadAiTools error:', err)
-          return []
-        })
-      : []
+    // Deliberately NOT gated by RATE_LIMITS.aiToolCall — that bucket is
+    // per-account and shared with the real auto-reply path, so it exists
+    // to protect the account's live integrations from a stampede of
+    // REAL customer traffic. Gating Playground testing behind the same
+    // bucket meant active testing silently starved real customers of
+    // tool access moments later (issue found in production testing —
+    // "works in Playground, not on WhatsApp", because Playground WAS the
+    // traffic spending the shared budget). The per-user `aiDraft` limit
+    // above (20/min) already bounds testing.
+    const tools = await loadAiTools(supabase, accountId).catch((err) => {
+      console.error('[ai/playground] loadAiTools error:', err)
+      return []
+    })
 
     const { text, handoff, toolCalls } = await generateReply({
       config,
       systemPrompt,
       messages,
       tools,
+    }).catch((err) => {
+      console.error('[ai/playground] generateReply failed:', err)
+      throw err
     })
     return NextResponse.json({
       reply: text,

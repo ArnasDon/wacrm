@@ -610,6 +610,7 @@
       "addFirstContact": "Add your first contact",
       "unnamed": "Unnamed",
       "editAction": "Edit",
+      "archiveAction": "Archive",
       "deleteAction": "Delete",
       "showingPagination": "Showing {start}-{end} of {total}",
       "pageCount": "Page {page} of {total}",
@@ -625,6 +626,8 @@
       "toastExportFailed": "Failed to export contacts",
       "toastFailedDelete": "Failed to delete contact",
       "toastDeleted": "Contact deleted",
+      "toastFailedArchive": "Failed to archive contact",
+      "toastArchived": "Contact archived",
       "toastBulkFailedDelete": "Failed to delete contacts",
       "toastBulkDeleted": "{count} contacts deleted"
     },

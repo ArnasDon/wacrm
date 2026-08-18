@@ -610,6 +610,7 @@
       "addFirstContact": "첫 연락처 추가하기",
       "unnamed": "이름 없음",
       "editAction": "수정",
+      "archiveAction": "보관",
       "deleteAction": "삭제",
       "showingPagination": "전체 {total}개 중 {start}-{end}",
       "pageCount": "{total} 중 {page}페이지",
@@ -625,6 +626,8 @@
       "toastExportFailed": "연락처를 내보내지 못했습니다",
       "toastFailedDelete": "연락처를 삭제하지 못했습니다",
       "toastDeleted": "연락처가 삭제되었습니다",
+      "toastFailedArchive": "연락처를 보관하지 못했습니다",
+      "toastArchived": "연락처가 보관되었습니다",
       "toastBulkFailedDelete": "연락처를 삭제하지 못했습니다",
       "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다"
     },

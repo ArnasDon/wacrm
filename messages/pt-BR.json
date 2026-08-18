@@ -610,6 +610,7 @@
       "addFirstContact": "Adicione seu primeiro contato",
       "unnamed": "Sem nome",
       "editAction": "Editar",
+      "archiveAction": "Arquivar",
       "deleteAction": "Excluir",
       "showingPagination": "Mostrando {start}-{end} de {total}",
       "pageCount": "Página {page} de {total}",
@@ -625,6 +626,8 @@
       "toastExportFailed": "Falha ao exportar contatos",
       "toastFailedDelete": "Falha ao excluir contato",
       "toastDeleted": "Contato excluído",
+      "toastFailedArchive": "Falha ao arquivar contato",
+      "toastArchived": "Contato arquivado",
       "toastBulkFailedDelete": "Falha ao excluir contatos",
       "toastBulkDeleted": "{count} contatos excluídos"
     },

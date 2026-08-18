@@ -121,6 +121,9 @@ export interface Contact {
   /** Reserved for a future AI suggestion (migration 048) — not read or
    *  written by any UI yet. */
   suggested_has_purchased?: boolean | null;
+  /** "Hidden from the active Contacts list" (migration 069), same
+   *  reversible-timestamp convention as deals.archived_at. */
+  archived_at?: string | null;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];

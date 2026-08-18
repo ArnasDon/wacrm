@@ -44,6 +44,7 @@ import {
   Download,
   MoreHorizontal,
   Pencil,
+  Archive,
   Trash2,
   Loader2,
   Users,
@@ -217,6 +218,7 @@ function ContactsPageInner() {
       let query = supabase
         .from('contacts')
         .select('*', { count: 'exact' })
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
         .range(from, to);
 
@@ -319,6 +321,7 @@ function ContactsPageInner() {
           let query = supabase
             .from('contacts')
             .select('*')
+            .is('archived_at', null)
             .order('created_at', { ascending: false })
             .range(offset, offset + EXPORT_BATCH_SIZE - 1);
           if (term) {
@@ -418,6 +421,20 @@ function ContactsPageInner() {
   function confirmDelete(contact: Contact) {
     setDeleteTarget(contact);
     setDeleteConfirmOpen(true);
+  }
+
+  async function handleArchive(contact: Contact) {
+    const { error } = await supabase
+      .from('contacts')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', contact.id);
+
+    if (error) {
+      toast.error(t('toastFailedArchive'));
+    } else {
+      toast.success(t('toastArchived'));
+      fetchContacts();
+    }
   }
 
   async function handleDelete() {
@@ -906,6 +923,16 @@ function ContactsPageInner() {
                         >
                           <Pencil className="size-4" />
                           {t('editAction')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleArchive(contact);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                        >
+                          <Archive className="size-4" />
+                          {t('archiveAction')}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator className="bg-border" />
                         <DropdownMenuItem

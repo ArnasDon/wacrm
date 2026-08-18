@@ -184,9 +184,25 @@ export async function dispatchInboundToAiReply(
       usage,
     })
 
-    if (handoff || !text) {
-      // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
+    if (!text && !handoff) {
+      // The model produced no usable reply text but didn't ask for a
+      // human either — most likely it emitted only a marker (e.g. the
+      // temperature sentinel) with no actual customer-facing message,
+      // a generation glitch rather than a real "I can't help" signal.
+      // Skip this inbound silently rather than forcing an unrequested
+      // handoff (previously `!text` alone triggered the same handoff
+      // path as an explicit request, which handed real conversations
+      // to a human even though the customer never asked and no sale
+      // closed). The next inbound message gets a fresh attempt.
+      console.warn(
+        `[ai auto-reply] empty reply text for conversation ${conversationId}, skipping without handoff`,
+      )
+      return
+    }
+
+    if (handoff) {
+      // The customer explicitly asked for a human — stop auto-replying
+      // on this thread and hand it to one. We (a) pause the bot here
       // (sticky until re-enabled), (b) route the conversation to the
       // configured handoff agent — null leaves it in the shared queue —
       // and (c) leave a short internal note so whoever picks it up has

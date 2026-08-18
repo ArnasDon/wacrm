@@ -3177,3 +3177,102 @@ consulta antes de comitear/pushear ese punto.
    (punto 2) — no hubo confirmación explícita tras ese segundo fix.
 4. Si Angel quiere renombrar OTRAS empresas desde `/admin` (no la
    propia), es una función nueva, no construida todavía (punto 5).
+
+---
+
+**2026-08-17 / 2026-08-18 — Claude Code — Documentación operativa (sin
+cambios de código).**
+
+Angel pidió inventariar todo lo que usa el proyecto y tener un manual
+de operación propio. Se generaron dos documentos, publicados como
+Artifacts privados (no en el repo — decisión deliberada: son
+documentos vivos que Angel actualiza pidiéndomelo, no código):
+
+- **Registro de servicios y credenciales** — cada servicio externo del
+  proyecto (EasyPanel, Supabase, dominio, Meta, Zernio, proveedor de
+  IA, VPS, etc.), para qué se usa cada uno, y dónde vive su credencial
+  real. **Principio de seguridad aplicado y a mantener siempre:** el
+  documento nunca contiene el VALOR real de ninguna credencial —solo
+  el nombre del servicio, su propósito, el nombre de la variable de
+  entorno, y un puntero a dónde está guardado el valor real. El VPS se
+  agregó como entrada aparte (EasyPanel corre encima de él), pero
+  queda con proveedor y método de acceso marcados como pendientes —
+  Angel no dio esos datos todavía, no se inventaron.
+- **Manual del propietario** — guía de operación para Angel como dueño
+  de la plataforma (distinto de "dueño de una empresa cliente"): sus
+  dos roles (`is_platform_admin` vs. `owner` de su propia cuenta), qué
+  se puede hacer hoy desde `/admin` (y qué no — renombrar otra
+  empresa, ver punto 4 arriba), cómo dar de alta una empresa nueva,
+  checklist de configuración por empresa, su asistente de IA, la
+  exención de sesión única de su propio equipo, disciplina de
+  despliegue, y dónde revisar salud del sistema.
+
+**Pendiente:** cuando Angel confirme el proveedor y método de acceso
+del VPS, actualizar el Registro de servicios (los campos están
+marcados explícitamente como "por confirmar", no hay nada que
+buscar/adivinar).
+
+**2026-08-18 — Claude Code — Manual de Usuario (tercer documento,
+sin cambios de código).** A diferencia del Manual del Propietario
+(para Angel como operador de la plataforma), este es para cualquier
+miembro de un equipo cliente (owner/admin/agent/viewer): uso día a día
+de inbox, contactos, pipeline, productos/catálogo, las 3 formas de
+cotizar, difusiones, flujos/automatizaciones, la IA de auto-respuesta
+a clientes (distinta del asistente personal del owner) y
+configuración, más un FAQ corto. Pensado para poder entregarse tal
+cual a cada empresa cliente como material de onboarding de su equipo.
+
+---
+
+**2026-08-18 — Claude Code — Fix: la IA transfería la conversación a un
+humano sin que el cliente lo pidiera ni la venta se cerrara; +
+notificación de Chrome al asignar un chat.**
+
+Angel reportó que el bot pasaba conversaciones a un agente humano sin
+que el cliente lo hubiera pedido ni hubiera llegado a cerrar la venta.
+Dos causas encontradas en `src/lib/ai/`:
+
+1. **`defaults.ts` (`buildSystemPrompt`, modo `auto_reply`):** el
+   prompt le decía al modelo que se transfiriera no solo cuando el
+   cliente pedía explícitamente un humano, sino también cuando el
+   cliente "estaba molesto o se quejaba" o cuando "la pregunta
+   necesitaba información que no tenía" — y además "prefiere
+   transferir antes que adivinar". Esas dos condiciones extra disparaban
+   handoffs que el cliente nunca pidió. Reescrito para transferir
+   ÚNICAMENTE cuando el cliente pide explícitamente hablar con una
+   persona; en cualquier otro caso el bot ahora debe responder lo mejor
+   que pueda, pedir la info que le falte, u ofrecer dar seguimiento —
+   sin soltar la conversación.
+2. **`auto-reply.ts` (`dispatchInboundToAiReply`), bug real de código:**
+   la condición `if (handoff || !text)` trataba CUALQUIER respuesta
+   vacía del modelo (p. ej. si solo emitió el marcador de temperatura
+   sin texto de cara al cliente, un glitch de generación) exactamente
+   igual que un handoff explícito — pausaba el bot y asignaba el chat a
+   un humano sin que nadie lo pidiera. Separado en dos casos: texto
+   vacío sin handoff ahora se salta ese inbound en silencio (sin
+   asignar, sin pausar el bot — el siguiente mensaje entrante tiene un
+   intento nuevo); solo `handoff === true` (petición explícita del
+   cliente) o la confirmación de compra (`flagDealClosing`, sin tocar)
+   siguen entregando la conversación a un humano.
+
+**Notificación de Chrome:** nuevo componente headless
+`src/components/notifications/browser-notifications.tsx`, montado en
+`dashboard-shell.tsx` junto a `PresenceHeartbeat`. Pide permiso de
+notificaciones del navegador una vez (si el usuario nunca respondió) y
+escucha el mismo canal realtime de la tabla `notifications` que ya
+usa `useUnreadNotifications` (RLS ya limita cada fila al usuario
+dueño de la sesión). Cuando llega una fila `type =
+'conversation_assigned'` — se dispara igual por reasignación manual
+entre compañeros que por un handoff de la IA, ambos pasan por el mismo
+trigger `on_conversation_assigned` — muestra una notificación nativa
+de Chrome; al hacer clic enfoca la pestaña y navega a
+`/inbox?c=<conversation_id>`. No se tocó el trigger SQL ni la tabla
+`notifications`, ya existían y ya cubrían este evento — solo faltaba
+quien la mostrara como notificación del sistema operativo.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo sin errores, `vitest run` en verde
+salvo los 2 fallos preexistentes y conocidos de
+`date-utils.test.ts` (`mondayIndex`/timezone, no relacionados). No
+probado aún contra WhatsApp real — pendiente que Angel lo valide en
+producción como hace siempre.

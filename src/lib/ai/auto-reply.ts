@@ -17,7 +17,10 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send-catalog'
 import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 import { formatWithOffset } from '@/lib/timezone'
+import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
+import { sendQuoteToConversation, sendQuoteAsText, SendQuoteError } from '@/lib/quotes/send-quote'
 import type { LeadTemperature } from '@/types'
+import type { GenerateResult } from './types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -130,6 +133,17 @@ export async function dispatchInboundToAiReply(
     // guessing or staying silent about what the business sells.
     const catalog = await loadCatalogContext(db, accountId)
 
+    // How the catalog actually gets delivered (migration 068) — also
+    // gates whether the model is taught CREATE_QUOTE_SENTINEL_PREFIX
+    // (see buildSystemPrompt below): the digital page already has its
+    // own self-service quote cart, so this only turns on for pdf/photos.
+    const { data: catalogModeRow } = await db
+      .from('accounts')
+      .select('catalog_delivery_mode')
+      .eq('id', accountId)
+      .maybeSingle()
+    const catalogDeliveryMode = (catalogModeRow?.catalog_delivery_mode as 'digital' | 'pdf' | 'photos' | undefined) ?? 'digital'
+
     // Autonomous appointment scheduling — only ever offered to the
     // model when the account explicitly opted in AND has a connected
     // Google Calendar. A failed freebusy check (expired connection,
@@ -145,9 +159,12 @@ export async function dispatchInboundToAiReply(
       dealStageOptions,
       catalog,
       calendar: calendarContext,
+      catalogDeliveryMode,
     })
 
-    const { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, usage } = await generateReply({
+    const {
+      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, quoteProposal, usage,
+    } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -283,6 +300,21 @@ export async function dispatchInboundToAiReply(
         })
       } catch (err) {
         console.error('[ai auto-reply] autonomous schedule_appointment failed:', err)
+      }
+    }
+
+    // Defense in depth, same reasoning as the appointment check above:
+    // buildSystemPrompt only ever teaches CREATE_QUOTE_SENTINEL_PREFIX
+    // when catalogDeliveryMode is 'pdf'/'photos', but re-check here too
+    // rather than trusting a marker in the raw output — a stray
+    // hallucination or an injection attempt in a customer message must
+    // never build a quote on a digital-catalog account, which already
+    // has its own self-service cart for this.
+    if (quoteProposal && catalogDeliveryMode !== 'digital') {
+      try {
+        await autoCreateQuoteFromChat({ db, accountId, contactId, configOwnerUserId, conversationId, proposal: quoteProposal })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous create_quote_chat failed:', err)
       }
     }
   } catch (err) {
@@ -756,5 +788,106 @@ async function autoScheduleAppointment(args: {
     start: start.toISOString(),
     end: end.toISOString(),
     source: 'auto_reply_autonomous',
+  })
+}
+
+/**
+ * Builds and sends a quote the model assembled from the chat itself —
+ * only reachable when the catalog is delivered as a PDF/photos (see
+ * the `catalogDeliveryMode` check at the call site), since the digital
+ * catalog page already has its own self-service cart for this.
+ *
+ * Re-resolves every item name against the account's real, active
+ * `products` (case-insensitive exact match) rather than trusting the
+ * model's text — an unmatched name is dropped, never invented; if
+ * NOTHING matches, this aborts quietly rather than send a broken or
+ * empty quote. `createQuote({ allowFreeItems: false })` is the exact
+ * same guard the public catalog's own cart relies on, so a chat-
+ * originated quote can't invent a product or price there either even
+ * if a name did match by coincidence.
+ */
+async function autoCreateQuoteFromChat(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  configOwnerUserId: string
+  conversationId: string
+  proposal: NonNullable<GenerateResult['quoteProposal']>
+}): Promise<void> {
+  const { db, accountId, contactId, configOwnerUserId, conversationId, proposal } = args
+
+  const { data: products } = await db
+    .from('products')
+    .select('id, name')
+    .eq('account_id', accountId)
+    .eq('is_active', true)
+  const byName = new Map(
+    (products ?? []).map((p) => [String(p.name).trim().toLowerCase(), p.id as string]),
+  )
+
+  const items: QuoteItemInput[] = []
+  for (const item of proposal.items) {
+    const productId = byName.get(item.name.trim().toLowerCase())
+    if (!productId) {
+      console.warn(`[ai auto-reply] create_quote_chat: no active product matches "${item.name}", skipping it`)
+      continue
+    }
+    items.push({ product_id: productId, quantity: item.qty })
+  }
+  if (items.length === 0) {
+    console.warn('[ai auto-reply] create_quote_chat: no item matched a real product, aborting')
+    return
+  }
+
+  const { data: contact } = await db
+    .from('contacts')
+    .select('phone')
+    .eq('id', contactId)
+    .eq('account_id', accountId)
+    .maybeSingle()
+
+  let created
+  try {
+    created = await createQuote({
+      db,
+      accountId,
+      userId: configOwnerUserId,
+      contactId,
+      customerNit: proposal.customerNit,
+      customerEmail: proposal.customerEmail,
+      customerPhone: contact?.phone ?? '',
+      customerAddress: proposal.customerAddress,
+      items,
+      allowFreeItems: false,
+    })
+  } catch (err) {
+    if (err instanceof CreateQuoteError) {
+      console.error('[ai auto-reply] create_quote_chat: createQuote failed:', err.message)
+      return
+    }
+    throw err
+  }
+
+  try {
+    if (proposal.format === 'text') {
+      await sendQuoteAsText(db, accountId, created.quote.id, conversationId)
+    } else {
+      await sendQuoteToConversation(db, accountId, created.quote.id, conversationId)
+    }
+  } catch (err) {
+    if (err instanceof SendQuoteError) {
+      console.error('[ai auto-reply] create_quote_chat: send failed:', err.message)
+      return
+    }
+    throw err
+  }
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'create_quote',
+    target_id: created.quote.id,
+    input: { items: proposal.items, format: proposal.format, source: 'auto_reply_autonomous' },
+    result: { quote_id: created.quote.id, total: created.quote.total },
   })
 }

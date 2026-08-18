@@ -15,6 +15,8 @@ import {
   SET_TEMPERATURE_SENTINEL_SUFFIX,
   SCHEDULE_APPOINTMENT_SENTINEL_PREFIX,
   SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX,
+  CREATE_QUOTE_SENTINEL_PREFIX,
+  CREATE_QUOTE_SENTINEL_SUFFIX,
   aiRequestTimeoutMs,
 } from './defaults'
 import type { LeadTemperature } from '@/types'
@@ -108,6 +110,34 @@ export function parseGeneration(
     if (start && end && email) appointmentProposal = { start, end, email }
   }
 
+  const quoteMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(CREATE_QUOTE_SENTINEL_PREFIX)}(.+?)${escapeRegExp(CREATE_QUOTE_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  let quoteProposal: GenerateResult['quoteProposal'] = null
+  if (quoteMatch) {
+    const [rawFormat, itemsStr, nit, email, address] = quoteMatch[1].split('|').map((s) => s.trim())
+    const format = rawFormat === 'text' ? 'text' : 'pdf'
+    const items = (itemsStr ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [name, qtyRaw] = entry.split(':').map((s) => s.trim())
+        if (!name) return null
+        const qty = Number(qtyRaw)
+        return { name, qty: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1 }
+      })
+      .filter((item): item is { name: string; qty: number } => item !== null)
+    // Require every field — a marker missing NIT/email/address means the
+    // model jumped ahead without actually having what it needs; better
+    // to silently ignore it than send a broken quote.
+    if (items.length > 0 && nit && email && address) {
+      quoteProposal = { format, items, customerNit: nit, customerEmail: email, customerAddress: address }
+    }
+  }
+
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -118,9 +148,20 @@ export function parseGeneration(
     .replace(moveMatch ? moveMatch[0] : '', '')
     .replace(temperatureMatch ? temperatureMatch[0] : '', '')
     .replace(appointmentMatch ? appointmentMatch[0] : '', '')
+    .replace(quoteMatch ? quoteMatch[0] : '', '')
     .trim()
 
-  return { text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, usage }
+  return {
+    text,
+    handoff,
+    markDealWon,
+    moveToStageName,
+    sendCatalog,
+    leadTemperature,
+    appointmentProposal,
+    quoteProposal,
+    usage,
+  }
 }
 
 function escapeRegExp(s: string): string {

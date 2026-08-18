@@ -91,6 +91,24 @@ export const SET_TEMPERATURE_SENTINEL_SUFFIX = ']]'
 export const SCHEDULE_APPOINTMENT_SENTINEL_PREFIX = '[[ACTION:schedule_appointment:'
 export const SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX = ']]'
 
+/**
+ * Sentinel prefix/suffix the model is instructed to wrap
+ * `<pdf|text>|<Name>:<qty>,<Name>:<qty>,...|<NIT>|<email>|<address>` in
+ * (auto-reply mode only, and only ever shown to the model when
+ * `catalogDeliveryMode` is `'pdf'` or `'photos'` — see that param's own
+ * doc comment). When the catalog itself is a digital page, the
+ * existing self-service cart on that page already covers this and
+ * this marker is never offered, to avoid two competing quote paths.
+ * Real products only: `dispatchInboundToAiReply` resolves each name
+ * against the account's actual `products` (case-insensitive), and
+ * `createQuote({ allowFreeItems: false })` — the same guard the public
+ * catalog's cart already relies on — refuses anything that isn't a
+ * real, active product, so the model can't invent an item or a price
+ * even if it tried.
+ */
+export const CREATE_QUOTE_SENTINEL_PREFIX = '[[ACTION:create_quote_chat:'
+export const CREATE_QUOTE_SENTINEL_SUFFIX = ']]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -156,6 +174,15 @@ export function buildSystemPrompt(args: {
   /** Compact active-catalog lines (see `loadCatalogContext`), or null
    *  when the account has no active products. */
   catalog?: string[] | null
+  /** How this account's catalog actually gets delivered
+   *  (`accounts.catalog_delivery_mode`, migration 068) — `'digital'`
+   *  (default/omitted) means the SEND_CATALOG marker links to the live
+   *  page, which already has its own self-service quote cart. `'pdf'`/
+   *  `'photos'` means the customer only ever sees files, so this also
+   *  turns on CREATE_QUOTE_SENTINEL_PREFIX: the one place in the app
+   *  today where the bot can build a quote from a chat request instead
+   *  of the digital cart. */
+  catalogDeliveryMode?: 'digital' | 'pdf' | 'photos'
   /** Real Google Calendar free/busy data (auto-reply mode only) — only
    *  ever passed when the account both opted into autonomous scheduling
    *  (`ai_configs.auto_schedule_appointments_enabled`) AND has a
@@ -163,7 +190,7 @@ export function buildSystemPrompt(args: {
    *  it can use `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` at all. */
   calendar?: AutoReplyCalendarContext | null
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -217,8 +244,22 @@ export function buildSystemPrompt(args: {
     }
 
     if (catalog && catalog.length > 0) {
+      const catalogDescription =
+        catalogDeliveryMode === 'pdf'
+          ? 'this sends them the business\'s own catalog PDF'
+          : catalogDeliveryMode === 'photos'
+            ? "this sends them the business's own catalog photos"
+            : 'this sends them a link to the live catalog page, where they can browse every product and request a quote themselves'
       parts.push(
-        `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — this sends them a link to the live catalog page, where they can browse every product and request a quote themselves, so you don't need to list every product yourself, just answer naturally and add the marker. Never mention this marker to the customer.`,
+        `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — ${catalogDescription}, so you don't need to list every product yourself, just answer naturally and add the marker. Never mention this marker to the customer.`,
+      )
+    }
+
+    if (catalog && catalog.length > 0 && (catalogDeliveryMode === 'pdf' || catalogDeliveryMode === 'photos')) {
+      parts.push(
+        `This business's catalog is ${catalogDeliveryMode === 'pdf' ? 'a PDF' : 'photos'}, not a digital page with its own shopping cart — so when the customer asks for the price or a quote on one or more SPECIFIC products from the catalog list below (never something outside that list), you handle the quote yourself, in two steps across turns: ` +
+          `(1) First, in plain text with no marker, ask whether they'd like the quote as a PDF or as a text message in the chat — ask this only once per conversation, don't repeat it if you already asked earlier in this same conversation. ` +
+          `(2) Once they've told you the format AND you know their NIT (or "CF"/consumidor final if they have none), email, and address — read these from earlier in the conversation if already given, otherwise ask for whichever of the three you're still missing before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|<NIT>|<email>|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message. Use the EXACT product name as it appears in the catalog list below (the text before the price in parentheses) for every item — never a product not in that list, never an invented quantity or price; the price always comes from the real catalog, you never write one yourself. Never mention this marker to the customer, and never claim the quote is sent until you actually have everything needed to use this marker.`,
       )
     }
   }

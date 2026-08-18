@@ -19,6 +19,7 @@ import {
   findRecentConversation,
   isWithinMessagingWindow,
   sendQuoteToConversation,
+  sendQuoteAsText,
   SendQuoteError,
 } from './send-quote'
 
@@ -138,6 +139,47 @@ describe('sendQuoteToConversation', () => {
     const { db } = makeSendDb({ quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' } })
 
     await expect(sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1')).rejects.toMatchObject({
+      status: 502,
+      message: 'down',
+    })
+  })
+})
+
+describe('sendQuoteAsText', () => {
+  it('sends a plain-text summary (no PDF work at all) and marks the quote sent', async () => {
+    const { db, updates } = makeSendDb({
+      quote: { id: 'q1', currency: 'GTQ', total: 750 },
+      items: [
+        { id: 'i1', description: 'Cama Montessori', quantity: 1, unit_price: 350, line_total: 350 },
+        { id: 'i2', description: 'Silla', quantity: 2, unit_price: 200, line_total: 400 },
+      ],
+    })
+
+    await sendQuoteAsText(db, 'acct-1', 'q1', 'conv-1')
+
+    expect(h.renderQuotePdf).not.toHaveBeenCalled()
+    expect(h.uploadCatalogPdf).not.toHaveBeenCalled()
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
+    const [, , payload] = h.sendMessageToConversation.mock.calls[0]
+    expect(payload.messageType).toBe('text')
+    expect(payload.contentText).toContain('Cama Montessori')
+    expect(payload.contentText).toContain('Silla')
+    expect(payload.contentText).toContain('Total')
+
+    const sentUpdate = updates.find((u) => 'sent_at' in u.payload)
+    expect(sentUpdate?.payload).toMatchObject({ status: 'sent', auto_send_pending: false })
+  })
+
+  it('throws when the quote does not exist', async () => {
+    const { db } = makeSendDb({ quote: null })
+    await expect(sendQuoteAsText(db, 'acct-1', 'missing', 'conv-1')).rejects.toBeInstanceOf(SendQuoteError)
+  })
+
+  it('wraps a SendMessageError from the send core', async () => {
+    h.sendMessageToConversation.mockRejectedValue(new SendMessageError('provider_error', 'down', 502))
+    const { db } = makeSendDb({ quote: { id: 'q1', currency: 'GTQ', total: 100 }, items: [] })
+
+    await expect(sendQuoteAsText(db, 'acct-1', 'q1', 'conv-1')).rejects.toMatchObject({
       status: 502,
       message: 'down',
     })

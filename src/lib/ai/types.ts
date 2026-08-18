@@ -89,6 +89,20 @@ export interface GenerateResult {
    *  `start`/`end` are the model's own text, re-validated (parseable,
    *  in-range, non-overlapping) before anything is booked. */
   appointmentProposal: { start: string; end: string; email: string } | null
+  /** A quote the model wants to build from the chat itself (auto-reply
+   *  mode only, catalog delivery mode 'pdf'/'photos' — see
+   *  `CREATE_QUOTE_SENTINEL_PREFIX`), or null. `items` are the model's
+   *  own text (product names to resolve against real `products`,
+   *  never trusted as-is) — `dispatchInboundToAiReply` re-validates
+   *  every item against the real catalog before calling `createQuote`,
+   *  same as the digital cart's own quote path. */
+  quoteProposal: {
+    format: 'pdf' | 'text'
+    items: { name: string; qty: number }[]
+    customerNit: string
+    customerEmail: string
+    customerAddress: string
+  } | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

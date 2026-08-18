@@ -49,6 +49,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -62,6 +63,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -72,6 +74,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -85,6 +88,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -105,6 +109,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -133,6 +138,7 @@ describe('parseGeneration', () => {
       sendCatalog: true,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -155,6 +161,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: 'hot',
       appointmentProposal: null,
+      quoteProposal: null,
       usage: null,
     })
   })
@@ -189,6 +196,7 @@ describe('parseGeneration', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage,
     })
   })
@@ -222,6 +230,47 @@ describe('parseGeneration', () => {
     })
     expect(res.text).toBe('Confirmado.')
   })
+
+  it('detects + strips the create-quote-chat sentinel, capturing format/items/contact fields', () => {
+    const res = parseGeneration(
+      '¡Aquí tienes! [[ACTION:create_quote_chat:pdf|Cama Montessori:1,Silla:2|CF|ana@example.com|Zona 10, Ciudad]]',
+    )
+    expect(res.quoteProposal).toEqual({
+      format: 'pdf',
+      items: [
+        { name: 'Cama Montessori', qty: 1 },
+        { name: 'Silla', qty: 2 },
+      ],
+      customerNit: 'CF',
+      customerEmail: 'ana@example.com',
+      customerAddress: 'Zona 10, Ciudad',
+    })
+    expect(res.text).toBe('¡Aquí tienes!')
+  })
+
+  it('parses the text format explicitly and defaults anything else to pdf', () => {
+    const asText = parseGeneration('ok [[ACTION:create_quote_chat:text|Silla:1|CF|a@b.com|Dir]]')
+    expect(asText.quoteProposal?.format).toBe('text')
+
+    const garbageFormat = parseGeneration('ok [[ACTION:create_quote_chat:whatever|Silla:1|CF|a@b.com|Dir]]')
+    expect(garbageFormat.quoteProposal?.format).toBe('pdf')
+  })
+
+  it('defaults a missing/invalid quantity to 1', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla|CF|a@b.com|Dir]]')
+    expect(res.quoteProposal?.items).toEqual([{ name: 'Silla', qty: 1 }])
+  })
+
+  it('ignores a create-quote-chat marker missing NIT, email, or address', () => {
+    expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1||a@b.com|Dir]]').quoteProposal).toBeNull()
+    expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|CF||Dir]]').quoteProposal).toBeNull()
+    expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|CF|a@b.com|]]').quoteProposal).toBeNull()
+  })
+
+  it('ignores a create-quote-chat marker with no items', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf||CF|a@b.com|Dir]]')
+    expect(res.quoteProposal).toBeNull()
+  })
 })
 
 describe('generateReply — OpenAI', () => {
@@ -248,6 +297,7 @@ describe('generateReply — OpenAI', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -312,6 +362,7 @@ describe('generateReply — Anthropic', () => {
       sendCatalog: false,
       leadTemperature: null,
       appointmentProposal: null,
+      quoteProposal: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

@@ -9,6 +9,80 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.11.0] — 2026-08-19
+
+Completes the other half of Phase 2 (§23): the `WhatsAppService`
+provider abstraction and `DemoWhatsAppService` (§3). Every Meta call
+site in the send/receive funnel — `/api/whatsapp/send`, the dashboard
+and public-API broadcast senders (+ resume), `/api/whatsapp/react`,
+the automations engine, and the Flows runner — now goes through one
+interface instead of importing `@/lib/whatsapp/meta-api` directly,
+mirroring the existing AI-provider pattern (`src/lib/ai/`). An account
+with no `whatsapp_config` row now sends through `DemoWhatsAppService`
+automatically instead of erroring — **the app runs the full send path
+with zero Meta credentials**, per §3. No migration — code only.
+
+### Added
+
+- **`src/lib/whatsapp/service.ts`** — the `WhatsAppService` interface
+  (`sendText`/`sendTemplate`/`sendMedia`/`sendInteractiveButtons`/
+  `sendInteractiveList`/`sendReaction`) and `resolveWhatsAppService(db,
+  accountId)`, the single chokepoint that decides Meta vs. demo. No
+  call site queries `whatsapp_config` directly any more — one lookup,
+  one answer to "does this account have Meta creds?". Also centralizes
+  the legacy-ciphertext self-heal that previously only ran on the
+  manual-send path.
+- **`MetaWhatsAppService`** (`providers/meta-whatsapp-service.ts`) —
+  thin adapter over the existing, already-tested `meta-api.ts` send
+  functions; changes *who* calls them, not what they do. Owns the
+  phone-variant retry ("recipient not in allowed list") that used to
+  be duplicated inline at seven call sites — now lives once.
+- **`DemoWhatsAppService`** (`providers/demo-whatsapp-service.ts`) —
+  every send resolves instantly against a synthetic `demo-...` id, no
+  network call, no template/recipient validation (there's nothing
+  real to validate against).
+- **`src/lib/whatsapp/inbound-events.ts`** — `handleStatusUpdate` /
+  `handleReaction` (+ helpers) moved verbatim out of the webhook route
+  so they're callable from outside a real Meta webhook. Zero behaviour
+  change — a pure extraction, still covered by the existing 15
+  webhook tests.
+- **`src/lib/whatsapp/demo-simulate.ts`** — `simulateDemoDeliveryAndRead`
+  drives a just-sent demo message through `delivered` → `read` using
+  the *exact same* `handleStatusUpdate` a real Meta status webhook
+  would call, so `messages.status`, `broadcast_recipients` counters,
+  and webhook fan-out all update identically regardless of transport
+  (§20: same tables production analytics reads, no parallel fake
+  system). Wired in after every demo send. `simulateDemoReaction` is
+  implemented and exported but not yet wired into a call site —
+  reaction simulation needs a conversationId/contactId pair not
+  currently threaded through the broadcast fan-out loop; documented
+  as ready for Phase 3/4 to pick up. Simulated *inbound* messages
+  (a synthetic customer reply) are likewise left for that later
+  full-funnel wiring, not invented here.
+
+### Changed
+
+- `sendMessageToConversation` (`send-message.ts`), `automations/meta-send.ts`,
+  `flows/meta-send.ts` (all three senders), `broadcast-core.ts`
+  (`createBroadcast`/`deliverBroadcast`), `broadcast-resume.ts`
+  (`planBroadcastResume`), `/api/whatsapp/broadcast`, and
+  `/api/whatsapp/react` all now resolve a `WhatsAppService` instead of
+  loading `whatsapp_config` and calling `meta-api.ts` inline. A missing
+  config used to throw `whatsapp_not_configured` (400) — it now means
+  "use the demo service" everywhere except nowhere: there is no longer
+  a code path where the absence of Meta credentials is a hard error.
+  HMAC-SHA256 webhook signature verification and existing rate limits
+  (`checkRateLimit`/`RATE_LIMITS`) are untouched — this refactor only
+  touches the *sending* side, never the webhook's inbound
+  authentication or the per-route rate gates.
+
+Out of scope for this change (Meta-specific admin/setup, not the
+send/receive funnel §3 names): WhatsApp registration
+(`/api/whatsapp/config*`), template lifecycle management
+(`/api/whatsapp/templates/*`), and the inbound-media proxy
+(`/api/whatsapp/media/[mediaId]`, `getMediaUrl`/`downloadMedia`) —
+these still call `meta-api.ts` directly, unchanged.
+
 ## [0.10.0] — 2026-08-19
 
 Adds Markets/Regions and extends `contacts` into `Member` and

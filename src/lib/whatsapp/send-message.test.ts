@@ -231,7 +231,15 @@ function sendPathDb(
           if (table === 'conversations') captured.conversation = row;
           return builder;
         },
-        maybeSingle: async () => ({ data: null, error: null }),
+        maybeSingle: async () => {
+          // resolveWhatsAppService reads whatsapp_config with
+          // maybeSingle() (a missing row means "use the demo
+          // service", not an error) — every other maybeSingle() call
+          // in the send path (e.g. the reply-to-message lookup) still
+          // wants null-by-default.
+          if (table === 'whatsapp_config') return { data: config, error: null };
+          return { data: null, error: null };
+        },
         single: async () => {
           if (table === 'conversations') {
             return { data: conversation, error: null };

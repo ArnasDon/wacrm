@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
+import { sanitizePhoneForMeta, isValidE164, phoneVariants } from '@/lib/whatsapp/phone-utils'
+import { resolveWhatsAppService } from '@/lib/whatsapp/service'
+import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -120,23 +115,10 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
-      return NextResponse.json(
-        {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
-        },
-        { status: 400 }
-      )
-    }
-
-    const accessToken = decrypt(config.access_token)
+    // Real Meta service when whatsapp_config exists for this account,
+    // DemoWhatsAppService otherwise — §3 requires this to work end to
+    // end with zero Meta credentials, same as every other send path.
+    const { service, isDemo } = await resolveWhatsAppService(supabase, accountId)
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -177,37 +159,24 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Retry with phone variants on "not in allowed list" so numbers
-      // that differ only in a trunk-prefix 0 still reach recipients.
-      const variants = phoneVariants(sanitized)
+      // Phone-variant retry on "not in allowed list" (numbers that
+      // differ only in a trunk-prefix 0) is now owned by
+      // MetaWhatsAppService; DemoWhatsAppService needs no retry.
       let sentMessageId: string | null = null
       let lastError: string | null = null
 
-      for (const variant of variants) {
-        try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: resolvedTemplate.language,
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
-          sentMessageId = result.messageId
-          lastError = null
-          break
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error'
-          if (!isRecipientNotAllowedError(errorMessage)) {
-            lastError = errorMessage
-            break
-          }
-          lastError = errorMessage
-          // retry with next variant
-        }
+      try {
+        const result = await service.sendTemplate({
+          toVariants: phoneVariants(sanitized),
+          templateName: template_name,
+          language: resolvedTemplate.language,
+          template: templateRow ?? undefined,
+          messageParams: recipient.messageParams,
+          params: recipient.params ?? [],
+        })
+        sentMessageId = result.messageId
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Unknown error'
       }
 
       if (sentMessageId) {
@@ -217,6 +186,11 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+        // Demo mode: advance this message through delivered -> read
+        // via the same handler a real Meta status webhook would drive.
+        if (isDemo) {
+          await simulateDemoDeliveryAndRead(sentMessageId)
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,

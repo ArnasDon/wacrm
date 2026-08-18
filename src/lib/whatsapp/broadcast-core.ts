@@ -18,17 +18,16 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
 import {
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
-  isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { resolveWhatsAppService, type WhatsAppService } from '@/lib/whatsapp/service';
+import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -66,8 +65,8 @@ export interface BroadcastPlan {
   broadcastId: string;
   templateName: string;
   templateLanguage: string;
-  phoneNumberId: string;
-  accessToken: string;
+  service: WhatsAppService;
+  isDemo: boolean;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
@@ -108,21 +107,10 @@ export async function createBroadcast(
     );
   }
 
-  // Config (fail fast + provides the audit trail owner already resolved
-  // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
-  }
-  const accessToken = decrypt(config.access_token);
+  // WhatsApp service — real Meta when whatsapp_config exists for this
+  // account, DemoWhatsAppService otherwise (§3: zero Meta credentials
+  // must still work end-to-end, including broadcasts).
+  const { service, isDemo } = await resolveWhatsAppService(db, accountId);
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -234,8 +222,8 @@ export async function createBroadcast(
     broadcastId,
     templateName,
     templateLanguage: resolvedTemplate.language,
-    phoneNumberId: config.phone_number_id,
-    accessToken,
+    service,
+    isDemo,
     templateRow,
     planned,
     rejected,
@@ -260,30 +248,20 @@ export async function deliverBroadcast(
   plan: BroadcastPlan
 ): Promise<void> {
   for (const recipient of plan.planned) {
-    const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
-    for (const variant of variants) {
-      try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
-          to: variant,
-          templateName: plan.templateName,
-          language: plan.templateLanguage,
-          template: plan.templateRow ?? undefined,
-          params: recipient.params,
-        });
-        sentMessageId = result.messageId;
-        lastError = null;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        lastError = message;
-        // Only a "recipient not allowed" error is worth another variant.
-        if (!isRecipientNotAllowedError(message)) break;
-      }
+    try {
+      const result = await plan.service.sendTemplate({
+        toVariants: phoneVariants(recipient.phone),
+        templateName: plan.templateName,
+        language: plan.templateLanguage,
+        template: plan.templateRow ?? undefined,
+        params: recipient.params,
+      });
+      sentMessageId = result.messageId;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Unknown error';
     }
 
     if (sentMessageId) {
@@ -296,6 +274,14 @@ export async function deliverBroadcast(
           error_message: null,
         })
         .eq('id', recipient.recipientRowId);
+
+      // Demo mode: advance this recipient's message through delivered
+      // -> read via the same handler a real Meta status webhook would
+      // drive (also mirrors onto this broadcast_recipients row, since
+      // handleStatusUpdate matches on whatsapp_message_id).
+      if (plan.isDemo) {
+        await simulateDemoDeliveryAndRead(sentMessageId);
+      }
     } else {
       await db
         .from('broadcast_recipients')

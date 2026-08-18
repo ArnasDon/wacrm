@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
-import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import { resolveWhatsAppService } from '@/lib/whatsapp/service';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -88,27 +87,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
-
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
-        { status: 400 },
-      );
-    }
-
-    const accessToken = decrypt(config.access_token);
+    // Real Meta service when whatsapp_config exists for this account,
+    // DemoWhatsAppService otherwise (§3).
+    const { service, isDemo } = await resolveWhatsAppService(supabase, accountId);
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
-      await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      await service.sendReaction({
         to: sanitizedPhone,
         targetMessageId: targetMessage.message_id,
         emoji,
@@ -116,10 +101,10 @@ export async function POST(request: Request) {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Unknown Meta API error';
-      console.error('[whatsapp/react] Meta send failed:', message);
+      console.error(`[whatsapp/react] ${isDemo ? 'Demo' : 'Meta'} send failed:`, message);
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 502 },
+        { error: `${isDemo ? 'Demo' : 'Meta API'} error: ${message}` },
+        { status: isDemo ? 500 : 502 },
       );
     }
 

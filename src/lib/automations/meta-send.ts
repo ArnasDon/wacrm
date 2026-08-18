@@ -1,20 +1,19 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
-  isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import {
   resolveTemplateRow,
   templateContentText,
 } from '@/lib/whatsapp/template-body'
+import { resolveWhatsAppService } from '@/lib/whatsapp/service'
+import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -135,16 +134,10 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
-
-  const accessToken = decrypt(config.access_token)
+  // Real Meta service when whatsapp_config exists for this account,
+  // DemoWhatsAppService otherwise — same chokepoint every WhatsApp
+  // call site in the app now goes through (§3).
+  const { service, isDemo } = await resolveWhatsAppService(db, input.accountId)
 
   // Local template row — read for the body we persist below, not for
   // the Meta payload (the wire shape is deliberately unchanged here).
@@ -162,47 +155,21 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         ).row
       : null
 
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'template') {
-      const r = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        templateName: input.templateName,
-        language: input.language,
-        params: input.params,
-      })
-      return r.messageId
-    }
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: input.text,
-    })
-    return r.messageId
-  }
-
-  // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
-  // numbers registered with/without a trunk 0 both require this to
-  // reliably land a message.
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
+  const toVariants = phoneVariants(sanitized)
+  const result =
+    input.kind === 'template'
+      ? await service.sendTemplate({
+          toVariants,
+          templateName: input.templateName,
+          language: input.language,
+          params: input.params,
+        })
+      : await service.sendText({
+          toVariants,
+          text: input.text,
+        })
+  const waMessageId = result.messageId
+  const workingPhone = result.workingPhone
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
@@ -247,6 +214,12 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+
+  // Demo mode: advance the just-persisted message through delivered ->
+  // read via the same handler a real Meta status webhook would drive.
+  if (isDemo) {
+    await simulateDemoDeliveryAndRead(waMessageId)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }

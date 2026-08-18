@@ -11,6 +11,8 @@ import {
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `decrypted:${v}`,
+  encrypt: (v: string) => v,
+  isLegacyFormat: () => false,
 }));
 
 // ============================================================
@@ -141,10 +143,16 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
           writes.failedUpdate = row;
           return b;
         },
-        maybeSingle: async () => ({
-          data: fx.broadcast === undefined ? null : fx.broadcast,
-          error: null,
-        }),
+        maybeSingle: async () => {
+          // resolveWhatsAppService reads whatsapp_config with
+          // maybeSingle() (missing = use the demo service, not an
+          // error) — table-branch so that lookup doesn't pick up the
+          // `broadcasts` fixture data instead.
+          if (table === 'whatsapp_config') {
+            return { data: fx.config === undefined ? null : fx.config, error: null };
+          }
+          return { data: fx.broadcast === undefined ? null : fx.broadcast, error: null };
+        },
         single: async () => ({
           data: fx.config === undefined ? null : fx.config,
           error: null,
@@ -220,7 +228,7 @@ describe('planBroadcastResume', () => {
         params: ['B456', 'Monday'],
       },
     ]);
-    expect(plan.accessToken).toBe('decrypted:tok');
+    expect(plan.isDemo).toBe(false);
     expect(remaining).toBe(0);
     expect(unsendable).toBe(0);
   });

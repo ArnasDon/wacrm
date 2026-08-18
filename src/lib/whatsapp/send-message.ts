@@ -21,26 +21,17 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  sendInteractiveButtons,
-  sendInteractiveList,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api';
+import type { MediaKind } from '@/lib/whatsapp/meta-api';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
-  isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import {
@@ -48,6 +39,8 @@ import {
   templateBodyParams,
   templateContentText,
 } from '@/lib/whatsapp/template-body';
+import { resolveWhatsAppService } from '@/lib/whatsapp/service';
+import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -251,38 +244,11 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
-  if (configError || !config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
-  }
-
-  const accessToken = decrypt(config.access_token);
-
-  // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
-    void db
-      .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
-      .eq('id', config.id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) {
-          console.warn(
-            '[send-message] access_token GCM upgrade failed:',
-            error.message
-          );
-        }
-      });
-  }
+  // WhatsApp service — real Meta when `whatsapp_config` exists for this
+  // account, DemoWhatsAppService otherwise. §3 requires the app to run
+  // end-to-end with zero Meta credentials, so a missing config is no
+  // longer an error here — it's the signal to use the demo service.
+  const { service, isDemo } = await resolveWhatsAppService(db, accountId);
 
   // Resolve the reply target to its Meta message_id. The parent must
   // belong to this same conversation — otherwise a caller could quote
@@ -336,12 +302,19 @@ export async function sendMessageToConversation(
     sendLanguage = resolved.language;
   }
 
-  const attempt = async (phone: string): Promise<string> => {
+  // Send via the resolved service — MetaWhatsAppService retries across
+  // phone-number variants internally if Meta rejects one as "recipient
+  // not in allowed list"; DemoWhatsAppService always "succeeds" against
+  // the first variant. Either way, persist whichever variant worked
+  // back onto the contact so the next send goes straight through.
+  const toVariants = phoneVariants(sanitizedPhone);
+  let waMessageId = '';
+  let workingPhone = sanitizedPhone;
+  try {
+    let result;
     if (messageType === 'template') {
-      const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
+      result = await service.sendTemplate({
+        toVariants,
         templateName: templateName!,
         language: sendLanguage,
         template: templateRow ?? undefined,
@@ -349,92 +322,56 @@ export async function sendMessageToConversation(
         params: templateParams || [],
         contextMessageId,
       });
-      return result.messageId;
-    }
-    if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
+    } else if (isMediaKind) {
+      result = await service.sendMedia({
+        toVariants,
         kind: messageType as MediaKind,
         link: mediaUrl!,
         caption: contentText || undefined,
         filename: filename || undefined,
         contextMessageId,
       });
-      return result.messageId;
-    }
-    if (messageType === 'interactive') {
+    } else if (messageType === 'interactive') {
       const p = interactivePayload!;
-      if (p.kind === 'buttons') {
-        const result = await sendInteractiveButtons({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
-          to: phone,
-          bodyText: p.body,
-          headerText: p.header || undefined,
-          footerText: p.footer || undefined,
-          buttons: p.buttons,
-          contextMessageId,
-        });
-        return result.messageId;
-      }
-      const result = await sendInteractiveList({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        bodyText: p.body,
-        buttonLabel: p.button_label,
-        headerText: p.header || undefined,
-        footerText: p.footer || undefined,
-        sections: p.sections,
+      result =
+        p.kind === 'buttons'
+          ? await service.sendInteractiveButtons({
+              toVariants,
+              bodyText: p.body,
+              headerText: p.header || undefined,
+              footerText: p.footer || undefined,
+              buttons: p.buttons,
+              contextMessageId,
+            })
+          : await service.sendInteractiveList({
+              toVariants,
+              bodyText: p.body,
+              buttonLabel: p.button_label,
+              headerText: p.header || undefined,
+              footerText: p.footer || undefined,
+              sections: p.sections,
+              contextMessageId,
+            });
+    } else {
+      result = await service.sendText({
+        toVariants,
+        text: contentText!,
         contextMessageId,
       });
-      return result.messageId;
     }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: contentText!,
-      contextMessageId,
-    });
-    return result.messageId;
-  };
-
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
-  let waMessageId = '';
-  let workingPhone = sanitizedPhone;
-  try {
-    const variants = phoneVariants(sanitizedPhone);
-    let lastError: unknown = null;
-
-    for (const variant of variants) {
-      try {
-        waMessageId = await attempt(variant);
-        workingPhone = variant;
-        lastError = null;
-        break;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isRecipientNotAllowedError(message)) {
-          throw err;
-        }
-        lastError = err;
-        console.warn(
-          `[send-message] variant "${variant}" rejected by Meta, trying next…`
-        );
-      }
-    }
-
-    if (lastError) throw lastError;
+    waMessageId = result.messageId;
+    workingPhone = result.workingPhone;
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    const message = err instanceof Error ? err.message : 'Unknown send error';
+    console.error(
+      `[send-message] ${isDemo ? 'Demo' : 'Meta'} send failed for all variants:`,
+      message
+    );
+    throw new SendMessageError(
+      'meta_error',
+      `${isDemo ? 'Demo' : 'Meta API'} error: ${message}`,
+      isDemo ? 500 : 502
+    );
   }
 
   if (workingPhone !== sanitizedPhone) {
@@ -493,6 +430,18 @@ export async function sendMessageToConversation(
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
       500
     );
+  }
+
+  // Demo mode: advance the just-persisted message through delivered ->
+  // read via the same handler a real Meta status webhook would drive
+  // (§20 — same tables, no parallel fake analytics). Best-effort (the
+  // helper swallows its own errors) — awaited rather than
+  // fire-and-forget because a detached promise here is exactly the
+  // serverless "function frozen before the callback finishes" failure
+  // mode issue #301 already burned this codebase on (see the
+  // webhook route's `after()` comment).
+  if (isDemo) {
+    await simulateDemoDeliveryAndRead(waMessageId);
   }
 
   const lastMessageText =

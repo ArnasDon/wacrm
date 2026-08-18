@@ -1,20 +1,16 @@
-import {
-  sendInteractiveButtons,
-  sendInteractiveList,
-  sendMediaMessage,
-  sendTextMessage,
-  type InteractiveButton,
-  type InteractiveListSection,
-  type MediaKind,
+import type {
+  InteractiveButton,
+  InteractiveListSection,
+  MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
-  isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
+import { resolveWhatsAppService } from '@/lib/whatsapp/service'
+import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -82,44 +78,14 @@ export async function engineSendText(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
+  const { service, isDemo } = await resolveWhatsAppService(db, args.accountId)
 
-  const accessToken = decrypt(config.access_token)
-
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: args.text,
-    })
-    return r.messageId
-  }
-
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
+  const result = await service.sendText({
+    toVariants: phoneVariants(sanitized),
+    text: args.text,
+  })
+  const waMessageId = result.messageId
+  const workingPhone = result.workingPhone
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
@@ -146,6 +112,10 @@ export async function engineSendText(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+
+  if (isDemo) {
+    await simulateDemoDeliveryAndRead(waMessageId)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -192,47 +162,17 @@ export async function engineSendMedia(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', args.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
+  const { service, isDemo } = await resolveWhatsAppService(db, args.accountId)
 
-  const accessToken = decrypt(config.access_token)
-
-  const attempt = async (phone: string): Promise<string> => {
-    const r = await sendMediaMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      kind: args.kind,
-      link: args.link,
-      caption: args.caption,
-      filename: args.filename,
-    })
-    return r.messageId
-  }
-
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
+  const result = await service.sendMedia({
+    toVariants: phoneVariants(sanitized),
+    kind: args.kind,
+    link: args.link,
+    caption: args.caption,
+    filename: args.filename,
+  })
+  const waMessageId = result.messageId
+  const workingPhone = result.workingPhone
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
@@ -263,6 +203,10 @@ export async function engineSendMedia(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+
+  if (isDemo) {
+    await simulateDemoDeliveryAndRead(waMessageId)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -344,63 +288,28 @@ async function sendInteractiveViaMeta(
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
+  const { service, isDemo } = await resolveWhatsAppService(db, input.accountId)
 
-  const accessToken = decrypt(config.access_token)
-
-  const attempt = async (phone: string): Promise<string> => {
-    if (input.kind === 'buttons') {
-      const r = await sendInteractiveButtons({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        to: phone,
-        bodyText: input.bodyText,
-        buttons: input.buttons,
-        headerText: input.headerText,
-        footerText: input.footerText,
-      })
-      return r.messageId
-    }
-    const r = await sendInteractiveList({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      bodyText: input.bodyText,
-      buttonLabel: input.buttonLabel,
-      sections: input.sections,
-      headerText: input.headerText,
-      footerText: input.footerText,
-    })
-    return r.messageId
-  }
-
-  // Same phone-variant retry as automations/meta-send.ts. Numbers
-  // registered with/without a trunk 0 + Meta's sandbox quirks all
-  // need this to reliably land a message.
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
+  const toVariants = phoneVariants(sanitized)
+  const result =
+    input.kind === 'buttons'
+      ? await service.sendInteractiveButtons({
+          toVariants,
+          bodyText: input.bodyText,
+          buttons: input.buttons,
+          headerText: input.headerText,
+          footerText: input.footerText,
+        })
+      : await service.sendInteractiveList({
+          toVariants,
+          bodyText: input.bodyText,
+          buttonLabel: input.buttonLabel,
+          sections: input.sections,
+          headerText: input.headerText,
+          footerText: input.footerText,
+        })
+  const waMessageId = result.messageId
+  const workingPhone = result.workingPhone
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
@@ -456,6 +365,10 @@ async function sendInteractiveViaMeta(
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+
+  if (isDemo) {
+    await simulateDemoDeliveryAndRead(waMessageId)
+  }
 
   return { whatsapp_message_id: waMessageId }
 }

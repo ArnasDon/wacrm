@@ -10,6 +10,8 @@ import {
 // them so these tests focus on the persistence boundary.
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: () => 'plain-access-token',
+  encrypt: (v: string) => v,
+  isLegacyFormat: () => false,
 }));
 vi.mock('@/lib/api/v1/contacts', () => ({
   findOrCreateContact: vi.fn(async () => ({ id: 'c1' })),
@@ -61,14 +63,14 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   const database = {
     from(table: string) {
       if (table === 'whatsapp_config') {
+        const configRow = { id: 'cfg-1', phone_number_id: 'pn-1', access_token: 'enc' };
         return {
           select: () => ({
             eq: () => ({
-              single: () =>
-                Promise.resolve({
-                  data: { phone_number_id: 'pn-1', access_token: 'enc' },
-                  error: null,
-                }),
+              // resolveWhatsAppService reads this with maybeSingle()
+              // (missing row = use the demo service, not an error).
+              single: () => Promise.resolve({ data: configRow, error: null }),
+              maybeSingle: () => Promise.resolve({ data: configRow, error: null }),
             }),
           }),
         };

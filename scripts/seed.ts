@@ -1,22 +1,24 @@
 /**
  * scripts/seed.ts — Rimula demo/dev seed data
  *
- * Populates the net-new Rimula tables added in migrations 040-048
- * (Products, Vehicles, verified compatibility, Campaigns, Content +
+ * Populates the net-new Rimula tables added in migrations 040-051:
+ * Products, Vehicles, verified compatibility, Campaigns, Content +
  * translations + voice notes, Customer Requests, Trials, Engagement
- * events, Product interactions, WhatsApp sync log) plus a handful of
- * demo `contacts` rows to serve as FK targets, per §19 of
+ * events, Product interactions, WhatsApp sync log (Phase 1), plus
+ * Markets, Regions, and the full §19 Member volumes on `contacts`,
+ * and BA fields on the demo profile (Phase 2). Per §19 of
  * docs/RIMULA_BUILD_SPEC.md.
  *
- * SCOPE NOTE: this is the Phase 1 (§23) seed pass — schema + seed
- * data for the genuinely net-new Rimula tables only. It deliberately
- * does NOT attempt §19's full Member/BA demographic volumes (202
- * Mechanics / 255 Truck Owners / 387 Drivers, 20 markets, BA
- * `languages`/`region`/`capacity` fields) — those columns don't exist
- * yet. They land on `contacts`/`profiles` in Phase 2 ("Members extend
- * contacts, BAs extend profiles, markets/regions" per §23), and a
- * follow-up should extend this script once those columns exist
- * rather than write a second seed script.
+ * §19 reference volumes (seeded exactly):
+ *
+ *   | Segment      | Total | WhatsApp confirmed |
+ *   |--------------|-------|---------------------|
+ *   | Mechanics    |   202 |                 154 |
+ *   | Truck Owners |   255 |                 187 |
+ *   | Drivers      |   387 |                 278 |
+ *   | Total        |   844 |                 619 |
+ *
+ * across 20 markets grouped into 5 regions.
  *
  * WHY PROGRAMMATIC, NOT A .sql FILE: everything below goes through
  * `@supabase/supabase-js` — the same client every other admin/service
@@ -69,6 +71,9 @@ type Row = Record<string, unknown>;
 // Children first — every FK below is ON DELETE CASCADE/SET NULL, but
 // deleting in dependency order keeps this readable and doesn't rely
 // on cascade behaviour to avoid FK errors on tables that use SET NULL.
+// `markets`/`regions` are listed after `contacts` (which references
+// them) for the same reason, even though SET NULL means the order
+// isn't load-bearing.
 const CLEANUP_TABLES = [
   'product_interactions',
   'engagement_events',
@@ -88,6 +93,8 @@ const CLEANUP_TABLES = [
   'product_categories',
   'community_groups',
   'contacts',
+  'markets',
+  'regions',
 ];
 
 // ============================================================
@@ -128,15 +135,34 @@ function pick<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 function hoursAgo(n: number): string {
   return new Date(Date.now() - n * 3_600_000).toISOString();
 }
 
+function daysFromNow(n: number): string {
+  return new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+// Supabase/PostgREST has no hard row-count limit on `.insert()`, but
+// chunking keeps payload size and statement time bounded regardless
+// of how large a seed section grows (the 844-row Member insert is
+// the reason this exists).
+const INSERT_CHUNK_SIZE = 250;
+
 async function insert(table: string, rows: Row[]): Promise<void> {
   if (rows.length === 0) return;
-  const { error } = await admin.from(table).insert(rows);
-  if (error) {
-    throw new Error(`Failed to insert into "${table}": ${error.message}`);
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
+    const { error } = await admin.from(table).insert(chunk);
+    if (error) {
+      throw new Error(
+        `Failed to insert into "${table}" (rows ${i}-${i + chunk.length - 1}): ${error.message}`
+      );
+    }
   }
 }
 
@@ -209,7 +235,7 @@ async function getAccountId(userId: string): Promise<string> {
 }
 
 // ============================================================
-// Seed sections
+// Seed sections — Phase 1 (Products/Vehicles/Campaigns/Content/...)
 // ============================================================
 
 async function seedCommunityGroup(
@@ -776,11 +802,6 @@ interface CampaignSeed {
   cost: number | null;
 }
 
-function daysFromNow(n: number): string {
-  const d = new Date(Date.now() + n * 86_400_000);
-  return d.toISOString().slice(0, 10);
-}
-
 const CAMPAIGN_SEEDS: CampaignSeed[] = [
   {
     key: 'fleet-checkup',
@@ -846,74 +867,427 @@ async function seedCampaigns(
   return campaignIds;
 }
 
-const DEMO_MEMBER_NAMES = [
-  'Ahmed Raza',
-  'Bilal Hussain',
-  'Chaudhry Farooq',
-  'Danish Iqbal',
-  'Ehsan Ali',
-  'Faisal Mehmood',
-  'Ghulam Abbas',
-  'Hamid Sultan',
-  'Imran Sheikh',
-  'Junaid Aslam',
-  'Kamran Yousaf',
-  'Liaquat Baig',
-  'Mudassar Khan',
-  'Nadeem Chaudhary',
-  'Omar Farooqi',
-  'Qasim Latif',
-  'Rashid Mahmood',
-  'Salman Tariq',
-  'Tariq Jameel',
-  'Usman Ghani',
+// ============================================================
+// Seed sections — Phase 2 (Markets/Regions, Members, BA fields)
+// ============================================================
+
+interface RegionSeed {
+  key: string;
+  name: string;
+}
+
+const REGIONS_SEEDS: RegionSeed[] = [
+  { key: 'punjab', name: 'Punjab' },
+  { key: 'sindh', name: 'Sindh' },
+  { key: 'kpk', name: 'Khyber Pakhtunkhwa' },
+  { key: 'balochistan', name: 'Balochistan' },
+  { key: 'ict', name: 'Islamabad Capital Territory' },
 ];
 
-const DEMO_MEMBER_COMPANIES: (string | null)[] = [
-  'Independent Mechanic',
-  'City Auto Workshop',
-  'Farooq Transport Co.',
-  null,
-  'Ali Fleet Services',
-  null,
-  'Abbas Logistics',
-  null,
-  'Sheikh Bus Service',
-  null,
-  'Yousaf Auto Care',
-  null,
-  'Khan Freight',
-  null,
-  'Farooqi Motors',
-  null,
-  'Mahmood Transport',
-  null,
-  'Jameel Bus Co.',
-  null,
+interface MarketSeed {
+  key: string;
+  name: string;
+  region: string;
+}
+
+// Exactly 20 markets (§19), grouped under the 5 regions above.
+const MARKETS_SEEDS: MarketSeed[] = [
+  { key: 'lahore', name: 'Lahore', region: 'punjab' },
+  { key: 'rawalpindi', name: 'Rawalpindi', region: 'punjab' },
+  { key: 'faisalabad', name: 'Faisalabad', region: 'punjab' },
+  { key: 'multan', name: 'Multan', region: 'punjab' },
+  { key: 'sialkot', name: 'Sialkot', region: 'punjab' },
+  { key: 'gujranwala', name: 'Gujranwala', region: 'punjab' },
+  { key: 'bahawalpur', name: 'Bahawalpur', region: 'punjab' },
+  { key: 'sargodha', name: 'Sargodha', region: 'punjab' },
+  { key: 'gujrat', name: 'Gujrat', region: 'punjab' },
+  { key: 'karachi', name: 'Karachi', region: 'sindh' },
+  { key: 'hyderabad', name: 'Hyderabad', region: 'sindh' },
+  { key: 'sukkur', name: 'Sukkur', region: 'sindh' },
+  { key: 'larkana', name: 'Larkana', region: 'sindh' },
+  { key: 'mirpurkhas', name: 'Mirpurkhas', region: 'sindh' },
+  { key: 'peshawar', name: 'Peshawar', region: 'kpk' },
+  { key: 'mardan', name: 'Mardan', region: 'kpk' },
+  { key: 'abbottabad', name: 'Abbottabad', region: 'kpk' },
+  { key: 'quetta', name: 'Quetta', region: 'balochistan' },
+  { key: 'gwadar', name: 'Gwadar', region: 'balochistan' },
+  { key: 'islamabad', name: 'Islamabad', region: 'ict' },
 ];
 
-// Existing `contacts` columns only — role/region/market/vehicle etc.
-// land on this table in Phase 2 (§23); these rows are just FK targets
-// for the requests/trials/engagement data below.
-async function seedDemoContacts(
-  accountId: string,
-  userId: string
-): Promise<string[]> {
-  const contactIds = DEMO_MEMBER_NAMES.map(() => randomUUID());
+async function seedMarketsRegions(
+  accountId: string
+): Promise<{ regionIds: Map<string, string>; marketIds: Map<string, string> }> {
+  const regionIds = new Map(REGIONS_SEEDS.map((r) => [r.key, randomUUID()]));
   await insert(
-    'contacts',
-    DEMO_MEMBER_NAMES.map((name, i) => ({
-      id: contactIds[i],
+    'regions',
+    REGIONS_SEEDS.map((r) => ({
+      id: regionIds.get(r.key),
       account_id: accountId,
-      user_id: userId,
-      phone: `+9230000${String(i + 1).padStart(4, '0')}`,
-      name,
-      email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-      company: DEMO_MEMBER_COMPANIES[i],
+      name: r.name,
     }))
   );
-  return contactIds;
+
+  const marketIds = new Map(MARKETS_SEEDS.map((m) => [m.key, randomUUID()]));
+  await insert(
+    'markets',
+    MARKETS_SEEDS.map((m) => ({
+      id: marketIds.get(m.key),
+      account_id: accountId,
+      region_id: regionIds.get(m.region),
+      name: m.name,
+    }))
+  );
+
+  return { regionIds, marketIds };
 }
+
+// Gives the single demo login usable BA fields (region/market/status/
+// capacity/languages) so it's a coherent BA target for
+// `assigned_ba_id` / `translated_by` / `verified_by` elsewhere in this
+// script, not just an account owner with everything null. Uses
+// `.update()` with the service-role client, which bypasses RLS —
+// `profiles_update` (migration 017) only allows a row's own user to
+// update it via the normal client, so an admin-editing-a-teammate UI
+// will need a server-side endpoint later; not needed here since the
+// demo user is updating (effectively) itself.
+async function seedDemoUserBaFields(
+  userId: string,
+  regionIds: Map<string, string>,
+  marketIds: Map<string, string>
+): Promise<void> {
+  const { error } = await admin
+    .from('profiles')
+    .update({
+      region_id: regionIds.get('punjab'),
+      market_id: marketIds.get('lahore'),
+      ba_status: 'active',
+      open_leads: 0,
+      capacity: 25,
+      languages: ['ur', 'ps', 'pa'],
+    })
+    .eq('user_id', userId);
+  if (error) {
+    throw new Error(`Failed to set demo BA profile fields: ${error.message}`);
+  }
+}
+
+interface NamedMemberSeed {
+  key: string;
+  name: string;
+  company: string | null;
+  role: 'Mechanic' | 'Truck Owner' | 'Truck Driver';
+}
+
+// The same 20 people the Phase 1 seed used as demo contacts, now with
+// a role assigned (derived from their company, where they had one —
+// e.g. "City Auto Workshop" -> Mechanic, "Farooq Transport Co." ->
+// Truck Owner). Kept as named individuals — rather than folding them
+// into the anonymous bulk-generated pool below — because
+// `customer_requests`/`trials` reference them by name in their
+// narrative `notes` fields; `namedContactIds` (returned by
+// `seedDemoContacts`) is how those sections look them up.
+const NAMED_MEMBER_SEEDS: NamedMemberSeed[] = [
+  {
+    key: 'ahmed-raza',
+    name: 'Ahmed Raza',
+    company: 'Independent Mechanic',
+    role: 'Mechanic',
+  },
+  {
+    key: 'bilal-hussain',
+    name: 'Bilal Hussain',
+    company: 'City Auto Workshop',
+    role: 'Mechanic',
+  },
+  {
+    key: 'chaudhry-farooq',
+    name: 'Chaudhry Farooq',
+    company: 'Farooq Transport Co.',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'danish-iqbal',
+    name: 'Danish Iqbal',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'ehsan-ali',
+    name: 'Ehsan Ali',
+    company: 'Ali Fleet Services',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'faisal-mehmood',
+    name: 'Faisal Mehmood',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'ghulam-abbas',
+    name: 'Ghulam Abbas',
+    company: 'Abbas Logistics',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'hamid-sultan',
+    name: 'Hamid Sultan',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'imran-sheikh',
+    name: 'Imran Sheikh',
+    company: 'Sheikh Bus Service',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'junaid-aslam',
+    name: 'Junaid Aslam',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'kamran-yousaf',
+    name: 'Kamran Yousaf',
+    company: 'Yousaf Auto Care',
+    role: 'Mechanic',
+  },
+  {
+    key: 'liaquat-baig',
+    name: 'Liaquat Baig',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'mudassar-khan',
+    name: 'Mudassar Khan',
+    company: 'Khan Freight',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'nadeem-chaudhary',
+    name: 'Nadeem Chaudhary',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'omar-farooqi',
+    name: 'Omar Farooqi',
+    company: 'Farooqi Motors',
+    role: 'Mechanic',
+  },
+  {
+    key: 'qasim-latif',
+    name: 'Qasim Latif',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'rashid-mahmood',
+    name: 'Rashid Mahmood',
+    company: 'Mahmood Transport',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'salman-tariq',
+    name: 'Salman Tariq',
+    company: null,
+    role: 'Truck Driver',
+  },
+  {
+    key: 'tariq-jameel',
+    name: 'Tariq Jameel',
+    company: 'Jameel Bus Co.',
+    role: 'Truck Owner',
+  },
+  {
+    key: 'usman-ghani',
+    name: 'Usman Ghani',
+    company: null,
+    role: 'Truck Driver',
+  },
+];
+
+// Segment order and exact totals/confirmed-counts from §19. Sums to
+// 844 total / 619 confirmed.
+const ROLE_SEGMENTS: {
+  role: NamedMemberSeed['role'];
+  total: number;
+  confirmed: number;
+}[] = [
+  { role: 'Mechanic', total: 202, confirmed: 154 },
+  { role: 'Truck Owner', total: 255, confirmed: 187 },
+  { role: 'Truck Driver', total: 387, confirmed: 278 },
+];
+
+// Cross-joined to synthesize the bulk (non-named) Member names —
+// 30x30 = 900 combinations, comfortably more than the 824 bulk rows
+// needed (844 total minus the 20 named individuals above).
+const FIRST_NAMES = [
+  'Ahmed',
+  'Ali',
+  'Usman',
+  'Bilal',
+  'Hassan',
+  'Hamza',
+  'Zeeshan',
+  'Tariq',
+  'Imran',
+  'Faisal',
+  'Waqas',
+  'Kamran',
+  'Salman',
+  'Adeel',
+  'Naveed',
+  'Shahid',
+  'Rizwan',
+  'Asif',
+  'Junaid',
+  'Farhan',
+  'Aamir',
+  'Sajid',
+  'Nadeem',
+  'Mudassar',
+  'Qasim',
+  'Rashid',
+  'Omar',
+  'Danish',
+  'Liaquat',
+  'Ghulam',
+];
+const LAST_NAMES = [
+  'Raza',
+  'Hussain',
+  'Farooq',
+  'Iqbal',
+  'Ali',
+  'Mehmood',
+  'Abbas',
+  'Sultan',
+  'Sheikh',
+  'Aslam',
+  'Yousaf',
+  'Baig',
+  'Khan',
+  'Chaudhary',
+  'Farooqi',
+  'Latif',
+  'Malik',
+  'Butt',
+  'Chishti',
+  'Qureshi',
+  'Siddiqui',
+  'Ansari',
+  'Bhatti',
+  'Cheema',
+  'Dogar',
+  'Gill',
+  'Janjua',
+  'Khokhar',
+  'Mirza',
+  'Rana',
+];
+
+interface MemberRow {
+  key: string | null;
+  name: string;
+  company: string | null;
+  role: NamedMemberSeed['role'];
+  whatsappStatus: 'confirmed' | 'unconfirmed';
+}
+
+function buildMemberRows(): MemberRow[] {
+  const rows: MemberRow[] = [];
+  let bulkCounter = 0;
+
+  for (const segment of ROLE_SEGMENTS) {
+    const segmentRows: Omit<MemberRow, 'whatsappStatus'>[] =
+      NAMED_MEMBER_SEEDS.filter((m) => m.role === segment.role).map((m) => ({
+        key: m.key,
+        name: m.name,
+        company: m.company,
+        role: m.role,
+      }));
+
+    while (segmentRows.length < segment.total) {
+      const first = FIRST_NAMES[bulkCounter % FIRST_NAMES.length];
+      const last =
+        LAST_NAMES[
+          Math.floor(bulkCounter / FIRST_NAMES.length) % LAST_NAMES.length
+        ];
+      segmentRows.push({
+        key: null,
+        name: `${first} ${last}`,
+        company: null,
+        role: segment.role,
+      });
+      bulkCounter += 1;
+    }
+
+    segmentRows.forEach((row, i) => {
+      rows.push({
+        ...row,
+        whatsappStatus: i < segment.confirmed ? 'confirmed' : 'unconfirmed',
+      });
+    });
+  }
+
+  return rows;
+}
+
+// Populates the full §19 Member population on `contacts`: 844 rows
+// (202 Mechanic / 255 Truck Owner / 387 Truck Driver), 619 with
+// `whatsapp_status = 'confirmed'` (154/187/278 per segment — the
+// reference table's numbers, hit exactly), spread evenly across the
+// 20 seeded markets. Returns the full id list (for the
+// engagement/interaction event generators, which just need a random
+// Member to attribute an event to) and a name->id lookup for the 20
+// named individuals `customer_requests`/`trials` reference directly.
+async function seedDemoContacts(
+  accountId: string,
+  userId: string,
+  regionIds: Map<string, string>,
+  marketIds: Map<string, string>
+): Promise<{ allContactIds: string[]; namedContactIds: Map<string, string> }> {
+  const memberRows = buildMemberRows();
+  const marketKeys = MARKETS_SEEDS.map((m) => m.key);
+  const marketRegionKey = new Map(MARKETS_SEEDS.map((m) => [m.key, m.region]));
+
+  const ids = memberRows.map(() => randomUUID());
+  const namedContactIds = new Map<string, string>();
+
+  const rows: Row[] = memberRows.map((m, i) => {
+    const marketKey = marketKeys[i % marketKeys.length];
+    const regionKey = marketRegionKey.get(marketKey)!;
+    if (m.key) namedContactIds.set(m.key, ids[i]);
+
+    return {
+      id: ids[i],
+      account_id: accountId,
+      user_id: userId,
+      phone: `+92300${String(i + 1).padStart(7, '0')}`,
+      name: m.name,
+      email: `${m.name.toLowerCase().replace(/\s+/g, '.')}.${i}@example.com`,
+      company: m.company,
+      role: m.role,
+      region_id: regionIds.get(regionKey),
+      market_id: marketIds.get(marketKey),
+      opt_in_status: m.whatsappStatus === 'confirmed' ? 'opted_in' : 'pending',
+      whatsapp_status: m.whatsappStatus,
+      last_engagement:
+        m.whatsappStatus === 'confirmed' ? hoursAgo(randomInt(1, 720)) : null,
+      joined_date: daysFromNow(-randomInt(1, 365)),
+    };
+  });
+
+  await insert('contacts', rows);
+  return { allContactIds: ids, namedContactIds };
+}
+
+// ============================================================
+// Seed sections — Phase 1 continued (Content, Requests, Trials, ...)
+// ============================================================
 
 interface ContentSeed {
   key: string;
@@ -1115,7 +1489,7 @@ async function seedVoiceNotes(
 
 interface CustomerRequestSeed {
   key: string;
-  memberIndex: number;
+  memberKey: string;
   productCode: string | null;
   campaignKey: string | null;
   type: string;
@@ -1128,7 +1502,7 @@ interface CustomerRequestSeed {
 const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   {
     key: 'cr-1',
-    memberIndex: 0,
+    memberKey: 'ahmed-raza',
     productCode: 'RIM-HDD-15W40',
     campaignKey: 'fleet-checkup',
     type: 'TRIAL_REQUEST',
@@ -1139,7 +1513,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-2',
-    memberIndex: 1,
+    memberKey: 'bilal-hussain',
     productCode: 'RIM-PCM-5W30',
     campaignKey: 'passenger-car-push',
     type: 'PRODUCT_QUESTION',
@@ -1150,7 +1524,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-3',
-    memberIndex: 2,
+    memberKey: 'chaudhry-farooq',
     productCode: 'RIM-HDD-15W40',
     campaignKey: 'fleet-checkup',
     type: 'PRODUCT_SUITABILITY',
@@ -1161,7 +1535,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-4',
-    memberIndex: 3,
+    memberKey: 'danish-iqbal',
     productCode: null,
     campaignKey: null,
     type: 'GENERAL_ENQUIRY',
@@ -1172,7 +1546,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-5',
-    memberIndex: 4,
+    memberKey: 'ehsan-ali',
     productCode: 'RIM-COOL-OAT',
     campaignKey: 'winter-coolant',
     type: 'PRODUCT_INFORMATION',
@@ -1183,7 +1557,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-6',
-    memberIndex: 5,
+    memberKey: 'faisal-mehmood',
     productCode: null,
     campaignKey: null,
     type: 'BA_CALL_REQUEST',
@@ -1194,7 +1568,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-7',
-    memberIndex: 6,
+    memberKey: 'ghulam-abbas',
     productCode: 'RIM-HDD-15W40',
     campaignKey: null,
     type: 'PURCHASE_REQUEST',
@@ -1205,7 +1579,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-8',
-    memberIndex: 7,
+    memberKey: 'hamid-sultan',
     productCode: null,
     campaignKey: null,
     type: 'FEEDBACK',
@@ -1216,7 +1590,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-9',
-    memberIndex: 8,
+    memberKey: 'imran-sheikh',
     productCode: 'RIM-ATF-III',
     campaignKey: null,
     type: 'CONVERSION_REQUEST',
@@ -1227,7 +1601,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
   },
   {
     key: 'cr-10',
-    memberIndex: 9,
+    memberKey: 'junaid-aslam',
     productCode: 'RIM-PCM-5W30',
     campaignKey: 'passenger-car-push',
     type: 'PRODUCT_QUESTION',
@@ -1241,7 +1615,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
 async function seedCustomerRequests(
   accountId: string,
   userId: string,
-  contactIds: string[],
+  namedContactIds: Map<string, string>,
   productIds: Map<string, string>,
   campaignIds: Map<string, string>
 ): Promise<Map<string, string>> {
@@ -1253,7 +1627,7 @@ async function seedCustomerRequests(
     CUSTOMER_REQUEST_SEEDS.map((r) => ({
       id: requestIds.get(r.key),
       account_id: accountId,
-      contact_id: contactIds[r.memberIndex],
+      contact_id: namedContactIds.get(r.memberKey),
       product_id: r.productCode ? productIds.get(r.productCode) : null,
       campaign_id: r.campaignKey ? campaignIds.get(r.campaignKey) : null,
       type: r.type,
@@ -1267,7 +1641,7 @@ async function seedCustomerRequests(
 }
 
 interface TrialSeed {
-  memberIndex: number | null;
+  memberKey: string | null;
   productCode: string;
   requestKey: string | null;
   name: string;
@@ -1289,7 +1663,7 @@ interface TrialSeed {
 
 const TRIAL_SEEDS: TrialSeed[] = [
   {
-    memberIndex: 0,
+    memberKey: 'ahmed-raza',
     productCode: 'RIM-HDD-15W40',
     requestKey: 'cr-1',
     name: 'Ahmed Raza',
@@ -1302,7 +1676,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     assign: true,
   },
   {
-    memberIndex: 1,
+    memberKey: 'bilal-hussain',
     productCode: 'RIM-PCM-5W30',
     requestKey: null,
     name: 'Bilal Hussain',
@@ -1315,7 +1689,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     assign: false,
   },
   {
-    memberIndex: 2,
+    memberKey: 'chaudhry-farooq',
     productCode: 'RIM-HDD-15W40',
     requestKey: null,
     name: 'Chaudhry Farooq',
@@ -1328,7 +1702,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     assign: true,
   },
   {
-    memberIndex: 4,
+    memberKey: 'ehsan-ali',
     productCode: 'RIM-COOL-OAT',
     requestKey: 'cr-5',
     name: 'Ehsan Ali',
@@ -1341,7 +1715,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     assign: true,
   },
   {
-    memberIndex: null,
+    memberKey: null,
     productCode: 'RIM-HDD-15W40',
     requestKey: null,
     name: 'Walk-in Prospect',
@@ -1354,7 +1728,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     assign: false,
   },
   {
-    memberIndex: 8,
+    memberKey: 'imran-sheikh',
     productCode: 'RIM-ATF-III',
     requestKey: null,
     name: 'Imran Sheikh',
@@ -1371,7 +1745,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
 async function seedTrials(
   accountId: string,
   userId: string,
-  contactIds: string[],
+  namedContactIds: Map<string, string>,
   productIds: Map<string, string>,
   requestIds: Map<string, string>
 ): Promise<void> {
@@ -1379,7 +1753,7 @@ async function seedTrials(
     'trials',
     TRIAL_SEEDS.map((t) => ({
       account_id: accountId,
-      contact_id: t.memberIndex !== null ? contactIds[t.memberIndex] : null,
+      contact_id: t.memberKey ? namedContactIds.get(t.memberKey) : null,
       product_id: productIds.get(t.productCode),
       customer_request_id: t.requestKey ? requestIds.get(t.requestKey) : null,
       name: t.name,
@@ -1543,8 +1917,19 @@ async function main(): Promise<void> {
   console.log('Seeding campaigns...');
   const campaignIds = await seedCampaigns(accountId, userId, productIds);
 
-  console.log('Seeding demo contacts (Members)...');
-  const contactIds = await seedDemoContacts(accountId, userId);
+  console.log('Seeding markets and regions...');
+  const { regionIds, marketIds } = await seedMarketsRegions(accountId);
+
+  console.log('Setting demo login BA fields...');
+  await seedDemoUserBaFields(userId, regionIds, marketIds);
+
+  console.log('Seeding demo Members (full §19 volumes: 844 contacts)...');
+  const { allContactIds, namedContactIds } = await seedDemoContacts(
+    accountId,
+    userId,
+    regionIds,
+    marketIds
+  );
 
   console.log('Seeding content...');
   const contentIds = await seedContent(
@@ -1568,24 +1953,32 @@ async function main(): Promise<void> {
   const requestIds = await seedCustomerRequests(
     accountId,
     userId,
-    contactIds,
+    namedContactIds,
     productIds,
     campaignIds
   );
 
   console.log('Seeding trials...');
-  await seedTrials(accountId, userId, contactIds, productIds, requestIds);
+  await seedTrials(accountId, userId, namedContactIds, productIds, requestIds);
 
   console.log('Seeding engagement events...');
-  await seedEngagementEvents(accountId, campaignIds, contactIds);
+  await seedEngagementEvents(accountId, campaignIds, allContactIds);
 
   console.log('Seeding product interactions...');
-  await seedProductInteractions(accountId, productIds, campaignIds, contactIds);
+  await seedProductInteractions(
+    accountId,
+    productIds,
+    campaignIds,
+    allContactIds
+  );
 
   console.log('Seeding WhatsApp sync log...');
   await seedWhatsAppSyncLog(accountId, productIds);
 
   console.log('');
+  console.log(
+    `Seeded ${allContactIds.length} Members (202 Mechanics / 255 Truck Owners / 387 Drivers, 619 WhatsApp-confirmed) across ${MARKETS_SEEDS.length} markets in ${REGIONS_SEEDS.length} regions.`
+  );
   console.log('Done. Demo login:');
   console.log(`  email:    ${DEMO_EMAIL}`);
   console.log(`  password: ${DEMO_PASSWORD}`);

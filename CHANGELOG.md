@@ -9,6 +9,65 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.10.0] — 2026-08-19
+
+Adds Markets/Regions and extends `contacts` into `Member` and
+`profiles` into `BA` (Phase 2 of the build plan in
+`docs/RIMULA_BUILD_SPEC.md` §23 — schema + seed only; the
+`WhatsAppService`/`DemoWhatsAppService` abstraction §23 also lists
+under Phase 2 is not part of this change). No table is replaced —
+`contacts`/`profiles` are widened in place, same as every extension
+the spec calls for in §9.0.
+
+> **Migration required:** apply, in order,
+> `supabase/migrations/049_rimula_markets_regions.sql`,
+> `050_rimula_member_fields.sql`, and `051_rimula_ba_fields.sql`. Then
+> re-run `npm run db:seed` for local/dev — it now seeds the full §19
+> Member volumes (844 contacts) instead of the small placeholder set
+> Phase 1 shipped.
+
+### Added
+
+- **`markets`, `regions`** (049) — settings-class lookup tables (admin+
+  writes, any member reads, mirrors `product_categories`) backing the
+  `region`/`market` fields on both `Member` and `BA` below. A market
+  optionally belongs to a region; §12's BA routing (`Market BA →
+  Regional BA → Unassigned`) is the reason these are real FKs with
+  stable ids rather than free-text columns that could drift ("Lahore"
+  / "lahore" / "LHR").
+- **`contacts` extended into `Member`** (050): `role` (Mechanic/Truck
+  Driver/Truck Owner/BA/Other — the exact §8 community audience
+  roles), `region_id`/`market_id` (FK into 049), `vehicle`/
+  `vehicle_type` (self-reported, deliberately not linked to the
+  Phase 1 `vehicles` catalog), `opt_in_status`, `whatsapp_status`
+  (drives the §19 "WhatsApp confirmed" metric), `community_status`,
+  `joined_date` (backfilled from `created_at` for existing rows, not
+  defaulted to today), `last_engagement`.
+- **`profiles` extended into `BA`** (051): `region_id`/`market_id` (FK
+  into 049), `ba_status` (named to avoid a third ambiguous bare
+  `status`/`role` column on this already-overloaded table — see
+  migration 041's `profiles.role` vs `profiles.account_role` note),
+  `open_leads` (denormalized counter, maintained by BA-routing logic
+  landing in a later phase), `capacity`, `languages` (reuses the exact
+  `ur`/`ps`/`pa`/`ur-Roman` codes `content_translations.language`
+  already uses, so §14's "BA may edit translations for languages in
+  their own `languages` field" is a direct array-membership check with
+  no code-mapping layer). Partial indexes on `(account_id, market_id)`
+  / `(account_id, region_id) WHERE ba_status = 'active'` for the §12
+  routing hot path.
+- **`scripts/seed.ts` now seeds the full §19 Member population**: 844
+  `contacts` rows (202 Mechanic / 255 Truck Owner / 387 Truck Driver,
+  619 with `whatsapp_status = 'confirmed'` — 154/187/278 per segment,
+  matching the reference table exactly) spread evenly across the 20
+  seeded markets. The 20 named individuals the Phase 1 seed already
+  used (referenced by `customer_requests`/`trials`) are preserved as
+  specific rows within their matching role segment — a bulk-generated
+  pool (first name × last name cross product) fills the rest. The
+  single demo login also gets usable `BA` fields set (region, market,
+  `languages: ['ur','ps','pa']`, capacity) so it's a coherent
+  assignment/verification/translation target elsewhere in the seed,
+  not an admin with every BA field null.
+
 ## [0.9.0] — 2026-08-19
 
 Adds the net-new Rimula Community Growth Platform schema (Phase 1 of

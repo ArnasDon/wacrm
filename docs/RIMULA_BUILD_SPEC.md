@@ -90,6 +90,13 @@ Feel: polished enterprise marketing-ops platform in Shell/Rimula colours (Shell 
 
 One MVP destination, "Rimula Announcements," modeled as a generic `CommunityGroup` so more destinations can be added later. Audience roles: Mechanics, Truck Drivers, Truck Owners, BAs, Other. Model is brand → audience broadcast, not open group chat. Only implement interaction methods Meta officially supports.
 
+**No hardcoded member cap.** The community must grow beyond the §19 seed volumes — 844/619 are seed data only, never a schema, validation, UI, or query-logic limit. Two real ceilings exist and must be handled explicitly rather than by capping membership:
+
+- **In this codebase:** `POST /api/v1/broadcasts` caps a single broadcast at 1,000 recipients. An audience larger than that must be batched into multiple broadcast rows (via the atomic `create_broadcast_with_recipients` entry point) and reassembled for reporting, so one logical announcement can reach an unbounded audience. Do not silently truncate the recipient list — if a send is split or deferred, surface it in the UI and log it.
+- **At Meta:** WhatsApp Cloud API messaging limits are tiered per rolling 24 hours. Per current official documentation, new business portfolios start at 250 unique customers, step to 2,000 on approval, then scale by one level at a time when message quality stays high and at least half the current limit is used within 7 days. Do not encode the older 1K/10K/100K/unlimited tier scheme — verify against Meta's live docs before hardcoding any number. This is an external constraint the app cannot raise: surface remaining headroom in the Announcements UI and queue or stagger sends that would exceed it, rather than failing mid-broadcast or reporting a success that didn't happen. Record the current tier in Settings; if unknown, display `Unknown` per §2.
+
+Demo mode simulates delivery and so has no tier ceiling — do not let that hide the production constraint from the operator.
+
 ## 9. DATA MODEL
 
 ### 9.0 Map onto the existing schema first

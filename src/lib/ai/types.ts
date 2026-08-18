@@ -6,6 +6,8 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
+import type { ToolCallRecord } from './tools/types'
+
 export type AiProvider = 'openai' | 'anthropic'
 
 /**
@@ -62,6 +64,11 @@ export interface GenerateResult {
   handoff: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
+  /** Every tool the model invoked while producing this reply, in order.
+   *  Omitted (not an empty array) when no tools were configured or none
+   *  were called — keeps the result shape identical to before tool
+   *  calling existed for every account that isn't using it. */
+  toolCalls?: ToolCallRecord[]
 }
 
 /**

@@ -26,6 +26,30 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
 
+/**
+ * Hard cap on tool-use round trips within one `generateReply` call.
+ * Each iteration is a full provider request, so this bounds both
+ * latency (a customer is waiting) and spend on the account's own key
+ * if the model gets stuck retrying a tool. Only ever consumed when the
+ * account has active tools configured — a call with none never enters
+ * the loop.
+ */
+export const MAX_TOOL_ITERATIONS = 5
+
+/**
+ * Wall-clock budget (ms) for the WHOLE tool-calling loop within one
+ * `generateReply` call, independent of `MAX_TOOL_ITERATIONS` and each
+ * call's own timeout. Without this, worst case latency is
+ * `MAX_TOOL_ITERATIONS × (aiRequestTimeoutMs() + a tool's own
+ * timeoutMs)` — with the 30s/20s defaults that's close to 3 minutes,
+ * which is not a real bound: a customer is waiting live for this reply,
+ * and most hosting platforms kill a serverless invocation well before
+ * that. Checked between rounds (a round already in flight always
+ * finishes) — once the budget is spent, the loop stops and the caller
+ * sees a clear `tool_loop_timeout` AiError instead of grinding on.
+ */
+export const MAX_TOOL_LOOP_MS = 45_000
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
 

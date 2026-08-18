@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(impeccable)",
+      "Skill(impeccable:*)",
+      "Bash(node /Users/adityakaklij/.claude/skills/impeccable/scripts/context.mjs)",
+      "Read(//Users/adityakaklij/.claude/skills/impeccable/reference/**)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse text *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse handoff *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse status *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse connect *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse resume *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse url *)",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-adityakaklij-Desktop-projects-wacrm/1f552747-1033-4953-8ea5-7023d267da23/scratchpad/shots)",
+      "Bash(python3 -c ' *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse css *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse snapshot *)",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse click *)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); json.load\\(open\\('messages/ko.json'\\)\\); print\\('json ok'\\)\")",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse disconnect *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/dashboard)",
+      "Bash(npx next *)",
+      "Bash(xargs sed -i '' 's/text-2xl font-bold/text-[28px] font-semibold tracking-tight/g')",
+      "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse reload *)",
+      "Bash(xargs ls)",
+      "Bash(npx vitest *)"
+    ]
+  }
+}

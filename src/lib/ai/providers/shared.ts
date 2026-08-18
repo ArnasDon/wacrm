@@ -1,8 +1,43 @@
 import { AiError, type AiUsage, type ChatMessage } from '../types'
+import type { ToolCallRecord, ToolExecutionResult } from '../tools/types'
 
 // ============================================================
 // Bits shared by the OpenAI + Anthropic adapters.
 // ============================================================
+
+/**
+ * Runs one tool call by name; never throws (a failure — bad args,
+ * SSRF-blocked, timeout, non-2xx — comes back as a `ToolExecutionResult`
+ * with `ok: false` so the model sees it as a tool result, not a crash).
+ * Provided by `generate.ts`, which owns the account's `AiTool[]` and
+ * wraps `executeTool` per name.
+ */
+export type ToolRunner = (
+  toolName: string,
+  args: Record<string, unknown>,
+) => Promise<ToolExecutionResult>
+
+/**
+ * Tool-calling knobs for one `generateReply` call. Omitted entirely
+ * when the account has no active tools — that's what guarantees the
+ * request an adapter sends is byte-identical to the pre-tool-calling
+ * shape for every account that isn't using this.
+ */
+export interface ToolLoopArgs {
+  /** Provider-specific tool definitions, already converted by
+   *  `tools/schema.ts` (`toAnthropicTool` / `toOpenAiTool`). */
+  toolDefs: unknown[]
+  runTool: ToolRunner
+  /** Hard cap on tool-use round trips (see `MAX_TOOL_ITERATIONS`). */
+  maxIterations: number
+  /** Epoch ms after which the loop must stop instead of starting
+   *  another round — see `MAX_TOOL_LOOP_MS`. A round already in flight
+   *  always finishes; this only gates starting the NEXT one. */
+  deadlineAt: number
+  /** Called once per executed tool call, in order, so the caller can
+   *  persist/display the full transcript. */
+  onToolCall: (record: ToolCallRecord) => void
+}
 
 export interface ProviderArgs {
   apiKey: string
@@ -10,6 +45,19 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Present only when the account has active tools. */
+  toolLoop?: ToolLoopArgs
+}
+
+/** Merge two usage totals (summing across tool-loop round trips). */
+export function sumUsage(a: AiUsage | null, b: AiUsage | null): AiUsage | null {
+  if (!a) return b
+  if (!b) return a
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  }
 }
 
 /**

@@ -7,6 +7,8 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
+import { loadAiTools } from './tools/config'
+import { persistToolCallMessages } from './tools/persist'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -38,6 +40,15 @@ interface DispatchArgs {
  * The 24h WhatsApp session window is inherently open here — we're
  * reacting to a customer message that just landed — so no separate
  * window check is needed.
+ *
+ * Tool calls (see `loadAiTools` below) are NOT gated by method or by a
+ * human-approval step: a GET and a POST/PUT/PATCH/DELETE tool both fire
+ * autonomously, purely on the model's own decision, driven entirely by
+ * what the customer typed. That's a deliberate scope call, not an
+ * oversight — an approval step is a materially bigger feature (a
+ * pending/approve state + UI). If a business wires up a state-changing
+ * tool (cancel an order, issue a refund), the tool's own `description`
+ * and the downstream API's business logic are the only backstops today.
  */
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
@@ -112,11 +123,32 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    // Tools are best-effort to load: a decrypt/DB failure here degrades
+    // to "no tools this turn" rather than losing the reply entirely.
+    // Same treatment for the account-wide tool-call throttle — over the
+    // limit means "reply without tools this turn", not "no reply".
+    const toolLimit = checkRateLimit(`ai-toolcall:${accountId}`, RATE_LIMITS.aiToolCall)
+    const tools = toolLimit.success
+      ? await loadAiTools(db, accountId).catch((err) => {
+          console.error('[ai auto-reply] loadAiTools failed:', err)
+          return []
+        })
+      : []
+
+    const { text, handoff, usage, toolCalls } = await generateReply({
       config,
       systemPrompt,
       messages,
+      tools,
     })
+
+    // Surface every tool the model called in the thread itself, before
+    // the final reply lands — an agent watching the conversation sees
+    // "checked availability" → "booked the slot" → the actual reply, in
+    // order. Best-effort; never blocks the send that follows.
+    if (toolCalls && toolCalls.length > 0) {
+      await persistToolCallMessages(db, conversationId, toolCalls)
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`

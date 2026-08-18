@@ -1,6 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { generateReply, parseGeneration } from './generate'
 import { AiError, type AiConfig } from './types'
+import type { AiTool } from './tools/types'
+
+function tool(overrides: Partial<AiTool> = {}): AiTool {
+  return {
+    id: 't1',
+    accountId: 'acct-1',
+    name: 'check_stock',
+    description: 'Checks stock for a SKU',
+    method: 'GET',
+    url: 'https://8.8.8.8/stock',
+    headers: {},
+    authType: 'none',
+    authHeaderName: null,
+    authSecret: null,
+    parameters: [{ name: 'sku', in: 'query', type: 'string', required: true }],
+    timeoutMs: 5000,
+    ...overrides,
+  }
+}
 
 function config(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -30,6 +49,17 @@ function errResponse(status: number, json: unknown): Response {
     ok: false,
     status,
     json: async () => json,
+  } as unknown as Response
+}
+
+/** A tool's own outbound response, as `executeTool` consumes it
+ *  (`res.text()`, not `.json()`). */
+function toolFetchResponse(body: string): Response {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: async () => body,
   } as unknown as Response
 }
 
@@ -190,5 +220,217 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+describe('generateReply — no tools configured (regression)', () => {
+  it('OpenAI: sends no `tools` key and the result has no `toolCalls` key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ choices: [{ message: { content: 'Hi!' } }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: [],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).not.toHaveProperty('tools')
+    expect(res).not.toHaveProperty('toolCalls')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('Anthropic: sends no `tools` key and the result has no `toolCalls` key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ content: [{ type: 'text', text: 'Hi!' }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).not.toHaveProperty('tools')
+    expect(res).not.toHaveProperty('toolCalls')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('generateReply — tool loop', () => {
+  it('OpenAI: executes a requested tool and feeds the result back for a final reply', async () => {
+    let providerCalls = 0
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      if (String(url).includes('api.openai.com')) {
+        providerCalls += 1
+        if (providerCalls === 1) {
+          return okResponse({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call_1',
+                      type: 'function',
+                      function: { name: 'check_stock', arguments: '{"sku":"ABC-1"}' },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          })
+        }
+        return okResponse({
+          choices: [{ message: { content: 'It is in stock!' } }],
+          usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 },
+        })
+      }
+      // The tool's own outbound call (executeTool → the account's API).
+      return toolFetchResponse('{"in_stock":true}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Is ABC-1 in stock?' }],
+      tools: [tool()],
+    })
+
+    expect(res.text).toBe('It is in stock!')
+    expect(res.toolCalls).toHaveLength(1)
+    expect(res.toolCalls?.[0]).toMatchObject({
+      toolName: 'check_stock',
+      args: { sku: 'ABC-1' },
+    })
+    expect(res.toolCalls?.[0].result.ok).toBe(true)
+    // Usage summed across both provider round trips.
+    expect(res.usage).toEqual({ promptTokens: 30, completionTokens: 10, totalTokens: 40 })
+    expect(providerCalls).toBe(2)
+  })
+
+  it('Anthropic: executes a requested tool and feeds the result back for a final reply', async () => {
+    let providerCalls = 0
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      if (String(url).includes('api.anthropic.com')) {
+        providerCalls += 1
+        if (providerCalls === 1) {
+          return okResponse({
+            content: [
+              { type: 'tool_use', id: 'tu_1', name: 'check_stock', input: { sku: 'ABC-1' } },
+            ],
+            usage: { input_tokens: 10, output_tokens: 5 },
+          })
+        }
+        return okResponse({
+          content: [{ type: 'text', text: 'It is in stock!' }],
+          usage: { input_tokens: 20, output_tokens: 5 },
+        })
+      }
+      return toolFetchResponse('{"in_stock":true}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Is ABC-1 in stock?' }],
+      tools: [tool()],
+    })
+
+    expect(res.text).toBe('It is in stock!')
+    expect(res.toolCalls).toHaveLength(1)
+    expect(res.toolCalls?.[0].toolName).toBe('check_stock')
+    expect(providerCalls).toBe(2)
+  })
+
+  it('gives up after MAX_TOOL_ITERATIONS rounds of tool use', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      if (String(url).includes('api.openai.com')) {
+        return okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_x',
+                    type: 'function',
+                    function: { name: 'check_stock', arguments: '{"sku":"ABC-1"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        })
+      }
+      return toolFetchResponse('ok')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'openai' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Is ABC-1 in stock?' }],
+        tools: [tool()],
+      }),
+    ).rejects.toMatchObject({ code: 'tool_loop_exhausted' })
+  })
+
+  it('gives up once the wall-clock budget is spent, even under MAX_TOOL_ITERATIONS', async () => {
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      if (String(url).includes('api.openai.com')) {
+        return okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_x',
+                    type: 'function',
+                    function: { name: 'check_stock', arguments: '{"sku":"ABC-1"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        })
+      }
+      return toolFetchResponse('ok')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    // First Date.now() call computes the deadline; every call after
+    // that (inside executeTool, and the loop's own deadline check)
+    // reports far past it — simulates the budget running out after
+    // just one round, well before MAX_TOOL_ITERATIONS (5) is reached.
+    const BASE = 1_700_000_000_000
+    let calls = 0
+    vi.spyOn(Date, 'now').mockImplementation(() => (calls++ === 0 ? BASE : BASE + 100_000))
+
+    try {
+      await expect(
+        generateReply({
+          config: config({ provider: 'openai' }),
+          systemPrompt: 'sys',
+          messages: [{ role: 'user', content: 'Is ABC-1 in stock?' }],
+          tools: [tool()],
+        }),
+      ).rejects.toMatchObject({ code: 'tool_loop_timeout' })
+      // Only the first round's provider call happened — it stopped
+      // before starting a second, not after exhausting all 5.
+      expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('api.openai.com'))).toHaveLength(1)
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })

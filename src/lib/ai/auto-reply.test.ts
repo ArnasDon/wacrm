@@ -8,6 +8,8 @@ const h = vi.hoisted(() => ({
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  loadAiTools: vi.fn(),
+  persistToolCallMessages: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -22,6 +24,8 @@ vi.mock('./context', () => ({ buildConversationContext: h.buildConversationConte
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('./tools/config', () => ({ loadAiTools: h.loadAiTools }))
+vi.mock('./tools/persist', () => ({ persistToolCallMessages: h.persistToolCallMessages }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -96,6 +100,8 @@ beforeEach(() => {
   h.retrieveKnowledge.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.loadAiTools.mockResolvedValue([])
+  h.persistToolCallMessages.mockResolvedValue(undefined)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -208,5 +214,42 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+})
+
+describe('dispatchInboundToAiReply — tool calls', () => {
+  it('passes the account\'s tools to generateReply', async () => {
+    const tools = [{ id: 't1', name: 'check_stock' }]
+    h.loadAiTools.mockResolvedValue(tools)
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply.mock.calls[0][0].tools).toBe(tools)
+  })
+
+  it('persists every tool call before the send, and still sends the reply', async () => {
+    const toolCalls = [
+      { toolName: 'check_stock', args: {}, result: { ok: true, status: 200 } },
+    ]
+    h.generateReply.mockResolvedValue({ text: 'In stock!', handoff: false, toolCalls })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.persistToolCallMessages).toHaveBeenCalledWith(
+      expect.anything(),
+      'conv-1',
+      toolCalls,
+    )
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'In stock!' }),
+    )
+  })
+
+  it('does not persist when the reply used no tools', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.persistToolCallMessages).not.toHaveBeenCalled()
+  })
+
+  it('degrades to no tools when loadAiTools fails, without losing the reply', async () => {
+    h.loadAiTools.mockRejectedValue(new Error('decrypt failed'))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply.mock.calls[0][0].tools).toEqual([])
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 })

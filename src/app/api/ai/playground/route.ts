@@ -6,6 +6,7 @@ import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
+import { loadAiTools } from '@/lib/ai/tools/config'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 // Keep the tested transcript bounded, mirroring the live context window.
@@ -15,11 +16,15 @@ const MAX_TURNS = 20
  * POST /api/ai/playground  (agent+)
  *
  * Test-chat with the account's agent WITHOUT touching WhatsApp. Runs the
- * exact same path the auto-reply bot uses — knowledge-base retrieval +
- * `auto_reply` system prompt + the configured provider — so what you see
- * here is what a real customer would get. Reads the config even when the
- * master switch is off (requireActive:false) so you can try it before
- * going live. Stateless: the client sends the running transcript each turn.
+ * exact same path the auto-reply bot uses — knowledge-base retrieval,
+ * configured tools, `auto_reply` system prompt, and the configured
+ * provider — so what you see here (including any tool calls the model
+ * makes) is what a real customer would get. Reads the config even when
+ * the master switch is off (requireActive:false) so you can try it
+ * before going live. Stateless: the client sends the running transcript
+ * each turn; tool calls made during the turn are returned in the
+ * response but not persisted anywhere (nothing to replay them from on
+ * the next turn, unlike the inbox where they land as message rows).
  */
 export async function POST(request: Request) {
   try {
@@ -84,8 +89,33 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
-    return NextResponse.json({ reply: text, handoff })
+    const toolLimit = checkRateLimit(`ai-toolcall:${accountId}`, RATE_LIMITS.aiToolCall)
+    const tools = toolLimit.success
+      ? await loadAiTools(supabase, accountId).catch((err) => {
+          console.error('[ai/playground] loadAiTools error:', err)
+          return []
+        })
+      : []
+
+    const { text, handoff, toolCalls } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+      tools,
+    })
+    return NextResponse.json({
+      reply: text,
+      handoff,
+      tool_calls: (toolCalls ?? []).map((c) => ({
+        tool_name: c.toolName,
+        args: c.args,
+        ok: c.result.ok,
+        status: c.result.status,
+        body: c.result.body,
+        error: c.result.error,
+        duration_ms: c.result.durationMs,
+      })),
+    })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(

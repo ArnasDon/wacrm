@@ -215,8 +215,27 @@ export type ContentType =
   | 'location'
   | 'template'
   /** Customer tapped a reply button or list row on a message we sent. */
-  | 'interactive';
+  | 'interactive'
+  /** The AI agent invoked one of its configured tools. Synthetic —
+   *  never sent to WhatsApp. Migration 040. */
+  | 'tool_call';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
+/** `content_type === 'tool_call'` detail — request (credential
+ *  redacted) + response summary, for the inbox bubble / Playground. */
+export interface ToolCallPayload {
+  tool_name: string;
+  status: 'success' | 'error';
+  request: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  response: { status: number | null; body_excerpt: string | null };
+  duration_ms: number;
+  error_message: string | null;
+}
 
 export interface Message {
   id: string;
@@ -258,6 +277,8 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /** Only set when `content_type === 'tool_call'`. Migration 040. */
+  tool_call_payload?: ToolCallPayload | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';

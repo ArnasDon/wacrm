@@ -1,0 +1,24 @@
+{
+  "updatedAt": "2026-08-14T04:54:30.672Z",
+  "reason": "updated",
+  "tabs": [
+    {
+      "tabId": 781328738,
+      "url": "http://127.0.0.1:34567/welcome",
+      "title": "GStack Browser",
+      "active": false,
+      "windowId": 781328737,
+      "pinned": false,
+      "audible": false
+    },
+    {
+      "tabId": 781328742,
+      "url": "http://localhost:3000/inbox",
+      "title": "wacrm",
+      "active": true,
+      "windowId": 781328737,
+      "pinned": false,
+      "audible": false
+    }
+  ]
+}

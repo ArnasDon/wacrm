@@ -228,7 +228,11 @@
       "downloadFailed": "Couldn't download the attachment",
       "viewImage": "View image",
       "expandVideo": "Expand video",
-      "imageAlt": "Shared image"
+      "imageAlt": "Shared image",
+      "unknownTool": "a tool"
+    },
+    "toolCall": {
+      "noBody": "(empty response)"
     },
     "mediaViewer": {
       "counter": "{index} of {total}",

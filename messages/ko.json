@@ -228,7 +228,11 @@
       "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
       "viewImage": "이미지 보기",
       "expandVideo": "동영상 확대",
-      "imageAlt": "공유된 이미지"
+      "imageAlt": "공유된 이미지",
+      "unknownTool": "도구"
+    },
+    "toolCall": {
+      "noBody": "(빈 응답)"
     },
     "mediaViewer": {
       "counter": "{total}개 중 {index}번째",

@@ -23,6 +23,7 @@ import {
   MediaVideoBubble,
 } from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import { ToolCallBlock } from "@/components/agents/tool-call-block";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -203,6 +204,24 @@ function MessageContent({
         <p className="whitespace-pre-wrap break-words text-sm">
           {message.content_text || t("interactiveReply")}
         </p>
+      );
+    }
+
+    case "tool_call": {
+      const payload = message.tool_call_payload;
+      return (
+        <ToolCallBlock
+          onPrimary={isAgent}
+          data={{
+            toolName: payload?.tool_name ?? message.content_text ?? t("unknownTool"),
+            status: payload?.status ?? "success",
+            request: payload?.request,
+            responseStatus: payload?.response.status,
+            responseBody: payload?.response.body_excerpt,
+            errorMessage: payload?.error_message,
+            durationMs: payload?.duration_ms,
+          }}
+        />
       );
     }
 

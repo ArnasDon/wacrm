@@ -40,7 +40,14 @@ function LoginPageInner() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // /auth/callback sends an expired/invalid recovery or invite link
+  // here (there's nowhere else useful to land) — surface it instead of
+  // silently showing a blank sign-in form.
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "invalid_or_expired_link"
+      ? "That link has expired or was already used. Request a new one."
+      : null,
+  );
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 

@@ -7,7 +7,13 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function platformInviteRedirectUrl(request: Request): string {
   const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const baseUrl = configuredSiteUrl || new URL(request.url).origin;
-  return `${baseUrl.replace(/\/+$/, "")}/login`;
+  // Through /auth/callback, same as the forgot-password link — Supabase's
+  // invite email carries a PKCE `code` that has to be exchanged for a
+  // real session before the recipient can do anything, and /login has no
+  // form to set an initial password. Previously this pointed straight at
+  // /login, which left invited owners stuck looking at a sign-in form for
+  // credentials they were never given.
+  return `${baseUrl.replace(/\/+$/, "")}/auth/callback?next=/reset-password`;
 }
 
 export async function GET() {

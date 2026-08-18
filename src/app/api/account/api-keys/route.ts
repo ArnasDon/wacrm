@@ -27,7 +27,7 @@ import {
 import { generateApiKey } from '@/lib/api-keys/keys';
 import { normalizeScopes } from '@/lib/api-keys/scopes';
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   try {
     const ctx = await requireRole('admin');
 
-    const limit = checkRateLimit(
+    const limit = await checkSharedRateLimit(
       `admin:apiKeyCreate:${ctx.userId}`,
       RATE_LIMITS.adminAction
     );

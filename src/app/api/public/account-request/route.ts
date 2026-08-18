@@ -12,7 +12,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { sendEmail, EmailError } from '@/lib/email/send'
 
 const REQUESTS_INBOX = 'asistentedechat@gmail.com'
@@ -35,7 +35,7 @@ interface RequestBody {
 
 export async function POST(request: Request) {
   const ip = getClientIp(request)
-  const limit = checkRateLimit(`account-request:${ip}`, RATE_LIMITS.accountRequest)
+  const limit = await checkSharedRateLimit(`account-request:${ip}`, RATE_LIMITS.accountRequest)
   if (!limit.success) return rateLimitResponse(limit)
 
   const body = (await request.json().catch(() => null)) as RequestBody | null

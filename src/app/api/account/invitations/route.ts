@@ -29,7 +29,7 @@ import {
 import { isAccountRole } from "@/lib/auth/roles";
 import { resolveBaseUrl } from "@/lib/http/base-url";
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     // legitimate admin is far below this; the cap exists to keep
     // a script run in a loop or a compromised admin session from
     // flooding `account_invitations` with rows.
-    const limit = checkRateLimit(
+    const limit = await checkSharedRateLimit(
       `admin:inviteCreate:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

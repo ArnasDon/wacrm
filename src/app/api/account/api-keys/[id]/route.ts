@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
@@ -28,7 +28,7 @@ export async function DELETE(
   try {
     const ctx = await requireRole('admin');
 
-    const limit = checkRateLimit(
+    const limit = await checkSharedRateLimit(
       `admin:apiKeyRevoke:${ctx.userId}`,
       RATE_LIMITS.adminAction
     );

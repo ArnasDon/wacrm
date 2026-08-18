@@ -18,7 +18,7 @@
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 function getClientIp(request: Request): string {
   const xff = request.headers.get('x-forwarded-for')
@@ -33,7 +33,7 @@ export async function GET(
   { params }: { params: Promise<{ accountId: string }> },
 ) {
   const ip = getClientIp(request)
-  const limit = checkRateLimit(`public-catalog-view:${ip}`, RATE_LIMITS.publicCatalogView)
+  const limit = await checkSharedRateLimit(`public-catalog-view:${ip}`, RATE_LIMITS.publicCatalogView)
   if (!limit.success) return rateLimitResponse(limit)
 
   const { accountId } = await params

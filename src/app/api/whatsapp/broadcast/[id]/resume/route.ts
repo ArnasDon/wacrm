@@ -33,7 +33,7 @@ import {
 } from '@/lib/whatsapp/broadcast-resume';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
@@ -53,7 +53,7 @@ export async function POST(
     // puts real messages on real phones.
     const { supabase, accountId, userId } = await requireRole('agent');
 
-    const limit = checkRateLimit(
+    const limit = await checkSharedRateLimit(
       `broadcast-resume:${userId}`,
       RATE_LIMITS.broadcast
     );

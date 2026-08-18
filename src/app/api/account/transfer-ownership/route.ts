@@ -23,7 +23,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     // every few months at most; a script run in a loop would
     // produce a noisy audit trail. 30/min is well above any human
     // pace and bounds the noise.
-    const limit = checkRateLimit(
+    const limit = await checkSharedRateLimit(
       `admin:transferOwnership:${ctx.userId}`,
       RATE_LIMITS.adminAction,
     );

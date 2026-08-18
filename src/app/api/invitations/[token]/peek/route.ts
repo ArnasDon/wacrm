@@ -25,7 +25,7 @@ import { NextResponse } from "next/server";
 
 import { hashInviteToken } from "@/lib/auth/invitations";
 import {
-  checkRateLimit,
+  checkSharedRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
@@ -57,7 +57,7 @@ export async function GET(
   // Rate-limit by IP first. Returns 429 to a serial bruteforcer
   // before we ever touch the DB.
   const ip = getClientIp(request);
-  const limit = checkRateLimit(`peek:${ip}`, RATE_LIMITS.invitationPeek);
+  const limit = await checkSharedRateLimit(`peek:${ip}`, RATE_LIMITS.invitationPeek);
   if (!limit.success) return rateLimitResponse(limit);
 
   const { token } = await params;

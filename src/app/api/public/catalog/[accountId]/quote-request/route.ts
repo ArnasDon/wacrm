@@ -33,7 +33,7 @@
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { findOrCreateContact, resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import {
@@ -72,7 +72,7 @@ export async function POST(
   { params }: { params: Promise<{ accountId: string }> },
 ) {
   const ip = getClientIp(request)
-  const limit = checkRateLimit(`public-catalog-quote:${ip}`, RATE_LIMITS.publicCatalogQuote)
+  const limit = await checkSharedRateLimit(`public-catalog-quote:${ip}`, RATE_LIMITS.publicCatalogQuote)
   if (!limit.success) return rateLimitResponse(limit)
 
   const { accountId } = await params

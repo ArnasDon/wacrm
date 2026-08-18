@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
+import { claimSingleSession } from "@/lib/auth/session-exclusivity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +43,18 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   // /auth/callback sends an expired/invalid recovery or invite link
   // here (there's nowhere else useful to land) — surface it instead of
-  // silently showing a blank sign-in form.
-  const [error, setError] = useState<string | null>(
-    searchParams.get("error") === "invalid_or_expired_link"
-      ? "That link has expired or was already used. Request a new one."
-      : null,
-  );
+  // silently showing a blank sign-in form. use-auth.tsx's kicked-
+  // session listener sends `reason=other_device` the same way, for the
+  // single-active-session policy (migration 067).
+  const [error, setError] = useState<string | null>(() => {
+    if (searchParams.get("error") === "invalid_or_expired_link") {
+      return "That link has expired or was already used. Request a new one.";
+    }
+    if (searchParams.get("reason") === "other_device") {
+      return "You were signed out because your account signed in on another device.";
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 
@@ -56,7 +63,7 @@ function LoginPageInner() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -65,6 +72,14 @@ function LoginPageInner() {
       setError(error.message);
       setLoading(false);
       return;
+    }
+
+    // Single-active-session enforcement (migration 067) — signs every
+    // OTHER device currently signed in as this user out, unless the
+    // account opted out. Awaited so it lands before the full-page nav
+    // below hands off to a fresh page load.
+    if (data.user) {
+      await claimSingleSession(supabase, data.user.id);
     }
 
     // Full-page navigation (not router.push) so the browser issues a

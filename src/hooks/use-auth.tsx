@@ -20,6 +20,7 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import { sessionChannelName, KICKED_EVENT } from "@/lib/auth/session-exclusivity";
 
 interface Profile {
   id: string;
@@ -46,6 +47,10 @@ interface AccountSummary {
   default_currency: string;
   suspended_at: string | null;
   suspended_reason: string | null;
+  /** Single-active-session policy (migration 067). true (the default
+   *  for every account except Chat Sandía's own) means signing in on
+   *  a new device signs every other session for that user out. */
+  enforce_single_session: boolean;
 }
 
 /**
@@ -245,9 +250,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.account_id) {
           const { data: account, error: accountErr } = await supabase
             .from("accounts")
-            // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency, suspended_at, suspended_reason")
+            // default_currency added in migration 021 (narrowed to the
+            // USD fallback below for older schemas where it reads null);
+            // enforce_single_session added in migration 067.
+            .select("id, name, default_currency, suspended_at, suspended_reason, enforce_single_session")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -264,6 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
               suspended_at: account.suspended_at ?? null,
               suspended_reason: account.suspended_reason ?? null,
+              enforce_single_session: account.enforce_single_session !== false,
             };
           }
         }
@@ -390,6 +397,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
+
+  // Single-active-session enforcement (migration 067) — the live half.
+  // A device signing in calls claimSingleSession() (see login/page.tsx),
+  // which broadcasts here *and* revokes this session's refresh token
+  // server-side. This listener is what makes an already-open other tab
+  // react immediately instead of waiting for its next token refresh
+  // (up to ~1h) — that revoked-refresh-token path is the real
+  // enforcement and still applies even if this broadcast is missed
+  // (tab closed, offline): the next protected-route request just fails
+  // auth and middleware sends it to /login, same as any expired session.
+  useEffect(() => {
+    if (!user?.id) return;
+    if (account && account.enforce_single_session === false) return;
+
+    const supabase = createClient();
+    const channel = supabase.channel(sessionChannelName(user.id));
+    channel
+      .on("broadcast", { event: KICKED_EVENT }, () => {
+        supabase.auth.signOut({ scope: "local" }).finally(() => {
+          window.location.href = "/login?reason=other_device";
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, account]);
 
   const signOut = useCallback(async () => {
     const supabase = createClient();

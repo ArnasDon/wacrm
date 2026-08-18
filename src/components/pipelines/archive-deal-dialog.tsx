@@ -19,6 +19,10 @@ interface ArchiveDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   dealId: string | null;
+  /** The deal's linked contact, if any — lets the archive cascade to
+   *  every deal tied to that contact and to contacts.archived_at, so
+   *  the Contacts page's "Arquivados" stays in sync (see AGENTS task). */
+  contactId?: string | null;
   dealName: string;
   /** Called after a successful archive, before the dialog closes — the
    *  caller owns removing the card from its local `deals` list. */
@@ -35,6 +39,7 @@ export function ArchiveDealDialog({
   open,
   onOpenChange,
   dealId,
+  contactId,
   dealName,
   onArchived,
 }: ArchiveDealDialogProps) {
@@ -45,19 +50,38 @@ export function ArchiveDealDialog({
     if (!dealId) return;
     setArchiving(true);
     const supabase = createClient();
-    const { error } = await supabase
-      .from("deals")
-      .update({ archived_at: new Date().toISOString() })
-      .eq("id", dealId);
+    const timestamp = new Date().toISOString();
+
+    // Archiving is one shared state between Pipeline and Contacts
+    // (contacts.archived_at / deals.archived_at kept in sync, not two
+    // parallel flags) — when the deal has a contact, cascade to every
+    // deal tied to that contact, not just the card clicked, so the lead
+    // reads as archived on every board it's on.
+    const dealsUpdate = contactId
+      ? supabase.from("deals").update({ archived_at: timestamp }).eq("contact_id", contactId)
+      : supabase.from("deals").update({ archived_at: timestamp }).eq("id", dealId);
+    const { error } = await dealsUpdate;
 
     if (error) {
       console.error("[archive-deal] failed:", error);
       toast.error(t("toastFailedArchive"));
-    } else {
-      toast.success(t("toastArchived"));
-      onArchived(dealId);
-      onOpenChange(false);
+      setArchiving(false);
+      return;
     }
+
+    if (contactId) {
+      const { error: contactError } = await supabase
+        .from("contacts")
+        .update({ archived_at: timestamp })
+        .eq("id", contactId);
+      if (contactError) {
+        console.error("[archive-deal] contact sync failed:", contactError);
+      }
+    }
+
+    toast.success(t("toastArchived"));
+    onArchived(dealId);
+    onOpenChange(false);
     setArchiving(false);
   }
 

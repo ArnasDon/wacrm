@@ -1304,6 +1304,7 @@ export function MessageThread({
         open={archiveDialogOpen}
         onOpenChange={setArchiveDialogOpen}
         dealId={pipelineDeal?.id ?? null}
+        contactId={contact.id}
         dealName={displayName}
         onArchived={() => {
           // useLeadPipelineStage's own sync channel — refetches this

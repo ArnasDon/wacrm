@@ -455,17 +455,28 @@ function ContactsPageInner() {
   }
 
   async function handleArchive(contact: Contact) {
+    const timestamp = new Date().toISOString();
     const { error } = await supabase
       .from('contacts')
-      .update({ archived_at: new Date().toISOString() })
+      .update({ archived_at: timestamp })
       .eq('id', contact.id);
 
     if (error) {
       toast.error(t('toastFailedArchive'));
-    } else {
-      toast.success(t('toastArchived'));
-      fetchContacts();
+      return;
     }
+    // Archiving is one shared state between Contacts and the Pipeline's
+    // "Arquivados" — not two independent flags (see AGENTS task). Cascade
+    // to every deal linked to this contact so it also drops off every
+    // pipeline board it's on.
+    await supabase
+      .from('deals')
+      .update({ archived_at: timestamp })
+      .eq('contact_id', contact.id)
+      .is('archived_at', null);
+
+    toast.success(t('toastArchived'));
+    fetchContacts();
   }
 
   async function handleRestore(contact: Contact) {
@@ -476,10 +487,19 @@ function ContactsPageInner() {
 
     if (error) {
       toast.error(t('toastFailedRestore'));
-    } else {
-      toast.success(t('toastRestored'));
-      fetchContacts();
+      return;
     }
+    // Mirror of handleArchive above — restore every deal archived
+    // alongside this contact so Pipeline's board and Arquivados stay in
+    // sync with Contacts.
+    await supabase
+      .from('deals')
+      .update({ archived_at: null })
+      .eq('contact_id', contact.id)
+      .not('archived_at', 'is', null);
+
+    toast.success(t('toastRestored'));
+    fetchContacts();
   }
 
   async function handleDelete() {

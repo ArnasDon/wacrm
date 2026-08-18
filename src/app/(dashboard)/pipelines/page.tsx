@@ -128,6 +128,7 @@ export default function PipelinesPage() {
   // contact/deal row's identity, only sets archived_at).
   const [archiveDealTarget, setArchiveDealTarget] = useState<{
     dealId: string;
+    contactId: string | null;
     name: string;
   } | null>(null);
 
@@ -448,6 +449,7 @@ export default function PipelinesPage() {
   const handleRequestArchiveDeal = useCallback((deal: Deal) => {
     setArchiveDealTarget({
       dealId: deal.id,
+      contactId: deal.contact_id,
       name: deal.contact?.name || deal.contact?.phone || deal.title,
     });
   }, []);
@@ -466,14 +468,26 @@ export default function PipelinesPage() {
 
   const handleRestoreDeal = useCallback(
     async (deal: Deal) => {
-      const { error } = await supabase
-        .from("deals")
-        .update({ archived_at: null })
-        .eq("id", deal.id);
+      // Mirror of ArchiveDealDialog's cascade — restore is the same
+      // shared state, not a separate flow, so undo every deal tied to
+      // this contact (and the contact itself) instead of just this card.
+      const dealsUpdate = deal.contact_id
+        ? supabase.from("deals").update({ archived_at: null }).eq("contact_id", deal.contact_id)
+        : supabase.from("deals").update({ archived_at: null }).eq("id", deal.id);
+      const { error } = await dealsUpdate;
       if (error) {
         console.error("[pipelines] restore failed:", error);
         toast.error(tArchive("toastFailedRestore"));
         return;
+      }
+      if (deal.contact_id) {
+        const { error: contactError } = await supabase
+          .from("contacts")
+          .update({ archived_at: null })
+          .eq("id", deal.contact_id);
+        if (contactError) {
+          console.error("[pipelines] restore contact sync failed:", contactError);
+        }
       }
       toast.success(tArchive("toastRestored"));
       setArchivedDeals((prev) => prev.filter((d) => d.id !== deal.id));
@@ -715,6 +729,7 @@ export default function PipelinesPage() {
           if (!open) setArchiveDealTarget(null);
         }}
         dealId={archiveDealTarget?.dealId ?? null}
+        contactId={archiveDealTarget?.contactId ?? null}
         dealName={archiveDealTarget?.name ?? ""}
         onArchived={handleDealArchived}
       />

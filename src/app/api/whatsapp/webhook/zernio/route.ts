@@ -313,6 +313,23 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
   if (!convResult) return
   const conversation = convResult.conversation
 
+  // `findOrCreateConversation` above never wrote `zernio_conversation_id`
+  // (unlike the Instagram/Facebook Zernio routes' shared
+  // `handleInboundDmMessage`, which does this same check) — every
+  // WhatsApp send via Zernio addresses a conversation by this id
+  // (`requireZernioConversation` in zernio-send.ts), so a conversation
+  // stuck at null could receive messages fine but could never send a
+  // reply. Mirrors handleInboundDmMessage's identical check so an
+  // already-existing conversation from before this fix self-heals on
+  // its very next inbound message, not just brand-new ones.
+  if (message.conversationId && conversation.zernio_conversation_id !== message.conversationId) {
+    await supabaseAdmin()
+      .from('conversations')
+      .update({ zernio_conversation_id: message.conversationId })
+      .eq('id', conversation.id)
+    conversation.zernio_conversation_id = message.conversationId
+  }
+
   if (convResult.created) {
     await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
       conversation_id: conversation.id,

@@ -40,6 +40,30 @@ export class GoogleCalendarError extends Error {
   }
 }
 
+// No call to Google here (or in api.ts, which imports this) previously
+// carried a timeout — the same gap already found and fixed in the
+// WhatsApp/Instagram/Zernio API clients. A slow/unresponsive Google
+// endpoint would hang until the reverse proxy in front of the app
+// (EasyPanel, in production) gave up first and returned its own bare
+// 502, before this module's own GoogleCalendarError ever got thrown.
+const GOOGLE_API_TIMEOUT_MS = 20_000
+
+/** `fetch` to Google's OAuth/Calendar APIs, bounded by
+ *  `GOOGLE_API_TIMEOUT_MS` — every call site in this file and
+ *  `google-calendar/api.ts` uses this instead of the bare global
+ *  `fetch`. */
+export async function googleFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(GOOGLE_API_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new GoogleCalendarError('Google API request timed out.', 504)
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    throw new GoogleCalendarError(`Could not reach Google: ${message}`, 502)
+  }
+}
+
 function clientId(): string {
   const id = process.env.GOOGLE_CALENDAR_CLIENT_ID
   if (!id) throw new GoogleCalendarError('GOOGLE_CALENDAR_CLIENT_ID is not configured.', 503)
@@ -94,7 +118,7 @@ interface TokenResponse {
  *  for tokens. `refresh_token` is only present when Google actually
  *  issued one (first consent, or `prompt=consent` — see above). */
 export async function exchangeCodeForTokens(code: string): Promise<TokenResponse> {
-  const res = await fetch(TOKEN_URL, {
+  const res = await googleFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -117,7 +141,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
  *  throws; a failure here shouldn't block the connection itself. */
 export async function fetchConnectedEmail(accessToken: string): Promise<string | null> {
   try {
-    const res = await fetch(USERINFO_URL, {
+    const res = await googleFetch(USERINFO_URL, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (!res.ok) return null
@@ -131,7 +155,7 @@ export async function fetchConnectedEmail(accessToken: string): Promise<string |
 async function refreshAccessToken(
   refreshToken: string,
 ): Promise<{ accessToken: string; expiresAt: Date }> {
-  const res = await fetch(TOKEN_URL, {
+  const res = await googleFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({

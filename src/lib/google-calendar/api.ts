@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
-import { getValidAccessToken, GoogleCalendarError } from './oauth'
+import { getValidAccessToken, googleFetch, GoogleCalendarError } from './oauth'
 
 // ============================================================
 // Google Calendar API calls used by the AI's schedule_appointment
@@ -46,7 +46,7 @@ export async function checkFreeBusy(
 ): Promise<BusyInterval[]> {
   const accessToken = await getValidAccessToken(db, accountId)
   const calendarId = await loadCalendarId(db, accountId)
-  const res = await fetch(`${CALENDAR_API}/freeBusy`, {
+  const res = await googleFetch(`${CALENDAR_API}/freeBusy`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ timeMin: timeMinISO, timeMax: timeMaxISO, items: [{ id: calendarId }] }),
@@ -88,7 +88,7 @@ export async function createEvent(
   const calendarId = await loadCalendarId(db, accountId)
   const timeZone = args.timeZone ?? 'UTC'
 
-  const res = await fetch(
+  const res = await googleFetch(
     `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all&conferenceDataVersion=1`,
     {
       method: 'POST',

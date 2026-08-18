@@ -18,12 +18,35 @@
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.instagram.com/${META_API_VERSION}`
 
+// Same gap found and fixed in src/lib/whatsapp/meta-api.ts and
+// src/lib/zernio/api.ts: no call here previously carried a timeout, so
+// a slow/unresponsive Graph API call would hang until the reverse
+// proxy in front of the app gave up first and returned its own bare
+// 502, before this file's own error handling ever ran.
+const META_API_TIMEOUT_MS = 20_000
+
 export interface InstagramSendResult {
   messageId: string
 }
 
 interface MetaErrorResponse {
   error?: { message?: string; code?: number; type?: string }
+}
+
+/** `fetch` to Instagram's Graph API, bounded by a timeout and with
+ *  network/timeout failures turned into a clear `Error` instead of a
+ *  raw `TypeError`/`DOMException` — every call site below uses this
+ *  instead of the bare global `fetch`. */
+async function metaFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(META_API_TIMEOUT_MS) })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error('Meta API request timed out.')
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not reach the Meta API: ${message}`)
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
@@ -61,7 +84,7 @@ export interface IgAccountInfo {
 export async function verifyIgAccount(args: VerifyIgAccountArgs): Promise<IgAccountInfo> {
   const { igAccountId, accessToken } = args
   const url = `${META_API_BASE}/${igAccountId}?fields=id,username,name,profile_picture_url`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
@@ -89,7 +112,7 @@ export async function getIgUserProfile(
   const { igsid, accessToken } = args
   try {
     const url = `${META_API_BASE}/${igsid}?fields=name,username`
-    const response = await fetch(url, {
+    const response = await metaFetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (!response.ok) return null
@@ -116,7 +139,7 @@ export interface SendTextMessageArgs {
 export async function sendTextMessage(args: SendTextMessageArgs): Promise<InstagramSendResult> {
   const { igAccountId, accessToken, to, text } = args
   const url = `${META_API_BASE}/${igAccountId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -160,7 +183,7 @@ export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<Inst
   const { igAccountId, accessToken, to, kind, link } = args
   if (!link) throw new Error('sendMediaMessage requires a link.')
   const url = `${META_API_BASE}/${igAccountId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -248,7 +271,7 @@ export async function sendQuickReplies(args: SendQuickRepliesArgs): Promise<Inst
   }
 
   const url = `${META_API_BASE}/${igAccountId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

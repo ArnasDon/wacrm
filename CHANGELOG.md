@@ -9,6 +9,73 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-08-19
+
+Adds the net-new Rimula Community Growth Platform schema (Phase 1 of
+the build plan in `docs/RIMULA_BUILD_SPEC.md` §23): the Product
+catalog, Vehicle compatibility, Campaigns, Customer Requests, Trials,
+Content/localization/voice notes, engagement/attribution analytics,
+and the WhatsApp catalogue sync log — plus a re-runnable demo seed
+script. No existing table is modified; every table below is new.
+
+> **Migration required:** apply, in order,
+> `supabase/migrations/040_rimula_community_groups.sql`,
+> `041_rimula_products.sql`, `042_rimula_vehicles.sql`,
+> `043_rimula_campaigns.sql`, `044_rimula_customer_requests.sql`,
+> `045_rimula_trials.sql`, `046_rimula_content.sql`,
+> `047_rimula_engagement_analytics.sql`, and
+> `048_rimula_whatsapp_sync_log.sql`. Then, for local/dev only, run
+> `supabase/seed.sql` (via `supabase db reset`) to populate demo data —
+> **never** point `seed.sql` at a hosted/production project; it
+> bootstraps a demo login by inserting directly into `auth.users`.
+
+### Added
+
+- **`community_groups`** (040) — generic brand→audience broadcast
+  destinations (§8); the seed script creates the single MVP
+  "Rimula Announcements" row.
+- **`product_categories`, `products`, `product_images`,
+  `product_applications`, `product_claims`** (041) — the Product
+  catalog. Each claim carries its own `draft/pending_review/approved/rejected`
+  lifecycle, separate from the product's own `status`, so "only
+  administrator-approved data may be shown as fact" is enforceable
+  per-claim, not just per-product.
+- **`vehicles`, `product_vehicles`** (042) — Vehicle Type/Manufacturer/
+  Model/Engine records and the verified compatibility join to
+  Products. This join table is the only source of truth the app may
+  ever show a customer as a compatibility fact.
+- **`campaigns`** (043) — groups content + broadcasts + a product for
+  funnel attribution (§13).
+- **`customer_requests`** (044) — the funnel's second-half entry
+  point; can originate from demo WhatsApp, real WhatsApp, a product
+  page, a campaign, manual entry, or a Flows `collect_input`/
+  `condition` branch.
+- **`trials`** (045) — `NEW → REQUESTED → ASSIGNED → SCHEDULED → COMPLETED → CONVERTED / CANCELLED`,
+  optionally linked back to a `customer_requests` row and forward to a
+  `deals` row once a phase 6 Lead exists.
+- **`content`, `content_translations`, `voice_notes`** (046) — the
+  Content Studio pipeline and its Urdu/Pashto/Punjabi/Roman-Urdu
+  content-data localization, kept deliberately separate from the
+  existing `next-intl` UI-chrome localization (§10). Voice notes and
+  product images both reuse the existing `chat-media` storage bucket
+  (migration 023) rather than a new bucket.
+- **`engagement_events`, `product_interactions`** (047) — the
+  dashboard/funnel event log and the PRODUCT → CAMPAIGN → CONTENT →
+  CUSTOMER → LEAD → TRIAL → CONVERSION attribution trail (§13).
+  Append-only: readable by any account member, written only by the
+  service role (mirrors `automation_logs` / `ai_usage_log`).
+- **`whatsapp_sync_log`** (048) — WhatsApp product catalogue sync
+  state per product (P1, schema now per §11 — automation wired in a
+  later phase).
+- **`supabase/seed.sql`** — a re-runnable local/dev seed script
+  covering every table above: 5 categories, 10 products (mixed
+  approval/lifecycle states on purpose), 8 vehicles, 17 verified
+  compatibility rows, 3 campaigns, 20 demo contacts, 6 content items
+  with translations and voice notes, 10 customer requests, 6 trials,
+  and generated engagement/product-interaction event rows. Does
+  **not** yet seed §19's full Member/BA demographic volumes (that
+  needs the `contacts`/`profiles` columns Phase 2 adds).
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

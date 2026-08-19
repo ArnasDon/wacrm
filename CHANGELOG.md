@@ -9,6 +9,22 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.13.2] — 2026-08-19
+
+Documents how the three cron-drained endpoints
+(`/api/automations/cron`, `/api/flows/cron`, `/api/content/cron`) are
+meant to be triggered — previously undocumented anywhere in the repo
+despite existing since `automations`/`flows` shipped; `.env.local.example`
+pointed at a `docs/automations-and-cron.md` that was never created.
+New "Scheduled jobs (cron)" section in `README.md`: the exact `curl`
+command for local dev, and production guidance (Vercel Cron Job /
+host crontab / external scheduled pinger — same mechanism works for
+all three, nothing platform-specific). `.env.local.example`'s
+`AUTOMATION_CRON_SECRET` comment now names all three endpoints and
+points at the README section instead of the missing doc file.
+
+Doc-only — no code change.
+
 ## [0.13.1] — 2026-08-19
 
 Fixes a wrong assumption from the previous release: Content Studio's

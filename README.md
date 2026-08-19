@@ -93,6 +93,53 @@ Open <http://localhost:3000>. You'll be redirected to `/login` (or
 Prefer containers? See [docs/docker.md](./docs/docker.md) for the
 Dockerfile + Docker Compose setup.
 
+## Scheduled jobs (cron)
+
+Three endpoints do periodic background work and nothing in this repo
+calls them on its own — each is a plain `GET` route guarded by a
+shared secret, meant to be hit on an interval by something external:
+
+| Endpoint | Drains |
+|---|---|
+| `GET /api/automations/cron` | Pending Wait-step executions |
+| `GET /api/flows/cron` | Timed-out Flow runs |
+| `GET /api/content/cron` | Due Content Studio scheduled posts (§10) — this is also what actually sends a post scheduled "now"; there's no separate synchronous send path |
+
+All three read the same `AUTOMATION_CRON_SECRET` (`.env.local`) and
+expect it on the `x-cron-secret` request header, compared in constant
+time. A request with a missing/wrong secret gets a `401`; with the env
+var unset entirely, a `503`.
+
+**Local development:** nothing triggers these while `npm run dev` is
+running — call them yourself when you want to see a scheduled post (or
+a Wait step, or a Flow timeout) actually resolve:
+
+```bash
+curl -H "x-cron-secret: $AUTOMATION_CRON_SECRET" http://localhost:3000/api/content/cron
+curl -H "x-cron-secret: $AUTOMATION_CRON_SECRET" http://localhost:3000/api/flows/cron
+curl -H "x-cron-secret: $AUTOMATION_CRON_SECRET" http://localhost:3000/api/automations/cron
+```
+
+(`$AUTOMATION_CRON_SECRET` here is your shell picking the value up from
+`.env.local` if you've exported it — e.g. `export $(grep AUTOMATION_CRON_SECRET .env.local)` —
+or just paste the value in directly.)
+
+**Production:** point a real scheduler at all three URLs, on whatever
+interval fits (every 1–5 minutes is plenty — a "scheduled for now"
+Content Studio post is picked up on the next tick, not instantly).
+Pick whichever fits your host, since none of this repo's cron
+mechanism is platform-specific:
+
+- **Vercel** — a [Vercel Cron Job](https://vercel.com/docs/cron-jobs)
+  per endpoint (`vercel.json`'s `crons` array), each configured to
+  send the `x-cron-secret` header.
+- **Hostinger** (or any host with real cron/SSH access) — a crontab
+  entry running the same `curl` command above against your production
+  domain.
+- **Anywhere** — an external scheduled pinger (GitHub Actions
+  `on: schedule`, a cron-as-a-service like cron-job.org, etc.) hitting
+  the same URLs with the header set.
+
 ## 🚀 Deploy on Hostinger (recommended)
 
 <p align="center">

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
-import { CalendarClock, ListChecks, MessageSquare, Pencil, Tag as TagIcon } from "lucide-react";
+import { ListChecks, MessageSquare, Pencil, Tag as TagIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,12 +17,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ExpandingDialogContent } from "@/components/ui/expanding-dialog-content";
-import type { ActionItem, Conversation, Deal, PipelineStage } from "@/types";
+import type { Conversation, Deal, PipelineStage } from "@/types";
 import { DealForm } from "./deal-form";
 import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
-import { ActionItemDetailSheet } from "@/components/action-items/action-item-detail-sheet";
-import { findActivePendingActionItem } from "@/lib/action-items/queries";
-import { FOLLOWUP_STAGE_NAME } from "@/lib/action-items/constants";
 
 interface DealDetailDrawerProps {
   /** Null hides the drawer — the parent owns "which deal", this
@@ -57,18 +54,6 @@ export function DealDetailDrawer({
   const [editOpen, setEditOpen] = useState(false);
   const [actionCenterOpen, setActionCenterOpen] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-
-  // Caminho A (AGENTS task): Pipeline → coluna Follow-up → clicar no
-  // card → abrir o MESMO Follow-up que a Central de Ações usa — não uma
-  // segunda implementação. `findActivePendingActionItem` is the exact
-  // same "resolve the active pending item for this contact+type" lookup
-  // used to prevent duplicate creation elsewhere (useFollowupGate,
-  // AddToActionCenterDialog), so both entry points land on the
-  // identical `action_items` row and inherit the same single-send
-  // guard (migration 072).
-  const [pendingFollowupItem, setPendingFollowupItem] = useState<ActionItem | null>(null);
-  const [openFollowupItem, setOpenFollowupItem] = useState<ActionItem | null>(null);
-  const [openFollowupOriginRect, setOpenFollowupOriginRect] = useState<DOMRect | null>(null);
 
   // Same "most recent conversation for this contact" lookup DealForm
   // already does — prefer the deal's own conversation_id (populated for
@@ -109,29 +94,6 @@ export function DealDetailDrawer({
       cancelled = true;
     };
   }, [deal]);
-
-  const isFollowupStage =
-    !!stage && stage.name.trim().toLowerCase() === FOLLOWUP_STAGE_NAME.toLowerCase();
-
-  useEffect(() => {
-    if (!deal || !isFollowupStage || !deal.contact_id) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPendingFollowupItem(null);
-      return;
-    }
-    let cancelled = false;
-    const supabase = createClient();
-    findActivePendingActionItem(supabase, deal.contact_id, "followup")
-      .then((item) => {
-        if (!cancelled) setPendingFollowupItem(item);
-      })
-      .catch(() => {
-        if (!cancelled) setPendingFollowupItem(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [deal, isFollowupStage]);
 
   if (!deal) return null;
 
@@ -263,8 +225,8 @@ export function DealDetailDrawer({
             </dd>
           </div>
 
-          <DialogFooter className="flex-wrap gap-2 sm:justify-between">
-            <div className="flex flex-wrap gap-2">
+          <DialogFooter className="flex-wrap items-center gap-2 sm:flex-row sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {conversation && (
                 // `conversation` only resolves once its async Supabase fetch
                 // (above) finishes, which lands independently of — and often
@@ -276,25 +238,17 @@ export function DealDetailDrawer({
                 // 200ms entrance regardless of when it actually mounts, so a
                 // late resolve looks like an intentional soft reveal instead
                 // of a pop-in — the FLIP animation's own duration/curve/
-                // transform are untouched.
-                <Link
-                  href={`/inbox?c=${conversation.id}`}
-                  className="inline-flex animate-in items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground fade-in duration-200 hover:bg-muted"
+                // transform are untouched. Rendered through the shared
+                // Button component (not a hand-styled <Link>) so its
+                // height/padding/radius are byte-identical to the other
+                // two footer buttons instead of approximated by hand.
+                <Button
+                  variant="outline"
+                  className="animate-in fade-in duration-200"
+                  render={<Link href={`/inbox?c=${conversation.id}`} />}
                 >
                   <MessageSquare className="h-4 w-4" />
                   {t("openConversation")}
-                </Link>
-              )}
-              {pendingFollowupItem && (
-                <Button
-                  variant="outline"
-                  onClick={(e) => {
-                    setOpenFollowupOriginRect(e.currentTarget.getBoundingClientRect());
-                    setOpenFollowupItem(pendingFollowupItem);
-                  }}
-                >
-                  <CalendarClock className="h-4 w-4" />
-                  {t("openFollowup")}
                 </Button>
               )}
               {deal.contact_id && (
@@ -335,26 +289,6 @@ export function DealDetailDrawer({
           onSaved={onChanged}
         />
       )}
-
-      {/* Same component the Central de Ações page renders for this
-          exact row (see /notifications) — "Abrir Follow-up" above is
-          a second entry point into the identical Follow-up, never a
-          separate implementation. */}
-      <ActionItemDetailSheet
-        item={openFollowupItem}
-        originRect={openFollowupOriginRect}
-        onClose={() => setOpenFollowupItem(null)}
-        onChanged={() => {
-          onChanged();
-          if (deal.contact_id) {
-            const supabase = createClient();
-            findActivePendingActionItem(supabase, deal.contact_id, "followup").then(
-              setPendingFollowupItem,
-            );
-          }
-        }}
-      />
-
     </>
   );
 }

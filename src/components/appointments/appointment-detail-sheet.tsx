@@ -7,12 +7,15 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogPortal,
+  DialogOverlay,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ExpandingDialogContent } from '@/components/ui/expanding-dialog-content';
 import { useLocale, useTranslations } from 'next-intl';
 import type { Appointment } from '@/types';
 import { deleteAppointment, updateAppointmentStatus } from '@/lib/appointments/queries';
@@ -22,6 +25,10 @@ interface AppointmentDetailSheetProps {
   /** Null hides the sheet — the parent owns "which appointment", this
    *  component owns view/edit/delete once one is selected. */
   appointment: Appointment | null;
+  /** The clicked card's own bounding box, captured at click time — see
+   *  useFlipTransition. Null/undefined just falls back to a centered
+   *  fade/grow, still animated. */
+  originRect?: DOMRect | null;
   onClose: () => void;
   /** Called after a save or a delete actually lands, so the caller
    *  (e.g. AgendaWeek) can refetch. */
@@ -30,6 +37,7 @@ interface AppointmentDetailSheetProps {
 
 export function AppointmentDetailSheet({
   appointment,
+  originRect,
   onClose,
   onChanged,
 }: AppointmentDetailSheetProps) {
@@ -97,8 +105,23 @@ export function AppointmentDetailSheet({
 
   return (
     <>
-      <Dialog open={!!appointment && !editOpen} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+      <Dialog
+        open={!!appointment && !editOpen}
+        // Same fix as DealDetailDrawer: `open` is computed from two
+        // sources (`appointment` and `editOpen`), so a false transition
+        // caused by clicking "Editar" (which flips `editOpen`, not a
+        // real dismiss) must not call `onClose()` — that would null out
+        // `appointment` in the parent and unmount this whole component,
+        // including the `<AppointmentFormDialog>` that was supposed to
+        // open, silently closing everything instead of opening the
+        // edit form.
+        onOpenChange={(open) => {
+          if (!open && !editOpen) onClose();
+        }}
+      >
+        <DialogPortal>
+          <DialogOverlay />
+          <ExpandingDialogContent originRect={originRect}>
           <DialogHeader>
             <DialogTitle>{appointment.title}</DialogTitle>
             <DialogDescription>{tAppt(`type.${appointment.type}`)}</DialogDescription>
@@ -146,7 +169,8 @@ export function AppointmentDetailSheet({
               </Button>
             </div>
           </DialogFooter>
-        </DialogContent>
+          </ExpandingDialogContent>
+        </DialogPortal>
       </Dialog>
 
       <AppointmentFormDialog

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -14,13 +15,21 @@ function formatDateLabel(dateKey: string): string {
 
 interface ActionItemCardProps {
   item: ActionItem;
-  onClick: () => void;
+  /** Called with the card's own bounding box (captured synchronously
+   *  at click time) so the detail popup can grow out of this exact
+   *  card — see useFlipTransition. */
+  onSelect: (item: ActionItem, originRect: DOMRect) => void;
 }
 
 /** Same visual language as the Pipeline's DealCard (rounded-xl,
  *  4px left accent bar) — AGENTS.md §12/§13 require reusing that exact
- *  card language, colored discreetly rather than filling the whole card. */
-export function ActionItemCard({ item, onClick }: ActionItemCardProps) {
+ *  card language, colored discreetly rather than filling the whole card.
+ *  Memoized — same reasoning as PipelineBoard's DealCard: opening the
+ *  detail popup only ever changes the page's `selected`/`originRect`
+ *  state, unrelated to any card's own `item` prop, so re-rendering
+ *  every sibling card on that update is pure waste that competes with
+ *  the popup's own opening animation for the first frame. */
+export const ActionItemCard = memo(function ActionItemCard({ item, onSelect }: ActionItemCardProps) {
   const t = useTranslations("ActionCenter.card");
   const contact = item.contact;
   const displayName = contact?.name || contact?.phone || t("noContact");
@@ -31,15 +40,19 @@ export function ActionItemCard({ item, onClick }: ActionItemCardProps) {
   const overdue = item.type === "followup" && !!item.due_date && isOverdue(item.due_date, todayKey);
   const dueToday = item.type === "followup" && !!item.due_date && isToday(item.due_date, todayKey);
 
+  function handleActivate(originRect: DOMRect) {
+    onSelect(item, originRect);
+  }
+
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={onClick}
+      onClick={(e) => handleActivate(e.currentTarget.getBoundingClientRect())}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onClick();
+          handleActivate(e.currentTarget.getBoundingClientRect());
         }
       }}
       className={cn(
@@ -85,4 +98,4 @@ export function ActionItemCard({ item, onClick }: ActionItemCardProps) {
       </div>
     </div>
   );
-}
+});

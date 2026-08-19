@@ -355,6 +355,65 @@ html[data-theme="rose"] {
    fechado" slim look the user wants unified across both lock states):
      1. lock + título + valor + ícone de info
      2. campo de porcentagem + campo de quantidade (ou "—" p/ Chaves) */
+/* ============================================================
+   Shared-element "card grows into detail view" open/close animation —
+   every card → detail popup in the app uses this one definition (paired
+   with `useFlipTransition` / `<ExpandingDialogContent>`), not a
+   per-component copy. Only `transform` and `opacity` are animated —
+   both compositor-only properties (no layout, no paint per frame),
+   which is what keeps this cheap regardless of what's rendered
+   underneath. `will-change` promotes the popup to its own compositor
+   layer up front, before the animation starts, instead of leaving that
+   to the browser's own heuristics — promotion decided *during* the
+   first animated frame is a common source of a visible stutter on that
+   frame, especially on iOS/WKWebView (PWA). Safe to leave on
+   permanently since the element only exists while a popup is open
+   (short-lived), not sitting in the tree indefinitely.
+   ============================================================ */
+.flip-modal-popup {
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* Decisive start, elegant/controlled deceleration, zero overshoot —
+     cubic-bezier(0.16, 1, 0.3, 1) ("expo-out") never bounces past its
+     target, which is the "very discreet elasticity" the interaction
+     calls for. Close is intentionally shorter (240ms) and uses a
+     standard ease-in — dismissing should feel quicker than opening. */
+  .flip-modal-popup[data-open] {
+    animation: flip-modal-in 384ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .flip-modal-popup[data-closed] {
+    animation: flip-modal-out 240ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+}
+/* Falls back to var(...,0px)/var(...,1) — i.e. no motion beyond the
+   opacity fade — when no origin rect was captured (e.g. keyboard
+   activation before layout settles), so it never animates from
+   garbage/unset values. */
+@keyframes flip-modal-in {
+  from {
+    transform: translate(-50%, -50%) translate(var(--flip-x, 0px), var(--flip-y, 0px))
+      scale(var(--flip-scale-x, 1), var(--flip-scale-y, 1));
+    opacity: 0.5;
+  }
+  to {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}
+@keyframes flip-modal-out {
+  from {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) translate(var(--flip-x, 0px), var(--flip-y, 0px))
+      scale(var(--flip-scale-x, 1), var(--flip-scale-y, 1));
+    opacity: 0.5;
+  }
+}
+
 @supports (-webkit-touch-callout: none) {
   @media (max-width: 430px) {
     .flow-editor-scroll {

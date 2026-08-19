@@ -20,6 +20,16 @@ export default function ActionCenterPage() {
   const [interests, setInterests] = useState<ActionItem[] | null>(null);
   const [followups, setFollowups] = useState<ActionItem[] | null>(null);
   const [selected, setSelected] = useState<ActionItem | null>(null);
+  const [selectedOriginRect, setSelectedOriginRect] = useState<DOMRect | null>(null);
+
+  // Stable identity — required for React.memo(ActionItemCard) to
+  // actually skip re-rendering every sibling card when only `selected`
+  // changes (an inline arrow function in each .map() below would give
+  // every card a new prop reference on every render, defeating memo).
+  const handleSelectItem = useCallback((item: ActionItem, originRect: DOMRect) => {
+    setSelected(item);
+    setSelectedOriginRect(originRect);
+  }, []);
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -81,7 +91,7 @@ export default function ActionCenterPage() {
             ) : (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {interests.map((item) => (
-                  <ActionItemCard key={item.id} item={item} onClick={() => setSelected(item)} />
+                  <ActionItemCard key={item.id} item={item} onSelect={handleSelectItem} />
                 ))}
               </div>
             )}
@@ -96,7 +106,7 @@ export default function ActionCenterPage() {
             ) : (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {followups.map((item) => (
-                  <ActionItemCard key={item.id} item={item} onClick={() => setSelected(item)} />
+                  <ActionItemCard key={item.id} item={item} onSelect={handleSelectItem} />
                 ))}
               </div>
             )}
@@ -104,7 +114,12 @@ export default function ActionCenterPage() {
         </>
       )}
 
-      <ActionItemDetailSheet item={selected} onClose={() => setSelected(null)} onChanged={load} />
+      <ActionItemDetailSheet
+        item={selected}
+        originRect={selectedOriginRect}
+        onClose={() => setSelected(null)}
+        onChanged={load}
+      />
     </div>
   );
 }

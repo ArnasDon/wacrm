@@ -9,12 +9,14 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
-  DialogContent,
+  DialogPortal,
+  DialogOverlay,
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ExpandingDialogContent } from "@/components/ui/expanding-dialog-content";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -41,6 +43,10 @@ type MessageDraft =
 
 interface ActionItemDetailSheetProps {
   item: ActionItem | null;
+  /** The clicked card's own bounding box, captured at click time — see
+   *  useFlipTransition. Null/undefined just falls back to a centered
+   *  fade/grow, still animated. */
+  originRect?: DOMRect | null;
   onClose: () => void;
   onChanged: () => void;
 }
@@ -55,7 +61,12 @@ function formatDateLabel(dateKey: string, locale: string): string {
  * interaction pattern as the Pipeline's DealDetailDrawer (click → full
  * context in a dialog, never straight into the Inbox) per AGENTS.md §19.
  */
-export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDetailSheetProps) {
+export function ActionItemDetailSheet({
+  item,
+  originRect,
+  onClose,
+  onChanged,
+}: ActionItemDetailSheetProps) {
   const t = useTranslations("ActionCenter.detail");
   const locale = useLocale();
   const { user } = useAuth();
@@ -264,7 +275,9 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
   return (
     <>
       <Dialog open={!!item} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+        <DialogPortal>
+          <DialogOverlay />
+          <ExpandingDialogContent originRect={originRect}>
           <DialogHeader>
             <div className="flex items-center gap-2">
               <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
@@ -435,7 +448,8 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
               {t("markDone")}
             </Button>
           </DialogFooter>
-        </DialogContent>
+          </ExpandingDialogContent>
+        </DialogPortal>
       </Dialog>
 
       <FollowupOutcomeDialog

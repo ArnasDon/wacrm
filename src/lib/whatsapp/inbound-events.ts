@@ -13,12 +13,16 @@
 // that turns a status/reaction event into DB state, and both the
 // real webhook and the demo simulator call it.
 //
-// No behaviour change from the original webhook-route versions —
-// this is a pure move, not a rewrite.
+// Phase 4 adds EngagementEvent writes into these same handlers (§16:
+// "Add EngagementEvent writes into that pipeline rather than building
+// a parallel ingestion path") — every caller now passes a `source`
+// ('whatsapp' for the real webhook, 'demo' for the simulator) so the
+// two stay distinguishable in the shared `engagement_events` table.
 // ============================================================
 
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
+import { writeEngagementEvent } from '@/lib/whatsapp/engagement';
 
 export interface WhatsAppReactionMessage {
   id: string;
@@ -27,6 +31,11 @@ export interface WhatsAppReactionMessage {
   type: string;
   reaction?: { message_id: string; emoji: string };
 }
+
+/** Default `source` for every handler below — the real Meta webhook
+ *  never passes an explicit one, so it reads as 'whatsapp' by
+ *  default; only the demo simulator overrides it. */
+const REAL_SOURCE = 'whatsapp';
 
 // The happy-path status ladder — pending → sent → delivered → read →
 // replied. Webhook replays (real or simulated) must never regress a
@@ -74,15 +83,22 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
  * Handle one message-status event — `id` is the provider message id
  * (a real Meta `wamid`, or a `demo-...` id for a simulated send).
  * Updates `messages.status`, mirrors onto `broadcast_recipients` when
- * the message belongs to a broadcast, and fans the change out to
- * outbound webhook subscribers.
+ * the message belongs to a broadcast, fans the change out to outbound
+ * webhook subscribers, and — for a broadcast-tied delivered/read —
+ * writes a matching `engagement_events` row (§13: EngagementEvent is
+ * about engagement with a *post*, so this is deliberately gated on
+ * the message actually being a broadcast recipient, not written for
+ * every plain 1:1 message's status change).
  */
-export async function handleStatusUpdate(status: {
-  id: string;
-  status: string;
-  timestamp: string;
-  recipient_id: string;
-}) {
+export async function handleStatusUpdate(
+  status: {
+    id: string;
+    status: string;
+    timestamp: string;
+    recipient_id: string;
+  },
+  source: string = REAL_SOURCE
+) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
@@ -109,7 +125,7 @@ export async function handleStatusUpdate(status: {
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcast_id, contact_id, broadcasts!inner(account_id)')
     .eq('whatsapp_message_id', status.id)
     .maybeSingle();
 
@@ -134,6 +150,22 @@ export async function handleStatusUpdate(status: {
 
     if (recUpdateErr) {
       console.error('Error updating broadcast recipient status:', recUpdateErr);
+    } else if (status.status === 'delivered' || status.status === 'read') {
+      const broadcastMeta = recipient.broadcasts as unknown as
+        | { account_id: string }
+        | { account_id: string }[]
+        | null;
+      const account = Array.isArray(broadcastMeta) ? broadcastMeta[0] : broadcastMeta;
+      if (account?.account_id) {
+        await writeEngagementEvent(supabaseAdmin(), {
+          accountId: account.account_id,
+          memberId: recipient.contact_id,
+          postId: recipient.broadcast_id,
+          eventType: status.status === 'delivered' ? 'DELIVERED' : 'READ',
+          source,
+          occurredAt: tsIso,
+        });
+      }
     }
   }
 
@@ -171,14 +203,16 @@ export async function handleStatusUpdate(status: {
 /**
  * If an inbound message's sender is on a still-unreplied
  * broadcast_recipients row, flip it to `replied` so the reply count
- * advances on the parent broadcast.
+ * advances on the parent broadcast, and record a REPLY
+ * `engagement_events` row.
  *
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
 export async function flagBroadcastReplyIfAny(
   accountId: string,
-  contactId: string
+  contactId: string,
+  source: string = REAL_SOURCE
 ) {
   try {
     // Most recent outbound broadcast in this account that hasn't
@@ -204,7 +238,16 @@ export async function flagBroadcastReplyIfAny(
 
     if (updErr) {
       console.error('Error marking broadcast recipient replied:', updErr);
+      return;
     }
+
+    await writeEngagementEvent(supabaseAdmin(), {
+      accountId,
+      memberId: contactId,
+      postId: row.broadcast_id,
+      eventType: 'REPLY',
+      source,
+    });
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err);
   }
@@ -238,12 +281,18 @@ export async function lookupInternalIdByMetaId(
  * `message_reactions`, never write a row into `messages`.
  *
  * Best-effort: a missing parent (we never received it) is logged and
- * skipped so the caller can still ack 200 to Meta.
+ * skipped so the caller can still ack 200 to Meta. On a genuine add
+ * (not a removal), also writes a REACTION `engagement_events` row —
+ * `postId` is resolved via `broadcast_recipients.whatsapp_message_id`
+ * when the target message happens to be a broadcast send, and left
+ * null otherwise (a reaction on a plain 1:1 message still counts as
+ * engagement, just not engagement *with a post*).
  */
 export async function handleReaction(
   message: WhatsAppReactionMessage,
   conversationId: string,
-  contactId: string
+  contactId: string,
+  source: string = REAL_SOURCE
 ) {
   const reaction = message.reaction;
   if (!reaction?.message_id) return;
@@ -288,5 +337,28 @@ export async function handleReaction(
     );
   if (upsertError) {
     console.error('[webhook] reaction upsert failed:', upsertError.message);
+    return;
   }
+
+  const { data: conversation } = await supabaseAdmin()
+    .from('conversations')
+    .select('account_id')
+    .eq('id', conversationId)
+    .maybeSingle();
+  if (!conversation?.account_id) return;
+
+  const { data: recipient } = await supabaseAdmin()
+    .from('broadcast_recipients')
+    .select('broadcast_id')
+    .eq('whatsapp_message_id', reaction.message_id)
+    .maybeSingle();
+
+  await writeEngagementEvent(supabaseAdmin(), {
+    accountId: conversation.account_id,
+    memberId: contactId,
+    postId: recipient?.broadcast_id ?? null,
+    eventType: 'REACTION',
+    source,
+    metadata: { emoji: reaction.emoji },
+  });
 }

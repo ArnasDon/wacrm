@@ -155,6 +155,11 @@ Key pages:
 - [Architecture](https://wacrm.tech/docs/architecture)
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
 
+> **This fork:** it runs against a Supabase project set up for local
+> testing, with two Auth settings deliberately relaxed. Read
+> [docs/production-checklist.md](./docs/production-checklist.md)
+> before deploying anywhere public.
+
 ## Stack
 
 - **App** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4.

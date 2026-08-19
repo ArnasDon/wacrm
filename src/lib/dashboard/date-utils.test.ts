@@ -105,19 +105,24 @@ describe("lastNDayKeys", () => {
 });
 
 describe("mondayIndex", () => {
+  // Date-only literals ("2026-05-18") are parsed as UTC midnight, but
+  // mondayIndex reads Date#getDay(), which is local. West of Greenwich
+  // that lands on the previous day and every assertion here shifts by
+  // one. Spelling out the time makes the literal local, matching both
+  // the function under test and the rest of this file.
   it("maps Monday → 0 and Sunday → 6", () => {
-    expect(mondayIndex(new Date("2026-05-18"))).toBe(0); // Mon
-    expect(mondayIndex(new Date("2026-05-19"))).toBe(1); // Tue
-    expect(mondayIndex(new Date("2026-05-23"))).toBe(5); // Sat
-    expect(mondayIndex(new Date("2026-05-24"))).toBe(6); // Sun
+    expect(mondayIndex(new Date("2026-05-18T00:00:00"))).toBe(0); // Mon
+    expect(mondayIndex(new Date("2026-05-19T00:00:00"))).toBe(1); // Tue
+    expect(mondayIndex(new Date("2026-05-23T00:00:00"))).toBe(5); // Sat
+    expect(mondayIndex(new Date("2026-05-24T00:00:00"))).toBe(6); // Sun
   });
 
   it("aligns with DOW_SHORT_MON_FIRST labels", () => {
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-18"))]).toBe(
-      "Mon",
-    );
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24"))]).toBe(
-      "Sun",
-    );
+    expect(
+      DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-18T00:00:00"))],
+    ).toBe("Mon");
+    expect(
+      DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24T00:00:00"))],
+    ).toBe("Sun");
   });
 });

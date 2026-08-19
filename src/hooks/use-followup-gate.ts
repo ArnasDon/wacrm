@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -124,14 +124,25 @@ export function useFollowupGate() {
   const contact = pending?.deal.contact;
   const contactName = contact?.name || contact?.phone || pending?.deal.title || "";
 
-  return {
-    open: !!pending,
-    saving,
-    contactName,
-    guardMove,
-    cancel,
-    confirm,
-  };
+  // Memoized: without this, every consumer (Pipeline page, Inbox
+  // message thread, deal form, contact sidebar) gets a brand-new
+  // object reference from this hook on every render of the component
+  // that calls it — even when nothing here actually changed. That
+  // breaks referential-stability of anything derived from this return
+  // value (e.g. a `useCallback([...followupGate])` elsewhere), which
+  // in turn defeats React.memo on components further down relying on
+  // that callback staying stable (see PipelineBoard).
+  return useMemo(
+    () => ({
+      open: !!pending,
+      saving,
+      contactName,
+      guardMove,
+      cancel,
+      confirm,
+    }),
+    [pending, saving, contactName, guardMove, cancel, confirm],
+  );
 }
 
 export type FollowupGate = ReturnType<typeof useFollowupGate>;

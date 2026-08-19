@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -83,7 +83,16 @@ const collisionDetection: CollisionDetection = (args) => {
   return rectIntersection(args);
 };
 
-export function PipelineBoard({
+// Memoized: opening a deal card only ever changes `selectedDeal`/
+// `dealOriginRect` state up in pipelines/page.tsx, unrelated to this
+// board's own props (`deals`/`stages`/callbacks are all stable
+// references across that update). Without this, that state change
+// re-renders the entire board — every column, every card, the whole
+// DnD context — in the same commit the FLIP open animation is
+// supposed to start in, and that synchronous work was stealing the
+// animation's first frame(s) (the visible "engasgando"/stutter on
+// open). Memoizing lets React skip this whole subtree for that update.
+export const PipelineBoard = memo(function PipelineBoard({
   stages,
   deals,
   onDealsReordered,
@@ -521,7 +530,7 @@ export function PipelineBoard({
       `}</style>
     </DndContext>
   );
-}
+});
 
 function StageColumn({
   stage,

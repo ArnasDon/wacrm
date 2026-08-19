@@ -193,11 +193,17 @@
       "edit": "편집",
       "markDone": "완료로 표시",
       "openConversation": "대화 열기",
-      "suggestedMessageLabel": "제안된 메시지",
-      "suggestMessage": "메시지 제안",
+      "sendMessageLabel": "메시지 보내기",
+      "generateMessage": "AI로 메시지 생성",
       "generating": "생성 중...",
-      "useInWhatsapp": "WhatsApp에서 사용",
-      "messageGenerateError": "제안을 생성하지 못했습니다."
+      "templateUsed": "사용된 템플릿",
+      "sendMessageButton": "메시지 보내기",
+      "sending": "보내는 중...",
+      "sentToast": "메시지가 전송되었습니다.",
+      "sendMessageError": "메시지를 보내지 못했습니다.",
+      "alreadySentError": "이 팔로우업은 이미 메시지가 전송되었습니다.",
+      "alreadySentThisRound": "이번 팔로우업의 메시지가 이미 전송되었습니다. 아래에서 다음 단계를 정하세요.",
+      "messageGenerateError": "메시지를 생성하지 못했습니다."
     }
   },
   "Dashboard": {
@@ -856,6 +862,7 @@
       "noHistory": "아직 기록된 상호작용이 없습니다",
       "openConversation": "대화 열기",
       "addToActionCenter": "액션 센터",
+      "openFollowup": "팔로우업 열기",
       "edit": "수정"
     },
     "form": {

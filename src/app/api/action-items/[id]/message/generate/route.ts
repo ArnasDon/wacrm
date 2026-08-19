@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 import { loadAiConfig } from "@/lib/ai/config";
-import { generateFollowupFreeMessage } from "@/lib/ai/followup-message";
+import { generateFollowupFreeMessage, selectFollowupTemplate } from "@/lib/ai/followup-message";
 import { logAiUsage } from "@/lib/ai/usage";
 
 function bad(message: string, status = 400) {
@@ -12,12 +12,26 @@ function bad(message: string, status = 400) {
 /**
  * POST /api/action-items/[id]/message/generate  (agent+)
  *
- * Central de Ações' "sugerir mensagem" (AGENTS.md §25). Reuses the
- * exact same free-text drafting call the Central de IA's follow-up
- * flow uses (src/lib/ai/followup-message.ts) — no new AI logic, just a
- * different row to read reason/context from. Never sends anything;
- * the client hands the returned text to the existing
- * writeFollowupDraft() → /inbox?c= bridge when the user chooses to use it.
+ * Central de Ações' "Gerar mensagem por IA" for the Follow-up flow
+ * (Pipeline → coluna Follow-up and Central de Ações → Follow-ups da
+ * semana both open the same action_items row and call this same
+ * endpoint — see action-item-detail-sheet.tsx). Zero new AI logic:
+ * reuses the exact same two calls the Central de IA's follow-up block
+ * (BLOCO 3/4) uses (src/lib/ai/followup-message.ts), just reading
+ * reason/context off an `action_items` row instead of `ai_suggestions`.
+ *
+ * Template-first, matching the spec ("a IA deve adaptar um template
+ * existente, não criar uma mensagem do zero"): tries
+ * `selectFollowupTemplate` against the account's approved WhatsApp
+ * templates first; only falls back to a free-style draft
+ * (`generateFollowupFreeMessage`) when no approved template fits (or
+ * none exist) — same fallback the Central de IA dialog already offers
+ * manually via its "no_template" step, just automatic here since this
+ * flow has no separate mode-choice screen.
+ *
+ * Never sends anything — the client reviews/edits the returned draft
+ * and only sends via POST /api/whatsapp/send when the user clicks
+ * "Enviar mensagem".
  */
 export async function POST(
   request: Request,
@@ -49,14 +63,46 @@ export async function POST(
     }
 
     const contactName = (item.contact as { name?: string } | null)?.name || "Lead";
+    const reason = item.title;
+    const approachSummary = item.description ?? null;
 
-    const { text, usage } = await generateFollowupFreeMessage({
+    const { selection, usage: templateUsage } = await selectFollowupTemplate(
+      supabase,
+      accountId,
+      config,
+      { contactName, reason, approachSummary },
+    );
+    void logAiUsage(supabase, {
+      accountId,
+      conversationId: item.conversation_id,
+      mode: "followup",
+      provider: config.provider,
+      model: config.model,
+      usage: templateUsage,
+    });
+
+    if (selection) {
+      return NextResponse.json({
+        draft: {
+          mode: "template" as const,
+          template_id: selection.template.id,
+          template_name: selection.template.name,
+          template_language: selection.template.language,
+          body_text: selection.template.body_text,
+          values: selection.values,
+        },
+      });
+    }
+
+    // No approved template fit — fall back to a free-style draft so
+    // the corretor still has something to review instead of a dead end.
+    const { text, usage: freeUsage } = await generateFollowupFreeMessage({
       db: supabase,
       config,
       conversationId: item.conversation_id,
       contactName,
-      reason: item.title,
-      approachSummary: item.description ?? null,
+      reason,
+      approachSummary,
     });
     void logAiUsage(supabase, {
       accountId,
@@ -64,10 +110,10 @@ export async function POST(
       mode: "followup",
       provider: config.provider,
       model: config.model,
-      usage,
+      usage: freeUsage,
     });
 
-    return NextResponse.json({ text });
+    return NextResponse.json({ draft: { mode: "free" as const, text } });
   } catch (err) {
     return toErrorResponse(err);
   }

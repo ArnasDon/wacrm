@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { writeFollowupDraft } from '@/lib/inbox/followup-draft';
+import { renderTemplatePreview } from '@/lib/whatsapp/template-validators';
 import type { AiSuggestion } from '@/types';
 
 /** Default "Adiar" window — a single click, no duration picker, kept
@@ -53,13 +54,6 @@ interface FollowupPayload {
 }
 
 type Step = 'review' | 'choose_mode' | 'free_draft' | 'template_draft' | 'no_template';
-
-function renderTemplatePreview(body: string, values: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return values[idx]?.trim() || `{{${raw}}}`;
-  });
-}
 
 export function FollowupDialog({
   suggestion,

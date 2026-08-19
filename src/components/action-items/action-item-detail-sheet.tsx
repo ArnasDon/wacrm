@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Check, MessageSquare, Pencil, Sparkles, CalendarClock } from "lucide-react";
+import { Check, MessageSquare, Pencil, Sparkles, CalendarClock, Send, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -24,9 +24,20 @@ import { DueDateField } from "./due-date-field";
 import { FollowupOutcomeDialog } from "./followup-outcome-dialog";
 import { ACTION_ITEM_COLORS } from "@/lib/action-items/constants";
 import { completeInterest, editActionItem, rescheduleFollowup } from "@/lib/action-items/queries";
-import { writeFollowupDraft } from "@/lib/inbox/followup-draft";
-import { useRouter } from "next/navigation";
+import { renderTemplatePreview } from "@/lib/whatsapp/template-validators";
 import type { ActionItem } from "@/types";
+
+type MessageDraft =
+  | { mode: "free"; text: string }
+  | {
+      mode: "template";
+      templateId: string;
+      templateName: string;
+      templateLanguage: string;
+      bodyText: string;
+      values: string[];
+      headerText?: string;
+    };
 
 interface ActionItemDetailSheetProps {
   item: ActionItem | null;
@@ -47,7 +58,6 @@ function formatDateLabel(dateKey: string, locale: string): string {
 export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDetailSheetProps) {
   const t = useTranslations("ActionCenter.detail");
   const locale = useLocale();
-  const router = useRouter();
   const { user } = useAuth();
 
   const [editing, setEditing] = useState(false);
@@ -61,13 +71,15 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
 
   const [outcomeDialogOpen, setOutcomeDialogOpen] = useState(false);
 
-  const [suggestedMessage, setSuggestedMessage] = useState<string | null>(null);
+  const [draft, setDraft] = useState<MessageDraft | null>(null);
   const [generatingMessage, setGeneratingMessage] = useState(false);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     setEditing(false);
     setRescheduling(false);
-    setSuggestedMessage(null);
+    setDraft(null);
+    setSending(false);
     if (item) {
       setEditTitle(item.title);
       setEditDescription(item.description ?? "");
@@ -160,7 +172,22 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
         toast.error(payload?.error || t("messageGenerateError"));
         return;
       }
-      setSuggestedMessage(payload.text as string);
+      const d = payload.draft;
+      if (d?.mode === "template") {
+        setDraft({
+          mode: "template",
+          templateId: d.template_id,
+          templateName: d.template_name,
+          templateLanguage: d.template_language,
+          bodyText: d.body_text,
+          values: d.values?.body ?? [],
+          headerText: d.values?.headerText,
+        });
+      } else if (d?.mode === "free") {
+        setDraft({ mode: "free", text: d.text });
+      } else {
+        toast.error(t("messageGenerateError"));
+      }
     } catch (err) {
       console.error("[action-center] message generate failed:", err);
       toast.error(t("messageGenerateError"));
@@ -169,14 +196,69 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
     }
   }
 
-  function useSuggestedMessage() {
-    if (!item?.conversation_id || !suggestedMessage) return;
-    writeFollowupDraft(item.conversation_id, {
-      suggestionId: item.id,
-      mode: "free",
-      text: suggestedMessage,
-    });
-    router.push(`/inbox?c=${item.conversation_id}`);
+  // "Enviar mensagem" — sends immediately through the CRM's existing
+  // send mechanism (same route the Inbox composer uses), no redirect.
+  // For a Follow-up, `action_item_id` rides along so /api/whatsapp/send
+  // can atomically claim the single-send guard (migration 072) before
+  // it calls Meta; a 409 there means this Follow-up was already sent
+  // (from this dialog or the other entry point) and is surfaced as-is,
+  // never retried silently. On success, hand off straight into the
+  // existing "o que aconteceu / próximo passo" flow — sending IS the
+  // follow-up contact, so there's no separate "mark done" click needed.
+  async function sendMessage() {
+    if (!item?.conversation_id || !draft) return;
+    setSending(true);
+    try {
+      const body: Record<string, unknown> = {
+        conversation_id: item.conversation_id,
+        ...(item.type === "followup" ? { action_item_id: item.id } : {}),
+      };
+      if (draft.mode === "free") {
+        body.message_type = "text";
+        body.content_text = draft.text.trim();
+      } else {
+        const renderedBody = renderTemplatePreview(draft.bodyText, draft.values);
+        body.message_type = "template";
+        body.template_name = draft.templateName;
+        body.template_language = draft.templateLanguage;
+        body.template_message_params = { body: draft.values, headerText: draft.headerText };
+        body.template_params = draft.values;
+        body.content_text = renderedBody;
+      }
+
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        toast.error(t("alreadySentError"));
+        onChanged();
+        return;
+      }
+      if (!res.ok) {
+        toast.error(payload?.error || t("sendMessageError"));
+        return;
+      }
+
+      toast.success(t("sentToast"));
+      setDraft(null);
+      onChanged();
+      // Sending IS the follow-up contact — hand off straight into the
+      // existing "o que aconteceu / próximo passo" flow instead of a
+      // separate "mark done" click. Interest items have no such flow;
+      // leave the sheet open so "Marcar como feito" is still available.
+      if (item.type === "followup") {
+        setOutcomeDialogOpen(true);
+      }
+    } catch (err) {
+      console.error("[action-center] send message failed:", err);
+      toast.error(t("sendMessageError"));
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -266,24 +348,59 @@ export function ActionItemDetailSheet({ item, onClose, onChanged }: ActionItemDe
           {item.conversation_id && (
             <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">{t("suggestedMessageLabel")}</p>
-                <Button variant="outline" size="sm" onClick={generateMessage} disabled={generatingMessage}>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {generatingMessage ? t("generating") : t("suggestMessage")}
-                </Button>
-              </div>
-              {suggestedMessage && (
-                <>
-                  <Textarea
-                    value={suggestedMessage}
-                    onChange={(e) => setSuggestedMessage(e.target.value)}
-                    rows={3}
-                    className="text-xs"
-                  />
-                  <Button size="sm" onClick={useSuggestedMessage}>
-                    {t("useInWhatsapp")}
+                <p className="text-xs font-medium text-muted-foreground">{t("sendMessageLabel")}</p>
+                {item.type === "followup" && item.followup_sent_at ? null : (
+                  <Button variant="outline" size="sm" onClick={generateMessage} disabled={generatingMessage || sending}>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {generatingMessage ? t("generating") : t("generateMessage")}
                   </Button>
-                </>
+                )}
+              </div>
+
+              {item.type === "followup" && item.followup_sent_at ? (
+                <p className="text-xs text-muted-foreground">{t("alreadySentThisRound")}</p>
+              ) : (
+                draft && (
+                  <>
+                    {draft.mode === "free" ? (
+                      <Textarea
+                        value={draft.text}
+                        onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+                        rows={4}
+                        className="text-xs"
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="rounded-md border border-border bg-background p-2 text-xs">
+                          <p className="mb-1 text-[10px] text-muted-foreground">
+                            {t("templateUsed")}: {draft.templateName}
+                          </p>
+                          <p className="whitespace-pre-wrap text-foreground">
+                            {renderTemplatePreview(draft.bodyText, draft.values)}
+                          </p>
+                        </div>
+                        {draft.values.map((v, i) => (
+                          <div key={i} className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">{`{{${i + 1}}}`}</Label>
+                            <Input
+                              value={v}
+                              onChange={(e) => {
+                                const next = [...draft.values];
+                                next[i] = e.target.value;
+                                setDraft({ ...draft, values: next });
+                              }}
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Button size="sm" onClick={sendMessage} disabled={sending}>
+                      {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {sending ? t("sending") : t("sendMessageButton")}
+                    </Button>
+                  </>
+                )
               )}
             </div>
           )}

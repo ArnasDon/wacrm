@@ -436,6 +436,11 @@ export interface ActionItem {
   created_by?: string | null;
   resolved_by?: string | null;
   resolved_at?: string | null;
+  /** Set atomically when a Follow-up message send is claimed (migration
+   *  072) — the guard against sending the same Follow-up twice, from
+   *  either the Pipeline or Central de Ações entry point. Cleared by
+   *  {@link rescheduleFollowup} so a new cycle can send again. */
+  followup_sent_at?: string | null;
   created_at: string;
   updated_at: string;
   /** Joined in by list queries. */

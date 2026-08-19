@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
-import { ListChecks, MessageSquare, Pencil, Tag as TagIcon, X as XIcon } from "lucide-react";
+import { CalendarClock, ListChecks, MessageSquare, Pencil, Tag as TagIcon, X as XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Conversation, Deal, PipelineStage } from "@/types";
+import type { ActionItem, Conversation, Deal, PipelineStage } from "@/types";
 import { DealForm } from "./deal-form";
 import { AddToActionCenterDialog } from "@/components/action-items/add-to-action-center-dialog";
+import { ActionItemDetailSheet } from "@/components/action-items/action-item-detail-sheet";
+import { findActivePendingActionItem } from "@/lib/action-items/queries";
+import { FOLLOWUP_STAGE_NAME } from "@/lib/action-items/constants";
 
 interface DealDetailDrawerProps {
   /** Null hides the drawer — the parent owns "which deal", this
@@ -54,6 +57,17 @@ export function DealDetailDrawer({
   const [editOpen, setEditOpen] = useState(false);
   const [actionCenterOpen, setActionCenterOpen] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
+
+  // Caminho A (AGENTS task): Pipeline → coluna Follow-up → clicar no
+  // card → abrir o MESMO Follow-up que a Central de Ações usa — não uma
+  // segunda implementação. `findActivePendingActionItem` is the exact
+  // same "resolve the active pending item for this contact+type" lookup
+  // used to prevent duplicate creation elsewhere (useFollowupGate,
+  // AddToActionCenterDialog), so both entry points land on the
+  // identical `action_items` row and inherit the same single-send
+  // guard (migration 072).
+  const [pendingFollowupItem, setPendingFollowupItem] = useState<ActionItem | null>(null);
+  const [openFollowupItem, setOpenFollowupItem] = useState<ActionItem | null>(null);
 
   // Same "most recent conversation for this contact" lookup DealForm
   // already does — prefer the deal's own conversation_id (populated for
@@ -94,6 +108,29 @@ export function DealDetailDrawer({
       cancelled = true;
     };
   }, [deal]);
+
+  const isFollowupStage =
+    !!stage && stage.name.trim().toLowerCase() === FOLLOWUP_STAGE_NAME.toLowerCase();
+
+  useEffect(() => {
+    if (!deal || !isFollowupStage || !deal.contact_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingFollowupItem(null);
+      return;
+    }
+    let cancelled = false;
+    const supabase = createClient();
+    findActivePendingActionItem(supabase, deal.contact_id, "followup")
+      .then((item) => {
+        if (!cancelled) setPendingFollowupItem(item);
+      })
+      .catch(() => {
+        if (!cancelled) setPendingFollowupItem(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deal, isFollowupStage]);
 
   // FLIP: measure the gap between the clicked card and the panel's own
   // resting position/size, then hand that delta to the popup as CSS
@@ -305,6 +342,12 @@ export function DealDetailDrawer({
                   {t("openConversation")}
                 </Link>
               )}
+              {pendingFollowupItem && (
+                <Button variant="outline" onClick={() => setOpenFollowupItem(pendingFollowupItem)}>
+                  <CalendarClock className="h-4 w-4" />
+                  {t("openFollowup")}
+                </Button>
+              )}
               {deal.contact_id && (
                 <Button variant="outline" onClick={() => setActionCenterOpen(true)}>
                   <ListChecks className="h-4 w-4" />
@@ -343,6 +386,24 @@ export function DealDetailDrawer({
           onSaved={onChanged}
         />
       )}
+
+      {/* Same component the Central de Ações page renders for this
+          exact row (see /notifications) — "Abrir Follow-up" above is
+          a second entry point into the identical Follow-up, never a
+          separate implementation. */}
+      <ActionItemDetailSheet
+        item={openFollowupItem}
+        onClose={() => setOpenFollowupItem(null)}
+        onChanged={() => {
+          onChanged();
+          if (deal.contact_id) {
+            const supabase = createClient();
+            findActivePendingActionItem(supabase, deal.contact_id, "followup").then(
+              setPendingFollowupItem,
+            );
+          }
+        }}
+      />
 
       <style jsx>{`
         /* :global() — styled-jsx's automatic scoping-class injection only

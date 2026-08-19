@@ -193,11 +193,17 @@
       "edit": "Edit",
       "markDone": "Mark as done",
       "openConversation": "Open conversation",
-      "suggestedMessageLabel": "Suggested message",
-      "suggestMessage": "Suggest message",
+      "sendMessageLabel": "Send message",
+      "generateMessage": "Generate message with AI",
       "generating": "Generating...",
-      "useInWhatsapp": "Use in WhatsApp",
-      "messageGenerateError": "Couldn't generate a suggestion."
+      "templateUsed": "Template used",
+      "sendMessageButton": "Send message",
+      "sending": "Sending...",
+      "sentToast": "Message sent.",
+      "sendMessageError": "Couldn't send the message.",
+      "alreadySentError": "This follow-up already had a message sent.",
+      "alreadySentThisRound": "Message already sent for this follow-up. Set the next step below.",
+      "messageGenerateError": "Couldn't generate the message."
     }
   },
   "Dashboard": {
@@ -856,6 +862,7 @@
       "noHistory": "No interaction recorded yet",
       "openConversation": "Open conversation",
       "addToActionCenter": "Action Center",
+      "openFollowup": "Open Follow-up",
       "edit": "Edit"
     },
     "form": {

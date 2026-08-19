@@ -231,7 +231,10 @@ export async function rescheduleFollowup(
 ): Promise<void> {
   const { error } = await db
     .from("action_items")
-    .update({ due_date: newDueDate, due_time: newDueTime })
+    // Reagendar abre um novo ciclo de follow-up — limpa a trava de
+    // envio único (migration 072) para que a próxima rodada possa
+    // mandar uma nova mensagem quando chegar a nova data.
+    .update({ due_date: newDueDate, due_time: newDueTime, followup_sent_at: null })
     .eq("id", item.id);
   if (error) throw error;
 

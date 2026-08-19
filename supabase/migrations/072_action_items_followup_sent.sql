@@ -1,0 +1,23 @@
+-- ============================================================
+-- 072_action_items_followup_sent.sql — guarda de envio único do Follow-up
+--
+-- AGENTS task: o mesmo Follow-up (action_items.id) não pode ter sua
+-- mensagem de "Enviar mensagem" disparada duas vezes — nem por duplo
+-- clique, nem por duas abas, nem pelos dois pontos de entrada (Pipeline
+-- e Central de Ações), que resolvem para a mesma linha. `disabled` no
+-- React não é suficiente (não protege contra corrida entre requests);
+-- a defesa real é este timestamp, reivindicado atomicamente por um
+-- UPDATE condicional (`WHERE followup_sent_at IS NULL`) em
+-- /api/whatsapp/send antes do envio de fato — mesmo padrão já usado
+-- para assigned_agent_id em send-message.ts (primeiro a escrever
+-- vence, sem índice único necessário pois é sempre UPDATE numa linha
+-- que já existe, nunca INSERT).
+--
+-- NULL de novo = uma nova rodada de follow-up pode ser enviada:
+-- rescheduleFollowup ("Continuar acompanhamento"/reagendar) limpa este
+-- campo, já que reagendar é, por definição, abrir um novo ciclo.
+--
+-- Idempotente — seguro rodar mais de uma vez.
+-- ============================================================
+
+ALTER TABLE action_items ADD COLUMN IF NOT EXISTS followup_sent_at timestamptz;

@@ -72,6 +72,20 @@ export function extractVariableIndices(text: string): number[] {
 }
 
 /**
+ * Fill a template body's `{{N}}` placeholders with values for preview
+ * (Central de IA and Central de Ações follow-up flows both render an
+ * editable preview before send). 1-indexed, matching `extractVariableIndices`.
+ * An unfilled/missing value falls back to showing the placeholder itself
+ * rather than blanking it out.
+ */
+export function renderTemplatePreview(body: string, values: string[]): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+    const idx = Number(raw) - 1;
+    return values[idx]?.trim() || `{{${raw}}}`;
+  });
+}
+
+/**
  * Meta requires contiguous, 1-indexed variables. `{{1}} {{3}}` is
  * invalid — it must be `{{1}} {{2}}`.
  */

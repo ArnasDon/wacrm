@@ -64,6 +64,11 @@ export async function POST(request: Request) {
       // suggestion — see the block below. Absent for every other send;
       // zero effect on the existing send paths.
       followup_suggestion_id,
+      // Central de Ações' Follow-up "Enviar mensagem" (action-item-detail-
+      // sheet.tsx) threads the action_items.id through so this same send
+      // request also claims the single-send guard — see the block below.
+      // Absent for every other send; zero effect on the existing paths.
+      action_item_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -154,6 +159,44 @@ export async function POST(request: Request) {
       )
     }
 
+    // Central de Ações Follow-up single-send guard (migration 072):
+    // claim `action_items.followup_sent_at` atomically — a conditional
+    // UPDATE, not a SELECT-then-write — so two concurrent requests for
+    // the same Follow-up (double click, two tabs, or the Pipeline and
+    // Central de Ações entry points both open the same row) can't both
+    // win. Only one `UPDATE ... WHERE followup_sent_at IS NULL` affects
+    // a row; the loser gets back no row and is rejected here, BEFORE
+    // Meta is ever called — the backend, not client `disabled` state, is
+    // the actual barrier (AGENTS task §10). `rescheduleFollowup` clears
+    // this column when a new follow-up cycle starts, so a later,
+    // legitimate resend is never permanently blocked.
+    let claimedActionItemId: string | null = null
+    if (typeof action_item_id === 'string' && action_item_id) {
+      const { data: claimed, error: claimError } = await supabase
+        .from('action_items')
+        .update({ followup_sent_at: new Date().toISOString() })
+        .eq('id', action_item_id)
+        .eq('account_id', accountId)
+        .eq('conversation_id', conversationId)
+        .eq('type', 'followup')
+        .is('followup_sent_at', null)
+        .select('id')
+        .maybeSingle()
+      if (claimError) {
+        return NextResponse.json(
+          { error: 'Failed to check follow-up send status' },
+          { status: 500 }
+        )
+      }
+      if (!claimed) {
+        return NextResponse.json(
+          { error: 'Este follow-up já teve uma mensagem enviada.' },
+          { status: 409 }
+        )
+      }
+      claimedActionItemId = claimed.id
+    }
+
     // Delegate to the shared send core (validates, sends to Meta with
     // phone-variant retry, persists, pauses active flow runs). Its
     // `SendMessageError` carries a machine code + HTTP status; the
@@ -209,6 +252,15 @@ export async function POST(request: Request) {
         whatsapp_message_id: result.whatsappMessageId,
       })
     } catch (err) {
+      // The send itself failed — release the claim above so this
+      // cycle's guard isn't permanently burned by a transient error;
+      // the user can just retry.
+      if (claimedActionItemId) {
+        await supabase
+          .from('action_items')
+          .update({ followup_sent_at: null })
+          .eq('id', claimedActionItemId)
+      }
       if (err instanceof SendMessageError) {
         return NextResponse.json(
           { error: err.message },

@@ -88,6 +88,18 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * `auth.uid()` of the teammate who sent this, persisted to
+   * `messages.sender_id` so the thread can say who said what on a
+   * shared number. Omit for senders that aren't a person: the public
+   * API authenticates an API key rather than a user, and the bot /
+   * automation paths are already identified by `sender_type`.
+   *
+   * Null is therefore a real value, not a gap to backfill — it means
+   * "not attributable to a member", which the UI renders as an
+   * unlabelled bubble.
+   */
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -201,6 +213,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    senderId,
   } = params;
 
   if (!conversationId) {
@@ -473,6 +486,7 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      sender_id: senderId ?? null,
       content_type: messageType,
       content_text: persistedText,
       media_url: mediaUrl || null,

@@ -332,6 +332,32 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     ).toBe('en');
   });
 
+  it('records the sending member on the message row', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateParams: ['A123', 'Friday'],
+      senderId: 'user-7',
+    });
+    expect(captured.message?.sender_id).toBe('user-7');
+  });
+
+  it('writes a null sender when the caller is not a person', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateParams: ['A123', 'Friday'],
+    });
+    // The public API authenticates an API key, not a user. Null is the
+    // honest answer there — the column must not silently inherit
+    // whoever happened to create the key.
+    expect(captured.message?.sender_id).toBeNull();
+  });
+
   it('leaves content_text null when the account has no local template row', async () => {
     const captured: CapturedWrites = {};
     await sendMessageToConversation(sendPathDb([], captured), 'acct-1', {

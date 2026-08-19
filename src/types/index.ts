@@ -233,7 +233,16 @@ export interface Message {
   id: string;
   conversation_id: string;
   sender_type: SenderType;
-  sender_id?: string;
+  /**
+   * `auth.uid()` of the teammate who sent an outbound message, so a
+   * shared inbox can attribute it. Null on: inbound customer
+   * messages, bot / automation / flow sends (identified by
+   * `sender_type` instead), sends made through the public API (an
+   * API key authenticates the account, not a person), and every row
+   * written before this column started being populated — those are
+   * unattributable after the fact and render without a label.
+   */
+  sender_id?: string | null;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;

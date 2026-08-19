@@ -168,6 +168,8 @@
       "unassign": "Unassign",
       "noTeammates": "No teammates available",
       "me": " (me)",
+      "senderAi": "AI assistant",
+      "senderTeam": "Team",
       "noMessagesYet": "No messages yet",
       "sendTemplateHint": "Send a template to start the conversation",
       "selectConversation": "Select a conversation",

@@ -29,6 +29,14 @@ interface MessageBubbleProps {
   message: Message;
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
+  /**
+   * Display name of the teammate who sent this outbound message.
+   * The parent resolves it (and decides when to repeat it across a
+   * run of consecutive messages) — the bubble just renders what it
+   * is handed. Absent means "don't attribute": a solo account, an
+   * inbound message, or a send with no recorded sender.
+   */
+  senderLabel?: string | null;
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
@@ -218,6 +226,7 @@ function MessageContent({
 export function MessageBubble({
   message,
   reply,
+  senderLabel,
   reactions,
   currentUserId,
   onToggleReaction,
@@ -245,6 +254,17 @@ export function MessageBubble({
             : "rounded-bl-md bg-muted text-foreground",
         )}
       >
+        {/* Sender attribution. Sits above the quote so the reading
+            order is who → what-they-replied-to → what-they-said,
+            matching how the same block reads in a group chat. The
+            `isAgent` guard is not redundant: the colour below is
+            written for the primary fill, so a label on an inbound
+            bubble would render near-invisible. */}
+        {isAgent && senderLabel && (
+          <div className="mb-0.5 truncate text-[11px] font-semibold text-primary-foreground/80">
+            {senderLabel}
+          </div>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}

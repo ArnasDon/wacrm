@@ -168,6 +168,8 @@
       "unassign": "담당자 해제",
       "noTeammates": "지정 가능한 팀원이 없습니다",
       "me": " (나)",
+      "senderAi": "AI 어시스턴트",
+      "senderTeam": "팀",
       "noMessagesYet": "아직 메시지가 없습니다",
       "sendTemplateHint": "템플릿을 보내 대화를 시작하세요",
       "selectConversation": "대화를 선택하세요",

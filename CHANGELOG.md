@@ -33,6 +33,25 @@ the conversations assigned to them.
   Note that a thread with no assignee is nobody's: a restricted member
   does not see inbound conversations until someone routes one to them.
 
+- **Message attribution.** Outbound messages now record which teammate
+  sent them (`messages.sender_id`, which existed since the first
+  migration but was never written), and the thread labels the first
+  bubble of each run with that person's name. Solo accounts see no
+  labels — there is only one possible sender.
+
+  This is not retroactive: messages sent before this release have no
+  recorded sender and stay unlabelled, because there is nothing to
+  recover them from. Sends through the public API are also unlabelled —
+  an API key authenticates the account, not a person.
+
+### Fixed
+
+- **Reply quotes credited the wrong person.** Quoting any outbound
+  message showed a bare "(me)" regardless of who had actually sent it,
+  because the quote reused a translation string meant as a suffix after
+  a name. Quotes now name the real sender, with "(me)" appended only
+  when it was you.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

@@ -208,9 +208,12 @@ export function MessageThread({
     messageId: string;
   } | null>(null);
 
-  // Profiles are bounded by RLS to rows the current user is allowed to
-  // see — today that's just the current user, but the dropdown keeps the
-  // shape ready for shared-team workspaces without a refactor.
+  // Every member of the caller's account — `profiles_select` (migration
+  // 017) scopes the read to the account, so no explicit filter is
+  // needed. Feeds the assignee dropdown and the sender-name lookup for
+  // message attribution. (The comment here used to say this returned
+  // only the current user; that stopped being true when accounts became
+  // shared.)
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -474,6 +477,9 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        // Attribute the optimistic bubble too, so the sender
+        // label does not pop in when the real row replaces it.
+        sender_id: user?.id,
         content_type: "text",
         content_text: text,
         status: "sending",
@@ -537,6 +543,9 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        // Attribute the optimistic bubble too, so the sender
+        // label does not pop in when the real row replaces it.
+        sender_id: user?.id,
         content_type: payload.kind,
         content_text: contentText,
         media_url: payload.mediaUrl,
@@ -597,6 +606,9 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        // Attribute the optimistic bubble too, so the sender
+        // label does not pop in when the real row replaces it.
+        sender_id: user?.id,
         content_type: "interactive",
         content_text: payload.body,
         interactive_payload: payload,
@@ -676,6 +688,9 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        // Attribute the optimistic bubble too, so the sender
+        // label does not pop in when the real row replaces it.
+        sender_id: user?.id,
         content_type: "template",
         content_text: renderedBody,
         template_name: template.name,
@@ -751,17 +766,54 @@ export function MessageThread({
     return map;
   }, [reactions]);
 
+  // user_id → display name for every member of the account. Feeds both
+  // the per-bubble sender label and the reply-quote author, so the two
+  // can't disagree about what to call someone.
+  const senderNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of profiles) {
+      if (p.full_name) map.set(p.user_id, p.full_name);
+    }
+    return map;
+  }, [profiles]);
+
+  // Attribution is noise on a one-person account: there is only one
+  // possible sender, and stamping your own name on every outbound
+  // bubble tells you nothing. `profiles` is RLS-scoped to the caller's
+  // account, so its length is the team size.
+  const isSharedInbox = profiles.length > 1;
+
   const contactDisplayName = contact?.name || contact?.phone || "Customer";
 
-  // Author label for a quoted message: "You" when we sent the parent,
-  // contact name when the customer sent it.
+  // Display name of the member behind an outbound message, or null when
+  // the row records none — a message sent before attribution existed, a
+  // send through the public API (an API key stands in for a person), or
+  // a member who has since left the account. Null means "don't claim to
+  // know", which is the honest rendering: guessing "You" here is what
+  // made the old reply quote label a teammate's message as your own.
+  const memberNameFor = useCallback(
+    (m: Message): string | null => {
+      if (m.sender_type === "bot") return t("senderAi");
+      if (!m.sender_id) return null;
+      return senderNameById.get(m.sender_id) ?? null;
+    },
+    [senderNameById, t],
+  );
+
+  // Author line for a reply quote and the composer's reply chip.
+  // `t("me")` is a suffix (" (me)") meant to follow a name — the old
+  // code rendered it standalone, which is why quoting any outbound
+  // message showed a bare "(me)" no matter who had sent it.
   const authorLabelFor = useCallback(
     (m: Message): string => {
-      const isAgentMsg =
-        m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? "You" : contactDisplayName;
+      if (m.sender_type === "customer") return contactDisplayName;
+      const name = memberNameFor(m);
+      if (!name) return t("senderTeam");
+      return m.sender_id && m.sender_id === user?.id
+        ? `${name}${t("me")}`
+        : name;
     },
-    [contactDisplayName],
+    [contactDisplayName, memberNameFor, t, user?.id],
   );
 
   const handleStartReply = useCallback(
@@ -1104,19 +1156,31 @@ export function MessageThread({
                 </div>
                 {/* Messages */}
                 <div className="space-y-2">
-                  {group.messages.map((msg) => {
+                  {group.messages.map((msg, msgIndex) => {
                     const parent = msg.reply_to_message_id
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;
                     const reply = parent
                       ? {
-                          authorLabel:
-                            parent.sender_type === "agent" || parent.sender_type === "bot"
-                              ? t("me") 
-                              : contact?.name || contact?.phone || "Unknown",
+                          authorLabel: authorLabelFor(parent),
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
+                    // Label only the first bubble of a run by the same
+                    // person. Repeating the name on every message in a
+                    // burst is what makes group chats unreadable, and
+                    // the run is unambiguous without it.
+                    const previous = group.messages[msgIndex - 1];
+                    const startsRun =
+                      !previous ||
+                      previous.sender_type !== msg.sender_type ||
+                      previous.sender_id !== msg.sender_id;
+                    const senderLabel =
+                      isSharedInbox &&
+                      msg.sender_type === "agent" &&
+                      startsRun
+                        ? memberNameFor(msg)
+                        : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
@@ -1141,6 +1205,7 @@ export function MessageThread({
                         <MessageBubble
                           message={msg}
                           reply={reply}
+                          senderLabel={senderLabel}
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}

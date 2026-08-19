@@ -177,6 +177,10 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        // Who typed it. The inbox is shared, so without this every
+        // teammate's message is indistinguishable from every other's
+        // — and unrecoverably so, since nothing else records it.
+        senderId: userId,
       })
 
       return NextResponse.json({

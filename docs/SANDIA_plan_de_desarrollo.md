@@ -3687,3 +3687,57 @@ completo, `vitest run` en verde (1107 tests, +4 nuevos — comparador
 `compareMessageCount` con los 5 operadores y casos inválidos, más
 validación de `message_count` en `validate.test.ts` — salvo los 2
 fallos preexistentes conocidos de `date-utils.test.ts`).
+
+---
+
+**2026-08-19 — Claude Code — Fix: la IA se quedaba callada de la nada
+en cuentas con automatizaciones de "palabra clave" activas, sin avisar
+a nadie.**
+
+Angel reportó un caso real: "Ricardo" (50255150298) estaba conversando
+con el bot de calificación de leads y la IA dejó de responder a mitad
+de chat, sin transferir a un humano ni dejar ninguna nota. Se
+reprodujo con datos reales de producción (Supabase, cuenta
+`6ad222e9-20b0-4754-85db-ab8547d49a1d`): `ai_usage_log` mostraba 6
+llamadas exitosas al modelo y luego ninguna más después del mensaje
+15:59:03 del cliente, mientras `conversations.ai_autoreply_disabled`
+seguía en `false` y sin `ai_handoff_summary` — es decir, la IA nunca
+intentó responder ese mensaje, y tampoco hizo ningún handoff.
+
+**Causa raíz:** `dispatchInboundToAiReply` (`src/lib/ai/auto-reply.ts`)
+tenía una compuerta que apagaba la IA para **toda la cuenta, en cada
+mensaje entrante**, con solo comprobar "¿existe alguna automatización
+activa de tipo `new_message_received` o `keyword_match`?" — sin
+importar si esa automatización realmente iba a dispararse con el
+mensaje actual, ni si alguna vez le manda algo al cliente. La cuenta
+de Ricardo tenía dos automatizaciones `keyword_match` activas
+("Mover a Diálogo por palabra clave de interés" y "Mover a Cotización
+por palabras clave de precio") que **solo mueven el deal de etapa**
+(`move_deal`, sin ningún paso de envío) — nunca le dicen nada al
+cliente — y aun así bloqueaban a la IA en cada inbound, con
+`execution_count: 0` confirmando que jamás llegaron a dispararse.
+
+**Fix** (`src/lib/ai/auto-reply.ts` + `auto-reply.test.ts`): la
+compuerta ahora exige dos cosas antes de callarse:
+1. Que el trigger de la automatización realmente aplique a **este**
+   mensaje — reutiliza `triggerMatches()` de
+   `src/lib/automations/engine.ts` (la misma función que usa el motor
+   de automatizaciones para decidir si dispararse), en vez de solo
+   comprobar existencia + `is_active`.
+2. Que la automatización tenga al menos un paso que realmente le hable
+   al cliente (`send_message`/`send_buttons`/`send_list`/
+   `send_template`) — una automatización que solo mueve un deal o pone
+   un tag nunca puede causar "doble mensaje", así que tampoco debe
+   silenciar al bot.
+
+4 tests nuevos cubren el caso de Ricardo (automatización sin paso de
+envío) y el caso de keyword que no matchea el mensaje, además del caso
+correcto donde sí debe ceder el turno.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (1112 tests, +4 nuevos — salvo los 2
+fallos preexistentes conocidos de `date-utils.test.ts`).
+
+Pendiente: avisarle a Ricardo/retomar esa conversación manualmente —
+el fix corrige el comportamiento hacia adelante, pero no reenvía nada
+a ese hilo ya silenciado.

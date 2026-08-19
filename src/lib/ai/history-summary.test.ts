@@ -30,7 +30,7 @@ describe('summarizeOlderMessages', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('calls OpenAI with a small max-tokens cap and returns the summary', async () => {
+  it('calls OpenAI with the summary max-tokens cap and returns the summary', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       okResponse({
         choices: [{ message: { content: 'Customer asked about bikes and helmets.' } }],
@@ -50,7 +50,7 @@ describe('summarizeOlderMessages', () => {
       usage: { promptTokens: 50, completionTokens: 10, totalTokens: 60 },
     })
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.max_completion_tokens).toBe(300)
+    expect(body.max_completion_tokens).toBe(1024)
     expect(body.messages[0].role).toBe('system')
     expect(body.messages[0].content).toContain('Condense this excerpt')
   })
@@ -71,7 +71,7 @@ describe('summarizeOlderMessages', () => {
     expect(body.messages[0].content).toContain('Customer asked about bikes.')
   })
 
-  it('works with Anthropic too, capping max_tokens the same way', async () => {
+  it('works with Anthropic too, using the same max-tokens cap', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       okResponse({ content: [{ type: 'text', text: 'Condensed summary.' }] }),
     )
@@ -85,7 +85,7 @@ describe('summarizeOlderMessages', () => {
 
     expect(result?.summary).toBe('Condensed summary.')
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.max_tokens).toBe(300)
+    expect(body.max_tokens).toBe(1024)
   })
 
   it('routes DeepSeek through the OpenAI-compatible adapter at DeepSeek\'s URL', async () => {
@@ -103,7 +103,7 @@ describe('summarizeOlderMessages', () => {
     expect(result?.summary).toBe('DeepSeek summary.')
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.deepseek.com')
-    expect(JSON.parse(opts.body).max_completion_tokens).toBe(300)
+    expect(JSON.parse(opts.body).max_completion_tokens).toBe(1024)
   })
 
   it('never throws — returns null on a provider error', async () => {

@@ -14,10 +14,18 @@ import type { AiConfig, AiUsage, ChatMessage } from './types'
 // nothing about the DB, the conversation, or persistence.
 // ============================================================
 
-/** Cap on a summary's own length — this is condensed context for the
- *  model, not a reply; keeps the summarization call itself cheap and
- *  keeps the resulting summary from growing unbounded turn after turn. */
-const SUMMARY_MAX_OUTPUT_TOKENS = 300
+/**
+ * Cap on a summary's own length — condensed context, not a reply, so it
+ * doesn't need `MAX_OUTPUT_TOKENS`'s full headroom for the VISIBLE text.
+ * It still needs real headroom overall, though: on reasoning-capable
+ * OpenAI models, internal reasoning tokens count against this same
+ * budget before any summary text comes out, and a too-tight cap fails
+ * with an empty response rather than a short summary (this shipped at
+ * 300, which even a non-reasoning model's summary could brush against,
+ * and a reasoning model's could consume entirely on reasoning alone —
+ * see `finish_reason: 'length'` in the empty-response error message).
+ */
+const SUMMARY_MAX_OUTPUT_TOKENS = 1024
 
 export interface SummarizeResult {
   summary: string

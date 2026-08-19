@@ -31,6 +31,11 @@ interface OpenAiTurn {
 interface OpenAiResponse {
   choices?: {
     message?: { content?: string | null; tool_calls?: OpenAiToolCall[] }
+    /** 'length' here (paired with empty content) means the model spent
+     *  its whole `max_completion_tokens` budget on internal reasoning
+     *  (o1/o3/gpt-5-class "reasoning" models) with nothing left for
+     *  visible output — not a real failure, just too tight a cap. */
+    finish_reason?: string
   }[]
   usage?: {
     prompt_tokens?: number
@@ -118,15 +123,21 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
       }),
     )
 
-    const message = data?.choices?.[0]?.message
+    const choice = data?.choices?.[0]
+    const message = choice?.message
     const toolCalls = message?.tool_calls ?? []
 
     if (toolCalls.length === 0 || !toolLoop) {
       const text = message?.content
       if (!text || typeof text !== 'string' || !text.trim()) {
-        throw new AiError(`${providerLabel} returned an empty response.`, {
-          code: 'empty_response',
-        })
+        const lengthCapped = choice?.finish_reason === 'length'
+        throw new AiError(
+          `${providerLabel} returned an empty response.` +
+            (lengthCapped
+              ? ' (finish_reason: length — the model likely spent its whole output-token budget on internal reasoning; raise maxOutputTokens.)'
+              : ''),
+          { code: 'empty_response' },
+        )
       }
       return { text, usage: usageTotal }
     }

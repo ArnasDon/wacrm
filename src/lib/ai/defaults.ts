@@ -23,9 +23,22 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
-/** Cap on generated reply length — keeps WhatsApp replies short and
- *  bounds token spend on the caller's own key. */
-export const MAX_OUTPUT_TOKENS = 1024
+/**
+ * Cap on generated reply length — bounds token spend on the caller's own
+ * key. NOT a target length (the prompt guidelines already ask for short,
+ * WhatsApp-suitable replies) — it's a safety ceiling, and needs real
+ * headroom above that target: on reasoning-capable OpenAI models
+ * (o1/o3/gpt-5-class), internal "thinking" tokens are billed against
+ * this SAME budget before any visible text is produced. Too tight a cap
+ * here doesn't shorten the reply — it can consume the whole budget on
+ * reasoning and leave zero room for visible output, which surfaces as
+ * an `empty_response` AiError, not a short reply. 4096 leaves real
+ * headroom for that; 1024 (this shipped with originally) was too tight
+ * once prompts grew past a trivial size (a knowledge base, a longer
+ * history) and started failing silently in production — see
+ * `finish_reason: 'length'` in the empty-response error message.
+ */
+export const MAX_OUTPUT_TOKENS = 4096
 
 /**
  * Hard cap on tool-use round trips within one `generateReply` call.

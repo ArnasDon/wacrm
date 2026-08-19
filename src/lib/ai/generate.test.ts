@@ -162,6 +162,25 @@ describe('generateReply — OpenAI', () => {
       }),
     ).rejects.toBeInstanceOf(AiError)
   })
+
+  it('flags a reasoning-token-exhausted empty completion (finish_reason: length)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }),
+      ),
+    )
+    await expect(
+      generateReply({
+        config: config(),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'empty_response',
+      message: expect.stringContaining('finish_reason: length'),
+    })
+  })
 })
 
 describe('generateReply — DeepSeek', () => {

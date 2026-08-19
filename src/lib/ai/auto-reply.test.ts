@@ -16,8 +16,6 @@ const h = vi.hoisted(() => ({
   createEvent: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
-    autoResponders: [] as { id: string; trigger_type: string; trigger_config: Record<string, unknown> }[],
-    autoResponderSteps: [] as { automation_id: string; step_type: string }[],
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
@@ -97,16 +95,6 @@ function selectManyChain(getData: () => unknown) {
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
-      if (table === 'automations') {
-        // .select('id, trigger_type, trigger_config').eq().eq().in() →
-        // active new_message_received/keyword_match automations.
-        return selectManyChain(() => h.state.autoResponders)
-      }
-      if (table === 'automation_steps') {
-        // .select('automation_id').in().in() → customer-facing send
-        // steps belonging to the matching automations above.
-        return selectManyChain(() => h.state.autoResponderSteps)
-      }
       if (table === 'deals') {
         // .select().eq().eq().eq().order().limit().maybeSingle() → most
         // recently updated open deal for the contact.
@@ -245,8 +233,6 @@ beforeEach(() => {
     ai_autoreply_disabled: false,
     ai_reply_count: 0,
   }
-  h.state.autoResponders = []
-  h.state.autoResponderSteps = []
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
@@ -304,49 +290,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
-  it('stands down when an active message-sending automation matches this inbound', async () => {
-    h.state.autoResponders = [{ id: 'auto-1', trigger_type: 'new_message_received', trigger_config: {} }]
-    h.state.autoResponderSteps = [{ automation_id: 'auto-1', step_type: 'send_message' }]
-    await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.engineSendText).not.toHaveBeenCalled()
-  })
-
-  it('does NOT stand down for a keyword_match automation whose keyword does not match this message', async () => {
-    // regression: this used to block the AI on every single inbound just
-    // because an active keyword_match automation existed anywhere on the
-    // account, regardless of whether its keyword ever matched.
-    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hola, buenas tardes' }])
-    h.state.autoResponders = [{
-      id: 'auto-1',
-      trigger_type: 'keyword_match',
-      trigger_config: { keywords: ['precio', 'costo'], match_type: 'contains' },
-    }]
-    h.state.autoResponderSteps = [{ automation_id: 'auto-1', step_type: 'send_message' }]
-    await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).toHaveBeenCalled()
-    expect(h.engineSendText).toHaveBeenCalled()
-  })
-
-  it('DOES stand down for a keyword_match automation whose keyword matches this message', async () => {
-    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '¿cuál es el precio?' }])
-    h.state.autoResponders = [{
-      id: 'auto-1',
-      trigger_type: 'keyword_match',
-      trigger_config: { keywords: ['precio', 'costo'], match_type: 'contains' },
-    }]
-    h.state.autoResponderSteps = [{ automation_id: 'auto-1', step_type: 'send_message' }]
-    await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.engineSendText).not.toHaveBeenCalled()
-  })
-
-  it('does NOT stand down for a matching automation with no customer-facing step (e.g. move_deal only)', async () => {
-    // regression: a keyword/new-message automation that only moves a
-    // deal or tags a contact never talks to the customer, so it can't
-    // cause double-texting — it must not silence the bot either.
-    h.state.autoResponders = [{ id: 'auto-1', trigger_type: 'new_message_received', trigger_config: {} }]
-    h.state.autoResponderSteps = [] // no send_* step recorded for auto-1
+  it('never stands down for automations — Angel\'s explicit product decision (2026-08-19): the AI must always reply regardless of what automations exist on the account', async () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).toHaveBeenCalled()
     expect(h.engineSendText).toHaveBeenCalled()

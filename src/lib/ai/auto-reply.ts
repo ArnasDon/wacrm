@@ -19,15 +19,8 @@ import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/goog
 import { formatWithOffset } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteToConversation, sendQuoteAsText, SendQuoteError } from '@/lib/quotes/send-quote'
-import { triggerMatches } from '@/lib/automations/engine'
-import type { LeadTemperature, Automation } from '@/types'
+import type { LeadTemperature } from '@/types'
 import type { GenerateResult } from './types'
-
-/** The only step types that actually put a message in front of the
- *  customer — everything else (`move_deal`, `add_tag`,
- *  `update_contact_field`, `send_webhook`, ...) is silent bookkeeping
- *  that can never cause the "double-texting" this gate exists to avoid. */
-const CUSTOMER_FACING_STEP_TYPES = ['send_message', 'send_buttons', 'send_list', 'send_template']
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -100,23 +93,16 @@ export async function dispatchInboundToAiReply(
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
 
-    // Deterministic, user-configured responders win over the LLM — the
-    // caller already excludes messages a Flow consumed. Message-level
-    // automations (`new_message_received` / `keyword_match`) are
-    // dispatched independently for this same inbound and may send their
-    // own reply, so if one whose trigger actually fires on THIS message
-    // also sends the customer something, we stand down to avoid
-    // double-texting. Used to check only "does an active responder-type
-    // automation exist anywhere on the account" — so a `keyword_match`
-    // automation whose keyword never matched this message (or one that
-    // only does silent bookkeeping like `move_deal`/`add_tag`, with no
-    // `send_*` step at all) permanently blocked the bot on every inbound
-    // regardless, leaving the customer with total silence and no handoff.
-    // (Relationship triggers like `first_inbound_message` don't count —
-    // they're not per-message auto-responders.)
-    if (await activeAutoResponderWouldReply(db, accountId, latestUserMessage(messages))) {
-      return
-    }
+    // Angel's explicit product decision (2026-08-19): the AI must never
+    // go quiet because of a message-level automation (`new_message_received`
+    // / `keyword_match`). This used to stand the bot down whenever any
+    // such automation was merely active on the account — including ones
+    // that never matched this message's content, or that never actually
+    // messaged the customer at all (e.g. a `move_deal`-only automation) —
+    // which produced total, unexplained silence on real conversations. A
+    // customer-facing automation firing on the same inbound can now cause
+    // a double reply; that tradeoff is accepted in exchange for the bot
+    // never silently doing nothing.
 
     // Account-wide throttle on the shared BYO key. The per-conversation
     // cap bounds one thread; this bounds a burst across many threads (a
@@ -387,47 +373,6 @@ async function handOffToHuman(args: {
     update.assigned_agent_id = handoffAgentId
   }
   await db.from('conversations').update(update).eq('id', conversationId)
-}
-
-/**
- * Whether an active account automation will actually respond to this
- * specific inbound instead of the AI. Two conditions must both hold for
- * a candidate (`new_message_received` always trivially matches;
- * `keyword_match` only when `messageText` hits its configured keywords
- * per the same `triggerMatches` logic the automation engine itself uses
- * to decide whether to fire):
- *
- *   1. Its trigger actually fires on this message (not just "exists and
- *      is active somewhere on the account").
- *   2. It has at least one customer-facing send step — a matching
- *      automation that only moves a deal or tags a contact was never
- *      going to say anything to the customer, so it can't cause
- *      double-texting and must not block the bot either.
- */
-async function activeAutoResponderWouldReply(
-  db: SupabaseClient,
-  accountId: string,
-  messageText: string,
-): Promise<boolean> {
-  const { data: candidates } = await db
-    .from('automations')
-    .select('id, trigger_type, trigger_config')
-    .eq('account_id', accountId)
-    .eq('is_active', true)
-    .in('trigger_type', ['new_message_received', 'keyword_match'])
-  if (!candidates || candidates.length === 0) return false
-
-  const matching = candidates.filter((a) =>
-    triggerMatches(a as Automation, { message_text: messageText }),
-  )
-  if (matching.length === 0) return false
-
-  const { data: steps } = await db
-    .from('automation_steps')
-    .select('automation_id')
-    .in('automation_id', matching.map((a) => a.id))
-    .in('step_type', CUSTOMER_FACING_STEP_TYPES)
-  return Boolean(steps && steps.length > 0)
 }
 
 /**

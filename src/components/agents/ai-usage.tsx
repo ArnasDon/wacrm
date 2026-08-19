@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Bot, PencilLine } from 'lucide-react';
+import { BarChart3, Bot, PencilLine, History } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import {
@@ -36,6 +36,7 @@ interface UsageResponse {
   by_mode: {
     auto_reply: { calls: number; tokens: number };
     draft: { calls: number; tokens: number };
+    history_summary: { calls: number; tokens: number };
   };
   by_model: {
     model: string;
@@ -155,6 +156,16 @@ export function AiUsageCard() {
                 value={formatCompactNumber(data.by_mode.draft.tokens)}
                 icon={PencilLine}
               />
+              {/* Only shown once an account has actually used history
+                  summarization — most accounts never will, and a
+                  permanently-zero tile would just be clutter. */}
+              {data.by_mode.history_summary.calls > 0 && (
+                <Stat
+                  label="History summaries"
+                  value={formatCompactNumber(data.by_mode.history_summary.tokens)}
+                  icon={History}
+                />
+              )}
             </div>
 
             <div>

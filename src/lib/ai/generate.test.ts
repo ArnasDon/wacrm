@@ -32,6 +32,12 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
+    handoffSensitivity: 'balanced',
+    temperature: null,
+    knowledgeTopK: 5,
+    knowledgeMinRelevance: null,
+    contextMessageLimit: 20,
+    summarizeHistory: false,
     ...overrides,
   }
 }
@@ -158,6 +164,101 @@ describe('generateReply — OpenAI', () => {
   })
 })
 
+describe('generateReply — DeepSeek', () => {
+  it('hits DeepSeek\'s endpoint, not OpenAI\'s, with the same request shape', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Sure — happy to help!' } }],
+        usage: { prompt_tokens: 42, completion_tokens: 8, total_tokens: 50 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'deepseek', apiKey: 'sk-deepseek-test' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(res).toEqual({
+      text: 'Sure — happy to help!',
+      handoff: false,
+      usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('api.deepseek.com')
+    expect(url).not.toContain('api.openai.com')
+    expect(opts.headers.Authorization).toBe('Bearer sk-deepseek-test')
+    const body = JSON.parse(opts.body)
+    expect(body.messages[0]).toEqual({ role: 'system', content: 'sys' })
+  })
+
+  it('maps a 401 to an invalid_key AiError labeled DeepSeek', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        errResponse(401, { error: { message: 'Incorrect API key' } }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'deepseek' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_key',
+      status: 401,
+      message: expect.stringContaining('DeepSeek'),
+    })
+  })
+
+  it('runs the tool loop using the OpenAI tool-calling format', async () => {
+    let providerCalls = 0
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      if (String(url).includes('api.deepseek.com')) {
+        providerCalls += 1
+        if (providerCalls === 1) {
+          return okResponse({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call_1',
+                      type: 'function',
+                      function: { name: 'check_stock', arguments: '{"sku":"ABC-1"}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          })
+        }
+        return okResponse({ choices: [{ message: { content: 'In stock!' } }] })
+      }
+      // The tool's own outbound call (executeTool → the account's API) —
+      // never DeepSeek's endpoint.
+      return toolFetchResponse('{"in_stock":true}')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'deepseek' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Is ABC-1 in stock?' }],
+      tools: [tool()],
+    })
+
+    expect(res.text).toBe('In stock!')
+    expect(res.toolCalls).toHaveLength(1)
+    expect(res.toolCalls?.[0].toolName).toBe('check_stock')
+    expect(providerCalls).toBe(2)
+  })
+})
+
 describe('generateReply — Anthropic', () => {
   it('calls the messages endpoint with the version header and parses text blocks', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -220,6 +321,195 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+
+  it('sends the system prompt as an ephemeral-cached block, same text as the plain string', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'You are a helpful assistant.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'You are a helpful assistant.',
+        cache_control: { type: 'ephemeral' },
+      },
+    ])
+  })
+
+  it('splits knowledgeBlock into its own uncached block, keeping the stable block cacheable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'You are a helpful assistant.',
+      knowledgeBlock: 'Knowledge base — returns accepted within 30 days.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'You are a helpful assistant.',
+        cache_control: { type: 'ephemeral' },
+      },
+      {
+        type: 'text',
+        text: 'Knowledge base — returns accepted within 30 days.',
+      },
+    ])
+  })
+
+  it('OpenAI folds knowledgeBlock back into one system message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ choices: [{ message: { content: 'ok' } }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'You are a helpful assistant.',
+      knowledgeBlock: 'Knowledge base — returns accepted within 30 days.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[0]).toEqual({
+      role: 'system',
+      content: 'You are a helpful assistant.\n\nKnowledge base — returns accepted within 30 days.',
+    })
+  })
+
+  it('Anthropic: historyBlock gets its own uncached block, ordered before knowledgeBlock', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'You are a helpful assistant.',
+      historyBlock: 'Summary of earlier conversation: asked about bikes.',
+      knowledgeBlock: 'Knowledge base — returns accepted within 30 days.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'You are a helpful assistant.',
+        cache_control: { type: 'ephemeral' },
+      },
+      { type: 'text', text: 'Summary of earlier conversation: asked about bikes.' },
+      { type: 'text', text: 'Knowledge base — returns accepted within 30 days.' },
+    ])
+  })
+
+  it('OpenAI folds historyBlock and knowledgeBlock into one system message, in order', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ choices: [{ message: { content: 'ok' } }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'You are a helpful assistant.',
+      historyBlock: 'Summary of earlier conversation: asked about bikes.',
+      knowledgeBlock: 'Knowledge base — returns accepted within 30 days.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.messages[0]).toEqual({
+      role: 'system',
+      content:
+        'You are a helpful assistant.\n\nSummary of earlier conversation: asked about bikes.\n\nKnowledge base — returns accepted within 30 days.',
+    })
+  })
+
+  it('omits historyBlock entirely when not set (regression: byte-identical request)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'You are a helpful assistant.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'You are a helpful assistant.',
+        cache_control: { type: 'ephemeral' },
+      },
+    ])
+  })
+})
+
+describe('generateReply — temperature', () => {
+  it('omits temperature when the config has none set (regression: byte-identical request)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ choices: [{ message: { content: 'Hi!' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'openai', temperature: null }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).not.toHaveProperty('temperature')
+  })
+
+  it('OpenAI: includes temperature when set', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ choices: [{ message: { content: 'Hi!' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'openai', temperature: 0.3 }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.temperature).toBe(0.3)
+  })
+
+  it('Anthropic: includes temperature when set', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'ok' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'anthropic', temperature: 0.6 }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.temperature).toBe(0.6)
   })
 })
 

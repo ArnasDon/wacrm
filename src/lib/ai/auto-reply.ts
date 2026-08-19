@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
-import { buildConversationContext } from './context'
+import { buildContextWithHistorySummary } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
@@ -90,7 +90,12 @@ export async function dispatchInboundToAiReply(
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
 
-    const messages = await buildConversationContext(db, conversationId)
+    const { messages, historySummary } = await buildContextWithHistorySummary(
+      db,
+      accountId,
+      conversationId,
+      config,
+    )
     if (messages.length === 0) return
 
     // Account-wide throttle on the shared BYO key. The per-conversation
@@ -115,12 +120,15 @@ export async function dispatchInboundToAiReply(
       accountId,
       config,
       latestUserMessage(messages),
+      config.knowledgeTopK,
     )
 
-    const systemPrompt = buildSystemPrompt({
+    const { systemPrompt, knowledgeBlock, historyBlock } = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      historySummary,
+      handoffSensitivity: config.handoffSensitivity,
     })
 
     // Tools are best-effort to load: a decrypt/DB failure here degrades
@@ -138,6 +146,8 @@ export async function dispatchInboundToAiReply(
     const { text, handoff, usage, toolCalls } = await generateReply({
       config,
       systemPrompt,
+      knowledgeBlock,
+      historyBlock,
       messages,
       tools,
     })

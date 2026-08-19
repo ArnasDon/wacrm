@@ -51,12 +51,33 @@ interface OpenAiResponse {
  * one request, identical to before tool calling existed.
  */
 export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, toolLoop } = args
+  const {
+    apiKey,
+    model,
+    systemPrompt,
+    knowledgeBlock,
+    historyBlock,
+    messages,
+    timeoutMs,
+    toolLoop,
+    temperature,
+    maxOutputTokens,
+    baseUrl,
+    providerLabel = 'OpenAI',
+  } = args
   const tools = toolLoop?.toolDefs
   const maxIterations = Math.max(1, toolLoop?.maxIterations ?? 1)
 
+  // No block concept in the Chat Completions API — fold the extra blocks
+  // back into one system message, exactly the single string
+  // buildSystemPrompt used to return before it was split for Anthropic's
+  // benefit. Byte-identical to before when there's neither block.
+  const fullSystemPrompt = [systemPrompt, historyBlock, knowledgeBlock]
+    .filter((p) => p && p.trim())
+    .join('\n\n')
+
   let turns: OpenAiTurn[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: fullSystemPrompt },
     ...mergeConsecutive(messages),
   ]
   let usageTotal: ReturnType<typeof normalizeUsage> = null
@@ -64,7 +85,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     let res: Response
     try {
-      res = await fetch(OPENAI_URL, {
+      res = await fetch(baseUrl ?? OPENAI_URL, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -73,8 +94,9 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
         body: JSON.stringify({
           model,
           messages: turns,
-          max_completion_tokens: MAX_OUTPUT_TOKENS,
+          max_completion_tokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
           ...(tools && tools.length > 0 ? { tools } : {}),
+          ...(temperature != null ? { temperature } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       })
@@ -83,7 +105,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
     }
 
     if (!res.ok) {
-      throw await providerHttpError('OpenAI', res)
+      throw await providerHttpError(providerLabel, res)
     }
 
     const data = (await res.json().catch(() => null)) as OpenAiResponse | null
@@ -102,7 +124,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
     if (toolCalls.length === 0 || !toolLoop) {
       const text = message?.content
       if (!text || typeof text !== 'string' || !text.trim()) {
-        throw new AiError('OpenAI returned an empty response.', {
+        throw new AiError(`${providerLabel} returned an empty response.`, {
           code: 'empty_response',
         })
       }

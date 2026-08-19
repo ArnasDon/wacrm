@@ -30,6 +30,22 @@ interface AnthropicResponse {
   usage?: { input_tokens?: number; output_tokens?: number }
 }
 
+/** Anthropic treats a string `system` as shorthand for exactly one text
+ *  block with no `cache_control` — sending it explicitly as this array
+ *  form is semantically identical (the model sees the same text) but
+ *  lets Anthropic cache it. Marked ephemeral so the (often large, with a
+ *  knowledge base and tool schemas) system prompt isn't re-billed as
+ *  fresh input on every round of a tool loop or every reply in a
+ *  conversation. Prompts below Anthropic's minimum cacheable length are
+ *  simply not cached — no error, no behaviour change either way. */
+interface AnthropicSystemBlock {
+  type: 'text'
+  text: string
+  /** Omitted on the (uncached) knowledge-base block — see
+   *  `generateAnthropic`. */
+  cache_control?: { type: 'ephemeral' }
+}
+
 /** One turn in the Anthropic conversation. `content` is a plain string
  *  for ordinary turns (identical to what the API accepted before tool
  *  calling existed) and a content-block array only once a tool round
@@ -71,9 +87,41 @@ function normalizeForAnthropic(messages: ChatMessage[]): AnthropicTurn[] {
  * existed.
  */
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, toolLoop } = args
+  const {
+    apiKey,
+    model,
+    systemPrompt,
+    knowledgeBlock,
+    historyBlock,
+    messages,
+    timeoutMs,
+    toolLoop,
+    temperature,
+    maxOutputTokens,
+  } = args
   const tools = toolLoop?.toolDefs
   const maxIterations = Math.max(1, toolLoop?.maxIterations ?? 1)
+
+  // Extra blocks, not folded into the stable one, when there's history
+  // and/or knowledge content: the cache breakpoint on the STABLE block
+  // means it keeps hitting cache turn to turn regardless of what the
+  // knowledge base returns or how the running summary grows for THIS
+  // question — a single mixed block would lose the whole block's cache
+  // (persona included) the moment either varies, even though most of
+  // the tokens didn't actually change. Neither extra block is marked
+  // cacheable — their hit rate is unpredictable turn to turn, so
+  // there's no reliable amortization to pay the cache-write premium
+  // for. Order: stable → history (older context) → knowledge
+  // (question-specific reference).
+  const system: AnthropicSystemBlock[] = [
+    { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+    ...(historyBlock && historyBlock.trim()
+      ? [{ type: 'text' as const, text: historyBlock }]
+      : []),
+    ...(knowledgeBlock && knowledgeBlock.trim()
+      ? [{ type: 'text' as const, text: knowledgeBlock }]
+      : []),
+  ]
 
   let turns: AnthropicTurn[] = normalizeForAnthropic(messages)
   let usageTotal: ReturnType<typeof normalizeUsage> = null
@@ -90,10 +138,11 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         },
         body: JSON.stringify({
           model,
-          system: systemPrompt,
-          max_tokens: MAX_OUTPUT_TOKENS,
+          system,
+          max_tokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
           messages: turns,
           ...(tools && tools.length > 0 ? { tools } : {}),
+          ...(temperature != null ? { temperature } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       })

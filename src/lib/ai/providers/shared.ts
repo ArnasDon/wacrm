@@ -42,11 +42,42 @@ export interface ToolLoopArgs {
 export interface ProviderArgs {
   apiKey: string
   model: string
+  /** Stable persona/guidelines/handoff/business-context text — see
+   *  `SystemPromptResult`. */
   systemPrompt: string
+  /** Knowledge-base excerpts for the current question, kept separate
+   *  from `systemPrompt` so Anthropic can cache the stable part
+   *  independently of turn-to-turn KB variation (see
+   *  `providers/anthropic.ts`). OpenAI just appends it after
+   *  `systemPrompt` — no behaviour change from before this existed. */
+  knowledgeBlock?: string
+  /** Condensed summary of conversation history older than the current
+   *  window (see `buildContextWithHistorySummary`). Same treatment as
+   *  `knowledgeBlock` — its own uncached Anthropic block, folded into
+   *  the one system message for OpenAI. Omitted for every account that
+   *  hasn't enabled history summarization. */
+  historyBlock?: string
   messages: ChatMessage[]
   timeoutMs: number
   /** Present only when the account has active tools. */
   toolLoop?: ToolLoopArgs
+  /** Sampling temperature (0–1). Omitted when null/undefined, which
+   *  means "don't send the param" — the provider's own default, exactly
+   *  today's request shape for every account that hasn't set one. */
+  temperature?: number | null
+  /** Overrides `MAX_OUTPUT_TOKENS` for this call — e.g. history
+   *  summarization wants a much shorter cap than a customer reply.
+   *  Omitted ⇒ `MAX_OUTPUT_TOKENS`, today's behaviour. */
+  maxOutputTokens?: number
+  /** Overrides the request URL — used by `providers/deepseek.ts` to
+   *  point `generateOpenAi` at DeepSeek's (OpenAI-compatible) endpoint
+   *  instead of OpenAI's. Omitted ⇒ OpenAI's own URL, today's
+   *  behaviour. Anthropic ignores this entirely. */
+  baseUrl?: string
+  /** Human-readable provider name for error messages ("X rejected the
+   *  API key", "X returned an empty response"). Omitted ⇒ "OpenAI",
+   *  today's behaviour. */
+  providerLabel?: string
 }
 
 /** Merge two usage totals (summing across tool-loop round trips). */

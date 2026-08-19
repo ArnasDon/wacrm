@@ -4,7 +4,7 @@ import type { AiConfig } from './types'
 // Shared, hoisted mock state so the module mocks can close over it.
 const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
-  buildConversationContext: vi.fn(),
+  buildContextWithHistorySummary: vi.fn(),
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
@@ -20,7 +20,9 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
-vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
+vi.mock('./context', () => ({
+  buildContextWithHistorySummary: h.buildContextWithHistorySummary,
+}))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
@@ -81,6 +83,12 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
+    handoffSensitivity: 'balanced',
+    temperature: null,
+    knowledgeTopK: 5,
+    knowledgeMinRelevance: null,
+    contextMessageLimit: 20,
+    summarizeHistory: false,
     ...overrides,
   }
 }
@@ -96,7 +104,9 @@ beforeEach(() => {
   h.state.updatePayload = null
   h.state.rpcCalls = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
-  h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
+  h.buildContextWithHistorySummary.mockResolvedValue({
+    messages: [{ role: 'user', content: 'hi' }],
+  })
   h.retrieveKnowledge.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
@@ -122,8 +132,11 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
     await dispatchInboundToAiReply(ARGS)
     expect(h.retrieveKnowledge).toHaveBeenCalled()
-    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
-    expect(systemPrompt).toContain('Returns accepted within 30 days.')
+    // Kept separate from `systemPrompt` (see providers/anthropic.ts) so
+    // the stable block stays cacheable regardless of which excerpts a
+    // given question retrieves.
+    const knowledgeBlock = h.generateReply.mock.calls[0][0].knowledgeBlock as string
+    expect(knowledgeBlock).toContain('Returns accepted within 30 days.')
   })
 
   it('stands down when an active message-level automation exists', async () => {
@@ -185,7 +198,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   })
 
   it('skips when there is nothing to reply to', async () => {
-    h.buildConversationContext.mockResolvedValue([])
+    h.buildContextWithHistorySummary.mockResolvedValue({ messages: [] })
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()

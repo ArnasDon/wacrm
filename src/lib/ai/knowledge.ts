@@ -14,6 +14,23 @@ interface MatchRow {
   content: string
 }
 
+/** `match_ai_knowledge_semantic` (migration 030) already returns this
+ *  cosine distance — 0 = identical, 2 = opposite. Lower is more relevant. */
+interface SemanticMatchRow extends MatchRow {
+  distance: number
+}
+
+/**
+ * Convert the admin-facing 0–1 "relevance strictness" (0 = off/loosest,
+ * 1 = strictest) into a max cosine distance a semantic match must beat
+ * to be kept. Null/undefined (the default) disables filtering entirely
+ * — every match `retrieveKnowledge` finds today keeps being returned.
+ */
+function maxDistanceFor(minRelevance: number | null | undefined): number | null {
+  if (minRelevance == null) return null
+  return 2 * (1 - minRelevance)
+}
+
 /**
  * (Re)build the chunks for one document. Deletes the document's
  * existing chunks, re-chunks the content, and — when the account has an
@@ -80,11 +97,18 @@ export async function ingestDocument(
  * matches to fill `k`. Lexical-only when there's no key. Best-effort:
  * any failure (no KB, embedding error, RPC error) degrades to fewer or
  * zero results and never throws into the draft / auto-reply path.
+ *
+ * `config.knowledgeMinRelevance`, when set, drops semantic matches
+ * weaker than that floor before they're ever returned — both trims
+ * tokens (fewer, more relevant excerpts in the prompt) and avoids the
+ * "the KB doesn't cover this" fallback firing on a match that was never
+ * actually relevant to begin with. Null (default) keeps every match,
+ * identical to before this existed.
  */
 export async function retrieveKnowledge(
   db: SupabaseClient,
   accountId: string,
-  config: Pick<AiConfig, 'embeddingsApiKey'>,
+  config: Pick<AiConfig, 'embeddingsApiKey' | 'knowledgeMinRelevance'>,
   queryText: string,
   k = 5,
 ): Promise<string[]> {
@@ -118,7 +142,11 @@ export async function retrieveKnowledge(
           p_match_count: k,
         })
         if (!error && Array.isArray(data)) {
-          for (const row of data as MatchRow[]) picked.set(row.id, row.content)
+          const maxDistance = maxDistanceFor(config.knowledgeMinRelevance)
+          for (const row of data as SemanticMatchRow[]) {
+            if (maxDistance !== null && row.distance > maxDistance) continue
+            picked.set(row.id, row.content)
+          }
         }
       }
     } catch (err) {

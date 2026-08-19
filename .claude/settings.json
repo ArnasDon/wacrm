@@ -24,7 +24,12 @@
       "Bash(xargs sed -i '' 's/text-2xl font-bold/text-[28px] font-semibold tracking-tight/g')",
       "Bash(/Users/adityakaklij/.claude/skills/gstack/browse/dist/browse reload *)",
       "Bash(xargs ls)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(git diff *)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); print\\('valid'\\)\")",
+      "Bash(python3 -c \"import json; json.load\\(open\\('messages/ko.json'\\)\\); print\\('valid'\\)\")",
+      "Bash(grep -n \"systemPrompt,\\\\s*$\\\\|knowledgeBlock,\\\\s*$\" src/lib/ai/generate.ts)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); json.load\\(open\\('messages/ko.json'\\)\\); print\\('valid'\\)\")"
     ]
   }
 }

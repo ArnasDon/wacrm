@@ -13,6 +13,7 @@ import {
 } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 import type { ToolLoopArgs } from './providers/shared'
 import { executeTool } from './tools/execute'
 import { toAnthropicTool, toOpenAiTool } from './tools/schema'
@@ -20,8 +21,18 @@ import type { AiTool, ToolCallRecord } from './tools/types'
 
 export interface GenerateArgs {
   config: AiConfig
-  /** Fully-built system prompt (see `buildSystemPrompt`). */
+  /** Stable portion of the system prompt (see `buildSystemPrompt`). */
   systemPrompt: string
+  /** Knowledge-base excerpts for this question — kept separate from
+   *  `systemPrompt` so Anthropic can cache the stable part independent
+   *  of turn-to-turn KB variation. Omitted when there's nothing to
+   *  ground the reply in. */
+  knowledgeBlock?: string
+  /** Condensed summary of history older than the current context window
+   *  — see `buildContextWithHistorySummary`. Omitted when the account
+   *  hasn't enabled history summarization or the conversation hasn't
+   *  exceeded the window yet. */
+  historyBlock?: string
   /** Recent conversation turns, oldest first. */
   messages: ChatMessage[]
   /** Account's active tools. Omitted/empty ⇒ the provider request is
@@ -43,7 +54,7 @@ export interface GenerateArgs {
  * to persist/display.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, messages, tools } = args
+  const { config, systemPrompt, knowledgeBlock, historyBlock, messages, tools } = args
   const timeoutMs = aiRequestTimeoutMs()
 
   const toolCalls: ToolCallRecord[] = []
@@ -79,9 +90,12 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     apiKey: config.apiKey,
     model: config.model,
     systemPrompt,
+    knowledgeBlock,
+    historyBlock,
     messages,
     timeoutMs,
     toolLoop,
+    temperature: config.temperature,
   }
 
   let result: { text: string; usage: AiUsage | null }
@@ -91,6 +105,9 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       break
     case 'anthropic':
       result = await generateAnthropic(providerArgs)
+      break
+    case 'deepseek':
+      result = await generateDeepSeek(providerArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {

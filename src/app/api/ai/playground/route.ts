@@ -82,11 +82,13 @@ export async function POST(request: Request) {
       accountId,
       config,
       latestUserMessage(messages),
+      config.knowledgeTopK,
     )
-    const systemPrompt = buildSystemPrompt({
+    const { systemPrompt, knowledgeBlock } = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      handoffSensitivity: config.handoffSensitivity,
     })
 
     // Deliberately NOT gated by RATE_LIMITS.aiToolCall — that bucket is
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
     const { text, handoff, toolCalls } = await generateReply({
       config,
       systemPrompt,
+      knowledgeBlock,
       messages,
       tools,
     }).catch((err) => {

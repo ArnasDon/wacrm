@@ -90,8 +90,22 @@ export async function dispatchInboundToAiReply(
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
-    // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    // below (this read can race a concurrent inbound). Reaching the cap
+    // used to just go silent forever on this thread — the customer got
+    // no reply and no human was ever notified, which is exactly the
+    // "AI never handed off" symptom this now fixes: treat running out
+    // of auto-reply budget the same as the bot being unable to help,
+    // and hand off instead of going quiet.
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
+      await handOffToHuman({
+        db,
+        conversationId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: `🤖 AI agent reached its ${config.autoReplyMaxPerConversation}-reply limit for this conversation and paused — needs a human follow-up.`,
+      })
+      return
+    }
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -216,20 +230,13 @@ export async function dispatchInboundToAiReply(
         messages,
         replyCount: conv.ai_reply_count ?? 0,
       })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
-        // Marks the moment of this handoff so the dashboard's "average
-        // human wait time" card can pair it with the first genuine
-        // human reply that follows. See migration 070.
-        ai_handoff_at: new Date().toISOString(),
-      }
-      // Only set the assignee when a target is configured AND the thread
-      // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
+      await handOffToHuman({
+        db,
+        conversationId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary,
+      })
       return
     }
 
@@ -344,6 +351,34 @@ export async function dispatchInboundToAiReply(
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
+}
+
+/**
+ * Shared conversation-update for every way the bot hands a conversation
+ * off to a human: pauses the bot (sticky until re-enabled), records
+ * when it happened (drives the dashboard's "average human wait time"
+ * card — migration 070), leaves an internal note, and routes to the
+ * configured handoff agent unless the thread already has one — never
+ * stomps an existing human assignment. Assigning fires the
+ * `on_conversation_assigned` trigger, which notifies the agent.
+ */
+async function handOffToHuman(args: {
+  db: SupabaseClient
+  conversationId: string
+  handoffAgentId: string | null
+  alreadyAssigned: boolean
+  summary: string
+}): Promise<void> {
+  const { db, conversationId, handoffAgentId, alreadyAssigned, summary } = args
+  const update: Record<string, unknown> = {
+    ai_autoreply_disabled: true,
+    ai_handoff_summary: summary,
+    ai_handoff_at: new Date().toISOString(),
+  }
+  if (handoffAgentId && !alreadyAssigned) {
+    update.assigned_agent_id = handoffAgentId
+  }
+  await db.from('conversations').update(update).eq('id', conversationId)
 }
 
 /**
@@ -466,18 +501,14 @@ async function flagDealClosing(args: {
 }): Promise<void> {
   const { db, accountId, conversationId, configOwnerUserId, handoffAgentId, alreadyAssigned } = args
 
-  const update: Record<string, unknown> = {
-    ai_autoreply_disabled: true,
-    ai_handoff_summary:
+  await handOffToHuman({
+    db,
+    conversationId,
+    handoffAgentId,
+    alreadyAssigned,
+    summary:
       'The customer explicitly confirmed the purchase. The AI assistant handed this conversation off so a teammate can close the sale.',
-    // See migration 070 — same wait-time tracking as the sentinel-based
-    // handoff in dispatchInboundToAiReply.
-    ai_handoff_at: new Date().toISOString(),
-  }
-  if (handoffAgentId && !alreadyAssigned) {
-    update.assigned_agent_id = handoffAgentId
-  }
-  await db.from('conversations').update(update).eq('id', conversationId)
+  })
 
   await db.from('ai_action_log').insert({
     account_id: accountId,

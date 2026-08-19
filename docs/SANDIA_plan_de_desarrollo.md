@@ -3354,3 +3354,58 @@ tiene ni debe usar credenciales de login; pendiente que Angel la
 revise en producción tras el deploy. Con pocos o ningún handoff real
 todavía, la carta mostrará "No AI handoffs yet" hasta que haya
 suficientes traslados de la IA para promediar.
+
+**Verificado en el navegador (misma sesión):** tras el deploy, con la
+pestaña de Chrome que ya tenía sesión iniciada de Angel (no se usaron
+credenciales), se confirmó visualmente que la carta nueva aparece en
+`/dashboard` con el ícono de reloj, mostrando "No AI handoffs yet"
+correctamente.
+
+---
+
+**2026-08-18/19 — Claude Code — Bug real encontrado: el límite de
+respuestas por conversación dejaba al bot mudo para siempre, sin
+transferir ni notificar a nadie.**
+
+Angel probó pidiéndole al bot un humano y no pasó nada — ni
+transferencia ni notificación. Se investigó directamente en Supabase
+(no en el código primero) la conversación real de prueba
+(`43dc2515-...`) y se encontró la secuencia exacta: el cliente pidió
+humano, el bot respondió correctamente con la pregunta de confirmación
+del nuevo flujo de dos pasos ("¿Te gustaría que te conecte con alguien
+del equipo?") — **esa fue exactamente la respuesta número 17 del
+bot**, y el límite configurado de la cuenta (`auto_reply_max_per_conversation`)
+también era 17. Cuando el cliente contestó "si" para confirmar,
+`dispatchInboundToAiReply` chequea el límite ANTES de siquiera llamar
+al modelo (`if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return`)
+— como 17 ≥ 17, la función simplemente retornaba sin hacer nada: sin
+responder, sin transferir, sin asignar a nadie, sin notificar. La
+conversación quedaba huérfana para siempre. Este bug es independiente
+del fix de handoff de sesiones anteriores — ya existía antes, solo que
+nunca se había topado el límite en una prueba real hasta ahora.
+
+**Fix en `src/lib/ai/auto-reply.ts`:** llegar al límite de respuestas
+ahora se trata igual que "el bot no puede ayudar más" — en vez de
+`return` en silencio, transfiere a un humano (pausa el bot, asigna al
+agente configurado, dispara la notificación vía `on_conversation_assigned`).
+Se extrajo la lógica de transferencia (que ya estaba duplicada entre
+el handoff por sentinel y `flagDealClosing`) a un helper compartido
+`handOffToHuman()`, usado ahora en los tres lugares: sentinel de
+handoff, confirmación de compra, y límite de respuestas alcanzado.
+
+**Conversación de prueba de Angel corregida manualmente vía Supabase
+MCP** (no hacía falta esperar otro mensaje entrante): se aplicó el
+mismo `UPDATE` que hará el código corregido — `ai_autoreply_disabled =
+true`, `ai_handoff_at = now()`, `assigned_agent_id` al agente de
+handoff configurado, y una nota interna explicando que fue por límite
+de respuestas alcanzado — para que la transferencia y notificación
+ocurran de inmediato sin que Angel tenga que reenviar el mensaje de
+prueba.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (108/109 archivos, solo los 2 fallos
+preexistentes de `date-utils.test.ts`) — un fallo de timeout del
+worker pool de Vitest en una corrida intermedia fue descartado como
+ruido de entorno (contención de recursos con las pruebas de navegador
+en curso), no relacionado con este cambio; una segunda corrida limpia
+lo confirmó.

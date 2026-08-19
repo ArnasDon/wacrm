@@ -3625,3 +3625,65 @@ DevTools con menús `<select>` nativos abiertos, no un problema de la
 app; confirmado navegando a otra página, donde las capturas volvieron
 a funcionar de inmediato. Anotado en memoria para no reinvestigarlo la
 próxima vez.)
+
+---
+
+**2026-08-19 — Claude Code — Nueva condición "cantidad de mensajes" en
+Automatizaciones + el asistente de IA ya puede proponer condiciones
+(antes no podía, por diseño).**
+
+Angel contó que en otra ocasión el asistente le dijo que no podía
+armar la automatización que pidió porque "no había una función nativa
+que cuente cuántos mensajes se llevan". Confirmó que se trataba de una
+condición tipo "si la conversación lleva más de X mensajes, entonces…".
+
+Dos huecos reales, no uno:
+1. El sistema de Automatizaciones no tenía NINGÚN `ConditionSubject`
+   basado en cantidad de mensajes (los cuatro existentes eran
+   `tag_presence`, `contact_field`, `message_content`, `time_of_day`)
+   — aunque el dueño lo hubiera construido a mano en el editor visual,
+   no había forma de expresarlo.
+2. Aparte de eso, la herramienta `create_automation_rule` del
+   asistente de IA tenía las condiciones deshabilitadas a propósito
+   desde el fix de la sesión anterior ("no branching/conditions in
+   this tool") — así que aunque el hueco #1 no existiera, el asistente
+   seguiría sin poder proponerlas.
+
+**Trabajo:**
+- `src/types/index.ts` — `message_count` agregado a `ConditionSubject`.
+  Reutiliza el `ConditionStepConfig` existente: `operand` es el
+  comparador (`>`, `>=`, `<`, `<=`, `==`) y `value` el número umbral.
+- `src/lib/automations/engine.ts` — nuevo caso en `evaluateCondition`:
+  resuelve la conversación (por contexto o por contacto, sin tronar si
+  no hay ninguna), cuenta filas de `messages` para esa conversación
+  (ambas direcciones), y compara. La comparación en sí se separó a
+  `compareMessageCount()` (exportada) para poder probarla sin mockear
+  Supabase.
+- `src/lib/automations/validate.ts` — valida que el operando de
+  `message_count` sea uno de los 5 comparadores válidos y que `value`
+  sea numérico.
+- `src/components/automations/automation-builder.tsx` — nueva opción
+  en el selector de "Subject" de una condición; cuando se elige
+  "Cantidad de mensajes" el campo "Operando" cambia de texto libre a
+  un `<select>` con los 5 comparadores, más un campo numérico para el
+  valor.
+- `src/lib/ai/assistant/tools.ts` — **se le devolvió al asistente la
+  capacidad de proponer condiciones** (`step_type: "condition"` con
+  `branches: {yes, no}`, ya soportado de punta a punta por el motor y
+  el builder desde antes — esta parte de la infraestructura ya
+  existía, solo estaba oculta para el asistente). A propósito
+  limitado a **solo dos** subjects seguros: `message_count` (no
+  necesita resolver ningún id) y `time_of_day` (tampoco). `tag_presence`
+  y `contact_field` siguen sin exponerse al asistente porque no tiene
+  ninguna herramienta de lectura para resolver un id de etiqueta o un
+  nombre de campo real — proponerlas arriesgaría inventar un id que no
+  existe. Si el dueño pide una condición de esas dos, el asistente
+  debe decir que no puede y sugerir que la agregue a mano en el editor.
+- i18n: `config.subjects.message_count`, `config.comparators.*`,
+  `config.messageCountValueLabel` en `en.json`/`ko.json`/`es.json`.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (1107 tests, +4 nuevos — comparador
+`compareMessageCount` con los 5 operadores y casos inválidos, más
+validación de `message_count` en `validate.test.ts` — salvo los 2
+fallos preexistentes conocidos de `date-utils.test.ts`).

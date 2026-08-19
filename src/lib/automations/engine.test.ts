@@ -104,7 +104,7 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
-import { runAutomationsForTrigger, triggerMatches } from "./engine";
+import { runAutomationsForTrigger, triggerMatches, compareMessageCount } from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -548,5 +548,31 @@ describe("triggerMatches — keyword_match", () => {
   it("ignores empty keywords and empty messages in `word` mode", () => {
     expect(on(automation({ keywords: [""], match_type: "word" }), "anything")).toBe(false);
     expect(on(automation({ keywords: ["hi"], match_type: "word" }), "")).toBe(false);
+  });
+});
+
+describe("compareMessageCount — message_count condition comparator", () => {
+  it("evaluates every operator correctly at, above, and below the threshold", () => {
+    expect(compareMessageCount(5, ">", 3)).toBe(true);
+    expect(compareMessageCount(3, ">", 3)).toBe(false);
+    expect(compareMessageCount(2, ">", 3)).toBe(false);
+
+    expect(compareMessageCount(3, ">=", 3)).toBe(true);
+    expect(compareMessageCount(2, ">=", 3)).toBe(false);
+
+    expect(compareMessageCount(2, "<", 3)).toBe(true);
+    expect(compareMessageCount(3, "<", 3)).toBe(false);
+
+    expect(compareMessageCount(3, "<=", 3)).toBe(true);
+    expect(compareMessageCount(4, "<=", 3)).toBe(false);
+
+    expect(compareMessageCount(3, "==", 3)).toBe(true);
+    expect(compareMessageCount(4, "==", 3)).toBe(false);
+  });
+
+  it("treats a missing or unrecognized operand as false, not a crash", () => {
+    expect(compareMessageCount(10, undefined, 3)).toBe(false);
+    expect(compareMessageCount(10, "!=", 3)).toBe(false);
+    expect(compareMessageCount(10, "", 3)).toBe(false);
   });
 });

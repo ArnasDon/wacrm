@@ -830,8 +830,55 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       const t = parse(to)
       return f <= t ? mins >= f && mins < t : mins >= f || mins < t
     }
+    case 'message_count': {
+      const threshold = Number(cfg.value)
+      if (!Number.isFinite(threshold)) return false
+
+      // Same resolution as resolveConversationId, but never throws — a
+      // condition with no conversation to count just evaluates false
+      // rather than aborting the whole automation run.
+      let conversationId = args.context.conversation_id
+      if (!conversationId && args.contactId) {
+        const { data } = await db
+          .from('conversations')
+          .select('id')
+          .eq('account_id', args.automation.account_id)
+          .eq('contact_id', args.contactId)
+          .maybeSingle()
+        conversationId = (data?.id as string | undefined) ?? undefined
+      }
+      if (!conversationId) return false
+
+      const { count } = await db
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId)
+
+      return compareMessageCount(count ?? 0, cfg.operand, threshold)
+    }
     default:
       return false
+  }
+}
+
+/** The actual `>` / `>=` / `<` / `<=` / `==` comparison for the
+ *  `message_count` condition — split out from `evaluateCondition` so
+ *  it's unit-testable without mocking Supabase (the DB round-trip
+ *  above it is just "how many rows"; this is the part actually prone
+ *  to off-by-one / wrong-operator bugs). Unknown/missing operand
+ *  (e.g. a hand-edited config) is false, not a crash. */
+export function compareMessageCount(
+  actual: number,
+  operand: string | undefined,
+  threshold: number,
+): boolean {
+  switch (operand) {
+    case '>': return actual > threshold
+    case '>=': return actual >= threshold
+    case '<': return actual < threshold
+    case '<=': return actual <= threshold
+    case '==': return actual === threshold
+    default: return false
   }
 }
 

@@ -1331,8 +1331,17 @@
           "tag_presence": "Tag presence",
           "contact_field": "Contact field",
           "message_content": "Message content",
-          "time_of_day": "Time of day"
+          "time_of_day": "Time of day",
+          "message_count": "Message count"
         },
+        "comparators": {
+          "gt": "Greater than (>)",
+          "gte": "Greater than or equal to (>=)",
+          "lt": "Less than (<)",
+          "lte": "Less than or equal to (<=)",
+          "eq": "Equal to (==)"
+        },
+        "messageCountValueLabel": "Number of messages",
         "operandLabel": "Operand",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "name / email / company",

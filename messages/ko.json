@@ -1331,8 +1331,17 @@
           "tag_presence": "태그 존재 여부",
           "contact_field": "연락처 필드",
           "message_content": "메시지 내용",
-          "time_of_day": "시간대"
+          "time_of_day": "시간대",
+          "message_count": "메시지 수"
         },
+        "comparators": {
+          "gt": "초과 (>)",
+          "gte": "이상 (>=)",
+          "lt": "미만 (<)",
+          "lte": "이하 (<=)",
+          "eq": "같음 (==)"
+        },
+        "messageCountValueLabel": "메시지 수",
         "operandLabel": "피연산자",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "이름 / 이메일 / 회사",

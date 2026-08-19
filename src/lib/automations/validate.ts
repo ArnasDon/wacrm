@@ -160,6 +160,17 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       if (!nonEmpty(c.operand)) {
         issues.push({ path: `${path}.operand`, message: 'condition operand is required' })
+      } else if (
+        c.subject === 'message_count' &&
+        !['>', '>=', '<', '<=', '=='].includes(String(c.operand))
+      ) {
+        issues.push({
+          path: `${path}.operand`,
+          message: 'message_count operand must be one of >, >=, <, <=, =='
+        })
+      }
+      if (c.subject === 'message_count' && !Number.isFinite(Number(c.value))) {
+        issues.push({ path: `${path}.value`, message: 'message_count needs a numeric value' })
       }
       break
     case 'send_webhook':

@@ -692,13 +692,21 @@ export type ConditionSubject =
   | 'contact_field'
   | 'tag_presence'
   | 'message_content'
-  | 'time_of_day';
+  | 'time_of_day'
+  | 'message_count';
 
 export interface ConditionStepConfig {
   subject: ConditionSubject;
-  /** e.g. field name, tag id, substring, or "HH:mm-HH:mm" depending on subject */
+  /**
+   * e.g. field name, tag id, substring, or "HH:mm-HH:mm" depending on
+   * subject. For `message_count`, one of the comparison operators
+   * `>` | `>=` | `<` | `<=` | `==`, compared against `value` (a
+   * stringified integer) — total messages (both directions) in the
+   * conversation so far.
+   */
   operand?: string;
-  /** For contact_field equals / message_content contains — comparison value */
+  /** For contact_field equals / message_content contains / message_count
+   *  comparisons — the value being compared against. */
   value?: string;
 }
 

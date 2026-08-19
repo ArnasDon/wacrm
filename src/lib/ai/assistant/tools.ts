@@ -186,7 +186,7 @@ const WRITE_TOOLS: ToolSchema[] = [
   {
     name: 'create_automation_rule',
     description:
-      "Propose a new lead-handling rule (automation) built from the owner's instructions in plain language. Always created as a DRAFT (inactive) — the owner reviews it in Automations and activates it separately, it never starts firing on real customers from this chat. Steps run in order, no branching/conditions in this tool — for anything conditional, tell the owner to build it in the Automations builder instead. Every step_type you emit MUST be exactly one of the values listed in that field's enum below and nothing else, even if it's close to what the owner asked for — never invent one. move_deal (step_config: {\"stage_id\": \"...\"}) moves the CONTACT'S CURRENTLY OPEN DEAL to that stage when the automation fires; it does nothing if the contact has no open deal (it never creates one) and takes no deal id — resolve the stage id with list_pipelines_and_stages first, never invent it. If the owner asks for something no step type here covers, say so plainly instead of approximating it with the wrong step.",
+      "Propose a new lead-handling rule (automation) built from the owner's instructions in plain language. Always created as a DRAFT (inactive) — the owner reviews it in Automations and activates it separately, it never starts firing on real customers from this chat. Steps run in order. Every step_type you emit MUST be exactly one of the values listed in that field's enum below and nothing else, even if it's close to what the owner asked for — never invent one. move_deal (step_config: {\"stage_id\": \"...\"}) moves the CONTACT'S CURRENTLY OPEN DEAL to that stage when the automation fires; it does nothing if the contact has no open deal (it never creates one) and takes no deal id — resolve the stage id with list_pipelines_and_stages first, never invent it. condition branches the rule in two: step_config is {\"subject\": \"message_count\"|\"time_of_day\", \"operand\": ..., \"value\": ...} — for \"message_count\" (total messages exchanged in the conversation so far, either direction), operand is one of \">\" \">=\" \"<\" \"<=\" \"==\" and value is the number as a string (e.g. subject message_count, operand \">=\", value \"6\" for \"6 or more messages\"); for \"time_of_day\", operand is a \"HH:mm-HH:mm\" window (24h, account's local time) and value is unused. Only use these two subjects — tag_presence and contact_field also exist in the system but need a real tag/field id you have no tool to look up here, so never propose them (tell the owner to add that condition manually in the Automations builder instead). A condition step ALSO needs a sibling `branches` property alongside step_type/step_config: {\"yes\": [...steps], \"no\": [...steps]}, each an array of steps in this exact same shape (a branch step can itself be a condition, but keep it to one level of nesting unless the owner explicitly asks for more — deeply nested conditions are hard for the owner to review at a glance). If the owner asks for something no step type or condition subject here covers, say so plainly instead of approximating it with the wrong one.",
     input_schema: {
       type: 'object',
       properties: {
@@ -211,9 +211,13 @@ const WRITE_TOOLS: ToolSchema[] = [
             properties: {
               step_type: {
                 type: 'string',
-                enum: ['send_message', 'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field', 'move_deal', 'wait', 'close_conversation'],
+                enum: ['send_message', 'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field', 'move_deal', 'condition', 'wait', 'close_conversation'],
               },
               step_config: { type: 'object' },
+              branches: {
+                type: 'object',
+                description: 'ONLY when step_type is "condition": {"yes": [...steps], "no": [...steps]} — each nested step follows this exact same {step_type, step_config, branches?} shape. Omit this property entirely for every other step_type.',
+              },
             },
             required: ['step_type', 'step_config'],
           },

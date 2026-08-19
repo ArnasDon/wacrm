@@ -219,6 +219,34 @@ describe("validateStepsForActivation", () => {
       "steps[0].subject",
     ]);
   });
+
+  it("accepts a well-formed message_count condition", () => {
+    const issues = validateStepsForActivation([
+      {
+        step_type: "condition",
+        step_config: { subject: "message_count", operand: ">=", value: "6" },
+      },
+    ]);
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects a message_count condition with a bad operator or non-numeric value", () => {
+    const badOperator = validateStepsForActivation([
+      {
+        step_type: "condition",
+        step_config: { subject: "message_count", operand: "!=", value: "6" },
+      },
+    ]);
+    expect(badOperator.map((i) => i.path)).toEqual(["steps[0].operand"]);
+
+    const badValue = validateStepsForActivation([
+      {
+        step_type: "condition",
+        step_config: { subject: "message_count", operand: ">=", value: "many" },
+      },
+    ]);
+    expect(badValue.map((i) => i.path)).toEqual(["steps[0].value"]);
+  });
 });
 
 describe("validateTriggerForActivation", () => {

@@ -199,8 +199,17 @@
           "tag_presence": "Presencia de etiqueta",
           "contact_field": "Campo de contacto",
           "message_content": "Contenido del mensaje",
-          "time_of_day": "Hora del día"
+          "time_of_day": "Hora del día",
+          "message_count": "Cantidad de mensajes"
         },
+        "comparators": {
+          "gt": "Mayor que (>)",
+          "gte": "Mayor o igual que (>=)",
+          "lt": "Menor que (<)",
+          "lte": "Menor o igual que (<=)",
+          "eq": "Igual a (==)"
+        },
+        "messageCountValueLabel": "Cantidad de mensajes",
         "operandLabel": "Operando",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "nombre / correo / empresa",

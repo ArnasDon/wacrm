@@ -3409,3 +3409,80 @@ worker pool de Vitest en una corrida intermedia fue descartado como
 ruido de entorno (contención de recursos con las pruebas de navegador
 en curso), no relacionado con este cambio; una segunda corrida limpia
 lo confirmó.
+
+---
+
+**2026-08-18/19 — Claude Code — Español nativo (`messages/es.json`),
+resuelve el crash de "No se pudo cargar esta página" al traducir con
+Chrome.**
+
+Angel reportó que al usar el traductor de Google Chrome sobre la app
+(que solo tenía catálogos `en.json`/`ko.json` — pendiente marcado
+desde el diagnóstico técnico inicial, sección G) algunas pantallas
+tiraban "No se pudo cargar esta página" y costaba avanzar. Causa: el
+traductor de Chrome reescribe nodos de texto del DOM directamente;
+cuando React intenta luego reconciliar esos mismos nodos (una
+navegación, un re-render), no los encuentra donde los dejó y truena —
+es un choque conocido entre Google Translate y cualquier framework que
+mantenga su propio DOM virtual, no un bug de este proyecto. La
+solución real no es evitar que el usuario traduzca, es que la página
+ya nazca en español y Chrome nunca ofrezca traducirla.
+
+**Trabajo:**
+- `messages/es.json` — catálogo completo (2025 strings hoja, paridad
+  100% con `en.json`) en español latinoamericano neutro/profesional,
+  con un glosario de términos fijado de antemano (Negocio, Etapa,
+  Difusión, Automatización, Flujo, Transferencia, Agente, Cotización,
+  etc.) para que sonara consistente en toda la app. Generado con 5
+  subagentes en paralelo, cada uno con una porción del archivo
+  (`LoginPage/Sidebar/Header/Dashboard/Kpis`,
+  `Inbox/Contacts`, `Pipelines/Products/Broadcasts`,
+  `Automations/Flows`, y `Settings` sola por ser la más grande —
+  711 strings).
+- Verificación propia además del self-check de cada subagente: script
+  de fusión con comparación de claves hoja por hoja (0 faltantes, 0
+  sobrantes) y un comparador consciente de sintaxis ICU (distingue un
+  argumento real como `{count}` del texto literal dentro de una rama
+  `=1 {...} other {...}`, que las primeras pasadas ingenuas confundían
+  como "variable renombrada" cuando en realidad es simplemente la
+  traducción correcta de esa rama) — 0 discrepancias reales. Un test
+  temporal (borrado después) confirmó con el parser ICU real de
+  `next-intl` que el conjunto exacto de strings deliberadamente NO-ICU
+  (placeholders `{{1}}` de plantillas de WhatsApp, HTML crudo para
+  `dangerouslySetInnerHTML`) es idéntico entre `en.json` y `es.json` —
+  ninguno se rompió, ninguno se "arregló" por accidente perdiendo su
+  sintaxis literal.
+- `src/i18n/request.ts` — el default de `NEXT_PUBLIC_APP_LOCALE` pasó
+  de `'en'` a `'es'` en el propio código (para que la app nazca en
+  español sin depender de una variable de entorno).
+- `src/i18n/messages.test.ts` — `'es'` agregado a `TRANSLATED_LOCALES`
+  para que la paridad de claves quede vigilada por CI de aquí en
+  adelante, igual que `'ko'`.
+
+**Hallazgo importante para el deploy — acción pendiente de Angel:**
+el `.env` local (y muy probablemente las variables de entorno reales
+de EasyPanel, que Angel administra directamente) tiene
+`NEXT_PUBLIC_APP_LOCALE=en` puesto explícitamente. Esa variable
+GANA sobre el nuevo default en el código
+(`process.env.NEXT_PUBLIC_APP_LOCALE || 'es'`) — si EasyPanel sigue
+teniendo esa variable en `en`, la app seguirá sirviéndose en inglés en
+producción a pesar de este cambio. **Angel necesita, en EasyPanel,
+quitar esa variable o cambiarla a `es`** para que el fix realmente
+tome efecto ahí. (El `.env` local sí se actualizó a `es` en este
+repo de trabajo, para poder probarlo.)
+
+**Probado visualmente en local** (`npm run dev`, con
+`NEXT_PUBLIC_APP_LOCALE=es` en el `.env` local): `/login` y `/signup`
+renderizan en español completo, natural, sin ninguna cadena en inglés
+visible — capturas de pantalla revisadas directamente. Las pantallas
+autenticadas (dashboard, inbox, settings, etc.) no se probaron
+visualmente en local porque el agente no usa credenciales de login;
+quedan cubiertas por la paridad de claves + el parser ICU real, y se
+recomienda que Angel las revise en producción una vez actualice la
+variable de entorno en EasyPanel y redepliegue.
+
+Verificado además: `tsc --noEmit` limpio, `eslint` limpio (solo un
+warning preexistente no relacionado), `next build` completo,
+`vitest run` en verde (110/110 tests de más — 2 archivos y 2 tests
+nuevos de paridad `es.json`/ICU — más los 2 fallos preexistentes ya
+conocidos de `date-utils.test.ts`).

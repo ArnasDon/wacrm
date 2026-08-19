@@ -89,6 +89,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     knowledgeMinRelevance: null,
     contextMessageLimit: 20,
     summarizeHistory: false,
+    dormancyResetHours: null,
     ...overrides,
   }
 }

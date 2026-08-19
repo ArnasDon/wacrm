@@ -71,4 +71,8 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   `GET /api/automations/cron` and `GET /api/flows/cron` on this
   deployment, sending the shared secret in the `x-cron-secret` header
   (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  503 until that variable is set. If any account enables AI Setup →
+  "Give up on a paused conversation after", also point the scheduler at
+  `GET /api/ai/cron` (same secret) — otherwise that setting has nothing
+  to actually reset a stale pause on a schedule; an hourly interval is
+  plenty even for the shortest (24h) option.

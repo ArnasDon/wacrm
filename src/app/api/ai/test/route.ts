@@ -80,6 +80,7 @@ export async function POST(request: Request) {
         knowledgeMinRelevance: null,
         contextMessageLimit: 20,
         summarizeHistory: false,
+        dormancyResetHours: null,
       })
     } catch (err) {
       if (err instanceof AiError) {

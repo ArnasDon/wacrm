@@ -62,7 +62,15 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
+    const update: Record<string, unknown> = {
+      ai_autoreply_disabled: paused,
+      // Marks this as a HUMAN pause, not the bot's own handoff — the
+      // dormancy-reset cron (src/app/api/ai/cron/route.ts) checks this
+      // and never auto-resumes a conversation a human deliberately took
+      // over, no matter how long it's since gone quiet. Cleared again
+      // on Resume AI below, same as every other pause-related field.
+      ai_paused_by_human: paused,
+    }
 
     if (paused) {
       if (assignToMe) update.assigned_agent_id = userId

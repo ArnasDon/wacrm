@@ -69,6 +69,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
     maxOutputTokens,
     baseUrl,
     providerLabel = 'OpenAI',
+    reasoningEffort,
   } = args
   const tools = toolLoop?.toolDefs
   const maxIterations = Math.max(1, toolLoop?.maxIterations ?? 1)
@@ -102,6 +103,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
           max_completion_tokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
           ...(tools && tools.length > 0 ? { tools } : {}),
           ...(temperature != null ? { temperature } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       })

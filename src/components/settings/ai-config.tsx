@@ -70,6 +70,14 @@ const RELEVANCE_PRESETS: Record<string, number | null> = {
   normal: 0.3,
   strict: 0.6,
 };
+const DORMANCY_NEVER = '__never__';
+const DORMANCY_PRESETS: Record<string, number | null> = {
+  [DORMANCY_NEVER]: null,
+  '24': 24,
+  '72': 72,
+  '168': 168, // 7 days
+  '336': 336, // 14 days
+};
 
 // Example snippet keys — the actual text lives in messages/*.json under
 // Settings.aiConfig.promptExample.<key> so it's translated like every
@@ -124,6 +132,7 @@ export function AiConfig() {
   const [knowledgeMinRelevance, setKnowledgeMinRelevance] = useState<number | null>(null);
   const [contextMessageLimit, setContextMessageLimit] = useState(20);
   const [summarizeHistory, setSummarizeHistory] = useState(false);
+  const [dormancyResetHours, setDormancyResetHours] = useState<number | null>(null);
   const [toolCount, setToolCount] = useState<number | null>(null);
 
   // Guard keyed on the account (not a bare boolean) so an in-place
@@ -162,6 +171,7 @@ export function AiConfig() {
         setKnowledgeMinRelevance(data.knowledge_min_relevance ?? null);
         setContextMessageLimit(data.context_message_limit ?? 20);
         setSummarizeHistory(Boolean(data.summarize_history));
+        setDormancyResetHours(data.dormancy_reset_hours ?? null);
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -221,6 +231,7 @@ export function AiConfig() {
     knowledge_min_relevance: knowledgeMinRelevance,
     context_message_limit: contextMessageLimit,
     summarize_history: summarizeHistory,
+    dormancy_reset_hours: dormancyResetHours,
   });
 
   const handleTest = async () => {
@@ -295,6 +306,7 @@ export function AiConfig() {
         setKnowledgeMinRelevance(null);
         setContextMessageLimit(20);
         setSummarizeHistory(false);
+        setDormancyResetHours(null);
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -749,6 +761,33 @@ export function AiConfig() {
                 onCheckedChange={setSummarizeHistory}
                 disabled={disabled}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-dormancy-reset">{t('dormancyReset')}</Label>
+              <p className="text-xs text-muted-foreground">{t('dormancyResetDesc')}</p>
+              <Select
+                value={
+                  Object.entries(DORMANCY_PRESETS).find(
+                    ([, v]) => v === dormancyResetHours,
+                  )?.[0] ?? DORMANCY_NEVER
+                }
+                onValueChange={(v: string | null) =>
+                  setDormancyResetHours(v ? DORMANCY_PRESETS[v] ?? null : null)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="ai-dormancy-reset">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DORMANCY_NEVER}>{t('dormancyResetNever')}</SelectItem>
+                  <SelectItem value="24">{t('dormancyReset24h')}</SelectItem>
+                  <SelectItem value="72">{t('dormancyReset72h')}</SelectItem>
+                  <SelectItem value="168">{t('dormancyReset7d')}</SelectItem>
+                  <SelectItem value="336">{t('dormancyReset14d')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>

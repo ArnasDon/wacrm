@@ -199,6 +199,12 @@ export async function dispatchInboundToAiReply(
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
+        // The BOT paused itself (model handoff or reply cap) — not a
+        // human clicking "Take over". Distinguishing the two is what
+        // lets the dormancy-reset cron (src/app/api/ai/cron/route.ts)
+        // safely auto-resume this one after enough quiet time, while
+        // never touching a conversation a human deliberately took over.
+        ai_paused_by_human: false,
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.

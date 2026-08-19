@@ -18,10 +18,11 @@ interface AiConfigRow {
   knowledge_min_relevance: number | null
   context_message_limit: number
   summarize_history: boolean
+  dormancy_reset_hours: number | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history, dormancy_reset_hours'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -95,6 +96,7 @@ export async function loadAiConfig(
     knowledgeMinRelevance: row.knowledge_min_relevance ?? null,
     contextMessageLimit: row.context_message_limit ?? 20,
     summarizeHistory: row.summarize_history ?? false,
+    dormancyResetHours: row.dormancy_reset_hours ?? null,
   }
 }
 

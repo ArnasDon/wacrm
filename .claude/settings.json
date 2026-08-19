@@ -29,7 +29,8 @@
       "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); print\\('valid'\\)\")",
       "Bash(python3 -c \"import json; json.load\\(open\\('messages/ko.json'\\)\\); print\\('valid'\\)\")",
       "Bash(grep -n \"systemPrompt,\\\\s*$\\\\|knowledgeBlock,\\\\s*$\" src/lib/ai/generate.ts)",
-      "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); json.load\\(open\\('messages/ko.json'\\)\\); print\\('valid'\\)\")"
+      "Bash(python3 -c \"import json; json.load\\(open\\('messages/en.json'\\)\\); json.load\\(open\\('messages/ko.json'\\)\\); print\\('valid'\\)\")",
+      "Bash(grep -n \"conversations.*update\\\\|\\\\.from\\('conversations'\\)\\\\s*$\\\\|from\\('conversations'\\)\" src/lib/flows/meta-send.ts)"
     ]
   }
 }

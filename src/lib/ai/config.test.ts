@@ -33,6 +33,7 @@ const ROW = {
   knowledge_min_relevance: null,
   context_message_limit: 20,
   summarize_history: false,
+  dormancy_reset_hours: null,
 }
 
 describe('loadAiConfig requireActive', () => {
@@ -109,5 +110,22 @@ describe('loadAiConfig — history summary fields (migration 042)', () => {
       requireActive: false,
     })
     expect(config).toMatchObject({ contextMessageLimit: 20, summarizeHistory: false })
+  })
+})
+
+describe('loadAiConfig — dormancy reset (migration 044)', () => {
+  it('maps dormancy_reset_hours through', async () => {
+    const row = { ...ROW, dormancy_reset_hours: 72 }
+    const config = await loadAiConfig(dbReturning(row), 'acct', { requireActive: false })
+    expect(config).toMatchObject({ dormancyResetHours: 72 })
+  })
+
+  it('falls back to disabled (null) when a row predates migration 044', async () => {
+    const { dormancy_reset_hours, ...legacyRow } = ROW
+    void dormancy_reset_hours
+    const config = await loadAiConfig(dbReturning(legacyRow), 'acct', {
+      requireActive: false,
+    })
+    expect(config).toMatchObject({ dormancyResetHours: null })
   })
 })

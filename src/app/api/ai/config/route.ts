@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history, dormancy_reset_hours',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -139,6 +139,17 @@ export async function POST(request: Request) {
     contextMessageLimit = Math.min(50, Math.max(4, Math.floor(contextMessageLimit)))
     const summarizeHistory = body.summarize_history === true
 
+    // Dormancy reset (migration 044) — null (default) disables it,
+    // today's sticky-forever pause behaviour.
+    let dormancyResetHours: number | null = null
+    if (body.dormancy_reset_hours != null) {
+      const h = Number(body.dormancy_reset_hours)
+      if (!Number.isFinite(h) || h < 1 || h > 720) {
+        return bad('dormancy_reset_hours must be a number between 1 and 720')
+      }
+      dormancyResetHours = Math.floor(h)
+    }
+
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
     // stranger); an empty string / null means "leave unassigned" (the
@@ -217,6 +228,7 @@ export async function POST(request: Request) {
           knowledgeMinRelevance,
           contextMessageLimit,
           summarizeHistory,
+          dormancyResetHours,
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -261,6 +273,7 @@ export async function POST(request: Request) {
       knowledge_min_relevance: knowledgeMinRelevance,
       context_message_limit: contextMessageLimit,
       summarize_history: summarizeHistory,
+      dormancy_reset_hours: dormancyResetHours,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

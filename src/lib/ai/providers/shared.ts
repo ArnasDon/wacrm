@@ -65,10 +65,17 @@ export interface ProviderArgs {
    *  means "don't send the param" — the provider's own default, exactly
    *  today's request shape for every account that hasn't set one. */
   temperature?: number | null
-  /** Overrides `MAX_OUTPUT_TOKENS` for this call — e.g. history
-   *  summarization wants a much shorter cap than a customer reply.
-   *  Omitted ⇒ `MAX_OUTPUT_TOKENS`, today's behaviour. */
+  /** Overrides `MAX_OUTPUT_TOKENS` for this call. Omitted ⇒
+   *  `MAX_OUTPUT_TOKENS`, today's behaviour. */
   maxOutputTokens?: number
+  /** OpenAI/DeepSeek reasoning-model effort ('low'/'medium'/'high') —
+   *  the actual lever for "spend fewer reasoning tokens on this call",
+   *  which `maxOutputTokens` is not (see `history-summary.ts`). Omitted
+   *  ⇒ no `reasoning_effort` param sent, today's behaviour; a
+   *  non-reasoning model on either provider ignores an unrecognized
+   *  field harmlessly (both APIs are documented to). Anthropic ignores
+   *  this entirely. */
+  reasoningEffort?: 'low' | 'medium' | 'high'
   /** Overrides the request URL — used by `providers/deepseek.ts` to
    *  point `generateOpenAi` at DeepSeek's (OpenAI-compatible) endpoint
    *  instead of OpenAI's. Omitted ⇒ OpenAI's own URL, today's

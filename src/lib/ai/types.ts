@@ -59,6 +59,12 @@ export interface AiConfig {
    *  into a running summary instead of silently dropped. Default false
    *  — today's behaviour (plain truncation) until an admin opts in. */
   summarizeHistory: boolean
+  /** Hours of customer inactivity after which a stale reply-cap/handoff
+   *  pause auto-resets (see `src/app/api/ai/cron/route.ts`). Null
+   *  (default) = disabled — a pause stays sticky forever until a human
+   *  clicks "Resume AI", today's behaviour. Never resets a pause a
+   *  human set via "Take over" (`conversations.ai_paused_by_human`). */
+  dormancyResetHours: number | null
 }
 
 /** A single conversation turn in the shape both providers accept. */

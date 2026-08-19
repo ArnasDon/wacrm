@@ -219,6 +219,10 @@ export async function dispatchInboundToAiReply(
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
+        // Marks the moment of this handoff so the dashboard's "average
+        // human wait time" card can pair it with the first genuine
+        // human reply that follows. See migration 070.
+        ai_handoff_at: new Date().toISOString(),
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
@@ -466,6 +470,9 @@ async function flagDealClosing(args: {
     ai_autoreply_disabled: true,
     ai_handoff_summary:
       'The customer explicitly confirmed the purchase. The AI assistant handed this conversation off so a teammate can close the sale.',
+    // See migration 070 — same wait-time tracking as the sentinel-based
+    // handoff in dispatchInboundToAiReply.
+    ai_handoff_at: new Date().toISOString(),
   }
   if (handoffAgentId && !alreadyAssigned) {
     update.assigned_agent_id = handoffAgentId

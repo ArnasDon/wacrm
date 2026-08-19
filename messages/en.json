@@ -84,7 +84,11 @@
       "newTodayVsYesterday": "new today vs yesterday",
       "vsYesterday": "vs yesterday",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
-      "noChange": "No change {suffix}"
+      "noChange": "No change {suffix}",
+      "avgHandoffWait": "Avg. Human Wait Time",
+      "handoffNoneYet": "No AI handoffs yet",
+      "handoffAttended": "{count} {count, plural, =1 {handoff} other {handoffs}} attended (30d)",
+      "handoffPendingSuffix": " · {count} waiting now"
     },
     "quickActions": {
       "newContact": "New Contact",

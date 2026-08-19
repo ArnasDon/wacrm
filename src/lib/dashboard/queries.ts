@@ -11,6 +11,7 @@ import {
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  HandoffWaitSummary,
   MetricsBundle,
   PipelineStageSlice,
   PipelineSummary,
@@ -316,7 +317,75 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
   }
 }
 
-// --- 5. Activity feed --------------------------------------------------
+// --- 5. Human handoff wait time -----------------------------------------
+//
+// Distinct from `loadResponseTime` above: this only looks at
+// conversations the AI itself handed off (`ai_handoff_at`, migration
+// 070), and measures how long a human took to actually pick one up —
+// the first `messages` row after the handoff with `sender_type =
+// 'agent' AND ai_generated = false` (a genuine human reply, the bot
+// stays silent on a handed-off thread by design). Two queries rather
+// than a join: PostgREST can't filter "messages after this specific
+// conversation's own timestamp" server-side, so we pull both sets and
+// pair them client-side, same approach as `loadResponseTime`.
+
+export async function loadHandoffWait(db: DB): Promise<HandoffWaitSummary> {
+  const windowStart = daysAgoStart(29).toISOString() // last 30 days
+
+  const { data: handoffs, error: handoffErr } = await db
+    .from('conversations')
+    .select('id, ai_handoff_at')
+    .not('ai_handoff_at', 'is', null)
+    .gte('ai_handoff_at', windowStart)
+  if (handoffErr) throw handoffErr
+
+  const rows = (handoffs ?? []) as { id: string; ai_handoff_at: string }[]
+  if (rows.length === 0) return { avgMinutes: null, samples: 0, pendingCount: 0 }
+
+  const handoffAtByConv = new Map(rows.map((r) => [r.id, new Date(r.ai_handoff_at).getTime()]))
+
+  const { data: msgs, error: msgErr } = await db
+    .from('messages')
+    .select('conversation_id, created_at')
+    .in('conversation_id', rows.map((r) => r.id))
+    .eq('sender_type', 'agent')
+    .eq('ai_generated', false)
+    .order('created_at', { ascending: true })
+  if (msgErr) throw msgErr
+
+  // First human reply strictly after that conversation's own handoff
+  // time. Rows arrive sorted ascending, so the first match per
+  // conversation is already the earliest one.
+  const firstReplyAt = new Map<string, number>()
+  for (const m of (msgs ?? []) as { conversation_id: string; created_at: string }[]) {
+    if (firstReplyAt.has(m.conversation_id)) continue
+    const handoffAt = handoffAtByConv.get(m.conversation_id)
+    if (handoffAt === undefined) continue
+    const ts = new Date(m.created_at).getTime()
+    if (ts > handoffAt) firstReplyAt.set(m.conversation_id, ts)
+  }
+
+  const waitMinutes: number[] = []
+  let pendingCount = 0
+  for (const row of rows) {
+    const replyAt = firstReplyAt.get(row.id)
+    if (replyAt === undefined) {
+      pendingCount += 1
+      continue
+    }
+    waitMinutes.push((replyAt - handoffAtByConv.get(row.id)!) / 60_000)
+  }
+
+  return {
+    avgMinutes: waitMinutes.length
+      ? waitMinutes.reduce((a, b) => a + b, 0) / waitMinutes.length
+      : null,
+    samples: waitMinutes.length,
+    pendingCount,
+  }
+}
+
+// --- 6. Activity feed --------------------------------------------------
 
 export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> {
   // Pull ~10 from each source (plenty of headroom after merge-sort),

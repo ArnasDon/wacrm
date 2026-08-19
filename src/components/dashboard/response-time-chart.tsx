@@ -1,7 +1,7 @@
 "use client"
 
 import { Clock } from 'lucide-react'
-import { DOW_SHORT_MON_FIRST } from '@/lib/dashboard/date-utils'
+import { DOW_SHORT_MON_FIRST, formatMinutesLabel } from '@/lib/dashboard/date-utils'
 import type { ResponseTimeSummary } from '@/lib/dashboard/types'
 import { BarChart } from '@/components/tremor/bar-chart'
 import { EmptyState } from './empty-state'
@@ -68,12 +68,12 @@ export function ResponseTimeChart({
               <div className="text-muted-foreground">
                 {t('thisWeek')}{' '}
                 <span className="font-medium text-foreground tabular-nums">
-                  {fmt(data.thisWeekAvg)}
+                  {formatMinutesLabel(data.thisWeekAvg)}
                 </span>
               </div>
               <div className="text-muted-foreground">
                 {t('lastWeek')}{' '}
-                <span className="tabular-nums">{fmt(data.lastWeekAvg)}</span>
+                <span className="tabular-nums">{formatMinutesLabel(data.lastWeekAvg)}</span>
               </div>
             </div>
           )}
@@ -108,11 +108,4 @@ export function ResponseTimeChart({
       </div>
     </section>
   )
-}
-
-function fmt(mins: number | null): string {
-  if (mins == null) return '—'
-  if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`
-  if (mins < 60) return `${mins.toFixed(1)}m`
-  return `${(mins / 60).toFixed(1)}h`
 }

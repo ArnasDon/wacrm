@@ -84,7 +84,11 @@
       "newTodayVsYesterday": "어제 대비 신규",
       "vsYesterday": "어제 대비",
       "openDeals": "진행 중인 딜 {count}건",
-      "noChange": "변동 없음 {suffix}"
+      "noChange": "변동 없음 {suffix}",
+      "avgHandoffWait": "평균 사람 응대 대기 시간",
+      "handoffNoneYet": "아직 AI 이관 건이 없습니다",
+      "handoffAttended": "{count}건 응대 완료 (30일)",
+      "handoffPendingSuffix": " · {count}건 대기 중"
     },
     "quickActions": {
       "newContact": "새 연락처",

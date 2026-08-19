@@ -51,6 +51,17 @@ export function mondayIndex(d: Date): number {
 
 export const DOW_SHORT_MON_FIRST = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
+/** Human-readable label for a duration given in minutes — "45s" under
+ *  a minute, "12.0m" under an hour, "1.5h" beyond that, "—" when
+ *  there's no sample. Shared by every dashboard widget that surfaces
+ *  an average-minutes metric so they all format identically. */
+export function formatMinutesLabel(mins: number | null): string {
+  if (mins == null) return '—'
+  if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s`
+  if (mins < 60) return `${mins.toFixed(1)}m`
+  return `${(mins / 60).toFixed(1)}h`
+}
+
 // ============================================================
 // Multi-granularity bucketing for the KPIs page's time-series charts
 // (src/lib/kpis/queries.ts). The dashboard's own charts only ever

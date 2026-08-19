@@ -3306,3 +3306,51 @@ lo sube a 1–200, aplicada ya en el proyecto de Supabase vía MCP
 (`apply_migration`) además de quedar versionada en
 `supabase/migrations/`. Los clamps de la API (`/api/ai/config`) y del
 input del formulario (`ai-config.tsx`) se actualizaron al mismo rango.
+
+---
+
+**2026-08-18 — Claude Code — Nueva carta en el Dashboard: tiempo
+promedio de espera humana tras un handoff de la IA.**
+
+Angel pidió una carta que muestre cuánto tarda un asesor humano en
+atender los chats que la IA le traslada. No existía ningún timestamp
+de "cuándo pasó el handoff" — `ai_autoreply_disabled` y
+`ai_handoff_summary` (migraciones 029/033) registran QUE pasó, no
+CUÁNDO. Se agregó:
+
+1. **Migración `070_ai_handoff_at.sql`** — columna
+   `conversations.ai_handoff_at timestamptz` + índice parcial. Aplicada
+   ya en Supabase vía MCP.
+2. **`src/lib/ai/auto-reply.ts`** — se marca `ai_handoff_at =
+   now()` en los dos lugares donde la IA realmente transfiere una
+   conversación: el handoff por sentinel (petición explícita +
+   confirmada del cliente) y `flagDealClosing` (confirmación de
+   compra).
+3. **`src/lib/dashboard/queries.ts` → `loadHandoffWait()`** — trae las
+   conversaciones con `ai_handoff_at` en los últimos 30 días, las
+   cruza (en cliente, mismo patrón que `loadResponseTime`) contra el
+   primer mensaje `sender_type = 'agent' AND ai_generated = false`
+   posterior a ese timestamp por conversación — un mensaje humano
+   real, no del bot — y calcula el promedio en minutos. Las que aún no
+   tienen respuesta humana se cuentan aparte como "esperando".
+4. **Carta nueva en `/dashboard`** ("Avg. Human Wait Time"), junto a
+   las 4 cartas de KPIs existentes, con su propio loading independiente
+   (no bloquea ni es bloqueada por las otras). Subtítulo muestra
+   cuántas se atendieron en 30 días y cuántas siguen esperando.
+   `formatMinutesLabel()` (segundos/minutos/horas) se extrajo de
+   `response-time-chart.tsx` a `date-utils.ts` para que ambas cartas
+   formateen igual — `response-time-chart.tsx` ahora importa la
+   versión compartida en vez de tener su propio `fmt()` duplicado.
+5. **i18n**: claves nuevas agregadas en `en.json` y `ko.json` (el
+   proyecto no tiene `es.json` todavía — ver diagnóstico técnico,
+   sección G, "Español" pendiente).
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo sin errores (incluye `/dashboard`),
+`vitest run` en verde salvo los 2 fallos preexistentes y conocidos de
+`date-utils.test.ts`. **No probado visualmente en el navegador** — la
+carta depende de sesión autenticada en el dashboard y el agente no
+tiene ni debe usar credenciales de login; pendiente que Angel la
+revise en producción tras el deploy. Con pocos o ningún handoff real
+todavía, la carta mostrará "No AI handoffs yet" hasta que haya
+suficientes traslados de la IA para promediar.

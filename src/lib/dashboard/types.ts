@@ -60,6 +60,22 @@ export interface ResponseTimeSummary {
   lastWeekAvg: number | null
 }
 
+/**
+ * How long a human agent takes to pick up a chat the AI handed off —
+ * distinct from `ResponseTimeSummary`, which measures first-response
+ * time for EVERY inbound message (AI replies included). Computed over
+ * the last 30 days of `conversations.ai_handoff_at` (migration 070).
+ */
+export interface HandoffWaitSummary {
+  /** Average minutes from handoff to the first human (non-AI) reply.
+   *  Null when there are no attended handoffs in the window. */
+  avgMinutes: number | null
+  /** Handoffs in the window that a human has since replied to. */
+  samples: number
+  /** Handoffs in the window still waiting on a human reply. */
+  pendingCount: number
+}
+
 export type ActivityKind =
   | 'message'
   | 'deal'

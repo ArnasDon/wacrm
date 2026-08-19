@@ -9,18 +9,22 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Clock,
 } from 'lucide-react'
 
 import {
   loadActivity,
   loadConversationsSeries,
+  loadHandoffWait,
   loadMetrics,
   loadPipelinesOverview,
   loadResponseTime,
 } from '@/lib/dashboard/queries'
+import { formatMinutesLabel } from '@/lib/dashboard/date-utils'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  HandoffWaitSummary,
   MetricsBundle,
   PipelineSummary,
   ResponseTimeSummary,
@@ -61,6 +65,9 @@ export default function DashboardPage() {
   const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
   const [responseTimeLoading, setResponseTimeLoading] = useState(true)
 
+  const [handoffWait, setHandoffWait] = useState<HandoffWaitSummary | null>(null)
+  const [handoffWaitLoading, setHandoffWaitLoading] = useState(true)
+
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
 
@@ -89,6 +96,11 @@ export default function DashboardPage() {
       .then((r) => setResponseTime(r))
       .catch((err) => console.error('[dashboard] response time failed:', err))
       .finally(() => setResponseTimeLoading(false))
+
+    void loadHandoffWait(db)
+      .then((h) => setHandoffWait(h))
+      .catch((err) => console.error('[dashboard] handoff wait failed:', err))
+      .finally(() => setHandoffWaitLoading(false))
 
     // Fetch up to 50 so the biggest page-size option in the feed
     // (50 rows) is already in memory — switching sizes then becomes
@@ -187,6 +199,23 @@ export default function DashboardPage() {
               }}
             />
           </>
+        )}
+        {handoffWaitLoading || !handoffWait ? (
+          <SkeletonCard />
+        ) : (
+          <MetricCard
+            title={t('avgHandoffWait')}
+            value={formatMinutesLabel(handoffWait.avgMinutes)}
+            icon={Clock}
+            subtitle={
+              handoffWait.samples === 0 && handoffWait.pendingCount === 0
+                ? t('handoffNoneYet')
+                : t('handoffAttended', { count: handoffWait.samples }) +
+                  (handoffWait.pendingCount > 0
+                    ? t('handoffPendingSuffix', { count: handoffWait.pendingCount })
+                    : '')
+            }
+          />
         )}
       </div>
 

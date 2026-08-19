@@ -121,6 +121,19 @@ describe("validateStepsForActivation", () => {
     ]);
   });
 
+  it("flags move_deal when stage_id is missing, passes when present", () => {
+    const missing = validateStepsForActivation([
+      { step_type: "move_deal", step_config: {} },
+    ]);
+    expect(missing).toEqual([
+      { path: "steps[0].stage_id", message: "stage is required" },
+    ]);
+    const ok = validateStepsForActivation([
+      { step_type: "move_deal", step_config: { stage_id: "stage-uuid" } },
+    ]);
+    expect(ok).toEqual([]);
+  });
+
   it("validates send_buttons / send_list interactive payloads", () => {
     const good = validateStepsForActivation([
       {
@@ -301,9 +314,10 @@ describe("validateTriggerForActivation", () => {
 });
 
 describe("validateStepTypesKnown", () => {
-  it("passes every real step type, including nested condition branches", () => {
+  it("passes every real step type, including move_deal and nested condition branches", () => {
     const issues = validateStepTypesKnown([
       { step_type: "send_message", step_config: {} },
+      { step_type: "move_deal", step_config: { stage_id: "stage-uuid" } },
       {
         step_type: "condition",
         step_config: {},
@@ -316,12 +330,12 @@ describe("validateStepTypesKnown", () => {
     expect(issues).toEqual([]);
   });
 
-  it("flags a step_type outside the builder's known set — e.g. an AI-hallucinated 'move_deal'", () => {
+  it("flags a step_type outside the builder's known set — e.g. an AI-hallucinated one", () => {
     const issues = validateStepTypesKnown([
-      { step_type: "move_deal", step_config: { stage_id: "stage-uuid" } },
+      { step_type: "delete_universe", step_config: {} },
     ]);
     expect(issues).toEqual([
-      { path: "steps[0]", message: "unknown step type: move_deal" },
+      { path: "steps[0]", message: "unknown step type: delete_universe" },
     ]);
   });
 
@@ -330,11 +344,11 @@ describe("validateStepTypesKnown", () => {
       {
         step_type: "condition",
         step_config: {},
-        branches: { yes: [{ step_type: "move_deal", step_config: {} }] },
+        branches: { yes: [{ step_type: "delete_universe", step_config: {} }] },
       },
     ]);
     expect(issues).toEqual([
-      { path: "steps[0].yes.steps[0]", message: "unknown step type: move_deal" },
+      { path: "steps[0].yes.steps[0]", message: "unknown step type: delete_universe" },
     ]);
   });
 

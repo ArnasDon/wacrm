@@ -28,6 +28,7 @@ import {
   Webhook,
   CircleSlash,
   AlertTriangle,
+  ArrowRightLeft,
   Zap,
   Loader2,
   ArrowDown,
@@ -117,6 +118,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   assign_conversation: { label: "assign_conversation", icon: UserCheck, border: "border-l-primary" },
   update_contact_field: { label: "update_contact_field", icon: PencilLine, border: "border-l-primary" },
   create_deal: { label: "create_deal", icon: Briefcase, border: "border-l-primary" },
+  move_deal: { label: "move_deal", icon: ArrowRightLeft, border: "border-l-primary" },
   wait: { label: "wait", icon: Hourglass, border: "border-l-border" },
   condition: { label: "condition", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "send_webhook", icon: Webhook, border: "border-l-primary" },
@@ -146,6 +148,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "assign_conversation",
   "update_contact_field",
   "create_deal",
+  "move_deal",
   "wait",
   "condition",
   "send_webhook",
@@ -203,6 +206,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { field: "name", value: "" }
     case "create_deal":
       return { pipeline_id: "", stage_id: "", title: "", value: 0 }
+    case "move_deal":
+      return { stage_id: "" }
     case "wait":
       return { amount: 1, unit: "hours" }
     case "condition":
@@ -561,6 +566,37 @@ function DealPipelineFields({
         </select>
       </FieldBlock>
     </>
+  )
+}
+
+/**
+ * `move_deal`'s config is just a `stage_id` (see `MoveDealStepConfig`)
+ * — no `pipeline_id` field to persist, unlike `create_deal`, since the
+ * target stage already implies its pipeline. This wrapper derives the
+ * pipeline to show in `DealPipelineFields`'s picker from the saved
+ * stage id (via the loaded stages list) and strips `pipeline_id` back
+ * out of the patch before saving, so switching pipeline in the picker
+ * only ever changes which stage options are offered, never adds an
+ * unused field to the stored config.
+ */
+function MoveDealFields({
+  stageId,
+  onChange,
+  t,
+}: {
+  stageId: string
+  onChange: (patch: { stage_id: string }) => void
+  t: ReturnType<typeof useTranslations>
+}) {
+  const { stages } = useResources()
+  const pipelineId = stages.find((s) => s.id === stageId)?.pipeline_id ?? ""
+  return (
+    <DealPipelineFields
+      pipelineId={pipelineId}
+      stageId={stageId}
+      onChange={(patch) => onChange({ stage_id: patch.stage_id })}
+      t={t}
+    />
   )
 }
 
@@ -1431,6 +1467,17 @@ function StepEditor({
               className="bg-muted text-foreground"
             />
           </FieldBlock>
+        </>
+      )
+    case "move_deal":
+      return (
+        <>
+          <MoveDealFields
+            stageId={(cfg.stage_id as string) ?? ""}
+            onChange={(patch) => set(patch)}
+            t={t}
+          />
+          <p className="text-xs text-muted-foreground">{t("config.moveDealHint")}</p>
         </>
       )
     case "wait":

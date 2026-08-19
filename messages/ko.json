@@ -1202,6 +1202,7 @@
         "assign_conversation": "대화 담당자 지정",
         "update_contact_field": "연락처 필드 업데이트",
         "create_deal": "딜 생성",
+        "move_deal": "딜 단계 이동",
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
@@ -1346,7 +1347,8 @@
         "matchWord": "단어 단위 일치",
         "matchWordHint": "키워드가 독립된 단어일 때만 일치하므로 \"k\"가 \"thanks\"에서 실행되지 않습니다. 공백으로 단어를 구분하는 언어의 짧은 키워드에 적합하며, 공백 없이 표기하는 언어에는 \"포함\"을 사용하세요.",
         "matchExact": "정확히 일치",
-        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
+        "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다.",
+        "moveDealHint": "연락처의 현재 진행 중인 딜을 이 단계로 이동합니다. 진행 중인 딜이 없으면 아무 작업도 하지 않습니다 — 딜을 새로 생성하지는 않습니다."
       }
     }
   },

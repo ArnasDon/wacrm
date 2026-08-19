@@ -579,6 +579,7 @@ export type AutomationStepType =
   | 'assign_conversation'
   | 'update_contact_field'
   | 'create_deal'
+  | 'move_deal'
   | 'wait'
   | 'condition'
   | 'send_webhook'
@@ -670,6 +671,18 @@ export interface CreateDealStepConfig {
   value?: number;
 }
 
+export interface MoveDealStepConfig {
+  /**
+   * Target stage — no `pipeline_id` needed, unlike `create_deal`: the
+   * stage's own pipeline is looked up server-side, and the contact's
+   * open deal must already belong to it (see `moveDeal` in
+   * `@/lib/pipelines/move-deal`). No `deal_id` either — this always
+   * moves the contact's own currently-open deal, resolved the same
+   * way the auto-reply bot's autonomous stage progression does.
+   */
+  stage_id: string;
+}
+
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
@@ -704,6 +717,7 @@ export type AutomationStepConfig =
   | AssignConversationStepConfig
   | UpdateContactFieldStepConfig
   | CreateDealStepConfig
+  | MoveDealStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

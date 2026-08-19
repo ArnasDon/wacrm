@@ -70,6 +70,7 @@
         "assign_conversation": "Asignar conversación",
         "update_contact_field": "Actualizar campo de contacto",
         "create_deal": "Crear negocio",
+        "move_deal": "Mover negocio de etapa",
         "wait": "Esperar",
         "condition": "Condición (Si/Si no)",
         "send_webhook": "Enviar webhook",
@@ -214,7 +215,8 @@
         "matchWord": "Palabra completa",
         "matchWordHint": "Coincide con la palabra clave solo como palabra independiente, así que \"k\" ya no se dispara con \"gracias\". Mejor para palabras clave cortas en idiomas separados por espacios; usa Contiene para idiomas escritos sin espacios.",
         "matchExact": "Exacto",
-        "closeConversationHint": "Cambia el estado de la conversación a \"cerrada\". No necesita configuración."
+        "closeConversationHint": "Cambia el estado de la conversación a \"cerrada\". No necesita configuración.",
+        "moveDealHint": "Mueve el negocio abierto actual del contacto a esta etapa. No hace nada si el contacto no tiene un negocio abierto — nunca crea uno nuevo."
       }
     }
   },

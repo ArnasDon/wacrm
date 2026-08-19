@@ -186,7 +186,7 @@ const WRITE_TOOLS: ToolSchema[] = [
   {
     name: 'create_automation_rule',
     description:
-      "Propose a new lead-handling rule (automation) built from the owner's instructions in plain language. Always created as a DRAFT (inactive) — the owner reviews it in Automations and activates it separately, it never starts firing on real customers from this chat. Steps run in order, no branching/conditions in this tool — for anything conditional, tell the owner to build it in the Automations builder instead. Every step_type you emit MUST be exactly one of the values listed in that field's enum below — send_message, add_tag, remove_tag, assign_conversation, update_contact_field, wait, close_conversation — and nothing else, even if it's close to what the owner asked for. In particular, there is no step for moving a deal to a different pipeline stage: if the owner asks for that (e.g. \"move the deal to Cotización when they ask the price\"), do NOT invent a step type for it — tell them this tool can't do that yet, and suggest add_tag as a proxy signal (or that they ask for it as a separate feature) instead of calling this tool with a made-up step_type.",
+      "Propose a new lead-handling rule (automation) built from the owner's instructions in plain language. Always created as a DRAFT (inactive) — the owner reviews it in Automations and activates it separately, it never starts firing on real customers from this chat. Steps run in order, no branching/conditions in this tool — for anything conditional, tell the owner to build it in the Automations builder instead. Every step_type you emit MUST be exactly one of the values listed in that field's enum below and nothing else, even if it's close to what the owner asked for — never invent one. move_deal (step_config: {\"stage_id\": \"...\"}) moves the CONTACT'S CURRENTLY OPEN DEAL to that stage when the automation fires; it does nothing if the contact has no open deal (it never creates one) and takes no deal id — resolve the stage id with list_pipelines_and_stages first, never invent it. If the owner asks for something no step type here covers, say so plainly instead of approximating it with the wrong step.",
     input_schema: {
       type: 'object',
       properties: {
@@ -211,7 +211,7 @@ const WRITE_TOOLS: ToolSchema[] = [
             properties: {
               step_type: {
                 type: 'string',
-                enum: ['send_message', 'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field', 'wait', 'close_conversation'],
+                enum: ['send_message', 'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field', 'move_deal', 'wait', 'close_conversation'],
               },
               step_config: { type: 'object' },
             },

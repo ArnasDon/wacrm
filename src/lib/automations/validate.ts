@@ -52,7 +52,7 @@ export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[]
 const KNOWN_STEP_TYPES = new Set([
   'send_message', 'send_buttons', 'send_list', 'send_template',
   'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field',
-  'create_deal', 'wait', 'condition', 'send_webhook', 'close_conversation',
+  'create_deal', 'move_deal', 'wait', 'condition', 'send_webhook', 'close_conversation',
 ])
 
 export function validateStepTypesKnown(steps: StepLike[]): ValidationIssue[] {
@@ -136,6 +136,11 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       if (!nonEmpty(c.title)) {
         issues.push({ path: `${path}.title`, message: 'title is required' })
+      }
+      break
+    case 'move_deal':
+      if (!nonEmpty(c.stage_id)) {
+        issues.push({ path: `${path}.stage_id`, message: 'stage is required' })
       }
       break
     case 'wait':

@@ -16,6 +16,7 @@ import type {
   UpdateContactFieldStepConfig,
   WaitStepConfig,
   CreateDealStepConfig,
+  MoveDealStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
@@ -25,6 +26,7 @@ import { engineSendText, engineSendTemplate, engineSendInteractive } from './met
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 
 // ------------------------------------------------------------
 // Public API
@@ -583,6 +585,45 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         status: 'open',
       })
       return 'deal created'
+    }
+
+    case 'move_deal': {
+      const cfg = step.step_config as MoveDealStepConfig
+      if (!cfg.stage_id) throw new Error('move_deal needs a stage')
+      if (!args.contactId) throw new Error('move_deal needs a contact')
+      // Always the contact's own currently-open deal — same resolution
+      // as the auto-reply bot's autonomous stage progression
+      // (autoMoveDealStage in src/lib/ai/auto-reply.ts). No target deal
+      // id: an automation fires per contact/conversation event, not
+      // against a specific deal the way the AI assistant's business
+      // action does (that one takes an explicit, model-resolved
+      // targetId — see src/lib/ai/assistant/tools.ts's move_deal).
+      const { data: openDeal } = await db
+        .from('deals')
+        .select('id')
+        .eq('account_id', args.automation.account_id)
+        .eq('contact_id', args.contactId)
+        .eq('status', 'open')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (!openDeal) return 'no open deal to move'
+
+      let moved
+      try {
+        moved = await moveDeal(db, args.automation.account_id, openDeal.id, cfg.stage_id)
+      } catch (err) {
+        if (err instanceof MoveDealError) throw new Error(err.message)
+        throw err
+      }
+
+      void dispatchWebhookEvent(db, args.automation.account_id, 'deal.stage_changed', {
+        deal_id: moved.deal.id,
+        pipeline_id: moved.deal.pipeline_id,
+        stage_id: moved.deal.stage_id,
+        source: 'automation',
+      })
+      return `deal moved to stage ${cfg.stage_id}`
     }
 
     case 'send_webhook': {

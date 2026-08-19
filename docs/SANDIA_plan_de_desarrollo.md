@@ -3552,3 +3552,64 @@ preexistentes y conocidos de `date-utils.test.ts`) — se agregaron 4
 tests nuevos para `validateStepTypesKnown` (tipo válido, tipo
 inventado en el nivel superior, tipo inventado dentro de una rama de
 condición, lista vacía/ausente).
+
+---
+
+**2026-08-19 — Claude Code — "Mover negocio de etapa" ahora es un paso
+real de Automatizaciones (Angel pidió construir la función en vez de
+solo borrar las 2 automatizaciones rotas).**
+
+Con el bug ya corregido en el commit anterior, Angel eligió la opción
+de construir de verdad "mover un negocio a otra etapa" como paso de
+Automatizaciones, en vez de solo borrar las dos automatizaciones que
+el asistente de IA había dejado rotas.
+
+**Trabajo:**
+- `src/types/index.ts` — `move_deal` agregado a `AutomationStepType`;
+  nuevo `MoveDealStepConfig { stage_id: string }` — sin `pipeline_id`
+  (la etapa ya implica su pipeline) y sin `deal_id` (siempre mueve el
+  negocio abierto actual del CONTACTO, no uno específico).
+- `src/lib/automations/engine.ts` — nuevo caso `move_deal`: resuelve
+  el negocio abierto más reciente del contacto (misma resolución que
+  `autoMoveDealStage` del bot de auto-respuesta), lo mueve reutilizando
+  el helper compartido `moveDeal()` (`src/lib/pipelines/move-deal.ts`,
+  el mismo que usa el Kanban humano y la acción de negocio de la IA),
+  y dispara el webhook `deal.stage_changed`. Si el contacto no tiene
+  negocio abierto, no hace nada (nunca crea uno) — decisión deliberada
+  para que "mover" no se comporte como "crear".
+- `src/lib/automations/validate.ts` — `move_deal` agregado a
+  `KNOWN_STEP_TYPES` y a la validación de completitud para activación
+  (`stage_id` requerido).
+- `src/components/automations/automation-builder.tsx` — icono
+  (`ArrowRightLeft`), agregado a la lista de pasos disponibles, y un
+  nuevo `MoveDealFields` que reutiliza el mismo selector
+  pipeline→etapa de `create_deal` pero solo persiste `stage_id` (el
+  pipeline se deriva de la etapa guardada al reabrir, no se guarda
+  aparte).
+- `src/lib/ai/assistant/tools.ts` — el asistente de IA ahora sabe usar
+  `move_deal` de verdad en `create_automation_rule` (antes se le decía
+  explícitamente que NO existía y que no debía inventarlo — ver commit
+  anterior); la descripción deja claro que no lleva `deal_id`, a
+  diferencia de la acción de negocio homónima del asistente
+  (`move_deal` con `targetId`+`stageId`, para un negocio específico que
+  el dueño ya nombró en el chat) — son dos mecanismos distintos que
+  comparten nombre por representar el mismo concepto de negocio.
+- i18n: `steps.move_deal` + `config.moveDealHint` agregados en
+  `en.json`/`ko.json`/`es.json`.
+
+**Las dos automatizaciones rotas de la sesión anterior** (`1bf330ab-...`,
+`419054f7-...`) ya tenían `step_type: "move_deal"` y
+`step_config: {"stage_id": "..."}` — exactamente la forma que el paso
+real ahora espera. No hizo falta tocarlas en la base de datos: en
+cuanto el fix esté desplegado, van a abrir y funcionar tal cual, sin
+ninguna migración de datos.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (salvo los 2 fallos preexistentes de
+`date-utils.test.ts`) — tests nuevos para `move_deal` en
+`validate.test.ts` (tipo conocido, completitud de `stage_id`). No
+probado visualmente en el navegador — igual que Automatizaciones en
+general, requiere sesión autenticada y el agente no usa credenciales
+de login; pendiente que Angel abra esas dos automatizaciones en
+producción tras el deploy para confirmar que ya cargan y que puede
+usar "Mover negocio" al crear una nueva.

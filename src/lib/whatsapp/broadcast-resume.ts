@@ -120,6 +120,7 @@ export interface ResumePlan {
 
 interface RecipientRow {
   id: string;
+  contact_id: string;
   template_params: unknown;
   contact: { phone?: string | null } | { phone?: string | null }[] | null;
 }
@@ -161,7 +162,7 @@ export async function planBroadcastResume(
   const statuses = scopeStatuses(scope);
   const { data: rawRows, error: recError } = await db
     .from('broadcast_recipients')
-    .select('id, template_params, contact:contacts(phone)')
+    .select('id, contact_id, template_params, contact:contacts(phone)')
     .eq('broadcast_id', broadcastId)
     .in('status', statuses)
     // Oldest first, so repeated capped passes chew through the backlog
@@ -241,6 +242,7 @@ export async function planBroadcastResume(
 
   const plan: BroadcastPlan = {
     broadcastId,
+    accountId,
     templateName: broadcast.template_name,
     templateLanguage: resolvedTemplate.language,
     service,
@@ -248,6 +250,7 @@ export async function planBroadcastResume(
     templateRow: resolvedTemplate.row,
     planned: slice.map((row) => ({
       recipientRowId: row.id,
+      contactId: row.contact_id,
       phone: sanitizePhoneForMeta(contactPhone(row) ?? ''),
       params: Array.isArray(row.template_params)
         ? row.template_params.filter((p): p is string => typeof p === 'string')

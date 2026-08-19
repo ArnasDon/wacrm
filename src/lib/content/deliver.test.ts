@@ -7,6 +7,12 @@ const resolveWhatsAppService = vi.fn();
 const simulateDemoDeliveryAndRead = vi.fn<
   (...args: unknown[]) => Promise<void>
 >(async () => {});
+const simulateDemoBroadcastReaction = vi.fn<
+  (...args: unknown[]) => Promise<void>
+>(async () => {});
+const simulateDemoInboundMessage = vi.fn<(...args: unknown[]) => Promise<void>>(
+  async () => {}
+);
 const finalizeBroadcastStatus = vi.fn<(...args: unknown[]) => Promise<void>>(
   async () => {}
 );
@@ -18,6 +24,10 @@ vi.mock('@/lib/whatsapp/service', () => ({
 vi.mock('@/lib/whatsapp/demo-simulate', () => ({
   simulateDemoDeliveryAndRead: (...args: unknown[]) =>
     simulateDemoDeliveryAndRead(...args),
+  simulateDemoBroadcastReaction: (...args: unknown[]) =>
+    simulateDemoBroadcastReaction(...args),
+  simulateDemoInboundMessage: (...args: unknown[]) =>
+    simulateDemoInboundMessage(...args),
 }));
 vi.mock('@/lib/whatsapp/broadcast-core', () => ({
   finalizeBroadcastStatus: (...args: unknown[]) =>
@@ -40,7 +50,7 @@ function fakeDb(opts: {
     content_type: string;
   } | null;
   translation?: { body: string } | null;
-  recipients: { id: string; phone: string | null }[];
+  recipients: { id: string; phone: string | null; contactId?: string }[];
   stillScheduledCount: number;
   finalStatus: string;
   updates: Update[];
@@ -68,6 +78,7 @@ function fakeDb(opts: {
             return resolve({
               data: opts.recipients.map((r) => ({
                 id: r.id,
+                contact_id: r.contactId ?? `contact-for-${r.id}`,
                 contact: { phone: r.phone },
               })),
               error: null,
@@ -101,6 +112,8 @@ describe('deliverContentBroadcast', () => {
     sendMedia.mockReset();
     resolveWhatsAppService.mockReset();
     simulateDemoDeliveryAndRead.mockClear();
+    simulateDemoBroadcastReaction.mockClear();
+    simulateDemoInboundMessage.mockClear();
     finalizeBroadcastStatus.mockClear();
   });
 

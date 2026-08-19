@@ -11,7 +11,11 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { resolveWhatsAppService } from '@/lib/whatsapp/service';
-import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
+import {
+  simulateDemoDeliveryAndRead,
+  simulateDemoBroadcastReaction,
+  simulateDemoInboundMessage,
+} from '@/lib/whatsapp/demo-simulate';
 import {
   phoneVariants,
   sanitizePhoneForMeta,
@@ -79,7 +83,7 @@ export async function deliverContentBroadcast(
 
   const { data: recipients, error: recError } = await db
     .from('broadcast_recipients')
-    .select('id, contact:contacts(phone)')
+    .select('id, contact_id, contact:contacts(phone)')
     .eq('broadcast_id', broadcast.id)
     .eq('status', 'pending');
   if (recError) {
@@ -92,6 +96,7 @@ export async function deliverContentBroadcast(
 
   interface RecipientRow {
     id: string;
+    contact_id: string;
     contact: { phone?: string | null } | { phone?: string | null }[] | null;
   }
 
@@ -139,6 +144,22 @@ export async function deliverContentBroadcast(
         .eq('id', row.id);
       if (isDemo) {
         await simulateDemoDeliveryAndRead(sentMessageId);
+        // Bounded probabilities — not every recipient reacts or
+        // replies, so a demo campaign doesn't look unrealistically
+        // uniform. Independent chances, both deliberately modest.
+        if (Math.random() < 0.3) {
+          await simulateDemoBroadcastReaction(
+            broadcast.account_id,
+            broadcast.id,
+            row.contact_id
+          );
+        }
+        if (Math.random() < 0.15) {
+          await simulateDemoInboundMessage(
+            broadcast.account_id,
+            row.contact_id
+          );
+        }
       }
     } else {
       await db

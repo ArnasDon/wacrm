@@ -31,7 +31,11 @@ import {
   WhatsAppNotConfiguredError,
   type WhatsAppService,
 } from '@/lib/whatsapp/service';
-import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
+import {
+  simulateDemoDeliveryAndRead,
+  simulateDemoBroadcastReaction,
+  simulateDemoInboundMessage,
+} from '@/lib/whatsapp/demo-simulate';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -61,12 +65,14 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
+  contactId: string;
   phone: string;
   params: string[];
 }
 
 export interface BroadcastPlan {
   broadcastId: string;
+  accountId: string;
   templateName: string;
   templateLanguage: string;
   service: WhatsAppService;
@@ -230,12 +236,18 @@ export async function createBroadcast(
   const planned: PlannedRecipient[] = createdRows.map(
     (row: { recipient_id: string; contact_id: string }) => {
       const r = byContact.get(row.contact_id)!;
-      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+      return {
+        recipientRowId: row.recipient_id,
+        contactId: r.contactId,
+        phone: r.phone,
+        params: r.params,
+      };
     }
   );
 
   return {
     broadcastId,
+    accountId,
     templateName,
     templateLanguage: resolvedTemplate.language,
     service,
@@ -297,6 +309,19 @@ export async function deliverBroadcast(
       // handleStatusUpdate matches on whatsapp_message_id).
       if (plan.isDemo) {
         await simulateDemoDeliveryAndRead(sentMessageId);
+        // Bounded probabilities — not every recipient reacts or
+        // replies, so a demo broadcast doesn't look unrealistically
+        // uniform. Independent chances, both deliberately modest.
+        if (Math.random() < 0.3) {
+          await simulateDemoBroadcastReaction(
+            plan.accountId,
+            plan.broadcastId,
+            recipient.contactId
+          );
+        }
+        if (Math.random() < 0.15) {
+          await simulateDemoInboundMessage(plan.accountId, recipient.contactId);
+        }
       }
     } else {
       await db

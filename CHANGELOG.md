@@ -9,6 +9,85 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.14.0] — 2026-08-19
+
+Completes Phase 4 (§23): §20's demo chain now runs end-to-end —
+`publish -> demo message -> simulated delivery -> simulated
+read/reaction -> engagement events in the database`. Builds on the
+0a54eb1 groundwork checkpoint (find-or-create extraction,
+`engagement.ts` writer, `source`-threaded `inbound-events.ts`
+handlers), which was committed behavior-neutral with nothing yet
+passing `source: 'demo'`. This is the commit that actually wires it.
+
+### Added
+
+- `simulateDemoBroadcastReaction` (`demo-simulate.ts`) — a broadcast/
+  content-publish send never creates a `messages` row (only
+  `broadcast_recipients` tracks it), so there's no target for
+  `handleReaction`'s `message_reactions` upsert to attach to. This
+  writes the `engagement_events` row directly instead — a reaction on
+  a broadcast is already "engagement with a post" without needing a
+  `message_reactions` row (§13).
+- `simulateDemoInboundMessage` (`demo-simulate.ts`) — the "simulated
+  inbound messages" deliverable. Resolves/creates the contact's
+  conversation via `findOrCreateConversation` (the same lookup a real
+  inbound webhook uses — from the groundwork commit), inserts a
+  `messages` row, bumps the conversation via
+  `bump_conversation_on_inbound`, reopens it if closed, then calls
+  `flagBroadcastReplyIfAny(..., 'demo')`, which both flips the
+  matching `broadcast_recipients` row to `replied` and writes the
+  REPLY `engagement_events` row. Reply text is drawn from a small,
+  deliberately generic acknowledgment pool ("Thanks for the update!",
+  "Got it, appreciate it.", etc.) — never a fabricated customer claim
+  (§2). Does NOT dispatch to Flows/automations/AI-reply or create a
+  `CustomerRequest` — that's Phase 6's commercial-funnel territory,
+  not this phase's engagement-event scope.
+- Tests: `engagement.test.ts`, `demo-simulate.test.ts`,
+  `inbound-events.test.ts` — 28 new cases covering
+  `writeEngagementEvent`'s campaign_id resolution and error-swallowing,
+  every `simulateDemo*` function's `source` tagging (the core
+  requirement this phase was building toward), and
+  `handleStatusUpdate`/`handleReaction`/`flagBroadcastReplyIfAny`'s
+  new engagement-event writes (including the negative cases: no event
+  for a `sent` transition, a ladder regression, a non-broadcast
+  message, or a reaction removal).
+
+### Changed
+
+- `demo-simulate.ts`: `simulateDemoDeliveryAndRead` and
+  `simulateDemoReaction` now pass `source: 'demo'` into
+  `handleStatusUpdate`/`handleReaction` — previously neither did, so
+  every event these produced was indistinguishable from a real one in
+  `engagement_events` (the real webhook's default is `source:
+  'whatsapp'`). This was the core gap the groundwork commit flagged
+  as still open.
+- `send-message.ts`: after a demo send's delivered/read simulation,
+  a 25% chance also simulates a reaction (`simulateDemoReaction`) —
+  bounded so a demo inbox doesn't look unrealistically uniform (a
+  reaction on literally every message would read as fake precisely
+  because it's too consistent).
+- `broadcast-core.ts`'s `deliverBroadcast` and `content/deliver.ts`'s
+  `deliverContentBroadcast`: after a demo recipient's delivered/read
+  simulation, independent 30%/15% chances simulate a broadcast
+  reaction / an inbound reply respectively. `BroadcastPlan.planned`
+  entries and `broadcast-resume.ts`'s resume path both gained
+  `contactId` (needed to call the new simulate functions per
+  recipient); `BroadcastPlan` itself gained `accountId`.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (894/894 — 866 existing + 28 new; the full suite was
+also run 3x in a row specifically to rule out flakiness from the new
+`Math.random()`-gated simulate calls, since those paths are real,
+unmocked code in the broadcast/send-message test fixtures — no
+flakiness observed, because every `simulateDemo*` export swallows its
+own errors, so even a fixture that doesn't model a table a simulate
+call touches just logs and moves on), and build all pass. format:check
+reports exactly the same 361-file pre-existing baseline as before this
+change; every file this phase touched or created is formatted clean
+(including `inbound-events.ts`/`find-or-create.ts`/`engagement.ts`
+from the prior groundwork commit, which turned out not to have been
+verified against format:check at the time — fixed here).
+
 ## [0.13.2] — 2026-08-19
 
 Documents how the three cron-drained endpoints

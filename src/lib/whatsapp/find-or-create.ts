@@ -13,16 +13,16 @@
 // `createClient(url, serviceRoleKey)`).
 // ============================================================
 
-import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { supabaseAdmin } from '@/lib/automations/admin-client';
+import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ContactRow = any
+type ContactRow = any;
 
 export interface ContactOutcome {
-  contact: ContactRow
+  contact: ContactRow;
   /** True when this call created the row. */
-  wasCreated: boolean
+  wasCreated: boolean;
 }
 
 export async function findOrCreateContact(
@@ -37,7 +37,11 @@ export async function findOrCreateContact(
   // strict `phonesMatch` in JS on the small candidate set. The same
   // helper backs the manual contact form and CSV import, so all three
   // paths agree on what "same number" means (issue #212).
-  const existingContact = await findExistingContact(supabaseAdmin(), accountId, phone)
+  const existingContact = await findExistingContact(
+    supabaseAdmin(),
+    accountId,
+    phone
+  );
 
   if (existingContact) {
     // Update name if it changed
@@ -45,9 +49,9 @@ export async function findOrCreateContact(
       await supabaseAdmin()
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existingContact.id)
+        .eq('id', existingContact.id);
     }
-    return { contact: existingContact, wasCreated: false }
+    return { contact: existingContact, wasCreated: false };
   }
 
   // Create new contact. account_id is the tenancy column;
@@ -63,7 +67,7 @@ export async function findOrCreateContact(
       name: name || phone,
     })
     .select()
-    .single()
+    .single();
 
   if (createError) {
     // Lost a race: a concurrent inbound delivery (or another path)
@@ -71,14 +75,18 @@ export async function findOrCreateContact(
     // unique index (migration 022) rejected the duplicate. Re-resolve
     // the existing row instead of dropping the message.
     if (isUniqueViolation(createError)) {
-      const raced = await findExistingContact(supabaseAdmin(), accountId, phone)
-      if (raced) return { contact: raced, wasCreated: false }
+      const raced = await findExistingContact(
+        supabaseAdmin(),
+        accountId,
+        phone
+      );
+      if (raced) return { contact: raced, wasCreated: false };
     }
-    console.error('Error creating contact:', createError)
-    return null
+    console.error('Error creating contact:', createError);
+    return null;
   }
 
-  return { contact: newContact, wasCreated: true }
+  return { contact: newContact, wasCreated: true };
 }
 
 export async function findOrCreateConversation(
@@ -105,15 +113,15 @@ export async function findOrCreateConversation(
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true })
-    .limit(1)
+    .limit(1);
 
   if (findError) {
-    console.error('Error finding conversation:', findError)
-    return null
+    console.error('Error finding conversation:', findError);
+    return null;
   }
 
   if (existingRows && existingRows.length > 0) {
-    return { conversation: existingRows[0], created: false }
+    return { conversation: existingRows[0], created: false };
   }
 
   // Create new conversation. Same tenancy + audit split as
@@ -126,7 +134,7 @@ export async function findOrCreateConversation(
       contact_id: contactId,
     })
     .select()
-    .single()
+    .single();
 
   if (createError) {
     // Lost a race: a concurrent inbound delivery created the
@@ -140,14 +148,14 @@ export async function findOrCreateConversation(
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: true })
-        .limit(1)
+        .limit(1);
       if (raced && raced.length > 0) {
-        return { conversation: raced[0], created: false }
+        return { conversation: raced[0], created: false };
       }
     }
-    console.error('Error creating conversation:', createError)
-    return null
+    console.error('Error creating conversation:', createError);
+    return null;
   }
 
-  return { conversation: newConv, created: true }
+  return { conversation: newConv, created: true };
 }

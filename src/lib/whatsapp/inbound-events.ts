@@ -125,7 +125,9 @@ export async function handleStatusUpdate(
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status, broadcast_id, contact_id, broadcasts!inner(account_id)')
+    .select(
+      'id, status, broadcast_id, contact_id, broadcasts!inner(account_id)'
+    )
     .eq('whatsapp_message_id', status.id)
     .maybeSingle();
 
@@ -152,10 +154,10 @@ export async function handleStatusUpdate(
       console.error('Error updating broadcast recipient status:', recUpdateErr);
     } else if (status.status === 'delivered' || status.status === 'read') {
       const broadcastMeta = recipient.broadcasts as unknown as
-        | { account_id: string }
-        | { account_id: string }[]
-        | null;
-      const account = Array.isArray(broadcastMeta) ? broadcastMeta[0] : broadcastMeta;
+        { account_id: string } | { account_id: string }[] | null;
+      const account = Array.isArray(broadcastMeta)
+        ? broadcastMeta[0]
+        : broadcastMeta;
       if (account?.account_id) {
         await writeEngagementEvent(supabaseAdmin(), {
           accountId: account.account_id,

@@ -44,7 +44,10 @@ import {
   WhatsAppNotConfiguredError,
   type WhatsAppService,
 } from '@/lib/whatsapp/service';
-import { simulateDemoDeliveryAndRead } from '@/lib/whatsapp/demo-simulate';
+import {
+  simulateDemoDeliveryAndRead,
+  simulateDemoReaction,
+} from '@/lib/whatsapp/demo-simulate';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -455,6 +458,12 @@ export async function sendMessageToConversation(
   // webhook route's `after()` comment).
   if (isDemo) {
     await simulateDemoDeliveryAndRead(waMessageId);
+    // Bounded, not every send — a reaction on every single message
+    // would look unrealistic in a demo inbox. 25% is arbitrary but
+    // deliberately modest.
+    if (Math.random() < 0.25) {
+      await simulateDemoReaction(waMessageId, conversationId, contact.id);
+    }
   }
 
   const lastMessageText =

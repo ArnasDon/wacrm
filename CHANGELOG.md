@@ -9,6 +9,117 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.13.0] — 2026-08-19
+
+Ships Phase 3 (§23): the Content Studio — content creation, media,
+manual localization (with voice notes), review/approval, and
+scheduling. UI + API only, per the phase's own scope note: `content`,
+`content_translations`, and `voice_notes` already existed (migration
+046); the one genuine schema gap was `broadcasts` not yet knowing how
+to carry a content-backed (non-template) send.
+
+> **Migration required:** apply
+> `supabase/migrations/053_rimula_content_scheduling.sql`. It adds
+> `broadcasts.content_id`/`broadcasts.language`, drops
+> `broadcasts.template_name`'s `NOT NULL` (a Content Studio post is
+> free text/media, not a Meta template — a new CHECK constraint
+> requires at least one of the two), and adds
+> `create_content_broadcast_with_recipients`, the content-post sibling
+> of `create_broadcast_with_recipients` (037/038/052) — same atomic
+> parent+recipients pattern, so a recipient-insert failure can never
+> orphan a parent broadcast.
+
+### Added
+
+- **Content Studio pages** (`/content`, `/content/new`, `/content/[id]`):
+  list with status filter tabs; a create form (title, type, body,
+  media upload into the existing `chat-media` bucket via
+  `uploadAccountMedia`); a detail page combining the original-copy
+  editor, a localization panel per language, and review/approve/
+  schedule actions. New "Content" sidebar + mobile-header nav entry
+  (§7 — extends the existing nav rather than a second surface).
+- **`LocalizationPanel`** — one Urdu/Pashto/Punjabi/Roman-Urdu tab per
+  language. Urdu and Pashto render `dir="rtl"`; Punjabi and Roman Urdu
+  don't (§10 names Urdu/Pashto specifically as RTL — Punjabi in
+  Gurmukhi script and Roman Urdu are both LTR, not lumped in on a
+  guess). Manual entry only, no AI translation, exactly as specified —
+  a BA writes each language directly into its own field and it's
+  persisted as its own `content_translations` row; the source `content`
+  row is never overwritten.
+- **`VoiceNoteRecorder`** — reuses the inbox composer's exact capture
+  path (`opus-recorder` + the vendored `/opus/` encoder worker, CSP
+  already permits `microphone=(self)`) trimmed down to record ->
+  upload -> hand back the storage path, plus a plain file-upload
+  fallback. Audio lands in `chat-media` under the standard
+  `account-<account_id>/...` path.
+- **`src/lib/content/audience.ts`** (`resolveAudienceContacts`) — turns
+  a `{ roles?, markets? }` selector into the Members it currently
+  matches (confirmed WhatsApp, opted in). Called both when scheduling
+  (to size the audience) and again by the cron drain at send time (so
+  a Member who joins in between is still included) — one definition
+  of "who does this post reach," not two that could drift.
+- **`src/lib/content/deliver.ts`** (`deliverContentBroadcast`) — the
+  content-backed sibling of `deliverBroadcast`: sends free text/media
+  (the requested language's translation when one is set, else the
+  source body) through `WhatsAppService` instead of a Meta template,
+  reusing the delivery-lock mutex (038) and `finalizeBroadcastStatus`
+  unchanged. Demo sends get `simulateDemoDeliveryAndRead` exactly like
+  every other WhatsApp send path already does. Reflects the outcome
+  back onto `content.status` (`Published`/`Failed`), but only once no
+  other scheduled broadcast remains for that content item — a still-
+  pending Urdu send doesn't get clobbered the moment the English one
+  goes out.
+- **`GET /api/content/cron`** — drains due Content Studio posts
+  (`content_id IS NOT NULL AND status='scheduled' AND scheduled_at <=
+  now()`). Same `AUTOMATION_CRON_SECRET` header + constant-time
+  compare as `GET /api/flows/cron` — one secret, one pattern, per
+  §10's explicit instruction not to invent a new one. There is no
+  separate "send immediately" code path: a caller that wants an
+  immediate send just schedules for `now`, and the next cron tick
+  picks it up — one send path instead of two that could silently
+  drift apart.
+- Content CRUD/workflow routes: `GET/POST /api/content`,
+  `GET/PATCH/DELETE /api/content/[id]`,
+  `GET/POST /api/content/[id]/translations` (+ `DELETE .../[language]`),
+  `GET/POST /api/content/[id]/voice-notes` (+ `DELETE .../[id]`),
+  `POST /api/content/[id]/submit` (Draft -> In Review, agent+),
+  `POST /api/content/[id]/approve` (In Review -> Approved or back to
+  Draft, **admin+ only** — approval is an admin action per §11/§14,
+  not something a BA can rubber-stamp on their own submission),
+  `POST /api/content/[id]/schedule` (Approved -> a new `broadcasts`
+  row; agent+). A BA may only write a translation for a language in
+  their own `profiles.languages` (§14) — admins/owners are exempt;
+  enforced in the route (RLS can't read the caller's own profile row
+  without a dedicated helper, which migration 046's header explicitly
+  deferred to this phase).
+- Demo-vs-real is frozen at schedule time (reads
+  `accounts.demo_mode_enabled` once, same as every other send path
+  since the Phase 2 correction) and a resume would need to honor that
+  same frozen choice — `create_content_broadcast_with_recipients`
+  takes `p_is_demo` directly rather than re-deriving it, so a content
+  post can't switch demo/real mid-flight either.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (866/866 — 846 existing + 20 new covering audience
+resolution, content delivery incl. demo-mode simulation, approval's
+admin-only enforcement, and the BA-language translation permission
+boundary), and build all pass (all new `/content*` and `/api/content*`
+routes appear in the route table). format:check reports exactly the
+same 361-file
+pre-existing baseline as before this change — the handful of
+pre-existing files this phase touched (`sidebar.tsx`, `header.tsx`,
+`upload-media.ts`, `en.json`) were already in that set; every
+brand-new file this phase added is formatted clean.
+
+Known gaps, stated rather than hidden: no product/campaign picker in
+the create form (Products/Campaigns management UI doesn't exist until
+Phase 5); no list view of a content item's scheduled broadcasts on its
+detail page; a scheduled post always sends via `sendText`/`sendMedia`,
+never a Meta template — for a real (non-demo) account that means
+Meta's 24-hour customer-service-window rule applies exactly as it
+already does everywhere else in this codebase, which is a real Meta
+constraint being surfaced honestly, not a bug.
+
 ## [0.12.0] — 2026-08-19
 
 Two corrections to the WhatsAppService rollout, requested before

@@ -133,6 +133,21 @@ export async function uploadAccountMedia(
 }
 
 /**
+ * Compute the public URL for an already-known storage object path,
+ * without re-uploading anything. For rendering media that was
+ * uploaded in an earlier session/request — e.g. Content Studio voice
+ * notes, which the API only ever returns as a `storage_path` (the DB
+ * has no reason to persist a derived public URL alongside it).
+ */
+export function getAccountMediaPublicUrl(bucket: string, path: string): string {
+  const supabase = createClient();
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(bucket).getPublicUrl(path);
+  return publicUrl;
+}
+
+/**
  * Delete a previously-uploaded object. Used to GC media that was staged
  * (uploaded) but never sent — a cancelled draft or a failed Meta send —
  * so abandoned attachments don't accumulate in the public bucket. The

@@ -3741,3 +3741,38 @@ fallos preexistentes conocidos de `date-utils.test.ts`).
 Pendiente: avisarle a Ricardo/retomar esa conversación manualmente —
 el fix corrige el comportamiento hacia adelante, pero no reenvía nada
 a ese hilo ya silenciado.
+
+---
+
+**2026-08-19 — Claude Code — Angel pidió ir más lejos: la IA no debe
+apagarse por NINGUNA automatización, sin excepción.**
+
+Después del fix anterior (que ya solo silenciaba la IA cuando una
+automatización realmente iba a dispararse con ese mensaje Y le hablaba
+al cliente), Angel pidió explícitamente eliminar la compuerta por
+completo: "haz que la IA no se apague con ninguna automatización".
+
+**Trabajo:** se quitó por completo `activeAutoResponderWouldReply()` y
+su llamada en `dispatchInboundToAiReply` (`src/lib/ai/auto-reply.ts`),
+junto con el import de `triggerMatches` y el tipo `Automation` que ya
+no se usan. La IA ahora responde siempre que las demás compuertas
+(agente humano asignado, auto-reply apagado en la cuenta/conversación,
+tope de respuestas) lo permitan — nunca se calla por la sola
+existencia, o incluso el disparo real, de una automatización de tipo
+`new_message_received`/`keyword_match`.
+
+**Trade-off aceptado a propósito:** si una automatización con un paso
+`send_message`/`send_buttons`/`send_list`/`send_template` se dispara
+para el mismo mensaje entrante que la IA también responde, el cliente
+puede recibir dos mensajes (uno de la automatización, otro de la IA).
+Angel lo aceptó explícitamente a cambio de que la IA nunca vuelva a
+quedarse en silencio sin razón.
+
+Se simplificaron los tests de `auto-reply.test.ts` acorde (se quitaron
+los 4 tests del gate anterior, se agregó uno que fija el nuevo
+comportamiento: la IA siempre responde sin importar qué automatización
+exista).
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (1105 tests — salvo los 2 fallos
+preexistentes conocidos de `date-utils.test.ts`).

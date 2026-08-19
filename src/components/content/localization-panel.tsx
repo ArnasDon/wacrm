@@ -10,11 +10,11 @@ import {
   type RecordedVoiceNote,
 } from './voice-note-recorder';
 
-// Urdu and Pashto are right-to-left; Punjabi and Roman Urdu are not
-// (§10 names Urdu/Pashto explicitly — Punjabi in Gurmukhi script and
-// Roman Urdu are both left-to-right, so they're not lumped in here on
-// a guess).
-const RTL_LANGUAGES = new Set(['ur', 'ps']);
+// Urdu, Pashto, and Punjabi are right-to-left; Roman Urdu is not. In
+// the Pakistani context this platform targets, Punjabi is written in
+// Shahmukhi (Perso-Arabic script), not Gurmukhi — that's what makes
+// it RTL alongside Urdu/Pashto rather than LTR (§10).
+const RTL_LANGUAGES = new Set(['ur', 'ps', 'pa']);
 
 const LANGUAGE_LABELS: Record<string, string> = {
   ur: 'Urdu',

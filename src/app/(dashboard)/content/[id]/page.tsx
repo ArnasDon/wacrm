@@ -269,7 +269,7 @@ export default function ContentDetailPage() {
           <CardTitle className="text-foreground">Localization</CardTitle>
           <CardDescription>
             Manual entry only — a bilingual BA writes each language directly.
-            Urdu and Pashto render right-to-left.
+            Urdu, Pashto, and Punjabi (Shahmukhi) render right-to-left.
           </CardDescription>
         </CardHeader>
         <CardContent>

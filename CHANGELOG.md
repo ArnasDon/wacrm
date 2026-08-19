@@ -9,6 +9,18 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.13.1] — 2026-08-19
+
+Fixes a wrong assumption from the previous release: Content Studio's
+localization editor treated Punjabi as left-to-right, reasoning it was
+written in Gurmukhi script. In the Pakistani context this platform
+targets, Punjabi is written in Shahmukhi (Perso-Arabic script), which
+is right-to-left — so it belongs alongside Urdu and Pashto, not Roman
+Urdu. `docs/RIMULA_BUILD_SPEC.md` §10 corrected to state this
+explicitly; `LocalizationPanel`'s `RTL_LANGUAGES` set now includes
+`pa`, and its editor/preview `dir` handling follows. No schema or API
+change — display-only.
+
 ## [0.13.0] — 2026-08-19
 
 Ships Phase 3 (§23): the Content Studio — content creation, media,

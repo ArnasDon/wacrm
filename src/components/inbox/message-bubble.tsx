@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -8,16 +7,21 @@ import {
   Check,
   CheckCheck,
   XCircle,
-  FileText,
   MapPin,
   LayoutTemplate,
-  ImageOff,
   CornerDownLeft,
   Sparkles,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import {
+  MediaAudioBubble,
+  MediaDocumentBubble,
+  MediaImageBubble,
+  MediaUnavailable,
+  MediaVideoBubble,
+} from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
 
@@ -28,6 +32,12 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /**
+   * Opens the thread's media viewer on this message. Only images and videos
+   * call it; omitted when the parent renders no viewer, in which case media
+   * stays inline and non-clickable.
+   */
+  onOpenMedia?: (messageId: string) => void;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -47,79 +57,22 @@ function StatusIcon({ status }: { status: Message["status"] }) {
   }
 }
 
-function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof useTranslations> }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span>{t("unavailable", { label })}</span>
-    </div>
-  );
-}
+function MessageContent({
+  message,
+  t,
+  isAgent,
+  onOpenMedia,
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  /** Outbound bubbles sit on the primary fill — badges must invert. */
+  isAgent: boolean;
+  onOpenMedia?: (messageId: string) => void;
+}) {
+  // Passed to the media bubbles as a no-arg callback; `undefined` when the
+  // parent wired up no viewer, which is what makes them non-clickable.
+  const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const loadImage = useCallback(async () => {
-    if (!url) return;
-
-    // Proxy URLs need auth fetch to create blob URL
-    if (url.startsWith("/api/whatsapp/media/")) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
-  }, [url]);
-
-  useEffect(() => {
-    loadImage();
-    return () => {
-      if (src?.startsWith("blob:")) {
-        URL.revokeObjectURL(src);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
-
-  if (error) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
-        <ImageOff className="h-8 w-8 text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
-    />
-  );
-}
-
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
   switch (message.content_type) {
     case "text":
       return (
@@ -132,7 +85,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <MediaImageBubble message={message} onOpen={openMedia} t={t} />
           ) : (
             <MediaUnavailable label={t("photo")} t={t} />
           )}
@@ -148,11 +101,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <MediaVideoBubble message={message} onOpen={openMedia} t={t} />
           ) : (
             <MediaUnavailable label={t("video")} t={t} />
           )}
@@ -168,7 +117,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <MediaAudioBubble message={message} t={t} />
           ) : (
             <MediaUnavailable label={t("audio")} t={t} />
           )}
@@ -179,31 +128,39 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       if (!message.media_url) {
         return <MediaUnavailable label={message.content_text || t("document")} t={t} />;
       }
-      return (
-        <a
-          href={message.media_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
-        >
-          <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <span className="truncate">
-            {message.content_text || t("document")}
-          </span>
-        </a>
-      );
+      return <MediaDocumentBubble message={message} t={t} />;
 
     case "template":
+      // Templates are almost always outbound, where the bubble fill IS
+      // `primary` — so the old `bg-primary/20 text-primary` chip was
+      // primary-on-primary and invisible. Paired with a null
+      // content_text (issue #483) that rendered a bubble with nothing
+      // in it at all. Invert on the primary fill, and fall back to the
+      // template's name when we have no stored body (legacy rows sent
+      // before the fix).
       return (
         <div>
-          <span className="mb-1 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span
+            className={cn(
+              "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              isAgent
+                ? "bg-primary-foreground/20 text-primary-foreground"
+                : "bg-primary/20 text-primary",
+            )}
+          >
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
-          {message.content_text && (
+          {message.content_text ? (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
+          ) : (
+            message.template_name && (
+              <p className="mt-1 break-words text-sm italic opacity-80">
+                {message.template_name}
+              </p>
+            )
           )}
         </div>
       );
@@ -264,6 +221,7 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  onOpenMedia,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -294,7 +252,12 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent
+          message={message}
+          t={t}
+          isAgent={isAgent}
+          onOpenMedia={onOpenMedia}
+        />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

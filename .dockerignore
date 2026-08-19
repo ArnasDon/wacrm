@@ -12,8 +12,9 @@ dist
 .env
 .env.*
 !.env.example
+!.env.local.example
 
-# Version control & CI
+# Version control
 .git
 .github
 .gitignore
@@ -21,14 +22,15 @@ dist
 # Editor / OS noise
 .vscode
 .idea
-.DS_Store
-Thumbs.db
 
-# Tests & docs not needed at runtime
+# Test / coverage
 coverage
-*.md
-!README.md
 
-# Claude / agent scratch
-.claude
-memory
+# Docker files
+Dockerfile
+docker-compose*.yml
+
+# Do NOT exclude application source/config directories
+# docs
+# mcp-server
+# supabase

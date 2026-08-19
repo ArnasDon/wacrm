@@ -3,7 +3,7 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
-import { buildSystemPrompt, getSystemTimeContext } from './defaults'
+import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
@@ -110,7 +110,6 @@ export async function dispatchInboundToAiReply(
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
-      timeContext: getSystemTimeContext(),
     })
 
     const { text, handoff, usage } = await generateReply({
@@ -134,20 +133,13 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
-      // The model can't (or shouldn't) answer — first send any farewell
-      // text the model provided, then stop auto-replying and hand over to
-      // a human.
-      if (text) {
-        await engineSendText({
-          accountId,
-          userId: configOwnerUserId,
-          conversationId,
-          contactId,
-          text,
-          aiGenerated: true,
-        })
-      }
-
+      // The model can't (or shouldn't) answer — stop auto-replying on
+      // this thread and hand it to a human. We (a) pause the bot here
+      // (sticky until re-enabled), (b) route the conversation to the
+      // configured handoff agent — null leaves it in the shared queue —
+      // and (c) leave a short internal note so whoever picks it up has
+      // context. Assigning fires the `on_conversation_assigned` trigger,
+      // which notifies the agent.
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,
@@ -156,14 +148,10 @@ export async function dispatchInboundToAiReply(
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
       }
-      // Pick the freest agent (fewest open conversations) when no
-      // specific handoff target is configured AND the thread isn't
-      // already owned — never stomp an existing human assignment.
-      if (!conv.assigned_agent_id) {
-        const agentId = config.handoffAgentId ?? (
-          await db.rpc('pick_freest_agent', { p_account_id: accountId })
-        ).data
-        if (agentId) update.assigned_agent_id = agentId
+      // Only set the assignee when a target is configured AND the thread
+      // isn't already owned — never stomp an existing human assignment.
+      if (config.handoffAgentId && !conv.assigned_agent_id) {
+        update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
       return

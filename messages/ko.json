@@ -60,6 +60,13 @@
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
   },
+  "AccountAccess": {
+    "unlinkedTitle": "이 사용자가 계정에 연결되어 있지 않음",
+    "unlinkedBody": "이 문제가 해결되기 전에는 변경 사항이 저장되지 않습니다. 계정이나 역할이 없는 사용자의 모든 쓰기 요청은 데이터베이스가 거부합니다. 팀에 초대된 경우 소유자에게 초대를 다시 보내달라고 요청하세요. 자체 호스팅 환경이라면 이 사용자에 대해 계정 부트스트랩 마이그레이션이 실행되었는지 확인하세요.",
+    "errorTitle": "권한을 불러올 수 없음",
+    "errorBody": "계정 역할을 불러오지 못해 모든 작업이 읽기 전용으로 처리되며 변경 사항은 저장되지 않습니다. 연결을 확인한 후 다시 시도하세요.",
+    "retry": "다시 시도"
+  },
   "Dashboard": {
     "page": {
       "title": "대시보드",
@@ -216,7 +223,25 @@
       "interactiveReply": "[인터랙티브 응답]",
       "unsupported": "[지원되지 않는 메시지 형식]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함"
+      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
+      "download": "다운로드",
+      "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
+      "viewImage": "이미지 보기",
+      "expandVideo": "동영상 확대",
+      "imageAlt": "공유된 이미지"
+    },
+    "mediaViewer": {
+      "counter": "{total}개 중 {index}번째",
+      "previous": "이전",
+      "next": "다음",
+      "zoomIn": "실제 크기로 보기",
+      "zoomOut": "화면에 맞추기",
+      "openOriginal": "원본 열기",
+      "download": "다운로드",
+      "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
+      "failed": "이 첨부파일은 더 이상 사용할 수 없습니다",
+      "imageAlt": "공유된 이미지",
+      "you": "나"
     },
     "actions": {
       "reply": "답장",
@@ -358,6 +383,7 @@
         "notes": "메모",
         "custom": "커스텀 필드",
         "deals": "딜",
+        "tags": "태그",
         "noTags": "태그 없음",
         "noDeals": "딜 없음",
         "addNotePlaceholder": "메모 추가..."
@@ -370,6 +396,7 @@
       "contactInfo": "연락처 정보",
       "unnamed": "알 수 없음",
       "contactDetailsDesc": "연락처 정보",
+      "name": "이름",
       "phone": "전화번호",
       "email": "이메일",
       "company": "회사",
@@ -654,7 +681,16 @@
         "failed": "실패"
       },
       "toastFailedDelete": "삭제하지 못했습니다: {error}",
-      "toastDeleted": "브로드캐스트가 삭제되었습니다"
+      "toastDeleted": "브로드캐스트가 삭제되었습니다",
+      "resumeTitle": "일부 수신자는 다시 시도해야 합니다",
+      "resumeStalledTitle": "이 캠페인이 중간에 중단되었습니다",
+      "resumeHint": "{count}명의 수신자에게 발송이 실패했습니다. 재시도하면 서버에서 다시 발송합니다.",
+      "resumeStalledHint": "{count}명에게 아직 발송되지 않았습니다. 캠페인을 실행하던 브라우저 탭이 완료 전에 닫혔습니다. 이어서 발송하면 서버에서 나머지를 처리합니다.",
+      "resumePending": "이어서 발송 ({count})",
+      "retryFailed": "실패 재시도 ({count})",
+      "toastResumeStarted": "{count}명에게 백그라운드로 발송 중입니다.",
+      "toastResumeStartedCapped": "{count}명에게 백그라운드로 발송 중입니다. 나머지 {remaining}명은 한 번 더 실행해야 합니다.",
+      "toastResumeFailed": "이어서 발송할 수 없습니다: {error}"
     },
     "new": {
       "title": "새 브로드캐스트",
@@ -931,6 +967,7 @@
         "no": "아니요"
       },
       "addStep": "단계 추가",
+      "delete": "삭제",
       "config": {
         "messageText": "메시지 텍스트",
         "placeholderMessageText": "안녕하세요! 문의해주셔서 감사합니다…",
@@ -970,6 +1007,8 @@
         "placeholderBody": "{\"id\": \"{{ contact.id }}\"}",
         "matchType": "일치 유형",
         "matchContains": "포함",
+        "matchWord": "단어 단위 일치",
+        "matchWordHint": "키워드가 독립된 단어일 때만 일치하므로 \"k\"가 \"thanks\"에서 실행되지 않습니다. 공백으로 단어를 구분하는 언어의 짧은 키워드에 적합하며, 공백 없이 표기하는 언어에는 \"포함\"을 사용하세요.",
         "matchExact": "정확히 일치",
         "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
       }
@@ -1330,13 +1369,11 @@
       "deleteLocallyAria": "로컬에서 템플릿 삭제",
       "deleteMetaLocallyTitle": "Meta와 로컬에서 삭제",
       "deleteLocallyTitle": "로컬에서 삭제",
-
       "dialogEditTitle": "메시지 템플릿 수정",
       "dialogNewTitle": "새 메시지 템플릿",
       "dialogEditDesc": "변경 사항을 저장해 Meta에 재제출하세요. 검토 중에는 상태가 다시 대기 중으로 바뀝니다.",
       "dialogNewDesc": "템플릿을 만들어 Meta 승인을 요청하세요. 승인되면 브로드캐스트와 인박스에서 사용할 수 있습니다.",
       "authWarning": "AUTHENTICATION 템플릿은 본문과 OTP 버튼 형식이 고정되어 있어 별도의 빌더가 필요합니다. 지금은 Meta WhatsApp 관리자에서 만든 뒤 <bold>Meta에서 동기화</bold>로 가져오세요.",
-
       "templateName": "템플릿 이름",
       "namePlaceholder": "예: order_confirmation",
       "nameFixed": "템플릿이 Meta에 존재하면 이름이 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
@@ -1345,7 +1382,6 @@
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
-
       "header": "헤더",
       "headerNone": "없음",
       "headerText": "텍스트",
@@ -1355,7 +1391,6 @@
       "headerTextPlaceholder": "헤더 텍스트 (최대 60자, {{1}} 선택 가능)",
       "headerSampleAria": "헤더 변수 샘플 값",
       "headerSamplePlaceholder": "{{1}}의 샘플 값 (Meta 검토에 필요)",
-
       "uploadImage": "이미지 업로드",
       "uploadHint": "JPEG 또는 PNG, 5MB 이하",
       "mediaUrlPlaceholder": "https://… (또는 공개 {format} 링크 붙여넣기)",
@@ -1363,17 +1398,14 @@
       "mediaHint": "공개적으로 접근 가능한 HTTPS 링크여야 합니다. Meta가 검토 중 한 번 가져오므로 약 24시간 동안 살아있어야 합니다.",
       "videoHint": " 권장: MP4 / 3GPP, 16MB 이하, 60초 이하.",
       "documentHint": " 권장: PDF, 100MB 이하.",
-
       "bodyText": "본문 텍스트",
       "bodyPlaceholder": "안녕하세요 {{1}}님, 주문 {{2}}이(가) 확정되었습니다.",
       "sampleValues": "샘플 값 (Meta가 템플릿 검토에 사용합니다)",
       "bodyHint": "변수에는 {{1}}, {{2}}를 사용하세요 ({{1}}부터 연속되어야 합니다).",
       "sampleAria": "본문 변수 {var}의 샘플 값",
       "samplePlaceholder": "{var}의 샘플",
-
       "footer": "푸터 (선택)",
       "footerPlaceholder": "선택적 푸터 텍스트 (최대 60자)",
-
       "buttons": "버튼 (선택)",
       "addButton": "버튼 추가",
       "buttonsLimit": "최대 {max}개 버튼. QUICK_REPLY 버튼은 URL / 전화 / 코드 복사 버튼보다 앞에 와야 합니다.",
@@ -1386,19 +1418,16 @@
       "urlSamplePlaceholder": "{{1}}의 예시 값 (URL에 변수가 있을 때 필요)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "예시 코드 (예: SUMMER20)",
-
       "cancel": "취소",
       "saving": "저장 중…",
       "submitting": "제출 중…",
       "saveResubmit": "저장 & 재제출",
       "submitApproval": "승인 요청",
-
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
       "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
       "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
-
       "toastLoadFailed": "템플릿을 불러오지 못했습니다",
       "toastSubmitFailed": "제출하지 못했습니다",
       "toastSubmitEditSuccess": "수정 사항이 제출되었습니다 — Meta는 보통 24시간 이내에 검토합니다.",
@@ -1465,6 +1494,12 @@
       "webhookTitle": "웹훅 설정",
       "webhookDesc": "Meta 앱 대시보드의 웹훅 콜백으로 이 URL을 사용하세요.",
       "webhookUrl": "웹훅 콜백 URL",
+      "mediaTitle": "첨부파일 저장",
+      "mediaDesc": "Meta는 수신된 미디어를 도착 후 약 30일이 지나면 삭제합니다. 첨부파일을 자체 스토리지에 복사해 두면 계속 볼 수 있습니다.",
+      "mirrorInbound": "수신 첨부파일 보관",
+      "mirrorInboundDesc": "고객이 보낸 사진, 동영상, 음성 메모, 문서를 모두 복사해 저장합니다. Supabase 스토리지를 사용하며 16MB를 초과하는 파일은 건너뜁니다.",
+      "mirrorInboundOffWarning": "새 첨부파일이 더 이상 복사되지 않으며, 도착 후 약 30일이 지나면 볼 수 없게 됩니다.",
+      "mirrorInboundSaveFailed": "첨부파일 설정을 업데이트하지 못했습니다.",
       "saving": "저장 중...",
       "saveConfig": "설정 저장",
       "testing": "테스트 중...",
@@ -1500,10 +1535,12 @@
       "appearance": "화면 설정",
       "whatsapp": "WhatsApp",
       "templates": "템플릿",
+      "quick-replies": "빠른 답장",
       "fields": "필드 & 태그",
       "deals": "딜 & 통화",
       "members": "팀원",
-      "api": "API 키"
+      "api": "API 키",
+      "language": "Language"
     },
     "groups": {
       "account": "계정",
@@ -1537,7 +1574,6 @@
       "profileSaved": "프로필이 저장되었습니다",
       "emailChangeFailed": "이메일 변경 실패: {message}",
       "profileSavedEmailCheck": "프로필이 저장되었습니다 — 이메일 주소 변경을 확인하려면 이메일을 확인하세요",
-
       "passwordTitle": "비밀번호",
       "passwordDesc": "최소 {min}자 이상 사용하세요. 변경 후에도 이 기기에서는 로그인이 유지됩니다.",
       "currentPassword": "현재 비밀번호",
@@ -1551,7 +1587,6 @@
       "currentPasswordIncorrect": "현재 비밀번호가 올바르지 않습니다",
       "passwordUpdateFailed": "비밀번호 업데이트 실패: {message}",
       "passwordUpdated": "비밀번호가 업데이트되었습니다",
-
       "sessionsTitle": "활성 세션",
       "sessionsDesc": "이 기기를 포함해 로그인되어 있는 모든 기기에서 로그아웃합니다. 노트북을 분실했거나 비밀번호를 공유한 경우 유용합니다.",
       "signOutAll": "모든 기기에서 로그아웃",
@@ -1598,7 +1633,7 @@
       "nameLabel": "이름",
       "namePlaceholder": "예: Zapier 자동화",
       "scopesLabel": "권한 범위",
-      "scopesHint": "권한 범위가 없는 키도 <code className=\"text-[11px]\">GET /api/v1/me</code>를 호출해 동작을 확인할 수 있습니다.",
+      "scopesHint": "권한 범위가 없는 키도 <code>GET /api/v1/me</code>를 호출해 동작을 확인할 수 있습니다.",
       "cancel": "취소",
       "creating": "만드는 중…",
       "createKey": "키 생성",
@@ -1691,7 +1726,55 @@
       "addDoc": "문서 추가",
       "reindex": "재색인",
       "reindexTooltip": "모든 문서를 다시 임베딩합니다 (예: 임베딩 키 추가 후)",
-      "loading": "불러오는 중…"
+      "loading": "불러오는 중…",
+      "inventoryHeading": "Inventory",
+      "inventoryDesc": "Upload your product catalog (CSV / Excel / Google Sheets) so the assistant can answer inventory questions.",
+      "noInventory": "No inventory uploaded yet.",
+      "inventoryStatus": "{rows} product(s) from {source}",
+      "inventorySourceCsv": "CSV",
+      "inventorySourceExcel": "Excel",
+      "inventorySourceSheet": "Google Sheets",
+      "inventoryDelete": "Delete inventory",
+      "inventoryDeleteSuccess": "Inventory deleted.",
+      "inventoryDeleteFailed": "Failed to delete inventory.",
+      "uploadFile": "Upload CSV or Excel",
+      "uploadFileHint": "Drag & drop or click to select",
+      "sheetUrl": "Google Sheets URL",
+      "sheetUrlPlaceholder": "https://docs.google.com/spreadsheets/d/.../export?format=csv",
+      "fetchSheet": "Fetch",
+      "fetchingSheet": "Fetching…",
+      "sheetFetchFailed": "Failed to fetch sheet data.",
+      "processingFile": "Processing…",
+      "previewTitle": "Column detection",
+      "previewDesc": "We auto-detected these columns. Uploading will replace any existing inventory.",
+      "detectedSku": "SKU / Code",
+      "detectedName": "Name",
+      "detectedPrice": "Price",
+      "detectedStock": "Stock",
+      "detectedCategory": "Category",
+      "notDetected": "Not detected",
+      "sampleRows": "Sample rows",
+      "confirmUpload": "Upload",
+      "uploadSuccess": "Inventory uploaded and indexed.",
+      "uploadFailed": "Failed to upload inventory.",
+      "cancelled": "Cancelled",
+      "close": "Close",
+      "selectColumns": "Columns to include in knowledge base:",
+      "uploadPdf": "Upload PDF",
+      "uploadPdfSuccess": "PDF uploaded and indexed.",
+      "uploadPdfFailed": "Failed to upload PDF.",
+      "uploadPdfHint": "PDF will be added as a regular document",
+      "selectAtLeastOne": "Select at least one column"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose the language used across the app interface.",
+      "language": "Language",
+      "active": "Active",
+      "reloadHint": "The page will reload to apply the new language."
     }
+  },
+  "LanguageSwitcher": {
+    "selectLanguage": "Select language"
   }
 }

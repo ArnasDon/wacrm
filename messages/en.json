@@ -63,6 +63,13 @@
   "LanguageSwitcher": {
     "selectLanguage": "Select language"
   },
+  "AccountAccess": {
+    "unlinkedTitle": "This user is not linked to an account",
+    "unlinkedBody": "Nothing you change will be saved while this is unresolved — the database rejects every write from a user with no account or role. If you were invited to a team, ask the owner to re-send the invitation. On a self-hosted install, check that the account-bootstrap migration ran for this user.",
+    "errorTitle": "Could not load your permissions",
+    "errorBody": "Your account role did not load, so every action is treated as read-only and changes will not save. Check your connection and try again.",
+    "retry": "Retry"
+  },
   "Dashboard": {
     "page": {
       "title": "Dashboard",
@@ -219,7 +226,25 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "download": "Download",
+      "downloadFailed": "Couldn't download the attachment",
+      "viewImage": "View image",
+      "expandVideo": "Expand video",
+      "imageAlt": "Shared image"
+    },
+    "mediaViewer": {
+      "counter": "{index} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "zoomIn": "Zoom to full size",
+      "zoomOut": "Fit to screen",
+      "openOriginal": "Open original",
+      "download": "Download",
+      "downloadFailed": "Couldn't download the attachment",
+      "failed": "This attachment is no longer available",
+      "imageAlt": "Shared image",
+      "you": "You"
     },
     "actions": {
       "reply": "Reply",
@@ -374,6 +399,7 @@
       "contactInfo": "Contact Information",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
+      "name": "Name",
       "phone": "Phone",
       "email": "Email",
       "company": "Company",
@@ -658,7 +684,16 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Broadcast deleted",
+      "resumeTitle": "Some recipients need another attempt",
+      "resumeStalledTitle": "This campaign stopped part-way",
+      "resumeHint": "{count} recipients failed. Retrying sends them again from the server.",
+      "resumeStalledHint": "{count} recipients were never sent — the browser tab running this campaign was closed before it finished. Resuming completes it from the server.",
+      "resumePending": "Resume sending ({count})",
+      "retryFailed": "Retry failed ({count})",
+      "toastResumeStarted": "Sending {count} recipients in the background.",
+      "toastResumeStartedCapped": "Sending {count} recipients in the background. {remaining} more will need another run.",
+      "toastResumeFailed": "Could not resume: {error}"
     },
     "new": {
       "title": "New Broadcast",
@@ -935,6 +970,7 @@
         "no": "No"
       },
       "addStep": "Add step",
+      "delete": "Delete",
       "config": {
         "messageText": "Message text",
         "placeholderMessageText": "Hi! Thanks for reaching out…",
@@ -974,6 +1010,8 @@
         "placeholderBody": "{\"id\": \"{{ contact.id }}\"}",
         "matchType": "Match type",
         "matchContains": "Contains",
+        "matchWord": "Whole word",
+        "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
@@ -1469,6 +1507,12 @@
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
+      "mediaTitle": "Attachment Storage",
+      "mediaDesc": "Meta deletes received media about 30 days after it arrives. Attachments can be copied to your own storage so they stay viewable.",
+      "mirrorInbound": "Keep inbound attachments",
+      "mirrorInboundDesc": "Save a copy of every photo, video, voice note and document customers send. Uses your Supabase storage; files over 16 MB are skipped.",
+      "mirrorInboundOffWarning": "New attachments will stop being copied and will become unavailable about 30 days after they arrive.",
+      "mirrorInboundSaveFailed": "Could not update the attachment setting.",
       "saving": "Saving...",
       "saveConfig": "Save Configuration",
       "testing": "Testing...",
@@ -1611,7 +1655,7 @@
       "nameLabel": "Name",
       "namePlaceholder": "e.g. Zapier automation",
       "scopesLabel": "Scopes",
-      "scopesHint": "A key with no scopes can still call <code className=\"text-[11px]\">GET /api/v1/me</code> to verify it works.",
+      "scopesHint": "A key with no scopes can still call <code>GET /api/v1/me</code> to verify it works.",
       "cancel": "Cancel",
       "creating": "Creating…",
       "createKey": "Create key",

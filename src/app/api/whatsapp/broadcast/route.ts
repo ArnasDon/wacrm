@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -60,40 +60,26 @@ interface NewRecipient {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Requires the 'agent' role — `canSendMessages` in lib/auth/roles is
+    // explicit that running broadcasts is a write operation and that
+    // viewers are read-only.
+    //
+    // This endpoint writes NOTHING to the database: it reads the config
+    // and template, then calls Meta directly. So unlike the rest of the
+    // app there was no RLS policy backstopping a missing role check —
+    // resolving `account_id` straight off the profile (which only needs
+    // 'viewer') was the ONLY gate, and it let a viewer blast a template
+    // to arbitrary phone numbers from the account's WhatsApp number.
+    // Nothing about that is recoverable after the fact, so the check has
+    // to happen here.
+    const { supabase, accountId, userId } = await requireRole('agent')
 
     // Per-user broadcast budget. Note: this limits how often a user
     // can *start* a campaign, not how many messages go out inside
     // one — the fan-out loop below runs without additional gating.
-    const limit = checkRateLimit(`broadcast:${user.id}`, RATE_LIMITS.broadcast)
+    const limit = checkRateLimit(`broadcast:${userId}`, RATE_LIMITS.broadcast)
     if (!limit.success) {
       return rateLimitResponse(limit)
-    }
-
-    // Resolve the caller's account_id. whatsapp_config + templates
-    // + broadcasts are all account-scoped post-multi-user, so the
-    // old `.eq('user_id', user.id)` filters miss every row created
-    // by a teammate.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
     }
 
     const body = await request.json()
@@ -157,14 +143,13 @@ export async function POST(request: Request) {
     // the loop would N+1 against Supabase for every recipient.
     // Guard against a malformed local row crashing every send in
     // the loop with the same opaque TypeError — fail loudly once.
-    const { data: rawTemplateRow } = await supabase
-      .from('message_templates')
-      .select('*')
-      .eq('account_id', accountId)
-      .eq('name', template_name)
-      .eq('language', template_language || 'en_US')
-      .maybeSingle()
-    if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+    const resolvedTemplate = await resolveTemplateRow(
+      supabase,
+      accountId,
+      template_name,
+      template_language,
+    )
+    if (resolvedTemplate.malformed) {
       return NextResponse.json(
         {
           error:
@@ -173,7 +158,7 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
-    const templateRow = rawTemplateRow ?? null
+    const templateRow = resolvedTemplate.row
 
     const results: BroadcastResult[] = []
     let sentCount = 0
@@ -205,7 +190,7 @@ export async function POST(request: Request) {
             accessToken,
             to: variant,
             templateName: template_name,
-            language: template_language || 'en_US',
+            language: resolvedTemplate.language,
             template: templateRow ?? undefined,
             messageParams: recipient.messageParams,
             params: recipient.params ?? [],
@@ -254,10 +239,9 @@ export async function POST(request: Request) {
       results,
     })
   } catch (error) {
+    // requireRole throws Unauthorized/Forbidden; toErrorResponse maps
+    // those to 401/403 and collapses anything else to a generic 500.
     console.error('Error in WhatsApp broadcast POST:', error)
-    return NextResponse.json(
-      { error: 'Failed to process broadcast' },
-      { status: 500 }
-    )
+    return toErrorResponse(error)
   }
 }

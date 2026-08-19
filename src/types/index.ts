@@ -64,9 +64,9 @@ export interface Account {
 /**
  * Hydrated member row for the Settings → Members tab. Combines
  * the profile and its account_role for a single member of the
- * caller's account. Sensitive fields (email) are populated only
- * when the caller has admin+ — agents and viewers see name +
- * avatar + role only.
+ * caller's account. Sensitive fields (email,
+ * can_view_all_conversations) are populated only when the caller
+ * has admin+ — agents and viewers see name + avatar + role only.
  */
 export interface AccountMember {
   user_id: string;
@@ -75,6 +75,17 @@ export interface AccountMember {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  /**
+   * Conversation scope (migration 040). `true` — sees every
+   * conversation in the account; `false` — sees only the ones
+   * assigned to them. Owners and admins are exempt from the
+   * restriction regardless of the stored value, so the flag is
+   * only meaningful on an agent or viewer row.
+   *
+   * `null` when the caller is not admin+ — same field-visibility
+   * rule as `email`.
+   */
+  can_view_all_conversations: boolean | null;
 }
 
 /**

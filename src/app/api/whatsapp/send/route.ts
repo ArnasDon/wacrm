@@ -132,13 +132,25 @@ export async function POST(request: Request) {
         userId,
         contact_id
       )
-      if (!resolved) {
-        return NextResponse.json(
-          { error: 'Failed to open a conversation for this contact' },
-          { status: 500 }
-        )
+      if (!resolved.ok) {
+        // 'hidden' — the thread exists but this member's conversation
+        // scope (migration 040) doesn't include it, so both the SELECT
+        // and the INSERT came back empty-handed. 403, not 500: nothing
+        // is broken, they just aren't on this conversation.
+        return resolved.reason === 'hidden'
+          ? NextResponse.json(
+              {
+                error:
+                  'This contact already has a conversation assigned to another teammate',
+              },
+              { status: 403 }
+            )
+          : NextResponse.json(
+              { error: 'Failed to open a conversation for this contact' },
+              { status: 500 }
+            )
       }
-      conversationId = resolved
+      conversationId = resolved.id
     }
 
     if (!conversationId) {
@@ -191,19 +203,31 @@ export async function POST(request: Request) {
 
 type SendSupabase = Awaited<ReturnType<typeof createClient>>
 
+type FindOrCreateResult =
+  | { ok: true; id: string }
+  // 'hidden' is specifically "it exists but not for you"; 'error' is
+  // everything else, and only that one deserves a 500.
+  | { ok: false; reason: 'hidden' | 'error' }
+
 /**
  * Return the contact's conversation id in this account, creating one if
  * it doesn't exist yet. Mirrors the webhook's find-or-create so an
  * inbound-then-outbound (or outbound-first) sequence converges on a single
  * thread per contact. Runs under the caller's RLS — the conversations_insert
  * policy requires account agent membership, which the caller already is.
+ *
+ * Since migration 040 the lookup can come back empty for a member whose
+ * conversation scope excludes the existing thread. The INSERT that
+ * follows then trips the (account_id, contact_id) unique index from 036
+ * with SQLSTATE 23505 — which is not a server fault but the scope rule
+ * working, so it maps to its own result and a 403 upstream.
  */
 async function findOrCreateConversation(
   supabase: SendSupabase,
   accountId: string,
   userId: string,
   contactId: string,
-): Promise<string | null> {
+): Promise<FindOrCreateResult> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id')
@@ -211,8 +235,11 @@ async function findOrCreateConversation(
     .eq('contact_id', contactId)
     .maybeSingle()
 
-  if (existing) return existing.id
+  if (existing) return { ok: true, id: existing.id }
 
+  // A restricted member's own new thread is auto-assigned to them by the
+  // BEFORE INSERT trigger in 040, so the `.select('id')` read-back below
+  // still succeeds under the tightened SELECT policy.
   const { data: created, error } = await supabase
     .from('conversations')
     .insert({
@@ -224,9 +251,12 @@ async function findOrCreateConversation(
     .single()
 
   if (error) {
+    if (error.code === '23505') {
+      return { ok: false, reason: 'hidden' }
+    }
     console.error('Error creating conversation for contact send:', error.message)
-    return null
+    return { ok: false, reason: 'error' }
   }
 
-  return created.id
+  return { ok: true, id: created.id }
 }

@@ -42,6 +42,32 @@ BEGIN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
   END IF;
 
+  -- Conversation scoping (040). Asserted because it is a security
+  -- boundary: if the column is missing the policy below silently
+  -- degrades, and if the policy never got rewritten every member
+  -- keeps seeing every thread. Both fail open, which is the failure
+  -- mode worth a check.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'profiles'
+      AND column_name = 'can_view_all_conversations'
+  ) THEN
+    RAISE EXCEPTION
+      'profiles.can_view_all_conversations is missing — migration 040 did not apply';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'conversations'
+      AND policyname = 'conversations_select'
+      AND qual LIKE '%can_access_conversation%'
+  ) THEN
+    RAISE EXCEPTION
+      'conversations_select does not apply can_access_conversation — migration 040 did not rewrite the policy';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

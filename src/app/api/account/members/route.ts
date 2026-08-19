@@ -25,6 +25,7 @@ interface ProfileRow {
   avatar_url: string | null;
   account_role: string;
   created_at: string;
+  can_view_all_conversations: boolean;
 }
 
 export async function GET() {
@@ -35,7 +36,9 @@ export async function GET() {
     // the caller's, so this query is naturally account-scoped.
     const { data, error } = await ctx.supabase
       .from("profiles")
-      .select("user_id, full_name, email, avatar_url, account_role, created_at")
+      .select(
+        "user_id, full_name, email, avatar_url, account_role, created_at, can_view_all_conversations",
+      )
       .eq("account_id", ctx.accountId)
       .order("created_at", { ascending: true });
 
@@ -47,7 +50,8 @@ export async function GET() {
       );
     }
 
-    const canSeeEmails = canManageMembers(ctx.role);
+    // One gate for every admin-only field on the row.
+    const canSeePrivileged = canManageMembers(ctx.role);
 
     const members: AccountMember[] = (data as ProfileRow[]).flatMap((row) => {
       // Defensive: the DB enum should never let an unknown role
@@ -58,10 +62,13 @@ export async function GET() {
         {
           user_id: row.user_id,
           full_name: row.full_name ?? "",
-          email: canSeeEmails ? row.email : null,
+          email: canSeePrivileged ? row.email : null,
           avatar_url: row.avatar_url,
           role: row.account_role,
           joined_at: row.created_at,
+          can_view_all_conversations: canSeePrivileged
+            ? row.can_view_all_conversations
+            : null,
         },
       ];
     });

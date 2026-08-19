@@ -5,8 +5,9 @@
 //
 // Two stacked sections:
 //   1. Roster   — every member of the account. Admin+ can change a
-//                 teammate's role inline and remove them. Owner row
-//                 is non-editable everywhere (transfer is its own
+//                 teammate's role inline, scope which conversations
+//                 they see, and remove them. Owner row is
+//                 non-editable everywhere (transfer is its own
 //                 separate flow, deferred to a later PR).
 //   2. Pending  — outstanding invite links. Admin+ can revoke. The
 //                 plaintext URL is gone after the create dialog
@@ -17,8 +18,17 @@
 //   The tab itself is reachable by any member, but mutation buttons
 //   are wrapped in `<RequireRole min="admin">` / `useCan` so an
 //   agent or viewer sees the roster read-only. The server-side
-//   RPCs (set_member_role, remove_account_member) double-check
-//   the role anyway.
+//   RPCs (set_member_role, set_member_conversation_access,
+//   remove_account_member) double-check the role anyway.
+//
+// Conversation scope
+//   The per-row switch maps to `profiles.can_view_all_conversations`
+//   (migration 040). It only renders on agent/viewer rows because
+//   owners and admins are exempt from the restriction in the RLS
+//   predicate — showing them a toggle that changes nothing would be
+//   a lie. Turning it off is what actually enforces the narrowing:
+//   the SELECT policy on `conversations` (and, cascading, on
+//   `messages`) stops returning anything the member isn't assigned.
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';
@@ -40,6 +50,7 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -83,6 +94,8 @@ interface Member {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  /** null for non-admin callers — the API withholds it like email. */
+  can_view_all_conversations: boolean | null;
 }
 
 interface Invitation {
@@ -228,6 +241,64 @@ export function MembersTab() {
     }
   }
 
+  async function handleConversationAccessChange(
+    member: Member,
+    nextValue: boolean,
+  ) {
+    // Same optimistic-then-revert shape as handleRoleChange: flip
+    // the switch immediately, put it back if the server says no.
+    // A switch that stays flipped after a failed PATCH is worse
+    // than a slow one — it reports an access boundary that isn't
+    // actually in place.
+    const previous = member.can_view_all_conversations;
+    setPendingMemberAction(member.user_id);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id
+          ? { ...m, can_view_all_conversations: nextValue }
+          : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ can_view_all_conversations: nextValue }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id
+              ? { ...m, can_view_all_conversations: previous }
+              : m,
+          ),
+        );
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update conversation access');
+        return;
+      }
+      toast.success(
+        nextValue
+          ? t('accessAllToast', { name: member.full_name || t('unnamed') })
+          : t('accessAssignedToast', {
+              name: member.full_name || t('unnamed'),
+            }),
+      );
+    } catch (err) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id
+            ? { ...m, can_view_all_conversations: previous }
+            : m,
+        ),
+      );
+      console.error('[MembersTab] conversation access change error:', err);
+      toast.error('Could not reach the server');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  }
+
   async function handleRemove() {
     if (!removingMember) return;
     setPendingMemberAction(removingMember.user_id);
@@ -331,6 +402,16 @@ export function MembersTab() {
               const isSelf = member.user_id === user?.id;
               const isOwnerRow = member.role === 'owner';
               const isBusy = pendingMemberAction === member.user_id;
+              // Owners/admins are exempt from the scope restriction
+              // in the RLS predicate, so the switch is meaningless on
+              // their rows. `can_view_all_conversations` is null when
+              // the caller isn't admin+, which the outer
+              // `canManageMembers` gate already excludes.
+              const showScopeSwitch =
+                canManageMembers &&
+                !isSelf &&
+                (member.role === 'agent' || member.role === 'viewer') &&
+                member.can_view_all_conversations !== null;
               const presence = getPresence(member.user_id);
               const presenceRow = getRow(member.user_id);
               const presenceText = presenceLabel(
@@ -410,6 +491,49 @@ export function MembersTab() {
                       inline. Items align to the start on mobile so the
                       role dropdown lines up under the avatar. */}
                   <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Conversation scope. On = sees the whole shared
+                        inbox (the default); off = sees only threads
+                        assigned to them. Enforced in RLS, not here —
+                        this switch just writes the flag. */}
+                    {showScopeSwitch && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={
+                                  member.can_view_all_conversations ?? true
+                                }
+                                onCheckedChange={(checked) =>
+                                  handleConversationAccessChange(
+                                    member,
+                                    checked,
+                                  )
+                                }
+                                disabled={isBusy}
+                                aria-label={t('scopeSwitchLabel', {
+                                  name: member.full_name || t('unnamed'),
+                                })}
+                              />
+                              {/* Label is desktop-only: the row already
+                                  stacks on mobile and a third text
+                                  column there pushes the role dropdown
+                                  onto its own line. The aria-label
+                                  above carries the meaning either way. */}
+                              <span className="hidden text-xs text-muted-foreground lg:inline">
+                                {t('scopeAll')}
+                              </span>
+                            </div>
+                          }
+                        />
+                        <TooltipContent>
+                          {member.can_view_all_conversations
+                            ? t('scopeAllHint')
+                            : t('scopeAssignedHint')}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+
                     {/* Role display / editor. Inline Select is admin+
                         only AND not allowed on the owner row (owner
                         changes go through transfer, which lands later). */}

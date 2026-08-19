@@ -9,6 +9,30 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+Per-member conversation visibility: an admin can now limit a teammate to
+the conversations assigned to them.
+
+> **Migration required:** apply `supabase/migrations/040_conversation_visibility.sql`
+> (adds `profiles.can_view_all_conversations`, defaulting to `true`, and
+> rewrites the `conversations` / `messages` / `message_reactions` RLS
+> policies to honour it). Existing members are unaffected until the
+> switch is turned off for them.
+
+### Added
+
+- **Conversation access per member.** Settings → Members gains an
+  "All chats" switch on each agent and viewer row. On (the default) is
+  the shared inbox everyone had before; off narrows that member to the
+  conversations whose assignee is them, and hides everything else —
+  including the message history, the unread badge and the realtime
+  stream, because the rule lives in the database policies rather than in
+  a query filter. Owners and admins are exempt and show no switch.
+
+  Note that a thread with no assignee is nobody's: a restricted member
+  does not see inbound conversations until someone routes one to them.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

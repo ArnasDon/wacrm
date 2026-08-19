@@ -27,6 +27,7 @@ import {
   GitBranch,
   Webhook,
   CircleSlash,
+  AlertTriangle,
   Zap,
   Loader2,
   ArrowDown,
@@ -120,6 +121,19 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   condition: { label: "condition", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "send_webhook", icon: Webhook, border: "border-l-primary" },
   close_conversation: { label: "close_conversation", icon: CircleSlash, border: "border-l-primary" },
+}
+
+// A step whose `step_type` isn't one of the keys above — e.g. bad data
+// from a source that doesn't go through the builder's own picker (an
+// AI-proposed automation that invented a step type outside its tool
+// schema has done this in practice). Rendering used to read
+// `STEP_META[step.step_type]` unconditionally and crash the whole page
+// on the missing lookup; this lets the card render as a visibly broken,
+// deletable step instead of taking down the editor.
+const UNKNOWN_STEP_META: StepMeta = {
+  label: "unknown",
+  icon: AlertTriangle,
+  border: "border-l-destructive",
 }
 
 const ADDABLE_STEPS: AutomationStepType[] = [
@@ -1090,7 +1104,8 @@ function StepRenderer({
 } & Omit<StepListProps, "steps" | "basePath" | "scope">) {
   const t = useTranslations("Automations.builder")
   const path = childPath(basePath, scope, index)
-  const meta = STEP_META[step.step_type]
+  const knownMeta = STEP_META[step.step_type] as StepMeta | undefined
+  const meta = knownMeta ?? UNKNOWN_STEP_META
   const Icon = meta.icon
   const expanded = props.expandedId === step.cid
   const isCondition = step.step_type === "condition"
@@ -1135,7 +1150,9 @@ function StepRenderer({
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
               </div>
-              <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
+              <div className="truncate text-sm font-medium text-foreground">
+                {knownMeta ? t(`steps.${meta.label}`) : `${t("steps.unknown")}: ${step.step_type}`}
+              </div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
             </div>
             <ChevronDown

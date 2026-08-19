@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   validateStepsForActivation,
+  validateStepTypesKnown,
   validateTriggerForActivation,
 } from "./validate";
 
@@ -296,5 +297,49 @@ describe("validateTriggerForActivation", () => {
 
   it("does not flag unknown trigger types (handled elsewhere)", () => {
     expect(validateTriggerForActivation("some_future_trigger", {})).toEqual([]);
+  });
+});
+
+describe("validateStepTypesKnown", () => {
+  it("passes every real step type, including nested condition branches", () => {
+    const issues = validateStepTypesKnown([
+      { step_type: "send_message", step_config: {} },
+      {
+        step_type: "condition",
+        step_config: {},
+        branches: {
+          yes: [{ step_type: "add_tag", step_config: {} }],
+          no: [{ step_type: "wait", step_config: {} }],
+        },
+      },
+    ]);
+    expect(issues).toEqual([]);
+  });
+
+  it("flags a step_type outside the builder's known set — e.g. an AI-hallucinated 'move_deal'", () => {
+    const issues = validateStepTypesKnown([
+      { step_type: "move_deal", step_config: { stage_id: "stage-uuid" } },
+    ]);
+    expect(issues).toEqual([
+      { path: "steps[0]", message: "unknown step type: move_deal" },
+    ]);
+  });
+
+  it("flags an unknown step type nested inside a condition branch", () => {
+    const issues = validateStepTypesKnown([
+      {
+        step_type: "condition",
+        step_config: {},
+        branches: { yes: [{ step_type: "move_deal", step_config: {} }] },
+      },
+    ]);
+    expect(issues).toEqual([
+      { path: "steps[0].yes.steps[0]", message: "unknown step type: move_deal" },
+    ]);
+  });
+
+  it("treats a missing or empty step list as valid (nothing to flag)", () => {
+    expect(validateStepTypesKnown([])).toEqual([]);
+    expect(validateStepTypesKnown(undefined as unknown as never[])).toEqual([]);
   });
 });

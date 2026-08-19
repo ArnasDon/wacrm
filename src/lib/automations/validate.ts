@@ -36,17 +36,48 @@ export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[]
     })
     return issues
   }
-  walk(steps, '', issues)
+  walk(steps, '', issues, validateOne)
   return issues
 }
 
-function walk(steps: StepLike[], prefix: string, issues: ValidationIssue[]): void {
+// Every `step_type` the builder UI can actually produce — the same set
+// `validateOne`'s switch below and `automation-builder.tsx`'s STEP_META
+// both key on. A step outside this set can never come from the builder
+// itself, draft or active, so it's never legitimate to store — unlike
+// the activation checks below (which allow an incomplete draft), this
+// runs unconditionally at save time. Added after an AI-assistant-
+// proposed automation stored a step_type ("move_deal") outside its own
+// tool schema unchecked, which the builder then crashed on trying to
+// open (STEP_META[step.step_type] was undefined).
+const KNOWN_STEP_TYPES = new Set([
+  'send_message', 'send_buttons', 'send_list', 'send_template',
+  'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field',
+  'create_deal', 'wait', 'condition', 'send_webhook', 'close_conversation',
+])
+
+export function validateStepTypesKnown(steps: StepLike[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  if (!Array.isArray(steps)) return issues
+  walk(steps, '', issues, (step, path, out) => {
+    if (!KNOWN_STEP_TYPES.has(step.step_type)) {
+      out.push({ path, message: `unknown step type: ${step.step_type}` })
+    }
+  })
+  return issues
+}
+
+function walk(
+  steps: StepLike[],
+  prefix: string,
+  issues: ValidationIssue[],
+  check: (step: StepLike, path: string, issues: ValidationIssue[]) => void,
+): void {
   steps.forEach((s, i) => {
     const path = `${prefix}steps[${i}]`
-    validateOne(s, path, issues)
+    check(s, path, issues)
     if (s.step_type === 'condition' && s.branches) {
-      if (s.branches.yes) walk(s.branches.yes, `${path}.yes.`, issues)
-      if (s.branches.no) walk(s.branches.no, `${path}.no.`, issues)
+      if (s.branches.yes) walk(s.branches.yes, `${path}.yes.`, issues, check)
+      if (s.branches.no) walk(s.branches.no, `${path}.no.`, issues, check)
     }
   })
 }

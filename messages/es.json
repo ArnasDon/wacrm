@@ -73,7 +73,8 @@
         "wait": "Esperar",
         "condition": "Condición (Si/Si no)",
         "send_webhook": "Enviar webhook",
-        "close_conversation": "Cerrar conversación"
+        "close_conversation": "Cerrar conversación",
+        "unknown": "Paso no compatible"
       },
       "triggers": {
         "new_message_received": {

@@ -1205,7 +1205,8 @@
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
-        "close_conversation": "대화 닫기"
+        "close_conversation": "대화 닫기",
+        "unknown": "지원되지 않는 단계"
       },
       "triggers": {
         "new_message_received": {

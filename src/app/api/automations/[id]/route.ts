@@ -9,6 +9,7 @@ import {
 } from '@/lib/automations/steps-tree'
 import {
   validateStepsForActivation,
+  validateStepTypesKnown,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
 
@@ -75,6 +76,21 @@ export async function PATCH(
     .maybeSingle()
   if (!existing || existing.user_id !== user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // Same "never store a step_type the builder can't render" guard as
+  // POST /api/automations — applies to a draft PATCH too, not just an
+  // activating one.
+  if (Array.isArray(body.steps)) {
+    const typeIssues = validateStepTypesKnown(
+      body.steps as { step_type: string; step_config: Record<string, unknown> }[],
+    )
+    if (typeIssues.length > 0) {
+      return NextResponse.json(
+        { error: 'Automation contains an unsupported step type', issues: typeIssues },
+        { status: 400 },
+      )
+    }
   }
 
   const update: Record<string, unknown> = {}

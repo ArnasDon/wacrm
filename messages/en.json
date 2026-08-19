@@ -1205,7 +1205,8 @@
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
-        "close_conversation": "Close Conversation"
+        "close_conversation": "Close Conversation",
+        "unknown": "Unsupported step"
       },
       "triggers": {
         "new_message_received": {

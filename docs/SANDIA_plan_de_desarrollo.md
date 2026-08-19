@@ -3486,3 +3486,69 @@ warning preexistente no relacionado), `next build` completo,
 `vitest run` en verde (110/110 tests de más — 2 archivos y 2 tests
 nuevos de paridad `es.json`/ICU — más los 2 fallos preexistentes ya
 conocidos de `date-utils.test.ts`).
+
+---
+
+**2026-08-19 — Claude Code — Bug real: dos automatizaciones creadas
+por el asistente de IA integrado quedaban imposibles de abrir
+("dando error").**
+
+Angel reportó que las automatizaciones pedidas al asistente de IA
+(el chat de `/ai-agents`, no el bot de auto-respuesta a clientes)
+tiraban error al intentar abrirlas después de tener dos. Investigado
+directo en Supabase (cuenta `6ad222e9-...`): las dos automatizaciones
+más recientes tenían un `automation_steps.step_type = "move_deal"` —
+un tipo de paso que **no existe en ningún lugar del sistema**: ni en
+el motor (`engine.ts`), ni en la validación (`validate.ts`), ni en el
+propio esquema de la herramienta `create_automation_rule` que el
+asistente usa (esa herramienta solo declara
+`send_message/add_tag/remove_tag/assign_conversation/update_contact_field/wait/close_conversation`
+— "mover un negocio a otra etapa del pipeline" simplemente no es una
+acción que las Automatizaciones puedan hacer hoy). El modelo,
+al no tener una herramienta real para lo que Angel pidió ("cuando
+pregunten el precio, muévelo a la etapa de Cotización"), inventó un
+`step_type` fuera de su propio schema — y como la ruta
+`POST /api/automations` nunca validaba el `step_type` de un borrador
+(solo lo hace al ACTIVAR una automatización), el paso inválido se
+guardó sin problema. Al abrir esa automatización en el editor,
+`automation-builder.tsx` hacía `STEP_META[step.step_type].icon` sin
+comprobar que la clave existiera — con `step_type: "move_deal"` eso es
+`undefined.icon`, y la página entera truena.
+
+**Fix (dos capas, no solo prompt-engineering):**
+1. `src/components/automations/automation-builder.tsx` — si el
+   `step_type` no está en `STEP_META`, la tarjeta ahora se renderiza
+   igual (icono de advertencia, borde rojo, "Paso no compatible: X")
+   en vez de tronar la página completa; el botón de eliminar sigue
+   funcionando normalmente para poder quitarlo.
+2. `src/lib/automations/validate.ts` (`validateStepTypesKnown`, nueva)
+   + wired en `POST /api/automations` y `PATCH /api/automations/[id]`
+   — un `step_type` fuera del set real de 13 tipos que soporta el
+   builder ahora se rechaza con 400 al guardar, sea borrador o activa
+   (a diferencia de la validación de "completitud" existente, que
+   sigue permitiendo borradores incompletos a propósito). Esto cierra
+   la vía por la que cualquier llamada directa a la API —no solo el
+   asistente de IA— podía colar un paso irrenderizable.
+3. `src/lib/ai/assistant/tools.ts` — la descripción de la herramienta
+   `create_automation_rule` ahora dice explícitamente que "mover un
+   negocio de etapa" no es una acción soportada y que el modelo NO
+   debe inventar un `step_type` para aproximarla; debe decirle al
+   dueño que no está disponible todavía. Mitiga la causa, no solo el
+   síntoma — pero como ningún control de prompt es 100% confiable, el
+   punto 2 es la defensa real.
+
+**Pendiente por confirmar con Angel:** las dos automatizaciones rotas
+siguen en la base de datos tal cual (`1bf330ab-...` y
+`419054f7-...`, ambas en borrador, nunca activadas, cero clientes
+afectados) — con el fix ya no truenan al abrirlas, se ven como "Paso
+no compatible" y se pueden borrar normalmente desde la UI. No las
+toqué directamente en la base de datos porque decidir entre borrarlas
+o construir de verdad la función "mover negocio a otra etapa desde
+Automatizaciones" es una decisión de producto, no una limpieza obvia.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (1102/1102 salvo los 2 fallos
+preexistentes y conocidos de `date-utils.test.ts`) — se agregaron 4
+tests nuevos para `validateStepTypesKnown` (tipo válido, tipo
+inventado en el nivel superior, tipo inventado dentro de una rama de
+condición, lista vacía/ausente).

@@ -6,6 +6,7 @@ import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
 import {
   validateStepsForActivation,
+  validateStepTypesKnown,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
 
@@ -92,6 +93,22 @@ export async function POST(request: Request) {
   // or the frontend) so it holds even against a malformed client or a
   // direct call to this endpoint with source=ai_assistant.
   const effectiveIsActive = source === 'ai_assistant' ? false : !!is_active
+
+  // A step_type outside the builder's own known set (e.g. an
+  // AI-assistant proposal that invented one beyond its tool schema)
+  // can never be rendered or run — reject it unconditionally, even for
+  // a draft. Unlike the activation checks below, an incomplete-but-
+  // real step is fine to save mid-build; a step type that doesn't
+  // exist at all is not.
+  const typeIssues = validateStepTypesKnown(
+    (effectiveSteps ?? []) as unknown as { step_type: string; step_config: Record<string, unknown> }[],
+  )
+  if (typeIssues.length > 0) {
+    return NextResponse.json(
+      { error: 'Automation contains an unsupported step type', issues: typeIssues },
+      { status: 400 },
+    )
+  }
 
   // Block activation of a clearly broken automation up-front instead of
   // letting every trigger silently produce a failed log row. Drafts

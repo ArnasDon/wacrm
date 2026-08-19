@@ -25,7 +25,7 @@
     "template"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=26.0.0"
   },
   "packageManager": "npm@10.9.9",
   "scripts": {

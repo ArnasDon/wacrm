@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Check, MessageSquare, Pencil, Sparkles, CalendarClock, Send, Loader2 } from "lucide-react";
+import { Check, ChevronDown, MessageSquare, Pencil, Sparkles, CalendarClock, Send, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -22,6 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { DueDateField } from "./due-date-field";
 import { FollowupOutcomeDialog } from "./followup-outcome-dialog";
 import { ACTION_ITEM_COLORS } from "@/lib/action-items/constants";
@@ -379,8 +385,8 @@ export function ActionItemDetailSheet({
                       <Textarea
                         value={draft.text}
                         onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-                        rows={4}
-                        className="text-xs"
+                        rows={7}
+                        className="text-sm"
                       />
                     ) : (
                       <div className="space-y-2">
@@ -418,27 +424,40 @@ export function ActionItemDetailSheet({
             </div>
           )}
 
-          <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              {item.conversation_id && (
-                <Button variant="outline" size="sm" render={<Link href={`/inbox?c=${item.conversation_id}`} />}>
-                  <MessageSquare className="h-4 w-4" />
-                  {t("openConversation")}
-                </Button>
-              )}
-              {!editing && (
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil className="h-4 w-4" />
-                  {t("edit")}
-                </Button>
-              )}
-              {item.type === "followup" && !rescheduling && (
-                <Button variant="outline" size="sm" onClick={() => setRescheduling(true)}>
-                  <CalendarClock className="h-4 w-4" />
-                  {t("reschedule")}
-                </Button>
-              )}
-            </div>
+          <DialogFooter className="items-center gap-2 sm:justify-between">
+            {/* "Abrir conversa"/"Reagendar"/"Editar" moved into this
+                dropdown — same handlers, same functionality, just not
+                three outline buttons competing with "Marcar como feito"
+                for attention in the footer's one visible row. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+                {t("actionsMenu")}
+                <ChevronDown className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-44 border-border bg-popover">
+                {item.conversation_id && (
+                  <DropdownMenuItem
+                    className="whitespace-nowrap"
+                    render={<Link href={`/inbox?c=${item.conversation_id}`} />}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    {t("openConversation")}
+                  </DropdownMenuItem>
+                )}
+                {item.type === "followup" && !rescheduling && (
+                  <DropdownMenuItem className="whitespace-nowrap" onClick={() => setRescheduling(true)}>
+                    <CalendarClock className="h-4 w-4" />
+                    {t("reschedule")}
+                  </DropdownMenuItem>
+                )}
+                {!editing && (
+                  <DropdownMenuItem className="whitespace-nowrap" onClick={() => setEditing(true)}>
+                    <Pencil className="h-4 w-4" />
+                    {t("edit")}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               size="sm"
               onClick={() => (item.type === "interest" ? markInterestDone() : setOutcomeDialogOpen(true))}

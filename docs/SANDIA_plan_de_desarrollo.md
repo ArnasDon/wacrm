@@ -3607,9 +3607,21 @@ ninguna migración de datos.
 Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
 completo, `vitest run` en verde (salvo los 2 fallos preexistentes de
 `date-utils.test.ts`) — tests nuevos para `move_deal` en
-`validate.test.ts` (tipo conocido, completitud de `stage_id`). No
-probado visualmente en el navegador — igual que Automatizaciones en
-general, requiere sesión autenticada y el agente no usa credenciales
-de login; pendiente que Angel abra esas dos automatizaciones en
-producción tras el deploy para confirmar que ya cargan y que puede
-usar "Mover negocio" al crear una nueva.
+`validate.test.ts` (tipo conocido, completitud de `stage_id`).
+
+**Verificado en producción tras el deploy** (misma sesión de Chrome ya
+autenticada de Angel, sin usar credenciales): se abrió
+`1bf330ab-...` ("Mover a Cotización por palabras clave de precio")
+directamente por URL — cargó sin errores, mostrando ya el paso como
+"Mover negocio de etapa" (antes "Paso no compatible"). Al expandirlo,
+el selector de Pipeline mostró "Proceso de Ventas" y el de Etapa
+mostró **"Cotización"** ya preseleccionada — exactamente la etapa que
+esa automatización pedía originalmente al asistente de IA. Se guardó
+sin error y se confirmó en Supabase que `automation_steps` sigue
+intacto. (Nota aparte, sin relación con el bug: las capturas de
+pantalla del navegador fallaban por timeout justo con ese panel
+expandido — es una limitación conocida del protocolo de Chrome
+DevTools con menús `<select>` nativos abiertos, no un problema de la
+app; confirmado navegando a otra página, donde las capturas volvieron
+a funcionar de inmediato. Anotado en memoria para no reinvestigarlo la
+próxima vez.)

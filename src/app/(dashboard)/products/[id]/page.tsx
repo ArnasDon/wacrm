@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { TagListEditor } from '@/components/products/tag-list-editor';
 import { ProductAnalytics } from '@/components/products/product-analytics';
+import { CatalogueSyncCard, type SyncLog } from '@/components/products/catalogue-sync-card';
 import { createClient } from '@/lib/supabase/client';
 import { loadProductAnalytics } from '@/lib/dashboard/rimula-analytics';
 import type { ProductAnalytics as ProductAnalyticsData } from '@/lib/dashboard/types';
@@ -147,6 +148,9 @@ export default function ProductDetailPage() {
   const [analytics, setAnalytics] = useState<ProductAnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
+  const [syncLog, setSyncLog] = useState<SyncLog | null>(null);
+  const [syncLogLoading, setSyncLogLoading] = useState(true);
+
   // Sub-resource forms
   const [uploading, setUploading] = useState(false);
   const [applicationDraft, setApplicationDraft] = useState('');
@@ -196,6 +200,15 @@ export default function ProductDetailPage() {
       .then((a) => setAnalytics(a))
       .catch((err) => console.error('[product analytics] failed:', err))
       .finally(() => setAnalyticsLoading(false));
+  }, [params.id]);
+
+  useEffect(() => {
+    setSyncLogLoading(true);
+    fetch(`/api/products/${params.id}/catalogue-sync`)
+      .then((res) => res.json())
+      .then((data) => setSyncLog(data.sync_log ?? null))
+      .catch((err) => console.error('[catalogue sync] load failed:', err))
+      .finally(() => setSyncLogLoading(false));
   }, [params.id]);
 
   useEffect(() => {
@@ -512,6 +525,14 @@ export default function ProductDetailPage() {
       </div>
 
       <ProductAnalytics analytics={analytics} loading={analyticsLoading} />
+
+      <CatalogueSyncCard
+        productId={product.id}
+        syncLog={syncLog}
+        loading={syncLogLoading}
+        canSync={isAdmin}
+        onSynced={setSyncLog}
+      />
 
       <Card>
         <CardHeader>

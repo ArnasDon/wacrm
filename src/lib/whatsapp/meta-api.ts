@@ -21,6 +21,18 @@ export interface MetaPhoneInfo {
   display_phone_number: string
   verified_name?: string
   quality_rating?: string
+  /**
+   * §8's messaging-limit tier (e.g. "TIER_250", "TIER_2K",
+   * "TIER_UNLIMITED"). Field name per Meta's docs as of this API
+   * version (v21.0); Meta has since introduced
+   * `whatsapp_business_manager_messaging_limit` as a portfolio-level
+   * replacement — if a future API-version bump adopts it, add it
+   * alongside this field rather than swapping, since old and new may
+   * coexist during Meta's own migration window. Absent (undefined)
+   * when Meta doesn't return it — render "Unknown" per §2, never a
+   * guessed tier.
+   */
+  messaging_limit_tier?: string
 }
 
 interface MetaErrorResponse {
@@ -36,6 +48,146 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
     // response body wasn't JSON — keep the fallback
   }
   throw new Error(message)
+}
+
+// ============================================================
+// Phase 8 hardening — retry + classified errors for the message-
+// sending / media-retrieval hot path.
+//
+// `throwMetaError` above stays as-is for the lower-frequency
+// account-setup and template-lifecycle calls; the functions actually
+// on the send/webhook-reliability path (send*, getMediaUrl,
+// downloadMedia, verifyPhoneNumber) go through `metaFetch` instead,
+// which adds:
+//   - Retry with exponential backoff + jitter on transient failures
+//     (429 rate limit, 5xx, and network-level errors fetch() itself
+//     throws for) — honoring Meta's `Retry-After` header when present.
+//   - A classified `MetaApiError` (httpStatus/code/type/isRetryable)
+//     on terminal failure, instead of a bare `Error(message)`, so
+//     callers (broadcast-core, automations, flows) can tell "this
+//     recipient's number is invalid, don't retry the broadcast" apart
+//     from "Meta rate-limited us, this send legitimately might
+//     succeed on the next attempt."
+// A 4xx other than 429 (bad request, invalid recipient, expired
+// token, template not approved, etc.) is never retried — retrying an
+// unfixable request just burns the account's own rate-limit budget
+// for no benefit.
+// ============================================================
+
+export class MetaApiError extends Error {
+  /** 0 when the failure never reached Meta (network/DNS/timeout). */
+  readonly httpStatus: number
+  /** Meta's numeric error code (`error.code`), when present. */
+  readonly code?: number
+  /** Meta's error type string (`error.type`), when present. */
+  readonly type?: string
+  readonly isRetryable: boolean
+  /** Seconds Meta's `Retry-After` header asked us to wait, when present. */
+  readonly retryAfterSeconds?: number
+
+  constructor(
+    message: string,
+    opts: {
+      httpStatus: number
+      code?: number
+      type?: string
+      isRetryable: boolean
+      retryAfterSeconds?: number
+    }
+  ) {
+    super(message)
+    this.name = 'MetaApiError'
+    this.httpStatus = opts.httpStatus
+    this.code = opts.code
+    this.type = opts.type
+    this.isRetryable = opts.isRetryable
+    this.retryAfterSeconds = opts.retryAfterSeconds
+  }
+}
+
+const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504])
+const META_MAX_RETRIES = 2 // up to 3 attempts total
+const META_BASE_DELAY_MS = 500
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Full jitter exponential backoff: base * 2^attempt, plus up to one more base's worth of jitter. */
+function metaBackoffMs(attempt: number): number {
+  return META_BASE_DELAY_MS * 2 ** attempt + Math.random() * META_BASE_DELAY_MS
+}
+
+async function classifyMetaFailure(response: Response): Promise<MetaApiError> {
+  let message = `Meta API error: ${response.status}`
+  let code: number | undefined
+  let type: string | undefined
+  try {
+    const data = (await response.json()) as MetaErrorResponse
+    if (data.error?.message) message = data.error.message
+    code = data.error?.code
+    type = data.error?.type
+  } catch {
+    // response body wasn't JSON — keep the fallback message
+  }
+  const retryAfterHeader = response.headers?.get?.('retry-after')
+  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : undefined
+  return new MetaApiError(message, {
+    httpStatus: response.status,
+    code,
+    type,
+    isRetryable: RETRYABLE_HTTP_STATUSES.has(response.status),
+    retryAfterSeconds:
+      retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds)
+        ? retryAfterSeconds
+        : undefined,
+  })
+}
+
+/**
+ * `fetch()` for the Meta Graph API with retry-on-transient-failure.
+ * Returns the (ok) Response on success; throws a classified
+ * `MetaApiError` after retries are exhausted or on a non-retryable
+ * status. Never retries a successful response, obviously, and never
+ * retries a non-retryable 4xx (would just waste the rate-limit budget
+ * on a request that can't succeed).
+ */
+async function metaFetch(
+  url: string,
+  init: RequestInit,
+  maxRetries: number = META_MAX_RETRIES
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    let response: Response
+    try {
+      response = await fetch(url, init)
+    } catch (err) {
+      // fetch() itself threw — network/DNS/timeout, never reached
+      // Meta. Always worth retrying; Meta didn't reject anything.
+      if (attempt < maxRetries) {
+        await sleep(metaBackoffMs(attempt))
+        continue
+      }
+      throw new MetaApiError(
+        err instanceof Error ? err.message : 'Network error contacting Meta',
+        { httpStatus: 0, isRetryable: true }
+      )
+    }
+
+    if (response.ok) return response
+
+    if (RETRYABLE_HTTP_STATUSES.has(response.status) && attempt < maxRetries) {
+      const retryAfterHeader = response.headers?.get?.('retry-after')
+      const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN
+      const delay = Number.isFinite(retryAfterSeconds)
+        ? retryAfterSeconds * 1000
+        : metaBackoffMs(attempt)
+      await sleep(delay)
+      continue
+    }
+
+    throw await classifyMetaFailure(response)
+  }
 }
 
 // ============================================================
@@ -55,13 +207,10 @@ export async function verifyPhoneNumber(
   args: VerifyPhoneNumberArgs
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
-  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating`
-  const response = await fetch(url, {
+  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,messaging_limit_tier`
+  const response = await metaFetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   return response.json()
 }
 
@@ -244,7 +393,7 @@ export async function sendTextMessage(
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
   }
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -252,9 +401,6 @@ export async function sendTextMessage(
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -310,7 +456,7 @@ export async function sendMediaMessage(
   }
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -318,9 +464,6 @@ export async function sendMediaMessage(
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -428,7 +571,7 @@ export async function sendTemplateMessage(
     body.context = { message_id: contextMessageId }
   }
 
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -436,9 +579,6 @@ export async function sendTemplateMessage(
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -682,7 +822,7 @@ export async function sendReactionMessage(
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, targetMessageId, emoji } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -696,9 +836,6 @@ export async function sendReactionMessage(
       reaction: { message_id: targetMessageId, emoji },
     }),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -818,7 +955,7 @@ export async function sendInteractiveButtons(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -826,9 +963,6 @@ export async function sendInteractiveButtons(
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -950,7 +1084,7 @@ export async function sendInteractiveList(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -958,9 +1092,6 @@ export async function sendInteractiveList(
     },
     body: JSON.stringify(body),
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
-  }
   const data = await response.json()
   return { messageId: data.messages[0].id }
 }
@@ -1013,12 +1144,9 @@ export async function getMediaUrl(
   args: GetMediaUrlArgs
 ): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const { mediaId, accessToken } = args
-  const response = await fetch(`${META_API_BASE}/${mediaId}`, {
+  const response = await metaFetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  if (!response.ok) {
-    await throwMetaError(response, `Media fetch failed: ${response.status}`)
-  }
   const data = await response.json()
   if (!data.url) throw new Error('Media URL not found in Meta response')
   // Meta documents file_size as a number but has been observed sending
@@ -1044,12 +1172,9 @@ export async function downloadMedia(
   args: DownloadMediaArgs
 ): Promise<{ buffer: Buffer; contentType: string }> {
   const { downloadUrl, accessToken } = args
-  const response = await fetch(downloadUrl, {
+  const response = await metaFetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  if (!response.ok) {
-    throw new Error(`Media download failed: ${response.status}`)
-  }
   const contentType =
     response.headers.get('content-type') || 'application/octet-stream'
   const buffer = Buffer.from(await response.arrayBuffer())

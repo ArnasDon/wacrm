@@ -16,7 +16,7 @@ retroactively at the start of Phase 6 — Phases 1–5 are summarized from
 | 5 | Products → claims → vehicles → compatibility → campaigns | Done |
 | 6 | Requests → leads → BA routing → trials → conversions | Done |
 | 7 | Dashboard → analytics → attribution → reports | **Done (this doc)** |
-| 8 | Meta hardening → catalogue sync → TTS/AI/translation providers | Not started (architected: `TranslationService`/`TextToSpeechService` interfaces exist as manual/no-op P0 implementations per §10) |
+| 8 | Meta hardening → catalogue sync → TTS/AI/translation providers | **Done, reduced scope (this doc)** — TTS and AI-assisted translation dropped by product decision, see below |
 
 Other §22 docs (`ARCHITECTURE.md`, `WHATSAPP_FEASIBILITY.md`, `API.md`,
 `DATA_MODEL.md`) are not yet written — out of scope for this pass,
@@ -283,3 +283,208 @@ pre-existing warnings), test (995/995), build. `format:check` reports
 the same pre-existing baseline as before this phase (four already-
 failing files touched, zero newly introduced — see the CHANGELOG
 0.16.0 entry for the exact list and how each was verified).
+
+## Phase 8 — Meta hardening → catalogue sync → TTS/AI/translation providers
+
+**Final phase, reduced scope by product decision** (stated at the
+start of this phase, not discovered mid-build): drop TTS and
+AI-assisted translation entirely rather than architect-and-stub them.
+
+### Dropped: TTS and AI-assisted translation
+
+**Decision: not built, not stubbed, no `TextToSpeechService` or a
+second `TranslationService` implementation.** Rationale:
+
+- §6 already names the P0 path as manual: "Localization (manual — bilingual
+  BAs write translations directly, no AI required)." That path is real,
+  complete, and shipped in Phase 3 (`ContentTranslation` rows, the
+  localization panel, RTL handling for ur/ps/pa).
+- §10 already names BA-recorded audio as the P0 voice-note path, and
+  TTS as explicitly P1: "`TextToSpeechService` and synthesized audio
+  are P1." That P0 path is also real, complete, and shipped in Phase 3
+  (`voice_notes` table, `voice-note-recorder.tsx`, wired into Content
+  Studio) — see the VoiceNote decision below.
+- Unlike WhatsApp catalogue sync (a real Meta product this account
+  simply lacks credentials for — worth architecting now so real
+  credentials drop in later), TTS and AI-translation are a **choice of
+  provider**, not a capability gap: any implementation would mean
+  picking and integrating a specific AI/speech vendor. Building a
+  provider abstraction with no real provider behind it and no decided
+  vendor to target would be speculative work against a requirement
+  the product has explicitly deprioritized — the "don't design for
+  hypothetical future requirements" principle this build has followed
+  throughout every other phase.
+- `TranslationService` still exists exactly as Phase 3 left it: the
+  abstraction point named in §10, currently satisfied by the
+  manual-entry path (a BA typing into `ContentTranslation` fields
+  *is* the interface's only implementation — there was never a
+  separate no-op class to keep or remove). No new code needed here;
+  this section exists to record the decision, per §24's requirement
+  that a P1 item be "implemented or clearly marked
+  architected-but-not-wired," not silently dropped.
+- **If this decision is reversed later:** pick a translation vendor
+  and a TTS vendor first (a product/vendor decision, not an
+  engineering one), then add a second `TranslationService`
+  implementation and a first `TextToSpeechService` implementation
+  behind the existing manual/no-op default — same chokepoint pattern
+  as `resolveWhatsAppService`. No rearchitecting needed; the interface
+  seam already exists.
+
+### VoiceNote — decided: keep, already correctly built
+
+Investigated before assuming this needed work: `voice_notes`
+(migration 046) already has `source TEXT CHECK (source IN ('recorded',
+'tts'))`, `recorded_by`, and `storage_path` in the `chat-media` bucket
+— schema shaped for exactly the P0 BA-recording path from day one.
+Phase 3 already built the full stack on top of it: `POST/GET/DELETE
+/api/content/[id]/voice-notes`, `voice-note-recorder.tsx` (reuses the
+inbox's `opus-recorder`/`MediaRecorder` capture path per §10), wired
+into the Content Studio localization panel. Every write hardcodes
+`source: 'recorded'` — confirmed zero TTS references anywhere in the
+recorder component or its API route.
+
+**Decision: keep as-is, no changes.** This is not a half-built entity
+— it's a complete, working P0 feature that happens to sit on a schema
+column (`source`) wide enough to someday carry a `'tts'` value it will
+never receive now that TTS is dropped. Narrowing the CHECK constraint
+to `'recorded'`-only was considered and rejected: it would be a
+schema change purely for documentation purposes (removing a value
+nothing writes is not a safety improvement), and this codebase's own
+convention elsewhere (e.g. `engagement_events.event_type` carrying
+`LEAD`/`TRIAL`/`CONVERSION` values unused for two full phases before
+Phase 6 wired them) is to let a CHECK constraint describe the full
+intended domain rather than only what's currently wired.
+
+### Reused as-is
+
+- `MetaWhatsAppService` / `DemoWhatsAppService` (`src/lib/whatsapp/service.ts`)
+  — the provider-abstraction pattern this phase's catalogue-sync
+  design mirrors exactly.
+- `whatsapp_sync_log` (migration 048) — schema already existed from
+  Phase 1 with the exact §11 field set; this phase is what finally
+  reads and writes it.
+- The cron-drain / `AUTOMATION_CRON_SECRET` pattern, `chat-media`
+  bucket convention, `is_account_member` RLS helper — no changes.
+- `voice_notes` + its full Phase 3 application stack (see above).
+
+### Extended
+
+- **`src/lib/whatsapp/meta-api.ts`** — every message-send function
+  (`sendTextMessage`, `sendMediaMessage`, `sendTemplateMessage`,
+  `sendReactionMessage`, `sendInteractiveButtons`, `sendInteractiveList`)
+  plus the inbound-media-mirror path (`getMediaUrl`, `downloadMedia`)
+  and `verifyPhoneNumber` now route through a new `metaFetch` helper:
+  exponential-backoff retry on 429/5xx and on `fetch()`-level network
+  failures (honoring Meta's `Retry-After` header), a classified
+  `MetaApiError` (httpStatus/code/type/isRetryable) on terminal
+  failure instead of a bare `Error(message)`, and no retry at all on a
+  non-retryable 4xx (would just burn the rate-limit budget on a
+  request that can't succeed). The lower-frequency account-setup and
+  template-lifecycle calls (`registerPhoneNumber`, `subscribeWabaToApp`,
+  `submitMessageTemplate`, etc.) were deliberately left on the
+  original `throwMetaError` path — lower risk/reward for this pass,
+  not a gap.
+- **`handleStatusUpdate`** (`src/lib/whatsapp/inbound-events.ts`) —
+  Meta's `statuses[].errors[]` detail (previously discarded entirely)
+  now persists onto `broadcast_recipients.error_message` and is always
+  logged server-side, so a failed broadcast recipient is diagnosable
+  instead of just labeled "failed" (§16: "handle explicitly, never
+  silently").
+- **`verifyPhoneNumber`** — now also requests `messaging_limit_tier`
+  (§8). No new column, no migration: the Settings page already called
+  this live on every load/test/save, so the tier is simply one more
+  field read off the same live response and held in component state,
+  never persisted or assumed stale-safe. Renders "Unknown" (not a
+  guessed number) when Meta doesn't return it.
+
+### Net-new
+
+- **`src/lib/products/catalogue-service.ts`** — `ProductCatalogueService`
+  interface, `StubProductCatalogueService` (the only implementation —
+  every call throws `CatalogueNotConfiguredError`, never a fake
+  success), `resolveProductCatalogueService()` as the single
+  chokepoint a future `MetaProductCatalogueService` would branch from.
+  The real Meta endpoint shape (`POST /{catalog_id}/items_batch`) is
+  documented in the file's header — architected, not implemented
+  against real network code, because it cannot be verified without a
+  live Commerce Manager catalog this account doesn't have (§2: never
+  ship unverifiable integration code presented as working).
+- **`POST/GET /api/products/[id]/catalogue-sync`** — every sync
+  attempt writes a real `whatsapp_sync_log` row (it's a log, not a
+  single-status record — no `UNIQUE(product_id)` exists, confirmed
+  against migration 048 before assuming an upsert was safe). A
+  not-configured failure is recorded as `Sync Error` with the real
+  message, returned as `200` with a `warning` field (the route itself
+  didn't fail; the sync attempt's outcome is the error).
+- **`CatalogueSyncCard`** (`src/components/products/catalogue-sync-card.tsx`)
+  — wired into `/products/[id]`: status badge, last-synced time,
+  error message, admin-only "Sync now."
+- **`docs/WHATSAPP_FEASIBILITY.md`** — did not exist before this
+  phase despite being required since §4 Step 1 of the original spec.
+  Written now, verified against Meta's own developer documentation
+  (not memory) via live fetch — see the doc itself for sourcing notes
+  and why several third-party "Communities/Channels API" claims were
+  rejected as unofficial-integration marketing rather than real Cloud
+  API surface.
+
+### Known gaps / deferred
+
+- **Messaging-tier headroom is surfaced in Settings only, not on the
+  Announcements/Broadcasts page, and there is no automatic
+  queue-or-stagger enforcement** when a broadcast would exceed the
+  tier ceiling. §8 asks for both. What's built: the real tier,
+  fetched live, displayed with an honest "Unknown" fallback — the
+  part of §8 this phase's own brief called out explicitly ("surface
+  messaging-tier headroom... display Unknown rather than assuming a
+  number"). What's not built: a rolling-24h "messages sent" counter
+  computed from `broadcast_recipients` compared against the tier
+  ceiling, displayed on the Announcements page, and dispatch-side
+  throttling that defers a send rather than letting it fail mid-flight.
+  This is a real, scoped follow-up (the data to compute "used" already
+  exists in `broadcast_recipients.sent_at`), not a "some day" gap —
+  flagged here rather than silently left off the DoD-relevant surface.
+- **WhatsApp catalogue sync has no real Meta implementation** — by
+  design, per this phase's brief. `MetaProductCatalogueService` is
+  fully specified (endpoint, payload shape, required scope, one
+  catalog per WABA) but not written, because it can't be tested
+  against a real Commerce Manager catalog this account doesn't have.
+  Also unresolved even for a future real implementation: `products`
+  has no price/currency field (§9.1), and WhatsApp catalogue items
+  require one — that's a data-model decision, not just a credential,
+  for whoever picks this up.
+- **`getSubscribedApps`, `editMessageTemplate`, `deleteMessageTemplate`,
+  `uploadResumableMedia`** and the rest of the account-setup/template-
+  lifecycle calls still use the original `throwMetaError` (no retry).
+  Deliberate scope boundary for this pass (see "Extended" above), not
+  an oversight — flagged so a future hardening pass knows exactly
+  what's left rather than re-auditing the whole file.
+
+### Testing
+
+16 new tests:
+
+- `src/lib/whatsapp/meta-api.retry.test.ts` (8) — first-try success
+  makes exactly one `fetch` call; a 429 retries and succeeds; a 500
+  retries `META_MAX_RETRIES` times then throws a classified retryable
+  `MetaApiError`; Meta's `Retry-After` header is honored over the
+  default backoff delay (verified with fake timers down to the
+  second); a non-retryable 400 fails immediately with exactly one
+  `fetch` call; a network-level `fetch()` rejection retries the same
+  as a 5xx; the same retry/classification path applies to
+  `getMediaUrl`, not just message sends.
+- `src/lib/whatsapp/inbound-events.test.ts` (+2) — a `failed` status
+  with Meta's `errors[]` persists a formatted `error_message` onto
+  `broadcast_recipients`; a `failed` status with no `errors` array
+  leaves `error_message` unset (not an empty string or "unknown").
+- `src/lib/products/catalogue-service.test.ts` (2) — the resolver
+  always returns the stub; the stub's `syncProduct`/`deleteProduct`
+  both throw `CatalogueNotConfiguredError`, never a fake success.
+- `src/app/api/products/[id]/catalogue-sync/route.test.ts` (4) —
+  admin-only (GET and POST), 404 on a missing product, a
+  not-configured sync records `Sync Error` and returns 200 with a
+  `warning` (not a 500 — the route did its job), a successful sync
+  records `Synced` with the returned catalogue id.
+
+Full §21 suite green: typecheck, lint, format:check, test, build —
+see the CHANGELOG 0.17.0 entry for exact counts and the format:check
+baseline reconciliation.

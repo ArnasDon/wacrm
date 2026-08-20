@@ -62,6 +62,10 @@ export function WhatsAppConfig() {
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
+  // §8 messaging-limit tier — null means "not fetched yet or Meta
+  // didn't return it," rendered as "Unknown" (§2: never guess a number
+  // Meta doesn't actually give us).
+  const [messagingTier, setMessagingTier] = useState<string | null>(null);
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
   // Guards against re-hydrating the form when the load effect below
@@ -182,14 +186,17 @@ export function WhatsAppConfig() {
             setConnectionStatus('connected');
             setResetReason(null);
             setStatusMessage('');
+            setMessagingTier(payload.phone_info?.messaging_limit_tier ?? null);
           } else {
             setConnectionStatus('disconnected');
             setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
             setStatusMessage(payload.message || '');
+            setMessagingTier(null);
           }
         } catch (err) {
           console.error('Health check failed:', err);
           setConnectionStatus('disconnected');
+          setMessagingTier(null);
         }
       } else {
         setConnectionStatus('disconnected');
@@ -374,6 +381,7 @@ export function WhatsAppConfig() {
         setConnectionStatus('connected');
         setResetReason(null);
         setStatusMessage('');
+        setMessagingTier(payload.phone_info?.messaging_limit_tier ?? null);
         toast.success(
           payload.phone_info?.verified_name
             ? `Connected to ${payload.phone_info.verified_name}`
@@ -383,6 +391,7 @@ export function WhatsAppConfig() {
         setConnectionStatus('disconnected');
         setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
         setStatusMessage(payload.message || '');
+        setMessagingTier(null);
         toast.error(payload.message || 'API connection failed');
       }
     } catch (err) {
@@ -571,6 +580,14 @@ export function WhatsAppConfig() {
               : statusMessage ||
                 t('notConnectedDesc')}
           </AlertDescription>
+          {connectionStatus === 'connected' && (
+            <p className="text-muted-foreground mt-2 text-xs">
+              {t('messagingTierLabel')}{' '}
+              <span className="text-foreground font-medium">
+                {messagingTier ?? t('messagingTierUnknown')}
+              </span>
+            </p>
+          )}
         </Alert>
 
         {/* Registration Status — the "is it actually live?" check.

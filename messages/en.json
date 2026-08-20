@@ -1530,6 +1530,8 @@
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
       "notConnectedDesc": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
+      "messagingTierLabel": "Messaging limit tier (§8):",
+      "messagingTierUnknown": "Unknown",
       "registered": "Registered — Meta will deliver events to wacrm",
       "notRegistered": "Not registered — Meta will not deliver events",
       "verifyWithMeta": "Verify with Meta",

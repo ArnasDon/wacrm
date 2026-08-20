@@ -251,6 +251,74 @@ describe('handleStatusUpdate — engagement events', () => {
 
     expect(writeEngagementEvent).not.toHaveBeenCalled();
   });
+
+  it('persists Meta\'s failure reason onto broadcast_recipients.error_message (Phase 8 hardening)', async () => {
+    currentDb = fakeDb({
+      messages: { onUpdate: () => ({ data: [], error: null }) },
+      broadcast_recipients: {
+        maybeSingle: () => ({
+          data: {
+            id: 'rec-1',
+            status: 'sent',
+            broadcast_id: 'bc-1',
+            contact_id: 'contact-1',
+            broadcasts: { account_id: 'acct-1' },
+          },
+          error: null,
+        }),
+        onUpdate: () => ({ data: [{ id: 'rec-1' }], error: null }),
+      },
+    });
+
+    await handleStatusUpdate({
+      id: 'wamid-1',
+      status: 'failed',
+      timestamp: '1700000000',
+      recipient_id: '',
+      errors: [
+        { code: 131026, title: 'Message undeliverable', error_data: { details: 'Recipient not on WhatsApp' } },
+      ],
+    });
+
+    const recipientUpdate = currentDb.captures.find(
+      (c: { table: string }) => c.table === 'broadcast_recipients'
+    );
+    expect(recipientUpdate?.row).toMatchObject({
+      status: 'failed',
+      error_message: 'Message undeliverable (Recipient not on WhatsApp)',
+    });
+  });
+
+  it('does not set error_message on a failed status with no errors array', async () => {
+    currentDb = fakeDb({
+      messages: { onUpdate: () => ({ data: [], error: null }) },
+      broadcast_recipients: {
+        maybeSingle: () => ({
+          data: {
+            id: 'rec-1',
+            status: 'sent',
+            broadcast_id: 'bc-1',
+            contact_id: 'contact-1',
+            broadcasts: { account_id: 'acct-1' },
+          },
+          error: null,
+        }),
+        onUpdate: () => ({ data: [{ id: 'rec-1' }], error: null }),
+      },
+    });
+
+    await handleStatusUpdate({
+      id: 'wamid-1',
+      status: 'failed',
+      timestamp: '1700000000',
+      recipient_id: '',
+    });
+
+    const recipientUpdate = currentDb.captures.find(
+      (c: { table: string }) => c.table === 'broadcast_recipients'
+    );
+    expect(recipientUpdate?.row.error_message).toBeUndefined();
+  });
 });
 
 describe('handleReaction — engagement events', () => {

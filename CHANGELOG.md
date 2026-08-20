@@ -9,6 +9,114 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.17.0] — 2026-08-20
+
+Completes Phase 8 (§23), the final build phase, with a product-decided
+reduced scope: TTS and AI-assisted translation dropped entirely (see
+below), Meta hardening + WhatsApp catalogue sync stub built instead.
+No schema changes — `whatsapp_sync_log` (migration 048) and
+`voice_notes` (migration 046) already existed from Phase 1/3 with
+exactly the right shape.
+
+### Dropped: TTS and AI-assisted translation
+
+Not built, not stubbed — a deliberate product decision, not an
+oversight. §6 already names manual BA translation (Phase 3, shipped)
+as the P0 path with "no AI required"; §10 already names BA-recorded
+audio (Phase 3, shipped) as the P0 voice-note path with TTS as P1.
+Unlike catalogue sync — a real Meta product this account lacks
+credentials for, worth architecting now — TTS/AI-translation are a
+choice of *provider*, not a capability gap; building an abstraction
+with no chosen vendor behind it would be speculative work against a
+requirement the product has explicitly deprioritized. Full rationale
+and the reversal path in `docs/IMPLEMENTATION_PLAN.md`'s Phase 8
+section, per §24's requirement that a dropped P1 item be recorded, not
+silently omitted.
+
+**VoiceNote — investigated, decided: keep, unchanged.** Not the
+half-built TTS-backed entity it might have been — Phase 3 already
+built the complete BA-recording stack (`voice_notes` table with
+`source CHECK IN ('recorded','tts')`, the `voice-note-recorder.tsx`
+component reusing the inbox's `opus-recorder` capture path, full
+CRUD API) and every write already hardcodes `source: 'recorded'`. No
+changes needed; documented so the next person doesn't rediscover this
+from scratch.
+
+### Added
+
+- **`docs/WHATSAPP_FEASIBILITY.md`** — required since §4 Step 1 of the
+  original spec, never written by any prior phase. Verified against
+  Meta's own developer documentation via live fetch (not memory),
+  including rejecting several third-party "Communities/Channels API"
+  claims as unofficial-integration marketing rather than real Cloud
+  API surface (§3's non-negotiable rule).
+- **Meta API retry hardening** (`src/lib/whatsapp/meta-api.ts`) — a
+  new `metaFetch` wrapper now backs every message-send function plus
+  `getMediaUrl`/`downloadMedia`/`verifyPhoneNumber`: exponential
+  backoff + jitter on 429/5xx and on `fetch()`-level network failures,
+  honoring Meta's `Retry-After` header, and a classified `MetaApiError`
+  (httpStatus/code/type/isRetryable) on terminal failure instead of a
+  bare `Error`. Non-retryable 4xx failures still fail on the first
+  attempt — retrying an unfixable request only burns rate-limit budget.
+- **Webhook failure detail capture** — Meta's `statuses[].errors[]`
+  array (previously discarded entirely) now persists onto
+  `broadcast_recipients.error_message` and is always logged, so a
+  failed broadcast recipient is diagnosable instead of just labeled
+  "failed" (§16).
+- **Messaging-limit tier surfaced in Settings** (§8) —
+  `verifyPhoneNumber` now also requests `messaging_limit_tier`; the
+  WhatsApp Settings panel displays it (or "Unknown" — never a guessed
+  number, §2) next to the connection status. No new column: the
+  Settings page already called this live on every load/test/save.
+- **`ProductCatalogueService`** (`src/lib/products/catalogue-service.ts`,
+  §11 P1) — interface + `StubProductCatalogueService` (every call
+  throws `CatalogueNotConfiguredError`, never a fake success) +
+  `resolveProductCatalogueService()` as the chokepoint a real
+  `MetaProductCatalogueService` would branch from later. The real
+  Meta endpoint (`POST /{catalog_id}/items_batch`) is fully documented
+  in the file's header — architected, not implemented against
+  unverifiable network code.
+- **`POST/GET /api/products/[id]/catalogue-sync`** + a
+  `CatalogueSyncCard` on `/products/[id]` — every sync attempt writes
+  a real `whatsapp_sync_log` row; a not-configured attempt is recorded
+  as `Sync Error` with the real message and returns `200` (the route
+  did its job; the sync attempt's outcome is the error, not a route
+  failure).
+
+### Known gaps (flagged, not silently dropped)
+
+- Messaging-tier headroom is surfaced in Settings only — not on the
+  Announcements/Broadcasts page, and there is no automatic
+  queue-or-stagger enforcement when a broadcast would exceed the tier
+  ceiling. §8 asks for both; what's built covers this phase's own
+  explicit brief ("surface... display Unknown"). The data to compute
+  a rolling-24h "used" count already exists
+  (`broadcast_recipients.sent_at`) — a scoped follow-up, not a "some
+  day" gap.
+- `MetaProductCatalogueService` (the real Meta implementation) is
+  fully specified but not written — untestable without a live
+  Commerce Manager catalog this account doesn't have. Also: `products`
+  has no price/currency field, which a real catalogue item requires —
+  a data-model decision for whoever picks this up, not just a
+  credential.
+- `registerPhoneNumber`, `subscribeWabaToApp`, `getSubscribedApps`,
+  `submitMessageTemplate`, `editMessageTemplate`,
+  `deleteMessageTemplate`, `uploadResumableMedia` still use the
+  original non-retrying `throwMetaError` path — deliberate scope
+  boundary (lower-frequency account-setup/template-lifecycle calls),
+  not an oversight.
+
+18 new tests (Meta retry/backoff/classification incl. fake-timer
+`Retry-After` precision, webhook error-detail capture, the catalogue
+stub's honest-failure contract, the sync route's admin-gating and
+200-with-warning-on-not-configured behavior). Full §21 suite green:
+typecheck, lint (0 errors, unchanged 37 pre-existing warnings), test
+(1013/1013 — 995 existing + 18 new), and build all pass. format:check
+reports the same pre-existing baseline as before this phase (seven
+already-failing files touched — confirmed against their pre-phase
+`HEAD` content before assuming so — zero newly introduced; every
+wholly new file is Prettier-clean).
+
 ## [0.16.0] — 2026-08-20
 
 Completes Phase 7 (§23): Dashboard → analytics → attribution → reports.

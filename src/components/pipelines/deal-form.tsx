@@ -197,7 +197,7 @@ export function DealForm({
       }
       const { error } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "NEW" });
       if (error) {
         toast.error(t("toastFailedCreate"));
         setSaving(false);
@@ -224,7 +224,7 @@ export function DealForm({
       return;
     }
     toast.success(
-      status === "won" ? t("toastMarkedWon") : status === "lost" ? t("toastMarkedLost") : t("toastReopened"),
+      status === "CONVERTED" ? t("toastMarkedWon") : status === "LOST" ? t("toastMarkedLost") : t("toastReopened"),
     );
     onOpenChange(false);
     onSaved();
@@ -384,11 +384,11 @@ export function DealForm({
                 <div className="flex gap-2">
                   <Button
                     type="button"
-                    onClick={() => handleStatusChange("won")}
-                    disabled={!!statusAction || deal.status === "won"}
+                    onClick={() => handleStatusChange("CONVERTED")}
+                    disabled={!!statusAction || deal.status === "CONVERTED"}
                     className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                   >
-                    {statusAction === "won" ? (
+                    {statusAction === "CONVERTED" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
@@ -399,11 +399,11 @@ export function DealForm({
                   </Button>
                   <Button
                     type="button"
-                    onClick={() => handleStatusChange("lost")}
-                    disabled={!!statusAction || deal.status === "lost"}
+                    onClick={() => handleStatusChange("LOST")}
+                    disabled={!!statusAction || deal.status === "LOST"}
                     className="flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    {statusAction === "lost" ? (
+                    {statusAction === "LOST" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
@@ -413,11 +413,11 @@ export function DealForm({
                     )}
                   </Button>
                 </div>
-                {deal.status && deal.status !== "open" && (
+                {deal.status && (deal.status === "CONVERTED" || deal.status === "LOST") && (
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => handleStatusChange("open")}
+                    onClick={() => handleStatusChange("NEW")}
                     disabled={!!statusAction}
                     className="w-full text-muted-foreground hover:text-foreground"
                   >

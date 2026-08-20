@@ -1,5 +1,5 @@
-import type { AccountRole } from "@/lib/auth/roles";
-import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+import type { AccountRole } from '@/lib/auth/roles';
+import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
 export type {
   InteractiveMessagePayload,
@@ -8,7 +8,7 @@ export type {
   InteractiveButton,
   InteractiveListRow,
   InteractiveListSection,
-} from "@/lib/whatsapp/interactive";
+} from '@/lib/whatsapp/interactive';
 
 export interface Profile {
   id: string;
@@ -75,6 +75,19 @@ export interface AccountMember {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  /** BA fields (migration 051, §9.1) — present for every member, but
+   *  only meaningful once an admin has configured them via
+   *  `PATCH /api/account/members/[userId]/ba-profile`. */
+  ba?: {
+    region_id: string | null;
+    region_name: string | null;
+    market_id: string | null;
+    market_name: string | null;
+    ba_status: 'active' | 'inactive' | 'on_leave';
+    open_leads: number;
+    capacity: number;
+    languages: string[];
+  };
 }
 
 /**
@@ -87,7 +100,7 @@ export interface AccountInvitation {
   id: string;
   account_id: string;
   /** Roles offered via invite — owner is never offered. */
-  role: Exclude<AccountRole, "owner">;
+  role: Exclude<AccountRole, 'owner'>;
   created_by_user_id: string | null;
   label: string | null;
   created_at: string;
@@ -216,7 +229,8 @@ export type ContentType =
   | 'template'
   /** Customer tapped a reply button or list row on a message we sent. */
   | 'interactive';
-export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+export type MessageStatus =
+  'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
   id: string;
@@ -364,7 +378,19 @@ export interface PipelineStage {
   created_at: string;
 }
 
-export type DealStatus = 'open' | 'won' | 'lost';
+// Widened by migration 055 (§9.0/§23 Phase 6: `deals` extended into
+// `Lead`) from the original 'open'|'won'|'lost'. Old rows are
+// remapped by the migration itself (open->NEW, won->CONVERTED,
+// lost->LOST) — no code should compare against the pre-055 values.
+export type DealStatus =
+  | 'NEW'
+  | 'ASSIGNED'
+  | 'CONTACTED'
+  | 'INTERESTED'
+  | 'TRIAL_REQUESTED'
+  | 'TRIAL_COMPLETED'
+  | 'CONVERTED'
+  | 'LOST';
 
 export interface Deal {
   id: string;
@@ -377,7 +403,18 @@ export interface Deal {
    */
   contact_id: string | null;
   conversation_id?: string;
+  /** profiles.id (the internal PK, not user_id — migration 002). */
   assigned_to?: string;
+  // ---- Lead fields, migration 055 (§9.0/§9.1, §23 Phase 6) ----
+  source?: string;
+  campaign_id?: string | null;
+  original_content_id?: string | null;
+  market_id?: string | null;
+  region_id?: string | null;
+  next_follow_up?: string | null;
+  last_contacted?: string | null;
+  outcome?: string | null;
+  routing_reason?: string | null;
   title: string;
   value: number;
   currency?: string;
@@ -391,8 +428,10 @@ export interface Deal {
   assignee?: Profile;
 }
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
-export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
+export type BroadcastStatus =
+  'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
+export type RecipientStatus =
+  'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
 export interface Broadcast {
   id: string;
@@ -574,10 +613,7 @@ export interface WaitStepConfig {
 }
 
 export type ConditionSubject =
-  | 'contact_field'
-  | 'tag_presence'
-  | 'message_content'
-  | 'time_of_day';
+  'contact_field' | 'tag_presence' | 'message_content' | 'time_of_day';
 
 export interface ConditionStepConfig {
   subject: ConditionSubject;

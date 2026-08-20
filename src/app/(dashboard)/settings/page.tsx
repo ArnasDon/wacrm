@@ -17,6 +17,7 @@ import { QuickRepliesManager } from '@/components/settings/quick-replies-manager
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
+import { BaRoutingSettings } from '@/components/settings/ba-routing-settings';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
@@ -66,7 +67,7 @@ function SettingsPageInner() {
       appearance: mode.charAt(0).toUpperCase() + mode.slice(1),
       deals: defaultCurrency,
     }),
-    [mode, defaultCurrency],
+    [mode, defaultCurrency]
   );
 
   const panel: Record<SettingsSection, ReactNode> = {
@@ -80,18 +81,17 @@ function SettingsPageInner() {
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
     members: <MembersTab />,
+    'ba-routing': <BaRoutingSettings />,
     api: <ApiKeysSettings />,
   };
 
   return (
     <div>
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="text-foreground text-2xl font-bold tracking-tight">
           {t('pageTitle')}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('pageDesc')}
-        </p>
+        <p className="text-muted-foreground mt-1 text-sm">{t('pageDesc')}</p>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">

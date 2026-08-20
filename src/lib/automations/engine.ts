@@ -579,7 +579,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         title: interpolate(cfg.title, args),
         value: cfg.value ?? 0,
         currency: acct?.default_currency ?? 'USD',
-        status: 'open',
+        // 'open' -> 'NEW' per migration 055's status widening (deals
+        // extended into Lead, §9.0/§23 Phase 6).
+        status: 'NEW',
       })
       return 'deal created'
     }

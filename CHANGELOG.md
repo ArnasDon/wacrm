@@ -9,6 +9,102 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.15.0] — 2026-08-20
+
+Completes Phase 6 (§23): `CustomerRequest → Lead → BA routing → Trial →
+Conversion` — the second half of the funnel, on top of Phase 5's
+Products/Campaigns. `customer_requests` and `trials` already existed
+as schema from Phase 1 (migrations 044/045); this phase wires the
+routing logic, the API, and the UI over them, and finally extends
+`deals` into `Lead` per §9.0's long-standing correction.
+
+**Migration required:**
+`supabase/migrations/055_rimula_leads.sql`,
+`supabase/migrations/056_rimula_ba_routing.sql`
+
+### Added
+
+- **`deals` extended into `Lead`** (055) — `status` widened from the
+  original `'open'|'won'|'lost'` to the 8-value funnel enum
+  (`NEW, ASSIGNED, CONTACTED, INTERESTED, TRIAL_REQUESTED,
+  TRIAL_COMPLETED, CONVERTED, LOST`), same drop-and-recreate-the-CHECK
+  pattern as migrations 002/014/016. Existing rows are remapped
+  (`open→NEW`, `won→CONVERTED`, `lost→LOST`), not left stranded on the
+  old values. New columns: `source`, `campaign_id`, `original_content_id`
+  (→ `content`), `market_id`/`region_id` (→ migration 049's lookup
+  tables), `next_follow_up`, `last_contacted`, `outcome`,
+  `routing_reason`. `assigned_to` (migration 002, → `profiles.id`) and
+  `contact_id` (already `NOT NULL`) map directly to `assignedBA` and
+  `customer` — no new columns needed for those.
+- **§12 `LeadRoutingService`** (`src/lib/routing/service.ts`) — the
+  Market BA → Regional BA → Unassigned cascade, with a per-account
+  configurable strategy (`round_robin`, `lowest_open_leads`, `manual`)
+  read from the new `ba_routing_settings` table (056). Every decision's
+  reason is stamped onto the assigned row's own `routing_reason`
+  column (`customer_requests`, `deals`, `trials` all have one now)
+  rather than a separate audit table. `profiles.open_leads` is kept
+  atomic via the new `adjust_ba_open_leads` SECURITY DEFINER RPC;
+  round-robin state via `advance_ba_routing_cursor`.
+- **`set_ba_profile_fields` RPC** (056) — the admin-editable half of
+  migration 051's BA fields (region/market/capacity/status/languages).
+  `profiles_update` RLS only lets a user edit their own row, so this
+  mirrors migration 018's `set_member_role` pattern rather than adding
+  a second, broader UPDATE policy.
+- **API**: `POST/GET /api/customer-requests` (+ `[id]`, +
+  `[id]/convert` to qualify a request into a Lead),
+  `POST/GET /api/leads` (+ `[id]`), `POST/GET /api/trials` (+ `[id]`),
+  `GET/PATCH /api/settings/ba-routing`,
+  `PATCH /api/account/members/[userId]/ba-profile`. Every create path
+  runs through `LeadRoutingService`; every CONVERTED/CANCELLED
+  transition closes the row out of its assignee's open-lead count and
+  (CONVERTED only) writes an `engagement_events` `CONVERSION` row and
+  a `product_interactions` `conversion` row — the `LEAD`/`TRIAL`/
+  `CONVERSION` event types added to `src/lib/whatsapp/engagement.ts`
+  in Phase 4 but left unused until now. A Trial converting also closes
+  out its linked Lead (`trials.deal_id`) without double-firing the
+  CONVERSION event.
+- **UI**: new "Leads" nav entry (§7) at `/leads` — Requests / Leads /
+  Trials tabs, status changes, "Convert to Lead," and a "My queue
+  only" filter. New Settings → "BA routing" section: strategy
+  selector plus a per-BA region/market/capacity/status/languages
+  editor. (Markets/Regions themselves still have no dedicated
+  management UI — §15 lists them as their own Settings area, not
+  built in this phase; routing falls back to Unassigned when none
+  exist.)
+
+### Changed
+
+- Every existing reader of `deals.status` updated for the widened
+  enum: the Pipelines Kanban board's Won/Lost badges and actions
+  (`deal-card.tsx`, `deal-form.tsx`, `pipeline-analytics.tsx`), the
+  contact detail view's deal badge, the dashboard's "open pipeline
+  value" queries (now `status IN (<6 non-terminal values>)` instead of
+  the single literal `'open'`), and the automations engine's
+  `create_deal` step. Marking a deal Won/Lost from the Pipelines
+  Kanban board still writes directly to `deals` (unchanged
+  client-side-Supabase pattern) and does **not** go through
+  `LeadRoutingService`'s open-lead bookkeeping or fire a `CONVERSION`
+  event — only `PATCH /api/leads/[id]` does. The new `/leads` UI is
+  the intended surface for Lead-specific lifecycle actions; Pipelines
+  remains the general-purpose Kanban tool it always was.
+
+### Known gaps
+
+- No seed data yet for `customer_requests`/`deals`-as-Lead/`trials` —
+  §19's seed script still only covers Phases 1–5. The funnel is
+  exercisable end-to-end through the UI/API but starts empty.
+- No Markets/Regions management UI (§15) — routing and the BA profile
+  editor both degrade gracefully to "Unassigned" / empty pickers until
+  an admin creates rows in those tables directly.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (986/986 — 944 existing + 42 new), and build all pass.
+format:check reports the same pre-existing baseline as before this
+change (two files — `src/lib/automations/engine.ts`,
+`src/components/pipelines/deal-form.tsx` — were already failing it
+before this phase touched them; this phase's own new/edited lines are
+clean).
+
 ## [0.14.2] — 2026-08-20
 
 Investigates `GET /api/content/cron` reporting `{"sent":0}` for a

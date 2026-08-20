@@ -37,6 +37,11 @@ export interface WriteEngagementEventInput {
    *  (§20). Callers should never invent a third value casually; the
    *  seed script's 'demo_seed' is the third, seed-time-only case. */
   source: string;
+  /** Explicit campaign attribution for callers that already know it
+   *  directly (e.g. a Lead/CustomerRequest/Trial's own `campaign_id`
+   *  column) rather than through a `postId` -> broadcast -> content
+   *  chain. Takes priority over the `postId` resolution below. */
+  campaignId?: string | null;
   /** Never put customer message text in here — §16 explicitly calls
    *  out `flow_run_events` storing reply *length*, not content, for
    *  this exact reason. Keep the same discipline here. */
@@ -57,9 +62,10 @@ export async function writeEngagementEvent(
     // campaign_id is reachable via broadcasts.content_id ->
     // content.campaign_id (migrations 046/053) — resolved here so
     // every caller gets it for free rather than each doing its own
-    // two-table walk.
-    let campaignId: string | null = null;
-    if (input.postId) {
+    // two-table walk. An explicit `campaignId` (Phase 6 callers that
+    // already have it on their own row) skips this lookup entirely.
+    let campaignId: string | null = input.campaignId ?? null;
+    if (!campaignId && input.postId) {
       const { data: broadcast } = await db
         .from('broadcasts')
         .select('content_id')

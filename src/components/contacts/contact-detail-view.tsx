@@ -6,7 +6,16 @@ import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
+import type {
+  Contact,
+  Tag,
+  ContactTag,
+  ContactNote,
+  CustomField,
+  ContactCustomValue,
+  Deal,
+  MessageTemplate,
+} from '@/types';
 import {
   TemplatePicker,
   type TemplateSendValues,
@@ -122,7 +131,10 @@ export function ContactDetailView({
 
     const [tagsRes, contactTagsRes] = await Promise.all([
       supabase.from('tags').select('*').order('name'),
-      supabase.from('contact_tags').select('tag_id').eq('contact_id', contactId),
+      supabase
+        .from('contact_tags')
+        .select('tag_id')
+        .eq('contact_id', contactId),
     ]);
 
     if (tagsRes.data) setAllTags(tagsRes.data);
@@ -188,7 +200,15 @@ export function ContactDetailView({
       fetchCustomFields();
       fetchDeals();
     }
-  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+  }, [
+    open,
+    contactId,
+    fetchContact,
+    fetchTags,
+    fetchNotes,
+    fetchCustomFields,
+    fetchDeals,
+  ]);
 
   async function copyPhone() {
     if (!contact) return;
@@ -241,7 +261,9 @@ export function ContactDetailView({
       }
       onUpdated();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('toastUpdateFailed'));
+      toast.error(
+        error instanceof Error ? error.message : t('toastUpdateFailed')
+      );
     }
     setSavingTags(false);
   }
@@ -326,7 +348,7 @@ export function ContactDetailView({
 
   async function handleSendTemplate(
     template: MessageTemplate,
-    values: TemplateSendValues,
+    values: TemplateSendValues
   ) {
     if (!contactId) return;
     setSendingTemplate(true);
@@ -378,382 +400,415 @@ export function ContactDetailView({
 
   return (
     <>
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
-      >
-        {loading || !contact ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="size-6 animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="flex flex-col h-full">
-            {/* Header */}
-            <SheetHeader className="p-4 border-b border-border/50">
-              <div className="flex items-center gap-3">
-                <Avatar className="size-12 bg-muted border border-border">
-                  <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                    {getInitials(contact.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <SheetTitle className="text-popover-foreground truncate">
-                    {contact.name || t('unnamed')}
-                  </SheetTitle>
-                  <SheetDescription className="text-muted-foreground text-xs mt-0.5">
-                    {t('contactDetailsDesc')}
-                  </SheetDescription>
-                  <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                    <button
-                      onClick={copyPhone}
-                      className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
-                    >
-                      <Phone className="size-3" />
-                      {contact.phone}
-                      {copiedPhone ? (
-                        <Check className="size-3 text-primary" />
-                      ) : (
-                        <Copy className="size-3" />
-                      )}
-                    </button>
-                    {contact.email && (
-                      <span className="flex items-center gap-1">
-                        <Mail className="size-3" />
-                        {contact.email}
-                      </span>
-                    )}
-                    {contact.company && (
-                      <span className="flex items-center gap-1">
-                        <Building2 className="size-3" />
-                        {contact.company}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3">
-                <Button
-                  size="sm"
-                  onClick={() => setTemplatePickerOpen(true)}
-                  disabled={sendingTemplate}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
-                >
-                  {sendingTemplate ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <LayoutTemplate className="size-4" />
-                  )}
-                  {t('sendTemplateBtn')}
-                </Button>
-              </div>
-            </SheetHeader>
-
-            {/* Tabs */}
-            <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-              <TabsList className="bg-muted/50 border-b border-border mx-4 mt-3">
-                <TabsTrigger
-                  value="details"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-                >
-                  {t('tabs.details')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="tags"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-                >
-                  {t('tabs.tags')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="notes"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-                >
-                  {t('tabs.notes')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="custom"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-                >
-                  {t('tabs.custom')}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="deals"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
-                >
-                  {t('tabs.deals')}
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Details Tab */}
-              <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('name')}</Label>
-                    <Input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">
-                      {t('phone')} <span className="text-red-400">*</span>
-                    </Label>
-                    <Input
-                      value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('email')}</Label>
-                    <Input
-                      value={editEmail}
-                      onChange={(e) => setEditEmail(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('company')}</Label>
-                    <Input
-                      value={editCompany}
-                      onChange={(e) => setEditCompany(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
-                    />
-                  </div>
-                  <Button
-                    onClick={saveDetails}
-                    disabled={savingDetails}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
-                    size="sm"
-                  >
-                    {savingDetails ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Save className="size-3.5" />
-                    )}
-                    {t('saveChangesBtn')}
-                  </Button>
-                </div>
-              </TabsContent>
-
-              {/* Tags Tab */}
-              <TabsContent value="tags" className="flex-1 overflow-y-auto px-4 py-3">
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    {t('tagsTab.clickTagDesc')}
-                  </p>
-                  {allTags.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      {t('tagsTab.noTagsAvailable')}
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {allTags.map((tag) => {
-                        const selected = contactTagIds.includes(tag.id);
-                        return (
-                          <button
-                            key={tag.id}
-                            onClick={() => toggleTag(tag.id)}
-                            disabled={savingTags}
-                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                              selected
-                                ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
-                                : 'opacity-50 hover:opacity-80'
-                            }`}
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {selected && <Check className="size-3 mr-1" />}
-                            {tag.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-
-              {/* Notes Tab */}
-              <TabsContent value="notes" className="flex-1 flex flex-col min-h-0 px-4 py-3">
-                <div className="space-y-2 mb-3">
-                  <Textarea
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
-                    placeholder={t('notesTab.placeholder')}
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground min-h-[60px] text-sm resize-none"
-                  />
-                  <Button
-                    onClick={addNote}
-                    disabled={!newNote.trim() || savingNote}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                    size="sm"
-                  >
-                    {savingNote ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="size-3.5" />
-                    )}
-                    {t('notesTab.save')}
-                  </Button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {loadingNotes ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : notes.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      {t('notesTab.noNotes')}
-                    </p>
-                  ) : (
-                    notes.map((note) => (
-                      <div
-                        key={note.id}
-                        className="rounded-lg bg-muted/50 border border-border/50 p-3 group"
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="right"
+          className="bg-popover border-border text-popover-foreground w-full p-0 sm:max-w-lg"
+        >
+          {loading || !contact ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="text-primary size-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="flex h-full flex-col">
+              {/* Header */}
+              <SheetHeader className="border-border/50 border-b p-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="bg-muted border-border size-12 border">
+                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                      {getInitials(contact.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <SheetTitle className="text-popover-foreground truncate">
+                      {contact.name || t('unnamed')}
+                    </SheetTitle>
+                    <SheetDescription className="text-muted-foreground mt-0.5 text-xs">
+                      {t('contactDetailsDesc')}
+                    </SheetDescription>
+                    <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-3 text-xs">
+                      <button
+                        onClick={copyPhone}
+                        className="hover:text-primary flex cursor-pointer items-center gap-1 transition-colors"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap flex-1">
-                            {note.note_text}
-                          </p>
-                          <button
-                            onClick={() => deleteNote(note.id)}
-                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all cursor-pointer shrink-0"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1.5">
-                          {new Date(note.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </TabsContent>
-
-              {/* Custom Fields Tab */}
-              <TabsContent value="custom" className="flex-1 overflow-y-auto px-4 py-3">
-                {loadingCustom ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                        <Phone className="size-3" />
+                        {contact.phone}
+                        {copiedPhone ? (
+                          <Check className="text-primary size-3" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                      {contact.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="size-3" />
+                          {contact.email}
+                        </span>
+                      )}
+                      {contact.company && (
+                        <span className="flex items-center gap-1">
+                          <Building2 className="size-3" />
+                          {contact.company}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                ) : customFields.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    {t('noCustomFields')}
-                  </p>
-                ) : (
+                </div>
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    onClick={() => setTemplatePickerOpen(true)}
+                    disabled={sendingTemplate}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {sendingTemplate ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <LayoutTemplate className="size-4" />
+                    )}
+                    {t('sendTemplateBtn')}
+                  </Button>
+                </div>
+              </SheetHeader>
+
+              {/* Tabs */}
+              <Tabs
+                defaultValue="details"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <TabsList className="bg-muted/50 border-border mx-4 mt-3 border-b">
+                  <TabsTrigger
+                    value="details"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.details')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="tags"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.tags')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="notes"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.notes')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="custom"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.custom')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="deals"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.deals')}
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Details Tab */}
+                <TabsContent
+                  value="details"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
                   <div className="space-y-3">
-                    {customFields.map((field) => (
-                      <div key={field.id} className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs capitalize">
-                          {field.field_name}
-                        </Label>
-                        <Input
-                          value={customValues[field.id] ?? ''}
-                          onChange={(e) =>
-                            setCustomValues((prev) => ({
-                              ...prev,
-                              [field.id]: e.target.value,
-                            }))
-                          }
-                          placeholder={t('enterCustomField', { name: field.field_name })}
-                          className="bg-muted border-border text-foreground h-8 text-sm placeholder:text-muted-foreground"
-                        />
-                      </div>
-                    ))}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('name')}
+                      </Label>
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('phone')} <span className="text-red-400">*</span>
+                      </Label>
+                      <Input
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('email')}
+                      </Label>
+                      <Input
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('company')}
+                      </Label>
+                      <Input
+                        value={editCompany}
+                        onChange={(e) => setEditCompany(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
                     <Button
-                      onClick={saveCustomFields}
-                      disabled={savingCustom}
+                      onClick={saveDetails}
+                      disabled={savingDetails}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
                       size="sm"
                     >
-                      {savingCustom ? (
+                      {savingDetails ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : (
                         <Save className="size-3.5" />
                       )}
-                      {t('saveCustomFieldsBtn')}
+                      {t('saveChangesBtn')}
                     </Button>
                   </div>
-                )}
-              </TabsContent>
+                </TabsContent>
 
-              {/* Deals Tab */}
-              <TabsContent value="deals" className="flex-1 overflow-y-auto px-4 py-3">
-                {loadingDeals ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="size-5 animate-spin text-primary" />
-                  </div>
-                ) : deals.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t('dealsTab.noDeals')}</p>
-                ) : (
-                  <div className="space-y-2">
-                    {deals.map((deal) => (
-                      <div
-                        key={deal.id}
-                        className="rounded-lg border border-border bg-muted/50 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-foreground">
-                            {deal.title}
-                          </p>
-                          {deal.stage && (
-                            <span
-                              className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                {/* Tags Tab */}
+                <TabsContent
+                  value="tags"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  <div className="space-y-3">
+                    <p className="text-muted-foreground text-xs">
+                      {t('tagsTab.clickTagDesc')}
+                    </p>
+                    {allTags.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        {t('tagsTab.noTagsAvailable')}
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {allTags.map((tag) => {
+                          const selected = contactTagIds.includes(tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              onClick={() => toggleTag(tag.id)}
+                              disabled={savingTags}
+                              className={`inline-flex cursor-pointer items-center rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                                selected
+                                  ? 'ring-primary ring-offset-border ring-2 ring-offset-1'
+                                  : 'opacity-50 hover:opacity-80'
+                              }`}
                               style={{
-                                backgroundColor: `${deal.stage.color}20`,
-                                color: deal.stage.color,
+                                backgroundColor: tag.color + '20',
+                                color: tag.color,
                               }}
                             >
-                              {deal.stage.name}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="size-3" />
-                            {formatCurrency(
-                              deal.value ?? 0,
-                              deal.currency || defaultCurrency,
-                            )}
-                          </span>
-                          {deal.status && deal.status !== 'open' && (
-                            <span
-                              className={
-                                deal.status === 'won'
-                                  ? 'text-primary'
-                                  : 'text-red-400'
-                              }
-                            >
-                              {deal.status}
-                            </span>
-                          )}
-                        </div>
+                              {selected && <Check className="mr-1 size-3" />}
+                              {tag.name}
+                            </button>
+                          );
+                        })}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
-      </SheetContent>
-    </Sheet>
-    <TemplatePicker
-      open={templatePickerOpen}
-      onOpenChange={setTemplatePickerOpen}
-      onSelect={handleSendTemplate}
-    />
+                </TabsContent>
+
+                {/* Notes Tab */}
+                <TabsContent
+                  value="notes"
+                  className="flex min-h-0 flex-1 flex-col px-4 py-3"
+                >
+                  <div className="mb-3 space-y-2">
+                    <Textarea
+                      value={newNote}
+                      onChange={(e) => setNewNote(e.target.value)}
+                      placeholder={t('notesTab.placeholder')}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground min-h-[60px] resize-none text-sm"
+                    />
+                    <Button
+                      onClick={addNote}
+                      disabled={!newNote.trim() || savingNote}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                      size="sm"
+                    >
+                      {savingNote ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="size-3.5" />
+                      )}
+                      {t('notesTab.save')}
+                    </Button>
+                  </div>
+
+                  <div className="flex-1 space-y-2 overflow-y-auto">
+                    {loadingNotes ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                      </div>
+                    ) : notes.length === 0 ? (
+                      <p className="text-muted-foreground py-8 text-center text-sm">
+                        {t('notesTab.noNotes')}
+                      </p>
+                    ) : (
+                      notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-muted/50 border-border/50 group rounded-lg border p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-muted-foreground flex-1 text-sm whitespace-pre-wrap">
+                              {note.note_text}
+                            </p>
+                            <button
+                              onClick={() => deleteNote(note.id)}
+                              className="text-muted-foreground shrink-0 cursor-pointer opacity-0 transition-all group-hover:opacity-100 hover:text-red-400"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-muted-foreground mt-1.5 text-xs">
+                            {new Date(note.created_at).toLocaleDateString(
+                              'en-US',
+                              {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }
+                            )}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </TabsContent>
+
+                {/* Custom Fields Tab */}
+                <TabsContent
+                  value="custom"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  {loadingCustom ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                    </div>
+                  ) : customFields.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      {t('noCustomFields')}
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {customFields.map((field) => (
+                        <div key={field.id} className="space-y-1.5">
+                          <Label className="text-muted-foreground text-xs capitalize">
+                            {field.field_name}
+                          </Label>
+                          <Input
+                            value={customValues[field.id] ?? ''}
+                            onChange={(e) =>
+                              setCustomValues((prev) => ({
+                                ...prev,
+                                [field.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={t('enterCustomField', {
+                              name: field.field_name,
+                            })}
+                            className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-sm"
+                          />
+                        </div>
+                      ))}
+                      <Button
+                        onClick={saveCustomFields}
+                        disabled={savingCustom}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
+                        size="sm"
+                      >
+                        {savingCustom ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Save className="size-3.5" />
+                        )}
+                        {t('saveCustomFieldsBtn')}
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Deals Tab */}
+                <TabsContent
+                  value="deals"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  {loadingDeals ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="text-primary size-5 animate-spin" />
+                    </div>
+                  ) : deals.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      {t('dealsTab.noDeals')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {deals.map((deal) => (
+                        <div
+                          key={deal.id}
+                          className="border-border bg-muted/50 rounded-lg border p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-foreground text-sm font-medium">
+                              {deal.title}
+                            </p>
+                            {deal.stage && (
+                              <span
+                                className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                                style={{
+                                  backgroundColor: `${deal.stage.color}20`,
+                                  color: deal.stage.color,
+                                }}
+                              >
+                                {deal.stage.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground mt-1.5 flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="size-3" />
+                              {formatCurrency(
+                                deal.value ?? 0,
+                                deal.currency || defaultCurrency
+                              )}
+                            </span>
+                            {deal.status &&
+                              (deal.status === 'CONVERTED' ||
+                                deal.status === 'LOST') && (
+                                <span
+                                  className={
+                                    deal.status === 'CONVERTED'
+                                      ? 'text-primary'
+                                      : 'text-red-400'
+                                  }
+                                >
+                                  {deal.status}
+                                </span>
+                              )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+      <TemplatePicker
+        open={templatePickerOpen}
+        onOpenChange={setTemplatePickerOpen}
+        onSelect={handleSendTemplate}
+      />
     </>
   );
 }

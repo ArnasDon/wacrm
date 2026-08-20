@@ -3776,3 +3776,35 @@ exista).
 Verificado: `tsc --noEmit` limpio, `eslint` limpio, `next build`
 completo, `vitest run` en verde (1105 tests — salvo los 2 fallos
 preexistentes conocidos de `date-utils.test.ts`).
+
+---
+
+**2026-08-20 — Claude Code — "Reportar pago" ahora exige foto del
+comprobante de depósito.**
+
+Angel pidió que la opción de Facturación (Settings → Facturación →
+"Reportar pago") pida una foto del depósito. Antes el botón solo
+enviaba un correo a `asistentedechat@gmail.com` con el nombre de la
+empresa y los datos bancarios de referencia — sin ninguna prueba del
+pago. No existe ninguna tabla que persista los reportes de pago (el
+correo ES el registro), así que en vez de crear un bucket de Storage
+nuevo con RLS, se aprovechó que `sendEmail()`
+(`src/lib/email/send.ts`) ya soporta `attachments`.
+
+**Trabajo:**
+- `src/app/api/billing/report-payment/route.ts` — ahora recibe
+  `multipart/form-data` con un campo `receipt` (antes no tomaba body).
+  Valida que exista, que sea imagen (`image/png|jpeg|webp`) y que pese
+  ≤5 MB (mismo tope que otros uploads de imagen del proyecto), y lo
+  adjunta al correo como `EmailAttachment`.
+- `src/components/settings/billing.tsx` — agrega un selector de
+  archivo con preview (thumbnail + botón de quitar), mismas
+  validaciones que el backend antes de enviar, y el botón "Reportar
+  pago" queda deshabilitado hasta que haya un archivo adjunto. Envía
+  `FormData` en vez de un POST sin body.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1111 tests),
+sin diff en `package-lock.json`. Commit `24cb46d`, pusheado a `main`
+con confirmación de Angel — EasyPanel despliega automáticamente por
+webhook.

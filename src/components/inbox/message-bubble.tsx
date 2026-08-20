@@ -110,7 +110,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="select-text whitespace-pre-wrap break-words text-sm">
           {message.content_text}
         </p>
       );
@@ -124,7 +124,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("photo")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
           )}
@@ -144,7 +144,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             <MediaUnavailable label={t("video")} t={t} />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
           )}
@@ -188,7 +188,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
             {t("template")}
           </span>
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
           )}
@@ -199,7 +199,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || t("locationShared")}</span>
+          <span className="select-text">{message.content_text || t("locationShared")}</span>
         </div>
       );
 
@@ -223,14 +223,14 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
               <CornerDownLeft className="h-3 w-3" />
               {t("buttonReply")}
             </span>
-            <p className="whitespace-pre-wrap break-words text-sm">
+            <p className="select-text whitespace-pre-wrap break-words text-sm">
               {message.content_text || t("interactiveReply")}
             </p>
           </div>
         );
       }
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="select-text whitespace-pre-wrap break-words text-sm">
           {message.content_text || t("interactiveReply")}
         </p>
       );
@@ -238,7 +238,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
 
     default:
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="select-text whitespace-pre-wrap break-words text-sm">
           {message.content_text || t("unsupported")}
         </p>
       );

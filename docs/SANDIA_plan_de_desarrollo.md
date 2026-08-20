@@ -4084,5 +4084,8 @@ correo/facturación, así que no se agregaron aquí tampoco, por
 consistencia), sin diff en `package-lock.json`. Advisors de seguridad
 de Supabase revisados sin hallazgos nuevos.
 
-Commit `68723cb` — pendiente de confirmación de Angel para pushear a
-`main`.
+Pusheado a `main` (con confirmación de Angel): `0564867..4fc8268`.
+Verificado en vivo tras el deploy automático de EasyPanel: `GET
+/api/admin/tickets` responde `401` (antes `404`) y `POST
+/api/support/report` responde `401` sin sesión — ambas rutas nuevas
+están desplegadas y exigen autenticación correctamente.

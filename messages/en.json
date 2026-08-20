@@ -21,7 +21,7 @@
     "actionCenter": "Action Center",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
-    "broadcasts": "Broadcasts",
+    "broadcasts": "Campaigns",
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
@@ -48,7 +48,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
-    "broadcasts": "Broadcasts",
+    "broadcasts": "Campaigns",
     "automations": "Automations",
     "settings": "Settings",
     "openMenu": "Open menu",
@@ -225,7 +225,7 @@
     "quickActions": {
       "newContact": "New Contact",
       "segments": "Segments",
-      "newBroadcast": "New Broadcast",
+      "newBroadcast": "New Campaign",
       "calculadora": "Calculator"
     },
     "agenda": {
@@ -943,13 +943,13 @@
       "toastDeleted": "Pipeline deleted"
     }
   },
-  "Broadcasts": {
+  "Campaigns": {
     "page": {
-      "title": "Broadcasts",
-      "subtitle": "Send bulk messages to your contacts using approved templates.",
-      "newBroadcast": "New Broadcast",
-      "noBroadcastsYet": "No broadcasts yet",
-      "createFirst": "Create your first broadcast to reach your contacts at scale.",
+      "title": "Campaigns",
+      "subtitle": "Send bulk messages to your leads using approved templates.",
+      "newCampaign": "New Campaign",
+      "noCampaignsYet": "No campaigns yet",
+      "createFirst": "Create your first campaign to reach your leads at scale.",
       "table": {
         "name": "Name",
         "template": "Template",
@@ -959,15 +959,21 @@
         "status": "Status",
         "date": "Date"
       },
-      "errorLoad": "Failed to load broadcasts",
-      "retry": "Retry"
+      "errorLoad": "Failed to load campaigns",
+      "retry": "Retry",
+      "startSending": "Start sending",
+      "resumeSending": "Resume sending",
+      "toastSendingResumed": "Sending finished",
+      "toastResumeFailed": "Failed to send the campaign"
     },
     "status": {
       "draft": "Draft",
+      "ready": "Ready to send",
       "scheduled": "Scheduled",
-      "sending": "Sending",
-      "sent": "Sent",
+      "sending": "In progress",
+      "sent": "Completed",
       "failed": "Failed",
+      "cancelled": "Cancelled",
       "pending": "Pending",
       "delivered": "Delivered",
       "read": "Read",
@@ -975,17 +981,17 @@
       "unknown": "Unknown"
     },
     "detail": {
-      "backToBroadcasts": "Back to Broadcasts",
-      "notFound": "Broadcast not found",
+      "backToBroadcasts": "Back to Campaigns",
+      "notFound": "Campaign not found",
       "template": "Template: {name}",
       "createdAt": "Created {date}",
-      "deletePrompt": "Delete this broadcast?",
+      "deletePrompt": "Delete this campaign?",
       "cancel": "Cancel",
       "confirm": "Confirm",
       "deleting": "Deleting…",
       "delete": "Delete",
-      "cannotDeleteSending": "Cannot delete while a broadcast is actively sending",
-      "deleteHover": "Delete this broadcast",
+      "cannotDeleteSending": "Cannot delete while a campaign is actively sending",
+      "deleteHover": "Delete this campaign",
       "funnel": "Funnel",
       "recipientsHeader": "Recipients ({filtered} of {total})",
       "recipientsHeaderAll": "Recipients ({total})",
@@ -1004,6 +1010,7 @@
       },
       "stats": {
         "totalRecipients": "Total Recipients",
+        "pending": "Pending",
         "sent": "Sent",
         "delivered": "Delivered",
         "read": "Read",
@@ -1011,22 +1018,34 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Campaign deleted",
+      "startSending": "Start sending",
+      "resumeSending": "Resume sending",
+      "toastSendingStarted": "Sending finished",
+      "toastSendFailed": "Failed to send the campaign",
+      "cancelCampaign": "Cancel campaign",
+      "cancelPrompt": "Cancel this campaign? Pending recipients will not receive the message.",
+      "toastCancelled": "Campaign cancelled",
+      "toastCancelFailed": "Failed to cancel: {error}",
+      "whoReceived": "Who received it",
+      "whoDidNotReceive": "Who hasn't received it yet"
     },
     "new": {
-      "title": "New Broadcast",
-      "subtitle": "Create and send a broadcast message to your contacts.",
+      "title": "New Campaign",
+      "subtitle": "Create, target, and send a campaign to your leads.",
       "steps": {
         "template": "Template",
         "audience": "Audience",
         "personalize": "Personalize",
         "send": "Send"
       },
-      "toastGiveName": "Give the broadcast a name before saving a draft.",
+      "toastGiveName": "Give the campaign a name before saving a draft.",
       "toastNotSignedIn": "Not signed in.",
       "toastNotLinked": "Your profile is not linked to an account.",
       "toastFailedDraft": "Failed to save draft: {error}",
-      "toastDraftSaved": "Draft saved"
+      "toastDraftSaved": "Draft saved",
+      "toastFailedReady": "Failed to save campaign: {error}",
+      "toastReadySaved": "Campaign ready to send"
     },
     "wizard": {
       "next": "Next",
@@ -1034,25 +1053,31 @@
       "cancel": "Cancel",
       "chooseTemplate": {
         "title": "Choose a Template",
-        "subtitle": "Select an approved message template for your broadcast.",
+        "subtitle": "Select an approved message template for your campaign.",
         "noTemplates": "No templates available.",
         "createFirst": "Create a template in Settings first.",
         "errorLoad": "Failed to load templates"
       },
       "selectAudience": {
         "title": "Select Audience",
-        "subtitle": "Choose who will receive this broadcast.",
+        "subtitle": "Choose who will receive this campaign.",
         "method": {
           "all": "All Contacts",
           "tags": "Filter by Tags",
           "customField": "Custom Field",
-          "csv": "Upload CSV"
+          "csv": "Upload CSV",
+          "segment": "Saved Segment",
+          "pipelineStage": "Pipeline Stage",
+          "contacts": "Select Leads"
         },
         "allDesc": "Send to all {count} contacts in your database.",
         "allDescLoading": "Send to all contacts in your database.",
         "tagDesc": "Send to contacts matching specific tags.",
-        "customFieldDesc": "Send to contacts matching a custom field rule.",
+        "customFieldDesc": "Send to contacts matching custom field criteria (e.g. property type, price range).",
         "csvDesc": "Upload a CSV with phone numbers (and optional names).",
+        "segmentDesc": "Send to a saved segment (tag combination).",
+        "pipelineStageDesc": "Send to leads currently in a specific pipeline stage.",
+        "contactsDesc": "Pick leads individually by name or phone.",
         "selectTags": "Select Tags",
         "searchTags": "Search tags...",
         "noTagsFound": "No tags found.",
@@ -1075,7 +1100,16 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "noFiltersYet": "No filters added yet.",
+        "addFilter": "Add filter",
+        "removeFilter": "Remove filter",
+        "filtersAreAnd": "A lead must match every filter above (AND).",
+        "noSegmentsFound": "No saved segments. Create one in Contacts → Segments.",
+        "selectStage": "Select a stage...",
+        "noStagesFound": "No pipeline stages found.",
+        "searchContactsPlaceholder": "Search by name or phone...",
+        "removeContact": "Remove"
       },
       "personalize": {
         "title": "Personalize Variables",
@@ -1106,9 +1140,11 @@
       },
       "scheduleSend": {
         "title": "Review & Send",
-        "subtitle": "Give your broadcast a name and confirm sending.",
-        "broadcastName": "Broadcast Name",
-        "broadcastNamePlaceholder": "e.g., Summer Promo",
+        "subtitle": "Give your campaign a name, review the recipients, and confirm sending.",
+        "broadcastName": "Campaign Name",
+        "broadcastNamePlaceholder": "e.g., Investors up to $350k",
+        "descriptionLabel": "Description (optional)",
+        "descriptionPlaceholder": "Internal note about this campaign",
         "summary": "Summary",
         "template": "Template:",
         "audience": "Audience:",
@@ -1116,14 +1152,27 @@
         "audienceTags": "Filtered by tags",
         "audienceField": "Filtered by custom field",
         "audienceCsv": "CSV upload",
+        "audienceSegment": "Saved segment",
+        "audiencePipelineStage": "Pipeline stage",
+        "audienceContacts": "Individually selected leads",
+        "estimatedReach": "Estimated Reach",
+        "language": "Language",
         "variables": "Variables:",
         "variablesMapped": "{count} mapped",
         "saveDraft": "Save as Draft",
-        "sendNow": "Send Broadcast",
+        "saveReady": "Save as ready to send",
+        "sendNow": "Send Campaign",
         "sending": "Sending...",
         "preparing": "Preparing...",
         "progressDesc": "Processing {current} of {total} recipients...",
-        "toastFailedPreview": "Failed to load preview data"
+        "toastFailedPreview": "Failed to load preview data",
+        "viewRecipients": "View recipients",
+        "recipientsPreviewTitle": "{count} contacts found",
+        "recipientsPreviewEmpty": "No recipients found for this audience.",
+        "recipientsPreviewClose": "Close",
+        "confirmTitle": "Confirm campaign",
+        "confirmDesc": "You are about to send this campaign to {count} contacts using the {template} template. This action cannot be undone.",
+        "toastFailedReady": "Failed to save campaign: {error}"
       }
     }
   },
@@ -1786,7 +1835,7 @@
       "submitApproval": "Submit for Approval",
       
       "deleteDialogTitle": "Delete template?",
-      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active campaigns using this template will start failing on their next send. This can't be undone.",
       "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",

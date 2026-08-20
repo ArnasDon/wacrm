@@ -48,8 +48,15 @@ it. Grant the minimum.
 | `contacts:read`      | List and read contacts                   |
 | `contacts:write`     | Create and update contacts               |
 | `conversations:read` | List and read conversations              |
-| `broadcasts:send`    | Launch broadcast campaigns               |
+| `broadcasts:send`    | Launch a broadcast, or send an existing campaign |
 | `webhooks:manage`    | Register and manage outbound webhooks    |
+| `campaigns:read`     | List campaigns, recipients, and a lead's campaign history |
+| `campaigns:write`    | Create campaigns and add recipients — cannot send |
+
+`campaigns:*` is deliberately split from `broadcasts:send`: a key with
+only `campaigns:read`/`campaigns:write` can look up leads, create a
+campaign, and stage recipients, but can **never** trigger a send —
+`POST /api/v1/campaigns/{id}/send` requires `broadcasts:send` too.
 
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
@@ -168,7 +175,10 @@ send), `template_malformed` (500).
 
 List contacts, newest first. Scope: `contacts:read`. Paginated (see
 [Pagination](#pagination)). Optional filters: `?search=` (matches name
-or phone) and `?tag=<tagId>`.
+or phone), `?tag=<tagId>`, and `?custom_field=<fieldId>&value=<v>&operator=is|is_not|contains`
+(`operator` defaults to `is`) — the custom-field filter is how "leads
+por critério" (tipo de imóvel, faixa de preço, região, … — modeled as
+custom fields in this CRM) is queried for Campaigns audience building.
 
 ```json
 {
@@ -262,6 +272,73 @@ Invalid phone numbers are dropped and counted as `rejected`. Response
 Broadcast status + counts. Scope: `broadcasts:send`. `status` moves
 `sending` → `sent`; `delivered_count` / `read_count` keep climbing as
 Meta delivery webhooks arrive. `404` for another account's broadcast.
+
+## Campaigns
+
+A campaign **is** a broadcast (migration 075) — same table, same send
+engine, same `GET /api/v1/broadcasts/{id}` status shape plus a
+`description` and a `pending_count`. The difference is in the write
+path: `POST /api/v1/campaigns` never sends by itself, so it's safe to
+expose to an assistant that only has `campaigns:*` scopes — a lookup
+question can never accidentally fire messages.
+
+### `POST /api/v1/campaigns`
+
+Create a campaign. Scope: `campaigns:write`. `name` and
+`template_name` are required; `recipients` is **optional** — omit it
+to create a `draft` you add recipients to later. Supplying `recipients`
+materializes them immediately and the campaign is `ready` to send.
+
+```bash
+curl -X POST https://your-crm.example.com/api/v1/campaigns \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "Investidores até 350 mil",
+        "description": "Leads com tag investidor + faixa até 350k",
+        "template_name": "promo_investidores",
+        "template_language": "pt_BR",
+        "recipients": [{ "to": "+5511999999999" }]
+      }'
+```
+
+### `GET /api/v1/campaigns`
+
+List campaigns, newest first. Scope: `campaigns:read`. Paginated.
+
+### `GET /api/v1/campaigns/{id}`
+
+Campaign status + counts, including `pending_count`. Scope:
+`campaigns:read`.
+
+### `GET` / `POST /api/v1/campaigns/{id}/recipients`
+
+`GET` lists recipients (optional `?status=pending|sent|delivered|read|replied|failed`).
+`POST` adds more recipients — `{ "recipients": [{ "to": "+…" }] }`.
+Both: scope `campaigns:read` / `campaigns:write` respectively. Adding
+is idempotent: a contact already on the campaign is silently skipped
+(a DB constraint, not just caller discipline), so retrying a request
+never double-adds anyone.
+
+### `POST /api/v1/campaigns/{id}/send`
+
+Dispatch a campaign's `pending` recipients. **Scope: `broadcasts:send`
+— not `campaigns:write`.** Requires an explicit confirmation body:
+
+```bash
+curl -X POST https://your-crm.example.com/api/v1/campaigns/{id}/send \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "confirm": true }'
+```
+
+Omitting `confirm: true` returns `400 confirmation_required`. Safe to
+retry — only recipients still `pending` are (re)planned.
+
+### `GET /api/v1/contacts/{id}/campaigns`
+
+A lead's campaign history — "quais campanhas esse cliente já
+recebeu?". Scope: `campaigns:read`.
 
 ## Pagination
 

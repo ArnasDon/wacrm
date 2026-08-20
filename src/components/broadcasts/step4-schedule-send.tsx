@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { MessageTemplate } from '@/types';
+import { MessageTemplate, Contact } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -14,101 +14,82 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Users, Save, Eye, CheckCircle2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-
-interface AudienceConfig {
-  type: string;
-  tagIds?: string[];
-  matchAll?: boolean;
-  csvContacts?: { phone: string; name?: string }[];
-}
-
-/**
- * filter_contacts_by_all_tags is paginated (built for the Contacts list
- * view); here we just need every matching id for the estimate, so page
- * it with a limit far above any realistic account size.
- */
-const MATCH_ALL_TAGS_LIMIT = 100000;
+import { useBroadcastSending, type AudienceConfig } from '@/hooks/use-broadcast-sending';
 
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
+  description: string;
+  onDescriptionChange: (description: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
   onSend: () => void;
   onSaveDraft?: () => void;
+  /** "Salvar como pronta para envio" — materializes recipients without sending (spec section 3). */
+  onSaveReady?: () => void;
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
 }
 
+const AUDIENCE_LABEL_KEY: Record<AudienceConfig['type'], string> = {
+  all: 'scheduleSend.audienceAll',
+  tags: 'scheduleSend.audienceTags',
+  custom_field: 'scheduleSend.audienceField',
+  csv: 'scheduleSend.audienceCsv',
+  segment: 'scheduleSend.audienceSegment',
+  pipeline_stage: 'scheduleSend.audiencePipelineStage',
+  contacts: 'scheduleSend.audienceContacts',
+};
+
 export function Step4ScheduleSend({
   name,
   onNameChange,
+  description,
+  onDescriptionChange,
   template,
   audience,
   onSend,
   onSaveDraft,
+  onSaveReady,
   onBack,
   isProcessing,
   progress,
 }: Step4Props) {
-  const t = useTranslations('Broadcasts.wizard');
+  const t = useTranslations('Campaigns.wizard');
+  const { previewAudience } = useBroadcastSending();
   const [showConfirm, setShowConfirm] = useState(false);
-  const [estimatedReach, setEstimatedReach] = useState<number>(0);
+  const [showRecipients, setShowRecipients] = useState(false);
+  const [recipients, setRecipients] = useState<Contact[] | null>(null);
   const [loadingReach, setLoadingReach] = useState(true);
 
+  // The same resolver the send engine uses (use-broadcast-sending.ts) —
+  // "X contatos encontrados" and "who actually gets messaged" are
+  // always the same list (spec section 3), never a second estimate
+  // that can drift from what's actually sent.
   useEffect(() => {
-    async function calculateReach() {
-      setLoadingReach(true);
-      try {
-        const supabase = createClient();
+    let cancelled = false;
+    setLoadingReach(true);
+    previewAudience(audience)
+      .then((contacts) => {
+        if (!cancelled) setRecipients(contacts);
+      })
+      .catch(() => {
+        if (!cancelled) setRecipients([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReach(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(audience)]);
 
-        if (audience.type === 'all') {
-          const { count } = await supabase
-            .from('contacts')
-            .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
-        } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
-          if (audience.matchAll && audience.tagIds.length > 1) {
-            const { data } = await supabase.rpc('filter_contacts_by_all_tags', {
-              p_tag_ids: audience.tagIds,
-              p_search: null,
-              p_limit: MATCH_ALL_TAGS_LIMIT,
-              p_offset: 0,
-            });
-            setEstimatedReach(((data ?? []) as unknown[]).length);
-          } else {
-            const { data: contactTags } = await supabase
-              .from('contact_tags')
-              .select('contact_id')
-              .in('tag_id', audience.tagIds);
-
-            const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-            setEstimatedReach(uniqueIds.size);
-          }
-        } else if (audience.type === 'csv' && audience.csvContacts) {
-          setEstimatedReach(audience.csvContacts.length);
-        } else {
-          setEstimatedReach(0);
-        }
-      } finally {
-        setLoadingReach(false);
-      }
-    }
-
-    calculateReach();
-  }, [audience]);
-
-  const audienceLabel =
-    audience.type === 'all'
-      ? t('scheduleSend.audienceAll')
-      : audience.type === 'tags'
-        ? t('scheduleSend.audienceTags')
-        : audience.type === 'csv'
-          ? t('scheduleSend.audienceCsv')
-          : t('scheduleSend.audienceField');
+  const estimatedReach = recipients?.length ?? 0;
+  const audienceLabel = t(AUDIENCE_LABEL_KEY[audience.type] ?? 'scheduleSend.audienceField');
 
   return (
     <div className="space-y-6">
@@ -119,15 +100,26 @@ export function Step4ScheduleSend({
         </p>
       </div>
 
-      {/* Broadcast Name */}
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-foreground">{t('scheduleSend.broadcastName')}</label>
-        <Input
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder={t('scheduleSend.broadcastNamePlaceholder')}
-          className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
-        />
+      {/* Campaign name + description */}
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">{t('scheduleSend.broadcastName')}</label>
+          <Input
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder={t('scheduleSend.broadcastNamePlaceholder')}
+            className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-foreground">{t('scheduleSend.descriptionLabel')}</label>
+          <Textarea
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            placeholder={t('scheduleSend.descriptionPlaceholder')}
+            className="min-h-16 border-border bg-muted text-foreground placeholder:text-muted-foreground"
+          />
+        </div>
       </div>
 
       {/* Summary Card */}
@@ -143,7 +135,7 @@ export function Step4ScheduleSend({
             <p className="text-foreground">{audienceLabel}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Estimated Reach</p>
+            <p className="text-xs text-muted-foreground">{t('scheduleSend.estimatedReach')}</p>
             <div className="flex items-center gap-1.5">
               {loadingReach ? (
                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
@@ -151,16 +143,61 @@ export function Step4ScheduleSend({
                 <>
                   <Users className="h-3.5 w-3.5 text-primary" />
                   <p className="font-medium text-foreground">{estimatedReach.toLocaleString()}</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowRecipients(true)}
+                    disabled={estimatedReach === 0}
+                    className="ml-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Eye className="h-3 w-3" />
+                    {t('scheduleSend.viewRecipients')}
+                  </button>
                 </>
               )}
             </div>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Language</p>
+            <p className="text-xs text-muted-foreground">{t('scheduleSend.language')}</p>
             <p className="text-foreground">{template.language ?? 'en_US'}</p>
           </div>
         </div>
       </div>
+
+      {/* Recipients preview — section 3: "mostrar X contatos e permitir
+          visualizar a lista antes de iniciar" */}
+      <Dialog open={showRecipients} onOpenChange={setShowRecipients}>
+        <DialogContent className="border-border bg-popover sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              {t('scheduleSend.recipientsPreviewTitle', { count: estimatedReach })}
+            </DialogTitle>
+          </DialogHeader>
+          {recipients && recipients.length > 0 ? (
+            <div className="max-h-80 space-y-1 overflow-y-auto">
+              {recipients.map((contact) => (
+                <div
+                  key={contact.id}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                >
+                  <span className="text-popover-foreground">{contact.name || contact.phone}</span>
+                  <span className="text-xs text-muted-foreground">{contact.phone}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('scheduleSend.recipientsPreviewEmpty')}</p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowRecipients(false)}
+              className="border-border text-muted-foreground"
+            >
+              {t('scheduleSend.recipientsPreviewClose')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Processing overlay */}
       {isProcessing && (
@@ -192,7 +229,7 @@ export function Step4ScheduleSend({
           {t('back')}
         </Button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onSaveDraft && (
             <Button
               variant="outline"
@@ -205,11 +242,23 @@ export function Step4ScheduleSend({
             </Button>
           )}
 
+          {onSaveReady && (
+            <Button
+              variant="outline"
+              onClick={onSaveReady}
+              disabled={!name.trim() || estimatedReach === 0 || isProcessing}
+              className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {t('scheduleSend.saveReady')}
+            </Button>
+          )}
+
           <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
           <DialogTrigger
             render={
               <Button
-                disabled={!name.trim() || isProcessing}
+                disabled={!name.trim() || estimatedReach === 0 || isProcessing}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               />
             }
@@ -219,13 +268,12 @@ export function Step4ScheduleSend({
           </DialogTrigger>
           <DialogContent className="border-border bg-popover sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-popover-foreground">Confirm Broadcast</DialogTitle>
+              <DialogTitle className="text-popover-foreground">{t('scheduleSend.confirmTitle')}</DialogTitle>
               <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
-                <span className="font-medium text-popover-foreground">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-popover-foreground">{template.name}</span> template.
-                This action cannot be undone.
+                {t('scheduleSend.confirmDesc', {
+                  count: estimatedReach,
+                  template: template.name,
+                })}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

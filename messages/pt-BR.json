@@ -21,7 +21,7 @@
     "actionCenter": "Central de Ações",
     "contacts": "Contatos",
     "pipelines": "Pipeline",
-    "broadcasts": "Transmissões",
+    "broadcasts": "Campanhas",
     "automations": "Automações",
     "flows": "Fluxos",
     "aiAgents": "Agentes de IA",
@@ -48,7 +48,7 @@
     "notifications": "Notificações",
     "contacts": "Contatos",
     "pipelines": "Pipeline",
-    "broadcasts": "Transmissões",
+    "broadcasts": "Campanhas",
     "automations": "Automações",
     "settings": "Configurações",
     "openMenu": "Abrir menu",
@@ -225,7 +225,7 @@
     "quickActions": {
       "newContact": "Novo contato",
       "segments": "Segmentos",
-      "newBroadcast": "Nova transmissão",
+      "newBroadcast": "Nova campanha",
       "calculadora": "Calculadora"
     },
     "agenda": {
@@ -943,13 +943,13 @@
       "toastDeleted": "Pipeline excluído"
     }
   },
-  "Broadcasts": {
+  "Campaigns": {
     "page": {
-      "title": "Transmissões",
-      "subtitle": "Envie mensagens em massa para seus contatos usando templates aprovados.",
-      "newBroadcast": "Nova transmissão",
-      "noBroadcastsYet": "Nenhuma transmissão ainda",
-      "createFirst": "Crie sua primeira transmissão para alcançar seus contatos em escala.",
+      "title": "Campanhas",
+      "subtitle": "Envie mensagens em massa para seus leads usando templates aprovados.",
+      "newCampaign": "Nova campanha",
+      "noCampaignsYet": "Nenhuma campanha ainda",
+      "createFirst": "Crie sua primeira campanha para alcançar seus leads em escala.",
       "table": {
         "name": "Nome",
         "template": "Template",
@@ -959,15 +959,21 @@
         "status": "Status",
         "date": "Data"
       },
-      "errorLoad": "Falha ao carregar transmissões",
-      "retry": "Tentar novamente"
+      "errorLoad": "Falha ao carregar campanhas",
+      "retry": "Tentar novamente",
+      "startSending": "Iniciar envio",
+      "resumeSending": "Continuar envio",
+      "toastSendingResumed": "Envio concluído",
+      "toastResumeFailed": "Falha ao enviar a campanha"
     },
     "status": {
       "draft": "Rascunho",
-      "scheduled": "Agendado",
-      "sending": "Enviando",
-      "sent": "Enviado",
+      "ready": "Pronta para envio",
+      "scheduled": "Agendada",
+      "sending": "Em andamento",
+      "sent": "Concluída",
       "failed": "Falhou",
+      "cancelled": "Cancelada",
       "pending": "Pendente",
       "delivered": "Entregue",
       "read": "Lido",
@@ -975,17 +981,17 @@
       "unknown": "Desconhecido"
     },
     "detail": {
-      "backToBroadcasts": "Voltar às transmissões",
-      "notFound": "Transmissão não encontrada",
+      "backToBroadcasts": "Voltar às campanhas",
+      "notFound": "Campanha não encontrada",
       "template": "Template: {name}",
       "createdAt": "Criada em {date}",
-      "deletePrompt": "Excluir esta transmissão?",
+      "deletePrompt": "Excluir esta campanha?",
       "cancel": "Cancelar",
       "confirm": "Confirmar",
       "deleting": "Excluindo…",
       "delete": "Excluir",
-      "cannotDeleteSending": "Não é possível excluir enquanto a transmissão está sendo enviada",
-      "deleteHover": "Excluir esta transmissão",
+      "cannotDeleteSending": "Não é possível excluir enquanto a campanha está sendo enviada",
+      "deleteHover": "Excluir esta campanha",
       "funnel": "Pipeline",
       "recipientsHeader": "Destinatários ({filtered} de {total})",
       "recipientsHeaderAll": "Destinatários ({total})",
@@ -1004,6 +1010,7 @@
       },
       "stats": {
         "totalRecipients": "Total de destinatários",
+        "pending": "Pendentes",
         "sent": "Enviado",
         "delivered": "Entregue",
         "read": "Lido",
@@ -1011,22 +1018,34 @@
         "failed": "Falhou"
       },
       "toastFailedDelete": "Falha ao excluir: {error}",
-      "toastDeleted": "Transmissão excluída"
+      "toastDeleted": "Campanha excluída",
+      "startSending": "Iniciar envio",
+      "resumeSending": "Continuar envio",
+      "toastSendingStarted": "Envio concluído",
+      "toastSendFailed": "Falha ao enviar a campanha",
+      "cancelCampaign": "Cancelar campanha",
+      "cancelPrompt": "Cancelar esta campanha? Os destinatários pendentes não receberão a mensagem.",
+      "toastCancelled": "Campanha cancelada",
+      "toastCancelFailed": "Falha ao cancelar: {error}",
+      "whoReceived": "Quem recebeu",
+      "whoDidNotReceive": "Quem ainda não recebeu"
     },
     "new": {
-      "title": "Nova transmissão",
-      "subtitle": "Crie e envie uma mensagem de transmissão para seus contatos.",
+      "title": "Nova campanha",
+      "subtitle": "Crie, defina o público e envie uma campanha para seus leads.",
       "steps": {
         "template": "Template",
         "audience": "Público",
         "personalize": "Personalizar",
         "send": "Enviar"
       },
-      "toastGiveName": "Dê um nome à transmissão antes de salvar o rascunho.",
+      "toastGiveName": "Dê um nome à campanha antes de salvar o rascunho.",
       "toastNotSignedIn": "Não conectado.",
       "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
       "toastFailedDraft": "Falha ao salvar rascunho: {error}",
-      "toastDraftSaved": "Rascunho salvo"
+      "toastDraftSaved": "Rascunho salvo",
+      "toastFailedReady": "Falha ao salvar campanha: {error}",
+      "toastReadySaved": "Campanha pronta para envio"
     },
     "wizard": {
       "next": "Próximo",
@@ -1034,25 +1053,31 @@
       "cancel": "Cancelar",
       "chooseTemplate": {
         "title": "Escolha um template",
-        "subtitle": "Selecione um template de mensagem aprovado para sua transmissão.",
+        "subtitle": "Selecione um template de mensagem aprovado para sua campanha.",
         "noTemplates": "Nenhum template disponível.",
         "createFirst": "Crie um template em Configurações primeiro.",
         "errorLoad": "Falha ao carregar templates"
       },
       "selectAudience": {
         "title": "Selecionar público",
-        "subtitle": "Escolha quem vai receber esta transmissão.",
+        "subtitle": "Escolha quem vai receber esta campanha.",
         "method": {
           "all": "Todos os contatos",
           "tags": "Filtrar por tags",
           "customField": "Campo personalizado",
-          "csv": "Enviar CSV"
+          "csv": "Enviar CSV",
+          "segment": "Segmento salvo",
+          "pipelineStage": "Etapa do pipeline",
+          "contacts": "Selecionar leads"
         },
         "allDesc": "Enviar para todos os {count} contatos da sua base.",
         "allDescLoading": "Enviar para todos os contatos da sua base.",
         "tagDesc": "Enviar para contatos com tags específicas.",
-        "customFieldDesc": "Enviar para contatos que atendem a uma regra de campo personalizado.",
+        "customFieldDesc": "Enviar para contatos que atendem a critérios de campo personalizado (ex: tipo de imóvel, faixa de preço).",
         "csvDesc": "Envie um CSV com números de telefone (e nomes opcionais).",
+        "segmentDesc": "Enviar para um segmento salvo (combinação de tags).",
+        "pipelineStageDesc": "Enviar para leads que estão numa etapa específica do pipeline.",
+        "contactsDesc": "Escolher leads individualmente por nome ou telefone.",
         "selectTags": "Selecionar tags",
         "searchTags": "Buscar tags...",
         "noTagsFound": "Nenhuma tag encontrada.",
@@ -1075,7 +1100,16 @@
         "errorLoadTags": "Falha ao carregar tags",
         "errorLoadFields": "Falha ao carregar campos personalizados",
         "errorCsvParse": "Não foi possível processar o arquivo CSV.",
-        "errorCsvMissingPhone": "O CSV precisa ter uma coluna 'phone'."
+        "errorCsvMissingPhone": "O CSV precisa ter uma coluna 'phone'.",
+        "noFiltersYet": "Nenhum filtro adicionado ainda.",
+        "addFilter": "Adicionar filtro",
+        "removeFilter": "Remover filtro",
+        "filtersAreAnd": "O lead precisa atender a todos os filtros acima (E).",
+        "noSegmentsFound": "Nenhum segmento salvo. Crie um em Contatos → Segmentos.",
+        "selectStage": "Selecione uma etapa...",
+        "noStagesFound": "Nenhuma etapa de pipeline encontrada.",
+        "searchContactsPlaceholder": "Buscar por nome ou telefone...",
+        "removeContact": "Remover"
       },
       "personalize": {
         "title": "Personalizar variáveis",
@@ -1106,9 +1140,11 @@
       },
       "scheduleSend": {
         "title": "Revisar e enviar",
-        "subtitle": "Dê um nome à sua transmissão e confirme o envio.",
-        "broadcastName": "Nome da transmissão",
-        "broadcastNamePlaceholder": "ex: Promoção de Verão",
+        "subtitle": "Dê um nome à sua campanha, revise os destinatários e confirme o envio.",
+        "broadcastName": "Nome da campanha",
+        "broadcastNamePlaceholder": "ex: Investidores até 350 mil",
+        "descriptionLabel": "Descrição (opcional)",
+        "descriptionPlaceholder": "Nota interna sobre esta campanha",
         "summary": "Resumo",
         "template": "Template:",
         "audience": "Público:",
@@ -1116,14 +1152,27 @@
         "audienceTags": "Filtrado por tags",
         "audienceField": "Filtrado por campo personalizado",
         "audienceCsv": "Upload de CSV",
+        "audienceSegment": "Segmento salvo",
+        "audiencePipelineStage": "Etapa do pipeline",
+        "audienceContacts": "Leads selecionados individualmente",
+        "estimatedReach": "Alcance estimado",
+        "language": "Idioma",
         "variables": "Variáveis:",
         "variablesMapped": "{count} mapeada(s)",
         "saveDraft": "Salvar como rascunho",
-        "sendNow": "Enviar transmissão",
+        "saveReady": "Salvar como pronta para envio",
+        "sendNow": "Enviar campanha",
         "sending": "Enviando...",
         "preparing": "Preparando...",
         "progressDesc": "Processando {current} de {total} destinatários...",
-        "toastFailedPreview": "Falha ao carregar dados de pré-visualização"
+        "toastFailedPreview": "Falha ao carregar dados de pré-visualização",
+        "viewRecipients": "Ver destinatários",
+        "recipientsPreviewTitle": "{count} contatos encontrados",
+        "recipientsPreviewEmpty": "Nenhum destinatário encontrado para este público.",
+        "recipientsPreviewClose": "Fechar",
+        "confirmTitle": "Confirmar campanha",
+        "confirmDesc": "Você está prestes a enviar esta campanha para {count} contatos usando o template {template}. Essa ação não pode ser desfeita.",
+        "toastFailedReady": "Falha ao salvar campanha: {error}"
       }
     }
   },
@@ -1786,7 +1835,7 @@
       "submitApproval": "Enviar para aprovação",
 
       "deleteDialogTitle": "Excluir template?",
-      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do wacrm. Transmissões ativas que usam este template começarão a falhar no próximo envio. Essa ação não pode ser desfeita.",
+      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do wacrm. Campanhas ativas que usam este template começarão a falhar no próximo envio. Essa ação não pode ser desfeita.",
       "deleteLocalDesc": "\"{name}\" será excluído do wacrm. Ele nunca foi enviado à Meta, então não é necessária limpeza remota.",
       "deleting": "Excluindo…",
       "delete": "Excluir",

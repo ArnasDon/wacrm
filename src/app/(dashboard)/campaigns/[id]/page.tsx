@@ -32,13 +32,25 @@ import {
   Download,
   ChevronDown,
   Trash2,
+  Play,
+  Ban,
+  Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getBroadcastStatus,
   getRecipientStatus,
 } from '@/lib/broadcast-status';
+import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { useTranslations } from 'next-intl';
+
+/**
+ * Campaign detail — the old /broadcasts/[id]/page.tsx moved under
+ * /campaigns (migration 075), with `description`, a Pending stat
+ * card, and Start/Resume/Cancel actions added. Everything else
+ * (stats, funnel, recipient table, CSV export, delete) already
+ * covered sections 7/8 of the Campaigns spec as-is.
+ */
 
 interface StatCardProps {
   label: string;
@@ -142,14 +154,15 @@ function downloadBlob(filename: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function BroadcastDetailPage() {
+export default function CampaignDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const t = useTranslations('Broadcasts.detail');
-  const tStatus = useTranslations('Broadcasts.status');
-  const broadcastId = params.id as string;
+  const t = useTranslations('Campaigns.detail');
+  const tStatus = useTranslations('Campaigns.status');
+  const { startCampaignSending } = useBroadcastSending();
+  const campaignId = params.id as string;
 
-  const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
+  const [campaign, setCampaign] = useState<Broadcast | null>(null);
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -158,38 +171,42 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function fetchData() {
+    try {
+      const supabase = createClient();
+
+      const { data: bc, error: bcError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', campaignId)
+        .single();
+
+      if (bcError) throw bcError;
+      setCampaign(bc);
+
+      const { data: recs, error: recsError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', campaignId)
+        .order('created_at', { ascending: false });
+
+      if (recsError) throw recsError;
+      setRecipients(recs ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notFound'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const supabase = createClient();
-
-        const { data: bc, error: bcError } = await supabase
-          .from('broadcasts')
-          .select('*')
-          .eq('id', broadcastId)
-          .single();
-
-        if (bcError) throw bcError;
-        setBroadcast(bc);
-
-        const { data: recs, error: recsError } = await supabase
-          .from('broadcast_recipients')
-          .select('*, contact:contacts(*)')
-          .eq('broadcast_id', broadcastId)
-          .order('created_at', { ascending: false });
-
-        if (recsError) throw recsError;
-        setRecipients(recs ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('notFound'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, [broadcastId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId]);
 
   const filteredRecipients = useMemo(
     () =>
@@ -199,8 +216,13 @@ export default function BroadcastDetailPage() {
     [recipients, statusFilter],
   );
 
+  const pendingCount = useMemo(
+    () => recipients.filter((r) => r.status === 'pending').length,
+    [recipients],
+  );
+
   function handleExport() {
-    if (!broadcast) return;
+    if (!campaign) return;
     const header = [
       t('table.contact'),
       t('table.phone'),
@@ -220,8 +242,8 @@ export default function BroadcastDetailPage() {
       r.error_message ?? '',
     ]);
     const csv = toCsv([header, ...rows]);
-    const safeName = broadcast.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
-    downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
+    const safeName = campaign.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
+    downloadBlob(`campaign-${safeName}-${campaignId.slice(0, 8)}.csv`, csv);
   }
 
   async function handleDelete() {
@@ -234,14 +256,44 @@ export default function BroadcastDetailPage() {
     const { error: delErr } = await supabase
       .from('broadcasts')
       .delete()
-      .eq('id', broadcastId);
+      .eq('id', campaignId);
     setDeleting(false);
     if (delErr) {
       toast.error(t('toastFailedDelete', { error: delErr.message }));
       return;
     }
     toast.success(t('toastDeleted'));
-    router.push('/broadcasts');
+    router.push('/campaigns');
+  }
+
+  async function handleStartOrResume() {
+    setSending(true);
+    try {
+      await startCampaignSending(campaignId);
+      toast.success(t('toastSendingStarted'));
+      await fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('toastSendFailed'));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleCancel() {
+    setCancelling(true);
+    const supabase = createClient();
+    const { error: cancelErr } = await supabase
+      .from('broadcasts')
+      .update({ status: 'cancelled' })
+      .eq('id', campaignId);
+    setCancelling(false);
+    setConfirmCancel(false);
+    if (cancelErr) {
+      toast.error(t('toastCancelFailed', { error: cancelErr.message }));
+      return;
+    }
+    toast.success(t('toastCancelled'));
+    await fetchData();
   }
 
   if (loading) {
@@ -252,24 +304,26 @@ export default function BroadcastDetailPage() {
     );
   }
 
-  if (error || !broadcast) {
+  if (error || !campaign) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <p className="text-sm text-red-400">{error ?? t('notFound')}</p>
-        <Button variant="outline" onClick={() => router.push('/broadcasts')}>
+        <Button variant="outline" onClick={() => router.push('/campaigns')}>
           {t('backToBroadcasts')}
         </Button>
       </div>
     );
   }
 
-  const status = getBroadcastStatus(broadcast.status);
+  const status = getBroadcastStatus(campaign.status);
+  const canStartOrResume = campaign.status === 'ready' || campaign.status === 'sending';
+  const canCancel = campaign.status === 'draft' || campaign.status === 'ready';
 
   const funnelSteps: FunnelStep[] = [
-    { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },
-    { label: t('stats.delivered'), value: broadcast.delivered_count, color: 'bg-teal-500' },
-    { label: t('stats.read'), value: broadcast.read_count, color: 'bg-blue-500' },
-    { label: t('stats.replied'), value: broadcast.replied_count, color: 'bg-indigo-500' },
+    { label: t('stats.sent'), value: campaign.sent_count, color: 'bg-primary' },
+    { label: t('stats.delivered'), value: campaign.delivered_count, color: 'bg-teal-500' },
+    { label: t('stats.read'), value: campaign.read_count, color: 'bg-blue-500' },
+    { label: t('stats.replied'), value: campaign.replied_count, color: 'bg-indigo-500' },
   ];
 
   return (
@@ -280,14 +334,14 @@ export default function BroadcastDetailPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.push('/broadcasts')}
+            onClick={() => router.push('/campaigns')}
             className="border-border"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">{broadcast.name}</h1>
+              <h1 className="text-2xl font-bold text-foreground">{campaign.name}</h1>
               <span
                 className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
               >
@@ -295,100 +349,163 @@ export default function BroadcastDetailPage() {
               </span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{t('template', { name: broadcast.template_name })}</span>
+              <span>{t('template', { name: campaign.template_name })}</span>
               <span>-</span>
               <span>
-                {t('createdAt', { date: new Date(broadcast.created_at).toLocaleDateString() })}
+                {t('createdAt', { date: new Date(campaign.created_at).toLocaleDateString() })}
               </span>
             </div>
+            {campaign.description && (
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">{campaign.description}</p>
+            )}
           </div>
         </div>
 
-        {/* Delete — inline-confirm pattern matches the pipeline-settings
-            "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
-            because orphaning in-flight Meta messages would leave the
-            funnel inconsistent. */}
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">{t('deletePrompt')}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {canStartOrResume && (
+            <Button
+              size="sm"
+              disabled={sending}
+              onClick={handleStartOrResume}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {sending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              {campaign.status === 'sending' ? t('resumeSending') : t('startSending')}
+            </Button>
+          )}
+
+          {canCancel &&
+            (confirmCancel ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-sm">
+                <span className="text-muted-foreground">{t('cancelPrompt')}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmCancel(false)}
+                  disabled={cancelling}
+                  className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  className="h-7"
+                  variant="outline"
+                >
+                  {t('confirm')}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmCancel(true)}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                {t('cancelCampaign')}
+              </Button>
+            ))}
+
+          {/* Delete — inline-confirm pattern matches the pipeline-settings
+              "Delete Pipeline" flow. Mid-send campaigns can't be deleted
+              because orphaning in-flight Meta messages would leave the
+              funnel inconsistent. */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
+              <span className="text-red-300">{t('deletePrompt')}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? t('deleting') : t('confirm')}
+              </Button>
+            </div>
+          ) : (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-              className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
+              disabled={campaign.status === 'sending'}
+              onClick={() => setConfirmDelete(true)}
+              title={
+                campaign.status === 'sending'
+                  ? t('cannotDeleteSending')
+                  : t('deleteHover')
+              }
+              className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
             >
-              {t('cancel')}
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('delete')}
             </Button>
-            <Button
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {deleting ? t('deleting') : t('confirm')}
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={broadcast.status === 'sending'}
-            onClick={() => setConfirmDelete(true)}
-            title={
-              broadcast.status === 'sending'
-                ? t('cannotDeleteSending')
-                : t('deleteHover')
-            }
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('delete')}
-          </Button>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Stats — 7 cards: Total / Pending / Sent / Delivered / Read / Replied / Failed */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <StatCard
           label={t('stats.totalRecipients')}
-          value={broadcast.total_recipients}
-          total={broadcast.total_recipients}
+          value={campaign.total_recipients}
+          total={campaign.total_recipients}
           icon={<Users className="h-4 w-4" />}
           color="bg-muted text-muted-foreground"
         />
         <StatCard
+          label={t('stats.pending')}
+          value={pendingCount}
+          total={campaign.total_recipients}
+          icon={<Clock className="h-4 w-4" />}
+          color="bg-slate-500/10 text-muted-foreground"
+        />
+        <StatCard
           label={t('stats.sent')}
-          value={broadcast.sent_count}
-          total={broadcast.total_recipients}
+          value={campaign.sent_count}
+          total={campaign.total_recipients}
           icon={<Send className="h-4 w-4" />}
           color="bg-primary/10 text-primary"
         />
         <StatCard
           label={t('stats.delivered')}
-          value={broadcast.delivered_count}
-          total={broadcast.total_recipients}
+          value={campaign.delivered_count}
+          total={campaign.total_recipients}
           icon={<CheckCheck className="h-4 w-4" />}
           color="bg-teal-500/10 text-teal-400"
         />
         <StatCard
           label={t('stats.read')}
-          value={broadcast.read_count}
-          total={broadcast.total_recipients}
+          value={campaign.read_count}
+          total={campaign.total_recipients}
           icon={<Eye className="h-4 w-4" />}
           color="bg-blue-500/10 text-blue-400"
         />
         <StatCard
           label={t('stats.replied')}
-          value={broadcast.replied_count}
-          total={broadcast.total_recipients}
+          value={campaign.replied_count}
+          total={campaign.total_recipients}
           icon={<MessageCircle className="h-4 w-4" />}
           color="bg-indigo-500/10 text-indigo-400"
         />
         <StatCard
           label={t('stats.failed')}
-          value={broadcast.failed_count}
-          total={broadcast.total_recipients}
+          value={campaign.failed_count}
+          total={campaign.total_recipients}
           icon={<AlertCircle className="h-4 w-4" />}
           color="bg-red-500/10 text-red-400"
         />

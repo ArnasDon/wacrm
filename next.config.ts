@@ -143,6 +143,16 @@ const nextConfig: NextConfig = {
    * they apply to every response regardless of which cache rule
    * matched.
    */
+  // Broadcasts → Campaigns (migration 075): the tab was renamed, not
+  // duplicated — old bookmarks/links to /broadcasts still land on the
+  // right campaign instead of 404ing.
+  async redirects() {
+    return [
+      { source: "/broadcasts", destination: "/campaigns", permanent: false },
+      { source: "/broadcasts/:id", destination: "/campaigns/:id", permanent: false },
+    ];
+  },
+
   async headers() {
     return [
       {

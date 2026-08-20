@@ -29,6 +29,7 @@ import {
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { resolveVariables, type VariableMapping } from '@/lib/whatsapp/template-variables';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -54,6 +55,18 @@ export interface CreateBroadcastParams {
   templateName: string;
   templateLanguage?: string | null;
   recipients: BroadcastRecipientInput[];
+  /** Campaigns planning note — migration 075. Unused by the plain broadcasts route. */
+  description?: string | null;
+  /**
+   * 'sending' (default) keeps the existing public-API broadcasts
+   * contract — POST /api/v1/broadcasts creates AND immediately sends.
+   * 'ready' is for POST /api/v1/campaigns: materialize the campaign +
+   * its recipients WITHOUT sending — section 10 of the Campaigns spec
+   * requires that creating a campaign never sends messages by itself;
+   * a separate POST /api/v1/campaigns/{id}/send (gated by the same
+   * 'broadcasts:send' scope + an explicit `confirm`) does that.
+   */
+  status?: 'sending' | 'ready';
 }
 
 interface PlannedRecipient {
@@ -89,6 +102,7 @@ export async function createBroadcast(
   params: CreateBroadcastParams
 ): Promise<BroadcastPlan> {
   const { name, templateName, recipients } = params;
+  const status = params.status ?? 'sending';
   const templateLanguage = params.templateLanguage || 'en_US';
 
   if (!templateName) {
@@ -199,9 +213,10 @@ export async function createBroadcast(
       account_id: accountId,
       user_id: auditUserId,
       name: name || `API broadcast (${templateName})`,
+      description: params.description || null,
       template_name: templateName,
       template_language: templateLanguage,
-      status: 'sending',
+      status,
       total_recipients: deduped.length,
     })
     .select('id')
@@ -211,14 +226,20 @@ export async function createBroadcast(
     throw new BroadcastError('internal', 'Failed to create broadcast', 500);
   }
 
+  // upsert + ignoreDuplicates (backed by migration 075's unique index
+  // on broadcast_recipients(broadcast_id, contact_id)) rather than a
+  // plain insert: a retried request against an existing campaign (see
+  // POST /api/v1/campaigns/{id}/recipients) can't double-insert a
+  // recipient — it's a DB-level guarantee, not just caller discipline.
   const { data: recipientRows, error: rErr } = await db
     .from('broadcast_recipients')
-    .insert(
+    .upsert(
       deduped.map((r) => ({
         broadcast_id: broadcast.id,
         contact_id: r.contactId,
         status: 'pending' as const,
-      }))
+      })),
+      { onConflict: 'broadcast_id,contact_id', ignoreDuplicates: true }
     )
     .select('id, contact_id');
   if (rErr || !recipientRows) {
@@ -247,6 +268,145 @@ export async function createBroadcast(
 }
 
 /**
+ * Build a {@link BroadcastPlan} for a campaign whose recipients were
+ * already materialized (POST /api/v1/campaigns, or the dashboard's
+ * "ready" campaigns) — used by POST /api/v1/campaigns/{id}/send. Unlike
+ * {@link createBroadcast}, nothing is inserted here: it only reads the
+ * `pending` `broadcast_recipients` rows already on the campaign, so
+ * calling it twice (a retried send request) plans exactly the rows
+ * still pending — already-sent ones are never re-planned, matching the
+ * dashboard's `startCampaignSending` idempotency (section 5 of the
+ * spec).
+ */
+export async function buildPlanForExistingCampaign(
+  db: SupabaseClient,
+  accountId: string,
+  campaignId: string
+): Promise<BroadcastPlan> {
+  const { data: campaign, error: campaignErr } = await db
+    .from('broadcasts')
+    .select('id, status, template_name, template_language, template_variables, header_media_url')
+    .eq('id', campaignId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (campaignErr || !campaign) {
+    throw new BroadcastError('not_found', 'Campaign not found', 404);
+  }
+  if (campaign.status === 'sent' || campaign.status === 'cancelled') {
+    throw new BroadcastError(
+      'bad_request',
+      `Campaign is already ${campaign.status} — nothing to send`,
+      400
+    );
+  }
+
+  const { data: config, error: configError } = await db
+    .from('whatsapp_config')
+    .select('*')
+    .eq('account_id', accountId)
+    .single();
+  if (configError || !config) {
+    throw new BroadcastError(
+      'whatsapp_not_configured',
+      'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      400
+    );
+  }
+  const accessToken = decrypt(config.access_token);
+
+  const { data: rawTemplateRow } = await db
+    .from('message_templates')
+    .select('*')
+    .eq('account_id', accountId)
+    .eq('name', campaign.template_name)
+    .eq('language', campaign.template_language)
+    .maybeSingle();
+  if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+    throw new BroadcastError(
+      'template_malformed',
+      'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before sending.',
+      500
+    );
+  }
+  const templateRow = (rawTemplateRow as MessageTemplate | null) ?? null;
+
+  const { data: pending, error: pendingErr } = await db
+    .from('broadcast_recipients')
+    .select('id, contact:contacts(id, phone, name, email, company)')
+    .eq('broadcast_id', campaignId)
+    .eq('status', 'pending');
+  if (pendingErr) {
+    throw new BroadcastError('internal', 'Failed to read campaign recipients', 500);
+  }
+
+  const variables = (campaign.template_variables ?? {}) as Record<
+    string,
+    VariableMapping
+  >;
+  type PendingContact = {
+    id: string;
+    phone: string | null;
+    name: string | null;
+    email: string | null;
+    company: string | null;
+  };
+  const contactIds = (pending ?? [])
+    .map((r) => (r.contact as unknown as PendingContact | null)?.id)
+    .filter((id): id is string => Boolean(id));
+  const customValueIndex = await fetchCustomValueIndexServer(db, contactIds);
+
+  const planned: PlannedRecipient[] = [];
+  for (const row of pending ?? []) {
+    const contact = row.contact as unknown as PendingContact | null;
+    if (!contact?.phone) continue;
+    planned.push({
+      recipientRowId: row.id as string,
+      phone: contact.phone,
+      params: resolveVariables(
+        variables,
+        {
+          name: contact.name ?? undefined,
+          phone: contact.phone,
+          email: contact.email ?? undefined,
+          company: contact.company ?? undefined,
+        },
+        customValueIndex.get(contact.id)
+      ),
+    });
+  }
+
+  return {
+    broadcastId: campaignId,
+    templateName: campaign.template_name,
+    templateLanguage: campaign.template_language,
+    phoneNumberId: config.phone_number_id,
+    accessToken,
+    templateRow,
+    planned,
+    rejected: 0,
+  };
+}
+
+/** contactId → (customFieldId → value) — server-side twin of the client hook's index. */
+async function fetchCustomValueIndexServer(
+  db: SupabaseClient,
+  contactIds: string[]
+): Promise<Map<string, Map<string, string>>> {
+  const index = new Map<string, Map<string, string>>();
+  if (contactIds.length === 0) return index;
+  const { data } = await db
+    .from('contact_custom_values')
+    .select('contact_id, custom_field_id, value')
+    .in('contact_id', contactIds);
+  for (const row of data ?? []) {
+    const bucket = index.get(row.contact_id) ?? new Map<string, string>();
+    bucket.set(row.custom_field_id, row.value ?? '');
+    index.set(row.contact_id, bucket);
+  }
+  return index;
+}
+
+/**
  * Fan out a {@link BroadcastPlan}: send each recipient's template
  * (phone-variant retry) and stamp its `broadcast_recipients` row.
  * Best-effort per recipient — one failure never aborts the rest.
@@ -263,8 +423,6 @@ export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
-  let sentCount = 0;
-
   for (const recipient of plan.planned) {
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
@@ -293,7 +451,6 @@ export async function deliverBroadcast(
     }
 
     if (sentMessageId) {
-      sentCount++;
       await db
         .from('broadcast_recipients')
         .update({
@@ -315,13 +472,27 @@ export async function deliverBroadcast(
   }
 
   // Terminal status only — counts are trigger-owned (see the note
-  // above). If nothing sent, the broadcast failed outright; a partial
-  // send is still 'sent' (per-recipient failures show in failed_count).
-  await db
-    .from('broadcasts')
-    .update({
-      status: sentCount > 0 ? 'sent' : 'failed',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', plan.broadcastId);
+  // above). Read the DB's own pending/failed counts rather than just
+  // this run's sentCount: buildPlanForExistingCampaign can plan a
+  // second, smaller batch of `pending` rows for a campaign that
+  // already has earlier successful sends (a resumed campaign send),
+  // and this run alone succeeding-or-not isn't the whole picture.
+  const { count: stillPending } = await db
+    .from('broadcast_recipients')
+    .select('*', { count: 'exact', head: true })
+    .eq('broadcast_id', plan.broadcastId)
+    .eq('status', 'pending');
+  if ((stillPending ?? 0) === 0) {
+    const { data: totals } = await db
+      .from('broadcasts')
+      .select('total_recipients, failed_count')
+      .eq('id', plan.broadcastId)
+      .single();
+    const finalStatus =
+      totals && totals.failed_count >= totals.total_recipients ? 'failed' : 'sent';
+    await db
+      .from('broadcasts')
+      .update({ status: finalStatus, updated_at: new Date().toISOString() })
+      .eq('id', plan.broadcastId);
+  }
 }

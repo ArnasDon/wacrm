@@ -1,10 +1,17 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CustomField, Tag } from '@/types';
+import { CustomField, Tag, SegmentSummary, PipelineStage, Contact } from '@/types';
 import { groupTagsByCategory } from '@/lib/contacts/tag-categories';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  useBroadcastSending,
+  type AudienceConfig,
+  type CustomFieldFilter,
+  type CustomFieldOperator,
+} from '@/hooks/use-broadcast-sending';
 import {
   Users,
   Tags,
@@ -14,34 +21,14 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  UserCheck,
+  Bookmark,
+  Kanban,
+  Plus,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
-type CustomFieldOperator = 'is' | 'is_not' | 'contains';
-
-interface CustomFieldFilter {
-  fieldId: string;
-  operator: CustomFieldOperator;
-  value: string;
-}
-
-interface AudienceConfig {
-  type: AudienceType;
-  tagIds?: string[];
-  /** AND (every tag) vs. the default OR (any tag) — mirrors Contacts. */
-  matchAll?: boolean;
-  customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string }[];
-  excludeTagIds?: string[];
-}
-
-/**
- * filter_contacts_by_all_tags is paginated (built for the Contacts list
- * view); here we just need every matching id for the estimate, so page
- * it with a limit far above any realistic account size.
- */
-const MATCH_ALL_TAGS_LIMIT = 100000;
+type AudienceType = AudienceConfig['type'];
 
 interface Step2Props {
   audience: AudienceConfig;
@@ -56,7 +43,7 @@ export function Step2SelectAudience({
   onNext,
   onBack,
 }: Step2Props) {
-  const t = useTranslations('Broadcasts.wizard');
+  const t = useTranslations('Campaigns.wizard');
 
   const OPERATOR_OPTIONS = useMemo<{ value: CustomFieldOperator; label: string }[]>(() => [
     { value: 'is', label: t('selectAudience.operatorIs') },
@@ -94,11 +81,37 @@ export function Step2SelectAudience({
       description: t('selectAudience.csvDesc'),
       icon: Upload,
     },
+    {
+      type: 'segment',
+      label: t('selectAudience.method.segment'),
+      description: t('selectAudience.segmentDesc'),
+      icon: Bookmark,
+    },
+    {
+      type: 'pipeline_stage',
+      label: t('selectAudience.method.pipelineStage'),
+      description: t('selectAudience.pipelineStageDesc'),
+      icon: Kanban,
+    },
+    {
+      type: 'contacts',
+      label: t('selectAudience.method.contacts'),
+      description: t('selectAudience.contactsDesc'),
+      icon: UserCheck,
+    },
   ], [t]);
+  const { previewAudience } = useBroadcastSending();
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [segments, setSegments] = useState<SegmentSummary[]>([]);
+  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactResults, setContactResults] = useState<Contact[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
   const [loadingFields, setLoadingFields] = useState(false);
+  const [loadingSegments, setLoadingSegments] = useState(false);
+  const [loadingStages, setLoadingStages] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
 
@@ -137,104 +150,109 @@ export function Step2SelectAudience({
     fetchFields();
   }, [audience.type]);
 
-  const fetchEstimatedCount = useCallback(async () => {
-    setLoadingCount(true);
-    try {
-      const supabase = createClient();
-
-      // Base query — produces the superset before exclude is applied.
-      let baseIds: Set<string> | null = null; // null means "all contacts"
-
-      if (audience.type === 'all') {
-        // Handled below — full-table count adjusted by excludes.
-      } else if (
-        audience.type === 'tags' &&
-        audience.tagIds &&
-        audience.tagIds.length > 0
-      ) {
-        if (audience.matchAll && audience.tagIds.length > 1) {
-          const { data } = await supabase.rpc('filter_contacts_by_all_tags', {
-            p_tag_ids: audience.tagIds,
-            p_search: null,
-            p_limit: MATCH_ALL_TAGS_LIMIT,
-            p_offset: 0,
-          });
-          baseIds = new Set(
-            ((data ?? []) as { contact: { id: string } }[]).map((r) => r.contact.id),
-          );
-        } else {
-          const { data } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', audience.tagIds);
-          baseIds = new Set((data ?? []).map((r) => r.contact_id));
-        }
-      } else if (
-        audience.type === 'custom_field' &&
-        audience.customField?.fieldId &&
-        audience.customField.value
-      ) {
-        const { fieldId, operator, value } = audience.customField;
-        let q = supabase
-          .from('contact_custom_values')
-          .select('contact_id')
-          .eq('custom_field_id', fieldId);
-        if (operator === 'is') q = q.eq('value', value);
-        else if (operator === 'is_not') q = q.neq('value', value);
-        else q = q.ilike('value', `%${value}%`);
-        const { data } = await q;
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
-      } else if (
-        audience.type === 'csv' &&
-        audience.csvContacts &&
-        audience.csvContacts.length > 0
-      ) {
-        setEstimatedCount(audience.csvContacts.length);
-        return;
-      } else {
-        // Partially-configured audience — wait for the user to finish.
-        setEstimatedCount(null);
-        return;
-      }
-
-      // Apply exclude tags
-      let excludeSet: Set<string> | null = null;
-      if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-        const { data: excludeRows } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.excludeTagIds);
-        excludeSet = new Set((excludeRows ?? []).map((r) => r.contact_id));
-      }
-
-      if (baseIds) {
-        const effective = [...baseIds].filter(
-          (id) => !excludeSet?.has(id),
-        );
-        setEstimatedCount(effective.length);
-      } else {
-        // "All" — fetch the total, then subtract exclude set if any.
-        const { count } = await supabase
-          .from('contacts')
-          .select('*', { count: 'exact', head: true });
-        const total = count ?? 0;
-        setEstimatedCount(excludeSet ? Math.max(0, total - excludeSet.size) : total);
-      }
-    } finally {
-      setLoadingCount(false);
-    }
-  }, [
-    audience.type,
-    audience.tagIds,
-    audience.matchAll,
-    audience.customField,
-    audience.csvContacts,
-    audience.excludeTagIds,
-  ]);
-
+  // Segments — saved tag combinations (migration 040), reused as-is
+  // rather than building a second segmentation system.
   useEffect(() => {
-    fetchEstimatedCount();
-  }, [fetchEstimatedCount]);
+    if (audience.type !== 'segment') return;
+    async function fetchSegments() {
+      setLoadingSegments(true);
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.rpc('list_segments_with_counts');
+        setSegments((data ?? []) as SegmentSummary[]);
+      } finally {
+        setLoadingSegments(false);
+      }
+    }
+    fetchSegments();
+  }, [audience.type]);
+
+  // Pipeline stages — same `deals`/`pipeline_stages` tables the Kanban
+  // board reads.
+  useEffect(() => {
+    if (audience.type !== 'pipeline_stage') return;
+    async function fetchStages() {
+      setLoadingStages(true);
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('pipeline_stages')
+          .select('*, pipeline:pipelines(name)')
+          .order('position');
+        setPipelineStages((data ?? []) as PipelineStage[]);
+      } finally {
+        setLoadingStages(false);
+      }
+    }
+    fetchStages();
+  }, [audience.type]);
+
+  // Individual lead search — section 3's "select leads individually".
+  useEffect(() => {
+    if (audience.type !== 'contacts') return;
+    const query = contactSearch.trim();
+    if (query.length < 2) {
+      setContactResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('contacts')
+        .select('*')
+        .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+        .limit(20);
+      setContactResults(data ?? []);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [audience.type, contactSearch]);
+
+  // Preview the resolved audience via the same resolver the send
+  // engine uses (use-broadcast-sending.ts) — one implementation for
+  // "how many will this reach" and "who actually gets messaged",
+  // instead of a second, drift-prone estimate query per audience type.
+  //
+  // Keyed on JSON.stringify(audience) rather than the `audience`
+  // object (which is a fresh reference every render from the parent's
+  // setState) or `previewAudience` (a plain function re-created every
+  // render by useBroadcastSending, not memoized) — either as an effect
+  // dependency re-fires this on every render, which starts a new
+  // request before the previous one's `finally` ever clears the
+  // loading flag, so "Calculating…" never settles.
+  useEffect(() => {
+    const hasEnoughToPreview =
+      audience.type === 'all' ||
+      (audience.type === 'tags' && (audience.tagIds?.length ?? 0) > 0) ||
+      (audience.type === 'custom_field' &&
+        ((audience.customFields?.some((f) => f.fieldId && f.value)) ||
+          Boolean(audience.customField?.fieldId && audience.customField.value))) ||
+      (audience.type === 'csv' && (audience.csvContacts?.length ?? 0) > 0) ||
+      (audience.type === 'contacts' && (audience.contactIds?.length ?? 0) > 0) ||
+      (audience.type === 'segment' && Boolean(audience.segmentId)) ||
+      (audience.type === 'pipeline_stage' && Boolean(audience.pipelineStageId));
+
+    if (!hasEnoughToPreview) {
+      setEstimatedCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingCount(true);
+    previewAudience(audience)
+      .then((contacts) => {
+        if (!cancelled) setEstimatedCount(contacts.length);
+      })
+      .catch(() => {
+        if (!cancelled) setEstimatedCount(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCount(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(audience)]);
 
   function toggleTag(tagId: string) {
     const current = audience.tagIds ?? [];
@@ -252,24 +270,53 @@ export function Step2SelectAudience({
     onUpdate({ ...audience, excludeTagIds: updated });
   }
 
-  function updateCustomField(patch: Partial<CustomFieldFilter>) {
-    const prev = audience.customField ?? {
-      fieldId: '',
-      operator: 'is' as CustomFieldOperator,
-      value: '',
-    };
-    onUpdate({ ...audience, customField: { ...prev, ...patch } });
+  // Multiple custom-field filters, ANDed (tipo de imóvel + faixa de
+  // preço + …). `audience.customField` (singular) is normalized into
+  // this list on first edit so older in-progress state still works.
+  const customFieldFilters = audience.customFields ??
+    (audience.customField ? [audience.customField] : []);
+
+  function updateCustomFieldFilters(next: CustomFieldFilter[]) {
+    onUpdate({ ...audience, customFields: next, customField: undefined });
+  }
+
+  function addCustomFieldFilter() {
+    updateCustomFieldFilters([
+      ...customFieldFilters,
+      { fieldId: '', operator: 'is' as CustomFieldOperator, value: '' },
+    ]);
+  }
+
+  function updateCustomFieldFilterAt(index: number, patch: Partial<CustomFieldFilter>) {
+    updateCustomFieldFilters(
+      customFieldFilters.map((f, i) => (i === index ? { ...f, ...patch } : f)),
+    );
+  }
+
+  function removeCustomFieldFilterAt(index: number) {
+    updateCustomFieldFilters(customFieldFilters.filter((_, i) => i !== index));
+  }
+
+  function toggleSelectedContact(contact: Contact) {
+    const exists = selectedContacts.some((c) => c.id === contact.id);
+    const next = exists
+      ? selectedContacts.filter((c) => c.id !== contact.id)
+      : [...selectedContacts, contact];
+    setSelectedContacts(next);
+    onUpdate({ ...audience, contactIds: next.map((c) => c.id) });
   }
 
   const isValid =
     audience.type === 'all' ||
     (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) ||
     (audience.type === 'custom_field' &&
-      !!audience.customField?.fieldId &&
-      audience.customField.value.length > 0) ||
+      customFieldFilters.some((f) => f.fieldId && f.value.length > 0)) ||
     (audience.type === 'csv' &&
       audience.csvContacts &&
-      audience.csvContacts.length > 0);
+      audience.csvContacts.length > 0) ||
+    (audience.type === 'segment' && Boolean(audience.segmentId)) ||
+    (audience.type === 'pipeline_stage' && Boolean(audience.pipelineStageId)) ||
+    (audience.type === 'contacts' && (audience.contactIds?.length ?? 0) > 0);
 
   return (
     <div className="space-y-6">
@@ -294,12 +341,15 @@ export function Step2SelectAudience({
                   // Wipe shape fields from other types to avoid stale
                   // config leaking across selections.
                   tagIds: option.type === 'tags' ? audience.tagIds : undefined,
-                  customField:
-                    option.type === 'custom_field'
-                      ? audience.customField
-                      : undefined,
+                  customField: undefined,
+                  customFields:
+                    option.type === 'custom_field' ? audience.customFields : undefined,
                   csvContacts:
                     option.type === 'csv' ? audience.csvContacts : undefined,
+                  segmentId: option.type === 'segment' ? audience.segmentId : undefined,
+                  pipelineStageId:
+                    option.type === 'pipeline_stage' ? audience.pipelineStageId : undefined,
+                  contactIds: option.type === 'contacts' ? audience.contactIds : undefined,
                 })
               }
               className={`flex items-start gap-3 rounded-xl border p-4 text-left transition-all ${
@@ -404,41 +454,171 @@ export function Step2SelectAudience({
               {t('selectAudience.errorLoadFields')}
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)]">
-              <select
-                value={audience.customField?.fieldId ?? ''}
-                onChange={(e) => updateCustomField({ fieldId: e.target.value })}
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            <div className="space-y-2">
+              {customFieldFilters.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t('selectAudience.noFiltersYet')}</p>
+              )}
+              {customFieldFilters.map((filter, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto]"
+                >
+                  <select
+                    value={filter.fieldId}
+                    onChange={(e) => updateCustomFieldFilterAt(index, { fieldId: e.target.value })}
+                    className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">{t('selectAudience.selectField')}</option>
+                    {customFields.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.field_name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={filter.operator}
+                    onChange={(e) =>
+                      updateCustomFieldFilterAt(index, {
+                        operator: e.target.value as CustomFieldOperator,
+                      })
+                    }
+                    className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    {OPERATOR_OPTIONS.map((op: { value: CustomFieldOperator; label: string }) => (
+                      <option key={op.value} value={op.value}>
+                        {op.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={filter.value}
+                    onChange={(e) => updateCustomFieldFilterAt(index, { value: e.target.value })}
+                    placeholder={t('selectAudience.valuePlaceholder')}
+                    className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCustomFieldFilterAt(index)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"
+                    aria-label={t('selectAudience.removeFilter')}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addCustomFieldFilter}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-primary/30 hover:text-primary"
               >
-                <option value="">{t('selectAudience.selectField')}</option>
-                {customFields.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.field_name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={audience.customField?.operator ?? 'is'}
-                onChange={(e) =>
-                  updateCustomField({
-                    operator: e.target.value as CustomFieldOperator,
-                  })
-                }
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                {OPERATOR_OPTIONS.map((op: { value: CustomFieldOperator; label: string }) => (
-                  <option key={op.value} value={op.value}>
-                    {op.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={audience.customField?.value ?? ''}
-                onChange={(e) => updateCustomField({ value: e.target.value })}
-                placeholder={t('selectAudience.valuePlaceholder')}
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-              />
+                <Plus className="h-3.5 w-3.5" />
+                {t('selectAudience.addFilter')}
+              </button>
+              {customFieldFilters.length > 1 && (
+                <p className="text-xs text-muted-foreground">{t('selectAudience.filtersAreAnd')}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'segment' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.segment')}</p>
+          {loadingSegments ? (
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          ) : segments.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('selectAudience.noSegmentsFound')}</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {segments.map((segment) => {
+                const isSelected = audience.segmentId === segment.id;
+                return (
+                  <button
+                    key={segment.id}
+                    onClick={() => onUpdate({ ...audience, segmentId: segment.id })}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                      isSelected
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border bg-muted text-muted-foreground hover:border-border'
+                    }`}
+                  >
+                    {segment.name}
+                    <span className="text-muted-foreground/70">({segment.contact_count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'pipeline_stage' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.pipelineStage')}</p>
+          {loadingStages ? (
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          ) : pipelineStages.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t('selectAudience.noStagesFound')}</p>
+          ) : (
+            <select
+              value={audience.pipelineStageId ?? ''}
+              onChange={(e) => onUpdate({ ...audience, pipelineStageId: e.target.value })}
+              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            >
+              <option value="">{t('selectAudience.selectStage')}</option>
+              {pipelineStages.map((stage) => (
+                <option key={stage.id} value={stage.id}>
+                  {stage.pipeline?.name ? `${stage.pipeline.name} — ${stage.name}` : stage.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'contacts' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.contacts')}</p>
+          <Input
+            value={contactSearch}
+            onChange={(e) => setContactSearch(e.target.value)}
+            placeholder={t('selectAudience.searchContactsPlaceholder')}
+            className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+          />
+          {contactResults.length > 0 && (
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border p-1">
+              {contactResults.map((contact) => {
+                const isSelected = selectedContacts.some((c) => c.id === contact.id);
+                return (
+                  <button
+                    key={contact.id}
+                    onClick={() => toggleSelectedContact(contact)}
+                    className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                      isSelected ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <span>{contact.name || contact.phone}</span>
+                    <span className="text-xs text-muted-foreground">{contact.phone}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {selectedContacts.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedContacts.map((contact) => (
+                <span
+                  key={contact.id}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
+                >
+                  {contact.name || contact.phone}
+                  <button onClick={() => toggleSelectedContact(contact)} aria-label={t('selectAudience.removeContact')}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
             </div>
           )}
         </div>

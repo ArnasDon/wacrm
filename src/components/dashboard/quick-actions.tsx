@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { UserPlus, Layers, Radio, Calculator } from 'lucide-react'
+import { UserPlus, Layers, Megaphone, Calculator } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { SegmentsManagerDialog } from '@/components/segments/segments-manager-dialog'
 
@@ -31,7 +31,7 @@ export function QuickActions() {
       tint: 'text-blue-400',
       onClick: () => setSegmentsOpen(true),
     },
-    { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
+    { labelKey: 'newBroadcast', href: '/campaigns/new', icon: Megaphone, tint: 'text-amber-400' },
     { labelKey: 'calculadora', href: '/calculadora', icon: Calculator, tint: 'text-primary' },
   ]
 

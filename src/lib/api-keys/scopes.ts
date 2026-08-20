@@ -21,6 +21,15 @@ export const API_SCOPES = [
   'conversations:read',
   'broadcasts:send',
   'webhooks:manage',
+  // Campaigns (migration 075) — deliberately split from 'broadcasts:send':
+  // a key with only 'campaigns:read'/'campaigns:write' can look up leads,
+  // create a campaign, and stage recipients, but can NEVER trigger an
+  // actual WhatsApp send — that still requires 'broadcasts:send' on
+  // POST /api/v1/campaigns/{id}/send. This is what keeps "which leads are
+  // investors?" from being able to accidentally fire messages (spec
+  // section 10).
+  'campaigns:read',
+  'campaigns:write',
 ] as const;
 
 export type ApiScope = (typeof API_SCOPES)[number];
@@ -32,8 +41,10 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   'contacts:read': 'List and read contacts',
   'contacts:write': 'Create and update contacts',
   'conversations:read': 'List and read conversations',
-  'broadcasts:send': 'Launch broadcast campaigns',
+  'broadcasts:send': 'Launch broadcasts / send a campaign',
   'webhooks:manage': 'Register and manage outbound event webhooks',
+  'campaigns:read': 'List campaigns, recipients, and a lead’s campaign history',
+  'campaigns:write': 'Create campaigns and add recipients (cannot send — needs broadcasts:send)',
 };
 
 /** Type-narrow an unknown value into a valid `ApiScope`. */

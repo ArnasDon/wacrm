@@ -10,7 +10,7 @@ import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-templa
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
-import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { useBroadcastSending, type AudienceConfig } from '@/hooks/use-broadcast-sending';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -21,62 +21,72 @@ const steps = [
   { label: 'send', key: 'send' },
 ] as const;
 
-export default function NewBroadcastPage() {
+export default function NewCampaignPage() {
   const router = useRouter();
-  const t = useTranslations('Broadcasts.new');
+  const t = useTranslations('Campaigns.new');
   const { accountId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { createAndSendBroadcast, saveCampaignReady, isProcessing, progress } =
+    useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
-  const [audience, setAudience] = useState<{
-    type: 'all' | 'tags' | 'custom_field' | 'csv';
-    tagIds?: string[];
-    matchAll?: boolean;
-    customField?: {
-      fieldId: string;
-      operator: 'is' | 'is_not' | 'contains';
-      value: string;
-    };
-    csvContacts?: { phone: string; name?: string }[];
-    excludeTagIds?: string[];
-  }>({ type: 'all' });
+  const [audience, setAudience] = useState<AudienceConfig>({ type: 'all' });
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
 
   async function handleSend() {
     if (!template) return;
 
     try {
-      const broadcastId = await createAndSendBroadcast({
+      const campaignId = await createAndSendBroadcast({
         name,
+        description,
         template,
-        audience: {
-          type: audience.type,
-          tagIds: audience.tagIds,
-          matchAll: audience.matchAll,
-          customField: audience.customField,
-          csvContacts: audience.csvContacts,
-          excludeTagIds: audience.excludeTagIds,
-        },
+        audience,
         variables,
         headerMediaUrl,
       });
-      router.push(`/broadcasts/${broadcastId}`);
+      router.push(`/campaigns/${campaignId}`);
     } catch (err) {
       // Previously swallowed with console.error — the wizard would
       // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
-      console.error('Broadcast failed:', err);
+      const message = err instanceof Error ? err.message : 'Campaign failed';
+      console.error('Campaign failed:', err);
       toast.error(message);
     }
   }
 
   /**
-   * Writes a draft broadcast row — no recipients, no sending. The user
+   * "Salvar como pronta para envio" (spec section 3) — resolves the
+   * audience and materializes recipient rows so the count/list are
+   * locked in and reviewable, but doesn't send. The campaign lands on
+   * its detail page in 'ready' status; "Iniciar envio" there sends it.
+   */
+  async function handleSaveReady() {
+    if (!template) return;
+    try {
+      const campaignId = await saveCampaignReady({
+        name,
+        description,
+        template,
+        audience,
+        variables,
+        headerMediaUrl,
+      });
+      toast.success(t('toastReadySaved'));
+      router.push(`/campaigns/${campaignId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save campaign';
+      toast.error(t('toastFailedReady', { error: message }));
+    }
+  }
+
+  /**
+   * Writes a draft campaign row — no recipients, no sending. The user
    * can revisit it via the list page to finish the flow later. We
    * don't persist the in-progress audience/variable config here
    * because the current schema doesn't carry it past `audience_filter`
@@ -107,6 +117,7 @@ export default function NewBroadcastPage() {
       user_id: user.id,
       account_id: accountId,
       name: name.trim(),
+      description: description.trim() || null,
       template_name: template.name,
       template_language: template.language ?? 'en_US',
       template_variables: variables,
@@ -114,6 +125,10 @@ export default function NewBroadcastPage() {
         type: audience.type,
         tagIds: audience.tagIds,
         matchAll: audience.matchAll,
+        customFields: audience.customFields,
+        segmentId: audience.segmentId,
+        pipelineStageId: audience.pipelineStageId,
+        contactIds: audience.contactIds,
       },
       status: 'draft',
       total_recipients: 0,
@@ -129,7 +144,7 @@ export default function NewBroadcastPage() {
       return;
     }
     toast.success(t('toastDraftSaved'));
-    router.push('/broadcasts');
+    router.push('/campaigns');
   }
 
   return (
@@ -196,7 +211,7 @@ export default function NewBroadcastPage() {
               selectedTemplate={template}
               onSelect={setTemplate}
               onNext={() => setCurrentStep(1)}
-              onBack={() => router.push('/broadcasts')}
+              onBack={() => router.push('/campaigns')}
             />
           )}
           {currentStep === 1 && (
@@ -222,10 +237,13 @@ export default function NewBroadcastPage() {
             <Step4ScheduleSend
               name={name}
               onNameChange={setName}
+              description={description}
+              onDescriptionChange={setDescription}
               template={template}
               audience={audience}
               onSend={handleSend}
               onSaveDraft={handleSaveDraft}
+              onSaveReady={handleSaveReady}
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}

@@ -3,8 +3,14 @@
 // POST /api/v1/contacts  — create a contact  (scope: contacts:write)
 //
 // List is keyset-paginated (see src/lib/api/v1/pagination.ts) and
-// supports `?search=` (name/phone) and `?tag=<tagId>` filters. Create
-// is find-or-create by phone: an existing match returns 200 with
+// supports `?search=` (name/phone), `?tag=<tagId>`, and
+// `?custom_field=<fieldId>&value=<v>&operator=is|is_not|contains`
+// filters — the last is how "leads por critério" (tipo de imóvel,
+// faixa de preço, …, all modeled as custom fields in this CRM) is
+// queried for Campaigns audience building / MCP lookups, reusing the
+// same eq/neq/ilike semantics the Broadcasts audience picker already
+// uses (see AudienceConfig in use-broadcast-sending.ts). Create is
+// find-or-create by phone: an existing match returns 200 with
 // `created: false`; a new row returns 201 with `created: true`.
 // ============================================================
 
@@ -39,16 +45,22 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const search = sanitizeSearch(url.searchParams.get('search') ?? '');
     const tag = url.searchParams.get('tag');
+    const customFieldId = url.searchParams.get('custom_field');
+    const customFieldValue = url.searchParams.get('value');
+    const customFieldOperator = url.searchParams.get('operator') ?? 'is';
+    const hasCustomFieldFilter = Boolean(customFieldId && customFieldValue);
 
-    // When filtering by tag, add an aliased INNER join on contact_tags
-    // used purely for the WHERE — the parent is kept only if it has the
-    // tag. The main `contact_tags(tags(*))` embed still returns the
-    // contact's FULL tag set for serialization. This filters in one
-    // bounded query (paged by limit+1) instead of pre-fetching an
+    // When filtering by tag or custom field, add an aliased INNER join
+    // used purely for the WHERE — the parent is kept only if it
+    // matches. The main `contact_tags(tags(*))` embed still returns
+    // the contact's FULL tag set for serialization. This filters in
+    // one bounded query (paged by limit+1) instead of pre-fetching an
     // unbounded id list into an `.in(...)`.
-    const selectClause = tag
-      ? `${CONTACT_SELECT}, tag_filter:contact_tags!inner(tag_id)`
-      : CONTACT_SELECT;
+    let selectClause: string = CONTACT_SELECT;
+    if (tag) selectClause += ', tag_filter:contact_tags!inner(tag_id)';
+    if (hasCustomFieldFilter) {
+      selectClause += ', field_filter:contact_custom_values!inner(custom_field_id, value)';
+    }
 
     let query = ctx.supabase
       .from('contacts')
@@ -61,6 +73,17 @@ export async function GET(request: Request) {
 
     if (tag) {
       query = query.eq('tag_filter.tag_id', tag);
+    }
+
+    if (hasCustomFieldFilter) {
+      query = query.eq('field_filter.custom_field_id', customFieldId as string);
+      if (customFieldOperator === 'is_not') {
+        query = query.neq('field_filter.value', customFieldValue as string);
+      } else if (customFieldOperator === 'contains') {
+        query = query.ilike('field_filter.value', `%${customFieldValue}%`);
+      } else {
+        query = query.eq('field_filter.value', customFieldValue as string);
+      }
     }
 
     query = query

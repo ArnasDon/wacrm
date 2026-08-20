@@ -612,6 +612,8 @@ export interface PipelineStage {
   position: number;
   color: string;
   created_at: string;
+  /** Joined via `pipeline:pipelines(name)` — the Campaigns audience picker labels stages by pipeline. */
+  pipeline?: { name: string };
 }
 
 export type DealStatus = 'open' | 'won' | 'lost';
@@ -656,17 +658,35 @@ export interface Deal {
   responder_color?: ResponderColor;
 }
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
+/**
+ * 'ready' and 'cancelled' added in migration 075 for Campaigns:
+ * 'ready' = audience + template picked, recipients materialized, not
+ * sent yet (produced by "review recipients" before send); 'cancelled'
+ * = a draft/ready campaign the user decided not to run. 'scheduled'
+ * is kept for wire compatibility though nothing schedules a send yet.
+ */
+export type BroadcastStatus =
+  | 'draft'
+  | 'ready'
+  | 'scheduled'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'cancelled';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
 export interface Broadcast {
   id: string;
   user_id: string;
   name: string;
+  /** Optional planning note — migration 075 (Campaigns). */
+  description?: string | null;
   template_name: string;
   template_language: string;
   template_variables?: Record<string, unknown>;
   audience_filter?: Record<string, unknown>;
+  /** Media URL for an IMAGE/VIDEO/DOCUMENT header template — migration 075. */
+  header_media_url?: string | null;
   scheduled_at?: string;
   status: BroadcastStatus;
   total_recipients: number;

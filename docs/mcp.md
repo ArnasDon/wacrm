@@ -8,11 +8,13 @@ Claude Code, Cursor, and any other MCP client — in natural language:
 > "Show the last five messages with +1 415 555 0123."
 > "Send the `order_update` template to that contact."
 
-It lives in [`mcp-server/`](../mcp-server) and is published to npm as
-[`wacrm-mcp`](https://www.npmjs.com/package/wacrm-mcp). Under the hood
-it's a thin wrapper over the [public API](./public-api.md), so every
-request is authenticated and scoped by your instance exactly like any
-other API call.
+It's published to npm as [`wacrm-mcp`](https://www.npmjs.com/package/wacrm-mcp)
+and its source is a standalone package (not part of this app's tree —
+a second `package.json` here breaks some one-click importers, so it's
+developed as a sibling project). Under the hood it's a thin wrapper
+over the [public API](./public-api.md), so every request is
+authenticated and scoped by your instance exactly like any other API
+call.
 
 ## Quick start
 
@@ -43,16 +45,29 @@ data or send messages, add `"WACRM_ENABLE_WRITES": "true"` (and
 ## What it exposes
 
 - **Reads (always on):** `whoami`, contacts (list/get), conversations
-  (list/get), messages (list), broadcast status.
-- **Writes (opt-in):** send a message, create/update a contact.
-- **Broadcasts (opt-in):** launch a template broadcast — requires an
-  explicit `confirm` and is marked destructive.
+  (list/get), messages (list), broadcast status, and campaigns
+  (list/get, list recipients, a lead's campaign history).
+- **Writes (opt-in):** send a message, create/update a contact,
+  create a campaign, add campaign recipients — creating or staging a
+  campaign never sends anything by itself.
+- **Broadcasts (opt-in):** launch a template broadcast, or dispatch an
+  existing campaign's recipients — both require an explicit `confirm`
+  and are marked destructive.
+
+A campaign is a broadcast with a `description` and richer audience
+planning (segments, pipeline stage, individual leads, multiple
+custom-field filters) — see the [Campaigns](./public-api.md#campaigns)
+section of the public API docs. "Which leads are investors?" only ever
+reaches a read tool; only the dedicated send tool can trigger a real
+WhatsApp send.
 
 ## Safety
 
 Because sending WhatsApp messages is a real side effect, the server is
 **read-only until you opt in**, layered on top of the API key's own
 scopes. Give an assistant a read-only key and read-only config and it
-physically cannot send anything. See the
-[server README](../mcp-server/README.md) for the full tool list and
-safety model.
+physically cannot send anything. Campaign creation sits under the
+write guard, not the broadcast one — you can let an assistant build
+and stage campaigns without ever letting it press send. See the
+server's README (in its own repository/package) for the full tool
+list and safety model.

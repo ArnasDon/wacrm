@@ -21,7 +21,7 @@ interface Step1Props {
 }
 
 export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
-  const t = useTranslations('Broadcasts.wizard');
+  const t = useTranslations('Campaigns.wizard');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

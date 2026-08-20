@@ -28,6 +28,10 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
     label: "draft",
     classes: "bg-slate-500/10 text-muted-foreground border-slate-500/20",
   },
+  ready: {
+    label: "ready",
+    classes: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  },
   scheduled: {
     label: "scheduled",
     classes: "bg-blue-500/10 text-blue-400 border-blue-500/20",
@@ -44,6 +48,10 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
   failed: {
     label: "failed",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
+  },
+  cancelled: {
+    label: "cancelled",
+    classes: "bg-slate-500/10 text-muted-foreground border-slate-500/20",
   },
 };
 

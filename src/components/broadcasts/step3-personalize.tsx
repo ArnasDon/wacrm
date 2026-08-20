@@ -76,7 +76,7 @@ export function Step3Personalize({
   onNext,
   onBack,
 }: Step3Props) {
-  const t = useTranslations('Broadcasts.wizard');
+  const t = useTranslations('Campaigns.wizard');
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
   const [firstContact, setFirstContact] = useState<Contact | null>(null);

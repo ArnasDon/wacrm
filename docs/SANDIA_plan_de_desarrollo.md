@@ -4089,3 +4089,90 @@ Verificado en vivo tras el deploy automático de EasyPanel: `GET
 /api/admin/tickets` responde `401` (antes `404`) y `POST
 /api/support/report` responde `401` sin sesión — ambas rutas nuevas
 están desplegadas y exigen autenticación correctamente.
+
+---
+
+**2026-08-20 — Claude Code — Precios adicionales por producto (hasta 3
+precios distintos, con instalación y fotos propias) + rediseño del
+formulario de carrito en el catálogo público.**
+
+Angel pidió que un producto pueda tener más de un precio (ejemplo:
+Q2,000 en un tamaño/color, Q3,000 en otro), que cada precio adicional
+pueda incluir un costo de instalación opcional y fotos propias, que
+nada de eso sea obligatorio, que todo viva en la misma "ficha" que ya
+se usa para crear/editar un producto, y que el formulario de datos del
+carrito ("Me lo llevo") en el catálogo público tenga el mismo diseño
+que el resto de esa página (hasta ahora usaba clases genéricas
+gris/blanco, no la paleta de marca de esa tienda).
+
+La migración 053 había dejado esto explícitamente fuera de alcance
+("sin categorías/variantes — fuera de alcance por decisión explícita")
+— se revierte esa decisión ahora a pedido directo de Angel.
+
+- **`supabase/migrations/075_product_price_options.sql`** — tabla
+  nueva `product_price_options` (label, price, installation_cost
+  opcional, image_urls opcional, position), hijo de `products` con su
+  propio `account_id` para RLS directa (mismo patrón que `products`:
+  lectura para cualquier miembro, escritura agent+). Tope de 2 filas
+  por producto (= 3 precios en total con el base) reforzado solo en la
+  app (`MAX_PRICE_OPTIONS`), no en la base de datos — mismo estilo que
+  otros topes suaves del proyecto. También agrega
+  `quote_items.product_price_option_id` (nullable, `SET NULL` al
+  borrar) para saber qué opción se cotizó en cada línea.
+- **`src/lib/products/price-options.ts`** (con tests) — validador puro
+  compartido por `POST`/`PATCH /api/products`: cada precio adicional
+  solo necesita nombre + precio; instalación y fotos son extras. Un
+  `PATCH` que incluya `price_options` hace reemplazo completo
+  (borra+reinserta) en vez de diff por id — correcto para un tope de 2
+  filas sin necesitar rastrear ids.
+- **`product-form.tsx`** (la ficha que abre "Agregar/Editar producto")
+  — nueva sección "Precios adicionales": hasta 2 filas, cada una con
+  nombre, precio, costo de instalación (opcional) y fotos propias
+  (reutiliza el mismo bucket `product-media`).
+- **`createQuote()`** (usado por el catálogo público, el creador de
+  cotizaciones interno y la acción de IA) — ahora resuelve
+  `price_option_id` server-side (nunca confía en el precio que mande
+  el cliente), y si la opción tiene costo de instalación agrega una
+  **línea aparte** en la cotización ("Instalación — Producto — Opción"),
+  no lo esconde dentro del precio unitario — así el cliente ve
+  exactamente qué está pagando. La instalación es un cargo fijo por
+  línea, no se multiplica por cantidad.
+- **Catálogo público (`/catalog/[accountId]`)** — la ficha de detalle
+  de un producto ahora muestra un selector de precio ("Precio base" +
+  cada opción con su precio), cambia la foto principal si la opción
+  tiene fotos propias, y muestra el costo de instalación si aplica. El
+  carrito trata cada combinación producto+opción como una línea
+  independiente (`productId::optionId`) — elegir "Talla XL" no toca
+  cuántas unidades del precio base ya estaban en el carrito. La tarjeta
+  de cada producto en la grilla muestra "Desde Qx" cuando hay opciones
+  con precio distinto al base.
+- **Rediseño del diálogo "Me lo llevo"** (formulario de datos +
+  pantalla de éxito) — de clases genéricas `gray-*`/`white` a la
+  paleta propia del catálogo (`#062f38`, `#082f38`, `#1e7774`,
+  `#fffefa`), tipografía serif en títulos, etiquetas en mayúsculas con
+  tracking, bordes cuadrados — ya no se siente como un formulario
+  aparte pegado a la tienda.
+
+**No se pudo probar visualmente en navegador** (mismo problema de
+aislamiento de red del sandbox de Chrome documentado en la entrada del
+botón "ir al chat" — `localhost:3000` no es alcanzable desde ese
+Chrome, aunque sí carga sitios externos). Se compensó con: prueba
+manual por SQL en Supabase (insertar producto + opción, confirmar
+`ON DELETE CASCADE`), `tsc --noEmit` limpio, `eslint` limpio en los
+archivos tocados, `next build` completo (renderiza/type-checks todas
+las páginas incluyendo `/catalog/[accountId]`), `vitest run` en verde
+(1127 tests — 14 nuevos: 10 del validador de precios + 4 de
+`createQuote` con opciones de precio), sin diff en `package-lock.json`,
+advisors de seguridad de Supabase sin hallazgos nuevos. Recomendado que
+Angel pruebe el flujo completo (crear un producto con 2 precios
+adicionales, abrirlo en el catálogo público, armar una cotización)
+contra una cuenta real después del deploy.
+
+Alcance deliberadamente NO cubierto: el creador de cotizaciones interno
+(`quote-builder.tsx`, usado por un vendedor dentro del CRM) sigue sin
+selector de opción de precio en su UI — `createQuote()` ya lo soporta
+a nivel de datos si se quisiera agregar después, pero no se pidió y no
+se tocó para mantener el alcance de este cambio contenido.
+
+Commit `a18b1ec` — pendiente de confirmación de Angel para pushear a
+`main`.

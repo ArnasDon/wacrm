@@ -9,8 +9,17 @@ interface ProductRow {
   is_active: boolean
 }
 
+interface PriceOptionRow {
+  id: string
+  product_id: string
+  label: string
+  price: number
+  installation_cost: number | null
+}
+
 interface Fixture {
   products?: ProductRow[]
+  priceOptions?: PriceOptionRow[]
   defaultCurrency?: string | null
   pipeline?: { id: string } | null
   stage?: { id: string } | null
@@ -52,6 +61,9 @@ function makeDb(fx: Fixture) {
       }
       if (table === 'products') {
         return { data: fx.products ?? [], error: null }
+      }
+      if (table === 'product_price_options') {
+        return { data: fx.priceOptions ?? [], error: null }
       }
       if (table === 'accounts') {
         return { data: { default_currency: fx.defaultCurrency ?? null }, error: null }
@@ -200,6 +212,76 @@ describe('createQuote — catalog vs free items', () => {
         allowFreeItems: false,
       }),
     ).rejects.toBeInstanceOf(CreateQuoteError)
+  })
+})
+
+describe('createQuote — price options (migration 075)', () => {
+  it('uses the price option\'s price instead of the product\'s base price', async () => {
+    const { db, inserted } = makeDb({
+      products: [{ id: 'p1', name: 'Silla', price: 100, is_active: true }],
+      priceOptions: [{ id: 'opt1', product_id: 'p1', label: 'Talla XL', price: 150, installation_cost: null }],
+      pipeline: null,
+    })
+    const { quote, items } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', price_option_id: 'opt1', quantity: 2 }],
+      allowFreeItems: false,
+    })
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ unit_price: 150, description: 'Silla — Talla XL', product_price_option_id: 'opt1' })
+    expect(quote.subtotal).toBe(300)
+    expect(inserted.quote_items[0]).toMatchObject({ unit_price: 150, quantity: 2, product_price_option_id: 'opt1' })
+  })
+
+  it('adds a separate flat-fee installation line when the option has one', async () => {
+    const { db, inserted } = makeDb({
+      products: [{ id: 'p1', name: 'Silla', price: 100, is_active: true }],
+      priceOptions: [{ id: 'opt1', product_id: 'p1', label: 'Talla XL', price: 150, installation_cost: 25 }],
+      pipeline: null,
+    })
+    const { items, quote } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', price_option_id: 'opt1', quantity: 3 }],
+      allowFreeItems: false,
+    })
+    expect(items).toHaveLength(2)
+    expect(items[1]).toMatchObject({ description: 'Instalación — Silla — Talla XL', unit_price: 25, quantity: 1 })
+    // 3 * 150 (product) + 25 (flat installation, not multiplied by qty)
+    expect(quote.subtotal).toBe(475)
+    expect(inserted.quote_items).toHaveLength(2)
+  })
+
+  it('does not add an installation line when installation_cost is null or zero', async () => {
+    const { db, inserted } = makeDb({
+      products: [{ id: 'p1', name: 'Silla', price: 100, is_active: true }],
+      priceOptions: [{ id: 'opt1', product_id: 'p1', label: 'Talla XL', price: 150, installation_cost: 0 }],
+      pipeline: null,
+    })
+    const { items } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', price_option_id: 'opt1', quantity: 1 }],
+      allowFreeItems: false,
+    })
+    expect(items).toHaveLength(1)
+    expect(inserted.quote_items).toHaveLength(1)
+  })
+
+  it('rejects a price_option_id that belongs to a different product', async () => {
+    const { db } = makeDb({
+      products: [
+        { id: 'p1', name: 'Silla', price: 100, is_active: true },
+        { id: 'p2', name: 'Mesa', price: 200, is_active: true },
+      ],
+      priceOptions: [{ id: 'opt1', product_id: 'p2', label: 'Grande', price: 250, installation_cost: null }],
+      pipeline: null,
+    })
+    await expect(
+      createQuote({
+        db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+        items: [{ product_id: 'p1', price_option_id: 'opt1', quantity: 1 }],
+        allowFreeItems: false,
+      }),
+    ).rejects.toMatchObject({ status: 404 })
   })
 })
 

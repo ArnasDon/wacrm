@@ -449,6 +449,30 @@ export interface Product {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** Up to 2 additional priced options (migration 075) — e.g. a
+   *  size/color that costs more than the base price. Not present on
+   *  every fetch; routes that don't need them omit the join. */
+  price_options?: ProductPriceOption[];
+}
+
+/**
+ * One additional priced variant of a product (migration 075) — e.g.
+ * "Talla M / Azul" at a different price than the base, optionally with
+ * its own installation cost and its own extra photos. A product may
+ * have zero, one, or two of these (capped client-side in
+ * product-form.tsx), on top of the base `Product.price`.
+ */
+export interface ProductPriceOption {
+  id: string;
+  account_id: string;
+  product_id: string;
+  label: string;
+  price: number;
+  installation_cost?: number | null;
+  image_urls: string[];
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
@@ -459,6 +483,8 @@ export interface QuoteItem {
   /** Null for a free-form item — only a human can create one; the AI's
    *  create_quote action only ever references catalog products. */
   product_id: string | null;
+  /** Which priced option (if any) this line used — see ProductPriceOption. */
+  product_price_option_id?: string | null;
   description: string;
   unit_price: number;
   quantity: number;

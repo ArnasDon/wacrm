@@ -13,6 +13,13 @@ export interface QuoteItemInput {
    *  never trusted from the caller). Absent = free-form item, only
    *  accepted when `allowFreeItems` is true. */
   product_id?: string | null
+  /** Optional priced variant of `product_id` (migration 075) — when
+   *  given, its `price` replaces the product's base price for this
+   *  line, and its `installation_cost` (if any) adds a second,
+   *  server-synthesized line right after it. Always re-read from
+   *  `product_price_options`, never trusted from the caller. Ignored
+   *  for a free-form item. */
+  price_option_id?: string | null
   quantity: number
   /** Free-item only. Ignored for a catalog item. */
   description?: string
@@ -76,7 +83,21 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     for (const p of products ?? []) productsById.set(p.id as string, p as { id: string; name: string; price: number; is_active: boolean })
   }
 
-  const resolvedItems: { description: string; unit_price: number; quantity: number; product_id: string | null }[] = []
+  const priceOptionIds = [...new Set(items.filter((i) => i.price_option_id).map((i) => i.price_option_id as string))]
+  const priceOptionsById = new Map<string, { id: string; product_id: string; label: string; price: number; installation_cost: number | null }>()
+  if (priceOptionIds.length > 0) {
+    const { data: options, error: optionsError } = await db
+      .from('product_price_options')
+      .select('id, product_id, label, price, installation_cost')
+      .eq('account_id', accountId)
+      .in('id', priceOptionIds)
+    if (optionsError) throw new CreateQuoteError(optionsError.message, 500)
+    for (const o of options ?? []) {
+      priceOptionsById.set(o.id as string, o as { id: string; product_id: string; label: string; price: number; installation_cost: number | null })
+    }
+  }
+
+  const resolvedItems: { description: string; unit_price: number; quantity: number; product_id: string | null; product_price_option_id: string | null }[] = []
   for (const raw of items) {
     const quantity = Number(raw.quantity)
     if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -87,7 +108,38 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
       if (!product || !product.is_active) {
         throw new CreateQuoteError(`Product ${raw.product_id} not found in this account's catalog, or inactive`, 404)
       }
-      resolvedItems.push({ description: product.name, unit_price: product.price, quantity, product_id: product.id })
+
+      let unitPrice = product.price
+      let description = product.name
+      let optionId: string | null = null
+      if (raw.price_option_id) {
+        const option = priceOptionsById.get(raw.price_option_id)
+        if (!option || option.product_id !== raw.product_id) {
+          throw new CreateQuoteError(`Price option ${raw.price_option_id} not found for product ${raw.product_id}`, 404)
+        }
+        unitPrice = option.price
+        description = `${product.name} — ${option.label}`
+        optionId = option.id
+      }
+
+      resolvedItems.push({ description, unit_price: unitPrice, quantity, product_id: product.id, product_price_option_id: optionId })
+
+      // Installation is a flat fee for the option, not multiplied by
+      // quantity — a separate, clearly-labeled line rather than folded
+      // silently into unit_price, so the customer sees exactly what
+      // they're paying for.
+      if (optionId) {
+        const option = priceOptionsById.get(optionId)!
+        if (option.installation_cost != null && option.installation_cost > 0) {
+          resolvedItems.push({
+            description: `Instalación — ${description}`,
+            unit_price: option.installation_cost,
+            quantity: 1,
+            product_id: null,
+            product_price_option_id: optionId,
+          })
+        }
+      }
     } else {
       if (!allowFreeItems) {
         throw new CreateQuoteError('Items must reference a catalog product (product_id)')
@@ -96,7 +148,7 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
       const unitPrice = Number(raw.unit_price)
       if (!description) throw new CreateQuoteError('A free-form item needs a description')
       if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new CreateQuoteError('A free-form item needs a valid unit_price')
-      resolvedItems.push({ description, unit_price: unitPrice, quantity, product_id: null })
+      resolvedItems.push({ description, unit_price: unitPrice, quantity, product_id: null, product_price_option_id: null })
     }
   }
 
@@ -177,6 +229,7 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     account_id: accountId,
     quote_id: quote.id,
     product_id: item.product_id,
+    product_price_option_id: item.product_price_option_id,
     description: item.description,
     unit_price: item.unit_price,
     quantity: item.quantity,

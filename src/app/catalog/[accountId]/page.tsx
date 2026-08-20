@@ -23,6 +23,14 @@ import { readResponseJson } from '@/lib/http/response-json';
 // owner picked for their own dashboard. Single-brand catalog, so no
 // search bar, filters, or category sidebar — every product shown here
 // already belongs to this one company.
+//
+// Price options (migration 075): a product may carry up to 2 extra
+// priced variants (e.g. a size/color that costs more), each optionally
+// with its own installation cost and its own extra photos. A cart line
+// is keyed by `${productId}::${optionId ?? ''}` (see `lineKey`) so the
+// base price and each option are independent selections with their
+// own quantity — picking "Talla XL" doesn't touch how many of the base
+// product are already in the cart.
 // ============================================================
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -38,6 +46,7 @@ import {
   Search,
   ArrowRight,
   Leaf,
+  Wrench,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -54,12 +63,21 @@ import {
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/currency';
 
+interface CatalogPriceOption {
+  id: string;
+  label: string;
+  price: number;
+  installation_cost: number | null;
+  image_urls: string[];
+}
+
 interface CatalogProduct {
   id: string;
   name: string;
   description: string | null;
   price: number;
   image_url: string | null;
+  price_options: CatalogPriceOption[];
 }
 
 interface CatalogData {
@@ -67,6 +85,17 @@ interface CatalogData {
   currency: string;
   whatsapp_number: string | null;
   products: CatalogProduct[];
+}
+
+/** Cart line identity: a product at its base price, or at one of its
+ *  priced options — each tracked as an independent quantity. */
+function lineKey(productId: string, optionId: string | null): string {
+  return `${productId}::${optionId ?? ''}`;
+}
+
+function parseLineKey(key: string): { productId: string; optionId: string | null } {
+  const [productId, optionId] = key.split('::');
+  return { productId, optionId: optionId || null };
 }
 
 // `useSearchParams` (for the `?c=<conversationId>` param — see
@@ -99,6 +128,7 @@ function PublicCatalogPageInner() {
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(
     null
   );
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -140,35 +170,61 @@ function PublicCatalogPageInner() {
     };
   }, [accountId]);
 
-  const setQuantity = useCallback((productId: string, qty: number) => {
-    setQuantities((prev) => {
-      const next = { ...prev };
-      if (qty <= 0) {
-        delete next[productId];
-      } else {
-        next[productId] = qty;
-      }
-      return next;
-    });
-  }, []);
+  const setQuantity = useCallback(
+    (productId: string, optionId: string | null, qty: number) => {
+      const key = lineKey(productId, optionId);
+      setQuantities((prev) => {
+        const next = { ...prev };
+        if (qty <= 0) {
+          delete next[key];
+        } else {
+          next[key] = qty;
+        }
+        return next;
+      });
+    },
+    []
+  );
 
   const selectedItems = useMemo(
     () =>
       Object.entries(quantities)
         .filter(([, qty]) => qty > 0)
-        .map(([productId, qty]) => {
+        .map(([key, qty]) => {
+          const { productId, optionId } = parseLineKey(key);
           const product = data?.products.find((p) => p.id === productId);
-          return product ? { product, quantity: qty } : null;
+          if (!product) return null;
+          const option = optionId
+            ? (product.price_options.find((o) => o.id === optionId) ?? null)
+            : null;
+          return {
+            product,
+            option,
+            quantity: qty,
+            unitPrice: option ? option.price : product.price,
+          };
         })
         .filter(
-          (x): x is { product: CatalogProduct; quantity: number } => x !== null
+          (
+            x
+          ): x is {
+            product: CatalogProduct;
+            option: CatalogPriceOption | null;
+            quantity: number;
+            unitPrice: number;
+          } => x !== null
         ),
     [quantities, data]
   );
 
   const total = useMemo(
     () =>
-      selectedItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
+      selectedItems.reduce((sum, i) => {
+        // Installation is a flat fee per selected line, not multiplied
+        // by quantity — mirrors createQuote's server-side pricing.
+        const installation = i.option?.installation_cost ?? 0;
+        return sum + i.unitPrice * i.quantity + installation;
+      }, 0),
     [selectedItems]
   );
   const totalCount = selectedItems.reduce((sum, i) => sum + i.quantity, 0);
@@ -182,6 +238,22 @@ function PublicCatalogPageInner() {
         .includes(query)
     );
   }, [data, search]);
+
+  const selectedOption = selectedProduct
+    ? (selectedProduct.price_options.find((o) => o.id === selectedOptionId) ??
+      null)
+    : null;
+  const detailPrice = selectedOption ? selectedOption.price : selectedProduct?.price;
+  const detailImages =
+    selectedOption && selectedOption.image_urls.length > 0
+      ? selectedOption.image_urls
+      : selectedProduct?.image_url
+        ? [selectedProduct.image_url]
+        : [];
+  const detailLineKey = selectedProduct
+    ? lineKey(selectedProduct.id, selectedOptionId)
+    : null;
+  const detailQty = detailLineKey ? (quantities[detailLineKey] ?? 0) : 0;
 
   async function handleSubmit() {
     if (!accountId) return;
@@ -204,6 +276,7 @@ function PublicCatalogPageInner() {
             address: address.trim() || undefined,
             items: selectedItems.map((i) => ({
               product_id: i.product.id,
+              price_option_id: i.option?.id || undefined,
               quantity: i.quantity,
             })),
             conversation_id: conversationId || undefined,
@@ -380,7 +453,10 @@ function PublicCatalogPageInner() {
               </p>
               <button
                 type="button"
-                onClick={() => setSelectedProduct(featuredProduct)}
+                onClick={() => {
+                  setSelectedOptionId(null);
+                  setSelectedProduct(featuredProduct);
+                }}
                 className="mt-6 inline-flex h-12 items-center gap-3 bg-[#062f38] px-7 text-xs font-bold tracking-[0.12em] text-white uppercase transition hover:bg-[#1e7774]"
               >
                 Ver producto <ArrowRight className="size-4" />
@@ -423,7 +499,8 @@ function PublicCatalogPageInner() {
         ) : (
           <div className="grid grid-cols-2 gap-x-3 gap-y-10 sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-4 lg:gap-x-8">
             {visibleProducts.map((product) => {
-              const qty = quantities[product.id] ?? 0;
+              const baseKey = lineKey(product.id, null);
+              const qty = quantities[baseKey] ?? 0;
               return (
                 <div key={product.id} className="group min-w-0">
                   {/* Opens the detail dialog — the quantity stepper below
@@ -431,7 +508,10 @@ function PublicCatalogPageInner() {
                       own clicks never bubble into "open detail". */}
                   <button
                     type="button"
-                    onClick={() => setSelectedProduct(product)}
+                    onClick={() => {
+                      setSelectedOptionId(null);
+                      setSelectedProduct(product);
+                    }}
                     className="block w-full text-left"
                   >
                     <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#e9ebe6]">
@@ -458,7 +538,9 @@ function PublicCatalogPageInner() {
                         </p>
                       )}
                       <p className="mt-1 text-sm font-semibold text-[#062f38] sm:text-base">
-                        {formatCurrency(product.price, data.currency)}
+                        {product.price_options.length > 0
+                          ? `Desde ${formatCurrency(Math.min(product.price, ...product.price_options.map((o) => o.price)), data.currency)}`
+                          : formatCurrency(product.price, data.currency)}
                       </p>
                     </div>
                   </button>
@@ -470,7 +552,7 @@ function PublicCatalogPageInner() {
                         size="icon"
                         className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
                         onClick={() =>
-                          setQuantity(product.id, Math.max(0, qty - 1))
+                          setQuantity(product.id, null, Math.max(0, qty - 1))
                         }
                         disabled={qty === 0}
                       >
@@ -484,7 +566,7 @@ function PublicCatalogPageInner() {
                         variant="outline"
                         size="icon"
                         className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
-                        onClick={() => setQuantity(product.id, qty + 1)}
+                        onClick={() => setQuantity(product.id, null, qty + 1)}
                       >
                         <Plus className="size-3.5" />
                       </Button>
@@ -499,17 +581,22 @@ function PublicCatalogPageInner() {
 
       <Dialog
         open={selectedProduct !== null}
-        onOpenChange={(open) => !open && setSelectedProduct(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedProduct(null);
+            setSelectedOptionId(null);
+          }
+        }}
       >
         <DialogContent className="max-h-[94vh] overflow-y-auto border-0 bg-[#fffefa] p-0 text-[#082f38] sm:max-w-6xl">
           {selectedProduct && (
             <div className="grid min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
-              <div className="flex min-h-[380px] items-center justify-center bg-[#e8e9e5] p-6 sm:p-10 lg:min-h-[620px]">
+              <div className="flex flex-col items-center justify-center gap-4 bg-[#e8e9e5] p-6 sm:p-10 lg:min-h-[620px]">
                 <div className="relative aspect-square w-full max-w-xl overflow-hidden bg-[#f1f1ee]">
-                  {selectedProduct.image_url ? (
+                  {detailImages[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
                     <img
-                      src={selectedProduct.image_url}
+                      src={detailImages[0]}
                       alt={selectedProduct.name}
                       className="h-full w-full object-contain transition duration-500 hover:scale-[1.03]"
                     />
@@ -522,6 +609,19 @@ function PublicCatalogPageInner() {
                     Catálogo
                   </span>
                 </div>
+                {detailImages.length > 1 && (
+                  <div className="flex w-full max-w-xl flex-wrap gap-2">
+                    {detailImages.map((url, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={url + i}
+                        src={url}
+                        alt=""
+                        className="h-14 w-14 border border-[#082f38]/15 object-cover"
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col p-7 sm:p-10 lg:p-14">
@@ -538,13 +638,56 @@ function PublicCatalogPageInner() {
                 </DialogHeader>
 
                 <p className="mt-6 font-serif text-3xl text-[#062f38]">
-                  {formatCurrency(selectedProduct.price, data.currency)}
+                  {formatCurrency(detailPrice ?? 0, data.currency)}
                 </p>
+                {selectedOption?.installation_cost ? (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-[#284d53]/70">
+                    <Wrench className="size-3.5" />
+                    + {formatCurrency(selectedOption.installation_cost, data.currency)}{' '}
+                    de instalación
+                  </p>
+                ) : null}
                 <div className="my-7 h-px bg-[#082f38]/12" />
 
                 <p className="text-sm leading-7 whitespace-pre-wrap text-[#284d53]/75 sm:text-base">
                   {selectedProduct.description || 'Sin descripción disponible.'}
                 </p>
+
+                {selectedProduct.price_options.length > 0 && (
+                  <div className="mt-8">
+                    <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
+                      Elige una opción
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOptionId(null)}
+                        className={`border px-4 py-2 text-xs font-semibold transition ${
+                          selectedOptionId === null
+                            ? 'border-[#062f38] bg-[#062f38] text-white'
+                            : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
+                        }`}
+                      >
+                        Precio base ·{' '}
+                        {formatCurrency(selectedProduct.price, data.currency)}
+                      </button>
+                      {selectedProduct.price_options.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setSelectedOptionId(option.id)}
+                          className={`border px-4 py-2 text-xs font-semibold transition ${
+                            selectedOptionId === option.id
+                              ? 'border-[#062f38] bg-[#062f38] text-white'
+                              : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
+                          }`}
+                        >
+                          {option.label} · {formatCurrency(option.price, data.currency)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-8">
                   <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
@@ -557,25 +700,23 @@ function PublicCatalogPageInner() {
                       onClick={() =>
                         setQuantity(
                           selectedProduct.id,
-                          Math.max(0, (quantities[selectedProduct.id] ?? 0) - 1)
+                          selectedOptionId,
+                          Math.max(0, detailQty - 1)
                         )
                       }
-                      disabled={(quantities[selectedProduct.id] ?? 0) === 0}
+                      disabled={detailQty === 0}
                       aria-label="Reducir cantidad"
                     >
                       <Minus className="size-4" />
                     </button>
                     <span className="w-10 text-center text-sm font-semibold">
-                      {quantities[selectedProduct.id] ?? 0}
+                      {detailQty}
                     </span>
                     <button
                       type="button"
                       className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5]"
                       onClick={() =>
-                        setQuantity(
-                          selectedProduct.id,
-                          (quantities[selectedProduct.id] ?? 0) + 1
-                        )
+                        setQuantity(selectedProduct.id, selectedOptionId, detailQty + 1)
                       }
                       aria-label="Aumentar cantidad"
                     >
@@ -589,9 +730,11 @@ function PublicCatalogPageInner() {
                   onClick={() => {
                     setQuantity(
                       selectedProduct.id,
-                      Math.max(1, (quantities[selectedProduct.id] ?? 0) + 1)
+                      selectedOptionId,
+                      Math.max(1, detailQty + 1)
                     );
                     setSelectedProduct(null);
+                    setSelectedOptionId(null);
                   }}
                   className="mt-8 flex h-14 w-full items-center justify-center gap-3 bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition hover:bg-[#1e7774]"
                 >
@@ -642,16 +785,21 @@ function PublicCatalogPageInner() {
         </div>
       )}
 
+      {/* "Me lo llevo" data-capture dialog — restyled to the storefront's
+          own palette/typography (was generic gray/white before), so the
+          checkout step doesn't look like a different, unbranded app. */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}
       >
-        <DialogContent className="border-gray-200 bg-white sm:max-w-md">
+        <DialogContent className="border-0 bg-[#fffefa] text-[#082f38] sm:max-w-md">
           {result === null ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-gray-900">Me lo llevo</DialogTitle>
-                <DialogDescription className="text-gray-500">
+                <DialogTitle className="font-serif text-2xl font-medium text-[#062f38]">
+                  Me lo llevo
+                </DialogTitle>
+                <DialogDescription className="text-[#284d53]/70">
                   {totalCount}{' '}
                   {totalCount === 1
                     ? 'producto seleccionado'
@@ -661,62 +809,72 @@ function PublicCatalogPageInner() {
               </DialogHeader>
               <div className="space-y-3 py-2">
                 <div className="space-y-1.5">
-                  <Label className="text-gray-600">Nombre *</Label>
+                  <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
+                    Nombre *
+                  </Label>
                   <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="border-gray-300 bg-white text-gray-900"
+                    className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-gray-600">Teléfono *</Label>
+                  <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
+                    Teléfono *
+                  </Label>
                   <Input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+502 5555 5555"
-                    className="border-gray-300 bg-white text-gray-900"
+                    className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-gray-600">NIT (opcional)</Label>
+                    <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
+                      NIT (opcional)
+                    </Label>
                     <Input
                       value={nit}
                       onChange={(e) => setNit(e.target.value)}
-                      className="border-gray-300 bg-white text-gray-900"
+                      className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-gray-600">Correo (opcional)</Label>
+                    <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
+                      Correo (opcional)
+                    </Label>
                     <Input
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="border-gray-300 bg-white text-gray-900"
+                      className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                     />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-gray-600">Dirección (opcional)</Label>
+                  <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
+                    Dirección (opcional)
+                  </Label>
                   <Textarea
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     rows={2}
-                    className="border-gray-300 bg-white text-gray-900"
+                    className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
               </div>
-              <DialogFooter className="bg-white">
+              <DialogFooter className="bg-[#fffefa]">
                 <Button
                   variant="outline"
                   onClick={() => setDialogOpen(false)}
-                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                  className="rounded-none border-[#082f38]/25 bg-transparent text-[#082f38] hover:bg-[#e7ebe5]"
                 >
                   Cancelar
                 </Button>
                 <Button
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="rounded-none bg-[#062f38] text-xs font-bold tracking-[0.1em] text-white uppercase hover:bg-[#1e7774]"
                 >
                   {submitting ? (
                     <>
@@ -732,8 +890,10 @@ function PublicCatalogPageInner() {
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle className="text-gray-900">¡Listo!</DialogTitle>
-                <DialogDescription className="text-gray-500">
+                <DialogTitle className="font-serif text-2xl font-medium text-[#062f38]">
+                  ¡Listo!
+                </DialogTitle>
+                <DialogDescription className="text-[#284d53]/70">
                   {result.delivered
                     ? 'Ya te enviamos el PDF de tu cotización — revisa el chat donde nos escribiste.'
                     : result.whatsappUrl
@@ -741,11 +901,11 @@ function PublicCatalogPageInner() {
                       : 'Tu cotización fue creada. Pronto se pondrán en contacto contigo.'}
                 </DialogDescription>
               </DialogHeader>
-              <DialogFooter className="bg-white">
+              <DialogFooter className="bg-[#fffefa]">
                 <Button
                   variant="outline"
                   onClick={resetDialog}
-                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                  className="rounded-none border-[#082f38]/25 bg-transparent text-[#082f38] hover:bg-[#e7ebe5]"
                 >
                   Cerrar
                 </Button>
@@ -755,7 +915,7 @@ function PublicCatalogPageInner() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Button className="gap-2 bg-[#25D366] text-white hover:bg-[#1ebe5a]">
+                    <Button className="gap-2 rounded-none bg-[#25D366] text-xs font-bold tracking-[0.1em] text-white uppercase hover:bg-[#1ebe5a]">
                       <MessageCircle className="size-4" />
                       Continuar por WhatsApp
                     </Button>

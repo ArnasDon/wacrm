@@ -57,7 +57,7 @@ interface RequestBody {
   nit?: string
   email?: string
   address?: string
-  items?: { product_id?: string; quantity?: number }[]
+  items?: { product_id?: string; quantity?: number; price_option_id?: string }[]
   /** The conversation this visitor's catalog link was sent from (see
    *  sendCatalogToConversation's `?c=` param) — when present and valid,
    *  delivers the quote there directly instead of guessing via
@@ -97,7 +97,11 @@ export async function POST(
 
   const items: QuoteItemInput[] = rawItems
     .filter((i) => typeof i.product_id === 'string' && i.product_id)
-    .map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity) || 0 }))
+    .map((i) => ({
+      product_id: i.product_id,
+      price_option_id: typeof i.price_option_id === 'string' && i.price_option_id ? i.price_option_id : undefined,
+      quantity: Number(i.quantity) || 0,
+    }))
   if (items.length === 0) {
     return NextResponse.json({ error: 'Selecciona al menos un producto' }, { status: 400 })
   }

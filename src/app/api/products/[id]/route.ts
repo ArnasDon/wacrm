@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
+import { parsePriceOptions } from '@/lib/products/price-options'
 
 // Update / delete a single product. Products are account-shared, so
 // every mutation is scoped by `account_id` (the service-role client
@@ -45,16 +46,49 @@ export async function PATCH(
     update.is_active = body.is_active === true
   }
 
-  if (Object.keys(update).length === 0) {
-    return NextResponse.json({ ok: true })
+  const admin = supabaseAdmin()
+
+  if (Object.keys(update).length > 0) {
+    const { error } = await admin
+      .from('products')
+      .update(update)
+      .eq('id', id)
+      .eq('account_id', ctx.accountId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const { error } = await supabaseAdmin()
-    .from('products')
-    .update(update)
-    .eq('id', id)
-    .eq('account_id', ctx.accountId)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Full replace, not a diff — the form always sends the complete
+  // desired set (at most 2 rows), so delete-then-reinsert correctly
+  // handles adds/removes/reorders without needing to track row ids.
+  if ('price_options' in body) {
+    const parsedOptions = parsePriceOptions(body.price_options)
+    if (!parsedOptions.ok) {
+      return NextResponse.json({ error: parsedOptions.error }, { status: 400 })
+    }
+
+    const { error: deleteError } = await admin
+      .from('product_price_options')
+      .delete()
+      .eq('product_id', id)
+      .eq('account_id', ctx.accountId)
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 })
+
+    if (parsedOptions.options.length > 0) {
+      const { error: insertError } = await admin.from('product_price_options').insert(
+        parsedOptions.options.map((option, index) => ({
+          account_id: ctx.accountId,
+          product_id: id,
+          label: option.label,
+          price: option.price,
+          installation_cost: option.installation_cost,
+          image_urls: option.image_urls,
+          position: index,
+        })),
+      )
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
+  }
+
   return NextResponse.json({ ok: true })
 }
 

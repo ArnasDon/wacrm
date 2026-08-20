@@ -68,10 +68,36 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to load catalog' }, { status: 500 })
   }
 
+  // Price options (migration 075) — up to 2 extra priced variants per
+  // product, each with its own optional installation cost and extra
+  // photos. Fetched in one batch query (not per-product) and merged in
+  // memory, same shape as the admin/companies member-count merge.
+  const productIds = (products ?? []).map((p) => p.id as string)
+  const priceOptionsByProduct = new Map<string, unknown[]>()
+  if (productIds.length > 0) {
+    const { data: options, error: optionsError } = await db
+      .from('product_price_options')
+      .select('id, product_id, label, price, installation_cost, image_urls')
+      .in('product_id', productIds)
+      .order('position')
+    if (optionsError) {
+      console.error('[public/catalog] price options error:', optionsError)
+      return NextResponse.json({ error: 'Failed to load catalog' }, { status: 500 })
+    }
+    for (const option of options ?? []) {
+      const list = priceOptionsByProduct.get(option.product_id as string) ?? []
+      list.push(option)
+      priceOptionsByProduct.set(option.product_id as string, list)
+    }
+  }
+
   return NextResponse.json({
     account_name: account.name,
     currency: account.default_currency ?? 'USD',
     whatsapp_number: whatsapp?.public_phone_number ?? null,
-    products: products ?? [],
+    products: (products ?? []).map((product) => ({
+      ...product,
+      price_options: priceOptionsByProduct.get(product.id as string) ?? [],
+    })),
   })
 }

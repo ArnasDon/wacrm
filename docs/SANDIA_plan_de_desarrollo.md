@@ -3875,3 +3875,60 @@ clientes puntuales antes de eso: agregar sus cuentas de Google
 manualmente como test users (hasta 100) desde la misma página
 Audience — no requiere revisión de Google, pero no escala a "cualquier
 cliente se conecta solo".
+
+---
+
+**2026-08-20 — Claude Code — Cierra la vulnerabilidad de invitaciones
+ilimitadas: cupos por empresa (`seat_limit`) + cobro de Q100 por
+usuario adicional.**
+
+Angel reportó que cualquier empresa podía invitar miembros nuevos sin
+límite ni costo — quería cobrar Q100 por usuario adicional y controlar
+él mismo cuántos cupos tiene cada empresa.
+
+- **`supabase/migrations/072_seat_limits.sql`** — `accounts.seat_limit`
+  (INTEGER, default 1). Aplicada en vivo contra el proyecto
+  (`puvbwzwmojpjplhdfnmk`). Backfill: cada empresa existente quedó con
+  `seat_limit` = su cantidad de miembros actual (verificado: "Chat
+  Sandia" 2/2, "Estilo y Confort" 1/1) — nadie con equipo ya armado
+  queda bloqueado retroactivamente; el límite solo frena crecimiento
+  *futuro* más allá del tamaño de hoy. Cuentas nuevas nacen en 1 (solo
+  el dueño), que es como ya nace toda cuenta hoy.
+- **`POST /api/account/invitations`** (creación de invitación) ahora
+  cuenta miembros + invitaciones pendientes vivas (no vencidas, no
+  aceptadas) contra `seat_limit` antes de crear el link — si ya está al
+  tope, responde 403 con un mensaje que apunta a la nueva solicitud de
+  acceso. Contar también las pendientes evita que un admin genere 5
+  links con 1 solo cupo libre y luego los 5 se canjeen.
+- **"Invitar miembro" (Settings → Miembros)** ahora se deshabilita
+  automáticamente (con tooltip explicando por qué) cuando la empresa
+  está al tope de cupos — sigue existiendo el mismo flujo de siempre,
+  solo que ahora depende de tener cupo disponible.
+- **Nuevo botón "Solicitud de accesos"** (mismo lugar, admin+, siempre
+  visible): abre un diálogo para elegir el rol del nuevo usuario
+  (Administrador/Agente/Visor), notas opcionales, y exige adjuntar
+  foto del comprobante de pago — igual que "Reportar pago" en
+  Facturación, no hay tabla nueva de solicitudes, el correo ES el
+  registro. `POST /api/billing/request-seat` envía el correo a
+  `asistentedechat@gmail.com` con empresa, quién solicita, rol pedido,
+  notas y el cupo actual, con la foto adjunta.
+- **Panel de Angel (`/admin`)** — nueva columna "Cupos" con
+  `usados/límite` (en ámbar si está al tope) y un botón **"+1 asiento"**
+  por empresa que suma un cupo (`PATCH /api/admin/companies/[id]` con
+  `add_seats: 1`) tras confirmar el pago en el correo recibido — eso
+  desbloquea de inmediato un clic más de "Invitar miembro" en esa
+  empresa. No se agregó botón para restar cupos (fuera de lo pedido, y
+  riesgoso: podría dejar a un miembro activo sin cupo retroactivamente).
+
+Decisión de producto documentada en el comentario de la migración: el
+costo es Q100 por asiento, sin asumir que sea mensual — Angel puede
+ajustarlo desde /admin en cualquier momento, no hay nada hardcodeado
+más allá del mensaje de la UI.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1111 tests,
+incluye paridad de catálogos de mensajes en/es/ko para las claves
+nuevas de `Settings.members`/`Settings.requestSeat`), sin diff en
+`package-lock.json`. Migración aplicada en Supabase, advisors de
+seguridad revisados sin hallazgos nuevos. Commit `3f192f5` — pendiente
+de confirmación de Angel para pushear a `main`.

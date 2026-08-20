@@ -9,6 +9,85 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.14.1] — 2026-08-20
+
+**Migration required:** `supabase/migrations/054_fix_ambiguous_contact_id_column_reference.sql`
+
+Fixes `POST /api/content/[id]/schedule` returning a 500 with no
+detail for every real (non-empty) audience. Root cause, found only
+after the route's silent-swallow error paths were fixed to actually
+log: `create_content_broadcast_with_recipients` (053) raised
+
+```
+code:    42702
+message: column reference "contact_id" is ambiguous
+details: It could refer to either a PL/pgSQL variable or a table
+         column.
+```
+
+`RETURNS TABLE(broadcast_id UUID, recipient_id UUID, contact_id UUID)`
+implicitly declares those three names as PL/pgSQL variables for the
+whole function body (same as OUT parameters). The unqualified
+`RETURNING id, contact_id` inside the recipient-insert CTE then
+collides with the outer `contact_id` — Postgres's default
+`#variable_conflict = error` refuses to guess which one you meant.
+Never caught by `npm run test` because that suite mocks `db.rpc()`
+everywhere; nothing exercises the real PL/pgSQL short of a live call,
+which is exactly how this shipped in 053 unnoticed.
+
+Fix: qualify the `RETURNING` target with a table alias
+(`INSERT INTO broadcast_recipients AS br (...) ... RETURNING br.id,
+br.contact_id`) rather than renaming the `RETURNS TABLE` columns —
+renaming those would change the RPC's actual wire contract (the JSON
+keys `src/app/api/content/[id]/schedule/route.ts`'s
+`rpcRows[0].broadcast_id` and `src/app/api/whatsapp/broadcast/
+route.ts` read) for no benefit, since the ambiguity only exists
+inside the SQL statement itself.
+
+`create_broadcast_with_recipients` (037/038/052) — the template-
+broadcast sibling every existing Broadcasts send already goes
+through — has the exact same `RETURNS TABLE` shape and the exact same
+unqualified `RETURNING id, contact_id`. Same latent bug, fixed in the
+same migration rather than left sitting in a hot path that just
+hadn't been hit by a real multi-recipient call yet in this
+environment.
+
+### Also in this pass
+
+- `src/app/api/content/[id]/schedule/route.ts`: three of its four
+  `500`-returning branches (`content` lookup, `content_translations`
+  lookup, `accounts.demo_mode_enabled` lookup) returned with **zero**
+  logging — the literal mechanism behind "server log shows only the
+  500 line." All three now log before returning. The RPC-failure log
+  now prints `message`/`details`/`hint`/`code` as separate fields
+  (a bare `console.error('...', rpcErr)` can have its second argument
+  dropped by some log pipelines) plus the recipient count and a
+  5-id sample, so the next real failure is diagnosable from the log
+  alone.
+- `src/lib/content/audience.ts`'s `resolveAudienceContacts` now logs
+  the same structured detail before throwing, instead of relying
+  solely on the generic `[toErrorResponse] uncategorized error`
+  catch-all to surface it.
+- Test: `src/app/api/content/[id]/schedule/route.test.ts` (new) —
+  covers a multi-recipient (3-contact) schedule end to end: every
+  resolved `contact.id` is forwarded to the RPC, a multi-row RPC
+  response (one row per recipient, shared `broadcast_id`) is read
+  correctly, `content.status` only flips to `Scheduled` after the RPC
+  actually succeeds, and a Postgres-error RPC response (modeled on
+  the exact 42702 above) 500s cleanly without flipping content status.
+  This pins down the app-side contract; it cannot exercise the real
+  PL/pgSQL itself since `db.rpc()` is mocked, same as the rest of this
+  suite. No Docker/Supabase CLI is available in this environment to
+  add a live-Postgres regression test for the SQL fix directly — that
+  side of the fix is covered by `.github/workflows/migrations.yml`,
+  which already replays every migration from scratch against a real
+  local Postgres on every PR touching `supabase/**`.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (897/897 — 894 existing + 3 new), and build all pass.
+format:check reports the same 361-file pre-existing baseline as
+before this change.
+
 ## [0.14.0] — 2026-08-19
 
 Completes Phase 4 (§23): §20's demo chain now runs end-to-end —

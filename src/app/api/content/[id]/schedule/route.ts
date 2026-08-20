@@ -39,8 +39,10 @@ export async function POST(
       .select('id, title, status')
       .eq('id', id)
       .maybeSingle();
-    if (contentErr)
+    if (contentErr) {
+      console.error('[content-schedule] content lookup failed:', contentErr);
       return NextResponse.json({ error: contentErr.message }, { status: 500 });
+    }
     if (!content)
       return NextResponse.json({ error: 'Content not found' }, { status: 404 });
     if (content.status !== 'Approved') {
@@ -76,6 +78,10 @@ export async function POST(
         .eq('language', language)
         .maybeSingle();
       if (translationErr) {
+        console.error(
+          '[content-schedule] translation lookup failed:',
+          translationErr
+        );
         return NextResponse.json(
           { error: translationErr.message },
           { status: 500 }
@@ -138,26 +144,56 @@ export async function POST(
       .select('demo_mode_enabled')
       .eq('id', accountId)
       .maybeSingle();
-    if (accountErr)
+    if (accountErr) {
+      console.error(
+        '[content-schedule] account/demo-mode lookup failed:',
+        accountErr
+      );
       return NextResponse.json({ error: accountErr.message }, { status: 500 });
+    }
     const isDemo = account?.demo_mode_enabled ?? true;
 
+    const rpcArgs = {
+      p_account_id: accountId,
+      p_user_id: userId,
+      p_name: `${content.title}${language ? ` (${language})` : ''}`,
+      p_content_id: id,
+      p_language: language,
+      p_scheduled_at: scheduledAt.toISOString(),
+      p_audience_filter: audience,
+      p_contact_ids: contacts.map((c) => c.id),
+      p_is_demo: isDemo,
+    };
     const { data: rpcRows, error: rpcErr } = await admin.rpc(
       'create_content_broadcast_with_recipients',
-      {
-        p_account_id: accountId,
-        p_user_id: userId,
-        p_name: `${content.title}${language ? ` (${language})` : ''}`,
-        p_content_id: id,
-        p_language: language,
-        p_scheduled_at: scheduledAt.toISOString(),
-        p_audience_filter: audience,
-        p_contact_ids: contacts.map((c) => c.id),
-        p_is_demo: isDemo,
-      }
+      rpcArgs
     );
     if (rpcErr || !rpcRows || rpcRows.length === 0) {
-      console.error('[content-schedule] RPC failed:', rpcErr);
+      // Log every field a PostgrestError carries (message/details/hint/
+      // code) individually — a bare `console.error('...', rpcErr)` has
+      // burned this route before: some log pipelines only surface the
+      // first string argument of a multi-arg console.error call, which
+      // silently drops the actual Postgres error and leaves only the
+      // generic "RPC failed" text with nothing to diagnose from. Also
+      // log the recipient count and a truncated contact-id sample so a
+      // foreign-key violation (a contact_id no longer present in
+      // `contacts` — e.g. deleted/merged by the dedupe pipeline in the
+      // gap between resolveAudienceContacts() and this call) is
+      // immediately visible without a second round trip.
+      console.error(
+        '[content-schedule] create_content_broadcast_with_recipients failed',
+        {
+          message: rpcErr?.message,
+          details: rpcErr?.details,
+          hint: rpcErr?.hint,
+          code: rpcErr?.code,
+          rowsReturned: rpcRows?.length ?? null,
+          recipientCount: contacts.length,
+          contentId: id,
+          accountId,
+          sampleContactIds: contacts.slice(0, 5).map((c) => c.id),
+        }
+      );
       return NextResponse.json(
         { error: 'Failed to schedule this post' },
         { status: 500 }

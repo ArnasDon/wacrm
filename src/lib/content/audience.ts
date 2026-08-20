@@ -59,6 +59,14 @@ export async function resolveAudienceContacts(
 
   const { data, error } = await query;
   if (error) {
+    console.error('[resolveAudienceContacts] contacts query failed:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      accountId,
+      selector,
+    });
     throw new Error(`Failed to resolve audience: ${error.message}`);
   }
   return (data ?? []).filter(

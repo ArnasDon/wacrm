@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -34,14 +34,26 @@ interface MessageBubbleProps {
   onToggleReaction?: (emoji: string) => void;
 }
 
-function StatusIcon({ status }: { status: Message["status"] }) {
+function StatusIcon({
+  status,
+  overlay,
+}: {
+  status: Message["status"];
+  /** True when drawn over a photo (see MediaImage's `overlay`) instead of
+   *  the bubble's own background — swaps the neutral tick color for white
+   *  so it stays legible against arbitrary photo content. The read/failed
+   *  colors stay as-is either way; those are meaningful status colors, not
+   *  just theme-matching. */
+  overlay?: boolean;
+}) {
+  const neutral = overlay ? "h-3 w-3 text-white" : "h-3 w-3 text-muted-foreground";
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className={neutral} />;
     case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
+      return <Check className={neutral} />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck className={neutral} />;
     case "read":
       return <CheckCheck className="h-3 w-3 text-blue-400" />;
     case "failed":
@@ -60,9 +72,26 @@ function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof us
   );
 }
 
-function MediaImage({ url, alt, t }: { url: string; alt: string; t: ReturnType<typeof useTranslations> }) {
+function MediaImage({
+  url,
+  alt,
+  t,
+  overlay,
+}: {
+  url: string;
+  alt: string;
+  t: ReturnType<typeof useTranslations>;
+  /** WhatsApp-iOS-style timestamp/status drawn over the photo itself
+   *  (bottom-right, on a bottom-edge gradient) instead of the bubble's
+   *  normal row below it. Only passed for a caption-less image message —
+   *  see MessageBubble's `isFramedPhoto`. */
+  overlay?: { time: string; status: ReactNode };
+}) {
   const { src, loading, error, setError } = useResolvedMediaSrc(url);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // Unique per instance — an SVG filter id must be unique in the document,
+  // and a thread can render many photo bubbles at once.
+  const shadeFilterId = useId();
 
   if (error) {
     return (
@@ -84,12 +113,14 @@ function MediaImage({ url, alt, t }: { url: string; alt: string; t: ReturnType<t
     <>
       {/* Reuses the already-loaded `src` (blob: URL for proxy-backed
           inbound media, or the direct URL for outbound) — opening the
-          lightbox never re-fetches the image. */}
+          lightbox never re-fetches the image. `relative` only when
+          overlaying — it's the "immediate wrapper of the image" the
+          timestamp/gradient position against. */}
       <button
         type="button"
         onClick={() => setLightboxOpen(true)}
         aria-label={t("photo")}
-        className="block cursor-zoom-in"
+        className={cn("block cursor-zoom-in", overlay && "relative")}
       >
         <img
           src={src ?? ""}
@@ -97,6 +128,44 @@ function MediaImage({ url, alt, t }: { url: string; alt: string; t: ReturnType<t
           className="max-h-64 max-w-60 rounded-lg object-cover"
           onError={() => setError(true)}
         />
+        {overlay && (
+          <>
+            {/* Contrast shading — one blurred ellipse (SVG + feGaussianBlur),
+                not a CSS gradient: a gradient box has a hard edge wherever
+                its own bounding box ends, which showed up as a visible
+                rotated-rectangle line across the photo. A blurred shape has
+                no such boundary — it fades to nothing on its own. Tilted
+                ~40° and anchored at the image's own corner; scales with the
+                photo via the 0–100 viewBox instead of fixed pixels. Never
+                intercepts clicks (the button above it already handles
+                opening the lightbox). */}
+            <svg
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <filter id={shadeFilterId} x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="8" />
+                </filter>
+              </defs>
+              <ellipse
+                cx="100"
+                cy="100"
+                rx="42"
+                ry="18"
+                fill="rgba(0,0,0,0.5)"
+                filter={`url(#${shadeFilterId})`}
+                transform="rotate(-40 100 100)"
+              />
+            </svg>
+            <span className="absolute bottom-[6px] right-2 z-[2] flex items-center gap-1 text-[11px] text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">
+              {overlay.time}
+              {overlay.status}
+            </span>
+          </>
+        )}
       </button>
       <MediaLightbox
         open={lightboxOpen}
@@ -271,6 +340,31 @@ export function MessageBubble({
     [message.content_text],
   );
 
+  // WhatsApp-iOS-style framed photo: a caption-less image message drops
+  // the bubble's usual text padding entirely (down to a 2px frame) and
+  // overlays the timestamp/status on the photo itself instead of giving
+  // them their own row below it. A caption (content_text) keeps the
+  // existing layout — image, caption text, timestamp row — unchanged;
+  // this repositioning is only for the pure-photo case the task's mockup
+  // shows.
+  const isFramedPhoto =
+    message.content_type === "image" && !!message.media_url && !message.content_text;
+
+  const timestamp = (
+    <span
+      className={cn(
+        "text-[10px]",
+        // Outbound bubbles sit on the primary fill, so the timestamp must
+        // read against that (not the neutral foreground) — otherwise it
+        // goes low-contrast in light mode. Inbound bubbles use the muted
+        // surface.
+        isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+      )}
+    >
+      {time}
+    </span>
+  );
+
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
   return (
@@ -282,54 +376,61 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          "relative rounded-2xl",
+          isFramedPhoto ? "overflow-hidden p-[2px]" : "px-3 py-2",
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
         )}
       >
         {reply && (
-          <ReplyQuote
-            authorLabel={reply.authorLabel}
-            preview={reply.preview}
-            onPrimary={isAgent}
-          />
+          <div className={isFramedPhoto ? "px-2 pt-2" : undefined}>
+            <ReplyQuote
+              authorLabel={reply.authorLabel}
+              preview={reply.preview}
+              onPrimary={isAgent}
+            />
+          </div>
         )}
-        <MessageContent message={message} t={t} />
-        {previewUrl && <LinkPreviewCard url={previewUrl} isAgent={isAgent} />}
-        <div
-          className={cn(
-            "mt-1 flex items-center gap-1",
-            isAgent ? "justify-end" : "justify-start",
-          )}
-        >
-          {/* AI badge — only on replies the auto-reply bot generated
-              (always outbound, so it sits on the primary fill). Lets
-              agents tell an AI reply from their own / a Flow's at a
-              glance. */}
-          {message.ai_generated && (
-            <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
-              title={t("aiBadgeTitle")}
+
+        {isFramedPhoto && message.media_url ? (
+          <MediaImage
+            url={message.media_url}
+            alt="Shared image"
+            t={t}
+            overlay={{
+              time,
+              status: isAgent ? <StatusIcon status={message.status} overlay /> : null,
+            }}
+          />
+        ) : (
+          <>
+            <MessageContent message={message} t={t} />
+            {previewUrl && <LinkPreviewCard url={previewUrl} isAgent={isAgent} />}
+            <div
+              className={cn(
+                "mt-1 flex items-center gap-1",
+                isAgent ? "justify-end" : "justify-start",
+              )}
             >
-              <Sparkles className="h-2.5 w-2.5" />
-              {t("aiBadge")}
-            </span>
-          )}
-          <span
-            className={cn(
-              "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
-            )}
-          >
-            {time}
-          </span>
-          {isAgent && <StatusIcon status={message.status} />}
-        </div>
+              {/* AI badge — only on replies the auto-reply bot generated
+                  (always outbound, so it sits on the primary fill). Lets
+                  agents tell an AI reply from their own / a Flow's at a
+                  glance. */}
+              {message.ai_generated && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+                  title={t("aiBadgeTitle")}
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  {t("aiBadge")}
+                </span>
+              )}
+              {timestamp}
+              {isAgent && <StatusIcon status={message.status} />}
+            </div>
+          </>
+        )}
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions

@@ -5,6 +5,10 @@ import { sendEmail, EmailError } from '@/lib/email/send'
 
 const PAYMENTS_INBOX = 'asistentedechat@gmail.com'
 
+/** 5 MB — matches the image cap used elsewhere for account-scoped uploads. */
+const MAX_RECEIPT_BYTES = 5 * 1024 * 1024
+const ALLOWED_RECEIPT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+
 /**
  * POST /api/billing/report-payment  (admin+)
  *
@@ -14,13 +18,40 @@ const PAYMENTS_INBOX = 'asistentedechat@gmail.com'
  * carries, per the product decision that the email should be
  * self-contained) — Angel still has to manually "Marcar como pagada"
  * in /admin; this route never touches next_payment_due_at itself.
+ *
+ * Requires a photo of the deposit/transfer receipt (multipart field
+ * `receipt`) attached straight to the email — there's no persisted
+ * "payment report" record anywhere, so the email IS the record, and it
+ * has to carry proof, not just a claim.
  */
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const ctx = await requireRole('admin')
 
     const limit = await checkSharedRateLimit(`payment-report:${ctx.userId}`, RATE_LIMITS.paymentReport)
     if (!limit.success) return rateLimitResponse(limit)
+
+    const form = await request.formData()
+    const receipt = form.get('receipt')
+    if (!(receipt instanceof File) || receipt.size === 0) {
+      return NextResponse.json(
+        { error: 'Debes adjuntar una foto del comprobante de depósito.' },
+        { status: 400 },
+      )
+    }
+    if (!ALLOWED_RECEIPT_TYPES.has(receipt.type)) {
+      return NextResponse.json(
+        { error: 'El comprobante debe ser una imagen (JPG, PNG o WEBP).' },
+        { status: 400 },
+      )
+    }
+    if (receipt.size > MAX_RECEIPT_BYTES) {
+      return NextResponse.json(
+        { error: 'La imagen del comprobante no puede superar 5 MB.' },
+        { status: 400 },
+      )
+    }
+    const receiptBuffer = Buffer.from(await receipt.arrayBuffer())
 
     const { data: settings } = await ctx.supabase
       .from('platform_settings')
@@ -56,6 +87,13 @@ export async function POST() {
         to: PAYMENTS_INBOX,
         subject: `Reporte de pago — ${ctx.account.name}`,
         text,
+        attachments: [
+          {
+            filename: receipt.name || 'comprobante.jpg',
+            content: receiptBuffer,
+            contentType: receipt.type,
+          },
+        ],
       })
     } catch (err) {
       if (err instanceof EmailError) {

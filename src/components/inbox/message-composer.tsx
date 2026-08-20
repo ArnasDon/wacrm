@@ -182,6 +182,18 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 // diagonal drag locks exactly as readily as a straight one.
 const LOCK_THRESHOLD_PX = 80;
 
+// Touch-only long-press gate before a recording is allowed to start —
+// desktop mice skip this entirely (see handleMicPointerDown) and start on
+// the first click. Keeps a tap that's just passing through the mic button
+// (e.g. a scroll starting there) from ever arming the recorder.
+const LONG_PRESS_MS = 300;
+
+// Movement (px) during the LONG_PRESS_MS window that cancels the pending
+// long-press — distinct from LOCK_THRESHOLD_PX above, which only applies
+// once a recording is already underway. Small on purpose: only meant to
+// catch a real scroll gesture, not natural finger jitter on a stationary hold.
+const TOUCH_MOVE_CANCEL_PX = 8;
+
 type MicPhase = "idle" | "recording" | "paused" | "sending";
 
 export function MessageComposer({
@@ -325,6 +337,10 @@ export function MessageComposer({
   const micButtonRef = useRef<HTMLButtonElement>(null);
   const lockHintRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<{ startY: number } | null>(null);
+  // Touch-only long-press timer + its start position (for the scroll-cancel
+  // check above) — both null whenever no long-press is currently pending.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // Viewers (read-only role) can browse the inbox but never send.
   // For solo users this is always true — single-owner accounts pass
@@ -338,6 +354,13 @@ export function MessageComposer({
     if (timerRef.current !== null) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+  }, []);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
   }, []);
 
@@ -708,41 +731,99 @@ export function MessageComposer({
     void recorderRef.current?.stop().catch(() => {});
   }, []);
 
-  // ---- Mic pointer gesture (press-and-hold, drag-up-to-lock) ---------
+  // ---- Mic pointer gesture ---------------------------------------------
   //
-  // Pointer Events (not separate touch/mouse handlers) so the exact same
-  // code drives touch (iPhone/Android/PWA) and mouse (desktop) — a
-  // mousedown-hold-drag-mouseup gesture works identically to a touch one.
+  // Pointer Events (not separate touch/mouse handlers) so one set of
+  // handlers drives both input types — but the *behavior* they implement
+  // now differs by `e.pointerType`, branched at the top of each handler:
+  //
+  //   mouse → plain click-to-toggle (no hold, no drag-to-lock).
+  //   touch/pen → unchanged press-and-hold + drag-up-to-lock, gated behind
+  //               a LONG_PRESS_MS timer so a tap/scroll can't arm it.
+  //
+  // Every path funnels through these two functions — nothing else is
+  // allowed to flip micPhase into/out of "recording" — so no matter which
+  // event (mouse click, completed long-press, the in-bar stop button) asks
+  // to start or stop, the guard here is the single source of truth and a
+  // duplicate request from a second event is always a no-op.
+  const startRecordingGesture = useCallback(() => {
+    if (micPhase !== "idle") return;
+    setLocked(false);
+    setRecordSeconds(0);
+    // Optimistic — the bar shows immediately; beginCapture (mic
+    // permission + encoder init) runs in the background and rolls
+    // this back on failure.
+    setMicPhase("recording");
+    clearTimer();
+    timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    // Stored so any stop request (below) can wait for this specific
+    // capture attempt to finish initializing before touching the
+    // recorder — see captureReadyRef / stopRecorder.
+    captureReadyRef.current = beginCapture();
+  }, [micPhase, clearTimer, beginCapture]);
+
+  const stopRecordingGesture = useCallback(() => {
+    if (micPhase !== "recording") return;
+    clearTimer();
+    setMicPhase("paused");
+    void stopRecorder();
+  }, [micPhase, clearTimer, stopRecorder]);
 
   const handleMicPointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (inputsDisabled || busy || micPhase !== "idle") return;
+      if (inputsDisabled || busy) return;
+
+      if (e.pointerType === "mouse") {
+        // Desktop: 1 click starts. The button itself is hidden the moment
+        // recording begins (swapped for the recording bar below), so the
+        // matching "1 click stops" happens on the bar's own stop button,
+        // not a second pointerdown here — both call stopRecordingGesture.
+        if (micPhase !== "idle") return;
+        e.preventDefault();
+        startRecordingGesture();
+        return;
+      }
+
+      // Touch/pen: don't start yet — arm a long-press timer. Guard against
+      // a second touch arming an overlapping timer while this one is
+      // still pending (micPhase only flips once the timer actually fires).
+      if (micPhase !== "idle" || longPressTimerRef.current !== null) return;
       e.preventDefault();
       micButtonRef.current?.setPointerCapture(e.pointerId);
       gestureRef.current = { startY: e.clientY };
-      setLocked(false);
-      setRecordSeconds(0);
-      // Optimistic — the bar shows immediately; beginCapture (mic
-      // permission + encoder init) runs in the background and rolls
-      // this back on failure.
-      setMicPhase("recording");
-      clearTimer();
-      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-      // Stored so any stop request (below) can wait for this specific
-      // capture attempt to finish initializing before touching the
-      // recorder — see captureReadyRef / stopRecorder.
-      captureReadyRef.current = beginCapture();
+      longPressStartRef.current = { x: e.clientX, y: e.clientY };
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        startRecordingGesture();
+      }, LONG_PRESS_MS);
     },
-    [inputsDisabled, busy, micPhase, clearTimer, beginCapture],
+    [inputsDisabled, busy, micPhase, startRecordingGesture],
   );
 
   const handleMicPointerMove = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "mouse") return;
+
+      // Still waiting out the long-press: a scroll-sized movement cancels
+      // it outright so brushing/scrolling over the button can never arm
+      // the recorder.
+      if (longPressTimerRef.current !== null) {
+        const start = longPressStartRef.current;
+        if (!start) return;
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        if (Math.hypot(dx, dy) > TOUCH_MOVE_CANCEL_PX) {
+          clearLongPressTimer();
+        }
+        return;
+      }
+
+      // Recording already started (long-press completed) — unchanged
+      // drag-up-to-lock gesture.
       const gesture = gestureRef.current;
       if (!gesture || locked || micPhase !== "recording") return;
       const dy = gesture.startY - e.clientY; // positive = dragged up
       if (lockHintRef.current) {
-        const progress = Math.min(1, Math.max(0, dy / LOCK_THRESHOLD_PX));
         // Ease-out (not a 1:1 linear follow): the hint travels faster
         // at the start of the drag and settles as it nears the top —
         // a natural deceleration, closer to how WhatsApp's own lock
@@ -750,6 +831,7 @@ export function MessageComposer({
         // and opacity build up alongside it, so the *whole* icon
         // visibly grows more confident as the gesture continues
         // instead of just sitting there until an abrupt flip.
+        const progress = Math.min(1, Math.max(0, dy / LOCK_THRESHOLD_PX));
         const eased = 1 - (1 - progress) * (1 - progress);
         lockHintRef.current.style.transform = `translateY(${-(eased * LOCK_THRESHOLD_PX)}px) scale(${0.85 + eased * 0.35})`;
         lockHintRef.current.style.opacity = String(0.55 + eased * 0.45);
@@ -758,22 +840,30 @@ export function MessageComposer({
         setLocked(true);
       }
     },
-    [locked, micPhase],
+    [locked, micPhase, clearLongPressTimer],
   );
 
-  // Releasing (or the gesture getting cancelled by the platform, e.g. an
-  // incoming call) stops the capture *unless* already locked — locking
-  // is exactly what makes the finger-lift a no-op.
+  // Touch/pen release (or the gesture getting cancelled by the platform,
+  // e.g. an incoming call) — mouse never reaches here (handled entirely on
+  // pointerdown above). Two distinct outcomes depending on where the
+  // gesture was when it ended:
+  //   - long-press still pending → just a tap/scroll, cancel the timer,
+  //     no recording was ever started.
+  //   - already recording → stop, unless locked (locking is exactly what
+  //     makes the finger-lift a no-op, same as before).
   const handleMicPointerEnd = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "mouse") return;
       micButtonRef.current?.releasePointerCapture(e.pointerId);
       gestureRef.current = null;
-      if (locked || micPhase !== "recording") return;
-      clearTimer();
-      setMicPhase("paused");
-      void stopRecorder();
+      if (longPressTimerRef.current !== null) {
+        clearLongPressTimer();
+        return;
+      }
+      if (locked) return;
+      stopRecordingGesture();
     },
-    [locked, micPhase, clearTimer, stopRecorder],
+    [locked, clearLongPressTimer, stopRecordingGesture],
   );
 
   const handleDiscardRecording = useCallback(() => {
@@ -849,13 +939,14 @@ export function MessageComposer({
   useEffect(() => {
     return () => {
       clearTimer();
+      clearLongPressTimer();
       cancelledRef.current = true;
       // stop() releases the mic stream + audio context inside opus-recorder.
       void stopRecorder();
       removeStaged(draftRef.current?.path);
       removeStaged(uploadedAudioRef.current?.path);
     };
-  }, [clearTimer, removeStaged, stopRecorder]);
+  }, [clearTimer, clearLongPressTimer, removeStaged, stopRecorder]);
 
   // ---- Draft send / discard (image/video/document) --------------------
 
@@ -898,7 +989,10 @@ export function MessageComposer({
     // base amount. `env()` resolves to 0 on devices without one (desktop,
     // older phones), so this is a no-op there. Requires `viewport-fit=cover`
     // (see app/layout.tsx), otherwise iOS never reports a nonzero inset.
-    <div className="border-t border-border bg-card px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+    // py-[9px] (was py-2/8px, ~15% more): the enlarged Attach/Mic buttons
+    // (h-[47px], up from h-9/36px) need a touch more breathing room in the
+    // bar itself — bottom mirrors it, on top of the safe-area inset.
+    <div className="border-t border-border bg-card px-3 py-[9px] pb-[calc(9px+env(safe-area-inset-bottom))]">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
@@ -984,7 +1078,16 @@ export function MessageComposer({
         <div className="relative">
           <div
             className={cn(
-              "flex items-end gap-2",
+              // items-center (was items-end): Attach/Mic are taller
+              // (h-[47px]) than Send (h-9) and the textarea's own
+              // single-line height sits in between — bottom-aligning
+              // those different box heights put each icon at a different
+              // distance from its own box's center, reading as
+              // "misaligned" even though the boxes' bottoms lined up.
+              // Centering the row instead puts every icon (each already
+              // centered within its own box) on the same line regardless
+              // of how tall its box is.
+              "flex items-center gap-2",
               micActive && "invisible absolute inset-0",
             )}
           >
@@ -999,12 +1102,12 @@ export function MessageComposer({
                       ? undefined
                       : t("attachMedia")
                 }
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-[47px] w-[47px] shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-[21px] w-[21px] animate-spin" />
                 ) : (
-                  <Paperclip className="h-4 w-4" />
+                  <Paperclip className="h-[21px] w-[21px]" />
                 )}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="border-border bg-popover">
@@ -1059,6 +1162,12 @@ export function MessageComposer({
                 title={readOnly ? t("readOnlyTitle") : undefined}
                 className={cn(
                   "w-full resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+                  // Scrollbar hidden visually only — scrolling itself
+                  // (wheel/touch/keyboard) is untouched, this just drops
+                  // the native scrollbar chrome (WebKit + Firefox + legacy
+                  // Edge) so a multi-line draft doesn't show a scroll track
+                  // inside the rounded input.
+                  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
                   (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
                 )}
               />
@@ -1108,9 +1217,9 @@ export function MessageComposer({
               onPointerMove={handleMicPointerMove}
               onPointerUp={handleMicPointerEnd}
               onPointerCancel={handleMicPointerEnd}
-              className="flex h-9 w-9 shrink-0 touch-none select-none items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-[47px] w-[47px] shrink-0 touch-none select-none items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Mic className="h-4 w-4" />
+              <Mic className="h-[21px] w-[21px]" />
             </button>
 
             <GatedButton
@@ -1155,6 +1264,26 @@ export function MessageComposer({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+
+              {/* Desktop's "click again to stop": the mic button itself is
+                  hidden the instant recording starts (see the `invisible`
+                  row above), so this is the reachable second click —
+                  same centralized stopRecordingGesture a touch release
+                  calls. Only meaningful while actively capturing (not
+                  once already paused, and not while locked — a locked
+                  hands-free take still stops here on an explicit click,
+                  only the passive finger-release ignores `locked`). */}
+              {micPhase === "recording" && (
+                <button
+                  type="button"
+                  onClick={stopRecordingGesture}
+                  aria-label={t("stopRecording")}
+                  title={t("stopRecording")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-red-500 transition-colors hover:bg-red-500/10"
+                >
+                  <Mic className="h-4 w-4" />
+                </button>
+              )}
 
               <div className="flex flex-1 items-center justify-center gap-2.5">
                 {locked && (

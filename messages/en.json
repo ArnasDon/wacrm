@@ -466,6 +466,7 @@
       "recordingPermissionDenied": "Microphone access denied or unavailable.",
       "recordingTooLong": "Recording is too long (over 16 MB).",
       "discardRecording": "Discard recording",
+      "stopRecording": "Stop recording",
       "sendRecording": "Send voice message",
       "unsupportedVideoType": "This video is in a format WhatsApp doesn't accept (e.g. iPhone .MOV). Send it as MP4 — on iPhone, switch Settings → Camera → Formats → Most Compatible, or pick a video that's already MP4.",
       "unsupportedFileType": "This file type isn't supported.",

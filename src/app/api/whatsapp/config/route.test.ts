@@ -13,6 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 let callerAccountId = 'acct-1'
 let callerRole = 'admin'
 let existingConfigCount = 0
+// Generous default so tests that don't care about the seat-style gate
+// (migration 073) aren't affected by it — tests that DO care override
+// this per-case.
+let whatsappNumberLimit = 10
 const insertedRows: Array<Record<string, unknown>> = []
 const listQueryAccountIds: string[] = []
 
@@ -56,7 +60,10 @@ function rlsSupabaseMock() {
         return { data: { account_id: callerAccountId, account_role: callerRole }, error: null }
       }
       if (table === 'accounts') {
-        return { data: { id: callerAccountId, name: 'Acme' }, error: null }
+        return {
+          data: { id: callerAccountId, name: 'Acme', whatsapp_number_limit: whatsappNumberLimit },
+          error: null,
+        }
       }
       return { data: null, error: null }
     })
@@ -126,6 +133,7 @@ beforeEach(() => {
   callerAccountId = 'acct-1'
   callerRole = 'admin'
   existingConfigCount = 0
+  whatsappNumberLimit = 10
   insertedRows.length = 0
   listQueryAccountIds.length = 0
   supabaseMock = rlsSupabaseMock()
@@ -186,5 +194,23 @@ describe('POST /api/whatsapp/config — default-connection invariant', () => {
     const res = await postConfig({ provider: 'meta', phone_number_id: 'pn-1', access_token: 'tok' })
     expect(res.status).toBe(403)
     expect(insertedRows).toHaveLength(0)
+  })
+})
+
+describe('POST /api/whatsapp/config — whatsapp_number_limit gate (migration 073)', () => {
+  it('rejects a new connection once the account is at its number limit', async () => {
+    existingConfigCount = 1
+    whatsappNumberLimit = 1
+    const res = await postConfig({ provider: 'meta', phone_number_id: 'pn-2', access_token: 'tok' })
+    expect(res.status).toBe(403)
+    expect(insertedRows).toHaveLength(0)
+  })
+
+  it('allows a new connection when under the number limit', async () => {
+    existingConfigCount = 1
+    whatsappNumberLimit = 2
+    const res = await postConfig({ provider: 'meta', phone_number_id: 'pn-2', access_token: 'tok' })
+    expect(res.status).toBe(200)
+    expect(insertedRows).toHaveLength(1)
   })
 })

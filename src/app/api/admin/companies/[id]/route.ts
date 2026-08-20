@@ -16,6 +16,7 @@ export async function PATCH(
       mark_paid?: unknown;
       next_payment_due_at?: unknown;
       add_seats?: unknown;
+      add_whatsapp_numbers?: unknown;
     };
 
     if (body.mark_paid === true) {
@@ -43,6 +44,31 @@ export async function PATCH(
         .update({ seat_limit: nextSeatLimit })
         .eq("id", id)
         .select("id, seat_limit")
+        .maybeSingle();
+      if (error) throw error;
+      return NextResponse.json({ company: data });
+    }
+
+    if ("add_whatsapp_numbers" in body) {
+      const delta = body.add_whatsapp_numbers;
+      if (typeof delta !== "number" || !Number.isInteger(delta) || delta === 0) {
+        return NextResponse.json({ error: "La cantidad de números a agregar es inválida" }, { status: 400 });
+      }
+      const admin = platformAdminClient();
+      const { data: current, error: fetchError } = await admin
+        .from("accounts")
+        .select("whatsapp_number_limit")
+        .eq("id", id)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (!current) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+
+      const nextNumberLimit = Math.max(1, current.whatsapp_number_limit + delta);
+      const { data, error } = await admin
+        .from("accounts")
+        .update({ whatsapp_number_limit: nextNumberLimit })
+        .eq("id", id)
+        .select("id, whatsapp_number_limit")
         .maybeSingle();
       if (error) throw error;
       return NextResponse.json({ company: data });

@@ -239,6 +239,9 @@ export const RATE_LIMITS = {
    *  reasoning as paymentReport — an occasional, human-triggered
    *  action, not something a legitimate admin does in a loop. */
   seatRequest: { limit: 5, windowMs: 60_000 },
+  /** Additional-WhatsApp-number request (sends an email), per user.
+   *  Same reasoning as seatRequest. */
+  whatsappNumberRequest: { limit: 5, windowMs: 60_000 },
   /** Public account-request form (sends an email), per-IP — this
    *  route is unauthenticated (a prospective customer has no account
    *  yet), so it's keyed by IP like the public catalog routes rather

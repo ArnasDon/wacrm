@@ -18,6 +18,7 @@ import {
   Pencil,
   Trash2,
   ArrowLeft,
+  Banknote,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
@@ -32,7 +33,13 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { SettingsPanelHead } from './settings-panel-head';
+import { RequestWhatsAppNumberDialog } from './request-whatsapp-number-dialog';
 import { readResponseJson } from '@/lib/http/response-json';
 import {
   Accordion,
@@ -89,17 +96,23 @@ export function WhatsAppConfig() {
   const { user, accountId, loading: authLoading, profileLoading } = useAuth();
 
   const [configs, setConfigs] = useState<ConfigSummary[] | null>(null);
+  const [numberLimit, setNumberLimit] = useState(1);
   const [loadingList, setLoadingList] = useState(true);
   // 'list' | 'new' | <config id being edited>
   const [view, setView] = useState<'list' | 'new' | string>('list');
+  const [requestNumberOpen, setRequestNumberOpen] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
 
   const fetchConfigs = useCallback(async () => {
     setLoadingList(true);
     try {
       const res = await fetch('/api/whatsapp/config');
-      const data = await readResponseJson<{ configs?: ConfigSummary[] }>(res);
+      const data = await readResponseJson<{
+        configs?: ConfigSummary[];
+        numberLimit?: number;
+      }>(res);
       setConfigs(Array.isArray(data?.configs) ? data.configs : []);
+      setNumberLimit(data?.numberLimit ?? 1);
     } catch (err) {
       console.error('Failed to load WhatsApp connections:', err);
       toast.error(t('loadFailed'));
@@ -198,6 +211,8 @@ export function WhatsAppConfig() {
     );
   }
 
+  const numbersAvailable = numberLimit - (configs?.length ?? 0);
+
   return (
     <section className="animate-in fade-in-50 duration-200">
       <SettingsPanelHead title={t('title')} description={t('description')} />
@@ -206,14 +221,41 @@ export function WhatsAppConfig() {
         <h3 className="text-foreground text-sm font-medium">
           {t('listTitle')}
         </h3>
-        <Button
-          size="sm"
-          onClick={() => setView('new')}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground"
-        >
-          <Plus className="size-4" />
-          {t('addConnection')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-border text-muted-foreground hover:bg-muted gap-2"
+            onClick={() => setRequestNumberOpen(true)}
+          >
+            <Banknote className="size-4" />
+            {t('requestNumber')}
+          </Button>
+          {numbersAvailable > 0 ? (
+            <Button
+              size="sm"
+              onClick={() => setView('new')}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              <Plus className="size-4" />
+              {t('addConnection')}
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span>
+                    <Button size="sm" disabled>
+                      <Plus className="size-4" />
+                      {t('addConnection')}
+                    </Button>
+                  </span>
+                }
+              />
+              <TooltipContent>{t('noNumbersAvailable')}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
 
       {loadingList ? (
@@ -296,6 +338,11 @@ export function WhatsAppConfig() {
           ))}
         </div>
       )}
+
+      <RequestWhatsAppNumberDialog
+        open={requestNumberOpen}
+        onOpenChange={setRequestNumberOpen}
+      />
     </section>
   );
 }

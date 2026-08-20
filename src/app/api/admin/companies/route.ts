@@ -26,20 +26,23 @@ export async function GET() {
   try {
     await requirePlatformAdmin();
     const admin = platformAdminClient();
-    const [accountsResult, profilesResult, invitationsResult] = await Promise.all([
-      admin.from("accounts").select("id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at, seat_limit").order("created_at", { ascending: false }),
+    const [accountsResult, profilesResult, invitationsResult, whatsappConfigsResult] = await Promise.all([
+      admin.from("accounts").select("id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at, seat_limit, whatsapp_number_limit").order("created_at", { ascending: false }),
       admin.from("profiles").select("user_id, account_id, full_name, email, account_role"),
       admin.from("platform_company_invitations").select("id, company_name, invited_email, created_at, expires_at").is("accepted_at", null).order("created_at", { ascending: false }),
+      admin.from("whatsapp_config").select("account_id"),
     ]);
 
-    const error = accountsResult.error ?? profilesResult.error ?? invitationsResult.error;
+    const error = accountsResult.error ?? profilesResult.error ?? invitationsResult.error ?? whatsappConfigsResult.error;
     if (error) throw error;
 
     const profiles = profilesResult.data ?? [];
+    const whatsappConfigs = whatsappConfigsResult.data ?? [];
     const usageSince = new Date(Date.now() - 30 * 86400000).toISOString();
     const companies = await Promise.all((accountsResult.data ?? []).map(async (account) => {
       const members = profiles.filter((profile) => profile.account_id === account.id);
       const owner = members.find((profile) => profile.user_id === account.owner_user_id);
+      const whatsappNumberCount = whatsappConfigs.filter((config) => config.account_id === account.id).length;
       const [messages, conversations, aiUsage] = await Promise.all([
         // `messages` has no account_id column. Scope through its owning
         // conversation so platform metrics stay tenant-safe without relying
@@ -60,6 +63,8 @@ export async function GET() {
         createdAt: account.created_at,
         memberCount: members.length,
         seatLimit: account.seat_limit,
+        whatsappNumberCount,
+        whatsappNumberLimit: account.whatsapp_number_limit,
         suspendedAt: account.suspended_at,
         suspendedReason: account.suspended_reason,
         nextPaymentDueAt: account.next_payment_due_at,

@@ -39,6 +39,8 @@ interface Company {
   createdAt: string;
   memberCount: number;
   seatLimit: number;
+  whatsappNumberCount: number;
+  whatsappNumberLimit: number;
   suspendedAt: string | null;
   suspendedReason: string | null;
   nextPaymentDueAt: string | null;
@@ -86,6 +88,7 @@ export default function PlatformAdminPage() {
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [savingDueDateId, setSavingDueDateId] = useState<string | null>(null);
   const [addingSeatId, setAddingSeatId] = useState<string | null>(null);
+  const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
 
   const [bankForm, setBankForm] = useState<PlatformBankSettings>({
     bank_name: '',
@@ -266,6 +269,34 @@ export default function PlatformAdminPage() {
     }
   };
 
+  const addWhatsAppNumber = async (company: Company) => {
+    if (
+      !window.confirm(
+        `¿Habilitar un número de WhatsApp adicional para ${company.name}? Pasará de ${company.whatsappNumberLimit} a ${company.whatsappNumberLimit + 1} números.`
+      )
+    )
+      return;
+    setAddingNumberId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_whatsapp_numbers: 1 }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo habilitar el número');
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo habilitar el número'
+      );
+    } finally {
+      setAddingNumberId(null);
+    }
+  };
+
   const changeDueDate = async (company: Company, value: string) => {
     setSavingDueDateId(company.id);
     setError(null);
@@ -431,6 +462,7 @@ export default function PlatformAdminPage() {
                 <TableHead>Dueño</TableHead>
                 <TableHead>Usuarios</TableHead>
                 <TableHead>Cupos</TableHead>
+                <TableHead>Números WhatsApp</TableHead>
                 <TableHead>Conversaciones</TableHead>
                 <TableHead>Mensajes</TableHead>
                 <TableHead>Tokens IA</TableHead>
@@ -469,6 +501,27 @@ export default function PlatformAdminPage() {
                         onClick={() => void addSeat(company)}
                       >
                         {addingSeatId === company.id ? 'Guardando…' : '+1 asiento'}
+                      </Button>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          company.whatsappNumberCount >= company.whatsappNumberLimit
+                            ? 'text-amber-500'
+                            : 'text-muted-foreground'
+                        }
+                      >
+                        {company.whatsappNumberCount} / {company.whatsappNumberLimit}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={addingNumberId === company.id}
+                        onClick={() => void addWhatsAppNumber(company)}
+                      >
+                        {addingNumberId === company.id ? 'Guardando…' : '+1 número'}
                       </Button>
                     </div>
                   </TableCell>
@@ -559,7 +612,7 @@ export default function PlatformAdminPage() {
               {!loading && companies.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={11}
+                    colSpan={12}
                     className="text-muted-foreground py-8 text-center"
                   >
                     No hay empresas registradas.

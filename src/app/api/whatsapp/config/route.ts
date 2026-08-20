@@ -25,21 +25,31 @@ export async function GET() {
   try {
     const { supabase, accountId } = await requireRole('viewer')
 
-    const { data, error } = await supabase
-      .from('whatsapp_config')
-      .select(
-        'id, provider, display_name, public_phone_number, phone_number_id, waba_id, zernio_account_id, status, is_default, connected_at, registered_at, subscribed_apps_at, last_registration_error'
-      )
-      .eq('account_id', accountId)
-      .order('is_default', { ascending: false })
-      .order('connected_at', { ascending: true, nullsFirst: false })
+    const [{ data, error }, { data: accountRow }] = await Promise.all([
+      supabase
+        .from('whatsapp_config')
+        .select(
+          'id, provider, display_name, public_phone_number, phone_number_id, waba_id, zernio_account_id, status, is_default, connected_at, registered_at, subscribed_apps_at, last_registration_error'
+        )
+        .eq('account_id', accountId)
+        .order('is_default', { ascending: false })
+        .order('connected_at', { ascending: true, nullsFirst: false }),
+      supabase
+        .from('accounts')
+        .select('whatsapp_number_limit')
+        .eq('id', accountId)
+        .maybeSingle(),
+    ])
 
     if (error) {
       console.error('Error listing whatsapp_config:', error)
       return NextResponse.json({ error: 'Failed to load configuration' }, { status: 500 })
     }
 
-    return NextResponse.json({ configs: data ?? [] })
+    return NextResponse.json({
+      configs: data ?? [],
+      numberLimit: accountRow?.whatsapp_number_limit ?? 1,
+    })
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
     return toErrorResponse(error)
@@ -65,11 +75,32 @@ export async function POST(request: Request) {
 
     const body = await request.json()
 
-    const { count: existingCount } = await supabase
-      .from('whatsapp_config')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
+    const [{ count: existingCount }, { data: accountRow }] = await Promise.all([
+      supabase
+        .from('whatsapp_config')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId),
+      supabase
+        .from('accounts')
+        .select('whatsapp_number_limit')
+        .eq('id', accountId)
+        .maybeSingle(),
+    ])
     const isFirstConnection = (existingCount ?? 0) === 0
+
+    // Number-limit gate — additional WhatsApp numbers cost Q200/number
+    // (product decision, 2026-08-20), same "seat" pattern as
+    // accounts.seat_limit for members.
+    const numberLimit = accountRow?.whatsapp_number_limit ?? 1
+    if ((existingCount ?? 0) >= numberLimit) {
+      return NextResponse.json(
+        {
+          error:
+            "No tienes cupos disponibles para agregar otro número de WhatsApp. Usa 'Solicitud de número adicional' para pedir un cupo más (Q200 por número).",
+        },
+        { status: 403 },
+      )
+    }
     const displayName: string | null =
       typeof body.display_name === 'string' && body.display_name.trim()
         ? body.display_name.trim()

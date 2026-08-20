@@ -97,7 +97,7 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
       <Card className="w-full max-w-md border-border bg-card">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
@@ -186,6 +186,14 @@ function LoginPageInner() {
           </p>
         </CardContent>
       </Card>
+
+      <p className="max-w-md text-center text-xs text-muted-foreground">
+        Chat Sandía — bandeja compartida de WhatsApp, Instagram y Facebook
+        con IA para equipos comerciales.{' '}
+        <Link href="/legal/privacidad" className="underline hover:text-foreground">
+          Política de privacidad
+        </Link>
+      </p>
     </div>
   );
 }

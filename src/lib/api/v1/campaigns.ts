@@ -15,7 +15,7 @@ import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { keysetFilter, buildPage, type Cursor } from '@/lib/api/v1/pagination';
 
 const CAMPAIGN_SELECT =
-  'id, name, description, template_name, template_language, status, ' +
+  'id, name, description, send_channel, template_name, template_language, message_text, header_media_url, status, ' +
   'total_recipients, sent_count, delivered_count, read_count, replied_count, failed_count, ' +
   'created_at, updated_at';
 
@@ -23,8 +23,14 @@ export interface ApiCampaign {
   id: string;
   name: string;
   description: string | null;
-  template_name: string;
+  /** 'api' (official WhatsApp API + template) or 'external' (WhatsApp Web, prepared by WACRM but sent manually) — migration 076. */
+  send_channel: 'api' | 'external';
+  template_name: string | null;
   template_language: string;
+  /** Free-text body — only set for send_channel = 'external'. */
+  message_text: string | null;
+  /** Media header URL (api) or the optional external-message image (migration 076). */
+  header_media_url: string | null;
   status: string;
   total_recipients: number;
   sent_count: number;
@@ -49,8 +55,11 @@ function serializeCampaign(row: Record<string, unknown>): ApiCampaign {
     id: row.id as string,
     name: row.name as string,
     description: (row.description as string | null) ?? null,
-    template_name: row.template_name as string,
+    send_channel: (row.send_channel as 'api' | 'external') ?? 'api',
+    template_name: (row.template_name as string | null) ?? null,
     template_language: row.template_language as string,
+    message_text: (row.message_text as string | null) ?? null,
+    header_media_url: (row.header_media_url as string | null) ?? null,
     status: row.status as string,
     total_recipients: total,
     sent_count: sent,
@@ -113,8 +122,14 @@ export async function getCampaign(
 export interface CreateCampaignInput {
   name: string;
   description?: string | null;
-  templateName: string;
+  /** 'api' (default) — official template. 'external' — free-text message, WhatsApp Web (migration 076). */
+  sendChannel?: 'api' | 'external';
+  templateName?: string;
   templateLanguage?: string | null;
+  /** Required when sendChannel = 'external'. */
+  messageText?: string;
+  /** Optional image for sendChannel = 'external'. */
+  imageUrl?: string;
   /** Optional initial recipients — same shape as POST /api/v1/broadcasts. Additional ones can be added via addCampaignRecipients. */
   recipients?: { to: string; params?: string[] }[];
 }
@@ -123,7 +138,9 @@ export interface CreateCampaignInput {
  * Create a campaign in 'ready' (recipients supplied) or 'draft' (none
  * supplied yet — add them later via addCampaignRecipients) status.
  * NEVER sends — section 10 of the spec: campaign creation must not be
- * able to trigger a WhatsApp send by itself.
+ * able to trigger a WhatsApp send by itself. Sending an 'external'
+ * campaign isn't even possible from WACRM (spec section 4/7) — only
+ * POST /campaigns/{id}/send exists, and it's 'api'-only.
  */
 export async function createCampaign(
   db: SupabaseClient,
@@ -131,6 +148,16 @@ export async function createCampaign(
   auditUserId: string,
   input: CreateCampaignInput
 ): Promise<ApiCampaign> {
+  const sendChannel = input.sendChannel ?? 'api';
+
+  if (sendChannel === 'external') {
+    return createExternalCampaign(db, accountId, auditUserId, input);
+  }
+
+  if (!input.templateName) {
+    throw new BroadcastError('bad_request', "'template_name' is required for the api channel", 400);
+  }
+
   if (!input.recipients || input.recipients.length === 0) {
     // No recipients yet — write a bare draft row directly (createBroadcast
     // requires a non-empty recipient list since it's shared with the
@@ -142,6 +169,7 @@ export async function createCampaign(
         user_id: auditUserId,
         name: input.name,
         description: input.description || null,
+        send_channel: 'api',
         template_name: input.templateName,
         template_language: input.templateLanguage || 'en_US',
         status: 'draft',
@@ -164,6 +192,72 @@ export async function createCampaign(
     status: 'ready',
   });
   const campaign = await getCampaign(db, accountId, plan.broadcastId);
+  if (!campaign) throw new BroadcastError('internal', 'Failed to read created campaign', 500);
+  return campaign;
+}
+
+/**
+ * 'external' channel — no Meta config/template validation (there's
+ * nothing to send via the API), just the same phone→contact
+ * resolution + dedup-safe recipient insert createBroadcast uses. WACRM
+ * prepares and registers; it never calls Meta for these rows.
+ */
+async function createExternalCampaign(
+  db: SupabaseClient,
+  accountId: string,
+  auditUserId: string,
+  input: CreateCampaignInput
+): Promise<ApiCampaign> {
+  const messageText = input.messageText?.trim();
+  if (!messageText) {
+    throw new BroadcastError('bad_request', "'message_text' is required for the external channel", 400);
+  }
+
+  const recipients = input.recipients ?? [];
+  const contactIds: string[] = [];
+  for (const r of recipients) {
+    const sanitized = sanitizePhoneForMeta(typeof r.to === 'string' ? r.to : '');
+    if (!isValidE164(sanitized)) continue;
+    const { id } = await findOrCreateContact(db, accountId, auditUserId, { phone: sanitized });
+    contactIds.push(id);
+  }
+  const uniqueContactIds = [...new Set(contactIds)];
+
+  const { data: broadcast, error: insertErr } = await db
+    .from('broadcasts')
+    .insert({
+      account_id: accountId,
+      user_id: auditUserId,
+      name: input.name,
+      description: input.description || null,
+      send_channel: 'external',
+      template_name: null,
+      message_text: messageText,
+      header_media_url: input.imageUrl?.trim() || null,
+      status: uniqueContactIds.length > 0 ? 'ready' : 'draft',
+      total_recipients: uniqueContactIds.length,
+    })
+    .select('id')
+    .single();
+  if (insertErr || !broadcast) {
+    throw new BroadcastError('internal', 'Failed to create campaign', 500);
+  }
+
+  if (uniqueContactIds.length > 0) {
+    const { error: recipientsErr } = await db.from('broadcast_recipients').upsert(
+      uniqueContactIds.map((contactId) => ({
+        broadcast_id: broadcast.id,
+        contact_id: contactId,
+        status: 'pending' as const,
+      })),
+      { onConflict: 'broadcast_id,contact_id', ignoreDuplicates: true }
+    );
+    if (recipientsErr) {
+      throw new BroadcastError('internal', 'Failed to add campaign recipients', 500);
+    }
+  }
+
+  const campaign = await getCampaign(db, accountId, broadcast.id as string);
   if (!campaign) throw new BroadcastError('internal', 'Failed to read created campaign', 500);
   return campaign;
 }
@@ -348,4 +442,90 @@ export async function getContactCampaignHistory(
   });
   if (error) throw new BroadcastError('internal', 'Failed to read campaign history', 500);
   return (data ?? []) as ContactCampaignHistoryEntry[];
+}
+
+export interface ReportRecipientResultInput {
+  status: 'sent' | 'failed';
+  /** Defaults to now() when status = 'sent' and this is omitted. */
+  sentAt?: string;
+  errorMessage?: string;
+  /**
+   * The external executor's own reference for this send (e.g. a
+   * WhatsApp Web message id it captured) — stored in the same
+   * `whatsapp_message_id` column the API channel uses for Meta's
+   * message id, since both mean "this send's external reference".
+   */
+  externalReference?: string;
+}
+
+/**
+ * Record the result of an 'external' send WACRM never performed
+ * itself (spec section 4: "depois do envio, o resultado deve retornar
+ * ao WACRM"). Conditioned on the recipient still being `pending` —
+ * spec section 5's "não duplicar envios" applies here too: a retried
+ * or duplicate report can't flip an already-resolved recipient again,
+ * so double-reporting is a no-op, not a double-counted send.
+ */
+export async function reportRecipientResult(
+  db: SupabaseClient,
+  accountId: string,
+  campaignId: string,
+  recipientId: string,
+  input: ReportRecipientResultInput
+): Promise<{ updated: boolean; status: string }> {
+  const campaign = await getCampaign(db, accountId, campaignId);
+  if (!campaign) throw new BroadcastError('not_found', 'Campaign not found', 404);
+
+  // Read first so a request against an already-resolved recipient can
+  // return a clean, idempotent "already reported" instead of silently
+  // updating 0 rows and looking like success.
+  const { data: existing, error: readErr } = await db
+    .from('broadcast_recipients')
+    .select('id, status')
+    .eq('id', recipientId)
+    .eq('broadcast_id', campaignId)
+    .maybeSingle();
+  if (readErr) throw new BroadcastError('internal', 'Failed to read recipient', 500);
+  if (!existing) throw new BroadcastError('not_found', 'Recipient not found on this campaign', 404);
+
+  if (existing.status !== 'pending') {
+    // Already reported (or otherwise resolved) — idempotent no-op.
+    return { updated: false, status: existing.status as string };
+  }
+
+  const patch =
+    input.status === 'sent'
+      ? {
+          status: 'sent' as const,
+          sent_at: input.sentAt || new Date().toISOString(),
+          whatsapp_message_id: input.externalReference || null,
+          error_message: null,
+        }
+      : {
+          status: 'failed' as const,
+          error_message: input.errorMessage || 'Unknown error',
+        };
+
+  // The WHERE still pins status = 'pending' — a concurrent report
+  // racing this one loses instead of double-applying (spec section 5).
+  const { data: updated, error: updateErr } = await db
+    .from('broadcast_recipients')
+    .update(patch)
+    .eq('id', recipientId)
+    .eq('broadcast_id', campaignId)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle();
+  if (updateErr) throw new BroadcastError('internal', 'Failed to record result', 500);
+  if (!updated) {
+    // Lost the race — re-read so the caller still gets a truthful status.
+    const { data: after } = await db
+      .from('broadcast_recipients')
+      .select('status')
+      .eq('id', recipientId)
+      .maybeSingle();
+    return { updated: false, status: (after?.status as string) ?? existing.status };
+  }
+
+  return { updated: true, status: patch.status };
 }

@@ -14,20 +14,32 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save, Eye, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Users, Save, Eye, CheckCircle2, Rocket, Smartphone } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useBroadcastSending, type AudienceConfig } from '@/hooks/use-broadcast-sending';
+
+type SendChannel = 'api' | 'external';
 
 interface Step4Props {
   name: string;
   onNameChange: (name: string) => void;
   description: string;
   onDescriptionChange: (description: string) => void;
-  template: MessageTemplate;
+  sendChannel: SendChannel;
+  /** Required (non-null) when sendChannel === 'api'. */
+  template: MessageTemplate | null;
+  /** Required (non-empty) when sendChannel === 'external'. */
+  messageText: string;
+  imageUrl: string;
   audience: AudienceConfig;
+  /** 'api' only — WACRM never sends 'external' campaigns itself (spec section 4/7). */
   onSend: () => void;
   onSaveDraft?: () => void;
-  /** "Salvar como pronta para envio" — materializes recipients without sending (spec section 3). */
+  /**
+   * "Salvar como pronta para envio" — materializes recipients without
+   * sending (spec section 3). For 'external' this is the only action:
+   * WACRM prepares + registers the campaign for the outside executor.
+   */
   onSaveReady?: () => void;
   onBack: () => void;
   isProcessing: boolean;
@@ -49,7 +61,10 @@ export function Step4ScheduleSend({
   onNameChange,
   description,
   onDescriptionChange,
+  sendChannel,
   template,
+  messageText,
+  imageUrl,
   audience,
   onSend,
   onSaveDraft,
@@ -122,14 +137,50 @@ export function Step4ScheduleSend({
         </div>
       </div>
 
+      {/* Channel indicator — spec section 2: "o usuário deve conseguir
+          visualizar claramente qual caminho está usando antes do envio." */}
+      <div
+        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+          sendChannel === 'api'
+            ? 'border-primary/20 bg-primary/5 text-primary'
+            : 'border-amber-500/20 bg-amber-500/5 text-amber-300'
+        }`}
+      >
+        {sendChannel === 'api' ? <Rocket className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
+        <span className="font-medium">
+          {sendChannel === 'api' ? t('scheduleSend.channelApiBadge') : t('scheduleSend.channelExternalBadge')}
+        </span>
+      </div>
+
       {/* Summary Card */}
       <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
         <p className="text-sm font-medium text-foreground">{t('scheduleSend.summary')}</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <p className="text-xs text-muted-foreground">{t('scheduleSend.template')}</p>
-            <p className="text-foreground">{template.name}</p>
-          </div>
+          {sendChannel === 'api' ? (
+            <>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('scheduleSend.template')}</p>
+                <p className="text-foreground">{template?.name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t('scheduleSend.language')}</p>
+                <p className="text-foreground">{template?.language ?? 'en_US'}</p>
+              </div>
+            </>
+          ) : (
+            <div className="col-span-2">
+              <p className="text-xs text-muted-foreground">{t('scheduleSend.messagePreview')}</p>
+              <p className="whitespace-pre-wrap text-foreground">{messageText}</p>
+              {imageUrl.trim() && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imageUrl.trim()}
+                  alt="Preview"
+                  className="mt-2 max-h-32 rounded-lg border border-border object-contain"
+                />
+              )}
+            </div>
+          )}
           <div>
             <p className="text-xs text-muted-foreground">{t('scheduleSend.audience')}</p>
             <p className="text-foreground">{audienceLabel}</p>
@@ -156,12 +207,12 @@ export function Step4ScheduleSend({
               )}
             </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">{t('scheduleSend.language')}</p>
-            <p className="text-foreground">{template.language ?? 'en_US'}</p>
-          </div>
         </div>
       </div>
+
+      {sendChannel === 'external' && (
+        <p className="text-xs text-muted-foreground">{t('scheduleSend.externalExplainer')}</p>
+      )}
 
       {/* Recipients preview — section 3: "mostrar X contatos e permitir
           visualizar a lista antes de iniciar" */}
@@ -250,53 +301,57 @@ export function Step4ScheduleSend({
               className="border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
             >
               <CheckCircle2 className="h-4 w-4" />
-              {t('scheduleSend.saveReady')}
+              {sendChannel === 'external' ? t('scheduleSend.prepareExternal') : t('scheduleSend.saveReady')}
             </Button>
           )}
 
-          <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-          <DialogTrigger
-            render={
-              <Button
-                disabled={!name.trim() || estimatedReach === 0 || isProcessing}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              />
-            }
-          >
-            <Send className="h-4 w-4" />
-            {t('scheduleSend.sendNow')}
-          </DialogTrigger>
-          <DialogContent className="border-border bg-popover sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-popover-foreground">{t('scheduleSend.confirmTitle')}</DialogTitle>
-              <DialogDescription className="text-muted-foreground">
-                {t('scheduleSend.confirmDesc', {
-                  count: estimatedReach,
-                  template: template.name,
-                })}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowConfirm(false)}
-                className="border-border text-muted-foreground"
-              >
-                {t('cancel')}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowConfirm(false);
-                  onSend();
-                }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
+          {/* 'external' campaigns are never sent from WACRM (spec
+              section 4/7) — saveReady above is the only action. */}
+          {sendChannel === 'api' && (
+            <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+              <DialogTrigger
+                render={
+                  <Button
+                    disabled={!name.trim() || estimatedReach === 0 || isProcessing}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  />
+                }
               >
                 <Send className="h-4 w-4" />
                 {t('scheduleSend.sendNow')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </DialogTrigger>
+              <DialogContent className="border-border bg-popover sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-popover-foreground">{t('scheduleSend.confirmTitle')}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    {t('scheduleSend.confirmDesc', {
+                      count: estimatedReach,
+                      template: template?.name ?? '',
+                    })}
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowConfirm(false)}
+                    className="border-border text-muted-foreground"
+                  >
+                    {t('cancel')}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowConfirm(false);
+                      onSend();
+                    }}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    <Send className="h-4 w-4" />
+                    {t('scheduleSend.sendNow')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
     </div>

@@ -51,7 +51,7 @@ it. Grant the minimum.
 | `broadcasts:send`    | Launch a broadcast, or send an existing campaign |
 | `webhooks:manage`    | Register and manage outbound webhooks    |
 | `campaigns:read`     | List campaigns, recipients, and a lead's campaign history |
-| `campaigns:write`    | Create campaigns and add recipients — cannot send |
+| `campaigns:write`    | Create campaigns, add recipients, report external-send results — cannot send via the API |
 
 `campaigns:*` is deliberately split from `broadcasts:send`: a key with
 only `campaigns:read`/`campaigns:write` can look up leads, create a
@@ -282,12 +282,29 @@ path: `POST /api/v1/campaigns` never sends by itself, so it's safe to
 expose to an assistant that only has `campaigns:*` scopes — a lookup
 question can never accidentally fire messages.
 
+**Two send channels** (migration 076), both on the same `broadcasts`
+row via `send_channel`:
+
+- `"api"` (default) — an approved template, sent through the official
+  WhatsApp Business API. Unchanged from migration 075.
+- `"external"` — a free-text message (+ optional image), sent manually
+  through an already-authenticated WhatsApp Web session. WACRM only
+  **prepares and registers** these — it never calls Meta for them.
+  There is no send endpoint for this channel; instead, an outside
+  executor reads the pending recipients + message here, sends them
+  itself, then reports each result back (see
+  `POST .../recipients/{recipientId}/result` below). `POST
+  /api/v1/campaigns/{id}/send` explicitly refuses `external` campaigns
+  even with a `broadcasts:send`-scoped key.
+
 ### `POST /api/v1/campaigns`
 
-Create a campaign. Scope: `campaigns:write`. `name` and
-`template_name` are required; `recipients` is **optional** — omit it
-to create a `draft` you add recipients to later. Supplying `recipients`
-materializes them immediately and the campaign is `ready` to send.
+Create a campaign. Scope: `campaigns:write`. `recipients` is
+**optional** on either channel — omit it to create a `draft` you add
+recipients to later; supplying it materializes them immediately and
+the campaign is `ready`.
+
+`api` channel (default) — `name` and `template_name` required:
 
 ```bash
 curl -X POST https://your-crm.example.com/api/v1/campaigns \
@@ -298,6 +315,22 @@ curl -X POST https://your-crm.example.com/api/v1/campaigns \
         "description": "Leads com tag investidor + faixa até 350k",
         "template_name": "promo_investidores",
         "template_language": "pt_BR",
+        "recipients": [{ "to": "+5511999999999" }]
+      }'
+```
+
+`external` channel — `name` and `message_text` required, `image_url`
+optional:
+
+```bash
+curl -X POST https://your-crm.example.com/api/v1/campaigns \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "Reativação leads frios",
+        "send_channel": "external",
+        "message_text": "Oi! Ainda tem interesse no apartamento?",
+        "image_url": "https://example.com/foto.jpg",
         "recipients": [{ "to": "+5511999999999" }]
       }'
 ```
@@ -333,7 +366,30 @@ curl -X POST https://your-crm.example.com/api/v1/campaigns/{id}/send \
 ```
 
 Omitting `confirm: true` returns `400 confirmation_required`. Safe to
-retry — only recipients still `pending` are (re)planned.
+retry — only recipients still `pending` are (re)planned. Returns `400`
+for an `external`-channel campaign — see the `send_channel` note above.
+
+### `POST /api/v1/campaigns/{id}/recipients/{recipientId}/result`
+
+Record the result of an `external`-channel send WACRM never performed
+itself. Scope: `campaigns:write` — **not** `broadcasts:send`, since
+this endpoint can't trigger a send, only record one that already
+happened outside WACRM.
+
+```bash
+curl -X POST https://your-crm.example.com/api/v1/campaigns/{id}/recipients/{recipientId}/result \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "sent", "external_reference": "whatsappweb-msg-id" }'
+```
+
+Or on failure: `{ "status": "failed", "error_message": "..." }`.
+Conditioned on the recipient still being `pending` — reporting a
+result for one already resolved is a no-op:
+`{ "data": { "updated": false, "status": "<current status>" } }`. This
+is the duplicate-send guard from section 5 applied to results: a
+retried or duplicate report can never flip an already-resolved
+recipient again.
 
 ### `GET /api/v1/contacts/{id}/campaigns`
 

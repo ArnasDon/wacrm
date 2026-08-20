@@ -675,17 +675,32 @@ export type BroadcastStatus =
   | 'cancelled';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
+/**
+ * 'api' (default) sends via the official WhatsApp Business API using
+ * an approved template — the flow built in migration 075. 'external'
+ * sends a free-text message (+ optional image) manually through an
+ * already-authenticated WhatsApp Web session — WACRM only prepares
+ * and registers the campaign/recipients; it never calls Meta for
+ * these rows. Migration 076.
+ */
+export type SendChannel = 'api' | 'external';
+
 export interface Broadcast {
   id: string;
   user_id: string;
   name: string;
   /** Optional planning note — migration 075 (Campaigns). */
   description?: string | null;
-  template_name: string;
+  /** migration 076 — 'api' (default) or 'external' (WhatsApp Web). */
+  send_channel: SendChannel;
+  /** NULL for send_channel = 'external' (migration 076). */
+  template_name: string | null;
   template_language: string;
   template_variables?: Record<string, unknown>;
+  /** Free-text body for send_channel = 'external' — migration 076. */
+  message_text?: string | null;
   audience_filter?: Record<string, unknown>;
-  /** Media URL for an IMAGE/VIDEO/DOCUMENT header template — migration 075. */
+  /** Media header URL (API) or the optional external-message image (migration 076). */
   header_media_url?: string | null;
   scheduled_at?: string;
   status: BroadcastStatus;

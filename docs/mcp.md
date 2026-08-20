@@ -48,8 +48,9 @@ data or send messages, add `"WACRM_ENABLE_WRITES": "true"` (and
   (list/get), messages (list), broadcast status, and campaigns
   (list/get, list recipients, a lead's campaign history).
 - **Writes (opt-in):** send a message, create/update a contact,
-  create a campaign, add campaign recipients — creating or staging a
-  campaign never sends anything by itself.
+  create a campaign, add campaign recipients, report an external-send
+  result — creating or staging a campaign never sends anything by
+  itself.
 - **Broadcasts (opt-in):** launch a template broadcast, or dispatch an
   existing campaign's recipients — both require an explicit `confirm`
   and are marked destructive.
@@ -60,6 +61,13 @@ custom-field filters) — see the [Campaigns](./public-api.md#campaigns)
 section of the public API docs. "Which leads are investors?" only ever
 reaches a read tool; only the dedicated send tool can trigger a real
 WhatsApp send.
+
+Campaigns also carry a `send_channel`: `"api"` (default, official
+template) or `"external"` — a free-text message sent manually via
+WhatsApp Web. WACRM only prepares and registers an `external`
+campaign; there is no tool (and no server-side path at all) that makes
+it send one. An outside executor reads the pending recipients +
+message, sends them itself, and reports each result back.
 
 ## Safety
 

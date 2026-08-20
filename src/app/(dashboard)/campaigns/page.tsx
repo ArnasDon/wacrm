@@ -261,8 +261,11 @@ export default function CampaignsPage() {
             <TableBody>
               {campaigns.map((campaign) => {
                 const status = getBroadcastStatus(campaign.status);
+                const isExternal = campaign.send_channel === 'external';
+                // 'external' campaigns are never dispatched from WACRM
+                // (spec section 4/7) — no Start/Resume action for them.
                 const canResume =
-                  campaign.status === 'ready' || campaign.status === 'sending';
+                  !isExternal && (campaign.status === 'ready' || campaign.status === 'sending');
                 return (
                   <TableRow
                     key={campaign.id}
@@ -278,7 +281,16 @@ export default function CampaignsPage() {
                       )}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground md:table-cell">
-                      {campaign.template_name}
+                      <span
+                        className={`mr-2 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                          isExternal
+                            ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                            : 'border-primary/20 bg-primary/10 text-primary'
+                        }`}
+                      >
+                        {isExternal ? t('channelExternal') : t('channelApi')}
+                      </span>
+                      {isExternal ? campaign.message_text : campaign.template_name}
                     </TableCell>
                     <TableCell className="hidden text-right text-muted-foreground tabular-nums sm:table-cell">
                       {campaign.total_recipients}

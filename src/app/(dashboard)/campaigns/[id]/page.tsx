@@ -316,7 +316,11 @@ export default function CampaignDetailPage() {
   }
 
   const status = getBroadcastStatus(campaign.status);
-  const canStartOrResume = campaign.status === 'ready' || campaign.status === 'sending';
+  const isExternal = campaign.send_channel === 'external';
+  // 'external' campaigns are never dispatched from WACRM (spec section
+  // 4/7) — no Start/Resume button for them, ever, regardless of status.
+  const canStartOrResume =
+    !isExternal && (campaign.status === 'ready' || campaign.status === 'sending');
   const canCancel = campaign.status === 'draft' || campaign.status === 'ready';
 
   const funnelSteps: FunnelStep[] = [
@@ -347,9 +351,22 @@ export default function CampaignDetailPage() {
               >
                 {tStatus(status.label)}
               </span>
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+                  isExternal
+                    ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                    : 'border-primary/20 bg-primary/10 text-primary'
+                }`}
+              >
+                {isExternal ? t('channelExternal') : t('channelApi')}
+              </span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{t('template', { name: campaign.template_name })}</span>
+              <span>
+                {isExternal
+                  ? t('externalMessage')
+                  : t('template', { name: campaign.template_name ?? '' })}
+              </span>
               <span>-</span>
               <span>
                 {t('createdAt', { date: new Date(campaign.created_at).toLocaleDateString() })}
@@ -510,6 +527,24 @@ export default function CampaignDetailPage() {
           color="bg-red-500/10 text-red-400"
         />
       </div>
+
+      {isExternal && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <p className="text-sm font-medium text-amber-300">{t('externalPanelTitle')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('externalPanelDesc')}</p>
+          <div className="mt-3 rounded-lg border border-border bg-card/50 p-3">
+            <p className="whitespace-pre-wrap text-sm text-foreground">{campaign.message_text}</p>
+            {campaign.header_media_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={campaign.header_media_url}
+                alt="Campaign"
+                className="mt-2 max-h-32 rounded-lg border border-border object-contain"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <FunnelChart steps={funnelSteps} />
 

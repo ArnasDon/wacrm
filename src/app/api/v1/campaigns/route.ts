@@ -9,7 +9,7 @@
 // 'broadcasts:send' scope plus an explicit `confirm: true` (spec
 // section 10: a read query must never be able to trigger a send).
 //
-// POST body:
+// POST body — 'api' channel (default, official template):
 //   {
 //     "name": "Investidores até 350 mil",
 //     "description": "optional planning note",
@@ -18,6 +18,16 @@
 //     "recipients": [                      // optional — omit to create a draft
 //       { "to": "+5511999999999" }
 //     ]
+//   }
+//
+// POST body — 'external' channel (free text, sent manually via
+// WhatsApp Web — migration 076; WACRM only prepares/registers it):
+//   {
+//     "name": "Reativação leads frios",
+//     "send_channel": "external",
+//     "message_text": "Oi! Ainda tem interesse no apartamento?",
+//     "image_url": "https://...",          // optional
+//     "recipients": [{ "to": "+5511999999999" }]
 //   }
 //
 // Response (201): { "data": <campaign> } — status is 'ready' when
@@ -61,10 +71,16 @@ export async function POST(request: Request) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return fail('bad_request', "'name' is required", 400);
 
+    const sendChannel = body.send_channel === 'external' ? 'external' : 'api';
+
     const templateName =
       typeof body.template_name === 'string' ? body.template_name : '';
-    if (!templateName) {
-      return fail('bad_request', "'template_name' is required", 400);
+    if (sendChannel === 'api' && !templateName) {
+      return fail('bad_request', "'template_name' is required for the api channel", 400);
+    }
+    const messageText = typeof body.message_text === 'string' ? body.message_text : '';
+    if (sendChannel === 'external' && !messageText.trim()) {
+      return fail('bad_request', "'message_text' is required for the external channel", 400);
     }
 
     const rawRecipients = Array.isArray(body.recipients) ? body.recipients : undefined;
@@ -74,9 +90,12 @@ export async function POST(request: Request) {
     const campaign = await createCampaign(ctx.supabase, ctx.accountId, auditUserId, {
       name,
       description: typeof body.description === 'string' ? body.description : null,
-      templateName,
+      sendChannel,
+      templateName: sendChannel === 'api' ? templateName : undefined,
       templateLanguage:
         typeof body.template_language === 'string' ? body.template_language : null,
+      messageText: sendChannel === 'external' ? messageText : undefined,
+      imageUrl: typeof body.image_url === 'string' ? body.image_url : undefined,
       recipients: rawRecipients?.map((r) => ({
         to: typeof r?.to === 'string' ? r.to : '',
         params: Array.isArray(r?.params) ? r.params : undefined,

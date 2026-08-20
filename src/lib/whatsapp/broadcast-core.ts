@@ -285,12 +285,22 @@ export async function buildPlanForExistingCampaign(
 ): Promise<BroadcastPlan> {
   const { data: campaign, error: campaignErr } = await db
     .from('broadcasts')
-    .select('id, status, template_name, template_language, template_variables, header_media_url')
+    .select('id, status, send_channel, template_name, template_language, template_variables, header_media_url')
     .eq('id', campaignId)
     .eq('account_id', accountId)
     .maybeSingle();
   if (campaignErr || !campaign) {
     throw new BroadcastError('not_found', 'Campaign not found', 404);
+  }
+  if (campaign.send_channel === 'external') {
+    // Section 4/7 of the spec: WACRM prepares/registers an 'external'
+    // campaign but never sends it — only POST .../recipients/{id}/result
+    // (reporting a send that already happened outside WACRM) applies.
+    throw new BroadcastError(
+      'bad_request',
+      "This is an external-send campaign — WACRM does not dispatch it. Report results via POST /campaigns/{id}/recipients/{recipientId}/result instead.",
+      400
+    );
   }
   if (campaign.status === 'sent' || campaign.status === 'cancelled') {
     throw new BroadcastError(

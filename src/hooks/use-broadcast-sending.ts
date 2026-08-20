@@ -49,29 +49,57 @@ export interface AudienceConfig {
   pipelineStageId?: string;
 }
 
-interface BroadcastPayload {
-  name: string;
-  description?: string;
-  template: MessageTemplate;
-  audience: AudienceConfig;
-  variables: Record<string, VariableMapping>;
-  /**
-   * Media URL for an IMAGE/VIDEO/DOCUMENT header. Required at send
-   * time for media-header templates — Meta rejects the send without
-   * it. Passed through as `messageParams.headerMediaUrl`; the builder
-   * falls back to the template's stored URL only when this is empty.
-   */
-  headerMediaUrl?: string;
-}
+/**
+ * migration 076 — a campaign is either:
+ *   'api'      — unchanged: an approved template + variable mapping,
+ *                sent through the official WhatsApp Business API.
+ *   'external' — a free-text message (+ optional image), sent
+ *                manually via an already-logged-in WhatsApp Web
+ *                session. WACRM only prepares/registers this one; see
+ *                startCampaignSending's guard below.
+ */
+type BroadcastPayload =
+  | {
+      name: string;
+      description?: string;
+      sendChannel: 'api';
+      template: MessageTemplate;
+      audience: AudienceConfig;
+      variables: Record<string, VariableMapping>;
+      /**
+       * Media URL for an IMAGE/VIDEO/DOCUMENT header. Required at send
+       * time for media-header templates — Meta rejects the send without
+       * it. Passed through as `messageParams.headerMediaUrl`; the builder
+       * falls back to the template's stored URL only when this is empty.
+       */
+      headerMediaUrl?: string;
+    }
+  | {
+      name: string;
+      description?: string;
+      sendChannel: 'external';
+      audience: AudienceConfig;
+      /** Free-text message body — no template, no variable mapping. */
+      messageText: string;
+      /** Optional image to send alongside the message. */
+      imageUrl?: string;
+    };
 
 interface UseBroadcastSendingReturn {
-  /** Resolve + persist recipients, then send immediately (existing "Send Now" flow). */
-  createAndSendBroadcast: (payload: BroadcastPayload) => Promise<string>;
+  /**
+   * Resolve + persist recipients, then send immediately via the
+   * official API — 'api' channel only. 'external' campaigns are never
+   * dispatched from here (see startCampaignSending's guard); the
+   * wizard only offers saveCampaignReady for that channel.
+   */
+  createAndSendBroadcast: (payload: Extract<BroadcastPayload, { sendChannel: 'api' }>) => Promise<string>;
   /**
    * Resolve + persist recipients WITHOUT sending — status 'ready'. Used
    * by the "review recipients, then decide" step (section 3 of the
-   * spec): the campaign's recipient list is locked in, sendable later
-   * via `startCampaignSending`.
+   * spec): the campaign's recipient list is locked in. For 'api' it's
+   * sendable later via `startCampaignSending`; for 'external' this is
+   * the ONLY materialization path — WACRM prepares and registers the
+   * campaign for the outside executor, never sends it itself.
    */
   saveCampaignReady: (payload: BroadcastPayload) => Promise<string>;
   /**
@@ -500,10 +528,19 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         account_id: accountId,
         name: payload.name,
         description: payload.description?.trim() || null,
-        template_name: payload.template.name,
-        template_language: payload.template.language ?? 'en_US',
-        template_variables: payload.variables,
-        header_media_url: payload.headerMediaUrl?.trim() || null,
+        send_channel: payload.sendChannel,
+        ...(payload.sendChannel === 'api'
+          ? {
+              template_name: payload.template.name,
+              template_language: payload.template.language ?? 'en_US',
+              template_variables: payload.variables,
+              header_media_url: payload.headerMediaUrl?.trim() || null,
+            }
+          : {
+              template_name: null,
+              message_text: payload.messageText.trim(),
+              header_media_url: payload.imageUrl?.trim() || null,
+            }),
         audience_filter: {
           type: payload.audience.type,
           tagIds: payload.audience.tagIds,
@@ -747,7 +784,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     await supabase.from('broadcasts').update({ status: finalStatus }).eq('id', broadcastId);
   }
 
-  async function createAndSendBroadcast(payload: BroadcastPayload): Promise<string> {
+  async function createAndSendBroadcast(
+    payload: Extract<BroadcastPayload, { sendChannel: 'api' }>,
+  ): Promise<string> {
     setIsProcessing(true);
     setProgress(0);
     const supabase = createClient();
@@ -790,6 +829,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
    * "Iniciar envio" (campaign is 'ready') or "Continuar envio" (a
    * 'sending' campaign got interrupted, e.g. the tab closed mid-send) —
    * same operation either way: send whatever is still `pending`.
+   *
+   * 'api' channel only — this is the function that actually calls the
+   * official WhatsApp API. An 'external' campaign is never dispatched
+   * from WACRM (section 4/7 of the spec: prepare + register, nothing
+   * more); the UI never renders a button that reaches this function
+   * for one, and this guard is the backstop.
    */
   async function startCampaignSending(campaignId: string): Promise<void> {
     setIsProcessing(true);
@@ -798,11 +843,16 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     try {
       const { data: broadcast, error } = await supabase
         .from('broadcasts')
-        .select('id, status, template_name, template_language, template_variables, header_media_url')
+        .select('id, status, send_channel, template_name, template_language, template_variables, header_media_url')
         .eq('id', campaignId)
         .single();
       if (error || !broadcast) {
         throw new Error('Campaign not found');
+      }
+      if (broadcast.send_channel === 'external') {
+        throw new Error(
+          'This is an external-send campaign — WACRM does not dispatch it. Statuses are updated by the external executor.',
+        );
       }
       if (broadcast.status === 'sent' || broadcast.status === 'cancelled') {
         throw new Error(`Campaign is already ${broadcast.status} — nothing to send.`);

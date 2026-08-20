@@ -964,7 +964,9 @@
       "startSending": "Iniciar envio",
       "resumeSending": "Continuar envio",
       "toastSendingResumed": "Envio concluído",
-      "toastResumeFailed": "Falha ao enviar a campanha"
+      "toastResumeFailed": "Falha ao enviar a campanha",
+      "channelApi": "WACRM",
+      "channelExternal": "Externo"
     },
     "status": {
       "draft": "Rascunho",
@@ -1028,13 +1030,18 @@
       "toastCancelled": "Campanha cancelada",
       "toastCancelFailed": "Falha ao cancelar: {error}",
       "whoReceived": "Quem recebeu",
-      "whoDidNotReceive": "Quem ainda não recebeu"
+      "whoDidNotReceive": "Quem ainda não recebeu",
+      "channelApi": "WACRM",
+      "channelExternal": "Externo",
+      "externalMessage": "Mensagem livre (envio externo)",
+      "externalPanelTitle": "Campanha de envio externo",
+      "externalPanelDesc": "O envio é feito manualmente pelo WhatsApp Web. O WACRM registra os destinatários abaixo e aguarda o resultado ser reportado de volta para atualizar os status."
     },
     "new": {
       "title": "Nova campanha",
       "subtitle": "Crie, defina o público e envie uma campanha para seus leads.",
       "steps": {
-        "template": "Template",
+        "template": "Mensagem",
         "audience": "Público",
         "personalize": "Personalizar",
         "send": "Enviar"
@@ -1052,11 +1059,20 @@
       "back": "Voltar",
       "cancel": "Cancelar",
       "chooseTemplate": {
-        "title": "Escolha um template",
-        "subtitle": "Selecione um template de mensagem aprovado para sua campanha.",
+        "title": "Mensagem",
+        "subtitle": "Escolha como esta campanha será enviada.",
         "noTemplates": "Nenhum template disponível.",
         "createFirst": "Crie um template em Configurações primeiro.",
-        "errorLoad": "Falha ao carregar templates"
+        "errorLoad": "Falha ao carregar templates",
+        "channelApi": "WACRM",
+        "channelApiDesc": "Template oficial aprovado, enviado pela API do WhatsApp.",
+        "channelExternal": "Externo",
+        "channelExternalDesc": "Mensagem livre, enviada manualmente pelo WhatsApp Web já logado.",
+        "messageLabel": "Mensagem",
+        "messagePlaceholder": "Escreva a mensagem que será enviada...",
+        "messageHint": "Mensagem única, sem variáveis — igual para todos os destinatários.",
+        "imageLabel": "Imagem (opcional)",
+        "imagePlaceholder": "https://exemplo.com/imagem.jpg"
       },
       "selectAudience": {
         "title": "Selecionar público",
@@ -1172,7 +1188,12 @@
         "recipientsPreviewClose": "Fechar",
         "confirmTitle": "Confirmar campanha",
         "confirmDesc": "Você está prestes a enviar esta campanha para {count} contatos usando o template {template}. Essa ação não pode ser desfeita.",
-        "toastFailedReady": "Falha ao salvar campanha: {error}"
+        "toastFailedReady": "Falha ao salvar campanha: {error}",
+        "channelApiBadge": "Envio via WACRM — template oficial pela API do WhatsApp",
+        "channelExternalBadge": "Envio Externo — WhatsApp Web (manual)",
+        "messagePreview": "Mensagem",
+        "externalExplainer": "O WACRM prepara e registra os destinatários. O envio será feito manualmente pelo WhatsApp Web, e o resultado deve ser reportado de volta para atualizar o histórico.",
+        "prepareExternal": "Preparar campanha"
       }
     }
   },

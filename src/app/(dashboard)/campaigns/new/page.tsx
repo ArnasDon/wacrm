@@ -14,6 +14,8 @@ import { useBroadcastSending, type AudienceConfig } from '@/hooks/use-broadcast-
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
+type SendChannel = 'api' | 'external';
+
 const steps = [
   { label: 'template', key: 'template' },
   { label: 'audience', key: 'audience' },
@@ -29,7 +31,10 @@ export default function NewCampaignPage() {
     useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
+  const [sendChannel, setSendChannel] = useState<SendChannel>('api');
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [audience, setAudience] = useState<AudienceConfig>({ type: 'all' });
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
@@ -38,11 +43,26 @@ export default function NewCampaignPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
+  // 'external' has no template variables to map, so the wizard skips
+  // straight from "Público" to "Enviar" — same trilha, one fewer stop
+  // for a path that has nothing to personalize (spec section 1/2).
+  const personalizeStepIndex = 2;
+  const sendStepIndex = sendChannel === 'external' ? 2 : 3;
+
+  function goToAudienceNext() {
+    setCurrentStep(sendChannel === 'external' ? sendStepIndex : personalizeStepIndex);
+  }
+
+  function goBackFromSend() {
+    setCurrentStep(sendChannel === 'external' ? 1 : personalizeStepIndex);
+  }
+
   async function handleSend() {
-    if (!template) return;
+    if (sendChannel !== 'api' || !template) return;
 
     try {
       const campaignId = await createAndSendBroadcast({
+        sendChannel: 'api',
         name,
         description,
         template,
@@ -63,20 +83,33 @@ export default function NewCampaignPage() {
   /**
    * "Salvar como pronta para envio" (spec section 3) — resolves the
    * audience and materializes recipient rows so the count/list are
-   * locked in and reviewable, but doesn't send. The campaign lands on
-   * its detail page in 'ready' status; "Iniciar envio" there sends it.
+   * locked in and reviewable. For 'api' the campaign lands 'ready' to
+   * send from its detail page; for 'external' this is the ONLY
+   * materialization action — WACRM prepares + registers the campaign
+   * for the outside executor (spec section 4/7), it never sends it.
    */
   async function handleSaveReady() {
-    if (!template) return;
     try {
-      const campaignId = await saveCampaignReady({
-        name,
-        description,
-        template,
-        audience,
-        variables,
-        headerMediaUrl,
-      });
+      const campaignId = await saveCampaignReady(
+        sendChannel === 'api'
+          ? {
+              sendChannel: 'api',
+              name,
+              description,
+              template: template!,
+              audience,
+              variables,
+              headerMediaUrl,
+            }
+          : {
+              sendChannel: 'external',
+              name,
+              description,
+              audience,
+              messageText,
+              imageUrl,
+            },
+      );
       toast.success(t('toastReadySaved'));
       router.push(`/campaigns/${campaignId}`);
     } catch (err) {
@@ -95,7 +128,7 @@ export default function NewCampaignPage() {
    * A full resume-draft UX is a future polish.
    */
   async function handleSaveDraft() {
-    if (!template || !name.trim()) {
+    if (!name.trim()) {
       toast.error(t('toastGiveName'));
       return;
     }
@@ -118,9 +151,12 @@ export default function NewCampaignPage() {
       account_id: accountId,
       name: name.trim(),
       description: description.trim() || null,
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
-      template_variables: variables,
+      send_channel: sendChannel,
+      template_name: sendChannel === 'api' ? (template?.name ?? null) : null,
+      template_language: sendChannel === 'api' ? (template?.language ?? 'en_US') : 'en_US',
+      template_variables: sendChannel === 'api' ? variables : null,
+      message_text: sendChannel === 'external' ? messageText.trim() || null : null,
+      header_media_url: sendChannel === 'api' ? headerMediaUrl.trim() || null : imageUrl.trim() || null,
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
@@ -160,6 +196,8 @@ export default function NewCampaignPage() {
       {/* Step Indicator */}
       <div className="flex items-center justify-between">
         {steps.map((step, index) => {
+          // 'external' never visits "Personalizar" — render 3 dots for it.
+          if (sendChannel === 'external' && step.key === 'personalize') return null;
           const isActive = index === currentStep;
           const isCompleted = index < currentStep;
 
@@ -208,8 +246,14 @@ export default function NewCampaignPage() {
         >
           {currentStep === 0 && (
             <Step1ChooseTemplate
+              sendChannel={sendChannel}
+              onSendChannelChange={setSendChannel}
               selectedTemplate={template}
-              onSelect={setTemplate}
+              onSelectTemplate={setTemplate}
+              messageText={messageText}
+              onMessageTextChange={setMessageText}
+              imageUrl={imageUrl}
+              onImageUrlChange={setImageUrl}
               onNext={() => setCurrentStep(1)}
               onBack={() => router.push('/campaigns')}
             />
@@ -218,11 +262,11 @@ export default function NewCampaignPage() {
             <Step2SelectAudience
               audience={audience}
               onUpdate={setAudience}
-              onNext={() => setCurrentStep(2)}
+              onNext={goToAudienceNext}
               onBack={() => setCurrentStep(0)}
             />
           )}
-          {currentStep === 2 && template && (
+          {currentStep === personalizeStepIndex && sendChannel === 'api' && template && (
             <Step3Personalize
               template={template}
               variables={variables}
@@ -233,18 +277,21 @@ export default function NewCampaignPage() {
               onBack={() => setCurrentStep(1)}
             />
           )}
-          {currentStep === 3 && template && (
+          {currentStep === sendStepIndex && (
             <Step4ScheduleSend
               name={name}
               onNameChange={setName}
               description={description}
               onDescriptionChange={setDescription}
+              sendChannel={sendChannel}
               template={template}
+              messageText={messageText}
+              imageUrl={imageUrl}
               audience={audience}
               onSend={handleSend}
               onSaveDraft={handleSaveDraft}
               onSaveReady={handleSaveReady}
-              onBack={() => setCurrentStep(2)}
+              onBack={goBackFromSend}
               isProcessing={isProcessing}
               progress={progress}
             />

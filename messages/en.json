@@ -964,7 +964,9 @@
       "startSending": "Start sending",
       "resumeSending": "Resume sending",
       "toastSendingResumed": "Sending finished",
-      "toastResumeFailed": "Failed to send the campaign"
+      "toastResumeFailed": "Failed to send the campaign",
+      "channelApi": "WACRM",
+      "channelExternal": "External"
     },
     "status": {
       "draft": "Draft",
@@ -1028,13 +1030,18 @@
       "toastCancelled": "Campaign cancelled",
       "toastCancelFailed": "Failed to cancel: {error}",
       "whoReceived": "Who received it",
-      "whoDidNotReceive": "Who hasn't received it yet"
+      "whoDidNotReceive": "Who hasn't received it yet",
+      "channelApi": "WACRM",
+      "channelExternal": "External",
+      "externalMessage": "Free-form message (external send)",
+      "externalPanelTitle": "External-send campaign",
+      "externalPanelDesc": "Sending is done manually via WhatsApp Web. WACRM registers the recipients below and waits for the result to be reported back to update statuses."
     },
     "new": {
       "title": "New Campaign",
       "subtitle": "Create, target, and send a campaign to your leads.",
       "steps": {
-        "template": "Template",
+        "template": "Message",
         "audience": "Audience",
         "personalize": "Personalize",
         "send": "Send"
@@ -1052,11 +1059,20 @@
       "back": "Back",
       "cancel": "Cancel",
       "chooseTemplate": {
-        "title": "Choose a Template",
-        "subtitle": "Select an approved message template for your campaign.",
+        "title": "Message",
+        "subtitle": "Choose how this campaign will be sent.",
         "noTemplates": "No templates available.",
         "createFirst": "Create a template in Settings first.",
-        "errorLoad": "Failed to load templates"
+        "errorLoad": "Failed to load templates",
+        "channelApi": "WACRM",
+        "channelApiDesc": "Official approved template, sent via the WhatsApp API.",
+        "channelExternal": "External",
+        "channelExternalDesc": "Free-form message, sent manually via an already-logged-in WhatsApp Web session.",
+        "messageLabel": "Message",
+        "messagePlaceholder": "Write the message that will be sent...",
+        "messageHint": "A single message, no variables — the same for every recipient.",
+        "imageLabel": "Image (optional)",
+        "imagePlaceholder": "https://example.com/image.jpg"
       },
       "selectAudience": {
         "title": "Select Audience",
@@ -1172,7 +1188,12 @@
         "recipientsPreviewClose": "Close",
         "confirmTitle": "Confirm campaign",
         "confirmDesc": "You are about to send this campaign to {count} contacts using the {template} template. This action cannot be undone.",
-        "toastFailedReady": "Failed to save campaign: {error}"
+        "toastFailedReady": "Failed to save campaign: {error}",
+        "channelApiBadge": "WACRM send — official template via the WhatsApp API",
+        "channelExternalBadge": "External send — WhatsApp Web (manual)",
+        "messagePreview": "Message",
+        "externalExplainer": "WACRM prepares and registers the recipients. The send is done manually via WhatsApp Web, and the result must be reported back to update the history.",
+        "prepareExternal": "Prepare campaign"
       }
     }
   },

@@ -85,6 +85,42 @@ export async function POST(request: Request) {
     );
     if (!limit.success) return rateLimitResponse(limit);
 
+    // Seat gate — additional members cost Q100/seat (product decision,
+    // 2026-08-20). Count current members + still-live (non-expired,
+    // non-accepted) pending invites against accounts.seat_limit: pending
+    // invites reserve a seat so admins can't fan out N invites past M
+    // available seats and have them all get redeemed later.
+    const [{ count: memberCount }, { count: pendingCount }, { data: accountRow }] =
+      await Promise.all([
+        ctx.supabase
+          .from("profiles")
+          .select("user_id", { count: "exact", head: true })
+          .eq("account_id", ctx.accountId),
+        ctx.supabase
+          .from("account_invitations")
+          .select("id", { count: "exact", head: true })
+          .eq("account_id", ctx.accountId)
+          .is("accepted_at", null)
+          .gt("expires_at", new Date().toISOString()),
+        ctx.supabase
+          .from("accounts")
+          .select("seat_limit")
+          .eq("id", ctx.accountId)
+          .maybeSingle(),
+      ]);
+
+    const seatLimit = accountRow?.seat_limit ?? 1;
+    const usedSeats = (memberCount ?? 0) + (pendingCount ?? 0);
+    if (usedSeats >= seatLimit) {
+      return NextResponse.json(
+        {
+          error:
+            "No tienes cupos disponibles para invitar a un miembro más. Usa 'Solicitud de accesos' para pedir un cupo adicional (Q100 por usuario).",
+        },
+        { status: 403 },
+      );
+    }
+
     const body = (await request.json().catch(() => null)) as
       | { role?: unknown; expiresInDays?: unknown; label?: unknown }
       | null;

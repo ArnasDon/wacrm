@@ -27,6 +27,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  Banknote,
   Loader2,
   Mail,
   MailX,
@@ -75,6 +76,7 @@ import {
   PresenceDot,
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { RequestSeatDialog } from './request-seat-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
 
@@ -137,9 +139,11 @@ export function MembersTab() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [seatLimit, setSeatLimit] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [requestSeatOpen, setRequestSeatOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null
@@ -159,8 +163,12 @@ export function MembersTab() {
         toast.error(payload.error || 'Failed to load members');
         return;
       }
-      const mdata = await readResponseJson<{ members: Member[] }>(mres);
+      const mdata = await readResponseJson<{
+        members: Member[];
+        seatLimit: number;
+      }>(mres);
       setMembers(mdata.members);
+      setSeatLimit(mdata.seatLimit);
 
       if (ires) {
         if (!ires.ok) {
@@ -294,6 +302,9 @@ export function MembersTab() {
     );
   }
 
+  const usedSeats = members.length + invitations.length;
+  const seatsAvailable = seatLimit - usedSeats;
+
   return (
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
@@ -301,10 +312,36 @@ export function MembersTab() {
         description={t('description')}
         action={
           <RequireRole min="admin">
-            <Button onClick={() => setInviteOpen(true)}>
-              <Plus className="size-4" />
-              {t('inviteMember')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="border-border text-muted-foreground hover:bg-muted gap-2"
+                onClick={() => setRequestSeatOpen(true)}
+              >
+                <Banknote className="size-4" />
+                {t('requestAccess')}
+              </Button>
+              {seatsAvailable > 0 ? (
+                <Button onClick={() => setInviteOpen(true)}>
+                  <Plus className="size-4" />
+                  {t('inviteMember')}
+                </Button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span>
+                        <Button disabled>
+                          <Plus className="size-4" />
+                          {t('inviteMember')}
+                        </Button>
+                      </span>
+                    }
+                  />
+                  <TooltipContent>{t('noSeatsAvailable')}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           </RequireRole>
         }
       />
@@ -582,6 +619,8 @@ export function MembersTab() {
         onOpenChange={setInviteOpen}
         onCreated={loadEverything}
       />
+
+      <RequestSeatDialog open={requestSeatOpen} onOpenChange={setRequestSeatOpen} />
 
       <Dialog
         open={removingMember !== null}

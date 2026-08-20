@@ -38,6 +38,7 @@ interface Company {
   name: string;
   createdAt: string;
   memberCount: number;
+  seatLimit: number;
   suspendedAt: string | null;
   suspendedReason: string | null;
   nextPaymentDueAt: string | null;
@@ -84,6 +85,7 @@ export default function PlatformAdminPage() {
   const [changingId, setChangingId] = useState<string | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [savingDueDateId, setSavingDueDateId] = useState<string | null>(null);
+  const [addingSeatId, setAddingSeatId] = useState<string | null>(null);
 
   const [bankForm, setBankForm] = useState<PlatformBankSettings>({
     bank_name: '',
@@ -233,6 +235,34 @@ export default function PlatformAdminPage() {
       );
     } finally {
       setMarkingPaidId(null);
+    }
+  };
+
+  const addSeat = async (company: Company) => {
+    if (
+      !window.confirm(
+        `¿Habilitar un usuario adicional para ${company.name}? Pasará de ${company.seatLimit} a ${company.seatLimit + 1} cupos.`
+      )
+    )
+      return;
+    setAddingSeatId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_seats: 1 }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo habilitar el cupo');
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo habilitar el cupo'
+      );
+    } finally {
+      setAddingSeatId(null);
     }
   };
 
@@ -400,6 +430,7 @@ export default function PlatformAdminPage() {
                 <TableHead>Empresa</TableHead>
                 <TableHead>Dueño</TableHead>
                 <TableHead>Usuarios</TableHead>
+                <TableHead>Cupos</TableHead>
                 <TableHead>Conversaciones</TableHead>
                 <TableHead>Mensajes</TableHead>
                 <TableHead>Tokens IA</TableHead>
@@ -420,6 +451,27 @@ export default function PlatformAdminPage() {
                     </div>
                   </TableCell>
                   <TableCell>{company.memberCount}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          company.memberCount >= company.seatLimit
+                            ? 'text-amber-500'
+                            : 'text-muted-foreground'
+                        }
+                      >
+                        {company.memberCount} / {company.seatLimit}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={addingSeatId === company.id}
+                        onClick={() => void addSeat(company)}
+                      >
+                        {addingSeatId === company.id ? 'Guardando…' : '+1 asiento'}
+                      </Button>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {company.usage30d.conversations.toLocaleString('es-GT')}
                   </TableCell>
@@ -507,7 +559,7 @@ export default function PlatformAdminPage() {
               {!loading && companies.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className="text-muted-foreground py-8 text-center"
                   >
                     No hay empresas registradas.

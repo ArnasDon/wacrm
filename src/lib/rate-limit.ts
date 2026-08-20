@@ -235,6 +235,10 @@ export const RATE_LIMITS = {
   /** Payment report (sends an email), per user. Same reasoning as
    *  supportReport — an occasional, human-triggered action. */
   paymentReport: { limit: 5, windowMs: 60_000 },
+  /** Additional-seat request (sends an email), per user. Same
+   *  reasoning as paymentReport — an occasional, human-triggered
+   *  action, not something a legitimate admin does in a loop. */
+  seatRequest: { limit: 5, windowMs: 60_000 },
   /** Public account-request form (sends an email), per-IP — this
    *  route is unauthenticated (a prospective customer has no account
    *  yet), so it's keyed by IP like the public catalog routes rather

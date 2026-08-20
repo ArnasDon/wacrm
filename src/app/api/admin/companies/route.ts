@@ -27,7 +27,7 @@ export async function GET() {
     await requirePlatformAdmin();
     const admin = platformAdminClient();
     const [accountsResult, profilesResult, invitationsResult] = await Promise.all([
-      admin.from("accounts").select("id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at").order("created_at", { ascending: false }),
+      admin.from("accounts").select("id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at, seat_limit").order("created_at", { ascending: false }),
       admin.from("profiles").select("user_id, account_id, full_name, email, account_role"),
       admin.from("platform_company_invitations").select("id, company_name, invited_email, created_at, expires_at").is("accepted_at", null).order("created_at", { ascending: false }),
     ]);
@@ -59,6 +59,7 @@ export async function GET() {
         name: account.name,
         createdAt: account.created_at,
         memberCount: members.length,
+        seatLimit: account.seat_limit,
         suspendedAt: account.suspended_at,
         suspendedReason: account.suspended_reason,
         nextPaymentDueAt: account.next_payment_due_at,

@@ -33,11 +33,18 @@ export async function GET() {
 
     // RLS on profiles allows reading any row whose account matches
     // the caller's, so this query is naturally account-scoped.
-    const { data, error } = await ctx.supabase
-      .from("profiles")
-      .select("user_id, full_name, email, avatar_url, account_role, created_at")
-      .eq("account_id", ctx.accountId)
-      .order("created_at", { ascending: true });
+    const [{ data, error }, { data: accountRow }] = await Promise.all([
+      ctx.supabase
+        .from("profiles")
+        .select("user_id, full_name, email, avatar_url, account_role, created_at")
+        .eq("account_id", ctx.accountId)
+        .order("created_at", { ascending: true }),
+      ctx.supabase
+        .from("accounts")
+        .select("seat_limit")
+        .eq("id", ctx.accountId)
+        .maybeSingle(),
+    ]);
 
     if (error) {
       console.error("[GET /api/account/members] fetch error:", error);
@@ -66,7 +73,7 @@ export async function GET() {
       ];
     });
 
-    return NextResponse.json({ members });
+    return NextResponse.json({ members, seatLimit: accountRow?.seat_limit ?? 1 });
   } catch (err) {
     return toErrorResponse(err);
   }

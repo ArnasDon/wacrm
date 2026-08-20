@@ -15,11 +15,37 @@ export async function PATCH(
       reason?: unknown;
       mark_paid?: unknown;
       next_payment_due_at?: unknown;
+      add_seats?: unknown;
     };
 
     if (body.mark_paid === true) {
       const result = await markAccountPaid(platformAdminClient(), id);
       return NextResponse.json({ company: result });
+    }
+
+    if ("add_seats" in body) {
+      const delta = body.add_seats;
+      if (typeof delta !== "number" || !Number.isInteger(delta) || delta === 0) {
+        return NextResponse.json({ error: "La cantidad de cupos a agregar es inválida" }, { status: 400 });
+      }
+      const admin = platformAdminClient();
+      const { data: current, error: fetchError } = await admin
+        .from("accounts")
+        .select("seat_limit")
+        .eq("id", id)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (!current) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+
+      const nextSeatLimit = Math.max(1, current.seat_limit + delta);
+      const { data, error } = await admin
+        .from("accounts")
+        .update({ seat_limit: nextSeatLimit })
+        .eq("id", id)
+        .select("id, seat_limit")
+        .maybeSingle();
+      if (error) throw error;
+      return NextResponse.json({ company: data });
     }
 
     if ("next_payment_due_at" in body) {

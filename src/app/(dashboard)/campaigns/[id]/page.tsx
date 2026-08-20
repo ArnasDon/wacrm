@@ -42,6 +42,7 @@ import {
   getRecipientStatus,
 } from '@/lib/broadcast-status';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { ExternalCampaignReview } from '@/components/campaigns/external-campaign-review';
 import { useTranslations } from 'next-intl';
 
 /**
@@ -533,6 +534,9 @@ export default function CampaignDetailPage() {
           <p className="text-sm font-medium text-amber-300">{t('externalPanelTitle')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{t('externalPanelDesc')}</p>
           <div className="mt-3 rounded-lg border border-border bg-card/50 p-3">
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t('messageTemplate')}
+            </p>
             <p className="whitespace-pre-wrap text-sm text-foreground">{campaign.message_text}</p>
             {campaign.header_media_url && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -544,6 +548,14 @@ export default function CampaignDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {isExternal && campaign.status !== 'cancelled' && (
+        <ExternalCampaignReview
+          campaign={campaign}
+          recipients={recipients.filter((r) => r.status === 'pending')}
+          onRefresh={fetchData}
+        />
       )}
 
       <FunnelChart steps={funnelSteps} />

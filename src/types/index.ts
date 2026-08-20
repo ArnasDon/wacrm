@@ -710,6 +710,14 @@ export interface Broadcast {
   read_count: number;
   replied_count: number;
   failed_count: number;
+  /**
+   * Set once the user approves the previewed/edited 'external'
+   * recipient list — migration 077. Locks further edits/removals;
+   * "Exportar para Cloud Code" only appears once this is set.
+   */
+  approved_at?: string | null;
+  /** Last time the export file was generated — migration 077, informational only. */
+  exported_at?: string | null;
   created_at: string;
 }
 
@@ -734,6 +742,13 @@ export interface BroadcastRecipient {
    * Added in migration 003.
    */
   whatsapp_message_id?: string;
+  /**
+   * 'external' campaigns only (migration 077) — the final, approved
+   * per-recipient message. NULL = use the computed default
+   * (campaign.message_text with {{nome}} substituted); non-NULL = the
+   * user's manual per-recipient edit.
+   */
+  message_text?: string | null;
   created_at: string;
   contact?: Contact;
 }
